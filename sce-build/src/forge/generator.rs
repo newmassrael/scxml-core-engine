@@ -162,6 +162,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_first_flags: Option<(String, Vec<crate::forge::model::FlagDef>)>,
 
+    /// For codec imports: the imported codec's fields, as parsed.
+    ///
+    /// What a parent that reads INSIDE an imported codec needs: a
+    /// `<sce:tlv-chain entry-id="…">` names a flag or a field of its entry
+    /// codec, which is a fact about that codec and unknowable from the
+    /// parent's own document. Empty for non-codec imports and for codec
+    /// imports whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub codec_fields: Vec<CodecField>,
+
     /// RFC variant-default-uniformity Go `NewT()` contract: `true` when
     /// the imported codec emits a `NewT()` constructor — either because
     /// any of its fields declares `<sce:flag value=>` (inner-default
@@ -715,6 +725,7 @@ fn resolve_single_import(
         go_init_expr,
         codec_max_bytes: None,
         codec_first_flags: None,
+        codec_fields: Vec::new(),
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_as_borrowed_fallible: false,
@@ -4770,6 +4781,11 @@ fn render_codec(
     // the 5 checks plus the no-dispatch + no-default-arm gate.
     validate_cross_codec_variant_dispatch(m, imports)?;
 
+    // A `<sce:tlv-chain entry-id="…">` names a flag or a field of the entry
+    // codec it imports, and the values a `<chain>.has(…)` predicate looks
+    // for must be values that identifier can hold.
+    validate_cross_codec_chain_entry_id(m, imports)?;
+
     // RFC flag inversion + caller-tag variant shape: reject the
     // variant-arm-body-is-caller-tag-dispatcher configuration upfront
     // so the author sees a typed diagnostic at codegen time instead of
@@ -5121,7 +5137,7 @@ fn render_codec(
                         };
                         obj.insert("kt_default".into(), kt_default.into());
                     }
-                } else if let BitSize::TlvChain { max_depth, on_overflow, terminate_on } = &f.bit_size {
+                } else if let BitSize::TlvChain { max_depth, on_overflow, terminate_on, .. } = &f.bit_size {
                     // RFC §synth-5-B B3 TLV chain primitive — populate the
                     // per-field decode/encode statements + host-language
                     // list type. Reuses the repeat machinery for body
@@ -5230,6 +5246,10 @@ fn render_codec(
                             lang,
                         })
                     };
+                    // A later field gated on `<chain>.has(…)` reads a boolean
+                    // local that follows the chain (`with_chain_has_decls`);
+                    // nothing is appended when no predicate asks.
+                    let decode_stmt = with_chain_has_decls(decode_stmt, f, &m.fields, lang);
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     let encode_block = if f.present_if.is_some() {
                         tlv_chain_streaming_encode_block_gated(
@@ -6127,6 +6147,21 @@ fn render_codec(
         "has_parent_tag_derivation".into(),
         (!parent_tag_derivations.is_empty()).into(),
     );
+    // Chain-membership predicates (`<chain>.has(…)`): the locals `encode`
+    // binds from the value it encodes and, on backends that carry presence in
+    // a wrapper, the refusal of a message whose chain and gated fields
+    // disagree. Templates render `{{ present_if_encode_prologue }}` before
+    // the first write; it is the empty string — rendering nothing — for a
+    // codec no chain predicate gates, which keeps every existing golden
+    // byte-stable. `encode_can_refuse` makes the infallible-looking facades
+    // (`encode_to_vec` and kin) fallible for that codec alone.
+    let (present_if_encode_prologue, encode_can_refuse) =
+        present_if_chain_encode_prologue(&m.fields, lang);
+    ctx.insert(
+        "present_if_encode_prologue".into(),
+        present_if_encode_prologue.into(),
+    );
+    ctx.insert("encode_can_refuse".into(), encode_can_refuse.into());
 
     // RFC §synth-5-B variant primitive (item B1 trunk): build per-arm rendering
     // context. Each arm's `body_alias` resolves against the codec's
@@ -7124,6 +7159,173 @@ fn resolve_variant_arm_body_type(
         // exact spelling.
         crate::generator::Language::Python => imp.type_name.clone(),
     })
+}
+
+/// `validate_cross_codec_chain_entry_id`: the cross-document half of
+/// `<sce:tlv-chain entry-id="…">`. The parser reads the spelling; whether the
+/// entry codec has what the spelling names is a fact about another document,
+/// so it is judged here, where the import is resolved. For each chain that
+/// declares an identifier:
+///
+/// 1. the entry codec has the flag (`<carrier>.<flag>`) or the field (`<field>`);
+/// 2. a flag is multi-bit — a one-bit flag tells two kinds apart at most and
+///    is a flag, not an identifier — and a field is an unsigned integer that is
+///    on the wire whatever the entry holds (no `sce:present-if`);
+/// 3. every value a `<chain>.has(<value>)` predicate of this codec looks for
+///    fits the identifier's width, because a value it can never hold makes the
+///    predicate false for every message and the field it gates unreachable;
+/// 4. a chain that ends only when the wire does has no field after it to gate.
+///
+/// Each is a refusal with no repair a tool could apply — the author chooses
+/// which flag or field is the identifier — so each is
+/// `validation/attribute-rule-violated` on the chain's own row.
+fn validate_cross_codec_chain_entry_id(
+    parent: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+
+    for chain in parent.fields.iter().filter(|f| f.is_tlv_chain()) {
+        let BitSize::TlvChain {
+            entry_id: Some(identifier),
+            terminate_on,
+            ..
+        } = &chain.bit_size
+        else {
+            continue;
+        };
+        let spelled = match &identifier.carrier {
+            Some(carrier) => format!("{carrier}.{}", identifier.name),
+            None => identifier.name.clone(),
+        };
+        let refuse = |rule: String| {
+            ForgeError::Validation(Box::new(ValidationError::AttributeRuleViolated {
+                element: format!("<sce:tlv-chain id='{}'>", chain.id),
+                attr: "entry-id".into(),
+                value: spelled.clone(),
+                rule,
+            }))
+            .at_line(chain.line)
+        };
+
+        // (4) Nothing follows a chain that ends only with the wire.
+        if matches!(terminate_on, TlvTerminateStrategy::ExhaustOrDepth) {
+            return Err(refuse(format!(
+                "the chain '{}' ends only when the frame does (terminate-on is not \
+                 \"entry-flag\"), so no field follows it for a '.has(…)' predicate \
+                 to gate; either end the chain on a flag of its entries or drop \
+                 entry-id",
+                chain.id
+            )));
+        }
+
+        let Some(alias) = chain.tlv_chain_body_alias.as_deref() else {
+            continue;
+        };
+        let Some(entry_codec) = imports.iter().find(|i| i.alias == alias) else {
+            continue;
+        };
+        if entry_codec.codec_fields.is_empty() {
+            // The imported codec did not parse; its own error is the one to read.
+            continue;
+        }
+        let entry_name = &entry_codec.document_name;
+
+        // (1) + (2) Resolve the identifier to the number of bits it holds.
+        let bits: u32 = match &identifier.carrier {
+            Some(carrier) => {
+                let Some(carrier_field) =
+                    entry_codec.codec_fields.iter().find(|f| &f.id == carrier)
+                else {
+                    let candidates: Vec<&str> = entry_codec
+                        .codec_fields
+                        .iter()
+                        .filter(|f| f.is_flags_carrier())
+                        .map(|f| f.id.as_str())
+                        .collect();
+                    return Err(refuse(format!(
+                        "the entry codec '{entry_name}' declares no flags carrier \
+                         '{carrier}' (flags carriers: {})",
+                        candidates.join(", ")
+                    )));
+                };
+                let Some(flag) = carrier_field
+                    .flags
+                    .iter()
+                    .find(|f| f.name == identifier.name)
+                else {
+                    let candidates: Vec<String> = carrier_field
+                        .flags
+                        .iter()
+                        .map(|f| format!("{carrier}.{}", f.name))
+                        .collect();
+                    return Err(refuse(format!(
+                        "the carrier '{carrier}' of the entry codec '{entry_name}' declares \
+                         no flag '{}' (flags: {})",
+                        identifier.name,
+                        candidates.join(", ")
+                    )));
+                };
+                if flag.width <= 1 {
+                    return Err(refuse(format!(
+                        "'{carrier}.{}' is a one-bit flag, which tells two kinds of entry \
+                         apart at most; an identifier is a multi-bit flag or an integer \
+                         field of '{entry_name}'",
+                        identifier.name
+                    )));
+                }
+                flag.width
+            }
+            None => {
+                let Some(entry_field) = entry_codec
+                    .codec_fields
+                    .iter()
+                    .find(|f| f.id == identifier.name)
+                else {
+                    let candidates: Vec<&str> = entry_codec
+                        .codec_fields
+                        .iter()
+                        .filter(|f| f.sce_type.int_bit_width().is_some())
+                        .map(|f| f.id.as_str())
+                        .collect();
+                    return Err(refuse(format!(
+                        "the entry codec '{entry_name}' declares no field '{}' \
+                         (integer fields: {})",
+                        identifier.name,
+                        candidates.join(", ")
+                    )));
+                };
+                let Some(width) = entry_field.sce_type.int_bit_width() else {
+                    return Err(refuse(format!(
+                        "the field '{}' of the entry codec '{entry_name}' is not an \
+                         unsigned integer, so it cannot identify a kind of entry",
+                        identifier.name
+                    )));
+                };
+                if entry_field.present_if.is_some() {
+                    return Err(refuse(format!(
+                        "the field '{}' of the entry codec '{entry_name}' is gated by \
+                         sce:present-if, so an entry may carry no identifier at all",
+                        identifier.name
+                    )));
+                }
+                width
+            }
+        };
+
+        // (3) Every value some predicate looks for fits the identifier.
+        for value in chain_has_values(&parent.fields, &chain.id) {
+            if bits < 64 && value >> bits != 0 {
+                return Err(refuse(format!(
+                    "a predicate looks for the identifier {value} in the chain '{}', but \
+                     '{spelled}' holds {bits} bits (0..={}), so no entry can have it",
+                    chain.id,
+                    (1u64 << bits) - 1
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// RFC §synth-5-B variant primitive (item B1): per-language decoder reference
@@ -9641,26 +9843,17 @@ fn repeat_streaming_encode_block_gated(
         // length-ref equivalent). Reads `self->carrier` for Local
         // scope, bare `parent_flags` for Parent scope.
         Language::C11 => {
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, pred);
-            let op = if pred.negate { "==" } else { "!=" };
+            // The encode-site predicate, whatever its form: a carrier bit
+            // (`self->carrier`), a flag-input parameter, a chain-membership
+            // local, and the `||` of them.
+            let test = present_if_test_literal_encode(fields, pred, lang);
             let id_snake = filters::to_snake_case(id.to_string());
-            let test_id = match &carrier {
-                PresentIfCarrier::Local(c) => {
-                    format!("self->{}", filters::to_snake_case(c.id.clone()))
-                }
-                // Flag inversion: encode-site predicate reads the
-                // bare snake_case flag-input parameter — no struct
-                // prefix because the input is a function argument, not
-                // a struct member.
-                PresentIfCarrier::Input => filters::to_snake_case(pred.flag_name.clone()),
-            };
             format!(
-                "    if (({test_id} & 0x{mask:0width$X}) {op} 0) {{\n        \
+                "    if ({test}) {{\n        \
                      for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n            \
                          SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w));\n        \
                      }}\n    \
-                 }}",
-                width = hex_digits
+                 }}"
             )
         }
         Language::Python => {
@@ -9890,19 +10083,12 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
     // RFC §synth-5-B — entry-flag termination accessor, per-language. The
     // body codec's flags-bearing carrier (typically the entry's outer
     // header byte) exposes a per-flag accessor whose name mirrors
-    // `build_flag_ctx`'s `name_acc` rule (snake/pascal/camel by
-    // language). The chain decoder reads the accessor on the
-    // just-decoded entry and breaks the loop when the bit is clear.
+    // `build_flag_ctx`'s `name_acc` rule (`flag_getter_name`). The chain
+    // decoder reads the accessor on the just-decoded entry and breaks the
+    // loop when the bit is clear.
     let entry_flag_acc = match terminate_on {
         TlvTerminateStrategy::ExhaustOrDepth => None,
-        TlvTerminateStrategy::EntryFlag { flag_name } => {
-            let acc = match lang {
-                Language::Go => filters::to_pascal_case(flag_name.clone()),
-                Language::Kotlin => filters::to_camel_case(flag_name.clone()),
-                _ => filters::to_snake_case(flag_name.clone()),
-            };
-            Some(acc)
-        }
+        TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
     };
     match lang {
         // Rust: bounded loop over `max_depth`; each iteration peeks at
@@ -10270,14 +10456,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
     // Entry-flag termination accessor (per-language casing).
     let entry_flag_acc = match terminate_on {
         TlvTerminateStrategy::ExhaustOrDepth => None,
-        TlvTerminateStrategy::EntryFlag { flag_name } => {
-            let acc = match lang {
-                Language::Go => filters::to_pascal_case(flag_name.clone()),
-                Language::Kotlin => filters::to_camel_case(flag_name.clone()),
-                _ => filters::to_snake_case(flag_name.clone()),
-            };
-            Some(acc)
-        }
+        TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
     };
 
     match lang {
@@ -10632,6 +10811,45 @@ fn flag_default_carrier_value(field: &CodecField) -> u64 {
     })
 }
 
+/// The name of a flag's getter on the codec that declares it, in `lang`'s
+/// casing: `PascalCase` on Go, `camelCase` on Kotlin, `snake_case` elsewhere.
+///
+/// The single place the rule lives. `build_flag_ctx` declares the getter by it
+/// and everything that CALLS a getter on another codec's value — a chain
+/// terminating on an entry flag, a chain reading an entry's identifier —
+/// names it by it, so a declaration and its call cannot disagree.
+fn flag_getter_name(flag_name: &str, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    let snake = filters::to_snake_case(flag_name.to_string());
+    match lang {
+        Language::Go => filters::to_pascal_case(flag_name.to_string()),
+        Language::Kotlin => filters::to_camel_case(flag_name.to_string()),
+        Language::C11 => {
+            // C11's flat scope can collide with the codec's own
+            // typedef family: `<struct>_t` (the codec struct
+            // itself) and `<struct>_encoded_t` (the encode-
+            // result wrapper). When the flag's snake form is
+            // `t` or `encoded_t` the templated accessor name
+            // `<struct>_<flag>` would re-declare the typedef
+            // identifier — hard compile error against
+            // `-Werror=implicit-int`. Append `_flag` to the
+            // getter only; the setter stays `set_<flag>`
+            // because the `set_` prefix already disambiguates.
+            // Single-letter flag names like `T`/`X`/`Z` are the
+            // Zenoh upstream-idiomatic wire-bit nomenclature
+            // (zenoh-pico `_Z_FLAG_Z_T` / `_Z_FLAG_Z_X` /
+            // `_Z_FLAG_Z_Z`) — author can't rename them, so
+            // codegen sanitizes.
+            if snake == "t" || snake == "encoded_t" {
+                format!("{snake}_flag")
+            } else {
+                snake
+            }
+        }
+        _ => snake,
+    }
+}
+
 fn build_flag_ctx(
     field_id: &str,
     flags: &[FlagDef],
@@ -10651,7 +10869,6 @@ fn build_flag_ctx(
         .map(|f| {
             let snake = filters::to_snake_case(f.name.clone());
             let pascal = filters::to_pascal_case(f.name.clone());
-            let camel = filters::to_camel_case(f.name.clone());
             let width = f.width.max(1);
             let multi_bit = width > 1;
             // Shifted mask in carrier width (full bit-range claimed
@@ -10678,33 +10895,11 @@ fn build_flag_ctx(
                 value_mask_unshifted,
                 width = value_hex_digits
             );
-            let (name_acc, name_set) = match lang {
-                Language::Go => (pascal.clone(), format!("Set{pascal}")),
-                Language::Kotlin => (camel.clone(), format!("set{pascal}")),
-                Language::C11 => {
-                    // C11's flat scope can collide with the codec's own
-                    // typedef family: `<struct>_t` (the codec struct
-                    // itself) and `<struct>_encoded_t` (the encode-
-                    // result wrapper). When the flag's snake form is
-                    // `t` or `encoded_t` the templated accessor name
-                    // `<struct>_<flag>` would re-declare the typedef
-                    // identifier — hard compile error against
-                    // `-Werror=implicit-int`. Append `_flag` to the
-                    // getter only; the setter stays `set_<flag>`
-                    // because the `set_` prefix already disambiguates.
-                    // Single-letter flag names like `T`/`X`/`Z` are the
-                    // Zenoh upstream-idiomatic wire-bit nomenclature
-                    // (zenoh-pico `_Z_FLAG_Z_T` / `_Z_FLAG_Z_X` /
-                    // `_Z_FLAG_Z_Z`) — author can't rename them, so
-                    // codegen sanitizes.
-                    let acc_name = if snake == "t" || snake == "encoded_t" {
-                        format!("{snake}_flag")
-                    } else {
-                        snake.clone()
-                    };
-                    (acc_name, format!("set_{snake}"))
-                }
-                _ => (snake.clone(), format!("set_{snake}")),
+            let name_acc = flag_getter_name(&f.name, lang);
+            let name_set = match lang {
+                Language::Go => format!("Set{pascal}"),
+                Language::Kotlin => format!("set{pascal}"),
+                _ => format!("set_{snake}"),
             };
             // Per-language result type for multi-bit accessors.
             // Single-bit returns bool — the `result_type_*` field is
@@ -13303,30 +13498,57 @@ fn present_if_carrier_info<'a>(
             // any non-zero value of the supplied u8 fires the predicate.
             (0x01, 2, PresentIfCarrier::Input)
         }
+        // A chain-membership clause tests no carrier bit; it is lowered by
+        // `present_if_chain_clause` before this is asked.
+        PresentIfScope::Chain => {
+            unreachable!(
+                "a chain-membership clause has no carrier; present_if_chain_clause lowers it"
+            )
+        }
     }
 }
 
+/// Where a present-if predicate is evaluated. The same predicate reads the
+/// same data in both places, but under different names: while a codec
+/// decodes, the carriers and chains it tests are the locals decoded so far;
+/// while it encodes, they are members of the value being encoded.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PresentIfSite {
+    Decode,
+    Encode,
+}
+
+/// RFC §synth-5-B present-if disjunction chain (`a.X || b.Y || ...`) as the
+/// DECODE site reads it — each clause's test emitted recursively, joined by
+/// the per-language logical-OR token. Python uses the keyword `or`; all
+/// other 5 backends use `||` (Rust/Cpp/Kotlin/Go/C11). Each clause
+/// independently honors its own `negate`, so chains like `!a.X || b.Y` emit
+/// `(a & MASK_A) == 0 || (b & MASK_B) != 0` without bracketing — `&` binds
+/// tighter than `==`/`!=` in every backend, and `==`/`!=` binds tighter than
+/// `||`/`or`, so the unparen'd shape parses exactly as written. Outer
+/// negation `!(a || b)` defers to a future RFC stage.
 fn present_if_test_literal(
     fields: &[CodecField],
     pred: &PresentIfPredicate,
     lang: crate::generator::Language,
 ) -> String {
+    present_if_test_literal_at(fields, pred, lang, PresentIfSite::Decode)
+}
+
+/// [`present_if_test_literal`] at either site: the walk over the `||` tail,
+/// each clause lowered by [`present_if_test_literal_clause`].
+fn present_if_test_literal_at(
+    fields: &[CodecField],
+    pred: &PresentIfPredicate,
+    lang: crate::generator::Language,
+    site: PresentIfSite,
+) -> String {
     use crate::generator::Language;
-    // RFC §synth-5-B present-if disjunction chain (`a.X || b.Y || ...`)
-    // — emit each clause's single-bit test recursively, joined by the
-    // per-language logical-OR token. Python uses the keyword `or`; all
-    // other 5 backends use `||` (Rust/Cpp/Kotlin/Go/C11). Each clause
-    // independently honors its own `negate`, so chains like
-    // `!a.X || b.Y` emit `(a & MASK_A) == 0 || (b & MASK_B) != 0`
-    // without bracketing — `&` binds tighter than `==`/`!=` in every
-    // backend, and `==`/`!=` binds tighter than `||`/`or` so the
-    // unparen'd shape parses exactly as written. Outer negation
-    // `!(a || b)` defers to a future RFC stage.
-    let head = present_if_test_literal_clause(fields, pred, lang);
+    let head = present_if_test_literal_clause(fields, pred, lang, site);
     match &pred.or_with {
         None => head,
         Some(tail) => {
-            let rest = present_if_test_literal(fields, tail, lang);
+            let rest = present_if_test_literal_at(fields, tail, lang, site);
             let join = match lang {
                 Language::Python => " or ",
                 _ => " || ",
@@ -13336,17 +13558,26 @@ fn present_if_test_literal(
     }
 }
 
-/// Emit the per-language single-clause bit test for one
+/// Emit the per-language single-clause test for one
 /// `PresentIfPredicate` (without walking the disjunction tail).
-/// `present_if_test_literal` calls this for the head clause and
-/// joins with the recursive tail; `present_if_test_literal_encode`
-/// post-processes the result for C11 Local-scope encode-site.
+/// `present_if_test_literal_at` calls this for the head clause and
+/// joins with the recursive tail.
+///
+/// `site` only changes how a clause NAMES what it reads: the decode site
+/// reads the locals decoded so far, the encode site reads the members of the
+/// value being encoded. A flag-input is a function parameter on both sides.
+/// Every clause's decode-site text is exactly what it was before the encode
+/// site existed.
 fn present_if_test_literal_clause(
     fields: &[CodecField],
     pred: &PresentIfPredicate,
     lang: crate::generator::Language,
+    site: PresentIfSite,
 ) -> String {
     use crate::generator::Language;
+    if pred.scope == PresentIfScope::Chain {
+        return present_if_chain_clause(pred, lang);
+    }
     let (mask, hex_digits, carrier) = present_if_carrier_info(fields, pred);
     let (id_owned, carrier_type) = match &carrier {
         PresentIfCarrier::Local(c) => (c.id.clone(), c.sce_type.clone()),
@@ -13379,6 +13610,8 @@ fn present_if_test_literal_clause(
             // resolves to the parameter `n` rather than the literal `N`.
             let rust_id = if matches!(carrier, PresentIfCarrier::Input) {
                 filters::to_snake_case(id.to_string())
+            } else if site == PresentIfSite::Encode {
+                format!("self.{}", codec_field_local_name(id, lang))
             } else {
                 id.to_string()
             };
@@ -13390,7 +13623,9 @@ fn present_if_test_literal_clause(
         Language::Cpp => {
             // Mirror Rust: snake_case the Input-scope identifier so
             // `<sce:flag-input name="N">` reads through the parameter
-            // `n` declared by `compute_flag_input_param_fragments`.
+            // `n` declared by `compute_flag_input_param_fragments`. A C++
+            // codec's members are named as the author wrote them, so the
+            // carrier reads the same on both sites.
             let cpp_id = if matches!(carrier, PresentIfCarrier::Input) {
                 filters::to_snake_case(id.to_string())
             } else {
@@ -13407,6 +13642,9 @@ fn present_if_test_literal_clause(
         // camelCase (`hasSuffix byte`).
         Language::Go => {
             let go_id = match carrier {
+                PresentIfCarrier::Local(_) if site == PresentIfSite::Encode => {
+                    format!("s.{}", filters::to_pascal_case(id.to_string()))
+                }
                 PresentIfCarrier::Local(_) => filters::to_pascal_case(id.to_string()),
                 // Flag inversion: flag-input is a Go function parameter
                 // (camelCase per Go convention — the param decl emits
@@ -13419,16 +13657,18 @@ fn present_if_test_literal_clause(
         // C11: present-if has no nullable wrapper, so both decode and
         // encode test the carrier bit directly on the struct member.
         // The decode site reads through `out->`, the encode site through
-        // `self->`. This helper hardcodes the decode-site `out->` prefix;
-        // encode-site callers go through `present_if_test_literal_encode`
-        // which post-processes the Local-scope prefix to `self->`. For
-        // Input scope the predicate reads through the function parameter
-        // directly — bare snake_case identifier, no struct prefix.
+        // `self->`. For Input scope the predicate reads through the
+        // function parameter directly — bare snake_case identifier, no
+        // struct prefix.
         Language::C11 => {
             let c_id = filters::to_snake_case(id.to_string());
+            let local_prefix = match site {
+                PresentIfSite::Decode => "out->",
+                PresentIfSite::Encode => "self->",
+            };
             match carrier {
                 PresentIfCarrier::Local(_) => format!(
-                    "(out->{c_id} & 0x{mask:0width$X}) {op} 0",
+                    "({local_prefix}{c_id} & 0x{mask:0width$X}) {op} 0",
                     width = hex_digits
                 ),
                 // Flag inversion: flag-input is a function parameter
@@ -13447,7 +13687,13 @@ fn present_if_test_literal_clause(
         // require them and the operator precedence of `&` is tighter
         // than `!=` so disambiguation isn't necessary either.
         Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let snake = filters::to_snake_case(id.to_string());
+            let py_id =
+                if site == PresentIfSite::Encode && matches!(carrier, PresentIfCarrier::Local(_)) {
+                    format!("self.{snake}")
+                } else {
+                    snake
+                };
             format!("({py_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
         Language::Kotlin => {
@@ -13467,6 +13713,8 @@ fn present_if_test_literal_clause(
             // (`hasSuffix: UByte`); apply the same camelCase conversion.
             let kt_id = if matches!(carrier, PresentIfCarrier::Input) {
                 filters::to_camel_case(id.to_string())
+            } else if site == PresentIfSite::Encode {
+                format!("this.{id}")
             } else {
                 id.to_string()
             };
@@ -13481,27 +13729,441 @@ fn present_if_test_literal_clause(
     }
 }
 
-/// RFC §synth-5-B — encode-site wrapper around
-/// `present_if_test_literal`. C11 hardcodes the decode-site `out->`
-/// prefix in the Local-scope arm; encode sites need `self->` to read
-/// from the struct passed by the encode helper. The post-process
-/// rewrites `out->` → `self->` only for C11 Local scope; the C11
-/// Input scope (which reads through a function parameter without a
-/// struct prefix) and all other languages pass through unchanged.
-/// Substring is unambiguous because `present_if_test_literal` only
-/// emits `out->` on the C11 Local arm — no other language path produces
-/// that token.
+/// RFC §synth-5-B — the predicate as the ENCODE site reads it: the carriers
+/// and chains it tests are members of the value being encoded (`self->…` on
+/// C11, `self.…` on Rust and Python, `s.…` on Go, `this.…` on Kotlin).
 fn present_if_test_literal_encode(
     fields: &[CodecField],
     pred: &PresentIfPredicate,
     lang: crate::generator::Language,
 ) -> String {
-    let test = present_if_test_literal(fields, pred, lang);
-    if matches!(lang, crate::generator::Language::C11) {
-        test.replace("out->", "self->")
-    } else {
-        test
+    present_if_test_literal_at(fields, pred, lang, PresentIfSite::Encode)
+}
+
+// ── Chain-membership predicates: `<chain>.has(<value>)` ───────────────────
+//
+// A chain's entries are only known once the chain has been read, and a
+// predicate over them is a loop, which no backend can spell as the one
+// expression a `present-if` test is. So the loop is written once, as a
+// statement that follows the chain, and binds a boolean local; the predicate
+// is then the local's name and joins `!`/`||` like any other clause.
+//
+// The same locals are declared at the top of `encode`, computed from the value
+// being encoded, so the encoder evaluates the predicate the decoder did on the
+// same data (`present_if_chain_encode_prologue`).
+
+/// The identifiers some `<chain_id>.has(…)` clause of this codec looks for,
+/// ascending and without repeats — one boolean local per identifier.
+fn chain_has_values(fields: &[CodecField], chain_id: &str) -> Vec<u64> {
+    let mut values = Vec::new();
+    for field in fields {
+        let mut clause = field.present_if.as_ref();
+        while let Some(p) = clause {
+            if p.scope == PresentIfScope::Chain && p.field_id == chain_id {
+                values.extend(p.entry_id);
+            }
+            clause = p.or_with.as_deref();
+        }
     }
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+/// Whether any clause of `pred` (its `||` tail included) is a chain test.
+fn present_if_has_chain_clause(pred: &PresentIfPredicate) -> bool {
+    let mut clause = Some(pred);
+    while let Some(p) = clause {
+        if p.scope == PresentIfScope::Chain {
+            return true;
+        }
+        clause = p.or_with.as_deref();
+    }
+    false
+}
+
+/// The boolean local holding "the chain has an entry with this identifier".
+/// Leading underscore: it is only read when some field is gated on it, and
+/// every backend that warns about an unused local exempts that spelling.
+fn chain_has_local(chain_id: &str, value: u64, lang: crate::generator::Language) -> String {
+    format!("_has_{}_{value}", codec_field_local_name(chain_id, lang))
+}
+
+/// A chain-membership clause: the boolean local, negated when the author
+/// wrote `!<chain>.has(…)`.
+fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::Language) -> String {
+    let value = pred
+        .entry_id
+        .expect("the parser gives every chain-membership clause its identifier");
+    let has = chain_has_local(&pred.field_id, value, lang);
+    match (pred.negate, lang) {
+        (false, _) => has,
+        (true, crate::generator::Language::Python) => format!("not {has}"),
+        (true, _) => format!("!{has}"),
+    }
+}
+
+/// One decoded entry's identifier as an unsigned 64-bit value, whatever the
+/// width of the flag or field it is read from, so that one literal compares
+/// against all of them. `entry` names the entry in the loop that reads it.
+fn chain_entry_identifier(
+    chain: &CodecField,
+    entry: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let BitSize::TlvChain {
+        entry_id: Some(identifier),
+        ..
+    } = &chain.bit_size
+    else {
+        panic!("a chain-membership clause names a chain that declares entry-id");
+    };
+    let raw = if identifier.carrier.is_some() {
+        // A flag of the entry codec's flags carrier: read through its getter.
+        let getter = flag_getter_name(&identifier.name, lang);
+        if matches!(lang, Language::C11) {
+            // C11 has no methods: the getter is a free function prefixed by
+            // the entry codec's struct name, which is its decoder's.
+            let alias = chain
+                .tlv_chain_body_alias
+                .as_deref()
+                .expect("parser sets tlv_chain_body_alias for every BitSize::TlvChain");
+            let decoder = resolve_variant_arm_decoder(alias, lang);
+            let entry_struct = decoder.strip_suffix("_decode").unwrap_or(&decoder);
+            format!("{entry_struct}_{getter}(&{entry})")
+        } else {
+            format!("{entry}.{getter}()")
+        }
+    } else {
+        format!("{entry}.{}", codec_field_local_name(&identifier.name, lang))
+    };
+    match lang {
+        Language::Rust => format!("u64::from({raw})"),
+        Language::Cpp => format!("static_cast<std::uint64_t>({raw})"),
+        Language::Kotlin => format!("({raw}).toULong()"),
+        Language::Go => format!("uint64({raw})"),
+        Language::Python => raw,
+        Language::C11 => format!("(uint64_t)({raw})"),
+    }
+}
+
+/// `value` as a literal of the type `chain_entry_identifier` yields.
+fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => format!("{value}u64"),
+        Language::Cpp | Language::C11 => format!("{value}ULL"),
+        Language::Kotlin => format!("{value}UL"),
+        Language::Go | Language::Python => value.to_string(),
+    }
+}
+
+/// The statements, one per element, that bind
+/// [`chain_has_local`]`(chain, value)`.
+///
+/// At the decode site the chain is the local decoded just before; at the
+/// encode site it is the member of the value being encoded. A chain that is
+/// itself gated is absent (`None`, `nullopt`, `nil`) when it was not on the
+/// wire, and an absent chain has no entries.
+fn chain_has_decl_lines(
+    chain: &CodecField,
+    value: u64,
+    lang: crate::generator::Language,
+    site: PresentIfSite,
+) -> Vec<String> {
+    use crate::generator::Language;
+    let has = chain_has_local(&chain.id, value, lang);
+    let gated = chain.present_if.is_some();
+    let id = codec_field_local_name(&chain.id, lang);
+    let literal = chain_identifier_literal(value, lang);
+    let test = |entry: &str| {
+        format!(
+            "{} == {literal}",
+            chain_entry_identifier(chain, entry, lang)
+        )
+    };
+    let encode = site == PresentIfSite::Encode;
+    match lang {
+        Language::Rust => {
+            let list = if encode { format!("self.{id}") } else { id };
+            let found = test("_e");
+            vec![if gated {
+                format!(
+                    "let {has} = {list}.as_ref().is_some_and(|_c| _c.iter().any(|_e| {found}));"
+                )
+            } else {
+                format!("let {has} = {list}.iter().any(|_e| {found});")
+            }]
+        }
+        Language::Cpp => {
+            // Members are named as the author wrote them on both sites.
+            let found = test("_e");
+            let (open, iter, close) = if gated {
+                (
+                    format!("if ({id}.has_value()) {{"),
+                    format!("    for (const auto& _e : *{id}) {{"),
+                    "}".to_string(),
+                )
+            } else {
+                (
+                    String::new(),
+                    format!("for (const auto& _e : {id}) {{"),
+                    String::new(),
+                )
+            };
+            let pad = if gated { "    " } else { "" };
+            let mut lines = vec![format!("bool {has} = false;")];
+            if gated {
+                lines.push(open);
+            }
+            lines.push(iter);
+            lines.push(format!("{pad}    if ({found}) {{"));
+            lines.push(format!("{pad}        {has} = true;"));
+            lines.push(format!("{pad}        break;"));
+            lines.push(format!("{pad}    }}"));
+            lines.push(format!("{pad}}}"));
+            if gated {
+                lines.push(close);
+            }
+            lines
+        }
+        Language::Kotlin => {
+            let list = if encode { format!("this.{id}") } else { id };
+            let found = test("_e");
+            vec![if gated {
+                format!("val {has}: Boolean = {list}?.any {{ _e -> {found} }} ?: false")
+            } else {
+                format!("val {has}: Boolean = {list}.any {{ _e -> {found} }}")
+            }]
+        }
+        Language::Go => {
+            // A nil slice ranges zero times, so an absent chain needs no case.
+            let list = if encode { format!("s.{id}") } else { id };
+            let found = test("_e");
+            vec![
+                format!("{has} := false"),
+                format!("for _, _e := range {list} {{"),
+                format!("\tif {found} {{"),
+                format!("\t\t{has} = true"),
+                "\t\tbreak".to_string(),
+                "\t}".to_string(),
+                "}".to_string(),
+            ]
+        }
+        Language::Python => {
+            let list = if encode { format!("self.{id}") } else { id };
+            let found = test("_e");
+            vec![if gated {
+                format!("{has} = {list} is not None and any({found} for _e in {list})")
+            } else {
+                format!("{has} = any({found} for _e in {list})")
+            }]
+        }
+        Language::C11 => {
+            // The chain is a fixed array and its length; an absent gated
+            // chain has length 0.
+            let base = if encode { "self->" } else { "out->" };
+            let list = format!("{base}{id}");
+            let found = test(&format!("{list}[_i]"));
+            vec![
+                format!("bool {has} = false;"),
+                format!("for (size_t _i = 0; _i < {list}_len; ++_i) {{"),
+                format!("    if ({found}) {{"),
+                format!("        {has} = true;"),
+                "        break;".to_string(),
+                "    }".to_string(),
+                "}".to_string(),
+            ]
+        }
+    }
+}
+
+/// The indentation the template gives a statement that follows a decoded
+/// chain, per backend.
+fn chain_decode_indent(lang: crate::generator::Language) -> &'static str {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust | Language::Cpp => "        ",
+        Language::Kotlin | Language::Python => "            ",
+        Language::Go => "\t",
+        Language::C11 => "    ",
+    }
+}
+
+/// The indentation of a statement at the top of the encode function body.
+fn encode_body_indent(lang: crate::generator::Language) -> &'static str {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => "        ",
+        Language::Go => "\t",
+        Language::C11 => "    ",
+    }
+}
+
+/// How an encoder of a gated field asks "was this field given?" and "was it
+/// left out?" — the same wrapper test the field's own encode block makes,
+/// spelled both ways so that no check has to negate an expression (which is
+/// what `clippy::nonminimal_bool` and its kin object to).
+fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) -> (String, String) {
+    use crate::generator::Language;
+    let id = codec_field_local_name(&field.id, lang);
+    match lang {
+        Language::Rust => (
+            format!("self.{id}.is_some()"),
+            format!("self.{id}.is_none()"),
+        ),
+        Language::Cpp => (format!("{id}.has_value()"), format!("!{id}.has_value()")),
+        Language::Kotlin => (format!("this.{id} != null"), format!("this.{id} == null")),
+        Language::Go => (format!("s.{id} != nil"), format!("s.{id} == nil")),
+        Language::Python => (
+            format!("self.{id} is not None"),
+            format!("self.{id} is None"),
+        ),
+        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+    }
+}
+
+/// The refusal of a message whose chain and a gated field contradict each
+/// other, as `if <test> { if <absent> {refuse} } else if <given> {refuse}`:
+/// the field must be given exactly when the predicate holds.
+fn present_if_mismatch_check(
+    test: &str,
+    given: &str,
+    absent: &str,
+    refuse: &str,
+    lang: crate::generator::Language,
+) -> Vec<String> {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => vec![
+            format!("if {test} {{"),
+            format!("    if {absent} {{"),
+            format!("        {refuse}"),
+            "    }".to_string(),
+            format!("}} else if {given} {{"),
+            format!("    {refuse}"),
+            "}".to_string(),
+        ],
+        Language::Cpp | Language::Kotlin => vec![
+            format!("if ({test}) {{"),
+            format!("    if ({absent}) {refuse}"),
+            format!("}} else if ({given}) {refuse}"),
+        ],
+        Language::Go => vec![
+            format!("if {test} {{"),
+            format!("\tif {absent} {{"),
+            format!("\t\t{refuse}"),
+            "\t}".to_string(),
+            format!("}} else if {given} {{"),
+            format!("\t{refuse}"),
+            "}".to_string(),
+        ],
+        Language::Python => vec![
+            format!("if {test}:"),
+            format!("    if {absent}:"),
+            format!("        {refuse}"),
+            format!("elif {given}:"),
+            format!("    {refuse}"),
+        ],
+        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+    }
+}
+
+/// The statements of an encoder's refusal when a field's presence and the
+/// predicate gating it disagree, indented to the enclosing `if`'s body.
+fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => "return Err(CodecError::PresentIfMismatch);".to_string(),
+        Language::Cpp => "return ::SCE::Forge::CodecError::PresentIfMismatch;".to_string(),
+        Language::Kotlin => "return CodecError.PresentIfMismatch".to_string(),
+        Language::Go => "return codec.ErrPresentIfMismatch".to_string(),
+        Language::Python => format!("raise PresentIfMismatch(\"{field_id}\")"),
+        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+    }
+}
+
+/// What a chain-membership predicate asks of the top of `encode`: the boolean
+/// locals it reads, bound from the value being encoded, and — on every
+/// backend that carries presence in a wrapper — the check that each field
+/// gated on such a predicate is given exactly when the predicate says it
+/// belongs on the wire.
+///
+/// The check is the whole point of an encoder reading the predicate. A
+/// message whose chain says "a slice list follows" and whose payload field is
+/// a plain byte string is two contradictory descriptions of one wire, and
+/// whichever the encoder wrote, the peer would read the other. It is refused
+/// before the first byte is written, so a refusal leaves the sink untouched.
+///
+/// C11 has no wrapper, so a field's presence there IS the predicate: it only
+/// declares the locals, and the field's own encode block gates on them, as it
+/// does on a flag.
+///
+/// Returns the text (each line indented and newline-terminated, empty when no
+/// predicate of the codec reads a chain) and whether `encode` can now refuse
+/// — which makes its `encode_to_vec`-style facade fallible.
+fn present_if_chain_encode_prologue(
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> (String, bool) {
+    let indent = encode_body_indent(lang);
+    let mut lines: Vec<String> = Vec::new();
+    for chain in fields.iter().filter(|f| f.is_tlv_chain()) {
+        for value in chain_has_values(fields, &chain.id) {
+            lines.extend(chain_has_decl_lines(
+                chain,
+                value,
+                lang,
+                PresentIfSite::Encode,
+            ));
+        }
+    }
+    if lines.is_empty() {
+        return (String::new(), false);
+    }
+    let checked = !matches!(lang, crate::generator::Language::C11);
+    if checked {
+        for field in fields {
+            let Some(pred) = field.present_if.as_ref() else {
+                continue;
+            };
+            if !present_if_has_chain_clause(pred) {
+                continue;
+            }
+            let test = present_if_test_literal_encode(fields, pred, lang);
+            let (given, absent) = gated_field_presence(field, lang);
+            let refuse = present_if_mismatch_stmt(&field.id, lang);
+            lines.extend(present_if_mismatch_check(
+                &test, &given, &absent, &refuse, lang,
+            ));
+        }
+    }
+    let text = lines
+        .iter()
+        .map(|line| format!("{indent}{line}\n"))
+        .collect::<String>();
+    (text, checked)
+}
+
+/// `decode_stmt`, followed by one boolean local per identifier a later
+/// predicate looks for among this chain's entries. Unchanged when none does.
+fn with_chain_has_decls(
+    decode_stmt: String,
+    chain: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    let indent = chain_decode_indent(lang);
+    let mut stmt = decode_stmt;
+    for value in chain_has_values(fields, &chain.id) {
+        for line in chain_has_decl_lines(chain, value, lang, PresentIfSite::Decode) {
+            stmt.push('\n');
+            stmt.push_str(indent);
+            stmt.push_str(&line);
+        }
+    }
+    stmt
 }
 
 /// Per-language VLE decode statement: declares a local of the field's
@@ -26160,6 +26822,7 @@ mod tests {
             go_init_expr: String::new(),
             codec_max_bytes: None,
             codec_first_flags: None,
+            codec_fields: Vec::new(),
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_as_borrowed_fallible: false,
@@ -26793,6 +27456,7 @@ mod tests {
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_first_flags: None,
+                codec_fields: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_as_borrowed_fallible: false,
@@ -26834,6 +27498,7 @@ mod tests {
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_first_flags: None,
+                codec_fields: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_as_borrowed_fallible: false,

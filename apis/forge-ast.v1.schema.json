@@ -855,6 +855,17 @@
         {
           "description": "RFC §synth-5-B B3 TLV chain primitive — bounded extension list (Type-Length-Value). Iteratively decodes entries up to `max_depth` (RFC: \"iterative, never recursive\"); residual bytes after the cap are handled per [`TlvOverflowPolicy`]. Entry body codec is resolved via [`CodecField::tlv_chain_body_alias`] (mirrors `repeat_body_alias`). MCU-class — emits only on Rust + C11; cpp/kotlin/go/python codecs containing this field type are rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language` (the existing kind-class diagnostic is repurposed at the codec-content granularity, see RFC §synth-5-B \"MCU-only codec sub-features\").",
           "properties": {
+            "entry_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TlvEntryId"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Which part of an entry identifies its kind. `None` for a chain no `sce:present-if` reads; required by the parser when one does (`<chain>.has(<value>)`). Absent from the serialized form when `None`, so a document that does not use it keeps its AST."
+            },
             "max_depth": {
               "format": "uint32",
               "minimum": 0.0,
@@ -5141,10 +5152,19 @@
       ]
     },
     "PresentIfPredicate": {
-      "description": "RFC §synth-5-B present-if predicate — a single bit-test on either a flags-bearing sibling field declared earlier in the same codec (Local scope) or a declared `<sce:flag-input>` on the codec itself (Input scope).\n\nv1 grammar covers four forms: - `<field_id>.<flag_name>` (Local positive) — predicate is true iff the named flag bit on the local carrier is set. - `!<field_id>.<flag_name>` (Local negative) — predicate is true iff the bit is clear. Required for Zenoh OpenSyn body where cookie is present iff the `A` input is NOT set. - `<name>` (Input positive) — true iff the named `<sce:flag-input>` value is non-zero. Single-bit input (v1 width=1). - `!<name>` (Input negative) — true iff the input is zero. - `<a> || <b> [|| <c> ...]` (Disjunction) — predicate is true iff ANY listed clause is true. Each clause is itself one of the four forms above (each can independently carry a leading `!`). Required for Zenoh interest where `not is_final` is `header.CURRENT || header.FUTURE` — `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per `interest.h:35`. Outer negation `!(a || b)` is not implemented until a consumer needs it.\n\n`field_id` is empty when `scope = Input` (carrier is implicit — the codec's own `<sce:flag-input>` parameter).\n\nConjunction (`flag1 && flag2`) and equality (`field == value`) are not implemented until a reachable consumer surfaces.",
+      "description": "RFC §synth-5-B present-if predicate — a single test on either a flags-bearing sibling field declared earlier in the same codec (Local scope), a declared `<sce:flag-input>` on the codec itself (Input scope), or the entries an earlier `<sce:tlv-chain>` decoded (Chain scope).\n\nv1 grammar covers four forms, plus the chain form below: - `<field_id>.<flag_name>` (Local positive) — predicate is true iff the named flag bit on the local carrier is set. - `!<field_id>.<flag_name>` (Local negative) — predicate is true iff the bit is clear. Required for Zenoh OpenSyn body where cookie is present iff the `A` input is NOT set. - `<name>` (Input positive) — true iff the named `<sce:flag-input>` value is non-zero. Single-bit input (v1 width=1). - `!<name>` (Input negative) — true iff the input is zero. - `<chain_id>.has(<value>)` (Chain positive) — true iff an entry of the earlier chain `chain_id` has the identifier `value`. `!` negates it like any other clause and `||` joins it with them. - `<a> || <b> [|| <c> ...]` (Disjunction) — predicate is true iff ANY listed clause is true. Each clause is itself one of the forms above (each can independently carry a leading `!`). Required for Zenoh interest where `not is_final` is `header.CURRENT || header.FUTURE` — `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per `interest.h:35`. Outer negation `!(a || b)` is not implemented until a consumer needs it.\n\n`field_id` is empty when `scope = Input` (carrier is implicit — the codec's own `<sce:flag-input>` parameter). `flag_name` is empty when `scope = Chain`: the chain, not a flag, is what is tested.\n\nConjunction (`flag1 && flag2`) and equality (`field == value`) are not implemented until a reachable consumer surfaces.\n\nEquality is by meaning: the author's spelling of `entry_id` (`0x2` against `2`) is not part of it, because the co-gating check asks whether two predicates say the same thing.",
       "properties": {
+        "entry_id": {
+          "description": "The identifier a `Chain`-scope predicate looks for among the chain's decoded entries. `None` for every other scope, and absent from the serialized form then, so a document that never uses the chain form keeps the AST it had.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "field_id": {
-          "description": "Carrier field id when `scope = Local`. Empty when `scope = Input` (the carrier is the codec's own `<sce:flag-input>` parameter named by `flag_name`).",
+          "description": "Carrier field id when `scope = Local`; the chain's field id when `scope = Chain`. Empty when `scope = Input` (the carrier is the codec's own `<sce:flag-input>` parameter named by `flag_name`).",
           "type": "string"
         },
         "flag_name": {
@@ -5171,7 +5191,7 @@
               "$ref": "#/definitions/PresentIfScope"
             }
           ],
-          "description": "Predicate scope. Defaults to `Local`; serialized only for non-Local scopes (`Input`) to keep the legacy local-scope JSON shape byte-stable."
+          "description": "Predicate scope. Defaults to `Local`; serialized only for non-Local scopes (`Input`, `Chain`) to keep the legacy local-scope JSON shape byte-stable."
         }
       },
       "required": [
@@ -5194,6 +5214,13 @@
           "description": "`<name>` (bare, no dot) — flag-input form. Resolves to a declared `<sce:flag-input name=\"X\">` on the codec itself; the input arrives as a typed positional parameter (`X: u8` for v1 width=1). Predicate reads `(X & ((1<<width)-1)) != 0` against the parameter directly — no carrier-byte threading, no struct prefix.",
           "enum": [
             "input"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<chain_id>.has(<value>)` — chain-membership form. `field_id` names a `<sce:tlv-chain>` declared earlier in the same codec, and the predicate is true iff one of the entries that chain decoded carries the identifier `entry_id`. What counts as an entry's identifier is the chain's own `entry-id` declaration ([`TlvEntryId`]), so the predicate says which kind to look for and the chain says where to look. A chain that is itself gated off holds no entries, so the predicate is false for it and `!<chain>.has(<value>)` is true.",
+          "enum": [
+            "chain"
           ],
           "type": "string"
         }
@@ -5976,6 +6003,26 @@
         "enter_expr",
         "id",
         "on_enter"
+      ],
+      "type": "object"
+    },
+    "TlvEntryId": {
+      "description": "Where a decoded TLV-chain entry keeps the identifier that tells one kind of entry from another.\n\nA chain is a list of entries of one codec, and which kinds of entry a message carries is itself information the rest of the message can depend on: a later field may be laid out one way when an entry of a given kind is present and another way when it is not, with nothing in any header saying so. The chain therefore declares which part of its entry is the identifier, once, and `sce:present-if=\"<chain>.has(<value>)\"` reads it.\n\nThe two shapes mirror `sce:length-field`, so an author reads one grammar for \"a value inside another field\": - a flag of the entry codec's flags carrier — `carrier = Some(\"header\")`, `name = \"ext_id\"` — which must be multi-bit, since a one-bit flag distinguishes two kinds at most and is a flag, not an identifier; - an unsigned integer field of the entry codec — `carrier = None`, `name = \"entry_type\"`.",
+      "properties": {
+        "carrier": {
+          "description": "The flags carrier on the entry codec when the identifier is one of its flags; `None` when the identifier is a plain integer field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The flag name when `carrier` is set, the field id otherwise.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },

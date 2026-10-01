@@ -45,7 +45,7 @@ use crate::forge::model::{
     DecodedValue, Endian, FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate,
     PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
     ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
-    TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
+    TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -2072,7 +2072,8 @@ fn parse_flag_def(w: &[&str], line: usize) -> Result<FlagDef, ParseError> {
     })
 }
 
-/// `[not] (local|input):<field>.<flag> [or …]`
+/// `[not] (local|input):<field>.<flag> [or …]`, or the chain form
+/// `[not] chain:<chain> has <value> [or …]`.
 fn parse_present_if(s: &str, line: usize) -> Result<PresentIfPredicate, ParseError> {
     let (head, rest) = match s.split_once(" or ") {
         Some((h, r)) => (h, Some(r)),
@@ -2086,23 +2087,53 @@ fn parse_present_if(s: &str, line: usize) -> Result<PresentIfPredicate, ParseErr
         line,
         why: "a present-if needs `<scope>:<field>.<flag>`".to_string(),
     })?;
-    let (field_id, flag_name) = path.split_once('.').ok_or_else(|| ParseError {
-        line,
-        why: "a present-if needs `<field>.<flag>`".to_string(),
-    })?;
+    let scope = match scope_word {
+        "local" => PresentIfScope::Local,
+        "input" => PresentIfScope::Input,
+        "chain" => PresentIfScope::Chain,
+        other => {
+            return Err(ParseError {
+                line,
+                why: format!("`{other}` is not a present-if scope"),
+            })
+        }
+    };
+    // A chain test names the chain and the identifier it looks for; every
+    // other scope names a carrier and one of its flags.
+    let (field_id, flag_name, entry_id, entry_id_text) = if scope == PresentIfScope::Chain {
+        let (chain, value) = path.split_once(" has ").ok_or_else(|| ParseError {
+            line,
+            why: "a chain present-if needs `chain:<chain> has <value>`".to_string(),
+        })?;
+        let value = value.trim();
+        let entry_id = crate::source_literal::read_unsigned(value).ok_or_else(|| ParseError {
+            line,
+            why: format!("`{value}` is not an unsigned number"),
+        })?;
+        (
+            undo(chain, line)?,
+            String::new(),
+            Some(entry_id),
+            value.to_string(),
+        )
+    } else {
+        let (field_id, flag_name) = path.split_once('.').ok_or_else(|| ParseError {
+            line,
+            why: "a present-if needs `<field>.<flag>`".to_string(),
+        })?;
+        (
+            undo(field_id, line)?,
+            undo(flag_name, line)?,
+            None,
+            String::new(),
+        )
+    };
     Ok(PresentIfPredicate {
-        scope: match scope_word {
-            "local" => PresentIfScope::Local,
-            "input" => PresentIfScope::Input,
-            other => {
-                return Err(ParseError {
-                    line,
-                    why: format!("`{other}` is not a present-if scope"),
-                })
-            }
-        },
-        field_id: undo(field_id, line)?,
-        flag_name: undo(flag_name, line)?,
+        scope,
+        field_id,
+        flag_name,
+        entry_id,
+        entry_id_text,
         negate,
         or_with: match rest {
             Some(r) => Some(Box::new(parse_present_if(r, line)?)),
@@ -2160,6 +2191,9 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
                     })
                 }
             },
+            // The identifier is a clause line of its own (`entry-id …`),
+            // filled in by `parse_codec_field`.
+            entry_id: None,
         },
         other => {
             return Err(ParseError {
@@ -2384,6 +2418,25 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
             Some("max-count") => f.max_count = kw.get(1).and_then(|v| v.parse().ok()),
             Some("repeat-body") => f.repeat_body_alias = Some(undo(tail(1), k.number)?),
             Some("tlv-body") => f.tlv_chain_body_alias = Some(undo(tail(1), k.number)?),
+            Some("entry-id") => {
+                let BitSize::TlvChain { entry_id, .. } = &mut f.bit_size else {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: "`entry-id` belongs to a tlv-chain field".to_string(),
+                    });
+                };
+                let spelled = tail(1);
+                *entry_id = Some(match spelled.split_once('.') {
+                    Some((carrier, name)) => TlvEntryId {
+                        carrier: Some(undo(carrier, k.number)?),
+                        name: undo(name, k.number)?,
+                    },
+                    None => TlvEntryId {
+                        carrier: None,
+                        name: undo(spelled, k.number)?,
+                    },
+                });
+            }
             Some("embed-body") => f.embed_body_alias = Some(undo(tail(1), k.number)?),
             Some("embed-length-from") => f.embed_length_from = Some(undo(tail(1), k.number)?),
             Some("dma-align") => f.dma_burst_align = kw.get(1).and_then(|v| v.parse().ok()),

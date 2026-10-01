@@ -110,6 +110,16 @@ pub enum CodecError {
     /// A CBOR codec read a value its entry's width cannot hold, or a
     /// `string` / `bytes` longer than its `sce:max-size`.
     CborOutOfRange,
+    /// Encode-side: a field gated by a chain-membership `sce:present-if`
+    /// (`<chain>.has(<value>)`) was given when the predicate says it does
+    /// not belong on the wire, or left out when it does. The chain and the
+    /// field are two descriptions of one wire, and they contradict each
+    /// other; the encoder refuses before it writes the first byte, so the
+    /// sink is untouched. Raised only by a codec some chain-membership
+    /// predicate gates. The C11 backend never raises it: a C11 field carries
+    /// no "given" marker, so there the predicate alone decides what is
+    /// written.
+    PresentIfMismatch,
 }
 
 /// Project an owned list into the bounded inline list

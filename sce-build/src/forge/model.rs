@@ -1860,6 +1860,34 @@ fn is_exhaust_or_depth(s: &TlvTerminateStrategy) -> bool {
     matches!(s, TlvTerminateStrategy::ExhaustOrDepth)
 }
 
+/// Where a decoded TLV-chain entry keeps the identifier that tells one
+/// kind of entry from another.
+///
+/// A chain is a list of entries of one codec, and which kinds of entry a
+/// message carries is itself information the rest of the message can depend
+/// on: a later field may be laid out one way when an entry of a given kind
+/// is present and another way when it is not, with nothing in any header
+/// saying so. The chain therefore declares which part of its entry is the
+/// identifier, once, and `sce:present-if="<chain>.has(<value>)"` reads it.
+///
+/// The two shapes mirror `sce:length-field`, so an author reads one grammar
+/// for "a value inside another field":
+///   - a flag of the entry codec's flags carrier — `carrier = Some("header")`,
+///     `name = "ext_id"` — which must be multi-bit, since a one-bit flag
+///     distinguishes two kinds at most and is a flag, not an identifier;
+///   - an unsigned integer field of the entry codec — `carrier = None`,
+///     `name = "entry_type"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TlvEntryId {
+    /// The flags carrier on the entry codec when the identifier is one of
+    /// its flags; `None` when the identifier is a plain integer field.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub carrier: Option<String>,
+    /// The flag name when `carrier` is set, the field id otherwise.
+    pub name: String,
+}
+
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1907,6 +1935,12 @@ pub enum BitSize {
         /// followed by message body variants).
         #[serde(skip_serializing_if = "is_exhaust_or_depth", default)]
         terminate_on: TlvTerminateStrategy,
+        /// Which part of an entry identifies its kind. `None` for a chain
+        /// no `sce:present-if` reads; required by the parser when one does
+        /// (`<chain>.has(<value>)`). Absent from the serialized form when
+        /// `None`, so a document that does not use it keeps its AST.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        entry_id: Option<TlvEntryId>,
     },
     /// RFC §synth-5-B embed primitive — single imported-codec field embedded inline.
     /// The host language emits a nested struct of the imported codec's
@@ -2028,14 +2062,23 @@ pub enum PresentIfScope {
     /// the parameter directly — no carrier-byte threading, no struct
     /// prefix.
     Input,
+    /// `<chain_id>.has(<value>)` — chain-membership form. `field_id` names
+    /// a `<sce:tlv-chain>` declared earlier in the same codec, and the
+    /// predicate is true iff one of the entries that chain decoded carries
+    /// the identifier `entry_id`. What counts as an entry's identifier is
+    /// the chain's own `entry-id` declaration ([`TlvEntryId`]), so the
+    /// predicate says which kind to look for and the chain says where to
+    /// look. A chain that is itself gated off holds no entries, so the
+    /// predicate is false for it and `!<chain>.has(<value>)` is true.
+    Chain,
 }
 
-/// RFC §synth-5-B present-if predicate — a single
-/// bit-test on either a flags-bearing sibling field declared earlier
-/// in the same codec (Local scope) or a declared
-/// `<sce:flag-input>` on the codec itself (Input scope).
+/// RFC §synth-5-B present-if predicate — a single test on either a
+/// flags-bearing sibling field declared earlier in the same codec (Local
+/// scope), a declared `<sce:flag-input>` on the codec itself (Input scope),
+/// or the entries an earlier `<sce:tlv-chain>` decoded (Chain scope).
 ///
-/// v1 grammar covers four forms:
+/// v1 grammar covers four forms, plus the chain form below:
 ///   - `<field_id>.<flag_name>` (Local positive) — predicate is true
 ///     iff the named flag bit on the local carrier is set.
 ///   - `!<field_id>.<flag_name>` (Local negative) — predicate
@@ -2044,9 +2087,12 @@ pub enum PresentIfScope {
 ///   - `<name>` (Input positive) — true iff the named `<sce:flag-input>`
 ///     value is non-zero. Single-bit input (v1 width=1).
 ///   - `!<name>` (Input negative) — true iff the input is zero.
+///   - `<chain_id>.has(<value>)` (Chain positive) — true iff an entry of
+///     the earlier chain `chain_id` has the identifier `value`. `!` negates
+///     it like any other clause and `||` joins it with them.
 ///   - `<a> || <b> [|| <c> ...]` (Disjunction) —
 ///     predicate is true iff ANY listed clause is true. Each clause
-///     is itself one of the four forms above (each can independently
+///     is itself one of the forms above (each can independently
 ///     carry a leading `!`). Required for Zenoh interest where
 ///     `not is_final` is `header.CURRENT || header.FUTURE` —
 ///     `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per
@@ -2054,24 +2100,41 @@ pub enum PresentIfScope {
 ///     implemented until a consumer needs it.
 ///
 /// `field_id` is empty when `scope = Input` (carrier is implicit —
-/// the codec's own `<sce:flag-input>` parameter).
+/// the codec's own `<sce:flag-input>` parameter). `flag_name` is empty
+/// when `scope = Chain`: the chain, not a flag, is what is tested.
 ///
 /// Conjunction (`flag1 && flag2`) and equality (`field == value`)
 /// are not implemented until a reachable consumer
 /// surfaces.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// Equality is by meaning: the author's spelling of `entry_id`
+/// (`0x2` against `2`) is not part of it, because the co-gating check
+/// asks whether two predicates say the same thing.
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local`; serialized only for
-    /// non-Local scopes (`Input`) to keep the legacy local-scope
+    /// non-Local scopes (`Input`, `Chain`) to keep the legacy local-scope
     /// JSON shape byte-stable.
     #[serde(default, skip_serializing_if = "is_local_scope")]
     pub scope: PresentIfScope,
-    /// Carrier field id when `scope = Local`. Empty when `scope =
-    /// Input` (the carrier is the codec's own `<sce:flag-input>`
-    /// parameter named by `flag_name`).
+    /// Carrier field id when `scope = Local`; the chain's field id when
+    /// `scope = Chain`. Empty when `scope = Input` (the carrier is the
+    /// codec's own `<sce:flag-input>` parameter named by `flag_name`).
     pub field_id: String,
     pub flag_name: String,
+    /// The identifier a `Chain`-scope predicate looks for among the
+    /// chain's decoded entries. `None` for every other scope, and absent
+    /// from the serialized form then, so a document that never uses the
+    /// chain form keeps the AST it had.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub entry_id: Option<u64>,
+    /// How the author spelled [`Self::entry_id`]. The value alone puts `2`
+    /// on the pseudocode review surface where the author wrote `0x2` — see
+    /// [`crate::source_literal`]. Empty when no source document is where
+    /// the predicate came from.
+    #[serde(skip, default)]
+    pub entry_id_text: String,
     /// Negation: when true, predicate fires when the named flag
     /// bit is *clear* (not set). Defaults to false to keep the
     /// JSON shape of all existing codec
@@ -2088,6 +2151,21 @@ pub struct PresentIfPredicate {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub or_with: Option<Box<PresentIfPredicate>>,
 }
+
+impl PartialEq for PresentIfPredicate {
+    /// Every field but [`PresentIfPredicate::entry_id_text`]: two predicates
+    /// that test the same thing are equal however their numbers were written.
+    fn eq(&self, other: &Self) -> bool {
+        self.scope == other.scope
+            && self.field_id == other.field_id
+            && self.flag_name == other.flag_name
+            && self.entry_id == other.entry_id
+            && self.negate == other.negate
+            && self.or_with == other.or_with
+    }
+}
+
+impl Eq for PresentIfPredicate {}
 
 fn is_local_scope(scope: &PresentIfScope) -> bool {
     matches!(scope, PresentIfScope::Local)

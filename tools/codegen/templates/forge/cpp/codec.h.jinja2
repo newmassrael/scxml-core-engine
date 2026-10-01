@@ -344,6 +344,7 @@ struct {{ struct_name }} {
         // carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
         // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
@@ -437,6 +438,25 @@ struct {{ struct_name }} {
 {% endif %}
     }
 
+{% if encode_can_refuse %}
+    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
+    /// so the worst-case write path performs at most one allocation,
+    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
+    /// refuses a message whose chain and a gated field contradict each
+    /// other (`CodecError::PresentIfMismatch`). Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec({{ params_first_arg }}) const {
+        std::vector<std::uint8_t> _sce_v;
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        if (encode(_sce_sink{{ params_first_arg_with_comma }})) {
+            return std::nullopt;
+        }
+        return _sce_v;
+    }
+{% else %}
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
@@ -449,6 +469,7 @@ struct {{ struct_name }} {
         (void)encode(_sce_sink{{ params_first_arg_with_comma }});
         return _sce_v;
     }
+{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}

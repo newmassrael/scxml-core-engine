@@ -333,6 +333,7 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) 
 	// carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
 	// RFC §synth-5-B empty body — zero-byte payload.
 	_ = w
@@ -420,6 +421,22 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) 
 {% endif %}
 }
 
+{% if encode_can_refuse %}
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice, or the
+// error Encode refuses a message with when a field's presence disagrees
+// with the chain-membership `sce:present-if` that gates it
+// (codec.ErrPresentIfMismatch). Callers targeting zero-alloc hot paths
+// should call Encode directly against a caller-owned sink (e.g.
+// BoundedSink over a stack buffer).
+func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) ([]byte, error) {
+	_dst := make([]byte, 0, {{ max_bytes }})
+	if err := s.Encode(codec.NewBytesSink(&_dst){{ params_first_arg_with_comma }}); err != nil {
+		return nil, err
+	}
+	return _dst, nil
+}
+{% else %}
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
 // over a BytesSink and returns the freshly-encoded byte slice.
 // Callers targeting zero-alloc hot paths should call Encode directly
@@ -429,3 +446,4 @@ func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) []byte {
 	_ = s.Encode(codec.NewBytesSink(&_dst){{ params_first_arg_with_comma }})
 	return _dst
 }
+{% endif %}

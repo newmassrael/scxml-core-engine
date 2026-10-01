@@ -418,6 +418,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
         // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
@@ -521,6 +522,28 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
     }
 
+{% if encode_can_refuse %}
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
+    ///
+    /// Gated on the `alloc` feature — `VecSink` lives behind the
+    /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
+    /// `no_std` builds without `alloc` only see the sink-based
+    /// primary `encode`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        Ok(_sce_v)
+    }
+{% else %}
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
@@ -540,6 +563,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
             .expect("VecSink is infallible");
         _sce_v
     }
+{% endif %}
 }
 {% if emit_owned %}
 

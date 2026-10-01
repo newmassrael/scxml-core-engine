@@ -171,6 +171,7 @@ data class {{ struct_name }}(
         // carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
         // RFC §synth-5-B empty body — zero-byte payload.
         return null
@@ -251,6 +252,19 @@ data class {{ struct_name }}(
 {% endif %}
     }
 
+{% if encode_can_refuse %}
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
+    /// `null` when `encode` refuses a message whose chain and a gated
+    /// field contradict each other (`CodecError.PresentIfMismatch`).
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray({{ params_first_arg }}): ByteArray? {
+        val _list = mutableListOf<Byte>()
+        if (encode(MutableListSink(_list){{ params_first_arg_with_comma }}) != null) return null
+        return _list.toByteArray()
+    }
+{% else %}
     /// Heap-backed convenience facade. Runs `encode` over a
     /// `MutableListSink` and returns the freshly-encoded ByteArray.
     /// Callers targeting zero-alloc hot paths should call `encode`
@@ -260,6 +274,7 @@ data class {{ struct_name }}(
         encode(MutableListSink(_list){{ params_first_arg_with_comma }})
         return _list.toByteArray()
     }
+{% endif %}
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor

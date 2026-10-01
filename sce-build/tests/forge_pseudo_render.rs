@@ -25,8 +25,8 @@ use sce_build::forge::model::{
     PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
     ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
     RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
-    TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel,
-    ValidatorRules, VariantArm, WorkerModel,
+    TimerModel, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
+    ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -885,6 +885,10 @@ fn a_codec_renders_every_field_it_can_carry() {
             terminate_on: TlvTerminateStrategy::EntryFlag {
                 flag_name: "more".to_string(),
             },
+            entry_id: Some(TlvEntryId {
+                carrier: Some("ctl".to_string()),
+                name: "kind".to_string(),
+            }),
         },
         endian: Some(Endian::Little),
         max_size: Some(64),
@@ -901,13 +905,27 @@ fn a_codec_renders_every_field_it_can_carry() {
             scope: PresentIfScope::Input,
             field_id: "hdr".to_string(),
             flag_name: "ext".to_string(),
+            entry_id: None,
+            entry_id_text: String::new(),
             negate: true,
             or_with: Some(Box::new(PresentIfPredicate {
                 scope: PresentIfScope::Local,
                 field_id: "hdr".to_string(),
                 flag_name: "alt".to_string(),
+                entry_id: None,
+                entry_id_text: String::new(),
                 negate: false,
-                or_with: None,
+                // The chain form, the author's hex spelling kept: the review
+                // surface must show `0x2`, not the `2` the model computes with.
+                or_with: Some(Box::new(PresentIfPredicate {
+                    scope: PresentIfScope::Chain,
+                    field_id: "ext".to_string(),
+                    flag_name: String::new(),
+                    entry_id: Some(2),
+                    entry_id_text: "0x2".to_string(),
+                    negate: true,
+                    or_with: None,
+                })),
             })),
         }),
         repeat_body_alias: Some("rb".to_string()),
@@ -997,10 +1015,11 @@ terminate entry-flag more
     max-count 9
     repeat-body rb
     tlv-body tb
+    entry-id ctl.kind
     embed-body eb
     embed-length-from len
     dma-align 16
-    present-if not input:hdr.ext or local:hdr.alt
+    present-if not input:hdr.ext or local:hdr.alt or not chain:ext has 0x2
     flag more bit 7 width 1 value 0x1
   variant tag-field hdr tag-flag mid peek-byte pk
     peek-flag k bit 0 width 2

@@ -436,12 +436,19 @@
   <xs:attribute name="length-field" type="xs:string"/>
 
   <!-- RFC §synth-5-B present-if primitive (sce:present-if attribute).
-       Predicate grammar v1: exactly `<field_id>.<flag_name>` — the
+       Predicate grammar: a clause is `<field_id>.<flag_name>` — the
        referenced field must be a `<sce:flags>` carrier declared
-       earlier in the same codec. Field shape (string typed at the XSD
-       layer; semantic checks land in sce-build):
-         - forward / unknown carrier → codec/present-if-refs-later-field
-         - non-flags carrier or unknown flag → validation/invalid-attribute -->
+       earlier in the same codec — or `<chain_id>.has(<value>)`, true
+       when an entry of the earlier `<sce:tlv-chain>` `chain_id` has the
+       identifier `value` (decimal, 0x or 0b; the chain's `entry-id`
+       says where an entry keeps it) — or a bare `<flag-input>` name. A
+       clause may carry a leading `!`, and clauses join with `||`.
+       Field shape (string typed at the XSD layer; semantic checks land
+       in sce-build):
+         - forward / unknown carrier or chain → codec/present-if-refs-later-field
+         - non-flags carrier or unknown flag → validation/invalid-attribute
+         - `.has(…)` on a chain that declares no entry-id, or on a field
+           that is not a chain → validation/attribute-rule-violated -->
   <xs:attribute name="present-if" type="xs:string"/>
 
   <!-- RFC §synth-5-B B3 DMA alignment primitive (sce:dma-burst-align attribute).
@@ -1056,6 +1063,17 @@
            presence when terminate-on="entry-flag". -->
       <xs:attribute name="terminate-on" type="sce:tlvTerminateOnType"/>
       <xs:attribute name="entry-flag-name" type="xs:string"/>
+      <!-- Which part of a decoded entry tells its kind: `<carrier>.<flag>`
+           names a multi-bit flag of the entry codec's flags carrier, a
+           bare name one of its unsigned integer fields — the grammar
+           `sce:length-field` uses for a value inside another field. A
+           later field's `sce:present-if="<chain>.has(<value>)"` is true
+           when an entry of this chain has that identifier, so a chain
+           some predicate reads must declare it. The parser checks the
+           spelling; the entry codec is only known once imported, and
+           sce-build checks there that the flag or field exists, is
+           unsigned and holds the values the predicates look for. -->
+      <xs:attribute name="entry-id" type="xs:string"/>
       <!-- RFC §synth-5-B — `<sce:tlv-chain sce:present-if="P">`
            gates the entire chain on a flag predicate (mirrors the
            repeat-with-present-if lift). When the predicate is

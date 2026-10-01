@@ -2394,6 +2394,63 @@ fn validate_codec_present_if_predicates(
                         },
                     ));
                 }
+            } else if predicate.scope == PresentIfScope::Chain {
+                // Chain membership: `<chain>.has(<value>)` reads the
+                // entries an earlier `<sce:tlv-chain>` decoded, so the
+                // referenced field must be one, and the chain must have said
+                // which part of an entry is its identifier — otherwise there
+                // is nothing for `<value>` to be compared with.
+                let written_predicate = format_present_if_predicate_for_diag(predicate);
+                let rule_violated = |rule: String| {
+                    located(
+                        &written,
+                        label.diagnostic_label,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!(
+                                "field '{}' in codec '{}'",
+                                field.id, label.identifier
+                            ),
+                            attr: "sce:present-if".into(),
+                            value: written_predicate.clone(),
+                            rule,
+                        },
+                    )
+                };
+                match by_id_so_far.get(predicate.field_id.as_str()) {
+                    None => {
+                        return Err(located(
+                            &written,
+                            label.diagnostic_label,
+                            ValidationError::CodecPresentIfRefsLaterField {
+                                codec: label.identifier.to_string(),
+                                field: field.id.clone(),
+                                refers_to: predicate.field_id.clone(),
+                            },
+                        ));
+                    }
+                    Some(chain) => match &chain.bit_size {
+                        BitSize::TlvChain { entry_id, .. } => {
+                            if entry_id.is_none() {
+                                return Err(rule_violated(format!(
+                                    "'{}.has(…)' tests which kinds of entry the chain \
+                                     '{}' decoded, so the chain must say which part of \
+                                     an entry is its identifier — add entry-id=\"…\" to \
+                                     <sce:tlv-chain id='{}'> (a flag of the entry's \
+                                     flags carrier as '<carrier>.<flag>', or one of its \
+                                     integer fields by name)",
+                                    predicate.field_id, predicate.field_id, predicate.field_id
+                                )));
+                            }
+                        }
+                        _ => {
+                            return Err(rule_violated(format!(
+                                "'.has(…)' tests the entries of a <sce:tlv-chain>; \
+                                 '{}' is not one",
+                                predicate.field_id
+                            )));
+                        }
+                    },
+                }
             } else {
                 match by_id_so_far.get(predicate.field_id.as_str()) {
                     None => {
@@ -2409,6 +2466,24 @@ fn validate_codec_present_if_predicates(
                     }
                     Some(carrier) => {
                         if !carrier.is_flags_carrier() {
+                            // A chain is not a flags carrier, and the author
+                            // who wrote `chain.flag` most likely meant to ask
+                            // which entries it carried — which has a spelling.
+                            let what = if carrier.is_tlv_chain() {
+                                format!(
+                                    "'{}' is a <sce:tlv-chain>, which has no flags; to \
+                                     gate on the kinds of entry it decoded write \
+                                     '{}.has(<value>)' and declare entry-id on the chain",
+                                    predicate.field_id, predicate.field_id
+                                )
+                            } else {
+                                format!(
+                                    "predicate LHS must reference a flags-bearing \
+                                     carrier (declared via <sce:flags>); '{}' is \
+                                     a plain field",
+                                    predicate.field_id
+                                )
+                            };
                             return Err(located(
                                 &written,
                                 label.diagnostic_label,
@@ -2422,12 +2497,7 @@ fn validate_codec_present_if_predicates(
                                         "{}.{}",
                                         predicate.field_id, predicate.flag_name
                                     ),
-                                    rule: format!(
-                                        "predicate LHS must reference a flags-bearing \
-                                         carrier (declared via <sce:flags>); '{}' is \
-                                         a plain field",
-                                        predicate.field_id
-                                    ),
+                                    rule: what,
                                 },
                             ));
                         }
@@ -3550,6 +3620,12 @@ pub fn parse_codec_field_from_node(
 ///   - `!<name>` (Input negative) — same input,
 ///     predicate fires when the input is zero. Mirrors the
 ///     Local/Parent negative shape.
+///   - `<chain_id>.has(<value>)` and its `!` negation (Chain) — `chain_id`
+///     names a `<sce:tlv-chain>` declared earlier in the same codec;
+///     the predicate fires when one of the entries it decoded has the
+///     identifier `value` (decimal, `0x` or `0b`). Which part of an entry
+///     is its identifier is the chain's `entry-id`, checked in
+///     [`validate_codec_present_if_predicates`].
 ///
 /// `field_id` is empty when scope = Parent or Input (carrier is
 /// implicit — the codec's RPF block for Parent; the codec's flag-input
@@ -3579,12 +3655,14 @@ fn parse_present_if_predicate(
                 value: raw.to_string(),
                 rule: "one of '<field_id>.<flag_name>' / \
                            '!<field_id>.<flag_name>' / 'parent.<flag_name>' / \
-                           '!parent.<flag_name>' / disjunction \
+                           '!parent.<flag_name>' / '<chain_id>.has(<value>)' / \
+                           '!<chain_id>.has(<value>)' / disjunction \
                            '<clause> || <clause> [|| ...]' where each \
-                           clause is one of the four single forms (Y3 \
+                           clause is one of the single forms (Y3 \
                            atomic 2b-ii); both halves are non-empty \
-                           identifiers; conjunction and equality defer \
-                           to a later RFC §5.B stage; outer negation \
+                           identifiers and <value> is an unsigned integer \
+                           (decimal, 0x or 0b); conjunction and equality \
+                           defer to a later RFC §5.B stage; outer negation \
                            '!(<chain>)' defers to a future stage"
                     .into(),
             },
@@ -3633,15 +3711,14 @@ fn parse_present_if_predicate(
                 scope: PresentIfScope::Input,
                 field_id: String::new(),
                 flag_name: name.to_string(),
+                entry_id: None,
+                entry_id_text: String::new(),
                 negate,
                 or_with: or_with_input,
             });
         }
     };
     if lhs.is_empty() || rhs.is_empty() {
-        return Err(invalid());
-    }
-    if !is_ident(lhs) || !is_ident(rhs) {
         return Err(invalid());
     }
     // Recurse on the tail when present so 3+-clause chains compose
@@ -3653,10 +3730,38 @@ fn parse_present_if_predicate(
         }
         None => None,
     };
+    // Chain-membership form `<chain_id>.has(<value>)`. The right-hand side
+    // is a call, not an identifier, so it is recognised before the
+    // identifier check below would refuse it. The value is read in the
+    // grammar every integer attribute shares, and kept as the author wrote
+    // it for the pseudocode surface.
+    if let Some(argument) = rhs.strip_prefix("has(").and_then(|r| r.strip_suffix(')')) {
+        let argument = argument.trim();
+        let Some(entry_id) = parse_int_u64(argument) else {
+            return Err(invalid());
+        };
+        if !is_ident(lhs) {
+            return Err(invalid());
+        }
+        return Ok(PresentIfPredicate {
+            scope: PresentIfScope::Chain,
+            field_id: lhs.to_string(),
+            flag_name: String::new(),
+            entry_id: Some(entry_id),
+            entry_id_text: argument.to_string(),
+            negate,
+            or_with,
+        });
+    }
+    if !is_ident(lhs) || !is_ident(rhs) {
+        return Err(invalid());
+    }
     Ok(PresentIfPredicate {
         scope: PresentIfScope::Local,
         field_id: lhs.to_string(),
         flag_name: rhs.to_string(),
+        entry_id: None,
+        entry_id_text: String::new(),
         negate,
         or_with,
     })
@@ -4313,6 +4418,48 @@ fn parse_codec_tlv_chain_from_node(
         Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
     };
 
+    // `entry-id` names the part of an entry that tells its kind, so a later
+    // field can be gated on which kinds the chain carried
+    // (`sce:present-if="<chain>.has(<value>)"`). The grammar is the one
+    // `sce:length-field` uses for "a value inside another field":
+    // `<carrier>.<flag>` for a flag of the entry codec's flags carrier, a bare
+    // name for one of its integer fields. Whether the entry codec has that
+    // flag or field is only known once it is imported, and is checked there.
+    let entry_id = match node.attribute("entry-id") {
+        None => None,
+        Some(raw) => {
+            let invalid = |rule: &str| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: format!("<sce:tlv-chain id='{id}'>"),
+                        attr: "entry-id".into(),
+                        value: raw.to_string(),
+                        rule: rule.into(),
+                    },
+                )
+            };
+            let is_ident = crate::scxml_identifier::is_code_identifier;
+            let spelled = raw.trim();
+            let (carrier, name) = match spelled.split_once('.') {
+                Some((carrier, name)) => (Some(carrier.trim()), name.trim()),
+                None => (None, spelled),
+            };
+            if !is_ident(name) || carrier.is_some_and(|c| !is_ident(c)) {
+                return Err(invalid(
+                    "'<carrier>.<flag>' naming a flag of the entry codec's flags \
+                     carrier, or a bare '<field>' naming one of its integer fields; \
+                     each part is a non-empty identifier",
+                ));
+            }
+            Some(TlvEntryId {
+                carrier: carrier.map(str::to_string),
+                name: name.to_string(),
+            })
+        }
+    };
+
     Ok(CodecField {
         id,
         line: Some(row_of(node)),
@@ -4323,6 +4470,7 @@ fn parse_codec_tlv_chain_from_node(
             max_depth,
             on_overflow,
             terminate_on,
+            entry_id,
         },
         endian: None,
         max_size: None,
@@ -4959,6 +5107,11 @@ fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     let head = match p.scope {
         PresentIfScope::Local => format!("{prefix}{}.{}", p.field_id, p.flag_name),
         PresentIfScope::Input => format!("{prefix}{}", p.flag_name),
+        PresentIfScope::Chain => format!(
+            "{prefix}{}.has({})",
+            p.field_id,
+            crate::source_literal::as_written(&p.entry_id_text, p.entry_id.unwrap_or_default())
+        ),
     };
     match &p.or_with {
         None => head,

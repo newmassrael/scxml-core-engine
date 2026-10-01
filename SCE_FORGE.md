@@ -1056,6 +1056,57 @@ fixed array to live in — every other backend's string grows. The generator's
 refusal and the conformance harness's schedule read one answer
 (`cbor_codec::refusal`), so a fixture runs exactly where it generates.
 
+#### 4.6.2 A field gated on the entries of a chain — `<chain>.has(<value>)`
+
+A message can lay a field out one way when an entry of a given kind is in an
+earlier `<sce:tlv-chain>` and another way when it is not, with no bit in any
+header saying which. `sce:present-if` reads the chain directly:
+
+```xml
+<sce:tlv-chain id="extensions" type="entry" sce:byte="1" max-depth="4"
+               on-overflow="reject" terminate-on="entry-flag"
+               entry-flag-name="more" entry-id="header.kind"/>
+<sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+           sce:present-if="!extensions.has(0x2)"/>
+<sce:repeat id="slices" type="slice" sce:byte="3" count="slice_count"
+            max-count="4" sce:present-if="extensions.has(0x2)"/>
+```
+
+`<chain>.has(<value>)` is true when an entry the chain decoded has the
+identifier `value` (decimal, `0x` or `0b`). It takes a leading `!`, joins
+other clauses with `||`, and reads wherever a flag predicate reads. A chain
+that is itself gated off holds no entries, so `has` is false for it.
+
+**The chain says where an entry keeps its identifier.** `entry-id` is the
+grammar of `sce:length-field` for a value inside another field:
+`<carrier>.<flag>` names a multi-bit flag of the entry codec's flags carrier,
+and a bare name one of its unsigned integer fields (on the wire whatever the
+entry holds, so not itself gated). A chain some predicate reads must declare
+it. It is judged where the import is resolved, because the entry codec is
+another document: the flag or field must exist, a flag must be multi-bit, and
+every value a predicate looks for must fit the identifier's width — a value it
+cannot hold makes the predicate false for every message.
+
+**Decode and encode read the same predicate.** The decoder binds one boolean
+per identifier a predicate looks for, right after the chain, and each gated
+field tests it. The encoder binds the same booleans from the value it is
+encoding and, before writing the first byte, checks that every gated field is
+given exactly when its predicate holds. A message whose chain says "slices
+follow" and whose payload is a plain byte string is two descriptions of one
+wire; it is refused (`CodecError::PresentIfMismatch` on Rust and C++,
+`CodecError.PresentIfMismatch` on Kotlin, `codec.ErrPresentIfMismatch` on Go,
+`PresentIfMismatch` raised on Python), and the sink is untouched. The facades
+that returned bytes outright (`encode_to_vec` and kin) return a `Result`, an
+`optional`, a `([]byte, error)` or `null` for a codec such a predicate gates,
+and are unchanged for every other codec.
+
+C11 has no wrapper that says a field was given: there the predicate alone
+decides what `encode` writes, as a flag does, and there is no mismatch to
+refuse.
+
+A chain that ends only when the frame does (`terminate-on` not `entry-flag`)
+leaves nothing after it to gate, so `entry-id` on one is refused.
+
 ### 4.7 validator
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).

@@ -3030,10 +3030,15 @@ fn bit_size_words(b: &BitSize) -> String {
             CountRef::LengthField(f) => format!("repeat length-field {}", text(f)),
             CountRef::UntilEof => "repeat until-eof".to_string(),
         },
+        // The entry identifier is a clause line of its own (`entry-id …`,
+        // `render_codec_field`), not a word here: the words after `size` are
+        // read back by position, and an optional word in the middle would
+        // make every later one ambiguous.
         BitSize::TlvChain {
             max_depth,
             on_overflow,
             terminate_on,
+            entry_id: _,
         } => {
             let overflow = match on_overflow {
                 TlvOverflowPolicy::Reject => "reject",
@@ -3053,22 +3058,23 @@ fn bit_size_words(b: &BitSize) -> String {
 
 /// A `present-if` predicate, including the `or_with` chain.
 ///
-/// The scope is printed as a word (`local` / `input`) rather than in the
-/// attribute's own encoding. The distinction decides which document the
-/// flag is read from, so a reviewer has to see it; spelling it out is
+/// The scope is printed as a word (`local` / `input` / `chain`) rather than
+/// in the attribute's own encoding. The distinction decides which document
+/// the flag is read from, so a reviewer has to see it; spelling it out is
 /// the only form that says so without the reader knowing the attribute
-/// grammar.
+/// grammar. A chain-membership test reads `chain:<chain> has <value>`, the
+/// value as the author wrote it.
 fn present_if_words(p: &PresentIfPredicate) -> String {
-    let scope = match p.scope {
-        PresentIfScope::Local => "local",
-        PresentIfScope::Input => "input",
+    let not = if p.negate { "not " } else { "" };
+    let mut s = match p.scope {
+        PresentIfScope::Local => format!("{not}local:{}.{}", text(&p.field_id), text(&p.flag_name)),
+        PresentIfScope::Input => format!("{not}input:{}.{}", text(&p.field_id), text(&p.flag_name)),
+        PresentIfScope::Chain => format!(
+            "{not}chain:{} has {}",
+            text(&p.field_id),
+            crate::source_literal::as_written(&p.entry_id_text, p.entry_id.unwrap_or_default())
+        ),
     };
-    let mut s = format!(
-        "{}{scope}:{}.{}",
-        if p.negate { "not " } else { "" },
-        text(&p.field_id),
-        text(&p.flag_name)
-    );
     if let Some(next) = &p.or_with {
         let _ = write!(s, " or {}", present_if_words(next));
     }
@@ -3184,6 +3190,17 @@ fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
         }
         if let Some(v) = &f.tlv_chain_body_alias {
             out.line(&format!("tlv-body {}", text(v)));
+        }
+        if let BitSize::TlvChain {
+            entry_id: Some(id), ..
+        } = &f.bit_size
+        {
+            match &id.carrier {
+                Some(carrier) => {
+                    out.line(&format!("entry-id {}.{}", text(carrier), text(&id.name)))
+                }
+                None => out.line(&format!("entry-id {}", text(&id.name))),
+            }
         }
         if let Some(v) = &f.embed_body_alias {
             out.line(&format!("embed-body {}", text(v)));

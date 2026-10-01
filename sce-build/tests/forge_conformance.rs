@@ -2146,6 +2146,447 @@ fn forge_c11_codec_tlv_chain_present_if_basic() {
     );
 }
 
+// ── RFC §synth-5-B — chain-membership predicate: `<chain>.has(<value>)`
+// A field laid out one way when an entry of a given kind is in an earlier
+// chain and another way when it is not. `codec_chain_has_envelope` gates on
+// a chain that is itself gated, with a multi-bit-flag identifier, in `!` and
+// positive form, over a VLE field, a length-ref bytes field, a count and a
+// repeat; `codec_chain_has_tagged` gates on an always-present chain with a
+// plain-field identifier, joined with a flag clause by `||`. The element
+// codecs carry their own goldens. Locks the boolean-local lowering and the
+// encoder's presence check across all 6 backends.
+
+#[test]
+fn forge_codec_chain_has_slice_cpp() {
+    assert_standalone_forge("codec_chain_has_slice", "codec_chain_has_slice.h");
+}
+
+#[test]
+fn forge_codec_chain_has_slice_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_has_slice", "CodecChainHasSlice.kt");
+}
+
+#[test]
+fn forge_codec_chain_has_slice_rust() {
+    assert_standalone_forge_rust("codec_chain_has_slice", "codec_chain_has_slice.rs");
+}
+
+#[test]
+fn forge_codec_chain_has_slice_go() {
+    assert_standalone_forge_go("codec_chain_has_slice", "codec_chain_has_slice.go");
+}
+
+#[test]
+fn forge_codec_chain_has_slice_python() {
+    assert_standalone_forge_python("codec_chain_has_slice", "codec_chain_has_slice.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_has_slice() {
+    assert_standalone_forge_c("codec_chain_has_slice", "codec_chain_has_slice.c.h");
+}
+
+#[test]
+fn forge_codec_chain_has_envelope_cpp() {
+    assert_standalone_forge("codec_chain_has_envelope", "codec_chain_has_envelope.h");
+}
+
+#[test]
+fn forge_codec_chain_has_envelope_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_has_envelope", "CodecChainHasEnvelope.kt");
+}
+
+#[test]
+fn forge_codec_chain_has_envelope_rust() {
+    assert_standalone_forge_rust("codec_chain_has_envelope", "codec_chain_has_envelope.rs");
+}
+
+#[test]
+fn forge_codec_chain_has_envelope_go() {
+    assert_standalone_forge_go("codec_chain_has_envelope", "codec_chain_has_envelope.go");
+}
+
+#[test]
+fn forge_codec_chain_has_envelope_python() {
+    assert_standalone_forge_python("codec_chain_has_envelope", "codec_chain_has_envelope.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_has_envelope() {
+    assert_standalone_forge_c("codec_chain_has_envelope", "codec_chain_has_envelope.c.h");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_entry_cpp() {
+    assert_standalone_forge(
+        "codec_chain_has_tagged_entry",
+        "codec_chain_has_tagged_entry.h",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_entry_kotlin() {
+    assert_standalone_forge_kotlin(
+        "codec_chain_has_tagged_entry",
+        "CodecChainHasTaggedEntry.kt",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_entry_rust() {
+    assert_standalone_forge_rust(
+        "codec_chain_has_tagged_entry",
+        "codec_chain_has_tagged_entry.rs",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_entry_go() {
+    assert_standalone_forge_go(
+        "codec_chain_has_tagged_entry",
+        "codec_chain_has_tagged_entry.go",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_entry_python() {
+    assert_standalone_forge_python(
+        "codec_chain_has_tagged_entry",
+        "codec_chain_has_tagged_entry.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_chain_has_tagged_entry() {
+    assert_standalone_forge_c(
+        "codec_chain_has_tagged_entry",
+        "codec_chain_has_tagged_entry.c.h",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_cpp() {
+    assert_standalone_forge("codec_chain_has_tagged", "codec_chain_has_tagged.h");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_has_tagged", "CodecChainHasTagged.kt");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_rust() {
+    assert_standalone_forge_rust("codec_chain_has_tagged", "codec_chain_has_tagged.rs");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_go() {
+    assert_standalone_forge_go("codec_chain_has_tagged", "codec_chain_has_tagged.go");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_python() {
+    assert_standalone_forge_python("codec_chain_has_tagged", "codec_chain_has_tagged.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_has_tagged() {
+    assert_standalone_forge_c("codec_chain_has_tagged", "codec_chain_has_tagged.c.h");
+}
+
+/// The documents the chain-membership fixtures import, then the fixtures.
+const CHAIN_HAS_SET: &[&str] = &[
+    "codec_zenoh_ext_unit.scxml",
+    "codec_zenoh_ext_zint.scxml",
+    "codec_zenoh_ext_zbuf.scxml",
+    "codec_zenoh_ext_entry.scxml",
+    "codec_chain_has_slice.scxml",
+    "codec_chain_has_envelope.scxml",
+    "codec_chain_has_tagged_entry.scxml",
+    "codec_chain_has_tagged.scxml",
+];
+
+/// A golden is text; this is the gate that it is also a program. The
+/// chain-membership lowering names locals, entry accessors and members on
+/// both the decode and the encode site, in six spellings each, and a name
+/// wrong on one site is a compile error only the host compiler sees.
+/// Collect-then-assert so a regression lists every failing backend.
+#[test]
+fn chain_has_codecs_compile_on_every_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = rustc_compile_codec_set(&dir, CHAIN_HAS_SET, "chain_has_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(&dir, CHAIN_HAS_SET, "chain_has_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(&dir, CHAIN_HAS_SET, "chain_has_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(&dir, CHAIN_HAS_SET, "chain_has_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(&dir, CHAIN_HAS_SET, "chain_has_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(&dir, CHAIN_HAS_SET, "chain_has_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "chain-membership codecs must compile on every backend. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+/// Every way a chain-membership predicate or its `entry-id` can be wrong is
+/// a refusal that names what is wrong and where, and none of them reaches the
+/// host compiler. Each case is a document differing from a valid one in one
+/// place; the expected text is a phrase of the rule it breaks, so a refusal
+/// that stops saying why is as much a regression as one that stops happening.
+#[test]
+fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_reason() {
+    // (case, tlv-chain attributes, the predicate on the field after it,
+    //  a phrase the refusal must contain)
+    const CASES: &[(&str, &str, &str, &str)] = &[
+        (
+            "no entry-id declared",
+            r#"terminate-on="entry-flag" entry-flag-name="Z""#,
+            "ext.has(1)",
+            "must say which part of an entry is its identifier",
+        ),
+        (
+            "has() on a field that is not a chain",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id""#,
+            "lead.has(1)",
+            "is not one",
+        ),
+        (
+            "a flag written on a chain",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id""#,
+            "ext.Z",
+            "write 'ext.has(<value>)'",
+        ),
+        (
+            "a value that is not a number",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id""#,
+            "ext.has(two)",
+            "unsigned integer",
+        ),
+        (
+            "an entry codec with no such carrier",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="nope.ext_id""#,
+            "ext.has(1)",
+            "declares no flags carrier 'nope'",
+        ),
+        (
+            "a carrier with no such flag",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.nope""#,
+            "ext.has(1)",
+            "declares no flag 'nope'",
+        ),
+        (
+            "a one-bit flag as an identifier",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.Z""#,
+            "ext.has(1)",
+            "one-bit flag",
+        ),
+        (
+            "a value the identifier cannot hold",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id""#,
+            "ext.has(16)",
+            "holds 4 bits",
+        ),
+        (
+            "a chain that ends only with the frame",
+            r#"entry-id="header.ext_id""#,
+            "ext.has(1)",
+            "ends only when the frame does",
+        ),
+    ];
+
+    for (case, chain_attrs, predicate, phrase) in CASES {
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="chain_has_refusal">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:field id="lead" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject" {chain_attrs}/>
+    <sce:field id="after" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="{predicate}"/>
+  </datamodel>
+</scxml>"#
+        );
+        let result = sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("chain_has_refusal"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        );
+        let message = match result {
+            Ok(_) => panic!("{case}: the document must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            message.contains(phrase),
+            "{case}: the refusal must say `{phrase}`; got: {message}"
+        );
+    }
+
+    // A chain declared AFTER the field that tests it is a forward reference,
+    // which the streaming decoder cannot honour.
+    let forward = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="chain_has_forward">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:field id="after" sce:type="uint8" sce:byte="0" sce:bit-size="8"
+               sce:present-if="ext.has(1)"/>
+    <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id"/>
+  </datamodel>
+</scxml>"#;
+    let message = match sce_build::compile_forge_with_imports(
+        forward,
+        sce_build::DocumentLabel::symmetric("chain_has_forward"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("a predicate over a chain declared later must be refused"),
+        Err(e) => e.error.to_string(),
+    };
+    assert!(
+        message.contains("not declared earlier"),
+        "forward reference must say so; got: {message}"
+    );
+}
+
+/// What the chain-membership predicate DOES, run on the Rust backend: the
+/// decoder gates fields on the entries the chain carried, the encoder
+/// reproduces the wire from the decoded value, and the encoder refuses a
+/// message whose chain and gated fields contradict each other — before it
+/// writes a byte.
+///
+/// The envelope's chain is itself gated by `header.E`, so the absent chain
+/// is a case too: no entries, `has(0x2)` false, the other layout.
+#[test]
+fn chain_has_decides_the_wire_layout_and_the_encoder_refuses_a_contradiction() {
+    const HARNESS: &str = r#"// Injected by chain_has_decides_the_wire_layout_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_chain_has_envelope::CodecChainHasEnvelope;
+    use crate::codec_chain_has_tagged::CodecChainHasTagged;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
+
+    // header E=1, one entry of kind 2 (last), then the SLICED layout:
+    // a count of 1, and one slice (kind 0, len 2, bytes AA BB).
+    const SLICED: [u8; 7] = [0x80, 0x02, 0x01, 0x00, 0x02, 0xAA, 0xBB];
+    // header E=1, entries of kind 3 (more) and 4 (last): no kind 2, so the
+    // PLAIN layout: a length of 2 and two bytes.
+    const PLAIN: [u8; 6] = [0x80, 0x83, 0x04, 0x02, 0xAA, 0xBB];
+
+    fn decode_env(frame: &[u8]) -> CodecChainHasEnvelope<'_> {
+        CodecChainHasEnvelope::decode(&mut SceCursor::new(frame)).expect("decode envelope")
+    }
+
+    #[test]
+    fn a_kind_two_entry_selects_the_sliced_layout() {
+        let v = decode_env(&SLICED);
+        assert!(v.payload_len.is_none() && v.payload.is_none());
+        assert_eq!(v.slice_count, Some(1));
+        let slices = v.slices.as_ref().expect("slices follow a kind-2 entry");
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].bytes, &[0xAA, 0xBB][..]);
+        assert_eq!(v.encode_to_vec().expect("encode"), SLICED.to_vec());
+    }
+
+    #[test]
+    fn no_kind_two_entry_selects_the_plain_layout() {
+        let v = decode_env(&PLAIN);
+        assert!(v.slice_count.is_none() && v.slices.is_none());
+        assert_eq!(v.payload_len, Some(2));
+        assert_eq!(v.payload, Some(&[0xAA, 0xBB][..]));
+        assert_eq!(v.encode_to_vec().expect("encode"), PLAIN.to_vec());
+    }
+
+    // header E=0: no chain at all, so no kind 2 either: PLAIN again.
+    #[test]
+    fn an_absent_chain_has_no_entries() {
+        let frame = [0x00u8, 0x01, 0xCC];
+        let v = decode_env(&frame);
+        assert!(v.extensions.is_none());
+        assert_eq!(v.payload, Some(&[0xCC][..]));
+        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+    }
+
+    #[test]
+    fn the_encoder_refuses_a_chain_and_a_layout_that_disagree() {
+        // Sliced layout described by the chain, plain layout supplied.
+        let mut v = decode_env(&SLICED);
+        v.payload_len = Some(2);
+        v.payload = Some(&[0xAA, 0xBB]);
+        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+
+        // Plain layout described by the chain, the sliced fields supplied.
+        let mut v = decode_env(&PLAIN);
+        v.payload_len = None;
+        v.payload = None;
+        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+
+        // A refusal writes nothing: the sink-based encode leaves it empty.
+        let mut out: Vec<u8> = Vec::new();
+        let mut sink = VecSink::new(&mut out);
+        assert_eq!(v.encode(&mut sink), Err(CodecError::PresentIfMismatch));
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn a_plain_field_identifier_joined_with_a_flag_clause() {
+        // Kind 7 present: `priority` follows. No kind 9: `checksum` follows.
+        let kind7: [u8; 7] = [0x00, 0x07, 0x00, 0x01, 0x55, 0x12, 0x34];
+        // `wide` set although no kind 7: `priority` still follows (the `||`).
+        // Kind 9 present: no `checksum`.
+        let wide9: [u8; 5] = [0x01, 0x09, 0x00, 0x02, 0x66];
+        // Neither: no `priority`, a `checksum`.
+        let neither: [u8; 6] = [0x00, 0x01, 0x00, 0x03, 0xAB, 0xCD];
+        for frame in [&kind7[..], &wide9[..], &neither[..]] {
+            let v = CodecChainHasTagged::decode(&mut SceCursor::new(frame)).expect("decode");
+            assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+        }
+        let v = CodecChainHasTagged::decode(&mut SceCursor::new(&kind7)).unwrap();
+        assert_eq!((v.priority, v.checksum), (Some(0x55), Some(0x1234)));
+        let v = CodecChainHasTagged::decode(&mut SceCursor::new(&wide9)).unwrap();
+        assert_eq!((v.priority, v.checksum), (Some(0x66), None));
+        let v = CodecChainHasTagged::decode(&mut SceCursor::new(&neither)).unwrap();
+        assert_eq!((v.priority, v.checksum), (None, Some(0xABCD)));
+
+        // The `||` is evaluated by the encoder too: kind 7 absent, `wide`
+        // clear, yet `priority` supplied.
+        let mut v = CodecChainHasTagged::decode(&mut SceCursor::new(&neither)).unwrap();
+        v.priority = Some(1);
+        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        CHAIN_HAS_SET,
+        &[("chain_has_behaviour.rs", HARNESS)],
+        "chain_has_behaviour",
+    )
+    .expect("chain-membership predicates must decide the layout and the encoder must refuse a contradiction");
+}
+
 // ── RFC §synth-5-B — zenoh-specific demo
 // `codec_zenoh_query` mirrors zenoh-pico `_z_query_encode/decode`
 // (message.c:394-505). Used as the request body variant arm for

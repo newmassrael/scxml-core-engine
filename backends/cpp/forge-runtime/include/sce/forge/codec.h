@@ -63,6 +63,12 @@ enum class CodecError : std::uint8_t {
     /// An `sce:encoding="cbor"` codec's byte string that is not its entry's
     /// exact `sce:length`, refused on encode as `CborOutOfRange` is.
     CborWrongLength = 5,
+    /// Encode-side: a field gated by a chain-membership `sce:present-if`
+    /// (`<chain>.has(<value>)`) was given when the predicate says it does
+    /// not belong on the wire, or left out when it does. The chain and the
+    /// field contradict each other, and `encode` refuses before writing the
+    /// first byte, so the sink is untouched.
+    PresentIfMismatch = 6,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use

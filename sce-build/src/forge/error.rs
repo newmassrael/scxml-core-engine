@@ -1755,10 +1755,11 @@ pub enum ValidationError {
     /// (a forward reference, which would require a runtime peek the
     /// streaming decoder cannot perform) or never declared at all.
     /// Author resolves by reordering field declarations so the
-    /// referenced flags carrier precedes every consumer, or by
+    /// referenced flags carrier (or `<sce:tlv-chain>`, for the
+    /// `<chain>.has(<value>)` form) precedes every consumer, or by
     /// correcting a typo in the predicate's field id.
     #[error(
-        "codec '{codec}': field '{field}' has sce:present-if=\"{refers_to}.…\" but '{refers_to}' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate"
+        "codec '{codec}': field '{field}' has sce:present-if=\"{refers_to}.…\" but '{refers_to}' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier or a tlv-chain that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate"
     )]
     CodecPresentIfRefsLaterField {
         codec: String,

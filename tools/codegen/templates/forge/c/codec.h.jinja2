@@ -370,6 +370,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
      * carrier's encode site. */
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
     /* RFC §synth-5-B empty body — zero-byte payload. */
     (void)self;

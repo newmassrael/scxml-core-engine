@@ -28,7 +28,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}NeedMoreBytes, SceCursor, SceSink{{ ", TlvChainOverflow" if has_tlv_chain_fields else "" }}{{ ", UndeclaredEnumValue" if has_closed_enum_fields else "" }}
+from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}NeedMoreBytes, {{ "PresentIfMismatch, " if encode_can_refuse else "" }}SceCursor, SceSink{{ ", TlvChainOverflow" if has_tlv_chain_fields else "" }}{{ ", UndeclaredEnumValue" if has_closed_enum_fields else "" }}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -344,6 +344,7 @@ class {{ struct_name }}:
         # carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
         # RFC §synth-5-B empty body — zero-byte payload.
         _ = w

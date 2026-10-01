@@ -4520,6 +4520,10 @@ fn validate_and_enrich_imports(
                     .iter()
                     .find(|f| !f.flags.is_empty() && f.byte_offset == 0)
                     .map(|f| (f.id.clone(), f.flags.clone()));
+                // A parent's `<sce:tlv-chain entry-id="…">` names a flag or
+                // a field of this codec; the parent cannot judge the name
+                // without the fields it is a name of.
+                ctx.codec_fields = cm.fields.clone();
                 // Variant-default uniformity (Go): the
                 // imported codec emits a `NewT()` constructor iff its
                 // own constructor gate fires — either any field declares a

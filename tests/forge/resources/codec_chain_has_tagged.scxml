@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: chain-membership predicates over a chain that is
+     always present, with a plain-field identifier, joined with a flag
+     clause.
+
+     `priority` is on the wire when an entry of kind 7 is in the chain OR the
+     header says the sender is `wide` — the `||` joins a chain test with a
+     flag test, and both are evaluated by the decoder and by the encoder.
+     `checksum` is on the wire when no entry of kind 9 is. An entry's kind is
+     its `entry_type` field (`entry-id="entry_type"`). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_has_tagged">
+  <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="wide" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="1"
+                   max-depth="3" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="more"
+                   entry-id="entry_type"/>
+    <sce:field id="priority" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="entries.has(7) || header.wide"/>
+    <sce:field id="checksum" sce:type="uint16" sce:byte="3" sce:bit-size="16"
+               sce:present-if="!entries.has(0x09)"/>
+  </datamodel>
+</scxml>

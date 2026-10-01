@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a field whose shape depends on which kinds of
+     entry an extension chain carried, with nothing in any header saying so.
+
+     The payload is laid out in one of two ways. When an entry of kind 0x2
+     is in the chain, it is a count of slices followed by that many slices
+     (`codec_chain_has_slice`); when none is, it is a length followed by
+     that many bytes. The header carries a flag for the chain's own
+     presence (`E`) and no flag for which payload follows — the chain is
+     the only evidence, so `sce:present-if` reads it: `extensions.has(0x2)`.
+
+     The chain is itself gated (`header.E`), so the document also covers a
+     chain that is absent: an absent chain has no entries, `has(0x2)` is
+     false, and `!extensions.has(0x2)` is true.
+
+     An entry's kind is the 4-bit `ext_id` flag of its header
+     (`entry-id="header.ext_id"`), the multi-bit flag form of the
+     identifier.
+
+     Composition: flags + gated tlv-chain with entry-flag termination +
+     chain-membership predicate (positive and negated) on a VLE field, a
+     length-ref bytes field, a VLE count and a repeat. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_has_envelope">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_chain_has_slice.scxml" kind="codec" as="codec_chain_has_slice"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="5"/>
+      <sce:flag name="E"    bit="7"/>
+    </sce:flags>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject" sce:present-if="header.E"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id"/>
+    <sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+               sce:present-if="!extensions.has(0x2)"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="256"
+               sce:present-if="!extensions.has(0x2)"/>
+    <sce:field id="slice_count" sce:type="uint32" sce:byte="4" sce:bit-size="vle"
+               sce:present-if="extensions.has(0x2)"/>
+    <sce:repeat id="slices" type="codec_chain_has_slice" sce:byte="5"
+                count="slice_count" max-count="4"
+                sce:present-if="extensions.has(0x2)"/>
+  </datamodel>
+</scxml>

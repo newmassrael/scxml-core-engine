@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain entry whose kind is a plain integer
+     field rather than a bit-range of a header.
+
+     Wire shape: `entry_type` (1 byte) ++ a control byte whose bit 0 says
+     another entry follows ++ one body byte. `codec_chain_has_tagged`
+     names `entry_type` as the entry's identifier (`entry-id="entry_type"`),
+     the bare-field form of the identifier. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_has_tagged_entry">
+  <datamodel>
+    <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:flags id="ctl" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="more" bit="0"/>
+    </sce:flags>
+    <sce:field id="body" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>
