@@ -25,6 +25,16 @@ protocol reads as exactly that.
                 server's own is refused, so a page in the owner's browser
                 cannot drive a loopback server (DNS rebinding).
   a size cap    a body over `MAX_BODY` is refused before it is read.
+
+⚠ And a fourth, for the one thing a token does not answer: who is trusted with
+the host. A caller with the token may hand over a DESIGN, and playing a design
+runs code nobody has read under the isolation `process.isolation_level` names
+(a child process under the kernel's limits), which stops a runaway and not a
+design that reads a file. So a design from a remote caller is read and checked
+and not played, until the operator says `--run-designs-under LEVEL`: the weakest
+isolation they accept. The host has to give at least that or the server does not
+start, and a caller that asks to play a design before then is told why, in the
+answer, with how to change it.
 """
 
 from __future__ import annotations
@@ -35,7 +45,7 @@ import posixpath
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-from . import mcp
+from . import mcp, process
 
 # The endpoint's one path segment: requests go to `http://HOST:PORT/mcp`.
 ENDPOINT = "mcp"
@@ -91,7 +101,8 @@ class _Handler(BaseHTTPRequestHandler):
         # The same guard the stdio loop keeps: one bad message is answered,
         # and the server stays up for the next.
         try:
-            return mcp.handle(message, remote=True)
+            return mcp.handle(message, remote=True,
+                              designs_withheld=self.server.designs_withheld)
         except Exception as exc:  # noqa: BLE001 - staying up outranks the bug
             ident = message.get("id") if isinstance(message, dict) else None
             return {"jsonrpc": "2.0", "id": ident,
@@ -134,32 +145,56 @@ class _Handler(BaseHTTPRequestHandler):
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, host: str, port: int, token: str | None):
+    def __init__(self, host: str, port: int, token: str | None,
+                 run_designs_under: str | None = None):
         super().__init__((host, port), _Handler)
         self.token = token
+        self.run_designs_under = run_designs_under
+        # None is the operator's statement that designs may be played; the
+        # absence of that statement is the sentence the caller reads instead.
+        self.designs_withheld = None if run_designs_under else mcp.DESIGNS_WITHHELD
         bound = self.server_address[1]
         self.origins = {f"http://{name}:{bound}" for name in (host, *_LOOPBACK)}
 
 
-def make_server(host: str, port: int, token: str | None) -> _Server:
+def make_server(host: str, port: int, token: str | None,
+                run_designs_under: str | None = None) -> _Server:
     """The server, bound and not yet serving -- what a test drives.
 
     Refuses a non-loopback address without a token rather than serving one
-    open: see the module note."""
+    open, and a host that isolates less than the operator asked for rather than
+    playing designs under it: see the module note."""
     if host not in _LOOPBACK and not token:
         raise SystemExit(
             f"refusing to listen on {host} without a token: anyone who can "
             f"reach it could run the code generator. Pass --token-file.")
     if token is not None and not token:
         raise SystemExit("the token file is empty")
-    return _Server(host, port, token)
+    if run_designs_under is not None:
+        if run_designs_under not in process.ISOLATION_LEVELS:
+            raise SystemExit(f"{run_designs_under!r} is not an isolation level this server "
+                             f"knows: {', '.join(process.ISOLATION_LEVELS)}")
+        given = process.isolation_level()
+        if process.isolation_rank(given) < process.isolation_rank(run_designs_under):
+            raise SystemExit(
+                f"refusing to start: asked to play designs under {run_designs_under!r}, and "
+                f"this host isolates them as {given!r}. Name the level this host gives, or "
+                f"serve from a host that gives more.")
+    return _Server(host, port, token, run_designs_under)
 
 
-def serve_http(host: str, port: int, token: str | None) -> int:
-    server = make_server(host, port, token)
+def serve_http(host: str, port: int, token: str | None,
+               run_designs_under: str | None = None) -> int:
+    server = make_server(host, port, token, run_designs_under)
     bound_host, bound_port = server.server_address[:2]
     url = f"http://{bound_host}:{bound_port}{posixpath.sep}{ENDPOINT}"
     print(f"sce-author MCP over HTTP at {url}", flush=True)
+    if run_designs_under:
+        print(f"designs from callers are played, under {process.isolation_level()!r} "
+              f"(asked for at least {run_designs_under!r})", flush=True)
+    else:
+        print("designs from callers are read and checked, not played "
+              "(--run-designs-under LEVEL allows it)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -268,13 +268,17 @@ def read_set(scenario_set: pathlib.Path, specification: pathlib.Path | None = No
     return _records(report, refusal, "the file is not a scenario set")
 
 
-def answer(read: list, played: dict | None) -> dict:
+def answer(read: list, played: dict | None, withheld: str | None = None) -> dict:
     """What the owner is told: the set's reading, and, when the set was usable
     and was played, the product's verdicts with the engine they are about.
 
     Every field is the product's record passed through, grouped. The words
     around them say only what the records leave unsaid: which engine, and
-    that a pass is not a claim about the design."""
+    that a pass is not a claim about the design.
+
+    `withheld` says why a usable set was not played, when the design was not
+    to be: the set's reading is still the owner's to see, and "set not usable"
+    would blame the examples for what was the host's decision."""
     summary = next((r for r in read if r.get("kind") == "scenario-set"), {})
     problems = [r for r in read if r.get("kind") == "problem"]
     reply = {"set": {"usable": summary.get("usable"),
@@ -283,6 +287,10 @@ def answer(read: list, played: dict | None) -> dict:
                      "runnable": summary.get("runnable"),
                      "quotes_checked": summary.get("quotes_checked"),
                      "problems": problems}}
+    if played is None and withheld is not None and summary.get("usable"):
+        reply["verdict"] = "not run"
+        reply["says"] = withheld
+        return reply
     if played is None:
         reply["verdict"] = "set not usable"
         reply["says"] = ("The examples have problems, so nothing was run: a verdict from a set "

@@ -73,6 +73,17 @@ without a token. A remote client hands every file over as text
 (`document_text`, `manifest_text`, `documents_text`), and a path from it is
 refused, since a path names the server's files rather than the caller's.
 
+A design from a remote caller is read and checked and **not played** unless the
+operator says how safely it may be: `--run-designs-under process+rlimit` names the
+weakest isolation they accept (`--help` lists the levels, weakest first), and a host
+that gives less does not start. Without it `compare` still answers every level that
+runs nothing and says `not judged` for behaviour, and `scxml_scenarios` reads the set
+and answers `not run`, each with the way to allow it. The reason is what playing is:
+a child process under the kernel's limits stops a design that runs away, not one that
+reads a file or opens a socket, so a server open to strangers does not run their
+designs until its operator has decided that is acceptable. Over stdio the designs are
+the owner's own and are always played.
+
 From a checkout, `scripts/sce_author_mcp.sh` runs the same server out of
 the tree after `cargo build -p sce-build --features cli --bin sce-codegen`,
 and takes the same `--http` flags.

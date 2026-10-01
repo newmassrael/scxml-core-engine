@@ -300,11 +300,16 @@ def _first_difference(a: list, b: list):
 
 def compare(documents: list, codegen: pathlib.Path | None = None, *,
             labels: list | None = None,
-            drives: int = DRIVES, steps: int = STEPS) -> dict:
+            drives: int = DRIVES, steps: int = STEPS,
+            withheld: str | None = None) -> dict:
     """Every level, for the drafts given. Returns a JSON-ready report.
 
     Each draft is named in the report by its label, or by its file name
-    when no labels are given."""
+    when no labels are given.
+
+    `withheld` is the sentence saying why the drafts are not to be played, or
+    None when they may be. Only the behaviour level plays them; the others read
+    and check."""
     if len(documents) < 2:
         raise CompareError("a comparison needs two drafts or more")
     documents = [pathlib.Path(d) for d in documents]
@@ -357,7 +362,12 @@ def compare(documents: list, codegen: pathlib.Path | None = None, *,
         "open_sets": open_sets,
     }
     statecharts = [n for n in names if kinds[n] == "statechart" and n not in refusals]
-    if len(statecharts) >= 2:
+    if len(statecharts) >= 2 and withheld is not None:
+        # Every level above ran nothing and is answered. Playing a draft is the
+        # one thing a caller who has not been trusted with the host is not given,
+        # and "not judged" says so rather than "not applicable".
+        report["behaviour"] = {"verdict": "not judged", "why": withheld}
+    elif len(statecharts) >= 2:
         report["behaviour"] = _behaviour(
             {n: d for n, d in zip(names, documents) if n in statecharts},
             texts, codegen, drives, steps)

@@ -1337,10 +1337,17 @@ class _Staging:
 
     A file handed over by path is read where it is. On a remote server that
     form is refused: the path names this machine's files, not the caller's.
+
+    It also carries the other thing a call is or is not allowed, because it is
+    what every tool already receives: `designs_withheld` is None when a design
+    handed over may be played, and otherwise the sentence saying why it will not
+    be. Reading and checking a design runs the product's generator; PLAYING it
+    runs code nobody has read, and that is a separate permission.
     """
 
-    def __init__(self, remote: bool):
+    def __init__(self, remote: bool, designs_withheld: str | None = None):
         self.remote = remote
+        self.designs_withheld = designs_withheld
         self._tmp = tempfile.TemporaryDirectory(prefix="sce-author-")
         self.dir = pathlib.Path(self._tmp.name)
         self._names: set[str] = set()
@@ -1652,7 +1659,7 @@ def _compare_tool(args: dict, staging: _Staging) -> dict:
     # Staged drafts come back named relative to the staging directory; the
     # comparison runs the product on each, so it is handed where they are.
     located = [path if path.is_absolute() else staging.dir / path for path in documents]
-    report = compare_drafts(located)
+    report = compare_drafts(located, withheld=staging.designs_withheld)
     report["summary"] = compare_summary(report)
     return _text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
@@ -1671,8 +1678,10 @@ def _scenarios_tool(args: dict, staging: _Staging) -> dict:
     chosen = located(scenario_set)
     read = read_scenario_set(chosen, located(specification) if specification else None)
     usable = any(r.get("kind") == "scenario-set" and r.get("usable") for r in read)
-    played = run_scenarios(chosen, located(documents[0])) if usable else None
-    return _text(json.dumps(scenario_answer(read, played), indent=2, ensure_ascii=False) + "\n")
+    withheld = staging.designs_withheld
+    played = run_scenarios(chosen, located(documents[0])) if usable and withheld is None else None
+    return _text(json.dumps(scenario_answer(read, played, withheld=withheld), indent=2,
+                            ensure_ascii=False) + "\n")
 
 
 def _decisions_tool(args: dict, staging: _Staging) -> dict:
@@ -1986,15 +1995,37 @@ _PACK_FREE = {
 }
 
 
-def call_tool(name: str, args: dict, *, remote: bool = False) -> dict:
+#: Why a remote caller's designs are not played when nobody has said how safely
+#: they may be. It is the sentence the caller reads, so it carries the way to
+#: change it.
+DESIGNS_WITHHELD = (
+    "this server does not play a design handed over by a remote caller: its operator has "
+    "not said what isolation they accept for running one (start it with "
+    "--run-designs-under LEVEL). Everything that runs nothing is answered as usual.")
+
+# Said by a caller that did not say, which is not the same as saying nothing is
+# withheld: `None` is a statement and this is its absence.
+_NOT_STATED = object()
+
+
+def call_tool(name: str, args: dict, *, remote: bool = False,
+              designs_withheld=_NOT_STATED) -> dict:
     """Run one tool. Every failure comes back as an answer, never a crash.
 
     `remote` is true when the caller reached this server over HTTP: it may
     not name this machine's files, and hands every document over as text.
+
+    `designs_withheld` is None when a design handed over may be played, and
+    otherwise the sentence saying why it will not be. Left out, a remote call
+    withholds and a local one plays: the owner who started this server beside
+    their own files is the one whose designs these are, and a stranger's are not
+    played until somebody who answers for the host has said so.
     """
+    if designs_withheld is _NOT_STATED:
+        designs_withheld = DESIGNS_WITHHELD if remote else None
     try:
         if name in _PACK_FREE:
-            staging = _Staging(remote)
+            staging = _Staging(remote, designs_withheld)
             try:
                 return _PACK_FREE[name](args, staging)
             finally:
@@ -2240,11 +2271,11 @@ def _invalid(ident, message: str, code: int = -32600) -> dict:
     return {"jsonrpc": "2.0", "id": ident, "error": {"code": code, "message": message}}
 
 
-def handle(message, *, remote: bool = False) -> dict | None:
+def handle(message, *, remote: bool = False, designs_withheld=_NOT_STATED) -> dict | None:
     """One request to one response. None means the message wanted no reply.
 
-    `remote` is true for a message that arrived over HTTP -- see
-    [`call_tool`].
+    `remote` is true for a message that arrived over HTTP, and `designs_withheld`
+    says whether its designs are played -- see [`call_tool`].
 
     ⚠ `message` is whatever the client sent, which is not necessarily an
     object. A bare array reached `message.get` and raised, and because the
@@ -2280,7 +2311,8 @@ def handle(message, *, remote: bool = False) -> dict | None:
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             return _invalid(ident, "'arguments' has to be an object", -32602)
-        result = call_tool(params.get("name") or "", arguments, remote=remote)
+        result = call_tool(params.get("name") or "", arguments, remote=remote,
+                           designs_withheld=designs_withheld)
     elif method == "ping":
         result = {}
     elif ident is None:
@@ -2340,15 +2372,26 @@ def main(argv: list[str] | None = None) -> int:
     to a caller on another machine (see `mcp_http`)."""
     import argparse
 
+    from .process import ISOLATION_LEVELS
+
     parser = argparse.ArgumentParser(prog="python3 -m sce_author.mcp")
     parser.add_argument("--http", metavar="HOST:PORT",
                         help="serve over HTTP instead of stdio")
     parser.add_argument("--token-file", type=pathlib.Path,
                         help="a file holding the bearer token HTTP callers must send")
+    parser.add_argument(
+        "--run-designs-under", metavar="LEVEL", choices=ISOLATION_LEVELS,
+        help="play the designs HTTP callers hand over, if this host isolates them at "
+             "least this much (" + ", ".join(ISOLATION_LEVELS) + "; weakest first); "
+             "without it they are read and checked and never played, and a host that "
+             "isolates less than LEVEL does not start")
     args = parser.parse_args(argv)
     if args.http is None:
         if args.token_file is not None:
             parser.error("--token-file goes with --http")
+        if args.run_designs_under is not None:
+            parser.error("--run-designs-under goes with --http: over stdio the designs "
+                         "are the owner's own and are always played")
         return serve()
     from .mcp_http import serve_http
 
@@ -2357,7 +2400,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--http takes HOST:PORT, e.g. 127.0.0.1:8765")
     token = (args.token_file.read_text(encoding="utf-8").strip()
              if args.token_file is not None else None)
-    return serve_http(host, int(port), token)
+    return serve_http(host, int(port), token, args.run_designs_under)
 
 
 if __name__ == "__main__":

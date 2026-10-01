@@ -160,6 +160,21 @@ def isolation_level() -> str:
     return f"process (kernel limits are not enforced on {sys.platform})"
 
 
+#: The levels `isolation_level` can name, weakest first. An operator names one to
+#: say the weakest they accept for running a stranger's design, and a stronger one
+#: (a namespace, a cgroup) goes at the end when this module can apply it.
+ISOLATION_LEVELS = ("process", "process+rlimit")
+
+
+def isolation_rank(level: str) -> int:
+    """Where a reported level sits in `ISOLATION_LEVELS`, or -1 for a name nobody
+    defined. A description ranks as the name it begins with: `process (kernel
+    limits are not enforced on darwin)` is `process`, which is the point of
+    ranking it, since it reads like the stronger one and is not."""
+    name = level.split(" ", 1)[0]
+    return ISOLATION_LEVELS.index(name) if name in ISOLATION_LEVELS else -1
+
+
 #: What a child is given of the environment: enough to find programs and speak
 #: UTF-8, and nothing else. A design's machine has no business with the
 #: caller's credentials, tokens or paths.

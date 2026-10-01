@@ -264,10 +264,13 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         # arrives as text under the name the owner knows it by.
         from sce_author.mcp import call_tool
 
+        # A remote call plays no design unless somebody who answers for the host
+        # has said it may (see `test_a_remote_callers_design_is_played_only_if_
+        # the_operator_said_so`); this case is about the text form, so it says so.
         answer = call_tool("compare", {"documents_text": [
             {"name": "first.scxml", "text": RESTARTS},
             {"name": "second.scxml", "text": IGNORES},
-        ]}, remote=True)
+        ]}, remote=True, designs_withheld=None)
         self.assertFalse(answer.get("isError"), answer)
         report = json.loads(answer["content"][0]["text"])
         self.assertEqual(report["documents"], ["first.scxml", "second.scxml"])
