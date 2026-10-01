@@ -25,9 +25,11 @@ What the supervisor will and will not say:
     it hoped for. On a host that cannot enforce a limit it says so.
 
     It does not claim a namespace, a cgroup or a seccomp filter it did not set
-    up. Those are further layers (see `claudedocs/rfc-driving-untrusted-designs.md`),
-    and a deployment that needs them asks for them by name and is refused where
-    they are absent.
+    up. Those are further layers, and they cannot be assumed: a namespace
+    sandbox needs unprivileged user namespaces, which a host may forbid (AppArmor
+    on a current Ubuntu does, so `bwrap` and `unshare -Urn` fail there), while a
+    cgroup scope needs a user systemd. A deployment that needs one asks for it by
+    name and is refused where it is absent.
 
 ⚠ `PR_SET_PDEATHSIG` follows the THREAD that started the child, not the process:
 a child started from a worker thread that then exits is killed with it. The

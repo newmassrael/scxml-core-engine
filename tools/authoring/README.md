@@ -306,9 +306,11 @@ output, a crash) and another machine may play it to the end, so a second run may
 differ; the answer says so. Every reply states the `isolation` the run really had
 (`process+rlimit` on Linux, and a plain `process` where the kernel does not
 enforce the limits) and the `limits` it was bounded by. What this does NOT give
-is a namespace, a cgroup or a seccomp filter: those are further layers
-(`claudedocs/rfc-driving-untrusted-designs.md`), and a deployment that needs them
-will ask for them by name and be refused where they are absent. A memory-safety
+is a namespace, a cgroup or a seccomp filter: those are further layers that a
+host may not offer (a namespace sandbox needs unprivileged user namespaces, which
+AppArmor forbids on a current Ubuntu, so `bwrap` and `unshare -Urn` fail there),
+and a deployment that needs one will ask for it by name and be refused where it
+is absent. A memory-safety
 defect in the Lua binding is contained by none of what is here.
 
 ⚠ What the driver does not do is as much of the design as what it does. It

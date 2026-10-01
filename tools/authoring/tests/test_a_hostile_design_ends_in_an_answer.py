@@ -17,8 +17,7 @@ This file is what the tool owes whoever calls it. It was written BEFORE the
 thing that keeps the promise, with the three cases that hung marked
 `expectedFailure`; the day the runner (`process.run_isolated`, one child per
 example under limits the kernel enforces and a clock outside it) made them pass
-the marker came off, as the lane said it would. See
-`claudedocs/rfc-driving-untrusted-designs.md`.
+the marker came off, as the lane said it would.
 
 Every case runs the tool in a CHILD process with a wall-clock limit of its own,
 so a design that never returns costs this suite its limit and not its life.
