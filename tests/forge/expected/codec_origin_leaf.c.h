@@ -1,0 +1,87 @@
+// SCE-MAP: codec_origin_leaf:7 :: _forge_body
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
+/* Runtime: none */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef SCE_FORGE_CODEC_ORIGIN_LEAF_H
+#define SCE_FORGE_CODEC_ORIGIN_LEAF_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+
+#include "sce/forge/codec.h"
+
+#define CODEC_ORIGIN_LEAF_MIN_BYTES 1
+#define CODEC_ORIGIN_LEAF_MAX_BYTES 17
+
+typedef struct {
+    uint8_t len;
+    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
+    uint8_t data[16];
+    size_t  data_len;
+} codec_origin_leaf_t;
+
+/* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
+ * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * (without advancing) when the cursor's tail is shorter than the
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
+ * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
+static inline sce_forge_codec_status_t codec_origin_leaf_decode(sce_forge_cursor_t *cursor, codec_origin_leaf_t *out) {
+    /* Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
+     * a codec without `<sce:field sce:bit-size="tail">` consumes only
+     * the bytes it actually decoded (`min_bytes + length_value`)
+     * rather than the entire cursor remaining. Codecs WITH a tail
+     * field still consume to end (tail's definition forces it). The
+     * prior "consume entire cursor" behaviour deferred to "the first
+     * multi-frame consumer" — the TLV chain is that consumer, so
+     * length-ref entry codecs now decode-iterably from a shared
+     * cursor without each entry eating the next entry's bytes. */
+    size_t _frame_len = sce_forge_cursor_remaining(cursor);
+    if (_frame_len < CODEC_ORIGIN_LEAF_MIN_BYTES) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, _frame_len);
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    size_t _consumed = CODEC_ORIGIN_LEAF_MIN_BYTES;
+    out->len = raw[0];
+    {
+        size_t _n = (size_t)out->len;
+        if (_n > 16 || 1 + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memcpy(out->data, raw + 1, _n);
+        out->data_len = _n;
+        if (1 + _n > _consumed) _consumed = 1 + _n;
+    }
+    if (!sce_forge_cursor_advance(cursor, _consumed)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ORIGIN_LEAF_MAX_BYTES bytes and use
+ * `codec_origin_leaf_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_origin_leaf_encode(const codec_origin_leaf_t *self, sce_forge_writer_t *w) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->len));
+    if (self->data_len <= 16) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->data, self->data_len));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ORIGIN_LEAF_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ORIGIN_LEAF_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_origin_leaf_encode_to_buf(const codec_origin_leaf_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_origin_leaf_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
+}
+
+#endif  /* SCE_FORGE_CODEC_ORIGIN_LEAF_H */

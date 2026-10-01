@@ -27,6 +27,13 @@ one run to the next, but the provenance path is spelled exactly as you
 named the input — an absolute path stays absolute, and resolves only on the
 machine that produced it.
 
+A flag that changes WHAT is written, not how a path is spelled, is an input
+like the document: `--owned-origin` (Rust) appends the origin-aware owned
+projection to each borrowed codec and, off, changes nothing. Pass the same
+flags to a regeneration and to `--assert-unchanged` as produced the files, and
+generate every codec of a set that embeds or repeats one another the same way
+(SCE_FORGE.md §4.6).
+
 ---
 
 ## 2. What each generated file carries

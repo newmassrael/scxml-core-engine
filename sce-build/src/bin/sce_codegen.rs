@@ -1439,6 +1439,15 @@ struct GenerateArgs {
     /// for any Go crossfile fixture; ignored for other languages.
     #[arg(long)]
     go_module_prefix: Option<String>,
+    /// Rust only: also generate the origin-aware owned projection of each
+    /// codec, `try_into_owned_in_origin`. It takes a storage profile that
+    /// implements `OriginStorage` and the origin its decoded bytes came from,
+    /// so a message decoded from a shared frame can share it instead of
+    /// copying out of it. Off by default, and when off the output is
+    /// unchanged. Every codec an enabled codec embeds, repeats or dispatches
+    /// to has to be generated with it on too; ignored for other languages.
+    #[arg(long)]
+    owned_origin: bool,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -4857,6 +4866,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         parent_stem,
         write_deps,
         go_module_prefix,
+        owned_origin,
         format_style,
         no_format,
         deploy,
@@ -4996,6 +5006,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             let forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
+                owned_origin,
                 ..Default::default()
             };
 
@@ -5713,6 +5724,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     forge: Some(&sce_build::ForgeCompileOptions {
                         go_module_prefix: go_module_prefix.map(str::to_owned),
                         const_fold_budget,
+                        owned_origin,
                         ..Default::default()
                     }),
                     codegen: Some(&sce_build::generator::StatechartCodegenOptions {

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: every place an owned mirror reaches a byte or text
+     container through the origin-aware projection (the generate flag
+     owned-origin).
+
+       - note      : a text field of the codec itself (`str_from`)
+       - required  : an embed of a borrowed body
+       - optional  : the same, present only when `hdr.has_opt` is set
+       - items     : a repeat of borrowed bodies
+
+     Wire shape (big-endian, streaming):
+       byte 0   : hdr        (bit 0 = has_opt)
+       byte 1   : note_len
+       byte 2.. : note       (note_len bytes of UTF-8)
+       next     : m          (count of items)
+       next     : required   (codec_origin_leaf)
+       next     : optional   (codec_origin_leaf, iff hdr.has_opt)
+       next     : items      (m x codec_origin_leaf) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_origin_envelope">
+  <sce:import src="codec_origin_leaf.scxml" kind="codec" as="codec_origin_leaf"/>
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_opt" bit="0"/>
+    </sce:flags>
+    <sce:field id="note_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="note" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="note_len" sce:max-size="16"/>
+    <sce:field id="m" sce:type="uint8" sce:byte="3" sce:bit-size="8"/>
+    <sce:embed id="required" type="codec_origin_leaf" sce:byte="4"/>
+    <sce:embed id="optional" type="codec_origin_leaf" sce:byte="5"
+               sce:present-if="hdr.has_opt"/>
+    <sce:repeat id="items" type="codec_origin_leaf" sce:byte="6"
+                count="m" max-count="3"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,91 @@
+#![doc = "SCE-MAP: codec_origin_scalar:6 :: _forge_body"]
+// SCE-MAP: codec_origin_scalar:6 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
+// are gated on the `alloc` feature (see
+// `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
+// only the sink-based primary `encode` + `SliceSink` paths.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use sce_forge_runtime::codec::VecSink;
+
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec). The kind-agnostic conformance harness only references a
+// subset of fixtures, so unused-but-pub fields/methods would otherwise
+// trigger dead_code on every codec build.
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodecOriginScalar {
+    pub value: u8,
+}
+
+#[allow(dead_code)]
+impl CodecOriginScalar {
+    /// Construct an instance with every field at its own type's
+    /// [`Default`]. Generated procedure_l2 code stores codec instances
+    /// as owned members and needs an infallible constructor to
+    /// initialize them before any `encode()` or `decode()` call. An
+    /// enum-typed field starts at the first variant its document
+    /// declares, not at the carrier's zero: a closed set does not hold
+    /// a value it never declared.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §synth-5-B L494-519).
+    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+        let raw = cursor.peek_slice(1)?;
+        let value = raw[0];
+        let value = Self {
+            value,
+        };
+        cursor.advance(1)?;
+        Ok(value)
+    }
+
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = 1;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        w.write_u8(self.value)?;
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    ///
+    /// Gated on the `alloc` feature — `VecSink` lives behind the
+    /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
+    /// `no_std` builds without `alloc` only see the sink-based
+    /// primary `encode`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+}

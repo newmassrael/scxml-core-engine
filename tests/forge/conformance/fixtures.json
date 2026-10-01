@@ -1977,6 +1977,34 @@
       }
     },
     {
+      "name": "codec_origin_leaf",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_origin_scalar",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_origin_envelope",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_origin_choice",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
       "name": "codec_chain_has_slice",
       "kind": "codec",
       "ref_section": "codecs",

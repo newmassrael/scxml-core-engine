@@ -761,4 +761,49 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
         self.{{ as_borrowed_fn }}(){{ as_borrowed_try }}.{{ owned_in_fn }}::<D>()
     }
 }
+{% if owned_origin %}
+{% if has_variant and variant_owned_generics_args %}
+
+#[allow(dead_code)]
+impl{{ variant_lifetime }} {{ struct_name }}Variant{{ variant_lifetime }} {
+    /// The projection above, with the profile's byte and text containers made
+    /// from `{{ origin_param }}` — what the decoded bytes were taken from.
+    pub fn {{ owned_in_origin_fn }}{{ origin_generics_impl }}(self, {{ origin_param }}: {{ origin_ref_type }}) -> Result<{{ struct_name }}OwnedVariant{{ variant_owned_generics_args }}, CodecError> {
+        Ok(match self {
+{% for arm in variant.arms %}
+            {{ struct_name }}Variant::{{ arm.variant_name }}(_b) => {{ struct_name }}OwnedVariant::{{ arm.variant_name }}({{ arm.owned_body_into_origin }}),
+{% endfor %}
+{% if variant.default_arm %}
+            {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { tag, body } => {{ struct_name }}OwnedVariant::{{ variant.default_arm.variant_name }} { tag, {{ variant.default_arm.owned_body_into_origin }} },
+{% endif %}
+        })
+    }
+}
+{% endif %}
+
+#[allow(dead_code)]
+impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
+    /// Project this borrowed view into an owned [`{{ struct_name }}Owned`]
+    /// whose byte and text containers are made by the profile's
+    /// `OriginStorage` from each slice AND `{{ origin_param }}`, the buffer the
+    /// view was decoded from. A profile that shares that buffer builds
+    /// containers that refer back to it instead of copying out of it; what the
+    /// origin is, and what to do with a slice that does not come from it, is
+    /// the profile's to say.
+    ///
+    /// `{{ owned_in_fn }}` stays the copying projection. Every codec this one
+    /// embeds, repeats or dispatches to must have been generated with
+    /// `--owned-origin` as well.
+    pub fn {{ owned_in_origin_fn }}{{ origin_generics_impl }}(self, {{ origin_param }}: {{ origin_ref_type }}) -> Result<{{ struct_name }}Owned{{ owned_generics_args }}, CodecError> {
+        Ok({{ struct_name }}Owned {
+{% for field in fields %}
+            {{ field.id }}: {{ field.rs_into_owned_origin_expr }},
+{% endfor %}
+{% if has_variant %}
+            body: self.body.{{ variant_into_owned_origin_call }},
+{% endif %}
+        })
+    }
+}
+{% endif %}
 {% endif %}

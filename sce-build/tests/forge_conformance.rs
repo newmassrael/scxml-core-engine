@@ -55,13 +55,28 @@ fn assert_standalone_forge_lang(
     expected_filename: &str,
     language: sce_build::generator::Language,
 ) {
+    assert_standalone_forge_with(
+        scxml_name,
+        expected_filename,
+        language,
+        golden_options(language),
+    );
+}
+
+/// [`assert_standalone_forge_lang`] under explicit options — for a golden whose
+/// whole point is an option the default factory leaves off.
+fn assert_standalone_forge_with(
+    scxml_name: &str,
+    expected_filename: &str,
+    language: sce_build::generator::Language,
+    options: sce_build::ForgeCompileOptions,
+) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
     let content = std::fs::read_to_string(&scxml_path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
 
     let stem = scxml_name;
     let base_dir = scxml_path.parent().unwrap();
-    let options = golden_options(language);
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric(stem),
@@ -2292,6 +2307,425 @@ fn forge_codec_chain_has_tagged_python() {
 #[test]
 fn forge_c11_codec_chain_has_tagged() {
     assert_standalone_forge_c("codec_chain_has_tagged", "codec_chain_has_tagged.c.h");
+}
+
+// ── Origin-aware owned projection (`generate --owned-origin`, Rust)
+// The `codec_origin_*` fixtures reach a byte or text container every way an
+// owned mirror can: a text field, an embed, an optional embed, a repeat, and a
+// variant with one arm that holds bytes and one that holds none. They are the
+// one family whose Rust golden is generated WITH the option, because a golden
+// is a module named for its fixture and the parents call their elements'
+// `try_into_owned_in_origin`, so the family has to agree. Every other
+// language ignores the option and has the ordinary golden.
+
+fn origin_options() -> sce_build::ForgeCompileOptions {
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.owned_origin = true;
+    opts
+}
+
+fn assert_origin_rust(scxml_name: &str) {
+    assert_standalone_forge_with(
+        scxml_name,
+        &format!("{scxml_name}.rs"),
+        sce_build::generator::Language::Rust,
+        origin_options(),
+    );
+}
+
+#[test]
+fn forge_codec_origin_leaf_rust() {
+    assert_origin_rust("codec_origin_leaf");
+}
+
+#[test]
+fn forge_codec_origin_scalar_rust() {
+    assert_origin_rust("codec_origin_scalar");
+}
+
+#[test]
+fn forge_codec_origin_envelope_rust() {
+    assert_origin_rust("codec_origin_envelope");
+}
+
+#[test]
+fn forge_codec_origin_choice_rust() {
+    assert_origin_rust("codec_origin_choice");
+}
+
+#[test]
+fn forge_codec_origin_leaf_cpp() {
+    assert_standalone_forge("codec_origin_leaf", "codec_origin_leaf.h");
+}
+
+#[test]
+fn forge_codec_origin_scalar_cpp() {
+    assert_standalone_forge("codec_origin_scalar", "codec_origin_scalar.h");
+}
+
+#[test]
+fn forge_codec_origin_envelope_cpp() {
+    assert_standalone_forge("codec_origin_envelope", "codec_origin_envelope.h");
+}
+
+#[test]
+fn forge_codec_origin_choice_cpp() {
+    assert_standalone_forge("codec_origin_choice", "codec_origin_choice.h");
+}
+
+#[test]
+fn forge_codec_origin_leaf_kotlin() {
+    assert_standalone_forge_kotlin("codec_origin_leaf", "CodecOriginLeaf.kt");
+}
+
+#[test]
+fn forge_codec_origin_scalar_kotlin() {
+    assert_standalone_forge_kotlin("codec_origin_scalar", "CodecOriginScalar.kt");
+}
+
+#[test]
+fn forge_codec_origin_envelope_kotlin() {
+    assert_standalone_forge_kotlin("codec_origin_envelope", "CodecOriginEnvelope.kt");
+}
+
+#[test]
+fn forge_codec_origin_choice_kotlin() {
+    assert_standalone_forge_kotlin("codec_origin_choice", "CodecOriginChoice.kt");
+}
+
+#[test]
+fn forge_codec_origin_leaf_go() {
+    assert_standalone_forge_go("codec_origin_leaf", "codec_origin_leaf.go");
+}
+
+#[test]
+fn forge_codec_origin_scalar_go() {
+    assert_standalone_forge_go("codec_origin_scalar", "codec_origin_scalar.go");
+}
+
+#[test]
+fn forge_codec_origin_envelope_go() {
+    assert_standalone_forge_go("codec_origin_envelope", "codec_origin_envelope.go");
+}
+
+#[test]
+fn forge_codec_origin_choice_go() {
+    assert_standalone_forge_go("codec_origin_choice", "codec_origin_choice.go");
+}
+
+#[test]
+fn forge_codec_origin_leaf_python() {
+    assert_standalone_forge_python("codec_origin_leaf", "codec_origin_leaf.py");
+}
+
+#[test]
+fn forge_codec_origin_scalar_python() {
+    assert_standalone_forge_python("codec_origin_scalar", "codec_origin_scalar.py");
+}
+
+#[test]
+fn forge_codec_origin_envelope_python() {
+    assert_standalone_forge_python("codec_origin_envelope", "codec_origin_envelope.py");
+}
+
+#[test]
+fn forge_codec_origin_choice_python() {
+    assert_standalone_forge_python("codec_origin_choice", "codec_origin_choice.py");
+}
+
+#[test]
+fn forge_c11_codec_origin_leaf() {
+    assert_standalone_forge_c("codec_origin_leaf", "codec_origin_leaf.c.h");
+}
+
+#[test]
+fn forge_c11_codec_origin_scalar() {
+    assert_standalone_forge_c("codec_origin_scalar", "codec_origin_scalar.c.h");
+}
+
+#[test]
+fn forge_c11_codec_origin_envelope() {
+    assert_standalone_forge_c("codec_origin_envelope", "codec_origin_envelope.c.h");
+}
+
+#[test]
+fn forge_c11_codec_origin_choice() {
+    assert_standalone_forge_c("codec_origin_choice", "codec_origin_choice.c.h");
+}
+
+/// The option ADDS the origin projection and changes nothing else.
+///
+/// For every codec document in the corpus, the Rust output with the option on
+/// is the output with it off followed by the origin projection — byte for byte
+/// up to that tail — and a codec with no owned mirror has no projection to add
+/// and is identical. This is the property the committed goldens cannot state
+/// for themselves: they are all generated with the option off, so a change
+/// that moved a byte of the default output would be caught by them, but one
+/// that made the option change something else would not.
+///
+/// The origin projection is the last thing in the template. A change that put
+/// something after it would break the prefix test below, and that is a change
+/// to make deliberately rather than by accident.
+#[test]
+fn the_origin_option_only_appends_the_origin_projection() {
+    use sce_build::generator::Language::Rust;
+    let mut checked = 0usize;
+    let mut with_mirror = 0usize;
+    let mut names: Vec<String> = std::fs::read_dir(resource_dir())
+        .expect("resources")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("codec_") && n.ends_with(".scxml"))
+        .collect();
+    names.sort();
+    for name in &names {
+        let src = std::fs::read_to_string(resource_dir().join(name)).expect("read fixture");
+        let stem = name.trim_end_matches(".scxml");
+        let generate = |opts: &sce_build::ForgeCompileOptions| {
+            sce_build::compile_forge_with_imports(
+                &src,
+                sce_build::DocumentLabel::symmetric(stem),
+                Rust,
+                &resource_dir(),
+                opts,
+            )
+        };
+        let (Ok(default), Ok(origin)) =
+            (generate(&golden_options(Rust)), generate(&origin_options()))
+        else {
+            // A fixture that is a refusal on purpose refuses both ways.
+            continue;
+        };
+        let (_, off) = &default.files[0];
+        let (_, on) = &origin.files[0];
+        checked += 1;
+        if off.contains("try_into_owned_in") {
+            with_mirror += 1;
+            assert!(
+                on.trim().starts_with(off.trim_end()) || on.starts_with(off.trim_end()),
+                "{stem}: the option changed the default output; it may only append"
+            );
+            assert!(
+                on.contains("try_into_owned_in_origin"),
+                "{stem}: has an owned mirror but no origin projection with the option on"
+            );
+            assert!(
+                !off.contains("try_into_owned_in_origin"),
+                "{stem}: the origin projection leaked into the default output"
+            );
+        } else {
+            assert_eq!(
+                on.trim(),
+                off.trim(),
+                "{stem}: has no owned mirror, so the option has nothing to add"
+            );
+        }
+    }
+    // A property over an empty sweep holds for anything: the corpus is large
+    // and most of it is borrowed, so a collapse of either count is a broken
+    // enumeration, not a smaller corpus.
+    assert!(checked >= 100, "only {checked} codec fixtures generated");
+    assert!(
+        with_mirror >= 50,
+        "only {with_mirror} codec fixtures carry an owned mirror"
+    );
+}
+
+/// The documents the origin fixtures import, then the fixtures.
+const ORIGIN_SET: &[&str] = &[
+    "codec_origin_leaf.scxml",
+    "codec_origin_scalar.scxml",
+    "codec_origin_envelope.scxml",
+    "codec_origin_choice.scxml",
+];
+
+/// What the origin projection DOES, run: a profile that shares its origin ends
+/// up holding the frame it was decoded from — the SAME memory, not a copy of
+/// it — at every depth the projection reaches, and releases the frame when its
+/// last owned value is dropped. The control is the copying projection of the
+/// same profile, which must not.
+///
+/// The profile here is a test's own; this crate ships none. It shares bytes
+/// (`Arc<Vec<u8>>` plus a range) and copies text, and for a slice that is not
+/// part of the origin it copies — a choice the trait leaves to the profile and
+/// this test makes explicit.
+#[test]
+fn an_origin_profile_shares_the_frame_it_was_decoded_from() {
+    const HARNESS: &str = r#"// Injected by an_origin_profile_shares_the_frame_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_origin_choice::{CodecOriginChoice, CodecOriginChoiceOwnedVariant};
+    use crate::codec_origin_envelope::CodecOriginEnvelope;
+    use ::sce_forge_runtime::codec::{
+        subrange_of, CodecError, CodecStorage, Heap, OriginStorage, SceByteBuf, SceCursor, SceStr,
+    };
+    use std::sync::Arc;
+
+    /// Bytes that name the frame they live in, and where.
+    #[derive(Debug, Clone)]
+    struct Shared<const N: usize> {
+        frame: Arc<Vec<u8>>,
+        range: core::ops::Range<usize>,
+    }
+    impl<const N: usize> PartialEq for Shared<N> {
+        fn eq(&self, other: &Self) -> bool {
+            self.as_slice() == other.as_slice()
+        }
+    }
+    impl<const N: usize> SceByteBuf for Shared<N> {
+        fn from_slice(b: &[u8]) -> Result<Self, CodecError> {
+            Ok(Self { frame: Arc::new(b.to_vec()), range: 0..b.len() })
+        }
+        fn as_slice(&self) -> &[u8] {
+            &self.frame[self.range.clone()]
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Sharing;
+    impl CodecStorage for Sharing {
+        type List<T, const N: usize> = Vec<T> where T: core::fmt::Debug + Clone + PartialEq;
+        type Str<const N: usize> = <Heap as CodecStorage>::Str<N>;
+        type Bytes<const N: usize> = Shared<N>;
+    }
+    impl OriginStorage for Sharing {
+        type Origin = Arc<Vec<u8>>;
+        fn bytes_from<const N: usize>(
+            origin: &Arc<Vec<u8>>,
+            view: &[u8],
+        ) -> Result<Shared<N>, CodecError> {
+            match subrange_of(&origin[..], view) {
+                Some(range) if !view.is_empty() => {
+                    Ok(Shared { frame: Arc::clone(origin), range })
+                }
+                // Not part of the origin, or empty: this profile copies.
+                _ => Shared::from_slice(view),
+            }
+        }
+        fn str_from<const N: usize>(
+            _origin: &Arc<Vec<u8>>,
+            view: &str,
+        ) -> Result<<Heap as CodecStorage>::Str<N>, CodecError> {
+            <<Heap as CodecStorage>::Str<N> as SceStr>::from_view(view)
+        }
+    }
+
+    // hdr (has_opt) | note_len | note | m | required | optional | items
+    const ENVELOPE: [u8; 13] = [
+        0x01, 0x02, b'h', b'i', 0x02, // hdr, note "hi", m = 2
+        0x01, 0xA1, // required: len 1, [A1]
+        0x02, 0xB1, 0xB2, // optional: len 2, [B1 B2]
+        0x01, 0xC1, // items[0]
+        0x00, // items[1]: empty
+    ];
+
+    #[test]
+    fn decoded_bytes_are_the_frames_own_memory_at_every_depth() {
+        let frame = Arc::new(ENVELOPE.to_vec());
+        let base = frame.as_ptr();
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let owned = view
+            .try_into_owned_in_origin::<Sharing>(&frame)
+            .expect("project");
+
+        // Three nested leaves, each in the frame at the offset it was read.
+        let at = |bytes: &Shared<16>, offset: usize, len: usize| {
+            assert_eq!(bytes.as_slice().len(), len);
+            assert_eq!(
+                bytes.as_slice().as_ptr(),
+                base.wrapping_add(offset),
+                "must be the frame's memory at offset {offset}, not a copy"
+            );
+        };
+        at(&owned.required.data, 6, 1);
+        at(&owned.optional.as_ref().expect("optional present").data, 8, 2);
+        at(&owned.items[0].data, 11, 1);
+        // An empty slice carries nothing to share; this profile copies it.
+        assert!(owned.items[1].data.as_slice().is_empty());
+        // Text is copied by this profile and still equals what was decoded.
+        assert_eq!(owned.note.as_str(), "hi");
+
+        // required + optional + items[0] hold the frame; the frame itself is
+        // the fourth owner. Dropping the value releases every one of them.
+        assert_eq!(Arc::strong_count(&frame), 4);
+        drop(owned);
+        assert_eq!(Arc::strong_count(&frame), 1);
+    }
+
+    #[test]
+    fn the_copying_projection_of_the_same_profile_shares_nothing() {
+        let frame = Arc::new(ENVELOPE.to_vec());
+        let base = frame.as_ptr();
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let copied = view.try_into_owned_in::<Sharing>().expect("project");
+        assert_eq!(copied.required.data.as_slice(), &[0xA1]);
+        assert_ne!(copied.required.data.as_slice().as_ptr(), base.wrapping_add(6));
+        assert_eq!(Arc::strong_count(&frame), 1, "a copy does not hold the frame");
+    }
+
+    #[test]
+    fn a_slice_that_is_not_from_the_origin_is_the_profiles_to_decide() {
+        let frame = Arc::new(ENVELOPE.to_vec());
+        let other = Arc::new(vec![0xEEu8; 4]);
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        // Decoded from `frame`, projected against `other`: this profile copies.
+        let owned = view
+            .try_into_owned_in_origin::<Sharing>(&other)
+            .expect("project");
+        assert_eq!(owned.required.data.as_slice(), &[0xA1]);
+        assert_eq!(Arc::strong_count(&other), 1);
+        assert_eq!(Arc::strong_count(&frame), 1);
+    }
+
+    #[test]
+    fn the_origin_projection_agrees_with_the_copying_one_on_every_value() {
+        let frame = Arc::new(ENVELOPE.to_vec());
+        let view = || CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let shared = view().try_into_owned_in_origin::<Sharing>(&frame).unwrap();
+        let copied = view().try_into_owned_in::<Sharing>().unwrap();
+        assert_eq!(shared, copied, "sharing changes where bytes live, not what they are");
+        // ...and the owned value re-encodes to the frame it came from.
+        assert_eq!(
+            shared
+                .try_as_borrowed()
+                .expect("within every bound")
+                .encode_to_vec(),
+            ENVELOPE.to_vec()
+        );
+    }
+
+    #[test]
+    fn a_variant_shares_through_the_arm_that_holds_bytes_and_moves_the_one_that_does_not() {
+        // tag 1 -> leaf (len 2, [D1 D2]); tag 2 -> scalar (7); tag 9 -> default.
+        let leaf = Arc::new(vec![0x01u8, 0x02, 0xD1, 0xD2]);
+        let view = CodecOriginChoice::decode(&mut SceCursor::new(&leaf)).expect("decode leaf arm");
+        let owned = view.try_into_owned_in_origin::<Sharing>(&leaf).expect("project");
+        match &owned.body {
+            CodecOriginChoiceOwnedVariant::CodecOriginLeaf(b) => {
+                assert_eq!(b.data.as_slice().as_ptr(), leaf.as_ptr().wrapping_add(2));
+            }
+            other => panic!("tag 1 must select the leaf arm, got {other:?}"),
+        }
+        assert_eq!(Arc::strong_count(&leaf), 2);
+
+        let scalar = Arc::new(vec![0x02u8, 0x07]);
+        let view = CodecOriginChoice::decode(&mut SceCursor::new(&scalar)).expect("decode scalar arm");
+        let owned = view.try_into_owned_in_origin::<Sharing>(&scalar).expect("project");
+        assert_eq!(Arc::strong_count(&scalar), 1, "a scalar arm holds nothing of the frame");
+        drop(owned);
+    }
+}
+"#;
+    let mut files = generate_files_for_codec_set_with(
+        &resource_dir(),
+        ORIGIN_SET,
+        sce_build::generator::Language::Rust,
+        origin_options(),
+    )
+    .expect("generate the origin family");
+    files.push(("origin_sharing.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "origin_sharing", "test", RustcProfile::Alloc)
+        .expect("an origin profile must share the frame, and release it with the last owned value");
 }
 
 /// The documents the chain-membership fixtures import, then the fixtures.
@@ -12210,7 +12644,16 @@ fn generate_files_for_codec_set(
     scxml_filenames: &[&str],
     lang: sce_build::generator::Language,
 ) -> Result<Vec<(String, String)>, String> {
-    let opts = golden_options(lang);
+    generate_files_for_codec_set_with(dir, scxml_filenames, lang, golden_options(lang))
+}
+
+/// [`generate_files_for_codec_set`] under explicit options.
+fn generate_files_for_codec_set_with(
+    dir: &std::path::Path,
+    scxml_filenames: &[&str],
+    lang: sce_build::generator::Language,
+    opts: sce_build::ForgeCompileOptions,
+) -> Result<Vec<(String, String)>, String> {
     let mut all_files: Vec<(String, String)> = Vec::new();
     for filename in scxml_filenames {
         let src = std::fs::read_to_string(dir.join(filename))

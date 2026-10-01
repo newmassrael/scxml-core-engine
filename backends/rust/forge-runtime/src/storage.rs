@@ -110,6 +110,76 @@ pub trait CodecStorage: core::fmt::Debug + Clone + PartialEq {
     type Bytes<const N: usize>: SceByteBuf + core::fmt::Debug + Clone + PartialEq;
 }
 
+/// A storage profile whose byte and text containers are made WITH knowledge of
+/// where the decoded bytes came from.
+///
+/// [`SceByteBuf::from_slice`] receives a borrowed slice and nothing else, so a
+/// container it builds can only copy: it cannot tell which buffer the slice is
+/// part of, and so cannot hold a reference to that buffer instead. A host that
+/// receives a frame into reference-counted storage and wants the decoded
+/// message to share the frame — not copy out of it — has no place to say so.
+/// This trait is that place. The projection `{Codec}::try_into_owned_in_origin`
+/// (generated only on request, `--owned-origin`) hands the profile an
+/// [`Self::Origin`] and the slice, and the profile builds a container that
+/// refers back to the origin however it chooses.
+///
+/// What the origin IS belongs to the profile, not to this crate: this crate is
+/// `no_std`, takes no position on reference counting, and ships no profile that
+/// uses an origin. A profile implements this trait beside its [`CodecStorage`]
+/// impl; [`Heap`] and [`Inline`] do not — an inline profile has no origin to
+/// refer to, which is the point of it — and neither impl, nor the generated
+/// output of a document that does not ask, changes.
+///
+/// There is no copying default for the two constructors. A default that
+/// copied would let a profile that forgot to override them build exactly what
+/// [`CodecStorage`] already builds, and report success: the sharing this trait
+/// exists for would silently not happen. A profile that wants to copy says so.
+pub trait OriginStorage: CodecStorage {
+    /// What the decoded bytes were taken from — a handle to a frame, an arena,
+    /// a pool slot. Unsized so that a profile can take a slice or a trait
+    /// object by reference as readily as a sized handle.
+    type Origin: ?Sized;
+
+    /// Build owned byte storage for `view`, which is part of `origin`.
+    ///
+    /// `view` is a slice of the buffer `origin` stands for when it was decoded
+    /// from it, but a borrowed view can be built by hand (a default field is
+    /// the empty slice; a test passes a literal). A profile decides what to do
+    /// with a slice that is not part of its origin — see [`subrange_of`], which
+    /// answers the question — and answers [`CodecError`] or copies; it must not
+    /// assume.
+    fn bytes_from<const N: usize>(
+        origin: &Self::Origin,
+        view: &[u8],
+    ) -> Result<Self::Bytes<N>, CodecError>;
+
+    /// Build owned text storage for `view`, which is part of `origin`; the
+    /// same contract as [`Self::bytes_from`]. `view` is valid UTF-8 by type.
+    fn str_from<const N: usize>(
+        origin: &Self::Origin,
+        view: &str,
+    ) -> Result<Self::Str<N>, CodecError>;
+}
+
+/// Where `sub` lies inside `base`, as a byte range of `base`; `None` when it
+/// does not lie wholly inside.
+///
+/// The check an [`OriginStorage`] profile makes to turn a borrowed slice back
+/// into a position in the buffer it was decoded from. It compares addresses,
+/// so it answers "is this memory part of that buffer", which is what sharing
+/// the buffer needs, and not "does it hold the same bytes", which a copy would
+/// satisfy. An empty `sub` is inside `base` only if its address is: a literal
+/// `&[]` has a dangling address that may happen to equal one, so a caller that
+/// cares about the difference tests emptiness first.
+#[must_use]
+pub fn subrange_of(base: &[u8], sub: &[u8]) -> Option<core::ops::Range<usize>> {
+    let base_start = base.as_ptr() as usize;
+    let sub_start = sub.as_ptr() as usize;
+    let start = sub_start.checked_sub(base_start)?;
+    let end = start.checked_add(sub.len())?;
+    (end <= base.len()).then_some(start..end)
+}
+
 /// Growable storage: heap containers, declared capacities advisory.
 ///
 /// The profile for hosts with an allocator, where the on-wire protocol places
@@ -401,5 +471,40 @@ mod tests {
             text::<Inline>("nine char").err(),
             Some(CodecError::TooManyElements)
         );
+    }
+
+    #[test]
+    fn a_slice_of_the_buffer_is_found_at_its_position() {
+        let frame = [10u8, 11, 12, 13, 14, 15];
+        assert_eq!(subrange_of(&frame, &frame[..]), Some(0..6));
+        assert_eq!(subrange_of(&frame, &frame[2..5]), Some(2..5));
+        // The last byte is inside; a slice ending exactly at the end is too.
+        assert_eq!(subrange_of(&frame, &frame[5..]), Some(5..6));
+    }
+
+    #[test]
+    fn memory_outside_the_buffer_is_not_found_even_when_equal() {
+        let frame = [1u8, 2, 3, 4];
+        // Same bytes, different memory: sharing a buffer is about where the
+        // bytes live, and a copy lives elsewhere.
+        let copy = frame;
+        assert_eq!(subrange_of(&frame, &copy[1..3]), None);
+        // A slice that starts inside but runs past the end is not inside.
+        let longer = [1u8, 2, 3, 4, 5, 6];
+        assert_eq!(subrange_of(&frame, &longer[2..]), None);
+        // Before the buffer: the offset would be negative.
+        assert_eq!(subrange_of(&longer[2..], &longer[..2]), None);
+    }
+
+    #[test]
+    fn an_empty_slice_is_found_only_where_its_address_is() {
+        let frame = [1u8, 2, 3];
+        assert_eq!(subrange_of(&frame, &frame[1..1]), Some(1..1));
+        assert_eq!(subrange_of(&frame, &frame[3..3]), Some(3..3));
+        // An empty slice in other memory has an address of its own. A static
+        // and a position inside it: one past the end of a stack array could
+        // coincide with the start of its neighbour.
+        static ELSEWHERE: [u8; 4] = [0; 4];
+        assert_eq!(subrange_of(&frame, &ELSEWHERE[2..2]), None);
     }
 }

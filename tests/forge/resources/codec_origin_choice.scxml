@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a variant whose arms differ in whether an origin
+     has anything to share — one arm's body holds bytes (`codec_origin_leaf`),
+     the other, which is also the default arm, holds only a scalar
+     (`codec_origin_scalar`). The origin-aware projection passes the origin to
+     the first and moves the second through unchanged.
+
+     Wire shape: `tag` (1 byte), then the arm body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_origin_choice">
+  <sce:import src="codec_origin_leaf.scxml" kind="codec" as="codec_origin_leaf"/>
+  <sce:import src="codec_origin_scalar.scxml" kind="codec" as="codec_origin_scalar"/>
+  <datamodel>
+    <data id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="tag">
+      <sce:arm value="0x01" type="codec_origin_leaf"/>
+      <sce:arm value="0x02" type="codec_origin_scalar" default="true"/>
+      <sce:default type="codec_origin_scalar"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

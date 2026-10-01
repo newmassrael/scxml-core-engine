@@ -1156,7 +1156,9 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Cpp)?
         }
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::Cpp, false)?
+        }
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Cpp)?
         }
@@ -4364,6 +4366,16 @@ const RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 /// projection at [`DefaultStorage`], and delegates here.
 const OWNED_IN_FN: &str = "try_into_owned_in";
 
+/// The same projection built through a profile's [`OriginStorage`]: the byte
+/// and text containers are made from the slice AND the origin it was decoded
+/// from, so a profile can share that origin instead of copying out of it.
+/// Generated only when the document asks (`--owned-origin`), so the default
+/// output — the copying projection above — is untouched.
+const OWNED_IN_ORIGIN_FN: &str = "try_into_owned_in_origin";
+
+/// Name of the origin parameter in every `*_in_origin` projection.
+const ORIGIN_PARAM: &str = "origin";
+
 /// Owned-projection mapping for one codec field — the `{Codec}Owned<S>`
 /// mirror (the rkyv-style Archived(borrowed) ↔ native(owned) split, both
 /// generated from the one SCXML SSOT). Returns `(owned_field_type,
@@ -4384,11 +4396,20 @@ const OWNED_IN_FN: &str = "try_into_owned_in";
 /// (`import_codec_borrowed`) — a borrowed body has its own `{Body}Owned<S>`
 /// mirror and threads the parent's profile into it; a non-borrowed body is
 /// already owned and moves through unchanged.
+///
+/// `origin` selects WHICH projection the expression is a piece of: `false`
+/// the copying `try_into_owned_in`, `true` the origin-aware
+/// `try_into_owned_in_origin` (`OWNED_IN_ORIGIN_FN`), whose byte and text
+/// containers come from the profile's `OriginStorage` constructors and whose
+/// nested bodies are projected the same way. The returned FIELD TYPE is the
+/// same either way — the origin changes how a container is made, not what it
+/// is.
 fn rust_owned_field_keys(
     f: &CodecField,
     codec_name: &str,
     imports: &[ImportContext],
     l: &LangCtx,
+    origin: bool,
 ) -> Result<(String, String), ForgeError> {
     // The element / body conversion a field needs. `List` and `Qualified`
     // carry their spelled-out call site, so the later `opt` match splices one
@@ -4427,7 +4448,11 @@ fn rust_owned_field_keys(
         if import_codec_borrowed(imports, alias) {
             (
                 format!("{STORAGE_PARAM}::List<{body_type}Owned<{STORAGE_PARAM}>, {max_count}>"),
-                Conv::List(format!("|_e| _e.{OWNED_IN_FN}::<{STORAGE_PARAM}>()")),
+                Conv::List(if origin {
+                    format!("|_e| _e.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})")
+                } else {
+                    format!("|_e| _e.{OWNED_IN_FN}::<{STORAGE_PARAM}>()")
+                }),
             )
         } else {
             (
@@ -4468,13 +4493,30 @@ fn rust_owned_field_keys(
             SceType::Bytes => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 let ty = format!("{STORAGE_PARAM}::Bytes<{max}>");
-                call_path = Some(format!("<{ty} as {RUNTIME_CODEC}::SceByteBuf>::from_slice"));
+                // The origin form names the profile's `OriginStorage` and
+                // spells the capacity as a turbofish: the constructor is
+                // generic over it, and nothing at the call site would
+                // otherwise infer it (the field type is `S::Bytes<N>`, an
+                // associated type that cannot be run backwards).
+                call_path = Some(if origin {
+                    format!(
+                        "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::bytes_from::<{max}>"
+                    )
+                } else {
+                    format!("<{ty} as {RUNTIME_CODEC}::SceByteBuf>::from_slice")
+                });
                 (ty, Conv::Qualified)
             }
             SceType::String => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 let ty = format!("{STORAGE_PARAM}::Str<{max}>");
-                call_path = Some(format!("<{ty} as {RUNTIME_CODEC}::SceStr>::from_view"));
+                call_path = Some(if origin {
+                    format!(
+                        "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::str_from::<{max}>"
+                    )
+                } else {
+                    format!("<{ty} as {RUNTIME_CODEC}::SceStr>::from_view")
+                });
                 (ty, Conv::Qualified)
             }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
@@ -4490,6 +4532,10 @@ fn rust_owned_field_keys(
     let apply = |e: &str| -> (String, bool) {
         match &conv {
             Conv::Move => (e.to_string(), false),
+            Conv::IntoOwned if origin => (
+                format!("{e}.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})"),
+                true,
+            ),
             Conv::IntoOwned => (format!("{e}.{OWNED_IN_FN}::<{STORAGE_PARAM}>()"), true),
             // The destination list container is the storage profile's, so the
             // collect goes through the runtime projector rather than
@@ -4508,9 +4554,23 @@ fn rust_owned_field_keys(
     };
 
     let self_ref = format!("self.{id}");
+    // A constructor call on `arg`: the origin form takes the origin first.
+    let call = |path: &str, arg: &str| {
+        if origin {
+            format!("{path}({ORIGIN_PARAM}, {arg})")
+        } else {
+            format!("{path}({arg})")
+        }
+    };
     if opt {
         let expr = if let Some(path) = &call_path {
-            format!("{self_ref}.map({path}).transpose()?")
+            if origin {
+                // A closure, not the bare path: the constructor takes two
+                // arguments and `map` supplies one.
+                format!("{self_ref}.map(|_v| {}).transpose()?", call(path, "_v"))
+            } else {
+                format!("{self_ref}.map({path}).transpose()?")
+            }
         } else {
             match &conv {
                 // Option<Copy/owned scalar> moves wholesale — no per-element map.
@@ -4527,7 +4587,7 @@ fn rust_owned_field_keys(
         };
         Ok((format!("Option<{inner_ty}>"), expr))
     } else if let Some(path) = &call_path {
-        Ok((inner_ty, format!("{path}({self_ref})?")))
+        Ok((inner_ty, format!("{}?", call(path, &self_ref))))
     } else {
         let (val_expr, fallible) = apply(&self_ref);
         let expr = if fallible {
@@ -4684,11 +4744,17 @@ pub(crate) fn insert_c_codec_symbols(
     ctx.insert("c_struct_snake".into(), snake.into());
 }
 
+/// `owned_origin` is the one switch that changes what is emitted for a
+/// document rather than how it is checked: it additionally generates the Rust
+/// owned mirror's origin-aware projection (`try_into_owned_in_origin`, see
+/// [`OWNED_IN_ORIGIN_FN`]). `false` is the default output, byte for byte, and
+/// is what every language but Rust passes.
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
+    owned_origin: bool,
 ) -> Result<String, ForgeError> {
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
@@ -5812,9 +5878,18 @@ fn render_codec(
             // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
             if matches!(lang, crate::generator::Language::Rust) {
                 let (rs_owned_type, rs_into_owned_expr) =
-                    rust_owned_field_keys(f, &m.name, imports, &l)?;
+                    rust_owned_field_keys(f, &m.name, imports, &l, false)?;
                 obj.insert("rs_owned_type".into(), rs_owned_type.into());
                 obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
+                // The same field's projection through the profile's
+                // `OriginStorage`, rendered only into the opt-in
+                // `try_into_owned_in_origin` block (`owned_origin`).
+                let (_, rs_into_owned_origin_expr) =
+                    rust_owned_field_keys(f, &m.name, imports, &l, true)?;
+                obj.insert(
+                    "rs_into_owned_origin_expr".into(),
+                    rs_into_owned_origin_expr.into(),
+                );
                 // Inverse projection (`{Codec}Owned::as_borrowed`): the
                 // per-field expr that re-borrows `self.<id>` back into the
                 // borrowed view. Consumed by the same owned-projection
@@ -6337,17 +6412,24 @@ fn render_codec(
                 // storage profile; a non-borrowed body is already owned and
                 // moves through unchanged.
                 if matches!(lang, crate::generator::Language::Rust) {
-                    let (owned_body_type, owned_body_into) =
+                    let (owned_body_type, owned_body_into, owned_body_into_origin) =
                         if import_codec_borrowed(imports, &arm.body_alias) {
                             (
                                 format!("{body_type}Owned<{STORAGE_PARAM}>"),
                                 format!("_b.{OWNED_IN_FN}::<{STORAGE_PARAM}>()?"),
+                                format!(
+                                    "_b.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})?"
+                                ),
                             )
                         } else {
-                            (body_type.clone(), "_b".to_string())
+                            (body_type.clone(), "_b".to_string(), "_b".to_string())
                         };
                     obj.insert("owned_body_type".into(), owned_body_type.into());
                     obj.insert("owned_body_into".into(), owned_body_into.into());
+                    obj.insert(
+                        "owned_body_into_origin".into(),
+                        owned_body_into_origin.into(),
+                    );
                     // Inverse projection match-arm expr (`as_borrowed`): the
                     // arm binds `_b: &Body` (matching `&self`), so a borrowed
                     // body re-borrows via `(try_)as_borrowed`, a non-borrowed
@@ -6480,17 +6562,24 @@ fn render_codec(
                 // the `body` shorthand (avoids the `body: body`
                 // redundant-field-name clippy lint downstream).
                 if matches!(lang, crate::generator::Language::Rust) {
-                    let (owned_body_type, owned_body_into) =
+                    let (owned_body_type, owned_body_into, owned_body_into_origin) =
                         if import_codec_borrowed(imports, &d.body_alias) {
                             (
                                 format!("{body_type}Owned<{STORAGE_PARAM}>"),
                                 format!("body: body.{OWNED_IN_FN}::<{STORAGE_PARAM}>()?"),
+                                format!(
+                                    "body: body.{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})?"
+                                ),
                             )
                         } else {
-                            (body_type.clone(), "body".to_string())
+                            (body_type.clone(), "body".to_string(), "body".to_string())
                         };
                     obj.insert("owned_body_type".into(), owned_body_type.into());
                     obj.insert("owned_body_into".into(), owned_body_into.into());
+                    obj.insert(
+                        "owned_body_into_origin".into(),
+                        owned_body_into_origin.into(),
+                    );
                     // Inverse projection field-init fragment (`as_borrowed`).
                     // The match binds `body: &Body` (matching `&self`); a
                     // non-borrowed body is cloned (so no `body` shorthand —
@@ -7002,6 +7091,30 @@ fn render_codec(
         ctx.insert(
             "codec_storage_path".into(),
             format!("{RUNTIME_CODEC}::CodecStorage").into(),
+        );
+        // The origin-aware projection (`try_into_owned_in_origin`), rendered
+        // only when the document asks for it. It takes a profile that is an
+        // `OriginStorage` and the origin its decoded bytes came from; a
+        // variant whose arms carry no profile parameter owns nothing an
+        // origin could be shared with, so there it is the plain projection.
+        let origin_storage_path = format!("{RUNTIME_CODEC}::OriginStorage");
+        let origin_ref = format!("&<{STORAGE_PARAM} as {origin_storage_path}>::Origin");
+        ctx.insert("owned_origin".into(), owned_origin.into());
+        ctx.insert("owned_in_origin_fn".into(), OWNED_IN_ORIGIN_FN.into());
+        ctx.insert("origin_param".into(), ORIGIN_PARAM.into());
+        ctx.insert("origin_ref_type".into(), origin_ref.into());
+        ctx.insert(
+            "origin_generics_impl".into(),
+            format!("<{STORAGE_PARAM}: {origin_storage_path}>").into(),
+        );
+        ctx.insert(
+            "variant_into_owned_origin_call".into(),
+            if variant_storage_generic {
+                format!("{OWNED_IN_ORIGIN_FN}::<{STORAGE_PARAM}>({ORIGIN_PARAM})?")
+            } else {
+                "try_into_owned()?".to_string()
+            }
+            .into(),
         );
         // Owned→borrowed projection method shape (inverse of `into_owned`).
         // The struct's projection is fallible (`try_as_borrowed -> Result`)
@@ -15771,7 +15884,7 @@ pub fn generate_kotlin_with_imports(
             render_condition(&env, m, imports, crate::generator::Language::Kotlin)?
         }
         ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Kotlin)?
+            render_codec(&env, m, imports, crate::generator::Language::Kotlin, false)?
         }
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -15946,9 +16059,13 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Rust)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Rust)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Rust,
+            options.owned_origin,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
         }
@@ -17766,7 +17883,9 @@ pub fn generate_go_with_imports(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Go)?
         }
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::Go, false)?
+        }
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
         }
@@ -17922,7 +18041,7 @@ pub fn generate_python_with_imports(
             render_condition(&env, m, imports, crate::generator::Language::Python)?
         }
         ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Python)?
+            render_codec(&env, m, imports, crate::generator::Language::Python, false)?
         }
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Python)?
@@ -18085,7 +18204,9 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::Lookup(m) => {
             render_lookup(&env, m, imports, crate::generator::Language::C11)?
         }
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::C11, false)?
+        }
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::C11)?
         }

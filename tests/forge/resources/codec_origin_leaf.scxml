@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a borrowed codec whose owned mirror holds a byte
+     container — the element every `codec_origin_*` fixture projects through
+     the origin-aware owned projection (the generate flag owned-origin).
+
+     Wire shape: `len` (1 byte) ++ `len` bytes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_origin_leaf">
+  <datamodel>
+    <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="len" sce:max-size="16"/>
+  </datamodel>
+</scxml>

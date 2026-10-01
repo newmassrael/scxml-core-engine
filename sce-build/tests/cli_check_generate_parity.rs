@@ -366,6 +366,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          else",
     ),
     f(
+        "--owned-origin",
+        Reach::Emission,
+        Some(&["--owned-origin"]),
+        "rust",
+        "adds the origin-aware owned projection to the Rust output; what is \
+         accepted is unchanged, since a parent whose element was not generated \
+         the same way fails in the host compiler, not in the generator",
+    ),
+    f(
         "--parent-stem",
         Reach::Emission,
         Some(&["--as-child", "--parent-stem", "p"]),
