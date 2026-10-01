@@ -207,9 +207,11 @@ fn push_transition(out: &mut Vec<Value>, source: &str, index: usize, t: &Transit
         source,
         index,
         &t.event,
-        // A targetless transition exits no state (§scxml-3.13), which is
-        // what "internal" tells the GUI; the C++ engine reports it so.
-        t.transition_type == "internal" || t.targets.is_empty(),
+        // §scxml-3.13: `type` as written, "external" unless written
+        // "internal". A targetless transition exits nothing whatever its
+        // type, and that is the empty `target` below, not this flag; the C++
+        // engine's `ITransitionNode::isInternal()` is the attribute alone.
+        t.transition_type == "internal",
         &t.cond,
         &t.actions,
         &t.unresolved,
@@ -549,5 +551,45 @@ mod tests {
         assert_eq!(s["transitions"][1]["events"], json!(["go", "more"]));
         assert_eq!(s["transitions"][3]["type"], "internal");
         assert_eq!(s["transitions"][0]["eventless"], true);
+    }
+
+    /// §scxml-3.13: `type` is reported as written. A transition with no
+    /// target is not "internal" for lacking one: it stays external unless it
+    /// says otherwise, and its emptiness is the `target` field's to carry.
+    /// The C++ engine reports the attribute alone, and the parity gate holds
+    /// the two to each other.
+    #[test]
+    fn a_transition_type_is_reported_as_written_whether_or_not_it_has_a_target() {
+        let s = structure(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
+  <state id="a">
+    <transition event="tick"/>
+    <transition event="tock" type="internal"/>
+    <transition event="go" target="b"/>
+  </state>
+  <state id="b"/>
+</scxml>"#,
+        );
+        let written: Vec<(&str, &str, bool)> = s["transitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                (
+                    t["event"].as_str().unwrap(),
+                    t["type"].as_str().unwrap(),
+                    t["isInternal"].as_bool().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            written,
+            [
+                ("tick", "external", false),
+                ("tock", "internal", true),
+                ("go", "external", false),
+            ]
+        );
+        assert_eq!(s["transitions"][0]["target"], "");
     }
 }
