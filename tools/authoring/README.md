@@ -210,6 +210,43 @@ What the prose decided came out alike; what moved was names and which
 open questions each draft chose to mark. The vending case leaves its
 interface open, and each draft invented a different one.
 
+`--profile` runs the same cases under an owner's authoring profile, and
+`--requirements <dir>` hands every draft of a case the SAME requirement list
+(`<case id>.manifest_text.json` and `.sidecar_text.json`, made once by
+`scxml_requirement_set`). Each draft is then measured against that list by the
+product's own `requirements` records, so the drafts of a case share a
+denominator instead of counting against ids their authors made up (twelve of
+fifteen drafts did, when left to number their own). Measured on 2026-10-01,
+five drafts per case, one run, a profile that closes the interface and requires
+every state and transition to claim a requirement, and the lists built from the
+prose with their quotes checked verbatim:
+
+| Case | Requirements | Cited an id the list lacks | Requirement missing | Marked unresolved by the draft | Behaviour classes |
+|---|---|---|---|---|---|
+| door-with-auto-close | 6 | 0 of 5 | 0 of 5 | none | 3 |
+| connection-keeper | 7 | 0 of 5 | 0 of 5 | none | 1 |
+| vending-controller | 12 | 0 of 5 | 0 of 5 | 8 marks on 4 requirements | not judged |
+
+Every draft kept to the profile and none left a requirement of the list
+unaccounted for: each was claimed by a part of the design or marked open by the
+draft itself. ⚠ What this does not show. `implemented` means a state or
+transition claims the id; the product does not check that the part does what the
+sentence says, so a draft can claim a requirement and be wrong (no draft piled
+ids on a node to satisfy the profile: at most three on one). The vending drafts
+agree on the list and not on which requirements to call open (`R6` in three
+drafts, `R10` and `R12` in two, `R7` in one), and that choice is the draft's.
+The three door classes are three real behaviours, not spellings: an open request
+while open restarts the 20 seconds in one draft and is ignored in the others,
+and of those two the one without a `<cancel>` on exit differs from the one with
+it only because the closed interface made the draft declare the timer's event as
+a driven input. The loose levels sit inside the band of the earlier runs with no
+profile (logic 15 against 13 and 14, table 14 against 13 and 14, open 15 against
+15 and 15, vocabulary 13 against 13 and 14); the door's behaviour column is the
+one that moved (3 against 1 in all three earlier arms), and one run per arm
+cannot say whether that is the profile or the sample. The three cases are the
+ones the product was shaped on and the lists were written by the owner's side
+before the drafts, so this is not a blind test.
+
 #### The owner's decision record
 
 What a draft does where the specification is silent is the difference

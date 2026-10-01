@@ -39,8 +39,8 @@ AUTHORING = HERE.parent
 REPO = AUTHORING.parent.parent
 sys.path.insert(0, str(AUTHORING))
 
-from sce_author.verify import (kind_catalog, unresolved_markers,  # noqa: E402
-                               validate_scxml)
+from sce_author.verify import (kind_catalog, requirement_records,  # noqa: E402
+                               unresolved_markers, validate_scxml)
 
 CASES = HERE / "kind_choice_cases.json"
 LAUNCHER = REPO / "scripts" / "sce_author_mcp.sh"
@@ -188,10 +188,16 @@ PROFILE_REQUEST = (
     " The owner's authoring profile is in profile.json in this directory: hold "
     "the draft to it.")
 
+MANIFEST_REQUEST = (
+    " The owner's list of what the specification requires is in "
+    "requirements.manifest.json in this directory, with the words it quotes in "
+    "requirements.sidecar.json.")
+
 
 def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
              model: str | None, codegen: pathlib.Path | None = None,
-             profile: pathlib.Path | None = None) -> dict:
+             profile: pathlib.Path | None = None,
+             requirements: pathlib.Path | None = None) -> dict:
     """One case in its own empty directory, then its score.
 
     `profile` is the owner's authoring profile. It is copied beside the
@@ -199,6 +205,12 @@ def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
     nothing more: what it asks, and how a tool takes it, are for the client to
     learn from the file and from the server's own instructions, which is what
     is under test.
+
+    `requirements` is a directory holding the owner's requirement list for each
+    case, `<case id>.manifest_text.json` and `<case id>.sidecar_text.json`, made
+    ONCE and given to every draft of that case, so the denominator does not vary
+    between the drafts being compared. It is copied under fixed names and the
+    request says where it is, as for the profile and for the same reason.
     """
     work = out / case["id"]
     work.mkdir(parents=True, exist_ok=False)
@@ -207,6 +219,12 @@ def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
     if profile is not None:
         (work / "profile.json").write_bytes(pathlib.Path(profile).read_bytes())
         prompt += PROFILE_REQUEST
+    if requirements is not None:
+        given = pathlib.Path(requirements)
+        for part, name in (("manifest_text", "requirements.manifest.json"),
+                           ("sidecar_text", "requirements.sidecar.json")):
+            (work / name).write_bytes((given / f"{case['id']}.{part}.json").read_bytes())
+        prompt += MANIFEST_REQUEST
     mcp_config = out / "mcp.json"
     argv = _argv(client, prompt, mcp_config)
     if model:
@@ -221,8 +239,39 @@ def run_case(case: dict, client: list[str], out: pathlib.Path, timeout: int,
     (work / "transcript.txt").write_text(transcript, encoding="utf-8")
     result = score(case, work / "draft.scxml", codegen,
                    None if profile is None else work / "profile.json")
+    if requirements is not None:
+        result["requirements"] = requirement_outcome(work / "draft.scxml",
+                                                     work / "requirements.manifest.json",
+                                                     codegen)
     result.update(client_status=status, seconds=round(time.monotonic() - started))
     return result
+
+
+def requirement_outcome(draft: pathlib.Path, manifest: pathlib.Path,
+                        codegen: pathlib.Path | None = None) -> dict | None:
+    """What the owner's fixed list makes of a draft: the ids by outcome and the
+    `node_paths` that carry each implemented one, from the product's own
+    `requirements` records and none of this module's reading of the document.
+
+    `None` for a draft that was not written, so a missing draft is not counted
+    as one that claimed nothing.
+    """
+    if not draft.is_file():
+        return None
+    report, refusal = requirement_records(draft, manifest, codegen)
+    if refusal or not report:
+        return {"refused": refusal.splitlines()[0] if refusal else "no answer"}
+    records = json.loads(report)["records"]
+    ids: dict[str, list[str]] = {}
+    carried: dict[str, list[str]] = {}
+    for record in records:
+        if record.get("kind") != "requirement":
+            continue
+        ids.setdefault(record["outcome"], []).append(record["id"])
+        if record["outcome"] == "implemented":
+            carried[record["id"]] = sorted(record.get("node_paths") or [])
+    return {"ids": {outcome: sorted(found) for outcome, found in sorted(ids.items())},
+            "node_paths": carried}
 
 
 def main(argv: list[str] | None = None) -> int:

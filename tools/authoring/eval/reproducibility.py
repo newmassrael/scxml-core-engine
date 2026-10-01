@@ -15,13 +15,22 @@ verdict with its bound, renamings and witnesses.
 
     python3 tools/authoring/eval/reproducibility.py --out /tmp/repro \\
         [--reps 5] [--only id,id] [--model claude-sonnet-5-5] [--effort high] \\
-        [--profile owner-profile.json]
+        [--profile owner-profile.json] [--requirements fixed-lists/]
 
 `--profile` runs the same cases under an owner's authoring profile: the file is
 copied beside each specification, the request says where it is, and every draft
 is judged under it. The report then says how many drafts the profile refused
 and by which codes. Run a case with and without it, over the same `--reps`, and
 the two tables are the measurement: whether a profile moves the classes.
+
+`--requirements` gives every draft of a case the SAME owner's requirement list,
+`<case id>.manifest_text.json` and `<case id>.sidecar_text.json` in the named
+directory, made once by `scxml_requirement_set` and read against the prose. Each
+draft is measured against that list by the product's own `requirements` records,
+so the report says, per case, how many drafts left no id dangling, how many left
+none missing, and for each requirement how many distinct parts of the design the
+drafts used to carry it. Without it each draft is counted against whatever ids
+its own author made up.
 
 ⚠ The model defaults to Sonnet because that is the model the owner fixed for
 drafting (2026-09-29). The figures are about the product together with that
@@ -90,6 +99,51 @@ def table(results: list[dict]) -> str:
     return "\n".join("  ".join(cell.ljust(w) for cell, w in zip(row, widths)) for row in rows)
 
 
+def requirement_agreement(drafts: dict[str, dict | None]) -> dict:
+    """How the drafts of one case stand against the owner's one list.
+
+    `drafts` maps a draft label to `kind_choice.requirement_outcome`. A draft
+    the product could not measure (`refused`) is named and left out of every
+    count, so an unreadable draft is not one that left nothing dangling.
+
+    `distinct_node_paths` is per requirement the number of different parts of
+    the design the drafts that implemented it used to carry it. ⚠ A node path
+    names states by their ids, so drafts that name a state differently differ
+    here without differing in what they do: it is a ceiling on disagreement and
+    not a measure of it, and `compare` is the judge of behaviour.
+    """
+    measured = {label: found for label, found in drafts.items()
+                if found and "refused" not in found}
+    unmeasured = sorted(label for label in drafts if label not in measured)
+    outcome_of = lambda found, outcome: found["ids"].get(outcome, [])
+    carried: dict[str, set[tuple[str, ...]]] = {}
+    for found in measured.values():
+        for ident, paths in found["node_paths"].items():
+            carried.setdefault(ident, set()).add(tuple(paths))
+    return {
+        "measured": len(measured),
+        "unmeasured": unmeasured,
+        "no_dangling": sum(1 for f in measured.values() if not outcome_of(f, "dangling")),
+        "none_missing": sum(1 for f in measured.values() if not outcome_of(f, "missing")),
+        "dangling": {label: outcome_of(f, "dangling") for label, f in measured.items()
+                     if outcome_of(f, "dangling")},
+        "missing": {label: outcome_of(f, "missing") for label, f in measured.items()
+                    if outcome_of(f, "missing")},
+        "implemented_by": {ident: sum(1 for f in measured.values()
+                                      if ident in f["node_paths"])
+                           for ident in sorted(carried, key=_id_order)},
+        "distinct_node_paths": {ident: len(paths)
+                                for ident, paths in sorted(carried.items(),
+                                                           key=lambda item: _id_order(item[0]))},
+    }
+
+
+def _id_order(ident: str) -> tuple[str, int]:
+    """`R2` before `R10`: the owner's ids in the order they were numbered."""
+    digits = "".join(ch for ch in ident if ch.isdigit())
+    return (ident.rstrip("0123456789"), int(digits) if digits else 0)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--client", default="claude-restricted",
@@ -104,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--profile", type=pathlib.Path,
                         help="the owner's authoring profile every case is drafted under")
+    parser.add_argument("--requirements", type=pathlib.Path,
+                        help="a directory holding each case's fixed requirement list")
     args = parser.parse_args(argv)
 
     if args.client not in kind_choice.CLIENTS:
@@ -120,6 +176,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.only:
         wanted = set(args.only.split(","))
         cases = [c for c in cases if c["id"] in wanted]
+    if args.requirements is not None:
+        lacking = [f"{c['id']}.{part}.json" for c in cases
+                   for part in ("manifest_text", "sidecar_text")
+                   if not (args.requirements / f"{c['id']}.{part}.json").is_file()]
+        if lacking:
+            parser.error(f"--requirements {args.requirements}: missing {lacking}")
     client = kind_choice.CLIENTS[args.client]
     argv_template = [client["argv"][0], "--effort", args.effort, *client["argv"][1:]]
 
@@ -132,7 +194,8 @@ def main(argv: list[str] | None = None) -> int:
         rows = []
         for case in cases:
             row = kind_choice.run_case(case, argv_template, out, args.timeout, args.model,
-                                       profile=args.profile)
+                                       profile=args.profile,
+                                       requirements=args.requirements)
             row["rep"] = rep
             rows.append(row)
             print(json.dumps(row), flush=True)
@@ -160,6 +223,10 @@ def main(argv: list[str] | None = None) -> int:
             entry["profile_findings"] = {f"rep{r['rep']}": r.get("profile_findings", [])
                                          for r in mine if f"rep{r['rep']}" in present}
             entry["held"] = sum(1 for found in entry["profile_findings"].values() if not found)
+        if args.requirements is not None:
+            entry["requirements"] = requirement_agreement(
+                {f"rep{r['rep']}": r.get("requirements") for r in mine
+                 if f"rep{r['rep']}" in present})
         if len(present) >= 2:
             entry["comparison"] = compare(list(present.values()), labels=list(present))
         else:
@@ -174,6 +241,12 @@ def main(argv: list[str] | None = None) -> int:
         report["profile"] = {"file": args.profile.name,
                              "sha256": hashlib.sha256(args.profile.read_bytes()).hexdigest(),
                              "request": kind_choice.PROFILE_REQUEST.strip()}
+    if args.requirements is not None:
+        report["requirements"] = {
+            "directory": args.requirements.name,
+            "sha256": {name.name: hashlib.sha256(name.read_bytes()).hexdigest()
+                       for name in sorted(args.requirements.glob("*_text.json"))},
+            "request": kind_choice.MANIFEST_REQUEST.strip()}
     (args.out / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     print(table(results))
