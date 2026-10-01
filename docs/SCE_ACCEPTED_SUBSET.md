@@ -3491,6 +3491,13 @@ names the driver could read. `observes` says which of the four a driver can see
 at all, and a channel that is observed is present in every observation. A run the
 driver did not make says why (`refused`) instead of carrying observations.
 
+A data name left out of an observation's `data` is a gap whatever the cause. A
+driver that knows the cause says it once, at the top of the trace, in
+`unreadable` (`{"count": "the generator gives it no reader"}`), and the gap for
+that name ends with the driver's words. Without it the gap says only that the
+name could not be read, which sends an owner to look for a fault the driver
+already knew about.
+
 `sce-codegen judge-scenarios <set> <trace>` writes a summary record, a record per
 scenario (`pass`, `fail`, `not-judged`, `blocked`, `awaiting-decision`), and a
 record for each failed check, each gap and each problem. The comparison:

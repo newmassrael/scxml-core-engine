@@ -125,6 +125,11 @@
         "data": { "$ref": "#/definitions/channel" }
       }
     },
+    "unreadable": {
+      "description": "Data names the driver knows it cannot read, each with why (a generator that gave the item no reader, say). A name missing from an observation's `data` is a gap either way; this is what lets the gap say why.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
     "runs": {
       "type": "array",
       "items": { "$ref": "#/definitions/run" }

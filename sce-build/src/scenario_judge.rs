@@ -256,6 +256,12 @@ pub struct Trace {
     pub design: Option<Design>,
     pub scenario_set: Option<SetRef>,
     pub observes: Observes,
+    /// Data names the driver knows it cannot read, each with why. A name left
+    /// out of an observation's `data` is a gap either way; this is what lets
+    /// the gap say a generator gave the item no reader, and not only that it
+    /// was missed.
+    #[serde(default)]
+    pub unreadable: BTreeMap<String, Reason>,
     pub runs: Vec<Run>,
 }
 
@@ -739,9 +745,14 @@ impl StepCheck<'_, '_> {
             match observed.get(name) {
                 None => {
                     let step = self.step;
+                    let why = trace
+                        .unreadable
+                        .get(name)
+                        .map(|reason| format!(": {}", reason.0))
+                        .unwrap_or_default();
                     self.gap(
                         "data",
-                        format!("the driver could not read `{name}` at step {step}"),
+                        format!("the driver could not read `{name}` at step {step}{why}"),
                     );
                 }
                 Some(got) if !want.same_value(got) => {
@@ -1255,6 +1266,34 @@ mod tests {
     }
 
     #[test]
+    fn a_data_item_the_driver_says_it_cannot_read_carries_its_reason_into_the_gap() {
+        let judgement = change(|t| {
+            t["runs"][0]["observations"][0]["data"] = json!({});
+            t["unreadable"] = json!({"count": "the generator gave it no reader"});
+        });
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::NotJudged);
+        assert!(
+            judgement.gaps[0]
+                .why
+                .ends_with(": the generator gave it no reader"),
+            "{:?}",
+            judgement.gaps
+        );
+        assert_eq!(judgement.failures, Vec::new());
+
+        // A reason about another name is not this name's.
+        let judgement = change(|t| {
+            t["runs"][0]["observations"][0]["data"] = json!({});
+            t["unreadable"] = json!({"other": "the generator gave it no reader"});
+        });
+        assert!(
+            !judgement.gaps[0].why.contains("no reader"),
+            "{:?}",
+            judgement.gaps
+        );
+    }
+
+    #[test]
     fn a_run_the_driver_refused_or_never_made_is_not_judged_and_says_why() {
         let judgement = change(|t| {
             t["runs"][0] = json!({"scenario": "S1", "refused": {"why": "the design has no transition on `go`"}});
@@ -1543,6 +1582,18 @@ mod tests {
                     t["runs"][0] = json!({"scenario": "S1", "refused": {}});
                 }),
             ),
+            (
+                "an unreadable data name with no reason",
+                Box::new(|t| {
+                    t["unreadable"] = json!({"count": ""});
+                }),
+            ),
+            (
+                "unreadable data names given as a list",
+                Box::new(|t| {
+                    t["unreadable"] = json!(["count"]);
+                }),
+            ),
         ];
         // Each case starts from a trace shown valid and changes one thing.
         assert_eq!(violations(&base_trace()), Vec::<String>::new());
@@ -1565,6 +1616,6 @@ mod tests {
                 "the schema refuses {what}, and the reader took it without a word"
             );
         }
-        assert_eq!(cases.len(), 15, "every case ran");
+        assert_eq!(cases.len(), 17, "every case ran");
     }
 }

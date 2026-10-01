@@ -121,6 +121,24 @@ edit("sce-build/src/scenario_judge.rs",
      "        } else if false {")
 PY
 
+# ── A gap loses the reason the driver gave for it ───────────────────
+#
+# The driver knows why it cannot read a data item (a generator that gave the
+# item no reader). A gap that says only "could not read" sends the owner to
+# look for a fault the generator already named.
+
+mutation_case "a gap about an unreadable item drops the driver's reason" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                        .map(|reason| format!(\": {}\", reason.0))",
+     "                        .map(|_| String::new())")
+PY
+
+mutation_case "a gap takes the reason of another item" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                        .get(name)",
+     "                        .values()\n                        .next()")
+PY
+
 # ── The command reports something other than what was found ─────────
 
 mutation_case "the summary counts a not-judged scenario as a pass" <<'PY'

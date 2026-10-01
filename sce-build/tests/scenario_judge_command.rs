@@ -216,6 +216,45 @@ fn what_a_driver_cannot_see_is_a_gap_with_its_reason_and_not_a_failure() {
 }
 
 #[test]
+fn a_data_item_the_driver_says_it_cannot_read_is_a_gap_that_carries_the_reason() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let set = serde_json::json!({
+        "record": "sce-scenario-set", "v": 1,
+        "specification": {"doc_id": "counter", "rev": "1"},
+        "origin": "ai-proposed",
+        "interface": {"inputs": [{"name": "go"}], "outputs": [], "data": ["count"]},
+        "scenarios": [{
+            "id": "S1", "quote": "it counts",
+            "steps": [{"send": "go", "expect": {"data": {"count": 1}}}]
+        }]
+    });
+    let trace = serde_json::json!({
+        "record": "sce-observation-trace", "v": 1,
+        "engine": {"name": "a driver"},
+        "observes": {"outbound": true, "finished": true, "configuration": true, "data": true},
+        "unreadable": {"count": "the generator gives it no reader"},
+        "runs": [{
+            "scenario": "S1",
+            "observations": [{"outbound": [], "finished": false, "configuration": ["a"], "data": {}}]
+        }]
+    });
+    let set = written(&dir, "counter.scenarios.json", &set.to_string());
+    let trace = written(&dir, "counter.trace.json", &trace.to_string());
+    let run = judge(&set, &trace);
+    assert_eq!(run.code, Some(0), "stderr: {}", run.stderr);
+    assert_eq!(run.verdict("S1"), "not-judged");
+    assert!(run.of_kind("failure").is_empty(), "a gap is not a failure");
+    let gaps = run.of_kind("gap");
+    assert_eq!(gaps.len(), 1, "{gaps:?}");
+    assert!(
+        gaps[0]["why"]
+            .as_str()
+            .is_some_and(|w| w.ends_with(": the generator gives it no reader")),
+        "{gaps:?}"
+    );
+}
+
+#[test]
 fn a_trace_taken_against_another_set_judges_nothing_and_says_so() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut trace = retry_trace();
