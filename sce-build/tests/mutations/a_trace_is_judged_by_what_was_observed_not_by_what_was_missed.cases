@@ -111,7 +111,7 @@ PY
 
 mutation_case "a blocked scenario is judged by its run" <<'PY'
 edit("sce-build/src/scenario_judge.rs",
-     "        Status::Blocked => {\n            return verdict(Verdict::Blocked, scenario.blocked_by.clone());\n        }",
+     "        Status::Blocked => {\n            return verdict(Verdict::Blocked, scenario.blocked_by.clone(), None);\n        }",
      "        Status::Blocked => {}")
 PY
 
@@ -137,6 +137,45 @@ mutation_case "a gap takes the reason of another item" <<'PY'
 edit("sce-build/src/scenario_judge.rs",
      "                        .get(name)",
      "                        .values()\n                        .next()")
+PY
+
+# ── A refusal loses whether another machine would refuse it too ─────
+#
+# `design` is a statement about the design and `environment` one about the
+# machine that ran it. A verdict that cannot tell them apart reads a slow
+# machine as a defect of the design, and a driver that did not say must not
+# be read as having said `design`.
+
+mutation_case "a refusal's cause is dropped from the verdict record" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        if let Some(cause) = verdict.cause {",
+     "        if let Some(cause) = verdict.cause.filter(|_| false) {")
+PY
+
+mutation_case "a refusal's cause is dropped from the gap record" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        if let Some(cause) = gap.cause {",
+     "        if let Some(cause) = gap.cause.filter(|_| false) {")
+PY
+
+mutation_case "a refusal that did not say why is read as the design's" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "            refused.cause,",
+     "            refused.cause.or(Some(Cause::Design)),")
+PY
+
+# ── The bounds a verdict was made under are not repeated ────────────
+
+mutation_case "the limits are not repeated in the summary" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if let Some(limits) = &trace.limits {",
+     "    if let Some(limits) = trace.limits.as_ref().filter(|_| false) {")
+PY
+
+mutation_case "the isolation is not repeated in the summary" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if let Some(isolation) = &trace.isolation {",
+     "    if let Some(isolation) = trace.isolation.as_ref().filter(|_| false) {")
 PY
 
 # ── The command reports something other than what was found ─────────

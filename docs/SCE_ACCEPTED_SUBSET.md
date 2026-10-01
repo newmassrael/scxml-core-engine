@@ -3544,6 +3544,17 @@ that name ends with the driver's words. Without it the gap says only that the
 name could not be read, which sends an owner to look for a fault the driver
 already knew about.
 
+A refusal says whether another machine would refuse the same run. `refused`
+may carry a `cause`: `design` when what the design did made the example
+unplayable (an error no state answered, an open route, a macrostep the engine
+cut short, a design that would not start), `environment` when the machine that
+ran it did (time, memory, a crash, a kill). The verdict and gap records repeat
+it, so a client can tell a design that never settles from a run that was only
+slow. A refusal that names no cause is reported with none, and is not read as
+`design`. The trace may also name the `limits` the driver ran under (events,
+instructions, seconds, bytes) and the `isolation` it was kept in; the summary
+repeats both unread, so a verdict states the bound it was made under.
+
 `sce-codegen judge-scenarios <set> <trace>` writes a summary record, a record per
 scenario (`pass`, `fail`, `not-judged`, `blocked`, `awaiting-decision`), and a
 record for each failed check, each gap and each problem. The comparison:

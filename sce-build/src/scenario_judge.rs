@@ -231,10 +231,40 @@ pub struct Observation {
     pub data: Option<BTreeMap<String, Scalar>>,
 }
 
+/// Why a run was refused, in the one respect a reader of the verdict needs: will
+/// it come out the same elsewhere?
+///
+/// `design`: what the DESIGN did made the example unplayable (an error no state
+/// answered, an open route, a budget the engine counted out, a macrostep it cut
+/// short, a design that would not start). Another machine, run again, reaches
+/// the same refusal.
+///
+/// `environment`: something about the machine that ran it did (the clock ran
+/// out, memory, a crash, a kill). Another machine may play it to the end, and a
+/// verdict saying otherwise would be a statement about load.
+///
+/// Absent means the driver did not say, which is not the same as `design`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Cause {
+    Design,
+    Environment,
+}
+
+impl Cause {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Cause::Design => "design",
+            Cause::Environment => "environment",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Refused {
     pub why: Reason,
+    pub cause: Option<Cause>,
 }
 
 /// One scenario as a driver ran it, or declined to.
@@ -262,6 +292,14 @@ pub struct Trace {
     /// was missed.
     #[serde(default)]
     pub unreadable: BTreeMap<String, Reason>,
+    /// The bounds the driver ran under (events, instructions, seconds, bytes),
+    /// by name. Not read by the judge: it is repeated in the judgement so a
+    /// verdict states the bound it was made under, the way `compare` prints its
+    /// drives and steps.
+    pub limits: Option<BTreeMap<String, Scalar>>,
+    /// How well the driver was kept apart from the machine it ran on
+    /// (`process+rlimit`, `+cgroup`, `+namespace`). Repeated in the judgement.
+    pub isolation: Option<Reason>,
     pub runs: Vec<Run>,
 }
 
@@ -356,6 +394,8 @@ pub struct Gap {
     pub step: Option<usize>,
     pub check: Option<&'static str>,
     pub why: String,
+    /// Set when the gap is a run the driver refused and said why.
+    pub cause: Option<Cause>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -368,6 +408,9 @@ pub struct ScenarioVerdict {
     pub bound: Option<u32>,
     /// Why, for a verdict that is not a pass or a fail.
     pub reason: Option<String>,
+    /// Whether that reason would be the same on another machine, when the
+    /// driver refused the run and said.
+    pub cause: Option<Cause>,
 }
 
 /// Everything the judge found.
@@ -495,45 +538,51 @@ fn scenario_verdict(
     trace: &Trace,
     judgement: &mut Judgement,
 ) -> ScenarioVerdict {
-    let verdict = |verdict: Verdict, reason: Option<String>| ScenarioVerdict {
-        id: scenario.id.clone(),
-        verdict,
-        requirements: scenario.requirements.clone(),
-        bound: scenario.bound.as_ref().map(|bound| bound.cycles),
-        reason,
-    };
+    let verdict =
+        |verdict: Verdict, reason: Option<String>, cause: Option<Cause>| ScenarioVerdict {
+            id: scenario.id.clone(),
+            verdict,
+            requirements: scenario.requirements.clone(),
+            bound: scenario.bound.as_ref().map(|bound| bound.cycles),
+            reason,
+            cause,
+        };
     // A scenario that cannot run is never judged, whatever the trace holds.
     match scenario.status {
         Status::Blocked => {
-            return verdict(Verdict::Blocked, scenario.blocked_by.clone());
+            return verdict(Verdict::Blocked, scenario.blocked_by.clone(), None);
         }
         Status::AwaitingDecision => {
             return verdict(
                 Verdict::AwaitingDecision,
                 scenario.decision.as_ref().map(|d| d.question.clone()),
+                None,
             );
         }
         Status::Runnable => {}
     }
-    let not_judged = |judgement: &mut Judgement, why: String| {
+    let not_judged = |judgement: &mut Judgement, why: String, cause: Option<Cause>| {
         judgement.gaps.push(Gap {
             scenario: scenario.id.clone(),
             step: None,
             check: None,
             why: why.clone(),
+            cause,
         });
-        verdict(Verdict::NotJudged, Some(why))
+        verdict(Verdict::NotJudged, Some(why), cause)
     };
     let Some(run) = run else {
         return not_judged(
             judgement,
             "the trace has no run for this scenario".to_string(),
+            None,
         );
     };
     if let Some(refused) = &run.refused {
         return not_judged(
             judgement,
             format!("the driver did not run it: {}", refused.why.0),
+            refused.cause,
         );
     }
     let observations = run.observations.as_deref().unwrap_or_default();
@@ -551,6 +600,7 @@ fn scenario_verdict(
         return not_judged(
             judgement,
             "the run does not carry one observation per step".to_string(),
+            None,
         );
     }
 
@@ -580,14 +630,15 @@ fn scenario_verdict(
         }
     }
     if judgement.failures.len() > failures_before {
-        verdict(Verdict::Fail, None)
+        verdict(Verdict::Fail, None, None)
     } else if judgement.gaps.len() > gaps_before {
         verdict(
             Verdict::NotJudged,
             Some("a check could not be judged".to_string()),
+            None,
         )
     } else {
-        verdict(Verdict::Pass, None)
+        verdict(Verdict::Pass, None, None)
     }
 }
 
@@ -617,6 +668,7 @@ impl StepCheck<'_, '_> {
             step: Some(self.step),
             check: Some(check),
             why,
+            cause: None,
         });
     }
 
@@ -1322,6 +1374,43 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_carries_whether_another_machine_would_refuse_it_too() {
+        for (given, want) in [
+            (Some("design"), Some(Cause::Design)),
+            (Some("environment"), Some(Cause::Environment)),
+            (None, None),
+        ] {
+            let judgement = change(|t| {
+                let mut refused = json!({"why": "it did not finish"});
+                if let Some(cause) = given {
+                    refused["cause"] = json!(cause);
+                }
+                t["runs"][0] = json!({"scenario": "S1", "refused": refused});
+            });
+            let s1 = judgement
+                .verdicts
+                .iter()
+                .find(|v| v.id == "S1")
+                .expect("S1");
+            assert_eq!(s1.verdict, Verdict::NotJudged);
+            assert_eq!(s1.cause, want, "verdict, given {given:?}");
+            assert_eq!(judgement.gaps[0].cause, want, "gap, given {given:?}");
+        }
+    }
+
+    #[test]
+    fn a_gap_about_a_step_has_no_cause_to_give() {
+        // A refusal is the driver's statement about a whole run. A check it
+        // could not see is a different kind of gap and is not given one.
+        let judgement = change(|t| {
+            t["runs"][0]["observations"][0]["data"] = json!({});
+            t["unreadable"] = json!({"count": "no reader"});
+        });
+        assert!(!judgement.gaps.is_empty());
+        assert!(judgement.gaps.iter().all(|g| g.cause.is_none()));
+    }
+
+    #[test]
     fn a_scenario_that_is_not_judged_is_never_counted_as_a_pass() {
         let judgement = change(|t| {
             t["runs"] = json!([]);
@@ -1594,6 +1683,25 @@ mod tests {
                     t["unreadable"] = json!(["count"]);
                 }),
             ),
+            (
+                "a refusal whose cause is neither design nor environment",
+                Box::new(|t| {
+                    t["runs"][0] = json!({"scenario": "S1",
+                        "refused": {"why": "no", "cause": "bad luck"}});
+                }),
+            ),
+            (
+                "a limit that is not a plain value",
+                Box::new(|t| {
+                    t["limits"] = json!({"events": {"max": 10}});
+                }),
+            ),
+            (
+                "an isolation level that says nothing",
+                Box::new(|t| {
+                    t["isolation"] = json!("");
+                }),
+            ),
         ];
         // Each case starts from a trace shown valid and changes one thing.
         assert_eq!(violations(&base_trace()), Vec::<String>::new());
@@ -1616,6 +1724,6 @@ mod tests {
                 "the schema refuses {what}, and the reader took it without a word"
             );
         }
-        assert_eq!(cases.len(), 17, "every case ran");
+        assert_eq!(cases.len(), 20, "every case ran");
     }
 }

@@ -70,7 +70,13 @@
           "type": "object",
           "required": ["why"],
           "additionalProperties": false,
-          "properties": { "why": { "type": "string", "minLength": 1 } }
+          "properties": {
+            "why": { "type": "string", "minLength": 1 },
+            "cause": {
+              "description": "Whether the refusal would be the same on another machine. `design`: what the design did made the example unplayable (an error no state answered, an open route, a budget counted out, a macrostep cut short, a design that would not start). `environment`: something about the machine that ran it did (time, memory, a crash, a kill), and another machine may play the example to its end. Absent: the driver did not say, which is not `design`.",
+              "enum": ["design", "environment"]
+            }
+          }
         }
       },
       "oneOf": [{ "required": ["observations"] }, { "required": ["refused"] }]
@@ -129,6 +135,16 @@
       "description": "Data names the driver knows it cannot read, each with why (a generator that gave the item no reader, say). A name missing from an observation's `data` is a gap either way; this is what lets the gap say why.",
       "type": "object",
       "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "limits": {
+      "description": "The bounds the driver ran under (events, instructions, seconds, bytes), by name. The judge does not read them; it repeats them in the judgement, so a verdict states the bound it was made under.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/scalar" }
+    },
+    "isolation": {
+      "description": "How well the driver was kept apart from the machine it ran on, as the driver measured it (for example `process+rlimit`, `+cgroup`, `+namespace`). Repeated in the judgement.",
+      "type": "string",
+      "minLength": 1
     },
     "runs": {
       "type": "array",

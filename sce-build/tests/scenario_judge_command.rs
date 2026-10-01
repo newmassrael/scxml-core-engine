@@ -216,6 +216,68 @@ fn what_a_driver_cannot_see_is_a_gap_with_its_reason_and_not_a_failure() {
 }
 
 #[test]
+fn a_refusal_says_whether_another_machine_would_refuse_it_and_the_bounds_are_repeated() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut trace = retry_trace();
+    trace["limits"] = serde_json::json!({"events": 100000, "seconds": 5, "memory_mb": 512});
+    trace["isolation"] = serde_json::json!("process+rlimit");
+    let runs = trace["runs"].as_array_mut().expect("runs");
+    runs[0] = serde_json::json!({
+        "scenario": "T1", "refused": {"why": "the clock ran out", "cause": "environment"}});
+    runs[1] = serde_json::json!({
+        "scenario": "T2-boundary",
+        "refused": {"why": "the machine settles nowhere", "cause": "design"}});
+    runs[2] = serde_json::json!({
+        "scenario": "T3-at-most-three", "refused": {"why": "the driver did not say which"}});
+    let written = written(&dir, "refused.trace.json", &trace.to_string());
+    let run = judge(&fixture("retry-client.scenarios.json"), &written);
+    assert_eq!(run.code, Some(0), "stderr: {}", run.stderr);
+
+    let summary = run.summary();
+    assert_eq!(summary["isolation"], "process+rlimit");
+    assert_eq!(summary["limits"]["events"], 100000);
+    assert_eq!(summary["limits"]["memory_mb"], 512);
+
+    let verdicts = run.of_kind("verdict");
+    let cause_of = |id: &str| {
+        verdicts
+            .iter()
+            .find(|v| v["id"] == id)
+            .unwrap_or_else(|| panic!("no verdict for {id}"))
+            .get("cause")
+            .cloned()
+    };
+    assert_eq!(cause_of("T1"), Some(serde_json::json!("environment")));
+    assert_eq!(cause_of("T2-boundary"), Some(serde_json::json!("design")));
+    // Not said is not `design`: the record carries no cause at all.
+    assert_eq!(cause_of("T3-at-most-three"), None);
+    assert_eq!(cause_of("T4-response-completes"), None);
+
+    let gaps = run.of_kind("gap");
+    let gap_cause = |id: &str| {
+        gaps.iter()
+            .find(|g| g["scenario"] == id)
+            .unwrap_or_else(|| panic!("no gap for {id}"))
+            .get("cause")
+            .cloned()
+    };
+    assert_eq!(gap_cause("T1"), Some(serde_json::json!("environment")));
+    assert_eq!(gap_cause("T2-boundary"), Some(serde_json::json!("design")));
+    assert_eq!(gap_cause("T3-at-most-three"), None);
+}
+
+#[test]
+fn a_trace_that_names_no_bounds_leaves_them_out_of_the_summary() {
+    let run = judge(
+        &fixture("retry-client.scenarios.json"),
+        &fixture("retry-client.trace.json"),
+    );
+    let summary = run.summary();
+    assert!(summary.get("limits").is_none(), "{summary}");
+    assert!(summary.get("isolation").is_none(), "{summary}");
+}
+
+#[test]
 fn a_data_item_the_driver_says_it_cannot_read_is_a_gap_that_carries_the_reason() {
     let dir = tempfile::tempdir().expect("tempdir");
     let set = serde_json::json!({

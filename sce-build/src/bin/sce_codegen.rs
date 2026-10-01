@@ -9723,7 +9723,7 @@ fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
         .map(|v| v.id.as_str())
         .collect();
     let problems = judgement.set_problems.len() + judgement.trace_problems.len();
-    let mut lines = vec![serde_json::json!({
+    let mut summary = serde_json::json!({
         "kind": "judgement",
         "doc_id": set.specification.doc_id,
         "rev": set.specification.rev,
@@ -9742,16 +9742,29 @@ fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
         "means": "a pass says the machine behaved as these examples say, on this engine, over \
                   these inputs; it does not say the design is right, or that the examples are \
                   the owner's, and a bounded scenario passed only up to its bound",
-    })];
+    });
+    // The bounds and the isolation the driver ran under are the trace's to say
+    // and the judgement's to repeat, so a verdict states what it was made under.
+    if let Some(limits) = &trace.limits {
+        summary["limits"] = serde_json::json!(limits);
+    }
+    if let Some(isolation) = &trace.isolation {
+        summary["isolation"] = serde_json::json!(isolation.0);
+    }
+    let mut lines = vec![summary];
     for verdict in &judgement.verdicts {
-        lines.push(serde_json::json!({
+        let mut record = serde_json::json!({
             "kind": "verdict",
             "id": verdict.id,
             "verdict": verdict.verdict.as_str(),
             "requirements": verdict.requirements,
             "bound": verdict.bound,
             "reason": verdict.reason,
-        }));
+        });
+        if let Some(cause) = verdict.cause {
+            record["cause"] = serde_json::json!(cause.as_str());
+        }
+        lines.push(record);
     }
     for failure in &judgement.failures {
         lines.push(serde_json::json!({
@@ -9764,13 +9777,17 @@ fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
         }));
     }
     for gap in &judgement.gaps {
-        lines.push(serde_json::json!({
+        let mut record = serde_json::json!({
             "kind": "gap",
             "scenario": gap.scenario,
             "step": gap.step,
             "check": gap.check,
             "why": gap.why,
-        }));
+        });
+        if let Some(cause) = gap.cause {
+            record["cause"] = serde_json::json!(cause.as_str());
+        }
+        lines.push(record);
     }
     for (source, found) in judgement
         .set_problems
