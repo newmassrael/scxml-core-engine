@@ -1222,6 +1222,37 @@ def page_provenance(document: pathlib.Path, codegen: pathlib.Path | None = None,
     return "\n".join(lines) + "\n", ""
 
 
+def _plain(name: str) -> str:
+    """A name with its separators gone: `door-with-auto-close` and
+    `door_with_auto_close` are the same document."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def generated_module_of(emitted: list, document: pathlib.Path) -> pathlib.Path:
+    """Which of the files the generator wrote IS the document.
+
+    ⚠ The generator names a statechart's module `<stem>_sm.py` and any other
+    kind's `<stem>.py`, and writes the module of every child session a design
+    starts, or of every document it imports, beside it. This used to compare
+    the document's stem with each file's whole stem, which is true for the
+    second naming and never for the first, and then take the first file the
+    directory listing returned for a statechart: right while there was one
+    file, and while there were two a coin toss that answered for the child.
+    A lone file is the document's whatever it is called; several and none of
+    them the document's is refused, because guessing here means judging a
+    machine nobody wrote."""
+    wanted = _plain(document.stem)
+    for path in emitted:
+        stem = path.stem[: -len("_sm")] if path.stem.endswith("_sm") else path.stem
+        if _plain(stem) == wanted:
+            return path
+    if len(emitted) == 1:
+        return emitted[0]
+    raise VerifyError(
+        f"{document.name}: the generator wrote {', '.join(sorted(p.name for p in emitted))} "
+        f"and none of them is named for the document, so there is no telling which to run")
+
+
 def load(into: pathlib.Path, document: pathlib.Path):
     """Import what was generated, as a package so its own imports resolve."""
     # ⚠ A generated statechart imports the product's own runtime; a generated
@@ -1232,12 +1263,10 @@ def load(into: pathlib.Path, document: pathlib.Path):
     runtime = _default_runtime()
     if runtime.is_dir() and str(runtime) not in sys.path:
         sys.path.insert(0, str(runtime))
-    stem = document.stem.lower().replace("_", "")
     emitted = [p for p in into.glob("*.py") if p.name != "__init__.py"]
     if not emitted:
         raise VerifyError(f"{document}: the generator wrote no python")
-    main = next((p for p in emitted if p.stem.lower().replace("_", "") == stem),
-                emitted[0])
+    main = generated_module_of(emitted, document)
     (into / "__init__.py").write_text("", encoding="utf-8")
     sys.path.insert(0, str(into.parent))
     parent_spec = importlib.util.spec_from_file_location(

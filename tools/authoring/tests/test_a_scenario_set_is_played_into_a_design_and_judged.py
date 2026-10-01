@@ -286,6 +286,190 @@ def counting_set(item: str) -> dict:
     }
 
 
+class TestWhatTheEngineDoesNotShow(Played):
+    """Reported by a reviewer on 2026-10-01 against the first landing, three
+    ways a run said `pass` or `fail` about something the engine had not shown
+    the design doing. Each is held here as the reviewer reproduced it."""
+
+    def play_set(self, spec: dict, text: str, name: str = "design.scxml") -> dict:
+        path = self.work / "design.scenarios.json"
+        path.write_text(json.dumps(spec), encoding="utf-8")
+        document = self.work / name
+        document.write_text(text, encoding="utf-8")
+        return run(path, document, self.codegen)
+
+    @staticmethod
+    def one_example(inputs, steps, conditions=None) -> dict:
+        interface = {"inputs": [{"name": n} for n in inputs], "outputs": []}
+        if conditions:
+            interface["conditions"] = conditions
+        return {"record": "sce-scenario-set", "v": 1,
+                "specification": {"doc_id": "design", "rev": "1"}, "origin": "ai-proposed",
+                "interface": interface,
+                "scenarios": [{"id": "E1", "quote": "an example", "steps": steps}]}
+
+    @staticmethod
+    def reason_of(answer: dict) -> str:
+        return next(r["reason"] or "" for r in answer["judgement"] if r["kind"] == "verdict")
+
+    def test_a_macrostep_the_engine_cut_short_is_not_a_machine_that_waits(self):
+        """W3C SCXML 3.13 lets a macrostep fail to terminate, and the engine
+        stops one after a ceiling and counts it. Every other reading of the
+        machine says it is fine: it is running, it names a state, the call
+        returned. A cyclic eventless transition used to pass an example that
+        says 'it waits in `ready`'."""
+        loop = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="ready">'
+                '<state id="ready"><transition target="ready"/></state></scxml>')
+        spec = self.one_example([], [{"expect": {"condition": "ready", "outbound": [],
+                                                 "finished": False}}], ["ready"])
+        answer = self.play_set(spec, loop)
+        self.assertEqual({"E1": "not-judged"}, self.verdicts(answer), answer["judgement"])
+        self.assertIn("stable", self.reason_of(answer))
+        self.assertIn("ready", self.reason_of(answer))
+
+    def test_a_chain_that_settles_is_not_mistaken_for_one_that_does_not(self):
+        """A hundred microsteps and then rest is ordinary, and counts zero."""
+        chain = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
+                 'datamodel="ecmascript" initial="a"><datamodel><data id="n" expr="0"/></datamodel>'
+                 '<state id="a"><transition cond="n &lt; 100" target="a">'
+                 '<assign location="n" expr="n + 1"/></transition>'
+                 '<transition cond="n &gt;= 100" target="b"/></state><state id="b"/></scxml>')
+        spec = self.one_example([], [{"expect": {"condition": "b"}}], ["a", "b"])
+        answer = self.play_set(spec, chain)
+        self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+
+    def test_the_same_time_passes_the_same_whether_given_in_one_step_or_three(self):
+        """W3C SCXML 6.2: a delay is measured from when the send executes.
+        The engine's clock moves where the host puts it, and a host that moves
+        it past three deadlines at once gets a timer armed at the END of the
+        move, not at the deadline that armed it. Measured: the retry machine
+        passed three steps of 200 ms and failed one step of 600 ms."""
+        request = {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}}
+        resend = [{"event": "SendRequest"}, {"event": "SendRequest"}, {"event": "TimeoutError"}]
+
+        def example(steps):
+            spec = json.loads(RETRY_SET.read_text(encoding="utf-8"))
+            spec["scenarios"] = [{"id": "E1", "quote": spec["scenarios"][0]["quote"],
+                                  "steps": steps}]
+            return spec
+
+        three = [request,
+                 {"advance_ms": 200, "expect": {"outbound": [{"event": "SendRequest"}]}},
+                 {"advance_ms": 200, "expect": {"outbound": [{"event": "SendRequest"}]}},
+                 {"advance_ms": 200, "expect": {"outbound": [{"event": "TimeoutError"}],
+                                                "finished": True}}]
+        at_once = [request, {"advance_ms": 600, "expect": {"outbound": resend,
+                                                            "finished": True}}]
+        for steps in (three, at_once):
+            answer = self.play_set(example(steps), machine())
+            self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+
+    def test_a_design_the_engine_cannot_start_is_an_answer_for_each_example(self):
+        """Found while checking whether a design with a child session could be
+        played at all: the generated parent imports the child's module by a
+        bare name the loader does not put on the path, and `initialize()` died
+        with ModuleNotFoundError, which took the whole call down with it. Each
+        example is refused with what the engine said instead. A design that
+        starts a child is the trigger today; any failure to start is the case."""
+        parent = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">'
+                  '<state id="a"><invoke type="scxml"><content>'
+                  '<scxml version="1.0" initial="c"><state id="c"/></scxml></content></invoke>'
+                  '<transition event="go" target="b"/></state><state id="b"/></scxml>')
+        spec = self.one_example(["go"], [{"send": "go", "expect": {"condition": "b"}}],
+                                ["a", "b"])
+        spec["scenarios"].append({"id": "E2", "quote": "an example", "steps": [
+            {"send": "go"}, {"advance_ms": 100, "expect": {"condition": "b"}}]})
+        answer = self.play_set(spec, parent)
+        self.assertEqual({"E1": "not-judged", "E2": "not-judged"}, self.verdicts(answer),
+                         answer["judgement"])
+        for record in answer["judgement"]:
+            if record["kind"] == "verdict":
+                self.assertIn("could not start the design", record["reason"])
+        self.assertEqual(0, self.summary(answer)["fail"], self.summary(answer))
+
+    def test_a_name_matched_by_prefix_that_the_design_reads_is_refused(self):
+        """W3C SCXML 3.12.1: `request.new` matches a transition on `request`
+        and `_event.name` stays `request.new`. The generated engines carry an
+        event as the descriptor they declared, so the machine would be told
+        `request`; a design reading the name then fails an example it meets.
+        Refused, naming the cause, rather than failed."""
+        reads = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
+                 'datamodel="ecmascript" initial="ready"><state id="ready">'
+                 '<transition event="request" cond="_event.name == \'request.new\'" '
+                 'target="done"/></state><final id="done"/></scxml>')
+        spec = self.one_example(["request.new"],
+                                [{"send": "request.new", "expect": {"finished": True}}])
+        answer = self.play_set(spec, reads)
+        self.assertEqual({"E1": "not-judged"}, self.verdicts(answer), answer["judgement"])
+        reason = self.reason_of(answer)
+        self.assertIn("_event.name", reason)
+        self.assertIn("request.new", reason)
+
+    def test_a_name_matched_by_prefix_that_the_design_never_reads_is_delivered(self):
+        quiet = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
+                 'initial="ready"><state id="ready"><transition event="request" target="done"/>'
+                 '</state><final id="done"/></scxml>')
+        spec = self.one_example(["request.new"],
+                                [{"send": "request.new", "expect": {"finished": True}}])
+        answer = self.play_set(spec, quiet)
+        self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+
+    def test_a_name_the_design_declares_exactly_keeps_its_name(self):
+        exact = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
+                 'datamodel="ecmascript" initial="ready"><state id="ready">'
+                 '<transition event="request.new" cond="_event.name == \'request.new\'" '
+                 'target="done"/></state><final id="done"/></scxml>')
+        spec = self.one_example(["request.new"],
+                                [{"send": "request.new", "expect": {"finished": True}}])
+        answer = self.play_set(spec, exact)
+        self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+
+
+class TestTheDesignIsTheModuleLoaded(unittest.TestCase):
+    """`load` picked the generated module to import by comparing the document's
+    stem with each file's stem, and the comparison could never be true: the
+    generator names a file `<stem>_sm.py`. It fell to the first file the
+    directory listing returned, which is right while there is one file and a
+    coin toss once a design starts a child session and the generator writes the
+    child's module beside the parent's. Found 2026-10-01 when a design named
+    `design.scxml` was played and the machine that answered was its child."""
+
+    def pick(self, document: str, files: list) -> str:
+        from sce_author.verify import generated_module_of
+
+        paths = [pathlib.Path(name) for name in files]
+        return generated_module_of(paths, pathlib.Path(document)).name
+
+    def test_the_parent_is_chosen_in_either_listing_order(self):
+        parent, child = "design_sm.py", "design__sce_synth_invoke__invoke_0_sm.py"
+        self.assertEqual(parent, self.pick("design.scxml", [parent, child]))
+        self.assertEqual(parent, self.pick("design.scxml", [child, parent]))
+
+    def test_a_separator_in_the_document_name_is_not_a_different_name(self):
+        self.assertEqual("door_with_auto_close_sm.py",
+                         self.pick("door-with-auto-close.scxml",
+                                   ["x__sce_synth_invoke__invoke_0_sm.py",
+                                    "door_with_auto_close_sm.py"]))
+
+    def test_a_document_that_is_not_a_statechart_is_named_without_the_suffix(self):
+        """A forge document's module is `<stem>.py`, and what it imports is
+        written beside it. Found by the whole authoring suite on the first
+        version of the repair, which looked only for `_sm`."""
+        for listing in (["importing.py", "supply_level.py"],
+                        ["supply_level.py", "importing.py"]):
+            self.assertEqual("importing.py", self.pick("importing.scxml", listing))
+
+    def test_a_lone_file_is_the_document_whatever_it_is_called(self):
+        self.assertEqual("odd_name_sm.py", self.pick("whatever.scxml", ["odd_name_sm.py"]))
+
+    def test_several_files_and_none_that_is_the_documents_is_refused_not_guessed(self):
+        from sce_author.verify import VerifyError
+
+        with self.assertRaises(VerifyError) as caught:
+            self.pick("design.scxml", ["a_sm.py", "b_sm.py"])
+        self.assertIn("a_sm.py", str(caught.exception))
+
+
 class TestStatesAndData(Played):
     """The channels the retry examples never ask about."""
 

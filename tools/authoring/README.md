@@ -289,6 +289,23 @@ reports what it saw and fills no hole:
   timer after it is never armed, and the machine would then fail an example about
   timing it was never allowed to keep. The refusal names the open decisions the
   author wrote, and the product reports `not-judged`, never `fail`.
+- An example is refused too when the engine stopped a macrostep that would not
+  end (W3C SCXML 3.13): every other reading of such a machine says it is fine.
+  Measured 2026-10-01 by an outside review, a cyclic eventless transition passed
+  an example that says the machine waits in its state.
+- Virtual time moves one scheduled instant at a time. The engine dates a timer
+  from the end of the move that fires it, so 600 ms in one step and 200 ms three
+  times were two runs of one machine (the retry machine passed the second and
+  failed the first). The same time now passes the same way however an example
+  splits it. The engine says when its own deadlines fall and nothing of a child
+  session's; a design that starts one (`<invoke>`) does not start in this loader
+  today, because the generated parent imports the child's module by a bare name,
+  and every example of it is refused with the engine's words, not a traceback.
+- An input the design answers only through a shorter event name (`request` for
+  `request.new`, W3C SCXML 3.12.1) is delivered under the shorter name, because
+  the generated engines carry an event as the descriptor they declared. A design
+  that reads `_event.name` is refused such an example; one that does not is
+  played.
 - An output the interface sends through a route (`via`) counts only when the
   design sent it through that route. A design that leaves by another door is not
   what the owner accepted, and counting its event would pass it.

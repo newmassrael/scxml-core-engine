@@ -10,8 +10,28 @@ out. This is one such driver, over the same Python lowering `verify` and
 lowering`, because a verdict is about an engine and the examples could pass on
 one runtime and fail on another.
 
-⚠ It reports what it saw and nothing else. Three places where a driver is
+⚠ It reports what it saw and nothing else. The places where a driver is
 tempted to fill a hole are closed on purpose.
+
+    A run during which the engine stopped a macrostep that would not end is
+    refused too (W3C SCXML 3.13). Every other reading of such a machine says it
+    is fine, and it used to pass an example that says the machine waits.
+
+    Virtual time moves one scheduled instant at a time, never in one jump. The
+    engine dates a timer from the end of the move that fires it, so an example
+    that says 600 ms and one that says 200 ms three times were two different
+    runs of one machine. (It cuts time at this machine's own deadlines and says
+    nothing of a child session's; a design that starts one does not start in
+    this loader today, and is refused with the engine's words.)
+
+    A design the engine cannot start is refused for every example, with what
+    the engine said, never a traceback for the whole call.
+
+    An input the design answers only through a shorter event name (`request`
+    for `request.new`, W3C SCXML 3.12.1) is delivered under the shorter name,
+    because the generated engines carry an event as the descriptor they
+    declared. A design that reads `_event.name` is refused such an example: it
+    would be told a name it is not sent.
 
     A run during which the engine raised an `error.*` event that no state
     answered is refused, not observed (W3C SCXML 3.12.2). The machine did not
@@ -44,6 +64,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import re
 import xml.etree.ElementTree as ET
 
 from .verify import (SendRecorder, VerifyError, _default_codegen, _host_names, _scratch,
@@ -95,15 +116,41 @@ def _payload_of(event_data: str) -> dict:
 
 
 def _resolve_event(policy, name: str):
-    """The policy's event for a name, falling back through dot-token prefixes
-    the way the engine does for a name it does not declare: a transition on
-    `door` answers `door.open` (W3C SCXML 3.12.1)."""
-    event = policy.get_event_from_name(name)
+    """`(event, declared)`: the policy's event for a name and the name the
+    design declares it under, falling back through dot-token prefixes the way
+    the engine does for a name it does not declare: a transition on `door`
+    answers `door.open` (W3C SCXML 3.12.1). `(None, None)` when no prefix of
+    the name is declared."""
     parts = name.split(".")
-    while event is None and len(parts) > 1:
+    while parts:
+        declared = ".".join(parts)
+        event = policy.get_event_from_name(declared)
+        if event is not None:
+            return event, declared
         parts.pop()
-        event = policy.get_event_from_name(".".join(parts))
-    return event
+    return None, None
+
+
+# `_event.name`, however it is spelled. W3C SCXML 5.10: the name the event
+# arrived under, which is what a prefix-matched event keeps and the generated
+# engines do not.
+_READS_EVENT_NAME = re.compile(r"""_event\s*(?:\.\s*name\b|\[\s*['"]name['"]\s*\])""")
+
+
+def _reads_event_name(document: pathlib.Path) -> bool:
+    """Whether the design reads `_event.name` in any attribute or text.
+    Comments are not read: the parser drops them."""
+    for node in ET.parse(document).getroot().iter():
+        texts = [node.text or "", *(str(value) for value in node.attrib.values())]
+        if any(_READS_EVENT_NAME.search(text) for text in texts):
+            return True
+    return False
+
+
+#: How many instants of virtual time one `advance_ms` step may be cut into. An
+#: example that arms a timer every millisecond for a day is not one a run can
+#: judge, and a timer that re-arms itself at zero delay never ends.
+MAX_TIME_STOPS = 50_000
 
 
 #: How many open decisions a refusal quotes. The first few name the cause; a
@@ -139,6 +186,7 @@ class _Design:
         self.data = data
         self.refusal = ""
         self.module = None
+        self.reads_event_name = False
         self.readers: dict = {}
         self.data_unavailable = ""
         self.unreadable: dict = {}
@@ -153,6 +201,7 @@ class _Design:
                             f"scenario drives a statechart")
             return
         self.module = load(into, document)
+        self.reads_event_name = _reads_event_name(document)
         if data:
             try:
                 self.readers = _host_names(self.module, "readers")
@@ -193,25 +242,40 @@ class _Design:
         from sce_runtime.event import EventMetadata
 
         sink, http = SendRecorder(), _HttpSeen()
-        engine = self.module.create_engine()
-        for processor in self.build.declared:
-            engine.register_event_processor(processor, sink)
-        engine.set_http_send_callback(http)
-        engine.initialize()
+        try:
+            engine = self.module.create_engine()
+            for processor in self.build.declared:
+                engine.register_event_processor(processor, sink)
+            engine.set_http_send_callback(http)
+            engine.initialize()
+        except Exception as exc:  # noqa: BLE001 - a design that cannot start is the answer
+            # An answer for the example, not a traceback for the whole call: the
+            # generated parent of a design that starts a child session imports
+            # the child's module by a bare name this loader does not put on the
+            # path, so it dies here with ModuleNotFoundError.
+            raise _Refusal(f"the engine could not start the design: "
+                           f"{type(exc).__name__}: {exc}") from exc
         policy = engine.policy
         observations = []
         for index, step in enumerate(steps):
             try:
                 if "send" in step:
-                    event = _resolve_event(policy, step["send"])
+                    event, declared = _resolve_event(policy, step["send"])
                     if event is None:
                         raise _Refusal(f"step {index} sends `{step['send']}`, and the design "
                                        f"names no event that answers it, so the example's "
                                        f"input reaches nothing in it")
+                    if declared != step["send"] and self.reads_event_name:
+                        raise _Refusal(
+                            f"step {index} sends `{step['send']}`, which the design answers "
+                            f"through its event `{declared}` (W3C SCXML 3.12.1), and the "
+                            f"engine reports that event to the machine as `{declared}`, not as "
+                            f"`{step['send']}`; this design reads `_event.name`, so what it "
+                            f"did would not be what it does when `{step['send']}` arrives")
                     payload = step.get("payload")
                     engine.send_event(event, EventMetadata(data=payload) if payload else None)
                 elif "advance_ms" in step:
-                    engine.advance_time(step["advance_ms"])
+                    self._advance(engine, step["advance_ms"], index)
             except _Refusal:
                 raise
             except Exception as exc:  # noqa: BLE001 - the engine failing is the report
@@ -220,6 +284,35 @@ class _Design:
             observations.append(self._observe(engine, policy, sink, index))
         return observations
 
+    @staticmethod
+    def _advance(engine, ms: int, index: int) -> None:
+        """Move virtual time forward by `ms`, one scheduled instant at a time.
+
+        W3C SCXML 6.2: a delay is measured from when its `<send>` executes. The
+        engine's clock belongs to the host and `advance_time(ms)` sets it to the
+        end of the move before it runs what fell due, so a timer armed while
+        handling a deadline in the middle of a long move is dated from the end
+        of the move. Measured: the retry machine passed three moves of 200 ms
+        and failed one of 600 ms. The engine says how far the next deadline is
+        (`time_until_next_scheduled_ms`), the product's own answer to a host
+        that would otherwise guess a step size, so the move is cut there and
+        the same time passes the same way however an example splits it.
+
+        A run that ends, or a machine that has finished, owes the rest no
+        deadlines."""
+        remaining, stops = ms, 0
+        while remaining > 0 and engine.is_running and not engine.reached_final:
+            due = engine.time_until_next_scheduled_ms()
+            step = remaining if due is None or due > remaining else due
+            engine.advance_time(step)
+            remaining -= step
+            stops += 1
+            if stops > MAX_TIME_STOPS:
+                raise _Refusal(
+                    f"step {index} lets {ms} ms pass and the design has a deadline at more "
+                    f"than {MAX_TIME_STOPS} of its instants (a timer that re-arms at zero "
+                    f"delay never ends), so the example cannot be played to its end")
+
     def _check_unobserved(self, engine, policy, http: _HttpSeen, index: int) -> None:
         """Refuse the run when it did something this driver cannot report."""
         if http.requests:
@@ -227,6 +320,17 @@ class _Design:
             raise _Refusal(f"at step {index} the design sent `{request.event_name}` over "
                            f"BasicHTTP to `{request.target}`; this driver observes sends to "
                            f"host-served processors and does not observe HTTP")
+        if engine.truncated_macrosteps():
+            # W3C SCXML 3.13: a macrostep may not terminate, and the engine
+            # stops one after a ceiling. Every other reading of the machine
+            # says it is fine (it runs, it names a state, the call returned),
+            # which is how an endless chain used to pass an example that says
+            # the machine waits.
+            state = engine.last_truncated_macrostep_state()
+            where = f" in `{policy.get_state_name(state)}`" if state is not None else ""
+            raise _Refusal(f"by step {index} the engine stopped a macrostep{where} that did not "
+                           f"reach a stable configuration (W3C SCXML 3.13), so where the "
+                           f"machine stands is not the design's behaviour")
         failures = engine.unhandled_error_events() + engine.error_cascade_events()
         if failures:
             last = engine.last_unhandled_error()
