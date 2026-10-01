@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 /**
@@ -174,13 +174,17 @@ class AnnotationOverlay {
         }
 
         // Transitions are keyed by (source state, position in that state),
-        // which is what the producer published beside the path.
-        const seen = new Map();
+        // which is what the producer published beside the path, and the
+        // structure carries as `sourceIndex`.
+        //
+        // ⚠ Not counted here: the structure holds one object per TARGET,
+        // so a count over the list shifts every transition after a
+        // two-target one — the defect `measure/marks.js` exists for.
         for (const transition of transitions || []) {
-            const source = transition.source ?? transition.from;
-            const index = seen.get(source) ?? 0;
-            seen.set(source, index + 1);
-            Object.assign(transition, this.annotationForTransition(source, index));
+            Object.assign(
+                transition,
+                this.annotationForTransition(transition.source, transition.sourceIndex)
+            );
         }
         return { states, transitions };
     }
@@ -289,10 +293,9 @@ async function loadAnnotationOverlay(wasmModule, scxmlContent, scxmlName) {
  * claimed. Those are different statements and only one of them is true.
  */
 async function annotationOverlayFromWasm(scxmlContent, scxmlName, wasmBase) {
-    const base = wasmBase || 'wasm/';
     try {
-        const wasm = await import(`./${base}sce_build.js`);
-        await wasm.default(`./${base}sce_build_bg.wasm`);
+        // The page's one loader for this module (sce-build-wasm.js).
+        const wasm = await SceBuildWasm.load(wasmBase || 'wasm/');
         return await loadAnnotationOverlay(wasm, scxmlContent, scxmlName);
     } catch (error) {
         if (typeof logger !== 'undefined' && logger.warn) {

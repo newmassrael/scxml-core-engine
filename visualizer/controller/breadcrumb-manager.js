@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
@@ -210,14 +210,17 @@ class BreadcrumbManager {
 
         if (childInfo) {
             logger.debug(`Found static child SCXML: ${childInfo.srcPath}`);
-            const childStructure = childInfo.structure;
-
-            if (childStructure) {
-                await this.navigateToChild(stateId, childStructure, childInfo);
-            } else {
-                console.error(`Child structure not available for ${childInfo.srcPath}`);
-                alert(`Cannot navigate to child SCXML: ${childInfo.srcPath}\n\nThe child SCXML structure was not loaded.`);
+            // The engine says WHICH child this is and where its file is; the
+            // structure is built from the Rust model, as the parent's was.
+            let childStructure = null;
+            try {
+                childStructure = await this._childStructure(childInfo.srcPath);
+            } catch (error) {
+                console.error(`Child structure not available for ${childInfo.srcPath}:`, error);
+                alert(`Cannot navigate to child SCXML: ${childInfo.srcPath}\n\n${error}`);
+                return;
             }
+            await this.navigateToChild(stateId, childStructure, { ...childInfo, structure: childStructure });
         } else {
             logger.warn(`No child SCXML found for state ${stateId}`);
 
@@ -262,9 +265,11 @@ class BreadcrumbManager {
                                info.parentStateId === stateId;
                     });
 
-                    if (dynamicChildInfo && dynamicChildInfo.structure) {
+                    if (dynamicChildInfo && dynamicChildInfo.srcPath) {
                         logger.debug(`[handleStateNavigation] Found dynamic child SCXML: ${dynamicChildInfo.srcPath}`);
-                        await this.navigateToChild(stateId, dynamicChildInfo.structure, dynamicChildInfo);
+                        const childStructure = await this._childStructure(dynamicChildInfo.srcPath);
+                        await this.navigateToChild(stateId, childStructure,
+                            { ...dynamicChildInfo, structure: childStructure });
                         return;
                     }
 
@@ -272,95 +277,16 @@ class BreadcrumbManager {
                     logger.debug(`[handleStateNavigation] Attempting to parse child SCXML directly from file: ${cleanPath}`);
 
                     try {
-                        // Get Module (WASM) from global scope
-                        if (typeof window.Module === 'undefined') {
-                            throw new Error('WASM Module not available');
-                        }
-                        const Module = window.Module;
-
-                        // Determine virtual file system path dynamically
-                        let virtualPath = null;
-
-                        // Try to get base path from runner if available
-                        if (this.controller.runner.getBasePath) {
-                            const basePath = this.controller.runner.getBasePath();
-                            virtualPath = `${basePath}${cleanPath}`;
-                            logger.debug(`[handleStateNavigation] Using runner base path: ${virtualPath}`);
-                        } else {
-                            // Fallback: Search Emscripten FS for the file
-                            const searchPaths = [
-                                `/resources/${cleanPath}`,  // Direct resources path
-                                `/${cleanPath}`             // Root path
-                            ];
-
-                            // Add test-specific path if available
-                            const params = new URLSearchParams(window.location.hash.substring(1));
-                            const testId = params.get('test');
-                            if (testId) {
-                                searchPaths.unshift(`/resources/${testId}/${cleanPath}`);
-                            }
-
-                            logger.debug(`[handleStateNavigation] Searching for file in paths:`, searchPaths);
-
-                            for (const path of searchPaths) {
-                                try {
-                                    Module.FS.stat(path);
-                                    virtualPath = path;
-                                    logger.debug(`[handleStateNavigation] File found at: ${virtualPath}`);
-                                    break;
-                                } catch (e) {
-                                    // File doesn't exist at this path, try next
-                                }
-                            }
-
-                            if (!virtualPath) {
-                                throw new Error(`File not found in virtual FS: ${cleanPath}`);
-                            }
-                        }
-
-                        logger.debug(`[handleStateNavigation] Reading virtual file: ${virtualPath}`);
-                        const fileContent = Module.FS.readFile(virtualPath, { encoding: 'utf8' });
-
-                        // Create temporary runner to parse child structure
-                        logger.debug(`[handleStateNavigation] Creating temporary parser for child SCXML`);
-                        const tempRunner = new Module.InteractiveTestRunner();
-
-                        try {
-                            // Set base path from parent runner or derive from virtual path
-                            let childBasePath = '/';
-                            if (this.controller.runner.getBasePath) {
-                                childBasePath = this.controller.runner.getBasePath();
-                            } else {
-                                // Derive base path from virtual path
-                                const lastSlash = virtualPath.lastIndexOf('/');
-                                if (lastSlash > 0) {
-                                    childBasePath = virtualPath.substring(0, lastSlash + 1);
-                                }
-                            }
-
-                            logger.debug(`[handleStateNavigation] Setting child base path: ${childBasePath}`);
-                            tempRunner.setBasePath(childBasePath);
-
-                            if (tempRunner.loadSCXML(fileContent, false)) {
-                                const childStructure = tempRunner.getSCXMLStructure();
-                                logger.debug(`[handleStateNavigation] Successfully parsed child SCXML structure`);
-
-                                // Navigate to child
-                                const childInfo = {
-                                    parentStateId: stateId,
-                                    srcPath: evaluatedSrc,
-                                    structure: childStructure
-                                };
-
-                                await this.navigateToChild(stateId, childStructure, childInfo);
-                                return;
-                            } else {
-                                throw new Error('Failed to parse child SCXML');
-                            }
-                        } finally {
-                            // Always cleanup tempRunner to prevent memory leak
-                            tempRunner.delete();
-                        }
+                        // Read the child file the engine can see, and build its
+                        // structure from the Rust model — no second engine
+                        // instance just to read a document.
+                        const childStructure = await this._childStructure(cleanPath);
+                        await this.navigateToChild(stateId, childStructure, {
+                            parentStateId: stateId,
+                            srcPath: evaluatedSrc,
+                            structure: childStructure
+                        });
+                        return;
                     } catch (parseError) {
                         console.error(`[handleStateNavigation] Failed to parse child SCXML:`, parseError);
                         logger.warn(`[handleStateNavigation] Available children:`, allSubSCXMLs);
@@ -376,6 +302,54 @@ class BreadcrumbManager {
                 alert(`No sub-SCXML found for state "${stateId}"`);
             }
         }
+    }
+
+    /**
+     * The text of a child document the engine resolved, read from its
+     * virtual filesystem: under the runner's base path when it has one,
+     * otherwise at the first of the usual places that holds it.
+     */
+    _readChildFile(srcPath) {
+        if (typeof window.Module === 'undefined') {
+            throw new Error('WASM Module not available');
+        }
+        const Module = window.Module;
+        const cleanPath = (srcPath || '').replace(/^file:/, '');
+
+        let virtualPath = null;
+        if (this.controller.runner.getBasePath) {
+            virtualPath = `${this.controller.runner.getBasePath()}${cleanPath}`;
+        } else {
+            const searchPaths = [`/resources/${cleanPath}`, `/${cleanPath}`];
+            const params = new URLSearchParams(window.location.hash.substring(1));
+            const testId = params.get('test');
+            if (testId) {
+                searchPaths.unshift(`/resources/${testId}/${cleanPath}`);
+            }
+            for (const path of searchPaths) {
+                try {
+                    Module.FS.stat(path);
+                    virtualPath = path;
+                    break;
+                } catch (e) {
+                    // Not at this path; try the next.
+                }
+            }
+            if (!virtualPath) {
+                throw new Error(`File not found in virtual FS: ${cleanPath}`);
+            }
+        }
+        logger.debug(`[_readChildFile] Reading virtual file: ${virtualPath}`);
+        return Module.FS.readFile(virtualPath, { encoding: 'utf8' });
+    }
+
+    /**
+     * A child document's structure, built from the Rust model like the
+     * parent's (`SceBuildWasm.guiStructure`) — never from the engine that
+     * runs it, so a child is drawn from the same reading as its parent.
+     */
+    async _childStructure(srcPath) {
+        return SceBuildWasm.guiStructure(this._readChildFile(srcPath), srcPath);
     }
 
     async navigateToChild(stateId, childStructure, childInfo = null) {

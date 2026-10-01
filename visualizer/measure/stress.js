@@ -211,7 +211,7 @@ function scatter(v, rand) {
         + ` ${targets.length} document(s)`);
     console.log('        replay with SCE_STRESS_SEED=' + SEED);
 
-    const { Module, elk } = await loadEngine();
+    const { rust, elk } = await loadEngine();
 
     // ⚠ A stream PER DOCUMENT, keyed by its name.
     //
@@ -232,8 +232,8 @@ function scatter(v, rand) {
     for (const doc of targets) {
         const rand = streamFor(doc);
         let structure;
-        try { structure = structureOf(Module, doc); } catch (e) {
-            fail(`${doc}: the engine could not read it — ${e.message}`);
+        try { structure = structureOf(rust, doc); } catch (e) {
+            fail(`${doc}: the model could not read it — ${e.message || e}`);
             continue;
         }
         let v;

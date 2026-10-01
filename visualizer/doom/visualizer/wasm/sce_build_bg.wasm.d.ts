@@ -4,6 +4,7 @@ export const memory: WebAssembly.Memory;
 export const annotation_overlay: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const compile_scxml_lang: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const get_machine_name: (a: number, b: number) => [number, number, number, number];
+export const gui_structure: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const supported_languages: () => [number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;

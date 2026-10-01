@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
@@ -75,6 +75,8 @@ class NodeBuilder {
                 // Row G2: what this element claims, and whether anything
                 // does. First, so a later field cannot quietly shadow it.
                 ...this.annotationFor(state.id),
+                // The author's `sce:unresolved` / `sce:assumed` markers.
+                ...authorMarksOf(state),
                 id: state.id,
                 type: state.type,
                 label: state.id,

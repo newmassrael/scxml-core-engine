@@ -1,10 +1,10 @@
 // How crowded is each document's drawing, measured over the real pipeline?
 //
 // Every part is the shipped one:
-//   the structure   from the C++ engine compiled to WASM (`visualizer.js`),
-//                   through `InteractiveTestRunner.getSCXMLStructure()` —
-//                   the same call main.js makes. Transcribing a document
-//                   into a structure by hand here would be a second parser.
+//   the structure   from `gui_structure()` in the sce-build WASM, through
+//                   the harness's `structureOf` — the same call main.js
+//                   makes. Transcribing a document into a structure by
+//                   hand here would be a second parser.
 //   the graph       from the real `SCXMLVisualizer`, so node building, link
 //                   merging, label measurement, ELK and the optimizer are
 //                   all the ones that ship.
@@ -13,19 +13,14 @@
 // Only d3 and window are stubbed, because `visualizer-core.js` is the one
 // file in this path that touches them.
 
-const fs = require('fs');
 const vm = require('vm');
-const path = require('path');
-
-const ROOT = path.resolve(__dirname, '..');
-const REPO = path.resolve(__dirname, '../../..');
 
 // ⚠ The harness is `harness.js` now, not a copy here. There were two
 // copies and they had already drifted: this one's `d3Chain` answered
 // `size()` with itself, which throws the moment the collapse path
 // interpolates it into a log message. A probe that cannot collapse and a
 // probe that can, from the same file, is what two copies buy.
-const { makeSandbox } = require('./harness');
+const { makeSandbox, loadEngine, structureOf } = require('./harness');
 
 
 // ---------------------------------------------------------------- oracle
@@ -358,13 +353,10 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
 }
 
 (async () => {
-    const createVisualizer = require(path.join(ROOT, 'visualizer.js'));
-    const Module = await createVisualizer();
-    // The vendored copy — the one the page loads, not one npm resolved.
+    // The vendored elkjs — the one the page loads, not one npm resolved.
     // A harness measuring a different build of the layout engine measures a
     // different product.
-    const ELK = require(path.join(ROOT, 'vendor/elkjs/elk.bundled.js'));
-    const elkInstance = new ELK();
+    const { rust, elk: elkInstance } = await loadEngine();
 
     // ⭐ Two modes, and the difference is what the numbers are FOR.
     //
@@ -376,16 +368,14 @@ async function measure(sandbox, elkInstance, structure, legacy, spacing) {
     const sweep = process.argv.includes('--sweep');
     const docs = process.argv.slice(2).filter((a) => a !== '--sweep');
 
-    // Read every structure once, from the engine.
+    // Read every structure once, from the model.
     const structures = [];
     let refused = 0;
     for (const rel of docs) {
         try {
-            const runner = new Module.InteractiveTestRunner();
-            runner.loadSCXML(fs.readFileSync(path.join(REPO, rel), 'utf8'), false);
-            structures.push({ rel, structure: runner.getSCXMLStructure() });
+            structures.push({ rel, structure: structureOf(rust, rel) });
         } catch (error) {
-            console.error(`${rel}: engine refused — ${error.message || error}`);
+            console.error(`${rel}: model refused — ${error.message || error}`);
             refused++;
         }
     }

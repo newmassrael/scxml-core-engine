@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
@@ -374,7 +374,21 @@ async function initVisualizer(scxmlContent) {
             throw new Error('Failed to initialize state machine');
         }
 
-        const structure = runner.getSCXMLStructure();
+        // The structure the diagram draws comes from the Rust model — the
+        // same reading the pseudocode page, the print figures and the
+        // checklist are built from — while `runner` above RUNS the machine.
+        // `web/visualizer/measure/structure-parity.js` holds the two to the
+        // same state ids and transition positions, which is what the live
+        // highlight joins on. A document the product refuses is shown with
+        // the product's message; there is no falling back to another reader.
+        let structure;
+        try {
+            structure = await SceBuildWasm.guiStructure(scxmlContent, params.test || 'untitled');
+        } catch (error) {
+            showLoading(false);
+            showFatalError(`The product refused this document: ${error}`);
+            return;
+        }
 
         logger.debug(`  State machine initialized: ${structure.states.length} states, ${structure.transitions ? structure.transitions.length : 0} transitions`);
         logger.debug('[DEBUG] Structure object:', structure);
@@ -442,7 +456,7 @@ async function initVisualizer(scxmlContent) {
         await visualizer.initPromise;
         logger.debug('[INIT] Visualizer render complete');
 
-        const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort(), visualizerManager);
+        const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort(), visualizerManager, structure);
 
         // Expose controller globally for event deletion buttons
         window.executionController = controller;

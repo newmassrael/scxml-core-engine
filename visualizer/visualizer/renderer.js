@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
@@ -522,12 +522,18 @@ class Renderer {
                 // acceptance report derived — nothing is computed here.
                 classes += annotationClassFor(d);
 
+                // The author's open questions and assumptions
+                // (author-marks.js), drawn wherever the author left one.
+                classes += authorMarkClassFor(d);
+
                 return classes;
             })
             .attr('data-state-id', d => d.id)
             // The ids themselves, so the claim is readable off the element
             // and not only inferable from its colour.
             .attr('data-sce-req', d => requirementIdsFor(d))
+            .attr('data-sce-unresolved', d => authorMarkIdsFor(d, 'unresolved'))
+            .attr('data-sce-assumed', d => authorMarkIdsFor(d, 'assumed'))
             .attr('transform', d => `translate(${d.x},${d.y})`)
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -772,6 +778,12 @@ class Renderer {
                         logger.debug(`[DRAG END] Immediate greedy rendering complete`);
                     }
                 }));
+
+        // The marker ids on hover, so a reviewer can name the question an
+        // outline points at.
+        nodeEnter.filter(d => authorMarkTitleFor(d) !== null)
+            .append('title')
+            .text(d => authorMarkTitleFor(d));
 
         // Merge enter + update selections
         this.visualizer.nodeElements = nodeEnter.merge(nodeElements);
@@ -1131,7 +1143,12 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             .data(visibleLinks)
             .enter().append('g')
             .attr('class', 'link-group');
-        
+
+        // The marker ids on hover — see the node builder's title above.
+        linkGroups.filter(d => authorMarkTitleFor(d) !== null)
+            .append('title')
+            .text(d => authorMarkTitleFor(d));
+
         // Path elements
         this.visualizer.linkElements = linkGroups.append('path')
             .attr('class', d => {
@@ -1146,9 +1163,12 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 }
                 // Row G2 — see the state node's class builder above.
                 classes += annotationClassFor(d);
+                classes += authorMarkClassFor(d);
                 return classes;
             })
             .attr('data-sce-req', d => requirementIdsFor(d))
+            .attr('data-sce-unresolved', d => authorMarkIdsFor(d, 'unresolved'))
+            .attr('data-sce-assumed', d => authorMarkIdsFor(d, 'assumed'))
             .attr('data-transition-id', d => d.transitionId || null)
             .attr('d', d => this.visualizer.getLinkPath(d))
             .style('marker-end', d => {

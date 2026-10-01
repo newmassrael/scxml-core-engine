@@ -300,6 +300,9 @@
     <script src="optimizer/optimizer-core.js"></script>
 
     <!-- SCXML Visualizer Modules -->
+    <!-- The author's sce:unresolved / sce:assumed marks; read by the node
+         and link builders and the renderer below. -->
+    <script src="author-marks.js"></script>
     <script src="visualizer/action-formatter.js"></script>
     <script src="visualizer/invoke-formatter.js"></script>
     <script src="visualizer/node-builder.js"></script>
@@ -315,6 +318,10 @@
          acceptance report derives and stamps the graph with it; derives
          nothing itself, which is the whole point of the file. -->
     <script src="annotation-overlay.js"></script>
+
+    <!-- The codegen WASM, loaded once: the GUI's structure (from the Rust
+         model), the annotation overlay and the code generator share it. -->
+    <script src="sce-build-wasm.js"></script>
 
     <!-- Execution Controller Modules -->
     <script src="controller/formatters.js"></script>

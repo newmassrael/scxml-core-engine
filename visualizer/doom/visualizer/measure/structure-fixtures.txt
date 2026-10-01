@@ -1,0 +1,50 @@
+# Documents `structure-parity.js` compares, and what each one is here to exercise.
+#
+# The GUI draws the structure `sce_build::gui_structure` builds from the Rust
+# model while the C++ engine runs the machine; the live highlight joins the two
+# by state id and by (source, sourceIndex). This list is where they are held to
+# agree.
+#
+# ⚠ PINNED, not derived, for the reason `fixtures.txt` gives: this gate runs in
+# deploy-visualizer.yml, whose trigger does not include the documents' own
+# directories, so a derived list would claim a lane that never runs for a
+# document edited elsewhere. The residue, stated: a document here changing shape
+# does not re-run the gate; a change to either producer (sce-build/**,
+# tests/w3c/InteractiveTestRunner.cpp) does, and that is where a disagreement
+# comes from.
+#
+# ⭐ Chosen by SHAPE. Measured 2026-09-29 over every tracked example,
+# integration fixture and W3C document the C++ engine loads standalone: 329 of
+# 335 agree, every difference a declared one. A shape the GUI draws that is not
+# below should be added with its reason.
+
+# History pseudo-state in its written place; parallel regions; finals.
+examples/ai_loop/ai_loop.scxml
+# <initial> elements make no node; the compound reports its resolved child.
+resources/412/test412.scxml
+# A multi-token initial (declared: C++ keeps the first token).
+resources/364/test364.scxml
+# Targetless transitions report as internal.
+examples/widget_patterns/drag.scxml
+# Guarded wildcards and internal transitions.
+integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml
+# <foreach> with iteration actions.
+resources/150/test150.scxml
+# <send> with <param>.
+resources/176/test176.scxml
+# <log label> (declared: C++ drops it).
+examples/timer/timer_example.scxml
+# A language-prefixed <script> (declared: C++ keeps the wrapper).
+examples/doom_wasm/scxml/weapon_state.scxml
+# Inline <invoke><content> and <finalize> (declared: serialisation, lowering).
+integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml
+# A hybrid <invoke> whose written type the model lowers (declared).
+integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml
+# An <if> nested in a branch (declared: C++ drops it).
+integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml
+# A transition cond the C++ builder omits (declared).
+resources/519/test519.scxml
+# <assign> with inline content (declared).
+resources/530/test530.scxml
+# <content> whitespace (declared).
+resources/562/test562.scxml

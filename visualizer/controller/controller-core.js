@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
@@ -17,7 +17,7 @@ const PANEL_HIGHLIGHT_DURATION = 3000; // ms - Duration for panel highlight anim
 
 
 class ExecutionController {
-    constructor(wasmRunner, visualizer, availableEvents = [], visualizerManager = null) {
+    constructor(wasmRunner, visualizer, availableEvents = [], visualizerManager = null, structure = null) {
         this.runner = wasmRunner;
         this.visualizer = visualizer;
         this.currentStep = 0;
@@ -36,7 +36,9 @@ class ExecutionController {
         this.currentMachine = {
             id: 'root',
             label: 'Parent',
-            structure: this.runner.getSCXMLStructure(),  // Get root SCXML structure from runner
+            // The structure the diagram was drawn from (the Rust model's),
+            // not a second reading by the engine that runs the machine.
+            structure,
             visualizer: this.visualizer,
             subSCXMLs: []  // [{stateId, childStructure, invokeSrc}, ...]
         };
