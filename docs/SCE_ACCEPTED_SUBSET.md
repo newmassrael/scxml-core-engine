@@ -2641,6 +2641,7 @@ line of the element or attribute that breaks it:
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
+| a `<param>` of an `<invoke type="scxml">` | A child session of this model has native fields of its own, which only its own code sets, and no generated code hands a parent's `<param>` to one: the value would be typed, accepted and never arrive (measured 2026-10-01 on Rust and Kotlin; under `ecmascript` the same document seeds the child's datamodel). Refused at the `<param>` as `scxml/static-datamodel-rule` until a value can land in a field; the child is given a value in an event it takes. A host-run invoke's `<param>` is part of the request the host receives and is judged as any typed expression |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each

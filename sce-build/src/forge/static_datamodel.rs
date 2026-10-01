@@ -349,13 +349,33 @@ impl<'a> Judge<'a> {
         state: &str,
         value: &str,
     ) -> Located<ForgeError> {
+        self.rule_at(
+            construct,
+            "this data model types the expressions of <data>, a condition, \
+             <assign>, <log> and <param>; this attribute has no typed form",
+            line,
+            col,
+            state,
+            value,
+        )
+    }
+
+    /// A refusal under the rule `rule`, placed at `line`/`col`: the one shape
+    /// every refusal of this pass takes, whatever the rule says.
+    fn rule_at(
+        &self,
+        construct: String,
+        rule: &str,
+        line: Option<u32>,
+        col: Option<u32>,
+        state: &str,
+        value: &str,
+    ) -> Located<ForgeError> {
         Located::new(
             ScxmlSemanticError::StaticDatamodelRule {
                 construct,
                 datamodel: Datamodel::SceStatic.as_str().to_string(),
-                rule: "this data model types the expressions of <data>, a condition, \
-                       <assign>, <log> and <param>; this attribute has no typed form"
-                    .to_string(),
+                rule: rule.to_string(),
                 state: state.to_string(),
                 observed: (!value.is_empty()).then(|| value.to_string()),
             }
@@ -604,6 +624,37 @@ impl<'a> Judge<'a> {
                     col,
                     state,
                     value,
+                ));
+            }
+        }
+        // §scxml-6.4.1: an `<invoke type="scxml">` hands each `<param>` to the
+        // child session it starts, to be bound as a variable of the child's
+        // datamodel. Under this model that datamodel is the child's own native
+        // fields, which only the child's code sets, and no generated code
+        // delivers a parent's `<param>` to one — so the value would be typed
+        // here, accepted, and never arrive. Refused where it is written until
+        // a value can land in a field. A host-run invoke's `<param>` is part of
+        // the request the host receives, and is judged below.
+        if matches!(invoke, Invoke::Scxml(_)) {
+            if let Some(param) = base.params.first() {
+                let at = param.source_location.as_ref();
+                let written = if param.expr.trim().is_empty() {
+                    &param.location
+                } else {
+                    &param.expr
+                };
+                return Err(self.rule_at(
+                    format!(
+                        "<param name=\"{}\"> of <invoke id=\"{}\">",
+                        param.name, base.invoke_id
+                    ),
+                    "a child session of this data model has native fields of its own and \
+                     is handed no <param>: the value would be dropped, so give the child \
+                     the value in an event it takes",
+                    at.and_then(|l| l.line).or(line),
+                    at.and_then(|l| l.col).or(col),
+                    state,
+                    written,
                 ));
             }
         }

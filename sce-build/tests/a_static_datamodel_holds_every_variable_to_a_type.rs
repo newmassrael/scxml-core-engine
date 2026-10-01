@@ -635,6 +635,116 @@ fn an_assignment_to_a_whole_record_is_refused() {
     assert_refused_at(&out, "expression/unsupported-construct", 12);
 }
 
+// ── A child session is given no <param> ─────────────────────────────────
+//
+// Under `sce-static` a variable is a native field, and a field is set by the
+// machine's own code. An `<invoke type="scxml">` starts a child session whose
+// datamodel is that child's own fields, and no generated code hands a parent's
+// `<param>` to one: the document is accepted, generates, and the child never
+// sees the value. (Under `ecmascript` the same document generates
+// `setInvokeParams`.) Measured 2026-10-01 on Rust and Kotlin. A refusal where
+// the `<param>` is written is the honest state until a value can arrive in a
+// field.
+
+/// A `sce-static` parent holding `count: uint32`, whose first state invokes a
+/// child session with `params` written inside the `<invoke>`. The `<state>`
+/// opens on line 8 and the `<invoke>` on line 9, so a param written on its own
+/// line is on line 10.
+fn invoking(params: &str) -> String {
+    machine(&format!(
+        r#"<state id="s">
+    <invoke type="scxml" id="child">
+      {params}
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="busy" datamodel="sce-static">
+          <datamodel><data id="start" sce:type="uint32" expr="0"/></datamodel>
+          <state id="busy"><transition event="finish" target="end"/></state>
+          <final id="end"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.child" target="done"/>
+  </state>"#
+    ))
+}
+
+#[test]
+fn a_child_session_with_no_param_is_accepted() {
+    // The control: the document the refusals below differ from only by a
+    // `<param>`.
+    for lang in ["rust", "kotlin"] {
+        let (ok, out) = run(&["check", "-l", lang], &invoking(""));
+        assert!(ok, "{lang}: an invoke with no param is fine:\n{out}");
+    }
+}
+
+#[test]
+fn a_param_the_child_session_would_never_receive_is_refused_on_its_line() {
+    for (what, param) in [
+        ("an expression", r#"<param name="start" expr="count"/>"#),
+        ("a literal", r#"<param name="start" expr="7"/>"#),
+        ("a location", r#"<param name="start" location="count"/>"#),
+    ] {
+        let (ok, out) = run(&["check"], &invoking(param));
+        assert!(!ok, "{what}: no code hands it to the child:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+    }
+}
+
+#[test]
+fn the_refusal_names_the_param_and_what_the_child_lacks() {
+    let (_, out) = run(
+        &["check"],
+        &invoking(r#"<param name="start" expr="count"/>"#),
+    );
+    let record = out
+        .lines()
+        .find(|l| l.contains("\"code\":\"scxml/static-datamodel-rule\""))
+        .unwrap_or_else(|| panic!("expected a static-datamodel-rule refusal:\n{out}"));
+    assert!(record.contains("start"), "it names the param:\n{record}");
+    assert!(
+        record.contains("child session"),
+        "it says whose datamodel the value has nowhere to arrive in:\n{record}"
+    );
+}
+
+#[test]
+fn a_param_is_still_given_to_a_child_under_ecmascript() {
+    // The refusal is of this data model's lacking a field to arrive in, not of
+    // `<param>`: under `ecmascript` the value is seeded into the child's
+    // datamodel.
+    let document = invoking(r#"<param name="start" expr="count"/>"#)
+        .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
+        .replace(r#" sce:type="uint32""#, "")
+        .replace(r#" sce:type="bool""#, "");
+    let (ok, out) = run(&["check"], &document);
+    assert!(ok, "ecmascript hands a param to its child:\n{out}");
+}
+
+#[test]
+fn a_host_run_invokes_param_is_still_accepted() {
+    // The refusal is of a CHILD SESSION's `<param>`. A host-run invoke's is part
+    // of the request the host receives, so it has somewhere to arrive, and is
+    // judged as a typed expression like any other.
+    let host = machine(
+        r#"<state id="s">
+    <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
+    <transition event="done.invoke.h" target="done"/>
+  </state>"#,
+    );
+    let (ok, out) = run(&["check"], &host);
+    assert!(ok, "a param addressed to the host is not refused:\n{out}");
+
+    // ... and it is judged: a name nothing declares is still refused there.
+    let (ok, out) = run(
+        &["check"],
+        &host.replace(r#"expr="count""#, r#"expr="cuont""#),
+    );
+    assert!(!ok, "`cuont` is declared nowhere:\n{out}");
+    assert!(out.contains("cuont"), "it names what was written:\n{out}");
+}
+
 // ── A variable is published by sce:direction="out" ──────────────────────
 
 #[test]
