@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 77d9ebe3529c99a39281511d0fcb487e99a73194813af5353b83abe11916ff46
+// source-hash: f412abe378d8602f487bb57814b1e86375602231fb9a698575c1e06002c3c186
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload.scxml
@@ -117,11 +117,14 @@ class StaticPayloadStateMachine(
      * This machine's whole state at the macrostep boundary it stands at —
      * every variable, the machine's own included, and where it stands — as
      * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
      *
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(): SavedState = savedState(
+    fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
             "day" to SavedValues.of(day),
@@ -129,7 +132,11 @@ class StaticPayloadStateMachine(
             "sinceEpoch" to SavedValues.of(sinceEpoch),
             "refusals" to SavedValues.of(refusals),
         ),
+        wallNowMs,
     )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
 
     /**
      * Stand this machine where [saved] left one, in place of [initialize]: no
@@ -137,11 +144,17 @@ class StaticPayloadStateMachine(
      * already did both. Every value is read before any is written, so a
      * refused restore leaves the machine as it was.
      *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
      * @throws StateRefusal for a machine that has already started, a state
      *   saved from a document of another shape, a configuration that is not
      *   one of this document, or a value its variable's type cannot hold.
      */
-    fun restore(saved: SavedState) {
+    fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint8(saved.variable("day"), "day")
         val saved2 = SavedValues.bool(saved.variable("late"), "late")
@@ -151,8 +164,11 @@ class StaticPayloadStateMachine(
         late = saved2
         sinceEpoch = saved3
         refusals = saved4
-        enterSaved(saved)
+        enterSaved(saved, wallNowMs)
     }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the

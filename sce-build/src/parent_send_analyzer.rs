@@ -28,7 +28,7 @@
 //! resolves at runtime and no build-time walk can name its value.
 
 use crate::forge::error::SourceLocation;
-use crate::model::{Action, SCXMLModel};
+use crate::model::SCXMLModel;
 
 /// The parent session's target, spelled as §scxml-6.2.4 spells it.
 pub const PARENT_TARGET: &str = "#_parent";
@@ -53,16 +53,16 @@ pub struct ParentSend {
 /// written — the list is read by a person looking for the line to open.
 /// Sites with no location sort last: absent position is not position zero.
 pub fn analyze(model: &SCXMLModel) -> Vec<ParentSend> {
-    let mut sends = Vec::new();
-    for (state_id, state) in &model.states {
-        for block in state.executable_blocks() {
-            collect(state_id, block, &mut sends);
-        }
-    }
-    // A `<history>`'s default transition belongs to its parent state.
-    for history in model.history_states.values() {
-        collect(&history.parent, &history.default_actions, &mut sends);
-    }
+    let mut sends: Vec<ParentSend> = model
+        .sends()
+        .into_iter()
+        .filter(|(_, send)| send.target == PARENT_TARGET)
+        .map(|(state_id, send)| ParentSend {
+            event: (!send.event.is_empty()).then(|| send.event.clone()),
+            state: state_id.to_string(),
+            location: send.source_location.clone(),
+        })
+        .collect();
     sends.sort_by_key(|s| {
         s.location
             .as_ref()
@@ -83,20 +83,6 @@ pub fn analyze(model: &SCXMLModel) -> Vec<ParentSend> {
 /// subtly different predicate never gets written.
 pub fn needs_parent(model: &SCXMLModel) -> bool {
     !analyze(model).is_empty()
-}
-
-fn collect(state_id: &str, block: &[Action], out: &mut Vec<ParentSend>) {
-    for action in block {
-        action.walk(&mut |a| {
-            if a.action_type == "send" && a.target == PARENT_TARGET {
-                out.push(ParentSend {
-                    event: (!a.event.is_empty()).then(|| a.event.clone()),
-                    state: state_id.to_string(),
-                    location: a.source_location.clone(),
-                });
-            }
-        });
-    }
 }
 
 /// [`analyze`], each location placed where the author wrote it — in the

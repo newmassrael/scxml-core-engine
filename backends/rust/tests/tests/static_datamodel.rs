@@ -15,8 +15,8 @@
 // The assertions are the Kotlin test's: one document means one behaviour on
 // both backends.
 
-use sce_rust_runtime::saved_state::{SavedState, StateRefusal};
-use sce_rust_runtime::Engine;
+use sce_rust_runtime::saved_state::{wall_clock_ms, SavedState, StateRefusal};
+use sce_rust_runtime::{Engine, SceClock};
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterData, StaticCounterObserve, StaticCounterPersist, StaticCounterPolicy,
     StaticCounterState,
@@ -36,6 +36,9 @@ use sce_rust_tests::integration::static_datamodel::static_overflow_sm::StaticOve
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordDayPickedPayload, StaticRecordDayRecord, StaticRecordInject, StaticRecordObserve,
     StaticRecordPersist, StaticRecordPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
+    StaticTimersPersist, StaticTimersPolicy,
 };
 
 // ── static_counter: scalar variables, a typed guard, assignments ──────────
@@ -884,4 +887,170 @@ fn a_saved_state_whose_object_repeats_a_name_is_not_this_format() {
         .replace(r#""last":["fast"]"#, r#""last":["fast"],"last":["slow"]"#);
     let refusal = SavedState::from_json(&text).expect_err("a repeated name");
     assert!(refusal.reason().contains("appears twice"), "{refusal}");
+}
+
+// ── a delayed <send> still waiting is part of the saved state ────────────────
+//
+// `static_timers.scxml` arms four on entering `waiting`; each appends a digit to
+// `trace` when delivered, so the number says which arrived and in what order.
+// Everything runs on a host-owned clock, so no case sleeps and none depends on
+// how loaded the machine is.
+
+const SHARED_TIMERS: &str =
+    include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_timers.json");
+const SHARED_TIMERS_MIDWAY: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_timers_midway.json"
+);
+
+/// The wall-clock moment the shared fixtures were saved at, as the Kotlin suite
+/// has it: 2023-11-14T22:13:20Z.
+const SAVED_AT_MS: u64 = 1_700_000_000_000;
+
+fn timers() -> Engine<StaticTimersPolicy> {
+    let mut engine = Engine::new(StaticTimersPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    engine.initialize();
+    engine
+}
+
+/// `text` restored `elapsed_ms` of wall-clock time after it was saved, into a
+/// process whose own clock starts at 0.
+fn timers_restored(text: &str, elapsed_ms: u64) -> Engine<StaticTimersPolicy> {
+    Engine::<StaticTimersPolicy>::restore_with(
+        StaticTimersPolicy::new(),
+        &SavedState::from_json(text).expect("reads"),
+        SceClock::Manual(0),
+        SAVED_AT_MS + elapsed_ms,
+    )
+    .expect("restores")
+}
+
+#[test]
+fn a_waiting_send_is_saved_as_the_wall_clock_moment_it_comes_due() {
+    // The same runs the Kotlin suite makes, saving the shared fixtures' text
+    // byte for byte: four sends in the order they would be delivered, `beat`
+    // ahead of `echo` since they are due together and were sent in that order.
+    let mut engine = timers();
+    assert_eq!(
+        engine.save_at(SAVED_AT_MS).expect("saves").to_json(),
+        SHARED_TIMERS.trim()
+    );
+
+    // 1.5 s later `inner` has been delivered. What is left is due at the same
+    // wall-clock moments as before, because the moment is what is saved — the
+    // wait left is what changed, and a restore is told the time, not the wait.
+    engine.advance_time_ms(1500);
+    assert_eq!(engine.policy().trace(), 1);
+    assert_eq!(
+        engine.save_at(SAVED_AT_MS + 1500).expect("saves").to_json(),
+        SHARED_TIMERS_MIDWAY.trim()
+    );
+}
+
+#[test]
+fn a_save_without_a_clock_reads_the_wall_clock() {
+    let engine = timers();
+    let before = wall_clock_ms();
+    let saved = engine.save().expect("saves");
+    let after = wall_clock_ms();
+    // `inner` waits 1 s on an engine whose clock is at 0.
+    let due = saved.pending[0].due;
+    assert!(
+        (before + 1000..=after + 1000).contains(&due),
+        "due {due} is not 1 s past the wall clock at the save ({before}..={after})"
+    );
+}
+
+#[test]
+fn a_restored_machine_delivers_each_waiting_send_when_its_moment_comes() {
+    // Back 500 ms after the save: `inner` has 500 ms left, `beat` and `echo`
+    // 1500, `timeout` 4500.
+    let mut engine = timers_restored(SHARED_TIMERS, 500);
+    assert_eq!(engine.policy().trace(), 0);
+
+    engine.advance_time_ms(499);
+    assert_eq!(engine.policy().trace(), 0, "`inner` is not due yet");
+    engine.advance_time_ms(1);
+    assert_eq!(engine.policy().trace(), 1, "`inner`, at 500 ms");
+    engine.advance_time_ms(999);
+    assert_eq!(engine.policy().trace(), 1, "`beat` and `echo` are not due");
+    engine.advance_time_ms(1);
+    assert_eq!(
+        engine.policy().trace(),
+        124,
+        "`beat` then `echo`, at 1500 ms"
+    );
+    assert!(!engine.is_in_final_state());
+    engine.advance_time_ms(3000);
+    assert_eq!(engine.policy().trace(), 1243, "`timeout`, at 4500 ms");
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn a_send_already_due_when_the_machine_comes_back_is_delivered_in_its_order() {
+    // A minute away: every wait ran out while the process was dead. Each is
+    // delivered, one macrostep apart, in the order the saved machine would
+    // have — `beat` ahead of `echo`, which were due together.
+    let mut engine = timers_restored(SHARED_TIMERS, 60_000);
+    assert_eq!(
+        engine.policy().trace(),
+        0,
+        "nothing is delivered by restoring"
+    );
+    engine.advance_time_ms(0);
+    assert_eq!(engine.policy().trace(), 1243);
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn a_wait_that_was_half_over_when_saved_has_the_rest_to_run() {
+    // Saved 1.5 s in with `inner` delivered and `trace` 1; restored at once.
+    let mut engine = timers_restored(SHARED_TIMERS_MIDWAY, 1500);
+    assert_eq!(engine.policy().trace(), 1);
+    engine.advance_time_ms(499);
+    assert_eq!(engine.policy().trace(), 1);
+    engine.advance_time_ms(1);
+    assert_eq!(engine.policy().trace(), 124, "`beat` then `echo`");
+    engine.advance_time_ms(3000);
+    assert_eq!(engine.policy().trace(), 1243);
+}
+
+#[test]
+fn a_restored_send_can_still_be_cancelled_by_its_id() {
+    // `stop` cancels `timer`, so what was saved has to carry the id it names.
+    let mut engine = timers_restored(SHARED_TIMERS, 0);
+    engine.raise_external_by_name("stop", "");
+    engine.step();
+    engine.advance_time_ms(60_000);
+    assert_eq!(engine.policy().trace(), 124, "`timeout` was cancelled");
+    assert!(!engine.is_in_final_state());
+}
+
+#[test]
+fn a_machine_restored_from_a_text_saves_that_text_again() {
+    // Nothing is lost on the way through: the order, the moments and the ids a
+    // second save writes are the first's.
+    for (text, elapsed) in [(SHARED_TIMERS, 0), (SHARED_TIMERS_MIDWAY, 1500)] {
+        let engine = timers_restored(text, elapsed);
+        assert_eq!(
+            engine
+                .save_at(SAVED_AT_MS + elapsed)
+                .expect("saves")
+                .to_json(),
+            text.trim()
+        );
+    }
+}
+
+#[test]
+fn a_waiting_send_naming_an_event_the_document_lacks_is_refused() {
+    let text = SHARED_TIMERS.replace(r#""event":"beat""#, r#""event":"warp""#);
+    let refusal = refused(Engine::<StaticTimersPolicy>::restore_with(
+        StaticTimersPolicy::new(),
+        &SavedState::from_json(&text).expect("reads"),
+        SceClock::Manual(0),
+        SAVED_AT_MS,
+    ));
+    assert!(refusal.reason().contains("pending[1]"), "{refusal}");
+    assert!(refusal.reason().contains("warp"), "{refusal}");
 }

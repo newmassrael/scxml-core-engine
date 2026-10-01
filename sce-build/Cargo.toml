@@ -796,8 +796,8 @@ required-features = ["cli"]
 
 [[test]]
 # Spawns `sce-codegen` and reads what it wrote, so the binary has to exist.
-name = "a_machine_holding_state_in_the_runtime_has_no_save_api"
-path = "tests/a_machine_holding_state_in_the_runtime_has_no_save_api.rs"
+name = "a_machine_waiting_on_another_session_has_no_save_api"
+path = "tests/a_machine_waiting_on_another_session_has_no_save_api.rs"
 required-features = ["cli"]
 
 [[test]]

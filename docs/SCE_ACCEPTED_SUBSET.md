@@ -2849,9 +2849,10 @@ of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
 yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait. A saved state holds every
 variable, the machine's own included, the configuration, the current leaf,
-what each `<history>` recorded and the external queue in order — only the
-internal queue is empty at a macrostep boundary, so an event a host raised and
-has not yet driven the machine through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
+what each `<history>` recorded, the delayed `<send>`s still waiting and the
+external queue in order — only the internal queue is empty at a macrostep
+boundary, so an event a host raised and has not yet driven the machine
+through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
 `schemas/sce-saved-state.v1.schema.json`, a `pre-release` surface in
 `SCE_WIRE_CONTRACTS.md`). The document is the same on every backend — keys are
 the document's ids, the configuration is in document order, a 64-bit integer
@@ -2868,11 +2869,40 @@ machine that resumes through it takes its default transition, as the saved one
 would have; a document with no `<history>` writes `{}`. The field is always
 present, as `external` is.
 
+**Waiting sends.** A delayed `<send>` that has not been delivered is part of
+the state too (§scxml-6.2): a saved machine that left it out would restore
+into one that never delivers it. `pending` lists each in the order the machine
+would deliver them — earliest first, entries due at the same moment in the
+order they were sent — and an entry is one of three acts: `raise`, an event for
+this session's external queue; `internal`, one for its internal queue
+(`#_internal`); `host`, a request a host-served processor performs
+(§scxml-6.2.5), with every field the document wrote. Each carries the send's
+`sendid`, so a `<cancel>` still finds it after a restore.
+
+An entry is saved as the moment it comes due on the host's WALL clock (`due`,
+a text of milliseconds since the Unix epoch), not as a wait. A wait would start
+again when the process came back, and a timer that ran out while it was dead
+would be late by exactly as long as it was dead. The engine's own clock is
+monotonic and has no epoch, so the host says what time it is on the wall: Rust
+`save_at(wall_now_ms)` and `restore_with(policy, &saved, clock, wall_now_ms)`,
+Kotlin `save(wallNowMs)` and `restore(saved, wallNowMs)`; the forms without it
+read the system's wall clock. A restore arms each entry to come due
+`due - wall_now_ms` after now on the machine's own clock — which is installed
+before it, as before `initialize`, so that a delay armed against one clock is
+not judged against another — and an entry already due when the machine comes
+back is armed to come due now, behind the ones due before it, so the next tick
+delivers them in the order the saved machine would have, one macrostep apart. A
+host that owns time (`SceClock::Manual`, `ManualClock`) passes whatever its
+notion of the wall is. The same run saves the same text on every backend,
+`pending` included: `static_timers.json` and `static_timers_midway.json` in the
+shared instances are the text each backend writes, and each restores from them.
+
 A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
 both, and its host calls cannot be made twice), and it is refused, leaving
 the machine as it was, for a state saved from a document of another shape, a
 configuration that is not one of the document, a value its variable's type
-or bound cannot hold, or a history value the document could not have
+or bound cannot hold, a waiting send that names an event the document does not
+name, or a history value the document could not have
 recorded: an id it does not declare or names twice, a state it does not name,
 none at all, one that is not below the history's parent (or, for a shallow
 history, not a child of it), a deep history's state that has children, or
@@ -2901,15 +2931,19 @@ re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
-A document with a delayed `<send>` (or a `<cancel>`) or an `<invoke>` has
-state the runtime holds rather than its fields, which this version of the
-format does not carry: a timer still pending in the scheduler, an invoked
-session. Such a machine is generated WITHOUT `save` / `restore`, so a host
-finds out when it compiles rather than when a restore drops part of the state.
-`sce-build/tests/a_machine_holding_state_in_the_runtime_has_no_save_api.rs`
+A document that waits on ANOTHER SESSION has state this version of the format
+does not carry: an `<invoke>`, whose child is a session of its own, or a
+delayed `<send>` whose target is a `#_` location other than `#_internal` — the
+parent, an invocation, a child session — which is delivered through a session
+the state does not hold. Such a machine is generated WITHOUT `save` /
+`restore`, so a host finds out when it compiles rather than when a restore
+drops part of the state. The delay and the target are read as written, since
+`sce-static` refuses `delayexpr` and `targetexpr`; a send to another session
+that is not delayed leaves nothing waiting, and does not take the API away.
+`sce-build/tests/a_machine_waiting_on_another_session_has_no_save_api.rs`
 pins this end to end, because the generator decides it from a model the
-analyzer has read: a delayed `<send>` is known to need the scheduler only after
-that pass.
+analyzer has read, and a unit test of the lowering alone cannot see a send the
+analyzer found.
 
 **Host actions.** Under `sce-static` a `<sce:action>` argument (§2.11) is
 any typed expression over the same scope, not only a bare

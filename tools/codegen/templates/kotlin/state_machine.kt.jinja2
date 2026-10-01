@@ -191,18 +191,25 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
      * This machine's whole state at the macrostep boundary it stands at —
      * every variable, the machine's own included, and where it stands — as
      * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
      *
      * @throws StateRefusal for a machine that is not running, or whose last
      *   macrostep stopped at the microstep ceiling.
      */
-    fun save(): SavedState = savedState(
+    fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
 {% for field in static_fields %}
             "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name) }},
 {% endfor %}
         ),
+        wallNowMs,
     )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
 
     /**
      * Stand this machine where [saved] left one, in place of [initialize]: no
@@ -210,11 +217,17 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
      * already did both. Every value is read before any is written, so a
      * refused restore leaves the machine as it was.
      *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
      * @throws StateRefusal for a machine that has already started, a state
      *   saved from a document of another shape, a configuration that is not
      *   one of this document, or a value its variable's type cannot hold.
      */
-    fun restore(saved: SavedState) {
+    fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
 {% for field in static_fields %}
         val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'saved.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound) }}
@@ -222,8 +235,11 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 {% for field in static_fields %}
         {{ field.name }} = saved{{ loop.index }}
 {% endfor %}
-        enterSaved(saved)
+        enterSaved(saved, wallNowMs)
     }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
 {% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 

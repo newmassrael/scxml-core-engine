@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables", "history", "external"],
+  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -13,7 +13,7 @@
       "const": 1
     },
     "shape": {
-      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
+      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -41,6 +41,17 @@
         "minItems": 1
       }
     },
+    "pending": {
+      "description": "The delayed <send>s still waiting (W3C SCXML 6.2), in the order they would be delivered: earliest first, entries due at the same moment in the order they were sent. Each is written as the moment it comes due on the wall clock of the host that saved it, not as a wait: a wait would start again when the process came back, and a timer that ran out while it was dead would be late by exactly as long as it was dead. A restore arms each to come due when its moment does, and one already due to come due now, in this order. A document that makes a delayed send to a parent, an invocation or a child session, or that invokes anything, has no saved state: the session it waits for is not part of this one.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/pendingRaise" },
+          { "$ref": "#/definitions/pendingInternal" },
+          { "$ref": "#/definitions/pendingHost" }
+        ]
+      }
+    },
     "external": {
       "description": "The external queue, front first: events raised to the machine that it has not yet been driven through. Only the internal queue is empty at a macrostep boundary. Restored in this order, behind nothing. A typed payload is not saved; it is lifted again from `data` on delivery.",
       "type": "array",
@@ -61,6 +72,61 @@
     }
   },
   "definitions": {
+    "due": {
+      "description": "When a waiting send comes due: milliseconds since the Unix epoch on the saving host's wall clock, a text holding a non-negative decimal whole number no larger than 9223372036854775807 (every 64-bit integer in this format is a text). A reader refuses one outside that range, which a pattern cannot say.",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
+    "pendingRaise": {
+      "description": "A delayed send of an event to this session's external queue.",
+      "type": "object",
+      "required": ["due", "act", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "raise" },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id: _event.sendid on delivery, and what a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin: the session that sent it.", "type": "string" }
+      }
+    },
+    "pendingInternal": {
+      "description": "A delayed send of an event to this session's internal queue (target #_internal).",
+      "type": "object",
+      "required": ["due", "act", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "internal" },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id, which a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin; empty on a backend whose internal events carry none.", "type": "string" }
+      }
+    },
+    "pendingHost": {
+      "description": "A delayed send a host-served processor performs when it comes due (W3C SCXML 6.2.5). Every field is what the document wrote, so the handler sees the request it would have seen had there been no delay.",
+      "type": "object",
+      "required": ["due", "act", "type", "event", "target", "content", "params", "sendid", "data", "invokeid"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "host" },
+        "type": { "description": "The processor type the send named.", "type": "string" },
+        "event": { "description": "<send event>.", "type": "string" },
+        "target": { "description": "<send target>, empty when the document named none.", "type": "string" },
+        "content": { "description": "Inline <content>, empty when the document carried none.", "type": "string" },
+        "params": {
+          "description": "<param> values by name, in order of name; a repeated name keeps every value in document order.",
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "sendid": { "description": "The send's id.", "type": "string" },
+        "data": { "description": "_event.data as a local delivery of the send would carry it.", "type": "string" },
+        "invokeid": { "description": "_event.invokeid of the event being processed when the send executed.", "type": "string" }
+      }
+    },
     "value": {
       "description": "A value as its sce:type writes it. A whole number up to 32 bits is a JSON number; a 64-bit one (int64, uint64) is a text holding its decimal digits, so no reader that holds numbers as doubles loses its low bits. A real is a number, or one of the texts NaN, Infinity, -Infinity, which JSON has no number for. A bool is a JSON boolean, a string a text, bytes an array of numbers 0 to 255, a list an array of its elements, a record an object keyed by its schema's field ids. The document's types decide which applies; this schema admits their union.",
       "oneOf": [

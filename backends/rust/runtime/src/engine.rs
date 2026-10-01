@@ -594,6 +594,21 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         self.entries.iter().map(|e| e.ready_at).min()
     }
 
+    /// Every queued entry with the instant it comes due, in the order
+    /// [`pop_ready_act_at`](Self::pop_ready_act_at) would take them: earliest
+    /// deadline first, entries due in the same millisecond in the order they
+    /// were scheduled (the sort is stable, as the pop's `min_by_key` is).
+    ///
+    /// A saved state reads this, and writing it in pop order is what lets a
+    /// restore arm the entries in the order it was given and get the order the
+    /// saved machine would have delivered them in (§scxml-6.2).
+    #[cfg(not(feature = "no_std"))]
+    pub fn pending(&self) -> Vec<(SchedTimePoint, &ScheduledAct<E>)> {
+        let mut pending: Vec<_> = self.entries.iter().map(|e| (e.ready_at, &e.act)).collect();
+        pending.sort_by_key(|(ready_at, _)| *ready_at);
+        pending
+    }
+
     /// Find-and-remove the ready entry that came due first — the single source
     /// of the scan/remove logic both `pop_ready_event_at` profiles project from.
     ///

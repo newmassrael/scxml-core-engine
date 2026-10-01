@@ -3,6 +3,9 @@
 
 package com.sce.runtime
 
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+
 /** Why a saved state cannot be restored, or a machine cannot be saved. */
 class StateRefusal(message: String) : Exception(message)
 
@@ -14,7 +17,17 @@ class StateRefusal(message: String) : Exception(message)
  * saves the machine and gives it back later. What it saves is everything a
  * macrostep boundary holds that the document cannot recompute: where the
  * machine is (its configuration and current leaf) and every variable, the
- * machine's own included — not only the ones a snapshot publishes.
+ * machine's own included — not only the ones a snapshot publishes — what each
+ * `<history>` recorded, the delayed `<send>`s still waiting, and the external
+ * queue, in order.
+ *
+ * A delayed send is saved as the moment it comes due on the host's WALL clock
+ * ([SavedSend.due], milliseconds since the Unix epoch), not as a wait. A wait
+ * would start again when the process came back, and a timer that ran out while
+ * it was dead would be late by exactly as long as it was dead. The engine's own
+ * [SceClock] is monotonic and has no epoch, so the host says what time it is on
+ * the wall when it saves and when it restores; an entry already due when the
+ * machine comes back is armed as due now, in the order it would have fired.
  *
  * The format is one JSON document (`sce-saved-state`, version [FORMAT]), the
  * same on every backend, so what one backend saved another can read. A
@@ -43,6 +56,9 @@ class StateRefusal(message: String) : Exception(message)
  *   history's id and ordered by it. A history that has recorded nothing is
  *   absent: a resumed machine takes its default transition, as the saved one
  *   would have.
+ * @property pending the delayed `<send>`s still waiting (§scxml-6.2), in the
+ *   order they would be delivered: earliest first, entries due at the same
+ *   moment in the order they were sent.
  * @property external the external queue, front first: events raised to the
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
@@ -54,6 +70,7 @@ class SavedState(
     val current: String,
     val variables: Map<String, Any?>,
     val history: Map<String, List<String>> = emptyMap(),
+    val pending: List<SavedSend> = emptyList(),
     val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
@@ -71,6 +88,7 @@ class SavedState(
             "current" to current,
             "variables" to variables,
             "history" to history,
+            "pending" to pending.map { it.toJsonValue() },
             "external" to external.map { it.toJsonValue() },
         )
     )
@@ -78,9 +96,10 @@ class SavedState(
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
             other.current == current && other.variables == variables && other.history == history &&
-            other.external == external
+            other.pending == pending && other.external == external
 
-    override fun hashCode(): Int = listOf(shape, configuration, current, variables, history, external).hashCode()
+    override fun hashCode(): Int =
+        listOf(shape, configuration, current, variables, history, pending, external).hashCode()
 
     companion object {
         /** The format version this runtime writes and reads. */
@@ -125,6 +144,8 @@ class SavedState(
                 val list = states as? List<*> ?: throw StateRefusal("'history.$id' is not an array")
                 history[id as String] = list.map { text(it, "history.$id") }
             }
+            val pending = (field("pending") as? List<*> ?: throw StateRefusal("'pending' is not an array"))
+                .mapIndexed { i, item -> SavedSend.fromJsonValue(item, "pending[$i]") }
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
@@ -133,9 +154,17 @@ class SavedState(
                 current = text(field("current"), "current"),
                 variables = variables,
                 history = history,
+                pending = pending,
                 external = external,
             )
         }
+
+        /**
+         * The wall clock now, in milliseconds since the Unix epoch: what a host
+         * that has no clock of its own to give `save` and `restore` gives them.
+         */
+        @OptIn(ExperimentalTime::class)
+        fun wallClockMs(): Long = Clock.System.now().toEpochMilliseconds()
 
         /**
          * Refuse [saved] unless it was saved from a document of this [shape] —
@@ -195,6 +224,159 @@ data class SavedEvent(
             )
         }
     }
+}
+
+/**
+ * One delayed `<send>` that has not been delivered yet.
+ *
+ * @property due when it comes due, in milliseconds since the Unix epoch on the
+ *   wall clock of the host that saved it (see [SavedState]).
+ * @property act what it does when it comes due.
+ */
+data class SavedSend(val due: Long, val act: SavedAct) {
+    internal fun toJsonValue(): Map<String, Any?> {
+        val members = linkedMapOf<String, Any?>("due" to due.toString())
+        when (act) {
+            is SavedAct.Raise -> members.putAll(
+                listOf(
+                    "act" to "raise",
+                    "event" to act.event,
+                    "data" to act.data,
+                    "sendid" to act.sendId,
+                    "origin" to act.origin,
+                )
+            )
+            is SavedAct.Internal -> members.putAll(
+                listOf(
+                    "act" to "internal",
+                    "event" to act.event,
+                    "data" to act.data,
+                    "sendid" to act.sendId,
+                    "origin" to act.origin,
+                )
+            )
+            is SavedAct.Host -> members.putAll(
+                listOf(
+                    "act" to "host",
+                    "type" to act.processorType,
+                    "event" to act.event,
+                    "target" to act.target,
+                    "content" to act.content,
+                    // By name, so the text one machine writes is every backend's.
+                    "params" to act.params.entries.sortedBy { it.key }.associateTo(LinkedHashMap()) { it.key to it.value },
+                    "sendid" to act.sendId,
+                    "data" to act.data,
+                    "invokeid" to act.invokeId,
+                )
+            )
+        }
+        return members
+    }
+
+    internal companion object {
+        fun fromJsonValue(value: Any?, what: String): SavedSend {
+            val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
+            fun text(key: String): String {
+                if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
+                return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
+            }
+            // A text of digits, as every 64-bit integer is, and one the other
+            // backends hold too: a moment is a non-negative whole number of
+            // milliseconds.
+            val dueText = text("due")
+            val due = dueText.toLongOrNull()?.takeIf { it >= 0 && dueText.all(Char::isDigit) }
+                ?: throw StateRefusal("'$what.due' ($dueText) is not a whole number of milliseconds")
+            val act = when (val name = text("act")) {
+                "raise" -> SavedAct.Raise(text("event"), text("data"), text("sendid"), text("origin"))
+                "internal" -> SavedAct.Internal(text("event"), text("data"), text("sendid"), text("origin"))
+                "host" -> SavedAct.Host(
+                    processorType = text("type"),
+                    event = text("event"),
+                    target = text("target"),
+                    content = text("content"),
+                    params = hostParams(members, what),
+                    sendId = text("sendid"),
+                    data = text("data"),
+                    invokeId = text("invokeid"),
+                )
+                else -> throw StateRefusal("'$what.act' is '$name', which is not raise, internal or host")
+            }
+            return SavedSend(due, act)
+        }
+
+        private fun hostParams(members: Map<*, *>, what: String): Map<String, List<String>> {
+            if (!members.containsKey("params")) throw StateRefusal("'$what' has no 'params'")
+            val params = members["params"] as? Map<*, *> ?: throw StateRefusal("'$what.params' is not an object")
+            val read = LinkedHashMap<String, List<String>>()
+            for ((name, values) in params) {
+                val list = values as? List<*> ?: throw StateRefusal("'$what.params.$name' is not an array")
+                read[name as String] = list.map {
+                    it as? String ?: throw StateRefusal("'$what.params.$name' holds a value that is not a text")
+                }
+            }
+            return read
+        }
+    }
+}
+
+/**
+ * What a waiting `<send>` does when it comes due. The three the delayed sends
+ * of a document that saves can be: its own event on this session's external
+ * queue or on its internal queue (`#_internal`), or an act a host-served
+ * processor performs (§scxml-6.2.5).
+ *
+ * A delayed send to a parent, a child or another session is none of them, and
+ * a document that makes one is generated without the save API (§2.15): such a
+ * send is delivered through a session this state does not carry.
+ */
+sealed interface SavedAct {
+    /** An event for this session's external queue. */
+    data class Raise(
+        /** The event's name, as the document spells it. */
+        val event: String,
+        /** `_event.data`, as the wire carries it. */
+        val data: String,
+        /** The `<send>`'s id, which `_event.sendid` carries and a `<cancel>` names. */
+        val sendId: String,
+        /** `_event.origin`: the session that sent it. */
+        val origin: String,
+    ) : SavedAct
+
+    /** An event for this session's internal queue. */
+    data class Internal(
+        /** The event's name, as the document spells it. */
+        val event: String,
+        /** `_event.data`, as the wire carries it. */
+        val data: String,
+        /** The `<send>`'s id, which a `<cancel>` names. */
+        val sendId: String,
+        /** `_event.origin`; empty on a backend whose internal events carry none. */
+        val origin: String,
+    ) : SavedAct
+
+    /**
+     * A `<send>` a host-served processor performs, as it is performed when it
+     * comes due (§scxml-6.2.5): every field is what the document wrote, so a
+     * handler sees the request it would have seen had there been no delay.
+     */
+    data class Host(
+        /** The `type` the send named. */
+        val processorType: String,
+        /** `<send event>`. */
+        val event: String,
+        /** `<send target>`, empty when the document named none. */
+        val target: String,
+        /** Inline `<content>`, empty when the document carried none. */
+        val content: String,
+        /** `<param>` values by name; a repeated name keeps every value in document order. */
+        val params: Map<String, List<String>>,
+        /** The send's id. */
+        val sendId: String,
+        /** The event's `_event.data` as a local delivery would carry it. */
+        val data: String,
+        /** `_event.invokeid` of the event being processed when the `<send>` executed. */
+        val invokeId: String,
+    ) : SavedAct
 }
 
 /**

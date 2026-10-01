@@ -284,16 +284,44 @@ pub trait {{ machine_name }}Persist: Sized {
     /// back. Empty for a document that declares none.
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>];
 
-    /// The machine's whole state. Refused for a machine that is not running,
-    /// and for one whose last macrostep stopped at the microstep ceiling.
-    fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
+    /// machine that is not running, and for one whose last macrostep stopped
+    /// at the microstep ceiling.
+    fn save_at(&self, wall_now_ms: u64) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
 
-    /// A machine of `policy` standing where `saved` left one. No `<onentry>`
-    /// runs and no `<data>` is evaluated: the saved run already did both.
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
     fn restore(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
-    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
 }
 
 impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_name }}Policy{{ policy_generics_use }}> {
@@ -311,7 +339,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% endfor %}
     ];
 
-    fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
+    fn save_at(&self, wall_now_ms: u64) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
 {% if static_fields %}
         let policy = self.policy();
 {% endif %}
@@ -324,16 +352,19 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% endfor %}
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            wall_now_ms,
         )
     }
 
-    fn restore(
+    fn restore_with(
 {% if static_fields or model.history_states %}
         mut policy: {{ machine_name }}Policy{{ policy_generics_use }},
 {% else %}
         policy: {{ machine_name }}Policy{{ policy_generics_use }},
 {% endif %}
         saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
@@ -360,7 +391,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             }
         }
 {% endif %}
-        ::sce_rust_runtime::saved_state::enter(policy, saved)
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
 

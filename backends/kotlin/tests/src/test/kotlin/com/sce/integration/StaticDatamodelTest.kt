@@ -32,6 +32,9 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
+import com.sce.integration.static_timers.StaticTimersEvent
+import com.sce.integration.static_timers.StaticTimersStateMachine
+import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateRefusal
 import java.io.File
@@ -899,5 +902,156 @@ class StaticDatamodelTest {
         val text = sharedFixture("static_history").replace("\"last\":[\"fast\"]", "\"last\":[\"fast\"],\"last\":[\"slow\"]")
         val refusal = assertThrows(StateRefusal::class.java) { SavedState.fromJson(text) }
         assertTrue(refusal.message!!.contains("appears twice"), refusal.message)
+    }
+
+    // ── a delayed <send> still waiting is part of the saved state ───────────
+    //
+    // `static_timers.scxml` arms four on entering `waiting`; each appends a
+    // digit to `trace` when delivered, so the number says which arrived and in
+    // what order. Everything runs on a host-owned clock, so no case sleeps and
+    // none depends on how loaded the machine is.
+
+    /** The wall-clock moment the shared fixtures were saved at, as the Rust suite has it: 2023-11-14T22:13:20Z. */
+    private val savedAtMs = 1_700_000_000_000L
+
+    private fun timers(): StaticTimersStateMachine {
+        val sm = StaticTimersStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        return sm
+    }
+
+    /** [text] restored [elapsedMs] of wall-clock time after it was saved, into a process whose own clock starts at 0. */
+    private fun <T> withRestoredTimers(text: String, elapsedMs: Long, body: (StaticTimersStateMachine) -> T): T {
+        val sm = StaticTimersStateMachine()
+        try {
+            sm.clock = ManualClock(0)
+            sm.restore(SavedState.fromJson(text), savedAtMs + elapsedMs)
+            return body(sm)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aWaitingSendIsSavedAsTheWallClockMomentItComesDue() {
+        // The same runs the Rust suite makes, saving the shared fixtures' text
+        // byte for byte: four sends in the order they would be delivered,
+        // `beat` ahead of `echo` since they are due together and were sent in
+        // that order.
+        val sm = timers()
+        try {
+            assertEquals(sharedFixture("static_timers"), sm.save(savedAtMs).toJson())
+
+            // 1.5 s later `inner` has been delivered. What is left is due at
+            // the same wall-clock moments as before, because the moment is what
+            // is saved — a restore is told the time, not the wait.
+            sm.advanceTimeMs(1500)
+            assertEquals(1u, sm.trace)
+            assertEquals(sharedFixture("static_timers_midway"), sm.save(savedAtMs + 1500).toJson())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aSaveWithoutAClockReadsTheWallClock() {
+        val sm = timers()
+        try {
+            val before = SavedState.wallClockMs()
+            val saved = sm.save()
+            val after = SavedState.wallClockMs()
+            // `inner` waits 1 s on an engine whose clock is at 0.
+            val due = saved.pending[0].due
+            assertTrue(due in (before + 1000)..(after + 1000), "due $due is not 1 s past the wall clock at the save ($before..$after)")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aRestoredMachineDeliversEachWaitingSendWhenItsMomentComes() {
+        // Back 500 ms after the save: `inner` has 500 ms left, `beat` and
+        // `echo` 1500, `timeout` 4500.
+        withRestoredTimers(sharedFixture("static_timers"), 500) { sm ->
+            assertEquals(0u, sm.trace)
+            sm.advanceTimeMs(499)
+            assertEquals(0u, sm.trace, "`inner` is not due yet")
+            sm.advanceTimeMs(1)
+            assertEquals(1u, sm.trace, "`inner`, at 500 ms")
+            sm.advanceTimeMs(999)
+            assertEquals(1u, sm.trace, "`beat` and `echo` are not due")
+            sm.advanceTimeMs(1)
+            assertEquals(124u, sm.trace, "`beat` then `echo`, at 1500 ms")
+            assertTrue(!sm.isInFinalState)
+            sm.advanceTimeMs(3000)
+            assertEquals(1243u, sm.trace, "`timeout`, at 4500 ms")
+            assertTrue(sm.isInFinalState)
+        }
+    }
+
+    @Test
+    fun aSendAlreadyDueWhenTheMachineComesBackIsDeliveredInItsOrder() {
+        // A minute away: every wait ran out while the process was dead. Each is
+        // delivered, one macrostep apart, in the order the saved machine would
+        // have — `beat` ahead of `echo`, which were due together.
+        withRestoredTimers(sharedFixture("static_timers"), 60_000) { sm ->
+            assertEquals(0u, sm.trace, "nothing is delivered by restoring")
+            sm.advanceTimeMs(0)
+            assertEquals(1243u, sm.trace)
+            assertTrue(sm.isInFinalState)
+        }
+    }
+
+    @Test
+    fun aWaitThatWasHalfOverWhenSavedHasTheRestToRun() {
+        // Saved 1.5 s in with `inner` delivered and `trace` 1; restored at once.
+        withRestoredTimers(sharedFixture("static_timers_midway"), 1500) { sm ->
+            assertEquals(1u, sm.trace)
+            sm.advanceTimeMs(499)
+            assertEquals(1u, sm.trace)
+            sm.advanceTimeMs(1)
+            assertEquals(124u, sm.trace, "`beat` then `echo`")
+            sm.advanceTimeMs(3000)
+            assertEquals(1243u, sm.trace)
+        }
+    }
+
+    @Test
+    fun aRestoredSendCanStillBeCancelledByItsId() {
+        // `stop` cancels `timer`, so what was saved has to carry the id it names.
+        withRestoredTimers(sharedFixture("static_timers"), 0) { sm ->
+            sm.send(StaticTimersEvent.Stop)
+            sm.tick()
+            sm.advanceTimeMs(60_000)
+            assertEquals(124u, sm.trace, "`timeout` was cancelled")
+            assertTrue(!sm.isInFinalState)
+        }
+    }
+
+    @Test
+    fun aMachineRestoredFromATextSavesThatTextAgain() {
+        // Nothing is lost on the way through: the order, the moments and the
+        // ids a second save writes are the first's.
+        for ((machine, elapsed) in listOf("static_timers" to 0L, "static_timers_midway" to 1500L)) {
+            withRestoredTimers(sharedFixture(machine), elapsed) { sm ->
+                assertEquals(sharedFixture(machine), sm.save(savedAtMs + elapsed).toJson())
+            }
+        }
+    }
+
+    @Test
+    fun aWaitingSendNamingAnEventTheDocumentLacksIsRefused() {
+        val text = sharedFixture("static_timers").replace("\"event\":\"beat\"", "\"event\":\"warp\"")
+        val sm = StaticTimersStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text), savedAtMs) }
+            assertTrue(refusal.message!!.contains("pending[1]"), refusal.message)
+            assertTrue(refusal.message!!.contains("warp"), refusal.message)
+            // A refused restore leaves the machine as it was: never started.
+            assertThrows(StateRefusal::class.java) { sm.save() }
+        } finally {
+            sm.cleanup()
+        }
     }
 }

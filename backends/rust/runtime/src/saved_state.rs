@@ -8,10 +8,21 @@
 //! saves the machine and gives it back later. What it saves is everything a
 //! macrostep boundary holds that the document cannot recompute: where the
 //! machine is (its configuration and current leaf), every variable, the
-//! machine's own included — not only the ones a snapshot publishes — and the
-//! external queue, in order. Only the internal queue is empty at a macrostep
+//! machine's own included — not only the ones a snapshot publishes — what each
+//! `<history>` recorded, the delayed `<send>`s still waiting, and the external
+//! queue, in order. Only the internal queue is empty at a macrostep
 //! boundary; an event a host raised and has not yet driven the machine
 //! through is part of the state.
+//!
+//! A delayed send is saved as the moment it comes due on the host's WALL clock
+//! (`due`, milliseconds since the Unix epoch), not as a wait. A wait would
+//! start again when the process came back, and a timer that ran out while it
+//! was dead would be late by exactly as long as it was dead. The engine's own
+//! clock is monotonic and has no epoch, so the host says what time it is on
+//! the wall when it saves and when it restores
+//! ([`crate::saved_state::save`], [`crate::saved_state::enter`]); an entry
+//! already due when the machine comes back is armed as due now, in the order
+//! it would have fired.
 //!
 //! The format is one JSON document (`sce-saved-state`, version [`crate::saved_state::FORMAT`]),
 //! the same on every backend, so what one backend saved another can read. A
@@ -41,7 +52,7 @@ use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
-use crate::{Engine, EventQueueLike, EventType, EventWithMetadata, StatePolicy};
+use crate::{Engine, EventQueueLike, EventType, EventWithMetadata, SceClock, StatePolicy};
 
 /// The format version this runtime writes and reads.
 pub const FORMAT: u32 = 1;
@@ -92,10 +103,234 @@ pub struct SavedState {
     /// resumed machine takes its default transition, as the saved one would
     /// have.
     pub history: Vec<(String, Vec<String>)>,
+    /// The delayed `<send>`s still waiting (§scxml-6.2), in the order they
+    /// would be delivered: earliest first, entries due at the same moment in
+    /// the order they were sent.
+    pub pending: Vec<SavedSend>,
     /// The external queue, front first: events a host raised and has not yet
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
     pub external: Vec<SavedEvent>,
+}
+
+/// One delayed `<send>` that has not been delivered yet.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedSend {
+    /// When it comes due, in milliseconds since the Unix epoch on the wall
+    /// clock of the host that saved it (module docs).
+    pub due: u64,
+    /// What it does when it comes due.
+    pub act: SavedAct,
+}
+
+/// What a waiting `<send>` does when it comes due. The three the delayed sends
+/// of a document that saves can be: its own event on this session's external
+/// queue or on its internal queue (`#_internal`), or an act a host-served
+/// processor performs (§scxml-6.2.5).
+///
+/// A delayed send to a parent, a child or another session is none of them, and
+/// a document that makes one is generated without the save API (§2.15): such a
+/// send is delivered through a session this state does not carry.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SavedAct {
+    /// An event for this session's external queue.
+    Raise {
+        /// The event's name, as the document spells it.
+        event: String,
+        /// `_event.data`, as the wire carries it.
+        data: String,
+        /// The `<send>`'s id, which `_event.sendid` carries and a `<cancel>`
+        /// names.
+        send_id: String,
+        /// `_event.origin`: the session that sent it.
+        origin: String,
+    },
+    /// An event for this session's internal queue.
+    Internal {
+        /// The event's name, as the document spells it.
+        event: String,
+        /// `_event.data`, as the wire carries it.
+        data: String,
+        /// The `<send>`'s id, which a `<cancel>` names.
+        send_id: String,
+        /// `_event.origin`: the session that sent it. Empty on a backend whose
+        /// internal events carry none.
+        origin: String,
+    },
+    /// A `<send>` a host-served processor performs.
+    Host(SavedHostSend),
+}
+
+/// A delayed `<send>` addressed to a host-served processor, as it is performed
+/// when it comes due (§scxml-6.2.5): every field is what the document wrote,
+/// so a handler sees the request it would have seen had there been no delay.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SavedHostSend {
+    /// The `type` the send named.
+    pub processor_type: String,
+    /// `<send event>`.
+    pub event: String,
+    /// `<send target>`, empty when the document named none.
+    pub target: String,
+    /// Inline `<content>`, empty when the document carried none.
+    pub content: String,
+    /// `<param>` values by name, ordered by name; a repeated name keeps every
+    /// value in document order.
+    pub params: Vec<(String, Vec<String>)>,
+    /// The send's id.
+    pub send_id: String,
+    /// The event's `_event.data` as a local delivery would carry it.
+    pub data: String,
+    /// `_event.invokeid` of the event being processed when the `<send>`
+    /// executed.
+    pub invoke_id: String,
+}
+
+impl SavedSend {
+    fn to_value(&self) -> Value {
+        let text = |s: &str| Value::Text(s.to_string());
+        let mut members = vec![
+            ("due".to_string(), Value::Text(self.due.to_string())),
+            (
+                "act".to_string(),
+                text(match self.act {
+                    SavedAct::Raise { .. } => "raise",
+                    SavedAct::Internal { .. } => "internal",
+                    SavedAct::Host(_) => "host",
+                }),
+            ),
+        ];
+        match &self.act {
+            SavedAct::Raise {
+                event,
+                data,
+                send_id,
+                origin,
+            } => members.extend([
+                ("event".to_string(), text(event)),
+                ("data".to_string(), text(data)),
+                ("sendid".to_string(), text(send_id)),
+                ("origin".to_string(), text(origin)),
+            ]),
+            SavedAct::Internal {
+                event,
+                data,
+                send_id,
+                origin,
+            } => members.extend([
+                ("event".to_string(), text(event)),
+                ("data".to_string(), text(data)),
+                ("sendid".to_string(), text(send_id)),
+                ("origin".to_string(), text(origin)),
+            ]),
+            SavedAct::Host(host) => members.extend([
+                ("type".to_string(), text(&host.processor_type)),
+                ("event".to_string(), text(&host.event)),
+                ("target".to_string(), text(&host.target)),
+                ("content".to_string(), text(&host.content)),
+                (
+                    "params".to_string(),
+                    Value::Object(
+                        host.params
+                            .iter()
+                            .map(|(name, values)| {
+                                (
+                                    name.clone(),
+                                    Value::Array(values.iter().map(|v| text(v)).collect()),
+                                )
+                            })
+                            .collect(),
+                    ),
+                ),
+                ("sendid".to_string(), text(&host.send_id)),
+                ("data".to_string(), text(&host.data)),
+                ("invokeid".to_string(), text(&host.invoke_id)),
+            ]),
+        }
+        Value::Object(members)
+    }
+
+    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let text = |key: &str| match value.member(key) {
+            Some(Value::Text(s)) => Ok(s.clone()),
+            Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
+            None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        let due_text = text("due")?;
+        // A text of digits, as every 64-bit integer is, and one a signed
+        // 64-bit reader holds too: the format is the same on every backend.
+        let due = due_text
+            .parse::<u64>()
+            .ok()
+            .filter(|d| {
+                // `parse` also reads a leading `+`, which the other backends
+                // refuse, and which no backend writes.
+                *d <= i64::MAX as u64 && due_text.bytes().all(|b| b.is_ascii_digit())
+            })
+            .ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "'{what}.due' ({due_text}) is not a whole number of milliseconds"
+                ))
+            })?;
+        let act = match text("act")?.as_str() {
+            "raise" => SavedAct::Raise {
+                event: text("event")?,
+                data: text("data")?,
+                send_id: text("sendid")?,
+                origin: text("origin")?,
+            },
+            "internal" => SavedAct::Internal {
+                event: text("event")?,
+                data: text("data")?,
+                send_id: text("sendid")?,
+                origin: text("origin")?,
+            },
+            "host" => {
+                let params = match value.member("params") {
+                    Some(Value::Object(members)) => members
+                        .iter()
+                        .map(|(name, values)| match values {
+                            Value::Array(items) => items
+                                .iter()
+                                .map(|v| match v {
+                                    Value::Text(s) => Ok(s.clone()),
+                                    _ => Err(StateRefusal::new(format!(
+                                        "'{what}.params.{name}' holds a value that is not a text"
+                                    ))),
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                                .map(|values| (name.clone(), values)),
+                            _ => Err(StateRefusal::new(format!(
+                                "'{what}.params.{name}' is not an array"
+                            ))),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    Some(_) => {
+                        return Err(StateRefusal::new(format!(
+                            "'{what}.params' is not an object"
+                        )))
+                    }
+                    None => return Err(StateRefusal::new(format!("'{what}' has no 'params'"))),
+                };
+                SavedAct::Host(SavedHostSend {
+                    processor_type: text("type")?,
+                    event: text("event")?,
+                    target: text("target")?,
+                    content: text("content")?,
+                    params,
+                    send_id: text("sendid")?,
+                    data: text("data")?,
+                    invoke_id: text("invokeid")?,
+                })
+            }
+            other => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.act' is '{other}', which is not raise, internal or host"
+                )))
+            }
+        };
+        Ok(Self { due, act })
+    }
 }
 
 /// One event of a saved external queue: its name and the `_event` fields a
@@ -213,6 +448,10 @@ impl SavedState {
                 ),
             ),
             (
+                "pending".to_string(),
+                Value::Array(self.pending.iter().map(SavedSend::to_value).collect()),
+            ),
+            (
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
@@ -267,6 +506,14 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'history' is not an object")),
         };
+        let pending = match field("pending")? {
+            Value::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| SavedSend::from_value(v, &format!("pending[{i}]")))
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(StateRefusal::new("'pending' is not an array")),
+        };
         let external = match field("external")? {
             Value::Array(items) => items
                 .iter()
@@ -281,6 +528,7 @@ impl SavedState {
             current: text_of(field("current")?, "current")?,
             variables,
             history,
+            pending,
             external,
         })
     }
@@ -452,9 +700,27 @@ pub fn bounded<T: SavedValue>(
     Ok(items)
 }
 
+/// The wall clock now, in milliseconds since the Unix epoch: what a host that
+/// has no clock of its own to give [`save`] and [`enter`] gives them.
+pub fn wall_clock_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+/// A moment as a saved state writes it, which a signed 64-bit reader holds.
+fn clamp_to_i64(ms: u64) -> u64 {
+    ms.min(i64::MAX as u64)
+}
+
 /// Save `engine`, a machine of the document whose shape is `shape`, with the
 /// `variables` its generated code read from its fields. The configuration is
-/// written in document order.
+/// written in document order, and every waiting delayed `<send>` is written as
+/// the moment it comes due on the wall clock whose reading now is
+/// `wall_now_ms` (module docs).
 ///
 /// Refused for a machine that is not running — never started, or ended at a
 /// top-level `<final>`, where there is nothing left to resume — and for one
@@ -465,6 +731,7 @@ pub fn save<P: StatePolicy>(
     shape: &str,
     variables: Vec<(String, Value)>,
     history: Vec<(String, Vec<String>)>,
+    wall_now_ms: u64,
 ) -> Result<SavedState, StateRefusal> {
     if !engine.is_running() {
         return Err(StateRefusal::new(
@@ -477,6 +744,9 @@ pub fn save<P: StatePolicy>(
              not stand at a settled configuration",
         ));
     }
+    // Read before anything is built, so a delayed send this state cannot carry
+    // refuses the save instead of leaving it out.
+    let pending = save_pending(engine, wall_now_ms)?;
     // Document order, so the same machine saves the same text on every
     // backend.
     let mut active = engine.get_active_states();
@@ -490,6 +760,7 @@ pub fn save<P: StatePolicy>(
         current: P::get_state_name(engine.get_current_state()).to_string(),
         variables,
         history,
+        pending,
         external: engine
             .external_queue
             .queued()
@@ -504,6 +775,90 @@ pub fn save<P: StatePolicy>(
             })
             .collect(),
     })
+}
+
+/// Every delayed send of `engine` still waiting, as a saved state holds it:
+/// written as the wall-clock moment it comes due, in the order the machine
+/// would deliver them.
+///
+/// A send the format cannot carry — one routed to a parent or a child session,
+/// or an invocation's deadline — refuses the save. A document that makes one
+/// is generated without the save API, so no generated machine reaches this;
+/// the refusal is for a machine built by hand, where leaving the entry out
+/// would restore a machine that never delivers it and say nothing.
+fn save_pending<P: StatePolicy>(
+    engine: &Engine<P>,
+    wall_now_ms: u64,
+) -> Result<Vec<SavedSend>, StateRefusal> {
+    use crate::engine::ScheduledAct;
+    use crate::ScheduledRoute;
+
+    let now = engine.now_ms();
+    let name = |event: &P::Event| P::get_event_name(*event).to_string();
+    engine
+        .scheduler
+        .pending()
+        .into_iter()
+        .map(|(ready_at, act)| {
+            let due = clamp_to_i64(wall_now_ms.saturating_add(ready_at.saturating_sub(now)));
+            let act = match act {
+                ScheduledAct::Raise {
+                    event,
+                    event_data,
+                    send_id,
+                    origin,
+                } => SavedAct::Raise {
+                    event: name(event),
+                    data: event_data.clone(),
+                    send_id: send_id.clone(),
+                    origin: origin.clone(),
+                },
+                ScheduledAct::Routed {
+                    event: Some(event),
+                    event_data,
+                    send_id,
+                    origin,
+                    route: ScheduledRoute::InternalQueue,
+                } => SavedAct::Internal {
+                    event: name(event),
+                    data: event_data.clone(),
+                    send_id: send_id.clone(),
+                    origin: origin.clone(),
+                },
+                ScheduledAct::Routed { send_id, route, .. } => {
+                    return Err(StateRefusal::new(format!(
+                        "the delayed send '{send_id}' is routed to {route:?}, a session a \
+                         saved state does not carry"
+                    )))
+                }
+                ScheduledAct::HostSend(request) => {
+                    let mut params: Vec<_> = request
+                        .params
+                        .iter()
+                        .map(|(name, values)| (name.clone(), values.clone()))
+                        .collect();
+                    params.sort_by(|a, b| a.0.cmp(&b.0));
+                    SavedAct::Host(SavedHostSend {
+                        processor_type: request.processor_type.clone(),
+                        event: request.event_name.clone(),
+                        target: request.target.clone(),
+                        content: request.content.clone(),
+                        params,
+                        send_id: request.send_id.clone(),
+                        data: request.event_data.clone(),
+                        invoke_id: request.invoke_id.clone(),
+                    })
+                }
+                ScheduledAct::HostInvokeDeadline { invoke_id, .. } => {
+                    return Err(StateRefusal::new(format!(
+                        "the invocation '{invoke_id}' is running, and a saved state does not \
+                         carry an invocation"
+                    )))
+                }
+            };
+            Ok(SavedSend { due, act })
+        })
+        .collect()
 }
 
 /// A `<history>` of the document, as a generated machine declares it: the id
@@ -654,7 +1009,19 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// run being resumed already did both, and the host calls it caused cannot be
 /// made twice. A configuration that is not one of this document is refused,
 /// and nothing is entered.
-pub fn enter<P: StatePolicy>(policy: P, saved: &SavedState) -> Result<Engine<P>, StateRefusal> {
+///
+/// The machine measures time by `clock`, which is installed before anything is
+/// armed — a delayed send armed against one clock and judged against another
+/// would never come due when it should. `wall_now_ms` is what time it is on
+/// the wall clock the saved `due`s were written against: a waiting send is
+/// armed to come due `due - wall_now_ms` after now, and one already due is
+/// armed to come due now, behind the ones due before it.
+pub fn enter<P: StatePolicy>(
+    policy: P,
+    saved: &SavedState,
+    clock: SceClock,
+    wall_now_ms: u64,
+) -> Result<Engine<P>, StateRefusal> {
     let state = |id: &str| {
         P::get_state_from_name(id)
             .ok_or_else(|| StateRefusal::new(format!("the document has no state '{id}'")))
@@ -694,14 +1061,154 @@ pub fn enter<P: StatePolicy>(policy: P, saved: &SavedState) -> Result<Engine<P>,
             Ok(queued)
         })
         .collect::<Result<Vec<_>, StateRefusal>>()?;
+    // The same for a waiting send: an event this document does not name refuses
+    // the restore, not the sends before it.
+    let pending = saved
+        .pending
+        .iter()
+        .enumerate()
+        .map(|(i, send)| ReadSend::<P::Event>::read::<P>(send, i))
+        .collect::<Result<Vec<_>, StateRefusal>>()?;
     let mut engine = Engine::new(policy);
+    engine.set_clock(clock);
     engine
         .enter_at(&configuration, current)
         .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;
     for queued in external {
         engine.raise_external_with_meta(queued);
     }
+    arm_pending(&mut engine, pending, wall_now_ms);
     Ok(engine)
+}
+
+/// A waiting send read against the document: the event it names, resolved, so a
+/// restore that cannot resolve one refuses before it arms any.
+enum ReadSend<'s, E> {
+    Raise {
+        due: u64,
+        event: E,
+        data: &'s str,
+        send_id: &'s str,
+        origin: &'s str,
+    },
+    Internal {
+        due: u64,
+        event: E,
+        data: &'s str,
+        send_id: &'s str,
+        origin: &'s str,
+    },
+    Host {
+        due: u64,
+        host: &'s SavedHostSend,
+    },
+}
+
+impl<'s, E> ReadSend<'s, E> {
+    /// `send`, the `index`th of a saved state's `pending`, with its event
+    /// looked up in the document of `P`.
+    fn read<P: StatePolicy<Event = E>>(
+        send: &'s SavedSend,
+        index: usize,
+    ) -> Result<Self, StateRefusal> {
+        let event_of = |name: &str| {
+            P::get_event_from_name(name).ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "pending[{index}] is '{name}', which the document does not name"
+                ))
+            })
+        };
+        let due = send.due;
+        Ok(match &send.act {
+            SavedAct::Raise {
+                event,
+                data,
+                send_id,
+                origin,
+            } => Self::Raise {
+                due,
+                event: event_of(event)?,
+                data,
+                send_id,
+                origin,
+            },
+            SavedAct::Internal {
+                event,
+                data,
+                send_id,
+                origin,
+            } => Self::Internal {
+                due,
+                event: event_of(event)?,
+                data,
+                send_id,
+                origin,
+            },
+            SavedAct::Host(host) => Self::Host { due, host },
+        })
+    }
+}
+
+/// Arm each of `pending`, already read, in the order a saved state lists them:
+/// each comes due `due - wall_now_ms` after the engine's now, and one that came
+/// due while the machine was away comes due now. Entries due at the same
+/// moment are armed in order and the scheduler delivers those in the order they
+/// were armed, which is how the saved machine would have.
+fn arm_pending<P: StatePolicy>(
+    engine: &mut Engine<P>,
+    pending: Vec<ReadSend<'_, P::Event>>,
+    wall_now_ms: u64,
+) {
+    use crate::ScheduledRoute;
+
+    let now = engine.now_ms();
+    let ready_at = |due: u64| now.saturating_add(due.saturating_sub(wall_now_ms));
+    for read in pending {
+        match read {
+            ReadSend::Raise {
+                due,
+                event,
+                data,
+                send_id,
+                origin,
+            } => {
+                engine
+                    .scheduler
+                    .schedule_event_at(event, ready_at(due), send_id, data, origin);
+            }
+            ReadSend::Internal {
+                due,
+                event,
+                data,
+                send_id,
+                origin,
+            } => {
+                engine.scheduler.schedule_routed_at(
+                    Some(event),
+                    ready_at(due),
+                    send_id,
+                    data,
+                    origin,
+                    ScheduledRoute::InternalQueue,
+                );
+            }
+            ReadSend::Host { due, host } => {
+                let request = crate::HostSendRequest {
+                    processor_type: host.processor_type.clone(),
+                    event_name: host.event.clone(),
+                    target: host.target.clone(),
+                    content: host.content.clone(),
+                    params: host.params.iter().cloned().collect(),
+                    send_id: host.send_id.clone(),
+                    event_data: host.data.clone(),
+                    invoke_id: host.invoke_id.clone(),
+                };
+                engine
+                    .scheduler
+                    .schedule_host_send_at(request, ready_at(due), &host.send_id);
+            }
+        }
+    }
 }
 
 /// A configuration refusal in the document's own vocabulary, which is the
@@ -773,6 +1280,42 @@ mod tests {
                 ("mode".to_string(), vec!["slow".to_string()]),
                 ("zone".to_string(), vec!["a".to_string(), "b".to_string()]),
             ],
+            pending: vec![
+                SavedSend {
+                    due: 1_700_000_005_000,
+                    act: SavedAct::Raise {
+                        event: "timeout".to_string(),
+                        data: String::new(),
+                        send_id: "timer".to_string(),
+                        origin: "s1".to_string(),
+                    },
+                },
+                SavedSend {
+                    due: 1_700_000_006_000,
+                    act: SavedAct::Internal {
+                        event: "inner".to_string(),
+                        data: "{\"n\":2}".to_string(),
+                        send_id: "__send_1".to_string(),
+                        origin: String::new(),
+                    },
+                },
+                SavedSend {
+                    due: i64::MAX as u64,
+                    act: SavedAct::Host(SavedHostSend {
+                        processor_type: "BasicHTTP".to_string(),
+                        event: "notify".to_string(),
+                        target: "http://host/x".to_string(),
+                        content: String::new(),
+                        params: vec![
+                            ("a".to_string(), vec!["1".to_string(), "2".to_string()]),
+                            ("b".to_string(), vec![]),
+                        ],
+                        send_id: "__send_2".to_string(),
+                        data: "{\"a\":[\"1\",\"2\"]}".to_string(),
+                        invoke_id: String::new(),
+                    }),
+                },
+            ],
             external: vec![SavedEvent {
                 name: "tick".to_string(),
                 data: "{\"n\":1}".to_string(),
@@ -836,8 +1379,69 @@ mod tests {
 
     #[test]
     fn a_history_that_is_not_a_list_of_state_ids_is_refused() {
-        let wrong = r#"{"format":1,"shape":"d","configuration":[],"current":"s","variables":{},"history":{"h":"a"},"external":[]}"#;
+        let wrong = r#"{"format":1,"shape":"d","configuration":[],"current":"s","variables":{},"history":{"h":"a"},"pending":[],"external":[]}"#;
         let refusal = SavedState::from_json(wrong).expect_err("not an array");
         assert!(refusal.reason().contains("history.h"), "{refusal}");
+    }
+
+    /// Every field is always present: a state with nothing waiting says so with
+    /// `[]`, and one that does not say is not this format.
+    #[test]
+    fn a_saved_state_with_no_pending_field_is_refused() {
+        let text = r#"{"format":1,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
+        let refusal = SavedState::from_json(text).expect_err("no pending");
+        assert!(refusal.reason().contains("'pending'"), "{refusal}");
+    }
+
+    fn with_pending(pending: &str) -> String {
+        format!(
+            r#"{{"format":1,"shape":"d","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"external":[]}}"#
+        )
+    }
+
+    #[test]
+    fn a_due_that_is_not_a_whole_number_of_milliseconds_is_refused() {
+        for due in [
+            "\"soon\"",
+            "\"-1\"",
+            "\"+5\"",
+            "\"1.5\"",
+            // One past the largest value a signed 64-bit reader holds.
+            "\"9223372036854775808\"",
+            // A number where a text belongs: the format writes a moment as a text.
+            "5000",
+        ] {
+            let text = with_pending(&format!(
+                r#"{{"due":{due},"act":"raise","event":"e","data":"","sendid":"","origin":""}}"#
+            ));
+            let refusal = SavedState::from_json(&text).expect_err(due);
+            assert!(
+                refusal.reason().contains("pending[0].due"),
+                "{due}: {refusal}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_send_that_is_none_of_the_three_acts_is_refused() {
+        let text = with_pending(r#"{"due":"1","act":"parent","event":"e"}"#);
+        let refusal = SavedState::from_json(&text).expect_err("not an act");
+        assert!(refusal.reason().contains("pending[0].act"), "{refusal}");
+    }
+
+    #[test]
+    fn a_host_send_whose_params_are_not_lists_of_texts_is_refused() {
+        let send = |params: &str| {
+            with_pending(&format!(
+                r#"{{"due":"1","act":"host","type":"t","event":"e","target":"","content":"","params":{params},"sendid":"","data":"","invokeid":""}}"#
+            ))
+        };
+        for params in [r#"{"p":"v"}"#, r#"{"p":[1]}"#, r#"["p"]"#] {
+            let refusal = SavedState::from_json(&send(params)).expect_err(params);
+            assert!(
+                refusal.reason().contains("pending[0].params"),
+                "{params}: {refusal}"
+            );
+        }
     }
 }

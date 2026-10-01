@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"): a delayed <send> still waiting is part of a machine's state, so
+  a saved machine that left it out would restore into one that never delivers
+  it — and nothing would say so.
+
+  Four delayed sends, armed on entering `waiting`:
+
+    inner    1s  to this session's INTERNAL queue (`#_internal`)
+    beat     2s  to the external queue, an id the generator gave it
+    echo     2s  to the external queue, due the same moment as `beat`
+    timeout  5s  to the external queue, id `timer`, which `stop` cancels
+
+  Each one appends a digit to `trace` when it is delivered (`inner` 1, `beat` 2,
+  `echo` 4, `timeout` 3), so the number says WHICH were delivered and in what
+  order: run to the end it is 1243, and 1423 would be `echo` ahead of `beat`
+  although they were sent in the other order and are due together. `timeout`
+  takes the machine to `done`; `stop` cancels it, which a restore has to keep
+  possible, since the id it names is part of what is saved.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_timers">
+  <datamodel>
+    <data id="trace" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <onentry>
+      <send id="timer" event="timeout" delay="5s"/>
+      <send event="beat" delay="2s"/>
+      <send event="echo" delay="2s"/>
+      <send event="inner" target="#_internal" delay="1s"/>
+    </onentry>
+    <transition event="inner">
+      <assign location="trace" expr="trace * 10 + 1"/>
+    </transition>
+    <transition event="beat">
+      <assign location="trace" expr="trace * 10 + 2"/>
+    </transition>
+    <transition event="echo">
+      <assign location="trace" expr="trace * 10 + 4"/>
+    </transition>
+    <transition event="timeout" target="done">
+      <assign location="trace" expr="trace * 10 + 3"/>
+    </transition>
+    <transition event="stop">
+      <cancel sendid="timer"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

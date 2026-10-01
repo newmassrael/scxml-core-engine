@@ -83,6 +83,22 @@ fn the_schema_refuses_what_no_backend_writes() {
         "current": "s",
         "variables": {"count": 1},
         "history": {"mode": ["slow"], "zone": ["a", "b"]},
+        "pending": [
+            {
+                "due": "1700000005000", "act": "raise", "event": "timeout",
+                "data": "", "sendid": "timer", "origin": ""
+            },
+            {
+                "due": "1700000006000", "act": "internal", "event": "inner",
+                "data": "{\"n\":2}", "sendid": "__send_1", "origin": ""
+            },
+            {
+                "due": "9223372036854775807", "act": "host", "type": "BasicHTTP",
+                "event": "notify", "target": "http://host/x", "content": "",
+                "params": {"a": ["1", "2"], "b": []},
+                "sendid": "__send_2", "data": "", "invokeid": ""
+            }
+        ],
         "external": [{
             "name": "tick", "data": "", "type": "external",
             "sendid": "", "origin": "", "origintype": "", "invokeid": ""
@@ -122,6 +138,46 @@ fn the_schema_refuses_what_no_backend_writes() {
             serde_json::json!({"mode": []}),
         ),
         (
+            "a waiting send that is none of raise, internal or host",
+            "pending",
+            serde_json::json!([{
+                "due": "1", "act": "parent", "event": "e",
+                "data": "", "sendid": "", "origin": ""
+            }]),
+        ),
+        (
+            "a moment written as a number",
+            "pending",
+            serde_json::json!([{
+                "due": 5000, "act": "raise", "event": "e",
+                "data": "", "sendid": "", "origin": ""
+            }]),
+        ),
+        (
+            "a moment that is not a whole number of milliseconds",
+            "pending",
+            serde_json::json!([{
+                "due": "-1", "act": "raise", "event": "e",
+                "data": "", "sendid": "", "origin": ""
+            }]),
+        ),
+        (
+            "a waiting send with no id field",
+            "pending",
+            serde_json::json!([{
+                "due": "1", "act": "internal", "event": "e",
+                "data": "", "origin": ""
+            }]),
+        ),
+        (
+            "a host send whose params are not lists of texts",
+            "pending",
+            serde_json::json!([{
+                "due": "1", "act": "host", "type": "t", "event": "e", "target": "",
+                "content": "", "params": {"p": "v"}, "sendid": "", "data": "", "invokeid": ""
+            }]),
+        ),
+        (
             "a queued event of no type",
             "external",
             serde_json::json!([{
@@ -138,4 +194,16 @@ fn the_schema_refuses_what_no_backend_writes() {
             "the schema admitted {what}"
         );
     }
+
+    // Every field is always present: a state with nothing waiting says so
+    // with `[]`, and one that does not say is not this format.
+    let mut without = good.clone();
+    without
+        .as_object_mut()
+        .expect("an object")
+        .remove("pending");
+    assert!(
+        !errors(&validator, &without).is_empty(),
+        "the schema admitted a saved state with no pending field"
+    );
 }

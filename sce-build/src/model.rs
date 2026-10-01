@@ -3465,6 +3465,42 @@ impl State {
 }
 
 impl SCXMLModel {
+    /// Every `<send>` written in the document, each with the state whose
+    /// executable content carries it — wherever that content sits, nested in
+    /// an `<if>` or a `<foreach>` included, and in a `<history>`'s default
+    /// transition, which belongs to the history's parent.
+    ///
+    /// One definition of "which sends does this document make", so the
+    /// analyzers that ask it (a send to the parent, a delayed send a saved
+    /// state cannot carry) read the same walk instead of each listing the
+    /// places a send can be. The parser copies a history's default actions into
+    /// `initial_history_default_actions` of the state whose `initial` names it,
+    /// so one written site can come back twice, from the same state.
+    pub fn sends(&self) -> Vec<(&str, &Action)> {
+        let mut sends = Vec::new();
+        for (state_id, state) in &self.states {
+            for block in state.executable_blocks() {
+                for action in block {
+                    action.walk(&mut |a| {
+                        if a.action_type == "send" {
+                            sends.push((state_id.as_str(), a));
+                        }
+                    });
+                }
+            }
+        }
+        for history in self.history_states.values() {
+            for action in &history.default_actions {
+                action.walk(&mut |a| {
+                    if a.action_type == "send" {
+                        sends.push((history.parent.as_str(), a));
+                    }
+                });
+            }
+        }
+        sends
+    }
+
     /// True iff any state declares a static [`Invoke::Scxml`]. The
     /// True iff any state in the model declares any `<invoke>` of any kind
     /// ([`Invoke::Scxml`], [`Invoke::Hybrid`], or [`Invoke::MeshRpc`]).

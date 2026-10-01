@@ -2179,7 +2179,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * This machine's [SavedState], with the [variables] its generated code
      * read from its fields. The configuration is written in document order,
-     * so the same machine saves the same text on every backend.
+     * so the same machine saves the same text on every backend, and every
+     * waiting delayed `<send>` is written as the moment it comes due on the
+     * wall clock whose reading now is [wallNowMs] ([SavedState]).
      *
      * Refused for a machine that is not running — never started, or ended at
      * a top-level `<final>`, where there is nothing left to resume — and for
@@ -2187,7 +2189,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * configuration is not a settled one, and a restore would resume it as if
      * it were.
      */
-    protected fun savedState(shape: String, variables: Map<String, Any?>): SavedState {
+    protected fun savedState(shape: String, variables: Map<String, Any?>, wallNowMs: Long): SavedState {
         if (configuration.isEmpty() || isInFinalState) {
             throw StateRefusal("the machine is not running: it was never started, or it has ended")
         }
@@ -2207,6 +2209,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 "the machine's last macrostep stopped at the microstep ceiling, so it does not " +
                     "stand at a settled configuration")
         }
+        // Read before anything is built, so a delayed send this state cannot
+        // carry refuses the save instead of being left out of it.
+        val pending = pendingSends(wallNowMs)
         return SavedState(
             shape = shape,
             configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
@@ -2220,6 +2225,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
                 .sortedBy { it.first }
                 .toMap(LinkedHashMap()),
+            pending = pending,
             external = externalEventQueue.map { queued ->
                 SavedEvent(
                     name = eventNameOf(queued.event)
@@ -2233,6 +2239,69 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 )
             },
         )
+    }
+
+    /**
+     * Every delayed send still waiting, as a saved state holds it: written as
+     * the wall-clock moment it comes due — [wallNowMs] plus the time left on
+     * this machine's [clock], none for one already past — in the order the
+     * machine would deliver them ([scheduledSends] is kept in that order).
+     *
+     * A send the format cannot carry — one routed to a parent or a child
+     * session, or an invocation's deadline — refuses the save. A document that
+     * makes one is generated without the save API, so no generated machine
+     * reaches this; the refusal is for a machine built by hand, where leaving
+     * the entry out would restore a machine that never delivers it and say
+     * nothing.
+     */
+    private fun pendingSends(wallNowMs: Long): List<SavedSend> {
+        val now = engineElapsedMs()
+        return scheduledSends.map { entry ->
+            val due = saturatingAddMs(wallNowMs, (entry.fireTimeMs - now).coerceAtLeast(0L))
+            val hostSend = entry.hostSend
+            val route = entry.route
+            val act = when {
+                entry.hostInvokeDeadline != null -> throw StateRefusal(
+                    "the invocation '${entry.hostInvokeDeadline.invokeId}' is running, and a saved " +
+                        "state does not carry an invocation")
+                hostSend != null -> SavedAct.Host(
+                    processorType = hostSend.processorType,
+                    event = hostSend.eventName,
+                    target = hostSend.target,
+                    content = hostSend.content,
+                    params = hostSend.params,
+                    sendId = hostSend.sendId,
+                    data = hostSend.eventData,
+                    invokeId = hostSend.invokeId,
+                )
+                route == null -> SavedAct.Raise(
+                    event = pendingEventName(entry),
+                    data = entry.metadata.data,
+                    sendId = entry.sendId,
+                    origin = entry.metadata.origin,
+                )
+                route == ScheduledRoute.InternalQueue -> SavedAct.Internal(
+                    event = pendingEventName(entry),
+                    data = entry.metadata.data,
+                    sendId = entry.sendId,
+                    origin = entry.metadata.origin,
+                )
+                else -> throw StateRefusal(
+                    "the delayed send '${entry.sendId}' is routed to $route, a session a saved " +
+                        "state does not carry")
+            }
+            SavedSend(due, act)
+        }
+    }
+
+    /** The document's name for the event a waiting entry delivers. */
+    private fun pendingEventName(entry: ScheduledSendEntry): String {
+        // Justification (UNCHECKED_CAST): an entry that delivers an event of
+        // this machine's own was queued by [scheduleSend] or
+        // [scheduleInternalSend], which accept only E.
+        @Suppress("UNCHECKED_CAST")
+        val event = entry.event as E
+        return eventNameOf(event) ?: error("a waiting send of an event the document does not name: $event")
     }
 
     /**
@@ -2253,6 +2322,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             throw StateRefusal("the saved configuration is refused: ${verdict.reason}")
         }
         savedHistory(saved)
+        savedPending(saved)
         savedExternal(saved)
     }
 
@@ -2262,8 +2332,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * judged: no `<onentry>` runs and no `<data>` is evaluated, since the
      * saved run already did both. The snapshot is published, as a completed
      * macrostep would.
+     *
+     * The delayed sends [saved] holds are armed against this machine's
+     * [clock], which has to be installed before the restore as it has before
+     * [initialize]: each comes due `due - wallNowMs` after now, [wallNowMs]
+     * being what time it is on the wall clock the saved `due`s were written
+     * against, and one already due comes due now, behind the ones due before
+     * it ([SavedState]).
      */
-    protected fun enterSaved(saved: SavedState) {
+    protected fun enterSaved(saved: SavedState, wallNowMs: Long) {
         val (states, current) = savedConfiguration(saved)
         check(enterAt(states, current) == ConfigurationRejection.NONE) {
             "beginRestore judged this configuration and enterAt refused it"
@@ -2271,11 +2348,73 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // What each `<history>` recorded, which the saved run's exits wrote and
         // this one has not made.
         historyValues.putAll(savedHistory(saved))
+        // Armed in the order they were saved, which is the order they are
+        // delivered in: entries due at the same moment keep it, since the
+        // sequence number is the tie-break.
+        val now = engineElapsedMs()
+        for ((due, armed) in savedPending(saved)) {
+            scheduledSends.add(
+                armed.copy(
+                    fireTimeMs = saturatingAddMs(now, (due - wallNowMs).coerceAtLeast(0L)),
+                    sequenceNum = schedulerSequence++,
+                )
+            )
+        }
+        scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
         // Behind nothing, in the order they were saved: enterAt left the
         // machine in the host-driven mode, whose queue this is.
         externalEventQueue.addAll(savedExternal(saved))
         onMacrostepComplete(false)
     }
+
+    /**
+     * What [saved] holds of the delayed sends still waiting, each as the entry
+     * it arms (with its time to be set when it is armed) and the moment it
+     * comes due, or the refusal that says which event this document does not
+     * name. Armed as the send site that made it would have: an event for the
+     * external queue as [scheduleSend] queues it, one for the internal queue
+     * as [scheduleInternalSend] does, a host-served act as [scheduleHostSend].
+     */
+    private fun savedPending(saved: SavedState): List<Pair<Long, ScheduledSendEntry>> =
+        saved.pending.mapIndexed { i, send ->
+            fun event(name: String): E = resolveEventByName(name)
+                ?: throw StateRefusal("pending[$i] is '$name', which the document does not name")
+            val entry = when (val act = send.act) {
+                is SavedAct.Raise -> ScheduledSendEntry(
+                    fireTimeMs = 0L,
+                    sequenceNum = 0L,
+                    sendId = act.sendId,
+                    event = event(act.event),
+                    metadata = EventMetadata.external(sendId = act.sendId, origin = act.origin, data = act.data),
+                )
+                is SavedAct.Internal -> ScheduledSendEntry(
+                    fireTimeMs = 0L,
+                    sequenceNum = 0L,
+                    sendId = act.sendId,
+                    event = event(act.event),
+                    metadata = EventMetadata(type = "internal", data = act.data, origin = act.origin),
+                    route = ScheduledRoute.InternalQueue,
+                )
+                is SavedAct.Host -> ScheduledSendEntry(
+                    fireTimeMs = 0L,
+                    sequenceNum = 0L,
+                    sendId = act.sendId,
+                    event = null,
+                    metadata = EventMetadata.EMPTY,
+                    hostSend = HostSendRequest(
+                        processorType = act.processorType,
+                        eventName = act.event,
+                        target = act.target,
+                        content = act.content,
+                        params = act.params,
+                        sendId = act.sendId,
+                        eventData = act.data,
+                        invokeId = act.invokeId,
+                    ),
+                )
+            }
+            send.due to entry
+        }
 
     /**
      * What [saved] records for each `<history>`, read as the states of this

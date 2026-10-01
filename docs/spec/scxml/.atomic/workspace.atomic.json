@@ -8530,6 +8530,14 @@
           "file": "backends/c/runtime/include/sce/types.h",
           "symbol": "sce_parse_delay_ms",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9105,6 +9113,11 @@
           "file": "sce-build/src/scxml_self_send.rs",
           "symbol": "sends_to_itself",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "symbol": "delays_a_send_to_another_session",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9297,6 +9310,14 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "RESERVED_TYPE_PREFIX",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

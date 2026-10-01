@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 77d9ebe3529c99a39281511d0fcb487e99a73194813af5353b83abe11916ff46
+// source-hash: f412abe378d8602f487bb57814b1e86375602231fb9a698575c1e06002c3c186
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -235,21 +235,55 @@ pub trait StaticPayloadPersist: Sized {
         ::sce_rust_runtime::NoHistory,
     >];
 
-    /// The machine's whole state. Refused for a machine that is not running,
-    /// and for one whose last macrostep stopped at the microstep ceiling.
-    fn save(
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
+    /// machine that is not running, and for one whose last macrostep stopped
+    /// at the microstep ceiling.
+    fn save_at(
         &self,
+        wall_now_ms: u64,
     ) -> Result<
         ::sce_rust_runtime::saved_state::SavedState,
         ::sce_rust_runtime::saved_state::StateRefusal,
     >;
 
-    /// A machine of `policy` standing where `saved` left one. No `<onentry>`
-    /// runs and no `<data>` is evaluated: the saved run already did both.
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
     fn restore(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
-    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
 }
 
 impl StaticPayloadPersist for Engine<StaticPayloadPolicy> {
@@ -261,8 +295,9 @@ impl StaticPayloadPersist for Engine<StaticPayloadPolicy> {
         ::sce_rust_runtime::NoHistory,
     >] = &[];
 
-    fn save(
+    fn save_at(
         &self,
+        wall_now_ms: u64,
     ) -> Result<
         ::sce_rust_runtime::saved_state::SavedState,
         ::sce_rust_runtime::saved_state::StateRefusal,
@@ -290,12 +325,15 @@ impl StaticPayloadPersist for Engine<StaticPayloadPolicy> {
                 ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            wall_now_ms,
         )
     }
 
-    fn restore(
+    fn restore_with(
         mut policy: StaticPayloadPolicy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
@@ -319,7 +357,7 @@ impl StaticPayloadPersist for Engine<StaticPayloadPolicy> {
             saved.variable("refusals")?,
             "refusals",
         )?;
-        ::sce_rust_runtime::saved_state::enter(policy, saved)
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
 

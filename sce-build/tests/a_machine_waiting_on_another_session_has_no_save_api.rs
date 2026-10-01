@@ -2,20 +2,24 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // Saving a `datamodel="sce-static"` machine (docs/SCE_ACCEPTED_SUBSET.md §2.15,
-// "Saving and restoring"): a machine that keeps part of its state in the
-// RUNTIME rather than in its own fields is generated WITHOUT the save API,
-// never with one that would write less than the machine holds.
+// "Saving and restoring"): a machine that is waiting on ANOTHER SESSION is
+// generated WITHOUT the save API, never with one that would write less than
+// the machine holds.
 //
-// What the runtime keeps is what a saved state does not yet hold — a delayed
-// `<send>` still pending in the scheduler, an invoked session. (What a
-// `<history>` recorded IS held, and so is the external queue.) The rule is the
-// safety of the whole feature: a `save()` that left a pending timer out would
-// restore a machine that never fires it, and nothing would say so. It is
-// decided by the shape the generator computes (`saved_shape`), from a model
-// the ANALYZER has already read — a delayed `<send>` is known to need the
-// scheduler only after that pass — so this runs the generator end to end
+// A saved state holds what this session holds: its configuration, its
+// variables, what each `<history>` recorded, the delayed `<send>`s it is
+// waiting to deliver to its own queues or to a host-served processor, and its
+// external queue. What it cannot hold is a session it does not carry — an
+// invoked child, or a delayed send waiting to be delivered to the parent, to an
+// invocation or to a child session. The rule is the safety of the whole
+// feature: a `save()` that left an invoked child out would restore a machine
+// that waits for a `done.invoke` nobody will send, and nothing would say so.
+//
+// It is decided by the shape the generator computes (`saved_shape`), from a
+// model the ANALYZER has already read, so this runs the generator end to end
 // rather than asking the lowering about a model nothing analysed. The unit
-// test beside `saved_shape` did exactly that and could not see a delayed send.
+// tests beside `saved_shape` run the analyzer themselves, and this is the
+// control that they and the templates agree.
 //
 // A machine that does hold everything gets the API, on both backends that
 // have one: the control that keeps the refusals above from being a generator
@@ -118,50 +122,92 @@ fn has_save_api(language: &str, text: &str) -> bool {
     text.contains(marker)
 }
 
+/// Generate `document` for every backend that has a save API and say, for
+/// each, whether it came with one. A document that does not generate at all
+/// fails the test, so a refusal is never read as "no API".
+fn save_api_per_backend(document: &str) -> Vec<(&'static str, bool)> {
+    SAVE_API
+        .iter()
+        .map(|(language, _)| {
+            let (ok, text) = generate(language, document);
+            assert!(
+                ok,
+                "{language}: the machine does not generate:\n{text}\n--- document:\n{document}"
+            );
+            (*language, has_save_api(language, &text))
+        })
+        .collect()
+}
+
 #[test]
 fn a_machine_that_holds_all_of_its_state_is_generated_with_the_save_api() {
-    for (language, _) in SAVE_API {
-        let (ok, text) = generate(language, &machine(""));
+    for (language, has) in save_api_per_backend(&machine("")) {
+        assert!(has, "{language}: a machine of fields alone has a save API");
+    }
+}
+
+#[test]
+fn a_delayed_send_to_this_session_is_generated_with_the_save_api() {
+    // The saved state holds each of these as the moment it comes due: an event
+    // for the external queue, one for the internal queue (`#_internal`), an act
+    // a host-served processor performs, and the `<cancel>` that names any of
+    // them.
+    for extra in [
+        r#"<onentry><send event="go" delay="5s"/></onentry>"#,
+        r#"<onentry><send id="timer" event="go" delay="5s"/></onentry>"#,
+        r##"<onentry><send event="go" target="#_internal" delay="5s"/></onentry>"##,
+        r#"<onexit><cancel sendid="timer"/></onexit>"#,
+        r#"<onentry><send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                           target="http://localhost:1/notify" event="go" delay="5s"/></onentry>"#,
+    ] {
+        for (language, has) in save_api_per_backend(&machine(extra)) {
+            assert!(
+                has,
+                "{language}: a send the saved state holds must not take the save API away: {extra}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_delayed_send_to_another_session_is_generated_without_it() {
+    for target in ["#_parent", "#_scxml_child_session"] {
+        let extra =
+            format!(r#"<onentry><send event="go" target="{target}" delay="5s"/></onentry>"#);
+        for (language, has) in save_api_per_backend(&machine(&extra)) {
+            assert!(
+                !has,
+                "{language}: a send waiting on a session the saved state does not carry is not \
+                 in it, so the machine must not offer to save one ({target})"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_send_to_another_session_that_is_not_delayed_is_generated_with_it() {
+    // Delivered at once, it leaves nothing in the machine to lose.
+    let extra = r##"<onentry><send event="go" target="#_parent"/></onentry>"##;
+    for (language, has) in save_api_per_backend(&machine(extra)) {
         assert!(
-            ok,
-            "{language}: the plain machine does not generate:\n{text}"
-        );
-        assert!(
-            has_save_api(language, &text),
-            "{language}: a machine of fields alone has a save API"
+            has,
+            "{language}: nothing is waiting, so there is nothing to lose"
         );
     }
 }
 
 #[test]
-fn a_machine_with_a_pending_delayed_send_is_generated_without_it() {
-    for (language, _) in SAVE_API {
-        let (ok, text) = generate(
-            language,
-            &machine(r#"<onentry><send event="go" delay="5s"/></onentry>"#),
-        );
-        assert!(ok, "{language}: the machine does not generate:\n{text}");
+fn an_invoked_session_is_generated_without_it() {
+    let extra = r#"<invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+      </content>
+    </invoke>"#;
+    for (language, has) in save_api_per_backend(&machine(extra)) {
         assert!(
-            !has_save_api(language, &text),
-            "{language}: a timer still pending in the scheduler is not in a saved state, so the \
-             machine must not offer to save one"
-        );
-    }
-}
-
-#[test]
-fn a_cancel_is_the_scheduler_too() {
-    // A `<cancel>` is not a delayed send, and a machine that has one has a
-    // scheduler whose entries it names.
-    for (language, _) in SAVE_API {
-        let (ok, text) = generate(
-            language,
-            &machine(r#"<onexit><cancel sendid="timer"/></onexit>"#),
-        );
-        assert!(ok, "{language}: the machine does not generate:\n{text}");
-        assert!(
-            !has_save_api(language, &text),
-            "{language}: a machine that cancels sends by id keeps them in the scheduler"
+            !has,
+            "{language}: a running child session is not in a saved state, so the machine must \
+             not offer to save one"
         );
     }
 }
@@ -185,12 +231,7 @@ fn a_machine_with_a_history_is_generated_with_the_save_api() {
   <state id="elsewhere"><transition event="back" target="h"/></state>
 </scxml>
 "#;
-    for (language, _) in SAVE_API {
-        let (ok, text) = generate(language, with_history);
-        assert!(ok, "{language}: the machine does not generate:\n{text}");
-        assert!(
-            has_save_api(language, &text),
-            "{language}: a machine with a history saves it"
-        );
+    for (language, has) in save_api_per_backend(with_history) {
+        assert!(has, "{language}: a machine with a history saves it");
     }
 }

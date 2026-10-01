@@ -1166,16 +1166,18 @@ pub fn lower(
 /// its id, whether it is deep, and the state it is declared in — and a document
 /// without one hashes exactly what it did before histories were saved.
 ///
-/// `None` for a machine whose state lives partly in the runtime rather than
-/// in its fields — a delayed `<send>` still pending, an invoked session —
-/// which this version of the saved state cannot hold. Such a machine is
-/// generated without the save API rather than with one that would silently
-/// drop part of its state.
+/// `None` for a machine whose state lives partly in a session other than this
+/// one — an invoked session, or a delayed `<send>` waiting to be delivered to
+/// another session ([`delays_a_send_to_another_session`]) — which this version
+/// of the saved state cannot hold. Such a machine is generated without the
+/// save API rather than with one that would silently drop part of its state.
+/// A delayed `<send>` to this session or to a host-served processor is not
+/// such a send: a saved state holds it as the moment it comes due.
 fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
-    if model.needs_event_scheduler_driving() || model.has_invoke() {
+    if model.has_invoke() || delays_a_send_to_another_session(model) {
         return None;
     }
     let mut text = String::from("sce-saved-state-shape 1\n");
@@ -1234,6 +1236,29 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         }
     }
     Some(format!("{:x}", Sha256::digest(text.as_bytes())))
+}
+
+/// Whether the document makes a delayed `<send>` that, when it comes due, is
+/// delivered through a session other than this one (§scxml-6.2.4): its target
+/// is a `#_` location other than `#_internal` — the parent, an invocation, a
+/// child session.
+///
+/// A saved state holds a waiting send as an event for this session's own
+/// queues or a request a host-served processor performs; a send waiting on
+/// another session is neither, and the session it waits for is not part of the
+/// state.
+///
+/// The delay and the target are read as written because this data model
+/// refuses the attributes that would leave either to run time (`delayexpr`,
+/// `targetexpr`: `UNTYPED_ACTION_ATTRIBUTES` in `static_datamodel`), so a
+/// send's target is never a value this document computes.
+/// `a_delayed_sends_target_and_delay_are_literals_under_sce_static` holds that:
+/// a data model that typed `targetexpr` would have to decide here which
+/// sessions it could name.
+fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
+    model.sends().into_iter().any(|(_, send)| {
+        !send.delay.is_empty() && send.target.starts_with("#_") && send.target != "#_internal"
+    })
 }
 
 /// A variable's initial value. It is computed while the machine is being
@@ -1692,7 +1717,7 @@ mod tests {
         // The generator lowers a model the analyzer has read, and a delayed
         // `<send>` is known to need the scheduler only after that pass: asked
         // of a model nothing analysed, a pending timer is invisible
-        // (`a_machine_holding_state_in_the_runtime_has_no_save_api` runs the
+        // (`a_machine_waiting_on_another_session_has_no_save_api` runs the
         // generator itself).
         crate::analyzer::analyze(&mut model, "m.scxml");
         lower_rust(&mut model, "M", &[])
@@ -1766,14 +1791,78 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_machine_that_pends_a_delayed_send_has_no_saved_shape() {
-        // What a delayed <send> still pending holds lives in the runtime's
-        // scheduler, which this version of the saved state does not hold.
-        let delayed = COUNTER.replace(
+    /// `COUNTER` whose `go` transition makes `send`.
+    fn counter_sending(send: &str) -> String {
+        COUNTER.replace(
             r#"<transition event="go" target="done"/>"#,
-            r#"<transition event="go" target="done"><send event="later" delay="5s"/></transition>"#,
+            &format!(r#"<transition event="go" target="done">{send}</transition>"#),
+        )
+    }
+
+    #[test]
+    fn a_delayed_send_to_this_session_changes_nothing_a_saved_state_names() {
+        // A waiting send to this session's own queues is held by the saved
+        // state as the moment it comes due, so a machine that makes one has a
+        // shape — and the same one: it adds no state or variable.
+        let base = shape(COUNTER).expect("shape");
+        for send in [
+            r#"<send event="later" delay="5s"/>"#,
+            r#"<send id="timer" event="later" delay="5s"/>"#,
+            r##"<send event="later" target="#_internal" delay="5s"/>"##,
+        ] {
+            assert_eq!(shape(&counter_sending(send)), Some(base.clone()), "{send}");
+        }
+        assert_eq!(
+            shape(&counter_sending(r#"<cancel sendid="timer"/>"#)),
+            Some(base),
+            "a <cancel> names a send of this session and is state of no other"
         );
-        assert_eq!(shape(&delayed), None);
+    }
+
+    #[test]
+    fn a_delayed_send_to_another_session_has_no_saved_shape() {
+        // It is delivered through a session the saved state does not carry:
+        // the parent, an invocation, a child by its session id.
+        for target in ["#_parent", "#_child", "#_scxml_session"] {
+            let send = format!(r#"<send event="later" target="{target}" delay="5s"/>"#);
+            assert_eq!(shape(&counter_sending(&send)), None, "{send}");
+        }
+    }
+
+    #[test]
+    fn a_delayed_sends_target_and_delay_are_literals_under_sce_static() {
+        // `delays_a_send_to_another_session` reads both as written. A target
+        // that is only known at run time may be any session, so the day this
+        // data model types `targetexpr` (or a `delayexpr` that makes a send
+        // delayed) this fails, and the predicate has to say what it does.
+        for send in [
+            r#"<send event="later" targetexpr="where" delay="5s"/>"#,
+            r#"<send event="later" delayexpr="how_long"/>"#,
+        ] {
+            let refusal = SCXMLParser::new()
+                .parse_string(&counter_sending(send), "m")
+                .expect_err(send);
+            assert!(
+                format!("{refusal:?}").contains("this attribute has no typed form"),
+                "{send}: {refusal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_send_to_another_session_that_is_not_delayed_waits_for_nothing() {
+        // Delivered at once, it leaves nothing in the machine to save.
+        assert!(shape(&counter_sending(
+            r##"<send event="now" target="#_parent"/>"##
+        ))
+        .is_some());
+    }
+
+    #[test]
+    fn a_delayed_send_in_a_history_default_is_seen() {
+        // A `<history>`'s default transition belongs to its parent state, and
+        // is not among the blocks a state's own transitions carry.
+        let history = r##"<history id="h"><transition target="counting"><send event="later" target="#_parent" delay="5s"/></transition></history>"##;
+        assert_eq!(shape(&counter_in_outer(history)), None);
     }
 }
