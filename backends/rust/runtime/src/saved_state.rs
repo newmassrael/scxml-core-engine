@@ -545,6 +545,10 @@ pub fn save_history<P: StatePolicy>(
     saved
 }
 
+/// What a saved state records for each `<history>` it names, read as the
+/// document's own: the history, and the states it recorded.
+pub type RestoredHistory<P> = Vec<(<P as StatePolicy>::History, Vec<<P as StatePolicy>::State>)>;
+
 /// What `saved` records for each of `declared`, read as the states of this
 /// document, or the refusal that says which value is not one.
 ///
@@ -558,10 +562,10 @@ pub fn save_history<P: StatePolicy>(
 pub fn restore_history<P: StatePolicy>(
     saved: &SavedState,
     declared: &[HistoryDecl<P::History>],
-) -> Result<Vec<(P::History, Vec<P::State>)>, StateRefusal> {
+) -> Result<RestoredHistory<P>, StateRefusal> {
     use crate::helpers::configuration::validate_history;
 
-    let mut restored: Vec<(P::History, Vec<P::State>)> = Vec::new();
+    let mut restored: RestoredHistory<P> = Vec::new();
     for (i, (id, names)) in saved.history.iter().enumerate() {
         if saved.history[..i].iter().any(|(earlier, _)| earlier == id) {
             return Err(StateRefusal::new(format!(
