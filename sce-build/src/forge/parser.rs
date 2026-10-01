@@ -7932,22 +7932,20 @@ fn parse_algorithm_stmt(
                         init_spelling: AttributeSpelling::of(node, None, "init"),
                     });
                 }
-                for stray in ["capacity"] {
-                    if let Some(value) = node.attribute(stray) {
-                        return Err(located(
-                            node,
-                            doc_name,
-                            ValidationError::AttributeRuleViolated {
-                                element: format!("<sce:var name=\"{name}\">"),
-                                attr: stray.into(),
-                                value: value.into(),
-                                rule: format!(
-                                    "omitted — a record local is built from one <sce:set> \
-                                     per field of {alias}"
-                                ),
-                            },
-                        ));
-                    }
+                if let Some(value) = node.attribute("capacity") {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:var name=\"{name}\">"),
+                            attr: "capacity".into(),
+                            value: value.into(),
+                            rule: format!(
+                                "omitted — a record local is built from one <sce:set> \
+                                 per field of {alias}"
+                            ),
+                        },
+                    ));
                 }
                 let fields =
                     read_record_fields(node, doc_name, format!("<sce:var name=\"{name}\">"))?;
