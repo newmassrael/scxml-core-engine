@@ -223,7 +223,7 @@ prose with their quotes checked verbatim:
 
 | Case | Requirements | Cited an id the list lacks | Requirement missing | Marked unresolved by the draft | Behaviour classes |
 |---|---|---|---|---|---|
-| door-with-auto-close | 6 | 0 of 5 | 0 of 5 | none | 3 |
+| door-with-auto-close | 6 | 0 of 5 | 0 of 5 | none | 2 |
 | connection-keeper | 7 | 0 of 5 | 0 of 5 | none | 1 |
 | vending-controller | 12 | 0 of 5 | 0 of 5 | 8 marks on 4 requirements | not judged |
 
@@ -235,14 +235,21 @@ sentence says, so a draft can claim a requirement and be wrong (no draft piled
 ids on a node to satisfy the profile: at most three on one). The vending drafts
 agree on the list and not on which requirements to call open (`R6` in three
 drafts, `R10` and `R12` in two, `R7` in one), and that choice is the draft's.
-The three door classes are three real behaviours, not spellings: an open request
-while open restarts the 20 seconds in one draft and is ignored in the others,
-and of those two the one without a `<cancel>` on exit differs from the one with
-it only because the closed interface made the draft declare the timer's event as
-a driven input. The loose levels sit inside the band of the earlier runs with no
+The two door classes are two real behaviours, not spellings: an open request
+while open restarts the 20 seconds in three drafts and is ignored in the other
+two. ⚠ This table first said three classes and gave a reason for the third that
+was wrong: it blamed the closed interface for making one draft declare its
+timer's event as a driven input. The cause was the Python runtime's scheduler,
+which remembered a cancelled `<send>` id and dropped the next send that reused
+it, so a draft that cancelled its timer on exit lost the timer of its second
+entry and a draft that did not cancel kept it (fixed 2026-10-01,
+`backends/python/tests/scheduler/`). Every behaviour figure of the earlier arms
+was recomputed under the repaired runtime from the saved drafts, and only this
+one moved; the recomputation under the old runtime reproduced the figures as
+first reported. The loose levels sit inside the band of the earlier runs with no
 profile (logic 15 against 13 and 14, table 14 against 13 and 14, open 15 against
 15 and 15, vocabulary 13 against 13 and 14); the door's behaviour column is the
-one that moved (3 against 1 in all three earlier arms), and one run per arm
+one that moved (2 against 1 in all three earlier arms), and one run per arm
 cannot say whether that is the profile or the sample. The three cases are the
 ones the product was shaped on and the lists were written by the owner's side
 before the drafts, so this is not a blind test.
