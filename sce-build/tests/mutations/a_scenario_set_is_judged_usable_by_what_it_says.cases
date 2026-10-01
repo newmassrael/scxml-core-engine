@@ -1,0 +1,122 @@
+# Mutation cases for "a scenario set is judged usable by what it says".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_scenario_set_is_judged_usable_by_what_it_says.cases`.
+#
+# `sce-codegen scenarios` reads a file of examples and answers whether it is
+# usable: every name inside the interface it declares, every quote word for word
+# in the specification, no scenario that would pass by asserting nothing. Each
+# case below takes one of those rules away, or breaks what the command reports
+# of it, and must make a test red: the unit tests of `scenario_set.rs`, which
+# make every problem code from an input, or `scenario_set_command.rs`, which
+# runs the command.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test scenario_set_command
+mutation_targets sce-build/src/scenario_set.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/src/scenario_set.rs sce-build/tests/scenario_set_command.rs
+
+# ── A scenario that asserts nothing is let through ──────────────────
+#
+# A runnable scenario with no expectation passes whatever the machine does,
+# which reads as success and measures nothing.
+
+mutation_case "a runnable scenario that asserts nothing is not a problem" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            && scenario.expectations() == 0\n",
+     "            && scenario.expectations() == usize::MAX\n")
+PY
+
+# ── A name outside the interface is let through ─────────────────────
+
+mutation_case "any event may be sent, declared or not" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     ".find(|input| input.name == name)",
+     ".find(|_input| true)")
+PY
+
+mutation_case "a condition the specification does not name is accepted" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     ".any(|name| name == condition)",
+     ".any(|_name| true)")
+PY
+
+# ── A sent event may leave out a field it carries ───────────────────
+#
+# An example that leaves a declared field out is not an example of any event
+# the machine could receive.
+
+mutation_case "a sent event may leave a declared payload field out" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            if !given.contains_key(field) {",
+     "            if false {")
+PY
+
+# ── A payload value of the wrong type is let through ────────────────
+
+mutation_case "an integer field holds a fraction" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            (FieldType::Integer, Scalar::Integer(_))\n",
+     "            (FieldType::Integer, Scalar::Integer(_) | Scalar::Number(_))\n")
+PY
+
+mutation_case "a number field refuses a whole number" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "                | (FieldType::Number, Scalar::Integer(_) | Scalar::Number(_))\n",
+     "                | (FieldType::Number, Scalar::Number(_))\n")
+PY
+
+# ── The quote is not held to the specification ──────────────────────
+#
+# A quote is the anchor that lets an owner read an example against their own
+# words, and one that is a paraphrase has none.
+
+mutation_case "every quote is found" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "                if !quote.is_empty() && text.contains(&quote) {",
+     "                if true {")
+PY
+
+mutation_case "white space is not collapsed before a quote is looked for" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "    text.split_whitespace().collect::<Vec<_>>().join(\" \")",
+     "    text.trim().to_string()")
+PY
+
+# ── A status that disagrees with what the scenario carries ──────────
+
+mutation_case "a blocked scenario need not say what blocks it" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "                if !blocked_by {",
+     "                if false {")
+PY
+
+mutation_case "two scenarios may share an id" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            if !seen.insert(scenario.id.as_str()) {",
+     "            if false {")
+PY
+
+# ── A file of another version is read ───────────────────────────────
+
+mutation_case "any version is read as this one" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            Some(v) if v == u64::from(SCENARIO_SET_VERSION) => {}",
+     "            Some(_) => {}")
+PY
+
+# ── The command reports something other than what was found ─────────
+
+mutation_case "the summary says usable whatever was found" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        \"usable\": problems.is_empty(),",
+     "        \"usable\": true,")
+PY
+
+mutation_case "one missing quote marks every scenario as missing its quote" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                p.code == \"quote-not-found\" && p.scenario.as_deref() == Some(scenario.id.as_str())",
+     "                p.code == \"quote-not-found\"")
+PY

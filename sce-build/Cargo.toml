@@ -194,6 +194,14 @@ name = "a_design_of_several_documents_is_measured_together"
 path = "tests/a_design_of_several_documents_is_measured_together.rs"
 required-features = ["cli"]
 
+# `sce-codegen scenarios` reads a scenario set. Spawns sce-codegen, and a stale
+# binary refuses the subcommand as a usage error, so the target is held to the
+# same declaration as the ones above.
+[[test]]
+name = "scenario_set_command"
+path = "tests/scenario_set_command.rs"
+required-features = ["cli"]
+
 # `generate --plan` names the files a generation would write. Spawns
 # sce-codegen, so it is held to the same declaration as the targets above:
 # the gate `every_target_that_spawns_the_binary_declares_the_feature` lists it

@@ -222,6 +222,10 @@ pub mod resolve;
 /// reaches into the other's namespace for shared derive policy.
 pub mod rust_derive_policy;
 pub mod sce_attr;
+/// Examples of what a specification says a machine does, in the owner's
+/// words: the file format, and whether a set of them is usable. The
+/// evidence column `Outcome::NeedsScenario` is waiting for.
+pub mod scenario_set;
 pub mod script_engine_analyzer;
 /// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children

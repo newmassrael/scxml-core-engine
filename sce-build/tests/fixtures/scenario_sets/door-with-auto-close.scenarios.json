@@ -1,0 +1,99 @@
+{
+  "record": "sce-scenario-set",
+  "v": 1,
+  "specification": {"doc_id": "door-with-auto-close", "rev": "1"},
+  "origin": "ai-proposed",
+  "interface": {
+    "why": "The specification names the four conditions and the two sensors; it names no event identifiers, so these are proposed.",
+    "inputs": [{"name": "open-request"}, {"name": "fully-open"}, {"name": "fully-closed"}],
+    "outputs": [],
+    "conditions": ["closed", "opening", "open", "closing"]
+  },
+  "scenarios": [
+    {
+      "id": "D1",
+      "quote": "An open request while the door is closed starts opening it.",
+      "assumes": ["the door starts closed (the specification does not say which condition it starts in)"],
+      "steps": [
+        {"expect": {"condition": "closed"}},
+        {"send": "open-request", "expect": {"condition": "opening"}}
+      ]
+    },
+    {
+      "id": "D2",
+      "quote": "When the fully-open sensor reports, the door is open.",
+      "assumes": ["the door starts closed"],
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open", "expect": {"condition": "open"}}
+      ]
+    },
+    {
+      "id": "D3-boundary",
+      "quote": "If the door has been open for 20 seconds without a new open request, it starts closing.",
+      "assumes": ["the door starts closed"],
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open", "expect": {"condition": "open"}},
+        {"advance_ms": 19999, "expect": {"condition": "open"}},
+        {"advance_ms": 1, "expect": {"condition": "closing"}}
+      ]
+    },
+    {
+      "id": "D4-restart",
+      "quote": "If the door has been open for 20 seconds without a new open request, it starts closing.",
+      "status": "awaiting-decision",
+      "decision": {
+        "question": "Does an open request while the door is open restart the 20 seconds?",
+        "alternatives": ["D4-ignore"]
+      },
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open", "expect": {"condition": "open"}},
+        {"advance_ms": 10000},
+        {"send": "open-request", "expect": {"condition": "open"}},
+        {"advance_ms": 19999, "expect": {"condition": "open"}},
+        {"advance_ms": 1, "expect": {"condition": "closing"}}
+      ]
+    },
+    {
+      "id": "D4-ignore",
+      "quote": "If the door has been open for 20 seconds without a new open request, it starts closing.",
+      "status": "awaiting-decision",
+      "decision": {
+        "question": "Does an open request while the door is open restart the 20 seconds?",
+        "alternatives": ["D4-restart"]
+      },
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open", "expect": {"condition": "open"}},
+        {"advance_ms": 10000},
+        {"send": "open-request", "expect": {"condition": "open"}},
+        {"advance_ms": 9999, "expect": {"condition": "open"}},
+        {"advance_ms": 1, "expect": {"condition": "closing"}}
+      ]
+    },
+    {
+      "id": "D5",
+      "quote": "An open request while closing reverses it to opening.",
+      "assumes": ["the door starts closed"],
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open"},
+        {"advance_ms": 20000, "expect": {"condition": "closing"}},
+        {"send": "open-request", "expect": {"condition": "opening"}}
+      ]
+    },
+    {
+      "id": "D6",
+      "quote": "When the fully-closed sensor reports, the door is closed.",
+      "assumes": ["the door starts closed"],
+      "steps": [
+        {"send": "open-request"},
+        {"send": "fully-open"},
+        {"advance_ms": 20000, "expect": {"condition": "closing"}},
+        {"send": "fully-closed", "expect": {"condition": "closed"}}
+      ]
+    }
+  ]
+}

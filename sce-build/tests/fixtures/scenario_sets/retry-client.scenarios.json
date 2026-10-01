@@ -1,0 +1,70 @@
+{
+  "record": "sce-scenario-set",
+  "v": 1,
+  "specification": {"doc_id": "retry-client", "rev": "1"},
+  "origin": "ai-proposed",
+  "interface": {
+    "why": "The specification names all four signals. It does not say who the outside caller is, so the outputs carry no route and no scenario asserts where an outbound event goes.",
+    "inputs": [{"name": "RequestNeeded"}, {"name": "ResponseReceived"}],
+    "outputs": [{"name": "SendRequest"}, {"name": "TimeoutError"}]
+  },
+  "scenarios": [
+    {
+      "id": "T1",
+      "quote": "When RequestNeeded arrives, the client sends a SendRequest signal to a caller outside this state machine",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}], "finished": false}}
+      ]
+    },
+    {
+      "id": "T2-boundary",
+      "quote": "If 200ms pass without a response, it sends SendRequest again.",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 199, "expect": {"outbound": []}},
+        {"advance_ms": 1, "expect": {"outbound": [{"event": "SendRequest"}]}}
+      ]
+    },
+    {
+      "id": "T3-at-most-three",
+      "quote": "Retransmission happens at most twice, so the request is sent at most three times including the first.",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 200, "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 200, "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 199, "expect": {"outbound": [], "finished": false}},
+        {"advance_ms": 1, "expect": {"outbound": [{"event": "TimeoutError"}], "finished": true}},
+        {"advance_ms": 10000, "expect": {"outbound": []}}
+      ]
+    },
+    {
+      "id": "T4-response-completes",
+      "quote": "When ResponseReceived arrives, it completes.",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 100},
+        {"send": "ResponseReceived", "expect": {"finished": true}}
+      ]
+    },
+    {
+      "id": "T5-response-stops-the-timer",
+      "quote": "When ResponseReceived arrives, it completes.",
+      "note": "Absence over a window: after the response nothing is sent, however long the clock runs. This is the evidence needs-scenario asks for.",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"send": "ResponseReceived", "expect": {"finished": true}},
+        {"advance_ms": 100000, "expect": {"outbound": []}}
+      ]
+    },
+    {
+      "id": "T6-response-after-a-retry",
+      "quote": "When ResponseReceived arrives, it completes.",
+      "steps": [
+        {"send": "RequestNeeded", "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"advance_ms": 200, "expect": {"outbound": [{"event": "SendRequest"}]}},
+        {"send": "ResponseReceived", "expect": {"finished": true}},
+        {"advance_ms": 100000, "expect": {"outbound": []}}
+      ]
+    }
+  ]
+}

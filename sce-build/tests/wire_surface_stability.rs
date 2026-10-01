@@ -48,6 +48,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-saved-state.v1.schema.json",
     "schemas/sce-kind-catalog.v1.schema.json",
     "schemas/sce-authoring-profile.v1.schema.json",
+    "schemas/sce-scenario-set.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -219,6 +220,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_profile_the_product_reads_validates_against_the_wire_schema",
         "sce-build/src/authoring_profile.rs",
     ),
+    (
+        "schemas/sce-scenario-set.v1.schema.json",
+        "every_set_the_product_reads_validates_against_the_wire_schema",
+        "sce-build/src/scenario_set.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -284,6 +290,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "the_profile_schema_rejects_a_setting_the_product_does_not_know",
         "sce-build/src/authoring_profile.rs",
     ),
+    (
+        "schemas/sce-scenario-set.v1.schema.json",
+        "the_wire_schema_rejects_what_the_reader_does_not_accept",
+        "sce-build/src/scenario_set.rs",
+    ),
 ];
 
 /// The field a surface carries the producing commit in.
@@ -340,6 +351,16 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          identifies a profile is its own sha256, which the manifest and the \
          acceptance record both carry.",
         "authoring profile deliberately does",
+    ),
+    (
+        "schemas/sce-scenario-set.v1.schema.json",
+        "written by the specification's owner, or proposed by an AI client for \
+         the owner to confirm, and never emitted by SCE: there is no run to \
+         stamp, and a commit nobody chose would sit in a file whose bytes an \
+         acceptance can pin. What identifies a scenario set is its own sha256, \
+         and the specification it quotes is named by `specification.doc_id` \
+         and `rev`.",
+        "scenario set deliberately does",
     ),
 ];
 

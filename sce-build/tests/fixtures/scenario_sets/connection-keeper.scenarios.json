@@ -1,0 +1,97 @@
+{
+  "record": "sce-scenario-set",
+  "v": 1,
+  "specification": {"doc_id": "connection-keeper", "rev": "1"},
+  "origin": "ai-proposed",
+  "interface": {
+    "why": "The specification says the keeper tries to connect and is told whether the attempt succeeded, failed, or the link was lost, and is asked to shut down. It names none of these as signals, and trying to connect is an act with no name: without a named output there is nothing to observe, so all of these are proposed.",
+    "inputs": [
+      {"name": "attempt-succeeded"},
+      {"name": "attempt-failed"},
+      {"name": "link-lost"},
+      {"name": "shutdown"}
+    ],
+    "outputs": [{"name": "connect-attempt"}],
+    "conditions": ["disconnected", "connected", "waiting"]
+  },
+  "scenarios": [
+    {
+      "id": "K1",
+      "quote": "The connection keeper starts disconnected and immediately tries to connect.",
+      "note": "Step 0 is the initial configuration: the attempt is made before any input, so what the start itself sent is part of that observation.",
+      "steps": [
+        {"expect": {"outbound": [{"event": "connect-attempt"}]}}
+      ]
+    },
+    {
+      "id": "K2",
+      "quote": "If the attempt succeeds it is connected;",
+      "steps": [
+        {"send": "attempt-succeeded", "expect": {"condition": "connected", "outbound": []}}
+      ]
+    },
+    {
+      "id": "K3-wait-boundary",
+      "quote": "if it fails it waits 5 seconds and tries again, indefinitely.",
+      "steps": [
+        {"send": "attempt-failed", "expect": {"outbound": []}},
+        {"advance_ms": 4999, "expect": {"outbound": []}},
+        {"advance_ms": 1, "expect": {"outbound": [{"event": "connect-attempt"}]}}
+      ]
+    },
+    {
+      "id": "K4-indefinitely",
+      "quote": "if it fails it waits 5 seconds and tries again, indefinitely.",
+      "note": "Indefinitely cannot be shown by running: a bounded run shows five cycles and says so.",
+      "bound": {"cycles": 5},
+      "steps": [
+        {"send": "attempt-failed"},
+        {"advance_ms": 5000, "expect": {"outbound": [{"event": "connect-attempt"}]}},
+        {"send": "attempt-failed"},
+        {"advance_ms": 5000, "expect": {"outbound": [{"event": "connect-attempt"}]}},
+        {"send": "attempt-failed"},
+        {"advance_ms": 5000, "expect": {"outbound": [{"event": "connect-attempt"}]}},
+        {"send": "attempt-failed"},
+        {"advance_ms": 5000, "expect": {"outbound": [{"event": "connect-attempt"}]}},
+        {"send": "attempt-failed"},
+        {"advance_ms": 5000, "expect": {"outbound": [{"event": "connect-attempt"}], "finished": false}}
+      ]
+    },
+    {
+      "id": "K5",
+      "quote": "While connected, a link-lost notification returns it to waiting 5 seconds before the next attempt.",
+      "steps": [
+        {"send": "attempt-succeeded", "expect": {"condition": "connected"}},
+        {"send": "link-lost", "expect": {"outbound": []}},
+        {"advance_ms": 4999, "expect": {"outbound": []}},
+        {"advance_ms": 1, "expect": {"outbound": [{"event": "connect-attempt"}]}}
+      ]
+    },
+    {
+      "id": "K6-shutdown-while-connected",
+      "quote": "A shutdown request in any condition stops it for good.",
+      "steps": [
+        {"send": "attempt-succeeded"},
+        {"send": "shutdown", "expect": {"finished": true}},
+        {"advance_ms": 100000, "expect": {"outbound": []}}
+      ]
+    },
+    {
+      "id": "K7-shutdown-while-waiting",
+      "quote": "A shutdown request in any condition stops it for good.",
+      "steps": [
+        {"send": "attempt-failed"},
+        {"send": "shutdown", "expect": {"finished": true}},
+        {"advance_ms": 100000, "expect": {"outbound": []}}
+      ]
+    },
+    {
+      "id": "K8-shutdown-before-any-answer",
+      "quote": "A shutdown request in any condition stops it for good.",
+      "steps": [
+        {"send": "shutdown", "expect": {"finished": true}},
+        {"advance_ms": 100000, "expect": {"outbound": []}}
+      ]
+    }
+  ]
+}

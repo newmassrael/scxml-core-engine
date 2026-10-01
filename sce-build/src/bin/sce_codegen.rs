@@ -2540,6 +2540,27 @@ enum Commands {
         #[arg(long)]
         manifest: Option<String>,
     },
+    /// Read a scenario set and say whether it is usable.
+    ///
+    /// A scenario set is a file of examples of what a specification says a
+    /// machine does: events sent in, virtual time passing, and what must be
+    /// observed, each anchored to a sentence of the specification. This
+    /// command reads one and reports it: a summary record, a record per
+    /// scenario, and a record per problem found. It runs nothing and says
+    /// nothing about any design.
+    ///
+    /// ⚠ The problems are FINDINGS, not refusals: the command exits 0
+    /// whether or not the set has any, and the summary's `usable` says which.
+    /// A file that is not a scenario set at all is refused, as a requirement
+    /// list is.
+    Scenarios {
+        /// Scenario set file (JSON, `sce-scenario-set` v1)
+        file: String,
+        /// The specification the quotes are taken from, as text. With it
+        /// every quote is checked word for word; without it none is.
+        #[arg(long, value_name = "PATH")]
+        specification: Option<String>,
+    },
     /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
     /// file. One JSON record per
     /// marker (attribute form and element form both detected);
@@ -3186,6 +3207,10 @@ fn main() {
         Commands::Requirements { scxml, manifest } => {
             cmd_requirements(&scxml, manifest.as_deref(), error_format)
         }
+        Commands::Scenarios {
+            file,
+            specification,
+        } => cmd_scenarios(&file, specification.as_deref()),
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
         Commands::Pseudo {
@@ -3350,6 +3375,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ReadMetadata { .. }
         | Commands::Manifest { .. }
         | Commands::Requirements { .. }
+        | Commands::Scenarios { .. }
         | Commands::TransitionTable { .. }
         | Commands::ReviewTable { .. }
         | Commands::Pseudo { .. }
@@ -9563,6 +9589,80 @@ fn cmd_requirements_of_design(
         .collect();
     let classification = sce_build::requirement_manifest::classify_documents(&members, &loaded);
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
+}
+
+/// `scenarios` — read a scenario set and report it.
+///
+/// One summary record, one record per scenario, then one record per problem.
+/// The problems are findings and the command exits 0 with them; `usable` in
+/// the summary is the answer. Only a file that is not a scenario set at all
+/// ends the run, through the same door a requirement list uses
+/// (`cli/closure-input-unusable`), so a probe on one loader says nothing about
+/// the next.
+fn cmd_scenarios(file: &str, specification: Option<&str>) {
+    let set = sce_build::scenario_set::ScenarioSet::load(Path::new(file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: file.to_string(),
+            what: "scenario set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let mut problems = set.problems();
+    if let Some(path) = specification {
+        let text = fs::read_to_string(path).unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: path.to_string(),
+                source,
+            })
+        });
+        problems.extend(set.quote_problems(&text));
+    }
+    let (runnable, awaiting, blocked) = set.counts();
+    let mut lines = vec![serde_json::json!({
+        "kind": "scenario-set",
+        "doc_id": set.specification.doc_id,
+        "rev": set.specification.rev,
+        "origin": set.origin.as_str(),
+        "scenarios": set.scenarios.len(),
+        "runnable": runnable,
+        "awaiting-decision": awaiting,
+        "blocked": blocked,
+        "quotes_checked": specification.is_some(),
+        "problems": problems.len(),
+        "usable": problems.is_empty(),
+    })];
+    for scenario in &set.scenarios {
+        let quote_found = specification.map(|_| {
+            !problems.iter().any(|p| {
+                p.code == "quote-not-found" && p.scenario.as_deref() == Some(scenario.id.as_str())
+            })
+        });
+        lines.push(serde_json::json!({
+            "kind": "scenario",
+            "id": scenario.id,
+            "status": scenario.status.as_str(),
+            "steps": scenario.steps.len(),
+            "expectations": scenario.expectations(),
+            "requirements": scenario.requirements,
+            "quote_found": quote_found,
+        }));
+    }
+    for found in &problems {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "scenario": found.scenario,
+            "path": found.path,
+            "code": found.code,
+            "detail": found.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
 }
 
 // ── Subcommand: unresolved ─────────────────────────────────────

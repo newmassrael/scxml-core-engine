@@ -3351,6 +3351,81 @@ No setting is named so that it could. The open-interface line of §2.16 stays
 as it is — it says a mismatch the document itself shows, where the profile
 states what the owner expects.
 
+### §2.18 A scenario set — `sce-codegen scenarios`
+
+Requirement closure asks whether a node claims a requirement's id, which is
+evidence only for a requirement met by something existing. A requirement met by
+something NOT happening has no honest answer among its outcomes, and
+`needs-scenario` says what would carry it: a scenario asserting the thing does
+not occur, and passing. A scenario set is the input of that column: examples of
+what a specification says a machine does, in the owner's words, kept in a file
+beside the specification.
+
+```json
+{ "record": "sce-scenario-set", "v": 1,
+  "specification": { "doc_id": "retry-client", "rev": "1" },
+  "origin": "ai-proposed",
+  "interface": { "inputs": [{ "name": "RequestNeeded" }],
+                 "outputs": [{ "name": "SendRequest" }] },
+  "scenarios": [
+    { "id": "T2-boundary",
+      "quote": "If 200ms pass without a response, it sends SendRequest again.",
+      "steps": [
+        { "send": "RequestNeeded", "expect": { "outbound": [{ "event": "SendRequest" }] } },
+        { "advance_ms": 199, "expect": { "outbound": [] } },
+        { "advance_ms": 1,   "expect": { "outbound": [{ "event": "SendRequest" }] } } ] } ] }
+```
+
+A step sends one event, or lets virtual time pass, or does neither and only
+observes (step 0 is judged on the initial configuration, so what the start
+itself sent is part of it). What is observed is a closed list: `outbound` (every
+event the machine sent to something outside itself during the step, in order;
+`[]` means none), `finished`, `condition` (a state the specification names) and
+`data` (a data item the specification names). Anything left out is not checked.
+Time is virtual and never wall-clock.
+
+The `interface` is the part a specification rarely supplies. It names the events
+sent in, the outputs, the payload fields and their types, and the conditions and
+data items an example may mention, and it is a PROPOSAL the owner accepts with
+the examples. Measured on four specifications (door, connection, vending,
+retry), only the retry specification named its signals; the others left the
+inputs, the outputs, or both for the example to invent. An output may carry the
+`via` route it leaves by; one that carries none is an output whose route nobody
+has decided, and an engine cannot observe it — which is correct, because under
+W3C SCXML a send to a target that cannot be reached is `error.communication`,
+not a delivery.
+
+A scenario that cannot simply run says why rather than being dropped.
+`assumes` lists what the example takes as given that the specification does not
+state (the condition the machine starts in). `awaiting-decision` is a question
+the specification leaves open, put as an example, with the expectation written
+for each answer (`decision.alternatives` names the scenarios of which one is
+kept). `blocked` waits on a fact nobody has decided (`blocked_by`). A sentence
+that claims something no run can show, such as "indefinitely", carries a
+`bound`, and a result says it was bounded.
+
+`sce-codegen scenarios <file> [--specification <path>]` reads a set and writes
+a summary record, a record per scenario and a record per problem, one JSON
+object per line. The problems are findings: the command exits 0 with them and
+the summary's `usable` says whether there were any. It reports every problem at
+once (`PROBLEM_CODES` in `sce-build/src/scenario_set.rs` lists them): a name used
+that the interface does not declare, a payload of the wrong type or missing a
+field, a status that does not agree with what the scenario carries, a runnable
+scenario that asserts nothing (it would pass whatever the machine did), and,
+with `--specification`, a quote that is not in the specification word for word
+(runs of white space are one space; nothing else is forgiven). A file that is
+not a scenario set at all (not JSON, another `record`, another `v`, a field this
+build does not know) is refused as `cli/closure-input-unusable` with `what` set
+to `scenario set`, and prints nothing.
+
+`origin` is a declaration (`ai-proposed` or `owner-written`) that SCE cannot
+verify and repeats in every result. This surface runs nothing and says nothing
+about any design: which engine drives a machine, and the judgement of its
+observations against these expectations, are not part of it. The sets shipped
+in `sce-build/tests/fixtures/scenario_sets/` (34 scenarios) are held to the
+schema, read, counted and quoted against their specifications by
+`every_set_the_product_reads_validates_against_the_wire_schema`.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

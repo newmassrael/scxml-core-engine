@@ -1,0 +1,253 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-scenario-set.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE scenario set (wire schema v1)",
+  "description": "Examples of what a specification says a machine does, each anchored to a sentence of the specification and written in the owner's words: which events are sent in, how much time passes, and what must be observed. A file beside the specification, written by its owner or proposed by an AI client for the owner to confirm, read by `sce-codegen scenarios`; never emitted by SCE. It carries the interface the examples are written against (a proposal the owner accepts with them), because a specification rarely names the events, payload fields and outputs an example has to mention. A scenario that cannot run says why instead of being dropped: `awaiting-decision` is a question the specification leaves open put as an example, `blocked` waits on a fact nobody has decided. SCE does not run a scenario here and does not say a design passes; this file is what an engine's observations are judged against. Authoritative reader is sce-build/src/scenario_set.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["record", "v", "specification", "origin", "interface", "scenarios"],
+  "additionalProperties": false,
+  "definitions": {
+    "name": {
+      "description": "A name the owner uses: an event, a condition, a data item, a payload field. Any text with no space at either end.",
+      "type": "string",
+      "pattern": "^\\S(.*\\S)?$"
+    },
+    "id": {
+      "description": "An identifier other entries refer to.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "fieldType": {
+      "description": "What a payload field holds: `integer` (a whole number), `number` (any number), `text` or `boolean`.",
+      "enum": ["integer", "number", "text", "boolean"]
+    },
+    "payloadDecl": {
+      "description": "The fields an event carries and the type of each.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/fieldType" }
+    },
+    "scalar": {
+      "description": "A value a payload field or a data item holds in an example.",
+      "type": ["number", "string", "boolean"]
+    },
+    "payloadValue": {
+      "description": "Values for the fields of an event, by field name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/scalar" }
+    },
+    "route": {
+      "description": "How an output leaves the machine: the Event I/O Processor type and the target it is sent to. An output with no route is one whose route nobody has decided, and a run cannot observe it.",
+      "type": "object",
+      "required": ["type", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 }
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/definitions/name" },
+        "payload": { "$ref": "#/definitions/payloadDecl" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/definitions/name" },
+        "payload": { "$ref": "#/definitions/payloadDecl" },
+        "via": { "$ref": "#/definitions/route" }
+      }
+    },
+    "interface": {
+      "description": "The names the examples are written against. A proposal: it becomes the machine's interface when the owner accepts it with the examples.",
+      "type": "object",
+      "required": ["inputs", "outputs"],
+      "additionalProperties": false,
+      "properties": {
+        "why": {
+          "description": "Why these names, and which of them the specification gives and which are proposed.",
+          "type": "string"
+        },
+        "inputs": { "type": "array", "items": { "$ref": "#/definitions/input" } },
+        "outputs": { "type": "array", "items": { "$ref": "#/definitions/output" } },
+        "conditions": {
+          "description": "States the specification itself names. An example may say a machine is in one of them; a state the specification does not name is not something an example can mention.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/name" }
+        },
+        "data": {
+          "description": "Data items the specification itself names.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/name" }
+        }
+      }
+    },
+    "world": {
+      "description": "Facts an example relies on that the specification does not give, such as a price list. The values are placeholders for a decision, not facts, and `source` says where the real ones come from, or `undecided`.",
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "why": { "type": "string" },
+        "source": { "type": "string", "minLength": 1 },
+        "values": { "type": "object" }
+      }
+    },
+    "expectOutbound": {
+      "description": "An event the machine sent to something outside itself. Without `payload` the payload is not checked.",
+      "type": "object",
+      "required": ["event"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "$ref": "#/definitions/name" },
+        "payload": { "$ref": "#/definitions/payloadValue" }
+      }
+    },
+    "expect": {
+      "description": "What must be observed after the step. `outbound` is every event sent outward during the step, in order, and `[]` means none: an example is as much about what does not happen. Anything left out is not checked.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "condition": { "$ref": "#/definitions/name" },
+        "outbound": { "type": "array", "items": { "$ref": "#/definitions/expectOutbound" } },
+        "finished": { "type": "boolean" },
+        "data": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/scalar" }
+        }
+      }
+    },
+    "step": {
+      "description": "One thing that happens, then what is observed. A step with neither `send` nor `advance_ms` observes without acting: step 0 of a scenario is judged on the initial configuration.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "send": { "$ref": "#/definitions/name" },
+        "payload": { "$ref": "#/definitions/payloadValue" },
+        "advance_ms": {
+          "description": "Virtual time that passes, in milliseconds. Never wall-clock time.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "expect": { "$ref": "#/definitions/expect" }
+      },
+      "dependencies": { "payload": ["send"] },
+      "not": { "required": ["send", "advance_ms"] }
+    },
+    "decision": {
+      "description": "The question a scenario waits on. `alternatives` names the scenarios of which exactly one is kept once the owner has answered.",
+      "type": "object",
+      "required": ["question"],
+      "additionalProperties": false,
+      "properties": {
+        "question": { "type": "string", "minLength": 1 },
+        "alternatives": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/id" }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["id", "quote", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "quote": {
+          "description": "The sentence of the specification this example is about, word for word. `sce-codegen scenarios --specification` refuses one that is not there.",
+          "type": "string",
+          "minLength": 1
+        },
+        "requirements": {
+          "description": "Ids of the requirement list this example is evidence for. A scenario that passes for a requirement met by something not happening is what settles a `needs-scenario` outcome.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "status": {
+          "description": "`runnable` (the default), `awaiting-decision` or `blocked`.",
+          "enum": ["runnable", "awaiting-decision", "blocked"]
+        },
+        "blocked_by": {
+          "description": "What a blocked scenario waits on.",
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": { "$ref": "#/definitions/decision" },
+        "assumes": {
+          "description": "Facts the example takes as given that the specification does not state, such as the condition the machine starts in.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "note": { "type": "string" },
+        "bound": {
+          "description": "How far a run went when the sentence claims something no run can show, such as 'indefinitely'. A result says it was bounded.",
+          "type": "object",
+          "required": ["cycles"],
+          "additionalProperties": false,
+          "properties": { "cycles": { "type": "integer", "minimum": 1 } }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/step" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "blocked" } } },
+          "then": { "required": ["blocked_by"] }
+        },
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "awaiting-decision" } } },
+          "then": { "required": ["decision"] }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "record": {
+      "description": "Names this file as a scenario set, so a file of another kind is refused rather than half read.",
+      "const": "sce-scenario-set"
+    },
+    "v": {
+      "description": "The wire version of this record. A file of another version is refused.",
+      "const": 1
+    },
+    "specification": {
+      "description": "The specification the quotes are taken from, as the requirement list names it.",
+      "type": "object",
+      "required": ["doc_id", "rev"],
+      "additionalProperties": false,
+      "properties": {
+        "doc_id": { "type": "string", "minLength": 1 },
+        "rev": { "type": "string", "minLength": 1 }
+      }
+    },
+    "origin": {
+      "description": "Who wrote the examples. A declaration only: SCE cannot verify it and repeats it in every result. `ai-proposed` examples are a reading of the specification until the owner confirms them.",
+      "enum": ["ai-proposed", "owner-written"]
+    },
+    "interface": { "$ref": "#/definitions/interface" },
+    "world": { "$ref": "#/definitions/world" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/scenario" }
+    }
+  }
+}

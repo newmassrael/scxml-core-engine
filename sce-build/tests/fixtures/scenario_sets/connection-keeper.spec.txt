@@ -1,0 +1,1 @@
+The connection keeper starts disconnected and immediately tries to connect. If the attempt succeeds it is connected; if it fails it waits 5 seconds and tries again, indefinitely. While connected, a link-lost notification returns it to waiting 5 seconds before the next attempt. A shutdown request in any condition stops it for good.
