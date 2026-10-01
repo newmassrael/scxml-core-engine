@@ -468,11 +468,22 @@ TOOLS = [
             "you name a `lexicon`: when the owner reads another language the "
             "product has a lexicon for (`ko`), pass it, and the words the "
             "grammar spends are that language's while the names and values "
-            "the document wrote are never translated."
+            "the document wrote are never translated. When the owner keeps "
+            "a requirement list for the specification (a `manifest`, made once "
+            "by scxml_requirement_set and read against their own words), pass "
+            "it and put the list's ids on the states and transitions as "
+            "sce:req=\"R3\": the answer then carries `requirements`, the "
+            "product's own outcome for each id -- implemented, missing, "
+            "needs-scenario, or `dangling` for an id the document cites and the "
+            "list does not hold -- with a count and the ids per outcome. Tell "
+            "the owner each missing and dangling id. It is data, not a "
+            "verdict, and `denominator` says whether the list is the "
+            "specification's own or a reading of it (`synthesized`)."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {**_DOCUMENT_INPUT, **_PROFILE_INPUT, **_LEXICON_INPUT},
+            "properties": {**_DOCUMENT_INPUT, **_PROFILE_INPUT, **_LEXICON_INPUT,
+                           **_MANIFEST_INPUT},
         },
     },
     {
@@ -1389,15 +1400,64 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
                         *({"type": "text", "text": block} for block in blocks)]}
 
 
+def _requirement_outcomes(document: pathlib.Path, manifest: pathlib.Path,
+                          staging: _Staging) -> dict:
+    """What the owner's requirement list makes of a document, from the
+    product's own records and none of this module's reading.
+
+    ⚠ The records are the product's, passed through whole: a requirement's
+    `outcome` and the `node_paths` that carry it, an id the document cites that
+    the list does not hold (`dangling`), and the extraction's own account of the
+    list (`synthesized`). What is added is a count per outcome, which is
+    arithmetic over those records and not a judgement, and the ids by outcome,
+    so a client can tell the owner which ones.
+
+    ⚠ It is DATA and never a refusal. The product answers `requirements` with
+    its records and a success status, a `missing` requirement is a thing for the
+    owner to read, and a verdict made up here would be a second author of what
+    the product's check means.
+
+    ⚠ The denominator is the owner's, not the client's. The list is a file the
+    owner keeps beside the specification (`scxml_requirement_set` makes it once,
+    from quotes the owner can read against their own words), so every draft of
+    one specification is measured against the same R1..Rn. Measured 2026-10-01
+    the lists a client builds itself agree in content and not in where a clause is
+    cut, and a client left to number its own `sce:req` made the ids up in twelve
+    drafts of fifteen.
+    """
+    report, refusal = requirement_records(document, manifest, cwd=staging.dir)
+    if refusal or not report:
+        return {"verdict": "refused", "refusal": refusal.splitlines()[0] if refusal else ""}
+    records = json.loads(report)["records"]
+    by_outcome: dict[str, list[str]] = {}
+    for record in records:
+        if record.get("kind") == "requirement":
+            by_outcome.setdefault(record["outcome"], []).append(record["id"])
+    extraction = next((r for r in records if r.get("kind") == "extraction"), {})
+    return {
+        "verdict": "measured",
+        "denominator": extraction.get("denominator"),
+        "counts": {outcome: len(ids) for outcome, ids in sorted(by_outcome.items())},
+        "ids": {outcome: ids for outcome, ids in sorted(by_outcome.items())
+                if outcome != "implemented"},
+        "records": records,
+    }
+
+
 def _validate_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     profile = _profile_file(args, staging)
+    manifest = staging.file(args, "manifest", "the owner's requirement list",
+                            "requirements.manifest.json", required=False)
     before = _digest_of(document, staging)
     lexicon = _name_arg(args, "lexicon", "a lexicon name")
     report, refusal = run_scxml_validation(document, profile=profile, cwd=staging.dir)
     if refusal or not report:
         return _answer(report, refusal)
-    return _with_pages(json.loads(report), [document], staging, [before], lexicon)
+    answer = json.loads(report)
+    if manifest is not None:
+        answer["requirements"] = _requirement_outcomes(document, manifest, staging)
+    return _with_pages(answer, [document], staging, [before], lexicon)
 
 
 def _validate_set_tool(args: dict, staging: _Staging) -> dict:

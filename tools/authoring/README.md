@@ -310,6 +310,20 @@ it needed a pack, which it does not). A page that comes with the verdict is
 there every time the design is checked and is the page of the bytes checked; the
 digest is taken before the check and again after the page, and a document that
 changed in between gets no page. A refused document has none.
+`validate_scxml` also takes the owner's requirement list (`manifest`, or
+`manifest_text`): when the product accepts the document, the answer carries
+`requirements` -- the product's own `requirements --manifest` records passed
+through whole, a count per outcome, and the ids by outcome (everything but
+`implemented`). The list is the owner's, made once by `scxml_requirement_set`
+from quotes they can read against their own words and kept beside the
+specification, so every draft of it is measured against the same R1..Rn: where
+the list a client builds for itself agrees in content and not in where a clause is
+cut, and a client left to number its own `sce:req` made the ids up in twelve of
+fifteen drafts (2026-10-01). It is data and not a verdict; `dangling` is an id the
+document cites that the list does not hold, `needs-scenario` a requirement met by
+something not happening, and `denominator` says whether the list is the
+specification's own or a reading of it (`synthesized`). A list the product cannot
+read is said as that and the check stands.
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
 as its FIRST block and, as a second block, a note on what the page was rendered
 from: the sha256 of the document, the product's check of that same document
