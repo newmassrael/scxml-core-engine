@@ -1162,16 +1162,20 @@ pub fn lower(
 /// action rewritten leaves a saved state restorable; a state or variable
 /// renamed, re-typed, re-parented or re-bounded refuses it.
 ///
+/// A `<history>` is named by the saved state, so each is part of the shape —
+/// its id, whether it is deep, and the state it is declared in — and a document
+/// without one hashes exactly what it did before histories were saved.
+///
 /// `None` for a machine whose state lives partly in the runtime rather than
-/// in its fields — what a `<history>` recorded, a delayed `<send>` still
-/// pending, an invoked session — which this version of the saved state cannot
-/// hold. Such a machine is generated without the save API rather than with
-/// one that would silently drop part of its state.
+/// in its fields — a delayed `<send>` still pending, an invoked session —
+/// which this version of the saved state cannot hold. Such a machine is
+/// generated without the save API rather than with one that would silently
+/// drop part of its state.
 fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
-    if model.has_history_states || model.needs_event_scheduler_driving() || model.has_invoke() {
+    if model.needs_event_scheduler_driving() || model.has_invoke() {
         return None;
     }
     let mut text = String::from("sce-saved-state-shape 1\n");
@@ -1193,6 +1197,15 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             state.id,
             state.parent.as_deref().unwrap_or("-")
         );
+    }
+    // By id: the map is ordered, so the same document hashes the same.
+    for (id, history) in &model.history_states {
+        let kind = if history.history_type == "deep" {
+            "deep"
+        } else {
+            "shallow"
+        };
+        let _ = writeln!(text, "history {id} {kind} {}", history.parent);
     }
     for var in &scope.variables {
         let ty = var
@@ -1676,6 +1689,12 @@ mod tests {
         let mut model = SCXMLParser::new()
             .parse_string(document, "m")
             .expect("parses");
+        // The generator lowers a model the analyzer has read, and a delayed
+        // `<send>` is known to need the scheduler only after that pass: asked
+        // of a model nothing analysed, a pending timer is invisible
+        // (`a_machine_holding_state_in_the_runtime_has_no_save_api` runs the
+        // generator itself).
+        crate::analyzer::analyze(&mut model, "m.scxml");
         lower_rust(&mut model, "M", &[])
             .expect("lowers")
             .saved_shape
@@ -1710,16 +1729,51 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_machine_with_a_history_has_no_saved_shape() {
-        // What a <history> recorded lives in the runtime, which this version
-        // of the saved state does not hold.
-        let with_history = COUNTER
+    /// `COUNTER` with `counting` inside a compound `outer`, which carries
+    /// `history` (an element, or nothing).
+    fn counter_in_outer(history: &str) -> String {
+        COUNTER
             .replace(
                 r#"<state id="counting">"#,
-                r#"<state id="outer" initial="counting"><history id="h"><transition target="counting"/></history><state id="counting">"#,
+                &format!(r#"<state id="outer" initial="counting">{history}<state id="counting">"#),
             )
-            .replace(r#"<final id="done"/>"#, r#"</state><final id="done"/>"#);
-        assert_eq!(shape(&with_history), None);
+            .replace(r#"<final id="done"/>"#, r#"</state><final id="done"/>"#)
+    }
+
+    #[test]
+    fn a_history_is_part_of_the_shape_a_saved_state_is_bound_to() {
+        let none = shape(&counter_in_outer("")).expect("a machine of fields alone has a shape");
+        let shallow = shape(&counter_in_outer(
+            r#"<history id="h"><transition target="counting"/></history>"#,
+        ))
+        .expect("a machine with a history has one too");
+        assert_ne!(shallow, none, "the history is declared");
+        assert_ne!(
+            shape(&counter_in_outer(
+                r#"<history id="h" type="deep"><transition target="counting"/></history>"#
+            ))
+            .expect("shape"),
+            shallow,
+            "shallow or deep is what the recorded value means"
+        );
+        assert_ne!(
+            shape(&counter_in_outer(
+                r#"<history id="g"><transition target="counting"/></history>"#
+            ))
+            .expect("shape"),
+            shallow,
+            "the id is what a saved state keys the value by"
+        );
+    }
+
+    #[test]
+    fn a_machine_that_pends_a_delayed_send_has_no_saved_shape() {
+        // What a delayed <send> still pending holds lives in the runtime's
+        // scheduler, which this version of the saved state does not hold.
+        let delayed = COUNTER.replace(
+            r#"<transition event="go" target="done"/>"#,
+            r#"<transition event="go" target="done"><send event="later" delay="5s"/></transition>"#,
+        );
+        assert_eq!(shape(&delayed), None);
     }
 }

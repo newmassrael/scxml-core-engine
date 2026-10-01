@@ -397,6 +397,24 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     // deep — what the runtime records as the state is exited.
     override fun historiesOf(state: {{ machine_name }}State): List<Pair<HistoryId, Boolean>> =
         historiesByParent[state] ?: emptyList()
+{% if static_saved_shape %}
+
+    // SCE Accepted Subset §2.15: the id a saved state keys a <history> by, and
+    // the history an id names.
+    override fun historyIdOf(history: HistoryId): String = when (history) {
+{% for history_id, info in model.history_states | dictsort %}
+        history{{ history_id | to_state_class_name }} -> "{{ history_id }}"
+{% endfor %}
+        else -> error("no <history> of this document is $history")
+    }
+
+    override fun resolveHistory(historyId: String): HistoryId? = when (historyId) {
+{% for history_id, info in model.history_states | dictsort %}
+        "{{ history_id }}" -> history{{ history_id | to_state_class_name }}
+{% endfor %}
+        else -> null
+    }
+{% endif %}
 {% endif %}
 
     private companion object {

@@ -86,6 +86,12 @@ pub struct SavedState {
     pub current: String,
     /// Every variable, by document id, in declaration order.
     pub variables: Vec<(String, Value)>,
+    /// What each `<history>` recorded when its parent was last exited
+    /// (§scxml-3.10), as state ids in document order, keyed by the history's id
+    /// and ordered by it. A history that has recorded nothing is absent: a
+    /// resumed machine takes its default transition, as the saved one would
+    /// have.
+    pub history: Vec<(String, Vec<String>)>,
     /// The external queue, front first: events a host raised and has not yet
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
@@ -193,6 +199,20 @@ impl SavedState {
                 Value::Object(self.variables.clone()),
             ),
             (
+                "history".to_string(),
+                Value::Object(
+                    self.history
+                        .iter()
+                        .map(|(id, states)| {
+                            (
+                                id.clone(),
+                                Value::Array(states.iter().cloned().map(Value::Text).collect()),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            (
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
@@ -233,6 +253,20 @@ impl SavedState {
             Value::Object(members) => members.clone(),
             _ => return Err(StateRefusal::new("'variables' is not an object")),
         };
+        let history = match field("history")? {
+            Value::Object(members) => members
+                .iter()
+                .map(|(id, states)| match states {
+                    Value::Array(items) => items
+                        .iter()
+                        .map(|v| text_of(v, &format!("history.{id}")))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(|states| (id.clone(), states)),
+                    _ => Err(StateRefusal::new(format!("'history.{id}' is not an array"))),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(StateRefusal::new("'history' is not an object")),
+        };
         let external = match field("external")? {
             Value::Array(items) => items
                 .iter()
@@ -246,6 +280,7 @@ impl SavedState {
             configuration,
             current: text_of(field("current")?, "current")?,
             variables,
+            history,
             external,
         })
     }
@@ -429,6 +464,7 @@ pub fn save<P: StatePolicy>(
     engine: &Engine<P>,
     shape: &str,
     variables: Vec<(String, Value)>,
+    history: Vec<(String, Vec<String>)>,
 ) -> Result<SavedState, StateRefusal> {
     if !engine.is_running() {
         return Err(StateRefusal::new(
@@ -453,6 +489,7 @@ pub fn save<P: StatePolicy>(
             .collect(),
         current: P::get_state_name(engine.get_current_state()).to_string(),
         variables,
+        history,
         external: engine
             .external_queue
             .queued()
@@ -467,6 +504,128 @@ pub fn save<P: StatePolicy>(
             })
             .collect(),
     })
+}
+
+/// A `<history>` of the document, as a generated machine declares it: the id
+/// a saved state keys it by, the history itself, and whether it is deep.
+#[derive(Clone, Copy, Debug)]
+pub struct HistoryDecl<H> {
+    /// The `<history>`'s id in the document.
+    pub id: &'static str,
+    /// The history, as the policy names it.
+    pub history: H,
+    /// Whether it records the atomic states below its parent (§scxml-3.10)
+    /// and not only the parent's children.
+    pub deep: bool,
+}
+
+/// What each of `declared` has recorded in `policy`, as a saved state holds it:
+/// state ids in document order — the order one machine writes is every
+/// backend's — keyed by the history's id and ordered by it. A history that has
+/// recorded nothing is left out.
+pub fn save_history<P: StatePolicy>(
+    policy: &P,
+    declared: &[HistoryDecl<P::History>],
+) -> Vec<(String, Vec<String>)> {
+    let mut saved: Vec<(String, Vec<String>)> = declared
+        .iter()
+        .filter_map(|decl| {
+            let mut states = policy.history_value(decl.history)?.to_vec();
+            states.sort_by_key(|s| P::get_document_order(*s));
+            Some((
+                decl.id.to_string(),
+                states
+                    .iter()
+                    .map(|s| P::get_state_name(*s).to_string())
+                    .collect(),
+            ))
+        })
+        .collect();
+    saved.sort_by(|a, b| a.0.cmp(&b.0));
+    saved
+}
+
+/// What `saved` records for each of `declared`, read as the states of this
+/// document, or the refusal that says which value is not one.
+///
+/// Every value is judged before any is applied, so a state with one bad
+/// history restores none of them. A history the document does not declare, one
+/// named twice, and a value its history could not have recorded — a state
+/// outside its parent, a compound state with two active children
+/// ([`validate_history`](crate::helpers::configuration::validate_history)) —
+/// are refused: a resumed machine entered through a history must land in a
+/// configuration its document could have been in.
+pub fn restore_history<P: StatePolicy>(
+    saved: &SavedState,
+    declared: &[HistoryDecl<P::History>],
+) -> Result<Vec<(P::History, Vec<P::State>)>, StateRefusal> {
+    use crate::helpers::configuration::validate_history;
+
+    let mut restored: Vec<(P::History, Vec<P::State>)> = Vec::new();
+    for (i, (id, names)) in saved.history.iter().enumerate() {
+        if saved.history[..i].iter().any(|(earlier, _)| earlier == id) {
+            return Err(StateRefusal::new(format!(
+                "the saved state records the history '{id}' twice"
+            )));
+        }
+        let decl = declared.iter().find(|d| d.id == id).ok_or_else(|| {
+            StateRefusal::new(format!(
+                "the saved state records the history '{id}', which the document does not declare"
+            ))
+        })?;
+        let states = names
+            .iter()
+            .map(|name| {
+                P::get_state_from_name(name).ok_or_else(|| {
+                    StateRefusal::new(format!(
+                        "the history '{id}' records '{name}', which the document does not name"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        validate_history::<P>(P::get_history_parent(decl.history), decl.deep, &states).map_err(
+            |rejection| {
+                StateRefusal::new(format!(
+                    "the history '{id}' records {}",
+                    describe_history::<P>(&rejection)
+                ))
+            },
+        )?;
+        restored.push((decl.history, states));
+    }
+    Ok(restored)
+}
+
+/// A history refusal in the document's own vocabulary.
+fn describe_history<P: StatePolicy>(
+    rejection: &crate::helpers::configuration::HistoryRejection<P::State>,
+) -> String {
+    use crate::helpers::configuration::HistoryRejection;
+    let name = |s: P::State| P::get_state_name(s);
+    match *rejection {
+        HistoryRejection::Empty => "no state, and a history records at least one".to_string(),
+        HistoryRejection::Duplicate { state } => format!("'{}' twice", name(state)),
+        HistoryRejection::NotBelow { state, parent } => format!(
+            "'{}', which is not below its parent '{}'",
+            name(state),
+            name(parent)
+        ),
+        HistoryRejection::NotAChild { state, parent } => format!(
+            "'{}', which is not a child of '{}' (a shallow history records the children)",
+            name(state),
+            name(parent)
+        ),
+        HistoryRejection::NotAtomic { state } => format!(
+            "'{}', which has children (a deep history records atomic states)",
+            name(state)
+        ),
+        HistoryRejection::Arity(ref configuration) => {
+            format!(
+                "states of no configuration: {}",
+                describe::<P>(configuration)
+            )
+        }
+    }
 }
 
 /// Refuse `saved` unless it was saved from a document of this `shape` —
@@ -606,6 +765,10 @@ mod tests {
                 ("big".to_string(), u64::MAX.to_saved()),
                 ("picked".to_string(), vec![3u8, 1].to_saved()),
             ],
+            history: vec![
+                ("mode".to_string(), vec!["slow".to_string()]),
+                ("zone".to_string(), vec!["a".to_string(), "b".to_string()]),
+            ],
             external: vec![SavedEvent {
                 name: "tick".to_string(),
                 data: "{\"n\":1}".to_string(),
@@ -654,7 +817,23 @@ mod tests {
 
     #[test]
     fn another_format_is_refused() {
-        let text = r#"{"format":2,"shape":"d","configuration":[],"current":"s","variables":{},"external":[]}"#;
+        let text = r#"{"format":2,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
         assert!(SavedState::from_json(text).is_err());
+    }
+
+    /// Every field is always present: a state saved with no history says so
+    /// with `{}`, and one that does not say is not this format.
+    #[test]
+    fn a_saved_state_with_no_history_field_is_refused() {
+        let text = r#"{"format":1,"shape":"d","configuration":[],"current":"s","variables":{},"external":[]}"#;
+        let refusal = SavedState::from_json(text).expect_err("no history");
+        assert!(refusal.reason().contains("'history'"), "{refusal}");
+    }
+
+    #[test]
+    fn a_history_that_is_not_a_list_of_state_ids_is_refused() {
+        let wrong = r#"{"format":1,"shape":"d","configuration":[],"current":"s","variables":{},"history":{"h":"a"},"external":[]}"#;
+        let refusal = SavedState::from_json(wrong).expect_err("not an array");
+        assert!(refusal.reason().contains("history.h"), "{refusal}");
     }
 }

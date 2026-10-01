@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6f1f6e88d0b261e809a7851abd545bdf8052863e1e1007d70ba1b3039a13d165
+// source-hash: 77d9ebe3529c99a39281511d0fcb487e99a73194813af5353b83abe11916ff46
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -185,6 +185,13 @@ pub trait StaticBlockEndsListPersist: Sized {
     /// is refused, one saved before a guard or an action changed is not.
     const SHAPE: &'static str;
 
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >];
+
     /// The machine's whole state. Refused for a machine that is not running,
     /// and for one whose last macrostep stopped at the microstep ceiling.
     fn save(
@@ -206,6 +213,10 @@ impl StaticBlockEndsListPersist for Engine<StaticBlockEndsListPolicy> {
     type Policy = StaticBlockEndsListPolicy;
 
     const SHAPE: &'static str = "670c183cda40bb46e81808b12dca21830ecda45892b88b766b37c8ca951c6b57";
+
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >] = &[];
 
     fn save(
         &self,
@@ -231,6 +242,7 @@ impl StaticBlockEndsListPersist for Engine<StaticBlockEndsListPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
                 ),
             ],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
         )
     }
 
@@ -239,6 +251,13 @@ impl StaticBlockEndsListPersist for Engine<StaticBlockEndsListPolicy> {
         saved: &::sce_rust_runtime::saved_state::SavedState,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+        ::sce_rust_runtime::saved_state::restore_history::<StaticBlockEndsListPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
         policy.picked =
             ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 2)?;
         policy.after_append = ::sce_rust_runtime::saved_state::SavedValue::from_saved(

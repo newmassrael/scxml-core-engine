@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"): what a <history> recorded is part of a machine's state, so a
+  saved machine that left it out would resume somewhere other than where the
+  saved one would have.
+
+  Three histories, each of a different kind of parent:
+
+    last      (shallow, of `running`)  records the children of `running` that
+                                       were active
+    deepest   (deep, of `running`)     records the atomic states below
+                                       `running` that were active
+    crew_all  (deep, of `working`)     records the atomic states below
+                                       `working`, whose child `crew` is a
+                                       <parallel>: one in EACH region
+
+  The run `faster`, `boost`, `pause`, `work`, `left_next`, `right_next`, `break`
+  ends in `paused` with all three recorded:
+
+    last      = [fast]            (`fast` was the active child of `running`)
+    deepest   = [burst]           (`faster` then `boost` went below `fast`)
+    crew_all  = [l2, r2]          (both regions had moved on)
+
+  Resumed through `last`, the machine enters `fast` and takes its initial
+  child, `cruise`; through `deepest` it lands in `burst`; through `crew_all` it
+  stands in `l2` and `r2` at once. The three differ, which is what a restore
+  that dropped a history, or kept the wrong one, would get wrong — and a saved
+  `crew_all` of `[l2]` alone is part of no configuration, since a <parallel>
+  holds every region. `resumed` counts the resumes through `last`, so the
+  variables are not empty and the count shows which way the machine went.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="static_history">
+  <datamodel>
+    <data id="resumed" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="running" initial="slow">
+    <history id="last" type="shallow">
+      <transition target="slow"/>
+    </history>
+    <history id="deepest" type="deep">
+      <transition target="slow"/>
+    </history>
+    <state id="slow">
+      <transition event="faster" target="fast"/>
+    </state>
+    <state id="fast" initial="cruise">
+      <state id="cruise">
+        <transition event="boost" target="burst"/>
+      </state>
+      <state id="burst"/>
+    </state>
+    <transition event="pause" target="paused"/>
+  </state>
+  <state id="working" initial="crew">
+    <history id="crew_all" type="deep">
+      <transition target="crew"/>
+    </history>
+    <parallel id="crew">
+      <state id="left" initial="l1">
+        <state id="l1">
+          <transition event="left_next" target="l2"/>
+        </state>
+        <state id="l2"/>
+      </state>
+      <state id="right" initial="r1">
+        <state id="r1">
+          <transition event="right_next" target="r2"/>
+        </state>
+        <state id="r2"/>
+      </state>
+    </parallel>
+    <transition event="break" target="paused"/>
+  </state>
+  <state id="paused">
+    <transition event="work" target="working"/>
+    <transition event="resume_last" target="last">
+      <assign location="resumed" expr="resumed + 1"/>
+    </transition>
+    <transition event="resume_deep" target="deepest"/>
+    <transition event="resume_crew" target="crew_all"/>
+  </state>
+</scxml>

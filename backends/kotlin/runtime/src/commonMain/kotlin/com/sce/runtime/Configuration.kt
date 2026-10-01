@@ -120,32 +120,9 @@ fun <S> validateConfiguration(
     }
 
     for (state in configuration) {
-        val children = configuration.count { parentOf(it) == state }
-
-        if (isParallel(state)) {
-            val regions = regionsOf(state)
-            // §scxml-3.4: every region, simultaneously.
-            for (region in regions) {
-                if (!configuration.contains(region)) {
-                    return ConfigurationRejection.PARALLEL_REGION_MISSING
-                }
-            }
-            if (children != regions.size) {
-                return ConfigurationRejection.PARALLEL_CHILD_COUNT
-            }
-            continue
-        }
-
-        // §scxml-3.11: exactly one. Compound is spelled as "not atomic and not
-        // parallel" because that is the pair the generator emits:
-        // `isAtomicState` answers false for both shapes, and the parallel arm
-        // above has already taken its own.
-        if (!isAtomic(state)) {
-            if (children != 1) {
-                return ConfigurationRejection.COMPOUND_CHILD_COUNT
-            }
-        } else if (children != 0) {
-            return ConfigurationRejection.ATOMIC_HAS_CHILDREN
+        val arity = childArity(configuration, state, parentOf, isAtomic, isParallel, regionsOf)
+        if (arity != ConfigurationRejection.NONE) {
+            return arity
         }
     }
 
@@ -157,4 +134,158 @@ fun <S> validateConfiguration(
     }
 
     return ConfigurationRejection.NONE
+}
+
+/**
+ * The child arity of one member of [configuration] (§scxml-3.4, §scxml-3.11): a
+ * `<parallel>` holds every region, a compound state exactly one child, an
+ * atomic state none. The one rule both a whole configuration and the part of one
+ * a `<history>` records are held to.
+ */
+private fun <S> childArity(
+    configuration: List<S>,
+    state: S,
+    parentOf: (S) -> S?,
+    isAtomic: (S) -> Boolean,
+    isParallel: (S) -> Boolean,
+    regionsOf: (S) -> List<S>,
+): ConfigurationRejection {
+    val children = configuration.count { parentOf(it) == state }
+
+    if (isParallel(state)) {
+        val regions = regionsOf(state)
+        // §scxml-3.4: every region, simultaneously.
+        for (region in regions) {
+            if (!configuration.contains(region)) {
+                return ConfigurationRejection.PARALLEL_REGION_MISSING
+            }
+        }
+        if (children != regions.size) {
+            return ConfigurationRejection.PARALLEL_CHILD_COUNT
+        }
+        return ConfigurationRejection.NONE
+    }
+
+    // §scxml-3.11: exactly one. Compound is spelled as "not atomic and not
+    // parallel" because that is the pair the generator emits: `isAtomicState`
+    // answers false for both shapes, and the parallel arm above has already
+    // taken its own.
+    if (!isAtomic(state)) {
+        if (children != 1) {
+            return ConfigurationRejection.COMPOUND_CHILD_COUNT
+        }
+    } else if (children != 0) {
+        return ConfigurationRejection.ATOMIC_HAS_CHILDREN
+    }
+    return ConfigurationRejection.NONE
+}
+
+/**
+ * Why a recorded `<history>` value was refused (§scxml-3.10).
+ *
+ * What a history recorded is part of a configuration: the active children of
+ * its parent for a shallow one, the active atomic states below it for a deep
+ * one. A value read back from a saved state is held to that, so the restored
+ * machine can only be taken, through the history, to a configuration its
+ * document could have been in.
+ */
+enum class HistoryRejection(val reason: String) {
+    /** The accepting answer. */
+    NONE("accepted"),
+
+    /** The value holds no state. A history records at least one. */
+    EMPTY("a history records at least one state"),
+
+    /** A state appears twice. */
+    DUPLICATE("a state appears twice"),
+
+    /** A state is not below the history's parent. */
+    NOT_BELOW("a state is not below the history's parent"),
+
+    /** A shallow history records the children of its parent, and a state is deeper. */
+    NOT_A_CHILD("a shallow history records the children of its parent, and a state is deeper"),
+
+    /** A deep history records atomic states, and one has children. */
+    NOT_ATOMIC("a deep history records atomic states, and one has children"),
+
+    /**
+     * What the value holds is part of no configuration of the document — a
+     * compound state with two active children, a region missing (§scxml-3.11).
+     */
+    NOT_A_CONFIGURATION("the states are part of no configuration of the document (W3C SCXML 3.11)"),
+    ;
+
+    override fun toString(): String = reason
+}
+
+/**
+ * Whether [recorded] is a value the `<history>` of [parent] could have
+ * recorded: its active children for a shallow one, the active atomic states
+ * below it for a deep one ([deep]).
+ *
+ * Read as a configuration of the subtree under [parent]: the recorded states and
+ * every ancestor between them and [parent] must satisfy the same child arity a
+ * whole configuration does ([validateConfiguration]). A shallow history records
+ * only the children, so the arity is judged on [parent] alone. The Kotlin twin
+ * of the Rust runtime's `helpers::configuration::validate_history`.
+ */
+fun <S> validateHistory(
+    parent: S,
+    deep: Boolean,
+    recorded: List<S>,
+    parentOf: (S) -> S?,
+    isAtomic: (S) -> Boolean,
+    isParallel: (S) -> Boolean,
+    regionsOf: (S) -> List<S>,
+): HistoryRejection {
+    if (recorded.isEmpty()) {
+        return HistoryRejection.EMPTY
+    }
+    for (index in recorded.indices) {
+        if (recorded.subList(0, index).contains(recorded[index])) {
+            return HistoryRejection.DUPLICATE
+        }
+    }
+
+    // The recorded states, and every state between each of them and the parent.
+    val subtree = mutableListOf(parent)
+    for (state in recorded) {
+        val chain = mutableListOf<S>()
+        var at: S? = state
+        while (at != parent) {
+            if (at == null) {
+                return HistoryRejection.NOT_BELOW
+            }
+            chain.add(at)
+            at = parentOf(at)
+        }
+        // A state that is the parent is below nothing.
+        if (chain.isEmpty()) {
+            return HistoryRejection.NOT_BELOW
+        }
+        for (member in chain) {
+            if (!subtree.contains(member)) {
+                subtree.add(member)
+            }
+        }
+    }
+
+    if (deep) {
+        if (recorded.any { !isAtomic(it) || isParallel(it) }) {
+            return HistoryRejection.NOT_ATOMIC
+        }
+        for (state in subtree) {
+            if (childArity(subtree, state, parentOf, isAtomic, isParallel, regionsOf) != ConfigurationRejection.NONE) {
+                return HistoryRejection.NOT_A_CONFIGURATION
+            }
+        }
+    } else {
+        if (recorded.any { parentOf(it) != parent }) {
+            return HistoryRejection.NOT_A_CHILD
+        }
+        if (childArity(subtree, parent, parentOf, isAtomic, isParallel, regionsOf) != ConfigurationRejection.NONE) {
+            return HistoryRejection.NOT_A_CONFIGURATION
+        }
+    }
+    return HistoryRejection.NONE
 }

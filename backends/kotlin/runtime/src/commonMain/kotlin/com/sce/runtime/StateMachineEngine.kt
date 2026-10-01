@@ -1881,6 +1881,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected open fun historiesOf(state: S): List<Pair<HistoryId, Boolean>> = emptyList()
 
     /**
+     * §scxml-3.10: the id a saved state keys [history] by — its id in the
+     * document. The default is a machine that declares no `<history>`, which no
+     * saved state has anything to say of.
+     */
+    protected open fun historyIdOf(history: HistoryId): String =
+        error("${this::class.simpleName} declares no <history>; asked for the id of $history")
+
+    /**
+     * The `<history>` a saved state keys by [historyId] (reverse of
+     * [historyIdOf]), or `null` for an id this document does not declare.
+     */
+    protected open fun resolveHistory(historyId: String): HistoryId? = null
+
+    /**
      * §scxml-D-enterStates: the state's position in document order, which is
      * also entry order; exit order is its reverse.
      */
@@ -2198,6 +2212,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
             configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
             current = stateIdOf(_currentState.value),
             variables = variables,
+            // State ids in document order, keyed by the history's id and ordered
+            // by it: the text one machine writes is every backend's.
+            history = historyValues.entries
+                .map { (history, states) ->
+                    historyIdOf(history) to states.sortedBy(::documentOrderOf).map(::stateIdOf)
+                }
+                .sortedBy { it.first }
+                .toMap(LinkedHashMap()),
             external = externalEventQueue.map { queued ->
                 SavedEvent(
                     name = eventNameOf(queued.event)
@@ -2230,6 +2252,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (verdict != ConfigurationRejection.NONE) {
             throw StateRefusal("the saved configuration is refused: ${verdict.reason}")
         }
+        savedHistory(saved)
         savedExternal(saved)
     }
 
@@ -2245,10 +2268,50 @@ abstract class StateMachineEngine<S : State, E : Event>(
         check(enterAt(states, current) == ConfigurationRejection.NONE) {
             "beginRestore judged this configuration and enterAt refused it"
         }
+        // What each `<history>` recorded, which the saved run's exits wrote and
+        // this one has not made.
+        historyValues.putAll(savedHistory(saved))
         // Behind nothing, in the order they were saved: enterAt left the
         // machine in the host-driven mode, whose queue this is.
         externalEventQueue.addAll(savedExternal(saved))
         onMacrostepComplete(false)
+    }
+
+    /**
+     * What [saved] records for each `<history>`, read as the states of this
+     * document, or the refusal that says which value is not one. A history the
+     * document does not declare, and a value its history could not have
+     * recorded — a state outside its parent, a compound state with two active
+     * children ([validateHistory]) — are refused: a resumed machine entered
+     * through a history must land in a configuration its document could have
+     * been in.
+     */
+    private fun savedHistory(saved: SavedState): Map<HistoryId, List<S>> {
+        val restored = LinkedHashMap<HistoryId, List<S>>()
+        for ((id, names) in saved.history) {
+            val history = resolveHistory(id)
+                ?: throw StateRefusal("the saved state records the history '$id', which the document does not declare")
+            val states = names.map { name ->
+                resolveState(name)
+                    ?: throw StateRefusal("the history '$id' records '$name', which the document does not name")
+            }
+            val parent = historyParentOf(history)
+            val deep = historiesOf(parent).first { it.first == history }.second
+            val verdict = validateHistory(
+                parent,
+                deep,
+                states,
+                ::parentOf,
+                { !isCompoundState(it) && !isParallelState(it) },
+                ::isParallelState,
+                ::childStatesOf,
+            )
+            if (verdict != HistoryRejection.NONE) {
+                throw StateRefusal("the history '$id' records states it could not have: ${verdict.reason}")
+            }
+            restored[history] = states
+        }
+        return restored
     }
 
     private fun savedConfiguration(saved: SavedState): Pair<List<S>, S> {

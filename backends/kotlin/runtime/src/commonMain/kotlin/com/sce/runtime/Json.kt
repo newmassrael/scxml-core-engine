@@ -159,6 +159,11 @@ object Json {
                 skipWhitespace()
                 if (atEnd() || text[at] != '"') malformed("a field name was expected")
                 val key = readString()
+                // An object whose names repeat has no single meaning: a reader
+                // that takes the first and one that takes the last would read
+                // two values from one text, so it is refused (the Rust reader
+                // refuses it the same way).
+                if (out.containsKey(key)) malformed("the field \"$key\" appears twice")
                 skipWhitespace()
                 if (atEnd() || text[at] != ':') malformed("a ':' was expected")
                 at++

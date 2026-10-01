@@ -213,6 +213,18 @@ impl Reader<'_> {
                 return Err(Self::malformed("a field name was expected"));
             }
             let key = self.read_string()?;
+            // An object whose names repeat has no single meaning: a reader that
+            // takes the first and one that takes the last would read two values
+            // from one text, so it is refused (the Kotlin reader refuses it the
+            // same way).
+            if members
+                .iter()
+                .any(|(earlier, _): &(String, Value)| *earlier == key)
+            {
+                return Err(Self::malformed(&format!(
+                    "the field \"{key}\" appears twice"
+                )));
+            }
             self.skip_whitespace();
             if self.peek() != Some(':') {
                 return Err(Self::malformed("a ':' was expected"));
@@ -326,6 +338,25 @@ impl Reader<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An object whose names repeat has no single meaning — one reader takes
+    /// the first, another the last — so no reader of this module takes it,
+    /// nested or not.
+    #[test]
+    fn an_object_that_repeats_a_field_name_is_refused() {
+        for text in [
+            r#"{"a":1,"a":2}"#,
+            r#"{"outer":{"a":1,"b":2,"a":3}}"#,
+            r#"[{"a":1,"a":1}]"#,
+        ] {
+            let refusal = parse(text).expect_err(text);
+            assert!(refusal.to_string().contains("appears twice"), "{refusal}");
+        }
+        assert!(
+            parse(r#"{"a":1,"b":{"a":2}}"#).is_ok(),
+            "the same name at another level is fine"
+        );
+    }
 
     /// tests/json_text/string_escape.json: the cases every engine's writer
     /// is measured against, read with this module's own parser.

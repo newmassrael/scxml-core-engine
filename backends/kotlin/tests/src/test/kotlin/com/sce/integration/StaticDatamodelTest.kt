@@ -21,6 +21,9 @@ import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallState
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_history.StaticHistoryEvent
+import com.sce.integration.static_history.StaticHistoryState
+import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_list.StaticListEvent
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowEvent
@@ -686,5 +689,215 @@ class StaticDatamodelTest {
             fresh.cleanup()
             list.cleanup()
         }
+    }
+
+    // ── what a <history> recorded is part of the saved state ────────────────
+
+    /**
+     * The run `static_history.scxml` describes: `last`, `deepest` and
+     * `crew_all` all recorded, standing in `paused`.
+     */
+    private val historyRun = listOf(
+        StaticHistoryEvent.Faster,
+        StaticHistoryEvent.Boost,
+        StaticHistoryEvent.Pause,
+        StaticHistoryEvent.Work,
+        StaticHistoryEvent.LeftNext,
+        StaticHistoryEvent.RightNext,
+        StaticHistoryEvent.Break,
+    )
+
+    private fun historyDrive(sm: StaticHistoryStateMachine, events: List<StaticHistoryEvent>) {
+        for (event in events) {
+            sm.send(event)
+            sm.tick()
+        }
+    }
+
+    /** A machine restored from the shared fixture's text, and cleaned up after [body]. */
+    private fun <T> withRestoredHistory(saved: SavedState = SavedState.fromJson(sharedFixture("static_history")), body: (StaticHistoryStateMachine) -> T): T {
+        val sm = StaticHistoryStateMachine()
+        try {
+            sm.restore(saved)
+            return body(sm)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aHistoryIsSavedWithTheMachineAsTheTextEveryBackendSaves() {
+        val sm = StaticHistoryStateMachine()
+        sm.initialize()
+        try {
+            historyDrive(sm, historyRun)
+            assertEquals(sharedFixture("static_history"), sm.save().toJson())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aMachineThatHasExitedNothingRecordsNoHistory() {
+        val sm = StaticHistoryStateMachine()
+        sm.initialize()
+        try {
+            assertEquals(emptyMap<String, List<String>>(), sm.save().history)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aRestoredMachineResumesThroughEachHistoryAsTheSavedOneWould() {
+        // Shallow: the child `fast` was active, and entering it takes its
+        // initial child.
+        withRestoredHistory { sm ->
+            historyDrive(sm, listOf(StaticHistoryEvent.ResumeLast))
+            assertTrue(StaticHistoryState.Cruise in sm.snapshot.value.configuration, "${sm.snapshot.value}")
+            assertEquals(1u.toUByte(), sm.resumed)
+        }
+        // Deep: the atomic state itself.
+        withRestoredHistory { sm ->
+            historyDrive(sm, listOf(StaticHistoryEvent.ResumeDeep))
+            assertTrue(StaticHistoryState.Burst in sm.snapshot.value.configuration, "${sm.snapshot.value}")
+        }
+        // Deep, below a <parallel>: one state in EACH region.
+        withRestoredHistory { sm ->
+            historyDrive(sm, listOf(StaticHistoryEvent.ResumeCrew))
+            val configuration = sm.snapshot.value.configuration
+            assertTrue(StaticHistoryState.L2 in configuration && StaticHistoryState.R2 in configuration, "$configuration")
+            assertTrue(StaticHistoryState.L1 !in configuration && StaticHistoryState.R1 !in configuration, "$configuration")
+        }
+    }
+
+    @Test
+    fun aHistoryThatWasNeverRecordedTakesItsDefaultAfterARestore() {
+        // Saved before any exit of `running`, `last` has nothing recorded, so
+        // resuming through it takes its default transition, as an unsaved
+        // machine would.
+        val shared = SavedState.fromJson(sharedFixture("static_history"))
+        val saved = SavedState(
+            shape = shared.shape,
+            configuration = shared.configuration,
+            current = shared.current,
+            variables = shared.variables,
+            history = shared.history.filterKeys { it != "last" },
+            external = shared.external,
+        )
+        withRestoredHistory(saved) { sm ->
+            historyDrive(sm, listOf(StaticHistoryEvent.ResumeLast))
+            assertTrue(StaticHistoryState.Slow in sm.snapshot.value.configuration, "${sm.snapshot.value}")
+        }
+    }
+
+    @Test
+    fun aSavedHistorySurvivesItsMachineBeingSavedAgain() {
+        withRestoredHistory { sm ->
+            assertEquals(sharedFixture("static_history"), sm.save().toJson(), "restoring and saving again changes nothing")
+            historyDrive(sm, listOf(StaticHistoryEvent.ResumeLast, StaticHistoryEvent.Pause))
+            assertEquals(
+                mapOf(
+                    "crew_all" to listOf("l2", "r2"),
+                    "deepest" to listOf("cruise"),
+                    "last" to listOf("fast"),
+                ),
+                sm.save().history,
+                "resumed through `last`, then left `running` again: `deepest` now records `cruise`",
+            )
+        }
+    }
+
+    /** The refusal a restore of `static_history` answers with once `history` is [entries]. */
+    private fun refusedHistory(vararg entries: Pair<String, List<String>>): String {
+        val shared = SavedState.fromJson(sharedFixture("static_history"))
+        val saved = SavedState(
+            shape = shared.shape,
+            configuration = shared.configuration,
+            current = shared.current,
+            variables = shared.variables,
+            history = linkedMapOf(*entries),
+            external = shared.external,
+        )
+        val sm = StaticHistoryStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { sm.restore(saved) }
+            // A refused restore leaves the machine as it was: never started.
+            assertThrows(StateRefusal::class.java) { sm.save() }
+            return refusal.message!!
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aHistoryTheDocumentDoesNotDeclareIsRefused() {
+        assertTrue(refusedHistory("nowhere" to listOf("fast")).contains("does not declare"))
+
+        // A document with no <history> refuses a state that records one.
+        val counter = StaticCounterStateMachine()
+        counter.initialize()
+        val restored = StaticCounterStateMachine()
+        try {
+            ticks(counter, 1)
+            val saved = counter.save()
+            val withHistory = SavedState(
+                shape = saved.shape,
+                configuration = saved.configuration,
+                current = saved.current,
+                variables = saved.variables,
+                history = mapOf("last" to listOf("counting")),
+                external = saved.external,
+            )
+            val refusal = assertThrows(StateRefusal::class.java) { restored.restore(withHistory) }
+            assertTrue(refusal.message!!.contains("does not declare"), refusal.message)
+        } finally {
+            counter.cleanup()
+            restored.cleanup()
+        }
+    }
+
+    @Test
+    fun aHistoryNamingAStateTheDocumentLacksIsRefused() {
+        assertTrue(refusedHistory("last" to listOf("warp")).contains("warp"))
+    }
+
+    @Test
+    fun aHistoryThatRecordsNothingOrAStateTwiceIsRefused() {
+        assertTrue(refusedHistory("last" to emptyList()).contains("at least one"))
+        assertTrue(refusedHistory("last" to listOf("fast", "fast")).contains("twice"))
+    }
+
+    @Test
+    fun aHistoryNamingAStateOutsideItsParentIsRefused() {
+        assertTrue(refusedHistory("last" to listOf("l1")).contains("not below"))
+        // The parent itself is below nothing.
+        assertTrue(refusedHistory("last" to listOf("running")).contains("not below"))
+    }
+
+    @Test
+    fun aShallowHistoryRecordsChildrenAndADeepOneAtomicStates() {
+        assertTrue(refusedHistory("last" to listOf("cruise")).contains("a shallow history records the children"))
+        assertTrue(refusedHistory("deepest" to listOf("fast")).contains("a deep history records atomic states"))
+    }
+
+    @Test
+    fun aHistoryThatIsPartOfNoConfigurationIsRefused() {
+        // `running` holds one active child, and these are in two.
+        assertTrue(refusedHistory("deepest" to listOf("slow", "burst")).contains("no configuration"))
+        // A <parallel> holds every region, and this is one of two.
+        assertTrue(refusedHistory("crew_all" to listOf("l2")).contains("no configuration"))
+        // Two states of one region.
+        assertTrue(refusedHistory("crew_all" to listOf("l1", "l2", "r1")).contains("no configuration"))
+    }
+
+    @Test
+    fun aSavedStateWhoseObjectRepeatsANameIsNotThisFormat() {
+        // `{"last":[..],"last":[..]}` has no single meaning: a reader that took
+        // the first and one that took the last would restore two machines from
+        // one text, so neither backend reads it.
+        val text = sharedFixture("static_history").replace("\"last\":[\"fast\"]", "\"last\":[\"fast\"],\"last\":[\"slow\"]")
+        val refusal = assertThrows(StateRefusal::class.java) { SavedState.fromJson(text) }
+        assertTrue(refusal.message!!.contains("appears twice"), refusal.message)
     }
 }

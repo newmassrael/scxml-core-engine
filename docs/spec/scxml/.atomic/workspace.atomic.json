@@ -468,6 +468,29 @@
         {
           "file": "sce-build/src/diagram/boxes.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "HistoryRejection",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "symbol": "SavedState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historyIdOf",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/configuration.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -727,6 +750,16 @@
         {
           "file": "sce-build/src/scxml_semantic.rs",
           "symbol": "ScxmlSemanticError",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "childArity",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "HistoryRejection",
           "kind": "references"
         }
       ],
@@ -2705,6 +2738,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "addRegionDefaults",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
+          "symbol": "childArity",
           "kind": "implements"
         }
       ],

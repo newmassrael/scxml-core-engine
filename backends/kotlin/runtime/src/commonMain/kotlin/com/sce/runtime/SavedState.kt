@@ -38,6 +38,11 @@ class StateRefusal(message: String) : Exception(message)
  *   alone cannot say.
  * @property variables every variable, by document id, in declaration order;
  *   each value as [Json] holds it.
+ * @property history what each `<history>` recorded when its parent was last
+ *   exited (§scxml-3.10), as state ids in document order, keyed by the
+ *   history's id and ordered by it. A history that has recorded nothing is
+ *   absent: a resumed machine takes its default transition, as the saved one
+ *   would have.
  * @property external the external queue, front first: events raised to the
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
@@ -48,6 +53,7 @@ class SavedState(
     val configuration: List<String>,
     val current: String,
     val variables: Map<String, Any?>,
+    val history: Map<String, List<String>> = emptyMap(),
     val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
@@ -64,15 +70,17 @@ class SavedState(
             "configuration" to configuration,
             "current" to current,
             "variables" to variables,
+            "history" to history,
             "external" to external.map { it.toJsonValue() },
         )
     )
 
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
-            other.current == current && other.variables == variables && other.external == external
+            other.current == current && other.variables == variables && other.history == history &&
+            other.external == external
 
-    override fun hashCode(): Int = listOf(shape, configuration, current, variables, external).hashCode()
+    override fun hashCode(): Int = listOf(shape, configuration, current, variables, history, external).hashCode()
 
     companion object {
         /** The format version this runtime writes and reads. */
@@ -112,6 +120,11 @@ class SavedState(
             @Suppress("UNCHECKED_CAST")
             val variables = field("variables") as? Map<String, Any?>
                 ?: throw StateRefusal("'variables' is not an object")
+            val history = LinkedHashMap<String, List<String>>()
+            for ((id, states) in field("history") as? Map<*, *> ?: throw StateRefusal("'history' is not an object")) {
+                val list = states as? List<*> ?: throw StateRefusal("'history.$id' is not an array")
+                history[id as String] = list.map { text(it, "history.$id") }
+            }
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
@@ -119,6 +132,7 @@ class SavedState(
                 configuration = configuration,
                 current = text(field("current"), "current"),
                 variables = variables,
+                history = history,
                 external = external,
             )
         }

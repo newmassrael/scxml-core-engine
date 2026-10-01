@@ -168,41 +168,7 @@ pub fn validate<P: StatePolicy>(
     // Per-member child arity: the rule that separates a configuration from a
     // set of states that merely all exist.
     for &state in configuration.iter() {
-        let children = configuration
-            .iter()
-            .filter(|&&s| P::get_parent(s) == Some(state))
-            .count();
-
-        if P::is_parallel_state(state) {
-            // §scxml-3.4: every region, simultaneously — a `<parallel>`'s
-            // regions are exactly its child states.
-            let regions = P::get_child_states(state);
-            for &region in regions {
-                if !configuration.contains(&region) {
-                    return Err(ConfigurationRejection::ParallelRegionMissing {
-                        parallel: state,
-                        region,
-                    });
-                }
-            }
-            if children != regions.len() {
-                return Err(ConfigurationRejection::ParallelChildCount {
-                    parallel: state,
-                    found: children,
-                    regions: regions.len(),
-                });
-            }
-        } else if P::is_compound_state(state) {
-            // §scxml-3.11: exactly one.
-            if children != 1 {
-                return Err(ConfigurationRejection::CompoundChildCount {
-                    parent: state,
-                    found: children,
-                });
-            }
-        } else if children != 0 {
-            return Err(ConfigurationRejection::AtomicHasChildren { state });
-        }
+        check_child_arity::<P>(configuration, state)?;
     }
 
     // The current state, which is the other half of what the engine publishes.
@@ -213,5 +179,162 @@ pub fn validate<P: StatePolicy>(
         return Err(ConfigurationRejection::CurrentNotAtomic { current });
     }
 
+    Ok(())
+}
+
+/// The child arity of one member of `configuration` (§scxml-3.4, §scxml-3.11):
+/// a `<parallel>` holds every region, a compound state exactly one child, an
+/// atomic state none. The one rule both a whole configuration and the part of
+/// one a `<history>` records are held to.
+fn check_child_arity<P: StatePolicy>(
+    configuration: &[P::State],
+    state: P::State,
+) -> Result<(), ConfigurationRejection<P::State>> {
+    let children = configuration
+        .iter()
+        .filter(|&&s| P::get_parent(s) == Some(state))
+        .count();
+
+    if P::is_parallel_state(state) {
+        // §scxml-3.4: every region, simultaneously — a `<parallel>`'s
+        // regions are exactly its child states.
+        let regions = P::get_child_states(state);
+        for &region in regions {
+            if !configuration.contains(&region) {
+                return Err(ConfigurationRejection::ParallelRegionMissing {
+                    parallel: state,
+                    region,
+                });
+            }
+        }
+        if children != regions.len() {
+            return Err(ConfigurationRejection::ParallelChildCount {
+                parallel: state,
+                found: children,
+                regions: regions.len(),
+            });
+        }
+    } else if P::is_compound_state(state) {
+        // §scxml-3.11: exactly one.
+        if children != 1 {
+            return Err(ConfigurationRejection::CompoundChildCount {
+                parent: state,
+                found: children,
+            });
+        }
+    } else if children != 0 {
+        return Err(ConfigurationRejection::AtomicHasChildren { state });
+    }
+    Ok(())
+}
+
+/// Why a recorded `<history>` value was refused (§scxml-3.10).
+///
+/// What a history recorded is part of a configuration: the active children of
+/// its parent for a shallow one, the active atomic states below it for a deep
+/// one. A value read back from a saved state is held to that, so the restored
+/// machine can only be taken, through the history, to a configuration its
+/// document could have been in.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryRejection<S> {
+    /// The value holds no state. A history records at least one.
+    Empty,
+    /// A state appears more than once.
+    Duplicate {
+        /// The state named twice.
+        state: S,
+    },
+    /// A state is not below the history's parent.
+    NotBelow {
+        /// The recorded state.
+        state: S,
+        /// The history's parent.
+        parent: S,
+    },
+    /// A shallow history records the children of its parent, and this state is
+    /// deeper.
+    NotAChild {
+        /// The recorded state.
+        state: S,
+        /// The history's parent.
+        parent: S,
+    },
+    /// A deep history records atomic states, and this one has children.
+    NotAtomic {
+        /// The recorded state.
+        state: S,
+    },
+    /// What the value holds is not part of any configuration of the document
+    /// (a compound state with two active children, a region missing).
+    Arity(ConfigurationRejection<S>),
+}
+
+/// Whether `recorded` is a value the `<history>` of `parent` could have
+/// recorded: its active children for a shallow one, the active atomic states
+/// below it for a deep one (`deep`).
+///
+/// Read as a configuration of the subtree under `parent`: the recorded states
+/// and every ancestor between them and `parent` must satisfy the same child
+/// arity a whole configuration does ([`validate`]). A shallow history records
+/// only the children, so the arity is judged on `parent` alone.
+#[cfg(not(feature = "no_std"))]
+pub fn validate_history<P: StatePolicy>(
+    parent: P::State,
+    deep: bool,
+    recorded: &[P::State],
+) -> Result<(), HistoryRejection<P::State>> {
+    if recorded.is_empty() {
+        return Err(HistoryRejection::Empty);
+    }
+    for (i, &state) in recorded.iter().enumerate() {
+        if recorded[..i].contains(&state) {
+            return Err(HistoryRejection::Duplicate { state });
+        }
+    }
+
+    // The recorded states, and every state between each of them and `parent`.
+    let mut subtree: Vec<P::State> = vec![parent];
+    for &state in recorded {
+        let mut chain = Vec::new();
+        let mut at = Some(state);
+        loop {
+            match at {
+                None => return Err(HistoryRejection::NotBelow { state, parent }),
+                Some(s) if s == parent => break,
+                Some(s) => {
+                    chain.push(s);
+                    at = P::get_parent(s);
+                }
+            }
+        }
+        // `state == parent` is below nothing.
+        if chain.is_empty() {
+            return Err(HistoryRejection::NotBelow { state, parent });
+        }
+        for s in chain {
+            if !subtree.contains(&s) {
+                subtree.push(s);
+            }
+        }
+    }
+
+    if deep {
+        for &state in recorded {
+            if !P::get_child_states(state).is_empty() {
+                return Err(HistoryRejection::NotAtomic { state });
+            }
+        }
+        for &state in &subtree {
+            check_child_arity::<P>(&subtree, state).map_err(HistoryRejection::Arity)?;
+        }
+    } else {
+        for &state in recorded {
+            if P::get_parent(state) != Some(parent) {
+                return Err(HistoryRejection::NotAChild { state, parent });
+            }
+        }
+        check_child_arity::<P>(&subtree, parent).map_err(HistoryRejection::Arity)?;
+    }
     Ok(())
 }

@@ -239,6 +239,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 }
 
 {% if static_saved_shape and not no_std %}
+{% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
 {% for record in static_records %}
 
@@ -278,6 +279,11 @@ pub trait {{ machine_name }}Persist: Sized {
     /// is refused, one saved before a guard or an action changed is not.
     const SHAPE: &'static str;
 
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>];
+
     /// The machine's whole state. Refused for a machine that is not running,
     /// and for one whose last macrostep stopped at the microstep ceiling.
     fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
@@ -295,6 +301,16 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 
     const SHAPE: &'static str = "{{ static_saved_shape }}";
 
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>] = &[
+{% for history_id, info in model.history_states | dictsort %}
+        ::sce_rust_runtime::saved_state::HistoryDecl {
+            id: "{{ history_id }}",
+            history: {{ machine_name }}History::{{ history_id | to_state_variant }},
+            deep: {{ "true" if info.type == "deep" else "false" }},
+        },
+{% endfor %}
+    ];
+
     fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
 {% if static_fields %}
         let policy = self.policy();
@@ -307,11 +323,12 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
 {% endfor %}
             ],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
         )
     }
 
     fn restore(
-{% if static_fields %}
+{% if static_fields or model.history_states %}
         mut policy: {{ machine_name }}Policy{{ policy_generics_use }},
 {% else %}
         policy: {{ machine_name }}Policy{{ policy_generics_use }},
@@ -319,6 +336,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
         saved: &::sce_rust_runtime::saved_state::SavedState,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+{% if model.history_states %}
+        let history = ::sce_rust_runtime::saved_state::restore_history::<{{ machine_name }}Policy{{ policy_generics_use }}>(saved, Self::HISTORIES)?;
+{% else %}
+        ::sce_rust_runtime::saved_state::restore_history::<{{ machine_name }}Policy{{ policy_generics_use }}>(saved, Self::HISTORIES)?;
+{% endif %}
 {% for field in static_fields %}
 {% if field.bound is not none %}
         policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
@@ -326,6 +351,15 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
         policy.{{ field.name }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?;
 {% endif %}
 {% endfor %}
+{% if model.history_states %}
+        for (recorded, states) in history {
+            match recorded {
+{% for history_id in model.history_states | sort %}
+                {{ machine_name }}History::{{ history_id | to_state_variant }} => policy.history_{{ history_id }} = Some(states),
+{% endfor %}
+            }
+        }
+{% endif %}
         ::sce_rust_runtime::saved_state::enter(policy, saved)
     }
 }

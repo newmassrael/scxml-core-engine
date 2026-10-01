@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables", "external"],
+  "required": ["format", "shape", "configuration", "current", "variables", "history", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -31,6 +31,15 @@
       "description": "Every variable, the machine's own included, keyed by its document id in declaration order.",
       "type": "object",
       "additionalProperties": { "$ref": "#/definitions/value" }
+    },
+    "history": {
+      "description": "What each <history> recorded when its parent was last exited (W3C SCXML 3.10): the active children of its parent for a shallow one, the active atomic states below it for a deep one. Keyed by the history's id, in order of id; each value is state ids in document order. A history that has recorded nothing is absent, and a document with no <history> has {}. A restore refuses an id the document does not declare, a state that is not below the history's parent, and a value that is part of no configuration of the document. Object member names are unique: a text that repeats one is not this format.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1
+      }
     },
     "external": {
       "description": "The external queue, front first: events raised to the machine that it has not yet been driven through. Only the internal queue is empty at a macrostep boundary. Restored in this order, behind nothing. A typed payload is not saved; it is lifted again from `data` on delivery.",

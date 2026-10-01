@@ -787,6 +787,12 @@ path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
 required-features = ["cli"]
 
 [[test]]
+# Spawns `sce-codegen` and reads what it wrote, so the binary has to exist.
+name = "a_machine_holding_state_in_the_runtime_has_no_save_api"
+path = "tests/a_machine_holding_state_in_the_runtime_has_no_save_api.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "diagnostic_fix_is_applicable"
 path = "tests/diagnostic_fix_is_applicable.rs"
 required-features = ["cli"]

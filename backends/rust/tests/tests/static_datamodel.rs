@@ -21,6 +21,9 @@ use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterData, StaticCounterObserve, StaticCounterPersist, StaticCounterPolicy,
     StaticCounterState,
 };
+use sce_rust_tests::integration::static_datamodel::static_history_sm::{
+    StaticHistoryObserve, StaticHistoryPersist, StaticHistoryPolicy, StaticHistoryState,
+};
 use sce_rust_tests::integration::static_datamodel::static_host_call_sm::{
     RecordingStaticHostCallActions, StaticHostCallActionsCall, StaticHostCallObserve,
     StaticHostCallPersist, StaticHostCallPolicy, StaticHostCallState,
@@ -670,4 +673,215 @@ fn a_machine_that_is_not_running_is_not_saved() {
         engine.save().is_err(),
         "ended at a top-level <final>: nothing left to resume"
     );
+}
+
+// ── what a <history> recorded is part of the saved state ─────────────────
+
+const SHARED_HISTORY: &str =
+    include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_history.json");
+
+/// The run `sce-build/tests/fixtures/static_datamodel/static_history.scxml`
+/// describes: `last`, `deepest` and `crew_all` all recorded, standing in
+/// `paused`.
+const HISTORY_RUN: [&str; 7] = [
+    "faster",
+    "boost",
+    "pause",
+    "work",
+    "left_next",
+    "right_next",
+    "break",
+];
+
+fn history_machine() -> Engine<StaticHistoryPolicy> {
+    let mut engine = Engine::new(StaticHistoryPolicy::new());
+    engine.initialize();
+    engine
+}
+
+fn history_run(engine: &mut Engine<StaticHistoryPolicy>, events: &[&str]) {
+    for event in events {
+        engine.raise_external_by_name(event, "");
+        engine.step();
+    }
+}
+
+fn history_restored() -> Engine<StaticHistoryPolicy> {
+    Engine::<StaticHistoryPolicy>::restore(
+        StaticHistoryPolicy::new(),
+        &SavedState::from_json(SHARED_HISTORY).expect("reads"),
+    )
+    .expect("restores")
+}
+
+#[test]
+fn a_history_is_saved_with_the_machine_as_the_text_every_backend_saves() {
+    let mut engine = history_machine();
+    history_run(&mut engine, &HISTORY_RUN);
+    assert_eq!(
+        engine.save().expect("saves").to_json(),
+        SHARED_HISTORY.trim()
+    );
+}
+
+#[test]
+fn a_machine_that_has_exited_nothing_records_no_history() {
+    let engine = history_machine();
+    let saved = engine.save().expect("saves");
+    assert!(saved.history.is_empty(), "{:?}", saved.history);
+}
+
+#[test]
+fn a_restored_machine_resumes_through_each_history_as_the_saved_one_would() {
+    // Shallow: the child `fast` was active, and entering it takes its initial
+    // child.
+    let mut engine = history_restored();
+    history_run(&mut engine, &["resume_last"]);
+    assert_eq!(engine.get_current_state(), StaticHistoryState::Cruise);
+    assert_eq!(engine.policy().resumed(), 1);
+
+    // Deep: the atomic state itself.
+    let mut engine = history_restored();
+    history_run(&mut engine, &["resume_deep"]);
+    assert_eq!(engine.get_current_state(), StaticHistoryState::Burst);
+
+    // Deep, below a <parallel>: one state in EACH region.
+    let mut engine = history_restored();
+    history_run(&mut engine, &["resume_crew"]);
+    let configuration = engine.snapshot().configuration;
+    for state in [StaticHistoryState::L2, StaticHistoryState::R2] {
+        assert!(configuration.contains(&state), "{configuration:?}");
+    }
+    for state in [StaticHistoryState::L1, StaticHistoryState::R1] {
+        assert!(!configuration.contains(&state), "{configuration:?}");
+    }
+}
+
+#[test]
+fn a_history_that_was_never_recorded_takes_its_default_after_a_restore() {
+    // Saved before any exit of `running`, `last` has nothing recorded, so
+    // resuming through it takes its default transition, as an unsaved
+    // machine would.
+    let mut saved = SavedState::from_json(SHARED_HISTORY).expect("reads");
+    saved.history.retain(|(id, _)| id != "last");
+    let mut engine = Engine::<StaticHistoryPolicy>::restore(StaticHistoryPolicy::new(), &saved)
+        .expect("restores");
+    history_run(&mut engine, &["resume_last"]);
+    assert_eq!(engine.get_current_state(), StaticHistoryState::Slow);
+}
+
+#[test]
+fn a_saved_history_survives_its_machine_being_saved_again() {
+    let mut engine = history_restored();
+    assert_eq!(
+        engine.save().expect("saves").to_json(),
+        SHARED_HISTORY.trim(),
+        "restoring and saving again changes nothing"
+    );
+    history_run(&mut engine, &["resume_last", "pause"]);
+    let again = engine.save().expect("saves");
+    assert_eq!(
+        again.history,
+        vec![
+            (
+                "crew_all".to_string(),
+                vec!["l2".to_string(), "r2".to_string()]
+            ),
+            ("deepest".to_string(), vec!["cruise".to_string()]),
+            ("last".to_string(), vec!["fast".to_string()]),
+        ],
+        "resumed through `last`, then left `running` again: `deepest` now records `cruise`"
+    );
+}
+
+/// `SHARED_HISTORY` with `history` replaced by `entries`, and the refusal the
+/// restore answers with.
+fn refused_history(entries: &[(&str, &[&str])]) -> StateRefusal {
+    let mut saved = SavedState::from_json(SHARED_HISTORY).expect("reads");
+    saved.history = entries
+        .iter()
+        .map(|(id, states)| {
+            (
+                (*id).to_string(),
+                states.iter().map(|s| (*s).to_string()).collect(),
+            )
+        })
+        .collect();
+    refused(Engine::<StaticHistoryPolicy>::restore(
+        StaticHistoryPolicy::new(),
+        &saved,
+    ))
+}
+
+#[test]
+fn a_history_the_document_does_not_declare_is_refused() {
+    let refusal = refused_history(&[("nowhere", &["fast"])]);
+    assert!(refusal.reason().contains("does not declare"), "{refusal}");
+
+    // A document with no <history> refuses a state that records one.
+    let mut engine = counter();
+    ticks(&mut engine, 1);
+    let mut saved = engine.save().expect("saves");
+    saved.history = vec![("last".to_string(), vec!["counting".to_string()])];
+    let refusal = refused(Engine::<StaticCounterPolicy>::restore(
+        StaticCounterPolicy::new(),
+        &saved,
+    ));
+    assert!(refusal.reason().contains("does not declare"), "{refusal}");
+}
+
+#[test]
+fn a_history_naming_a_state_the_document_lacks_is_refused() {
+    let refusal = refused_history(&[("last", &["warp"])]);
+    assert!(refusal.reason().contains("warp"), "{refusal}");
+}
+
+#[test]
+fn a_history_that_records_nothing_or_a_state_twice_is_refused() {
+    let refusal = refused_history(&[("last", &[])]);
+    assert!(refusal.reason().contains("at least one"), "{refusal}");
+    let refusal = refused_history(&[("last", &["fast", "fast"])]);
+    assert!(refusal.reason().contains("twice"), "{refusal}");
+}
+
+#[test]
+fn a_history_naming_a_state_outside_its_parent_is_refused() {
+    let refusal = refused_history(&[("last", &["l1"])]);
+    assert!(refusal.reason().contains("not below"), "{refusal}");
+    // The parent itself is below nothing.
+    let refusal = refused_history(&[("last", &["running"])]);
+    assert!(refusal.reason().contains("not below"), "{refusal}");
+}
+
+#[test]
+fn a_shallow_history_records_children_and_a_deep_one_atomic_states() {
+    let refusal = refused_history(&[("last", &["cruise"])]);
+    assert!(refusal.reason().contains("not a child"), "{refusal}");
+    let refusal = refused_history(&[("deepest", &["fast"])]);
+    assert!(refusal.reason().contains("has children"), "{refusal}");
+}
+
+#[test]
+fn a_history_that_is_part_of_no_configuration_is_refused() {
+    // `running` holds one active child, and these are in two.
+    let refusal = refused_history(&[("deepest", &["slow", "burst"])]);
+    assert!(refusal.reason().contains("no configuration"), "{refusal}");
+    // A <parallel> holds every region, and this is one of two.
+    let refusal = refused_history(&[("crew_all", &["l2"])]);
+    assert!(refusal.reason().contains("no configuration"), "{refusal}");
+    // Two states of one region.
+    let refusal = refused_history(&[("crew_all", &["l1", "l2", "r1"])]);
+    assert!(refusal.reason().contains("no configuration"), "{refusal}");
+}
+
+#[test]
+fn a_saved_state_whose_object_repeats_a_name_is_not_this_format() {
+    // `{"last":[..],"last":[..]}` has no single meaning: a reader that took
+    // the first and one that took the last would restore two machines from one
+    // text, so neither backend reads it.
+    let text = SHARED_HISTORY
+        .trim()
+        .replace(r#""last":["fast"]"#, r#""last":["fast"],"last":["slow"]"#);
+    let refusal = SavedState::from_json(&text).expect_err("a repeated name");
+    assert!(refusal.reason().contains("appears twice"), "{refusal}");
 }

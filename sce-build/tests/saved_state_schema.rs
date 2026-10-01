@@ -82,6 +82,7 @@ fn the_schema_refuses_what_no_backend_writes() {
         "configuration": ["s"],
         "current": "s",
         "variables": {"count": 1},
+        "history": {"mode": ["slow"], "zone": ["a", "b"]},
         "external": [{
             "name": "tick", "data": "", "type": "external",
             "sendid": "", "origin": "", "origintype": "", "invokeid": ""
@@ -109,6 +110,16 @@ fn the_schema_refuses_what_no_backend_writes() {
             "a variable that is null",
             "variables",
             serde_json::json!({"count": null}),
+        ),
+        (
+            "a history whose value is not a list of state ids",
+            "history",
+            serde_json::json!({"mode": "slow"}),
+        ),
+        (
+            "a history that recorded no state",
+            "history",
+            serde_json::json!({"mode": []}),
         ),
         (
             "a queued event of no type",
