@@ -82,8 +82,22 @@ def machine(attempts: int = 3, target: str = "", opened: bool = False) -> str:
     return MACHINE.format(attempts=attempts, request=request, timeout=timeout, open=decisions)
 
 
+def codegen_is_built() -> bool:
+    return _default_codegen().exists()
+
+
+# ⚠ The domain-free job of the authoring-core lane builds nothing on purpose
+# (`.github/workflows/authoring-core.yml`), so a case that spawns the product's
+# generator is skipped there and judged in `verify-with-codegen`. Landed without
+# this on 2026-10-01 and the lane was red for two pushes before anyone read it.
+needs_the_generator = unittest.skipUnless(codegen_is_built(),
+                                          "the product's generator is not built")
+
+
+@needs_the_generator
 class Played(unittest.TestCase):
-    """Shared plumbing: a work directory, a design, a set."""
+    """Shared plumbing: a work directory, a design, a set. Every case built on
+    it generates a design with the product, so the skip is inherited."""
 
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -549,6 +563,7 @@ def said(result: dict) -> dict:
     return json.loads(result["content"][0]["text"])
 
 
+@needs_the_generator
 class TestTheToolAnOwnersClientCalls(unittest.TestCase):
     def sets(self, change=None) -> str:
         spec = json.loads(RETRY_SET.read_text(encoding="utf-8"))
