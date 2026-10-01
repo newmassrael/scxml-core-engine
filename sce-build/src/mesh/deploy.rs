@@ -3622,7 +3622,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///
 /// Single source of truth for the driver allowlist. Each core driver
 /// implements exactly one protocol class (per RFC §synth-5-C lines 765-771 +
-/// §synth-8 Q8 line 3747); co-locating the class with the driver name
+/// §synth-8 Q8 line 4129); co-locating the class with the driver name
 /// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
 /// to drift against.
 ///
@@ -3633,7 +3633,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///     encapsulation floor as `lwip_tcp`; the per-frame
 ///     WebSocket header is application-protocol framing
 ///     carried by the §synth-5-B framer codec, not by the driver
-///     MTU floor. Spec §synth-8 Q8 line 3747 names the driver;
+///     MTU floor. Spec §synth-8 Q8 line 4129 names the driver;
 ///     spec §synth-5-C row 4 (line 770) names the class).
 ///
 /// Non-IP drivers carry floor `0` to mark "skip floor check"
@@ -3992,7 +3992,7 @@ pub fn validate_links_cross_doc(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747 cross-
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4129 cross-
 /// doc consistency check between forge `<sce:link-class>` and the
 /// deploy.yaml `driver:` allowlist entry.
 ///

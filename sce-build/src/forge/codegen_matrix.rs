@@ -141,7 +141,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         },
         // RFC §synth-5-A Algorithm: closed across all six backends.
         // Item A3 landed Rust + Cpp; item A5 closed C11 (RFC §synth-7
-        // line 3382); a follow-up trio added Go + Kotlin + Python
+        // line 3927); a follow-up trio added Go + Kotlin + Python
         // in three independent commits.
         ForgeKind::Algorithm => match lang {
             Language::Rust

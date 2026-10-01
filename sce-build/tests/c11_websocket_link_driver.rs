@@ -1,10 +1,10 @@
 //! Spec C11 follow-up — WebSocket link driver (`websocket_tcp`)
 //! deploy.yaml allowlist.
 //!
-//! SCE Protocol-Synthesis RFC §synth-8 Q8 line 3747 names `websocket_tcp` as one
+//! SCE Protocol-Synthesis RFC §synth-8 Q8 line 4129 names `websocket_tcp` as one
 //! of the six core-shipped drivers; §synth-5-C row 4 (line 770) names the
 //! `websocket` link class with "TCP + WebSocket framing" semantics.
-//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 4002)
 //! commits this driver. The serial sub-scope landed via `4f1c8bfa`
 //! (2026-05-14, see `c11_serial_link_driver.rs`); this file covers
 //! the WebSocket sub-scope.

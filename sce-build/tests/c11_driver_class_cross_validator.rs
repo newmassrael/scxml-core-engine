@@ -3,7 +3,7 @@
 //! document matches the protocol class implemented by the
 //! deploy.yaml `driver:` allowlist entry. Each core driver
 //! implements exactly one class (per SCE Protocol-Synthesis RFC §synth-5-C lines
-//! 765-771 + §synth-8 Q8 line 3747); a mismatch is now hard error
+//! 765-771 + §synth-8 Q8 line 4129); a mismatch is now hard error
 //! (`deploy/link-driver-class-mismatch`) instead of silently
 //! producing a wrapper whose `LINK_CLASS` const disagrees with the
 //! bound driver impl.

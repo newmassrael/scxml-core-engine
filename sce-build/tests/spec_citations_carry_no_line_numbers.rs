@@ -40,9 +40,10 @@ const EXTENSIONS: &[&str] = &[
 /// Spec documents whose citations this gate governs.
 ///
 /// `SCE_MESH.md` only, and the exclusion is a decision rather than an
-/// oversight. `rfc-sce-protocol-synthesis.md` is held at a fixed 4053
-/// lines — corrections are rewritten to the same line count on purpose,
-/// and roughly 1264 citations across the tree depend on that. Its line
+/// oversight. `rfc-sce-protocol-synthesis.md` is held at a pinned line
+/// count (`SYNTH_RFC_LINES`) — corrections are rewritten to the same line
+/// count on purpose, and over a thousand citations across the tree depend
+/// on that (`MIN_SYNTH_RFC_CITATIONS` is the floor). Its line
 /// numbers are a maintained contract, not drift waiting to happen, so
 /// forbidding them there would break a working convention to enforce a
 /// rule it does not need.
@@ -51,7 +52,24 @@ const EXTENSIONS: &[&str] = &[
 const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 
 /// The synth RFC's pinned length. See [`SYNTH_RFC`].
-const SYNTH_RFC_LINES: usize = 4053;
+///
+/// In-place corrections keep the count. A new section cannot: re-wrapping
+/// prose does not give back a section's worth of lines, and the RFC has to
+/// be able to grow. When it does, in the same commit set this to the new
+/// length and re-point every citation whose number sits at or past the
+/// insertion — those numbers moved with the text above them, and nothing
+/// else fails when they do.
+///
+/// Find them by the shapes the tree uses, not only the one counted below:
+/// `§synth-8 Q8 line 3747` has a word between the token and the number, and
+/// a wrapped comment can put the number on the line after its `§`. Re-point
+/// each to the text it quotes rather than adding the insertion's size — a
+/// citation can already be wrong for reasons older than the insertion
+/// (`line 3382` named a testing-requirements heading when the item it
+/// described was at 3551).
+///
+/// History: 4053 until `8c74ee9cf8` added the queue-kind section (+387 lines).
+const SYNTH_RFC_LINES: usize = 4440;
 
 /// The document the exclusion above is granted to.
 const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";
@@ -189,9 +207,11 @@ fn spec_citations_name_a_section_not_a_line() {
 /// Measured at the time this gate landed: 1316 citations across the tree
 /// name a line in that file, and 985 of them point below line 682.
 ///
-/// So the pin is asserted here. Adding content means re-wrapping nearby
+/// So the pin is asserted here. Correcting content means re-wrapping nearby
 /// prose to give the line back — which is what "corrections are rewritten
-/// to the same line count" already meant, now said out loud.
+/// to the same line count" already meant, now said out loud. Adding a
+/// section moves the pin and the citations below it together; see
+/// [`SYNTH_RFC_LINES`] for how.
 ///
 /// This does not check that a given line still says what its citation
 /// claims; content can be rewritten in place under a stable count. It
@@ -209,10 +229,12 @@ fn synth_rfc_holds_its_pinned_line_count() {
         lines, SYNTH_RFC_LINES,
         "{SYNTH_RFC} is {lines} lines, pinned at {SYNTH_RFC_LINES}. Citations across the \
          tree name absolute line numbers in this file, so an insertion or deletion moves \
-         every one below it and none of them would fail. To add content, re-wrap prose \
-         nearby to return the line; to remove it, spend the freed line the same way. If \
-         the pin is being retired on purpose, add this document to SPEC_DOCS above so the \
-         citations are forbidden instead, and update both in the same commit.",
+         every one below it and none of them would fail. To correct content, re-wrap prose \
+         nearby to return the line. To add or remove a section, set SYNTH_RFC_LINES to the \
+         new length and re-point the citations at or past the insertion in the same commit \
+         (its doc comment says how to find them). If the pin is being retired on purpose, \
+         add this document to SPEC_DOCS above so the citations are forbidden instead, and \
+         update both in the same commit.",
     );
 }
 

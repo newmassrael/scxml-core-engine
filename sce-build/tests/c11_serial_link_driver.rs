@@ -2,7 +2,7 @@
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J names `serial_uart` as the lwIP crate's
 //! UART driver alongside `lwip_udp` + `lwip_tcp` + `websocket_tcp`.
-//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 4002)
 //! commits this driver.
 //!
 //! SCE-side support pinned here: the `KNOWN_DRIVERS` baseline

@@ -2730,7 +2730,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4129
     /// (`deploy/link-driver-class-mismatch`). The forge
     /// `<sce:link-class>` value on the link doc does not match the
     /// protocol class implied by the deploy.yaml `driver:` allowlist
@@ -14505,7 +14505,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4129 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",
