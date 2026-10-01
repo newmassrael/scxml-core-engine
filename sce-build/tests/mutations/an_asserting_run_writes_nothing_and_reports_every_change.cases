@@ -73,8 +73,8 @@ PY
 
 mutation_case "an asserting run removes what the generation would remove" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "        OutputMode::AssertUnchanged => {\n            let doomed = if path.is_dir() {",
-     "        OutputMode::AssertUnchanged => {\n            let _ = fs::remove_file(path);\n            let doomed = if path.is_dir() {")
+     "        OutputMode::AssertUnchanged | OutputMode::Plan => {\n            let doomed = if path.is_dir() {",
+     "        OutputMode::AssertUnchanged | OutputMode::Plan => {\n            let _ = fs::remove_file(path);\n            let doomed = if path.is_dir() {")
 PY
 
 mutation_case "a file the generation would remove is passed" <<'PY'
