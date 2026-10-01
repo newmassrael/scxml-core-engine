@@ -20,7 +20,7 @@ import unittest.mock
 
 import yaml
 
-from sce_author import mcp, verify
+from sce_author import mcp, process, verify
 from sce_author.verify import _default_codegen
 
 from tests.test_refusals_actually_fire import (
@@ -53,7 +53,9 @@ def generator_that_records(seen=None, returncode=0, stdout="page\n", stderr=""):
         return subprocess.CompletedProcess(argv, returncode, stdout=stdout,
                                            stderr=stderr)
 
-    with unittest.mock.patch.object(verify.subprocess, "run", fake_run), \
+    # ⚠ `process.subprocess`: starting a program is `process`'s alone
+    # (2026-10-01), so that is the seam. `verify.subprocess` no longer exists.
+    with unittest.mock.patch.object(process.subprocess, "run", fake_run), \
             unittest.mock.patch.object(
                 verify, "_default_codegen",
                 lambda: pathlib.Path(sys.executable)):

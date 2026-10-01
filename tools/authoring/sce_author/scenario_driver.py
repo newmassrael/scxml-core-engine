@@ -10,57 +10,31 @@ out. This is one such driver, over the same Python lowering `verify` and
 lowering`, because a verdict is about an engine and the examples could pass on
 one runtime and fail on another.
 
-⚠ It reports what it saw and nothing else. The places where a driver is
-tempted to fill a hole are closed on purpose.
+⚠ A design is code, and it is never run in the process that serves the client.
+This module generates the design (the product's generator, a program this tree
+trusts) and then PLAYS each scenario in a child process of its own
+(`scenario_play`), supervised from outside by `process.run_isolated`: the
+kernel's limits on processor time, memory, output and open files, and a clock
+the child cannot reach. Measured 2026-10-01, an endless `<script>` loop ignored
+a timer set in its own process and a design that re-sends itself at zero delay
+never returned from `initialize()`; both used to keep the whole tool call from
+ever answering. Now each costs exactly the one example it was playing, and the
+rest keep their verdicts.
 
-    A run during which the engine stopped a macrostep that would not end is
-    refused too (W3C SCXML 3.13). Every other reading of such a machine says it
-    is fine, and it used to pass an example that says the machine waits.
+What this module will say about a stopped child is deliberately modest. A child
+stopped for time, memory, output or a crash is refused with `cause:
+environment`: another machine may play the same example to its end, and a
+verdict that read it as a defect of the design would be a statement about load.
+Whatever the design itself did that made an example unplayable (an error no
+state answered, an open route, a macrostep the engine cut short, a design that
+would not start) is refused by the child with `cause: design`. The trace also
+repeats the limits and the isolation the run really had, so a verdict states
+what it was made under; see `process.isolation_level` for what that means on
+this host.
 
-    Virtual time moves one scheduled instant at a time, never in one jump. The
-    engine dates a timer from the end of the move that fires it, so an example
-    that says 600 ms and one that says 200 ms three times were two different
-    runs of one machine. (It cuts time at this machine's own deadlines and says
-    nothing of a child session's; a design that starts one does not start in
-    this loader today, and is refused with the engine's words.)
-
-    A design the engine cannot start is refused for every example, with what
-    the engine said, never a traceback for the whole call.
-
-    An input is delivered under the name the example gives it. The generated
-    engines carry an event as the descriptor the design declares, and W3C SCXML
-    3.12.1 lets `request.new` match a transition on `request`, so the shorter
-    member used to be what `_event.name` reported. The longer name now rides
-    with the event (`EventMetadata.name`) and is what the machine reads however
-    it reads it: in a guard, through a helper function, through a variable, by
-    a computed key. A first version scanned the design's text for `_event.name`
-    and refused such an example, which a helper function or a computed key
-    walked straight past.
-
-    A run during which the engine raised an `error.*` event that no state
-    answered is refused, not observed (W3C SCXML 3.12.2). The machine did not
-    do what its document says: an entry block that meets an unresolvable
-    `<send>` ends there (W3C SCXML 4.9), so a timer armed after it is never
-    armed and the machine then "fails" an example about timing it was never
-    allowed to keep. The refusal names the error and, when the design holds
-    open decisions, which, because an open route is the usual cause.
-
-    A send the driver has no sink for is refused, not dropped. It observes
-    sends to host-served processors, and BasicHTTP sends it detects and
-    refuses; a send to a parent session or a mesh peer either raises an
-    unanswered error or reaches nobody, and both end the run the same way.
-
-    An output declared with a route (`via`) counts only when the design sent
-    it through exactly that route, and a design that sent it through another
-    one is refused with both routes named. The interface is what the owner
-    accepted; a design that leaves by a different door is not what the
-    examples describe, and counting the event anyway would pass it.
-
-What the machine sent while it started (the initial state's `<onentry>`) is
-part of the first step's observation, since no step has run before it.
-
-The run is bounded by the steps the scenarios write, in virtual time: it
-never waits on a clock.
+The scenario itself is played by `scenario_play`, which holds every rule about
+what a driver may and may not fill in; this module holds the set, the
+generation, the children, the trace and the owner's answer.
 """
 
 from __future__ import annotations
@@ -68,96 +42,39 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
-import xml.etree.ElementTree as ET
+import sys
+from concurrent.futures import ThreadPoolExecutor
 
-from .verify import (SendRecorder, VerifyError, _default_codegen, _host_names, _scratch,
-                     generate, load, scenario_judgement, scenario_set_reading)
+from . import process
+from .verify import (VerifyError, _default_codegen, _scratch, generate, scenario_judgement,
+                     scenario_set_reading)
 
 ENGINE_NAME = "Python lowering"
 RECORD = "sce-observation-trace"
 VERSION = 1
-#: Where this driver runs. Replaced by what the runner measured when the driver
-#: is supervised; in this process it is none of the layers a design needs
-#: stopping by, and says so.
-ISOLATION = "none (in the caller's process)"
 
+#: What each child may use. Replaced as a whole to play under other bounds.
+LIMITS = process.Limits()
 
-class ScenarioDriverError(VerifyError):
-    """The scenario set cannot be driven at all. Never a verdict."""
-
-
-class _HttpSeen:
-    """BasicHTTP sends the machine made. The driver does not observe them, so
-    a run that made one is refused rather than reported without it."""
-
-    def __init__(self) -> None:
-        self.requests: list = []
-
-    def __call__(self, request):
-        self.requests.append(request)
-        return None
-
-
-class _Refusal(Exception):
-    """One run ended because what it saw would not be the design's behaviour.
-    Its text is what the owner reads.
-
-    `cause` says whether another machine would refuse the same run: `design`
-    when what the design did made the example unplayable, `environment` when
-    the machine it ran on did (time, memory, a crash). Everything this driver
-    refuses today is the design's, because it runs in this process and has no
-    way to be stopped by anything else; the runner that supervises it will
-    refuse for the other reason."""
-
-    def __init__(self, why: str, cause: str = "design") -> None:
-        super().__init__(why)
-        self.cause = cause
-
-
-def _scalar(value) -> bool:
-    return isinstance(value, (bool, int, float, str))
-
-
-def _payload_of(event_data: str) -> dict:
-    """The fields a sent event carried, as the machine's own serialisation of
-    its `<param>`s and namelist (W3C SCXML 5.10). Anything that is not an
-    object of plain values carries no field a scenario could name."""
-    if not event_data:
-        return {}
-    try:
-        value = json.loads(event_data)
-    except ValueError:
-        return {}
-    if not isinstance(value, dict):
-        return {}
-    return {name: field for name, field in value.items() if _scalar(field)}
-
-
-def _resolve_event(policy, name: str):
-    """`(event, declared)`: the policy's event for a name and the name the
-    design declares it under, falling back through dot-token prefixes the way
-    the engine does for a name it does not declare: a transition on `door`
-    answers `door.open` (W3C SCXML 3.12.1). `(None, None)` when no prefix of
-    the name is declared."""
-    parts = name.split(".")
-    while parts:
-        declared = ".".join(parts)
-        event = policy.get_event_from_name(declared)
-        if event is not None:
-            return event, declared
-        parts.pop()
-    return None, None
-
+#: How many children play at once. Each is independent, so the order of the
+#: runs in the trace is the set's order whatever finishes first.
+MAX_PARALLEL = 4
 
 #: How many instants of virtual time one `advance_ms` step may be cut into. An
 #: example that arms a timer every millisecond for a day is not one a run can
 #: judge, and a timer that re-arms itself at zero delay never ends.
 MAX_TIME_STOPS = 50_000
 
-
 #: How many open decisions a refusal quotes. The first few name the cause; a
 #: design with dozens would bury the sentence they sit in.
 OPEN_DECISIONS_QUOTED = 4
+
+#: The directory the child imports this package from.
+_PACKAGE_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
+
+
+class ScenarioDriverError(VerifyError):
+    """The scenario set cannot be driven at all. Never a verdict."""
 
 
 def _open_decisions(manifest: dict) -> str:
@@ -179,19 +96,24 @@ def _open_decisions(manifest: dict) -> str:
             + (f"; and {more} more." if more > 0 else "."))
 
 
-class _Design:
-    """One design, generated to Python once and run from scratch per scenario."""
+def _refused(scenario_id: str, why: str, cause: str | None) -> dict:
+    """A run the driver did not make. `cause` is left out when the driver does
+    not know it: absent is not `design`."""
+    refused = {"why": why}
+    if cause:
+        refused["cause"] = cause
+    return {"scenario": scenario_id, "refused": refused}
+
+
+class _Built:
+    """One design, generated to Python once. Nothing here loads it: the engine
+    and the Lua machine are the children's."""
 
     def __init__(self, document: pathlib.Path, codegen: pathlib.Path,
-                 into: pathlib.Path, serves: tuple, routes: dict, data: list) -> None:
-        self.routes = routes
-        self.data = data
+                 into: pathlib.Path, serves: tuple) -> None:
+        self.document = document
+        self.into = into
         self.refusal = ""
-        self.module = None
-        self.readers: dict = {}
-        self.data_unavailable = ""
-        self.unreadable: dict = {}
-        self.opened = ""
         self.build = generate(document, codegen, into, serves=serves)
         if self.build.refusal:
             self.refusal = self.build.refusal
@@ -200,191 +122,51 @@ class _Design:
         if kind != "statechart":
             self.refusal = (f"{document.name} is a {kind or 'document of no known kind'}, and a "
                             f"scenario drives a statechart")
-            return
-        self.module = load(into, document)
-        if data:
-            try:
-                self.readers = _host_names(self.module, "readers")
-            except VerifyError as exc:
-                self.data_unavailable = str(exc)
-        self.unreadable = ({} if self.data_unavailable else
-                           {name: self._why_unreadable(name, document) for name in data
-                            if name not in self.readers})
-        self.opened = _open_decisions(self.build.manifest)
 
-    def _why_unreadable(self, name: str, document: pathlib.Path) -> str:
-        """Why the generated module has no reader for a data item the
-        interface names, in the generator's words when it gave them."""
-        record = self.build.unreadable(name)
-        if record:
-            return (f"the generator gives `{name}` no reader ({record.get('reason')} in "
-                    f"{record.get('language')}), and a reader exists in every backend or in none")
-        declared = {node.get("id") for node in ET.parse(document).getroot().iter()
-                    if node.tag.rsplit("}", 1)[-1] == "data" and node.get("id")}
-        if name not in declared:
-            return f"the design declares no data item called `{name}`"
-        # Said as far as it is known: the generated module has no reader and
-        # the generator's manifest gives no reason, which is the case of an
-        # item declared with no initial value.
-        return (f"the generated module has no reader for `{name}`, and the generator gives no "
-                f"reason")
+    @property
+    def generator(self) -> str | None:
+        return (self.build.manifest or {}).get("generator")
 
-    def run(self, scenario: dict) -> dict:
-        """The scenario's run: one observation per step, or why it was refused."""
-        if self.refusal:
-            # The design could not be built, or is not a statechart: the same
-            # on every machine.
-            return {"scenario": scenario["id"],
-                    "refused": {"why": self.refusal, "cause": "design"}}
-        try:
-            return {"scenario": scenario["id"], "observations": self._play(scenario["steps"])}
-        except _Refusal as exc:
-            return {"scenario": scenario["id"],
-                    "refused": {"why": str(exc), "cause": exc.cause}}
-
-    def _play(self, steps: list) -> list:
-        from sce_runtime.event import EventMetadata
-
-        sink, http = SendRecorder(), _HttpSeen()
-        try:
-            engine = self.module.create_engine()
-            for processor in self.build.declared:
-                engine.register_event_processor(processor, sink)
-            engine.set_http_send_callback(http)
-            engine.initialize()
-        except Exception as exc:  # noqa: BLE001 - a design that cannot start is the answer
-            # An answer for the example, not a traceback for the whole call: the
-            # generated parent of a design that starts a child session imports
-            # the child's module by a bare name this loader does not put on the
-            # path, so it dies here with ModuleNotFoundError.
-            raise _Refusal(f"the engine could not start the design: "
-                           f"{type(exc).__name__}: {exc}") from exc
-        policy = engine.policy
-        observations = []
-        for index, step in enumerate(steps):
-            try:
-                if "send" in step:
-                    event, declared = _resolve_event(policy, step["send"])
-                    if event is None:
-                        raise _Refusal(f"step {index} sends `{step['send']}`, and the design "
-                                       f"names no event that answers it, so the example's "
-                                       f"input reaches nothing in it")
-                    # W3C SCXML 5.10: the machine is told the name the event
-                    # arrived under. The event itself is the enumeration member
-                    # of the descriptor the design declares (3.12.1), so a
-                    # longer name rides beside it, whatever a guard or a helper
-                    # function does with `_event.name`.
-                    carried = step["send"] if declared != step["send"] else ""
-                    engine.send_event(event, EventMetadata(data=step.get("payload") or "",
-                                                           name=carried))
-                elif "advance_ms" in step:
-                    self._advance(engine, step["advance_ms"], index)
-            except _Refusal:
-                raise
-            except Exception as exc:  # noqa: BLE001 - the engine failing is the report
-                raise _Refusal(f"the engine raised {type(exc).__name__} at step {index}: {exc}")
-            self._check_unobserved(engine, policy, http, index)
-            observations.append(self._observe(engine, policy, sink, index))
-        return observations
-
-    @staticmethod
-    def _advance(engine, ms: int, index: int) -> None:
-        """Move virtual time forward by `ms`, one scheduled instant at a time.
-
-        W3C SCXML 6.2: a delay is measured from when its `<send>` executes. The
-        engine's clock belongs to the host and `advance_time(ms)` sets it to the
-        end of the move before it runs what fell due, so a timer armed while
-        handling a deadline in the middle of a long move is dated from the end
-        of the move. Measured: the retry machine passed three moves of 200 ms
-        and failed one of 600 ms. The engine says how far the next deadline is
-        (`time_until_next_scheduled_ms`), the product's own answer to a host
-        that would otherwise guess a step size, so the move is cut there and
-        the same time passes the same way however an example splits it.
-
-        A run that ends, or a machine that has finished, owes the rest no
-        deadlines."""
-        remaining, stops = ms, 0
-        while remaining > 0 and engine.is_running and not engine.reached_final:
-            due = engine.time_until_next_scheduled_ms()
-            step = remaining if due is None or due > remaining else due
-            engine.advance_time(step)
-            remaining -= step
-            stops += 1
-            if stops > MAX_TIME_STOPS:
-                raise _Refusal(
-                    f"step {index} lets {ms} ms pass and the design has a deadline at more "
-                    f"than {MAX_TIME_STOPS} of its instants (a timer that re-arms at zero "
-                    f"delay never ends), so the example cannot be played to its end")
-
-    def _check_unobserved(self, engine, policy, http: _HttpSeen, index: int) -> None:
-        """Refuse the run when it did something this driver cannot report."""
-        if http.requests:
-            request = http.requests[0]
-            raise _Refusal(f"at step {index} the design sent `{request.event_name}` over "
-                           f"BasicHTTP to `{request.target}`; this driver observes sends to "
-                           f"host-served processors and does not observe HTTP")
-        if engine.truncated_macrosteps():
-            # W3C SCXML 3.13: a macrostep may not terminate, and the engine
-            # stops one after a ceiling. Every other reading of the machine
-            # says it is fine (it runs, it names a state, the call returned),
-            # which is how an endless chain used to pass an example that says
-            # the machine waits.
-            state = engine.last_truncated_macrostep_state()
-            where = f" in `{policy.get_state_name(state)}`" if state is not None else ""
-            raise _Refusal(f"by step {index} the engine stopped a macrostep{where} that did not "
-                           f"reach a stable configuration (W3C SCXML 3.13), so where the "
-                           f"machine stands is not the design's behaviour")
-        failures = engine.unhandled_error_events() + engine.error_cascade_events()
-        if failures:
-            last = engine.last_unhandled_error()
-            if last is None:
-                last = engine.last_error_cascade_event()
-            name = policy.get_event_name(last) if last is not None else "error"
-            raise _Refusal(f"by step {index} the engine raised `{name}` and no state answered "
-                           f"it, so what the machine did from there is not the design's "
-                           f"behaviour.{self.opened}")
-
-    def _observe(self, engine, policy, sink: SendRecorder, index: int) -> dict:
-        outbound = []
-        for request in sink.take():
-            via = self.routes.get(request.event_name)
-            route = (request.processor_type, request.target)
-            if via is not None and route != via:
-                raise _Refusal(
-                    f"at step {index} the design sent `{request.event_name}` through "
-                    f"`{route[0]}` to `{route[1]}`, and the interface says it leaves through "
-                    f"`{via[0]}` to `{via[1]}`")
-            sent = {"event": request.event_name}
-            payload = _payload_of(request.event_data)
-            if payload:
-                sent["payload"] = payload
-            outbound.append(sent)
+    def request_for(self, scenario: dict, routes: dict, data: list) -> dict:
+        """What a child is told: everything it needs and nothing it could use to
+        reach beyond the example it plays."""
         return {
-            "outbound": outbound,
-            "finished": bool(engine.reached_final),
-            "configuration": sorted(policy.get_state_name(s)
-                                    for s in engine.active_configuration()),
-            "data": self._read_data(policy),
+            "built": str(self.into),
+            "document": str(self.document),
+            "declared": list(self.build.declared),
+            "routes": {name: list(route) for name, route in routes.items()},
+            "data": data,
+            "scenario": scenario,
+            "opened": _open_decisions(self.build.manifest),
+            "manifest_unreadable": self.build.manifest.get("unreadable_variables") or [],
+            "max_time_stops": MAX_TIME_STOPS,
         }
 
-    def _read_data(self, policy) -> dict:
-        values = {}
-        for name in self.data:
-            method = self.readers.get(name)
-            reader = getattr(policy, method, None) if method else None
-            if reader is None:
-                continue
-            try:
-                value = reader()
-            except Exception:  # noqa: BLE001 - an unreadable name is a gap, said by the judge
-                continue
-            if _scalar(value):
-                values[name] = value
-        return values
+
+def _in_a_child(request: dict, limits: process.Limits) -> dict:
+    """The result of playing one scenario in a child of its own."""
+    scenario_id = request["scenario"]["id"]
+    outcome = process.run_isolated(
+        [sys.executable, "-m", "sce_author.scenario_play"], limits=limits,
+        stdin_text=json.dumps(request), env={"PYTHONPATH": _PACKAGE_ROOT})
+    if outcome.stopped_by is not None or outcome.returncode != 0:
+        # The machine stopped it, or it died: another machine may play it to
+        # its end, so the verdict says nothing about the design.
+        return {"run": _refused(
+            scenario_id, f"the process that played it did not finish: {outcome.said()}",
+            "environment"), "unreadable": {}, "data_unavailable": ""}
+    lines = outcome.stdout.strip().splitlines()
+    try:
+        return json.loads(lines[-1])
+    except (IndexError, ValueError):
+        # A child that ended cleanly and said nothing readable is the driver's
+        # own defect. It is not the design's and it is not the machine's.
+        return {"run": _refused(scenario_id, "the process that played it printed no result",
+                                None), "unreadable": {}, "data_unavailable": ""}
 
 
 def drive(scenario_set: pathlib.Path, document: pathlib.Path,
-          codegen: pathlib.Path | None = None) -> dict:
+          codegen: pathlib.Path | None = None, *, limits: process.Limits | None = None) -> dict:
     """The observation trace of every runnable scenario in the set, played
     against the design `document` on the Python lowering.
 
@@ -392,11 +174,12 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
     usable set is `sce-codegen scenarios`' answer, and `judge-scenarios`
     judges nothing from one that is not."""
     scenario_set, document = pathlib.Path(scenario_set), pathlib.Path(document)
+    limits = limits or LIMITS
     raw = scenario_set.read_bytes()
     try:
         spec = json.loads(raw)
         interface = spec["interface"]
-        scenarios = spec["scenarios"]
+        scenarios = [s for s in spec["scenarios"] if s.get("status", "runnable") == "runnable"]
         outputs = interface.get("outputs") or []
     except (ValueError, KeyError, AttributeError, TypeError) as exc:
         raise ScenarioDriverError(f"{scenario_set}: not a scenario set a driver can read "
@@ -407,31 +190,40 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
     data = list(interface.get("data") or [])
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     with _scratch() as scratch:
-        design = _Design(document, codegen, scratch / "design", serves, routes, data)
-        runs = [design.run(scenario) for scenario in scenarios
-                if scenario.get("status", "runnable") == "runnable"]
-    generator = (design.build.manifest or {}).get("generator")
+        built = _Built(document, codegen, scratch / "design", serves)
+        if built.refusal:
+            # The design could not be built, or is not a statechart: the same
+            # on every machine, and no child has anything to play into.
+            results = [{"run": _refused(s["id"], built.refusal, "design"),
+                        "unreadable": {}, "data_unavailable": ""} for s in scenarios]
+        else:
+            requests = [built.request_for(s, routes, data) for s in scenarios]
+            with ThreadPoolExecutor(max_workers=max(1, min(MAX_PARALLEL, len(requests)))) as pool:
+                results = list(pool.map(lambda request: _in_a_child(request, limits), requests))
+    unreadable: dict = {}
+    for result in results:
+        unreadable.update(result["unreadable"])
+    data_unavailable = next((r["data_unavailable"] for r in results if r["data_unavailable"]), "")
     detail = "generated Python on the product's Python runtime"
     trace = {
         "record": RECORD,
         "v": VERSION,
         "engine": {"name": ENGINE_NAME,
-                   "detail": f"{detail}, generator {generator}" if generator else detail},
+                   "detail": (f"{detail}, generator {built.generator}" if built.generator
+                              else detail)},
         "design": {"path": str(document),
                    "sha256": hashlib.sha256(document.read_bytes()).hexdigest()},
         "scenario_set": {"sha256": hashlib.sha256(raw).hexdigest()},
         "observes": {"outbound": True, "finished": True, "configuration": True,
-                     "data": ({"unavailable": design.data_unavailable}
-                              if design.data_unavailable else True)},
-        # What this run was bounded by and kept apart by, said plainly. A driver
-        # that runs in the caller's process is kept apart from nothing, and a
-        # verdict that did not say so would read as better protected than it was.
-        "limits": {"time_stops_per_step": MAX_TIME_STOPS},
-        "isolation": ISOLATION,
-        "runs": runs,
+                     "data": {"unavailable": data_unavailable} if data_unavailable else True},
+        # What this run was bounded by and kept apart by, as the supervisor
+        # applied it: a verdict says what it was made under.
+        "limits": {**limits.record(), "time_stops_per_step": MAX_TIME_STOPS},
+        "isolation": process.isolation_level(),
+        "runs": [result["run"] for result in results],
     }
-    if design.unreadable:
-        trace["unreadable"] = design.unreadable
+    if unreadable:
+        trace["unreadable"] = unreadable
     return trace
 
 

@@ -96,8 +96,14 @@ class CoreIsDomainFree(unittest.TestCase):
         own. Any other module gaining that power is a new way for the core to
         depend on something outside the pack, and this case is here so it
         cannot happen quietly.
+
+        That one module is `process.py`, which took over from `verify.py` on
+        2026-10-01. Playing a design means running code nobody has read, and
+        the thing that runs it under limits and a clock outside the process had
+        to live where starting a program is already decided. `verify.py` asks
+        `process` for the generator's run like everyone else.
         """
-        allowed = {"verify.py"}
+        allowed = {"process.py"}
         offences = []
         for path in sources():
             tree = ast.parse(path.read_text(encoding="utf-8"))

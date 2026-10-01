@@ -280,6 +280,37 @@ naming itself `Python lowering`, because a verdict is about an engine. The
 verdicts are the product's, passed through. A second driver on another engine
 needs only to write the same trace.
 
+⚠ A design is code, and it is never played in the process that serves the
+client. Each example is played by `sce_author/scenario_play.py` in a child
+process of its own, started by `sce_author/process.py` (the one place this
+package starts a program; `test_core_is_domain_free` holds it to one). The child
+gets a session of its own, the kernel's limits on processor time, memory, output
+size and open files, no core dump, no new privileges, a scrubbed environment and
+a clock outside it, and the server process never imports the engine or the Lua
+binding. A hostile design costs exactly the one example it was playing.
+Measured 2026-10-01 against the tool as a client calls it, before and after:
+
+| Design | In the server's process | In a supervised child |
+|---|---|---|
+| Re-sends itself at zero delay | never returned | `not-judged`, cause `environment`, "had not finished" |
+| Endless `<script>` loop | never returned; a 3 s `SIGALRM` handler in the same process never ran, because the loop is inside Lua's C code | `not-judged`, cause `environment`, stopped by processor time |
+| Doubles a string for ever | took the memory the host had | `not-judged`, stopped by the memory limit or by an error nobody answered |
+| Nine fine examples and a tenth that loops | the whole call hung | nine `pass`, the tenth `not-judged` |
+| Cyclic `<raise>`, deep recursion, a timer every millisecond | ended, in the engine or the driver's bound | the same, cause `design` |
+
+A refusal carries a `cause`. `design` means what the design did made the example
+unplayable (an error no state answered, an open route, a macrostep the engine
+cut short, a design that would not start) and another machine would refuse it
+too. `environment` means the machine that ran it stopped it (time, memory,
+output, a crash) and another machine may play it to the end, so a second run may
+differ; the answer says so. Every reply states the `isolation` the run really had
+(`process+rlimit` on Linux, and a plain `process` where the kernel does not
+enforce the limits) and the `limits` it was bounded by. What this does NOT give
+is a namespace, a cgroup or a seccomp filter: those are further layers
+(`claudedocs/rfc-driving-untrusted-designs.md`), and a deployment that needs them
+will ask for them by name and be refused where they are absent. A memory-safety
+defect in the Lua binding is contained by none of what is here.
+
 ⚠ What the driver does not do is as much of the design as what it does. It
 reports what it saw and fills no hole:
 

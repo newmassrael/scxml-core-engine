@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from sce_author import mcp, verify
+from sce_author import mcp, process, verify
 from sce_author.verify import _default_codegen
 
 
@@ -171,7 +171,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, stdout="page\n", stderr="")
             return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n', stderr="")
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call("render_scxml_pseudocode", document=str(self.document),
@@ -190,7 +190,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
             calls.append(argv)
             return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n', stderr="")
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call("validate_scxml", document=str(self.document))
@@ -214,7 +214,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
         def fake_run(argv, **kwargs):
             return subprocess.CompletedProcess(argv, 20, stdout="", stderr=stderr)
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call("validate_scxml", document=str(self.document))
@@ -231,7 +231,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, stdout='{"kind":"check"}\n',
                                                stderr=json.dumps(record) + "\n")
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call("validate_scxml", document=str(self.document))
@@ -255,7 +255,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
                     encoding="utf-8")
             return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call(name, **arguments)
@@ -322,7 +322,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 20, stdout="",
                                                stderr=json.dumps(record) + "\n")
 
-        with mock.patch.object(verify.subprocess, "run", fake_run), \
+        with mock.patch.object(process.subprocess, "run", fake_run), \
              mock.patch.object(verify, "_default_codegen",
                                lambda: pathlib.Path(sys.executable)):
             result = call("scxml_acceptance_check", record=str(self.document),

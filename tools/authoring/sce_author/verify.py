@@ -34,13 +34,12 @@ import itertools
 import json
 import pathlib
 import re
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from . import delivery, landing
+from . import delivery, landing, process
 from .check import (STATECHART_KINDS, activation_in_force, activation_unsaid,
                     addresses_of, clock_refusals, driving_refusals, imports_of,
                     read_binding)
@@ -82,6 +81,23 @@ class ClockLost(VerifyError):
     """From here on the machine's configuration is not known, because a
     deadline fell inside the time a record knows only as a window. Unlike a
     VerifyError it is not about one case: every case after it is withheld."""
+
+
+#: How long the product's generator may take on one document. It is a program
+#: this tree builds and trusts to end, so this is a backstop for a defect and
+#: not a budget; a document that needs more than ten minutes is not an
+#: authoring document.
+CODEGEN_SECONDS = 600
+
+
+def _generator_run(argv: list, cwd=None):
+    """Run the product's generator through the one place this package starts a
+    program, with a clock. A generator that does not end is an answer, not a
+    hang."""
+    try:
+        return process.run(argv, cwd=cwd, timeout=CODEGEN_SECONDS)
+    except process.ProcessTimeout as exc:
+        raise VerifyError(f"the code generator did not answer: {exc}") from exc
 
 
 def _host_names(module, part: str) -> dict:
@@ -405,7 +421,7 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
             "-l", backend]
     for kind in host_processors:
         argv += ["--host-processor", kind]
-    run = subprocess.run(argv, capture_output=True, text=True)
+    run = _generator_run(argv)
     if run.returncode != 0:
         return Build(refusal=(run.stderr.strip() or run.stdout.strip()
                               or f"the code generator refused with status "
@@ -689,7 +705,8 @@ def validate_scxml(document: pathlib.Path,
     out, the check judges nothing the owner asked for, and the manifest
     carries no `profile` to say so.
 
-    Keep subprocess access in this module, as for ``pseudo_page``. The MCP
+    Keep generator access in this module, through ``_generator_run`` as for
+    ``pseudo_page``; starting a program is ``process``'s alone. The MCP
     adapter returns the generator's report or refusal without interpreting it
     as a judgment about whether the document matches its prose specification.
 
@@ -839,8 +856,7 @@ def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
         raise VerifyError(
             f"{codegen}: the code generator is not there, so no document can "
             f"be read. Build sce-codegen before using this tool.")
-    run = subprocess.run([str(codegen), "--error-format", "json", *args],
-                         capture_output=True, text=True, cwd=cwd)
+    run = _generator_run([str(codegen), "--error-format", "json", *args], cwd=cwd)
     refused = run.returncode != 0
     diagnostics = _diagnostic_records(run.stderr)
     verdict = verdicts[1] if refused else verdicts[0]
@@ -1149,7 +1165,7 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
         argv += ["--shape", shape]
     if lexicon is not None:
         argv += ["--lexicon", lexicon]
-    run = subprocess.run(argv, capture_output=True, text=True, cwd=cwd)
+    run = _generator_run(argv, cwd=cwd)
     if run.returncode != 0:
         return "", (run.stderr.strip() or run.stdout.strip()
                     or f"the code generator refused with status "
@@ -1190,7 +1206,7 @@ def page_provenance(document: pathlib.Path, codegen: pathlib.Path | None = None,
     """
     # ⚠ Where the generator finds the document, not where this process is: a
     # document handed as text is named relative to the directory it was staged
-    # in, and `cwd` is that directory (`subprocess.run(..., cwd=cwd)`).
+    # in, and `cwd` is that directory (`_generator_run(..., cwd=cwd)`).
     path = document if cwd is None or document.is_absolute() else pathlib.Path(cwd) / document
     before = hashlib.sha256(path.read_bytes()).hexdigest()
     report, refusal = validate_scxml(document, codegen, profile=profile, cwd=cwd)
