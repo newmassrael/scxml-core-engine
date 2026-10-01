@@ -23,7 +23,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::filters;
 use crate::forge::error::GenerateError;
-use crate::forge::expr::{transpile_into_receiving, ExprTarget, Receiving, Refusal};
+use crate::forge::expr::{
+    transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
+};
 use crate::forge::model::{EventSchemaModel, SceType};
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::InferredType;
@@ -318,6 +320,11 @@ pub trait StaticTarget {
     /// `lowered`, a guard reading the payload, held to the delivery having
     /// carried one.
     fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String;
+    /// `value`, a lowered expression of type `ty` ([`InferredType::wire_param_slot`]
+    /// admits the bool, string, narrow-integer and real types), as the typed
+    /// value this backend's wire helpers take: the one a `<param>` crosses to a
+    /// host as, text and JSON alike.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String;
 }
 
 /// Kotlin: a variable is a property of the machine class, a record an
@@ -530,6 +537,18 @@ impl StaticTarget for KotlinTarget {
     }
     fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
         format!("{} != null && ({lowered})", kotlin_payload_field(event))
+    }
+    // The runtime's wire helpers read a `Boolean`, a `String`, or a number
+    // through a `Double`, and Kotlin's unsigned types are not `Number`: so an
+    // integer of at most 32 bits is widened to a `Long` (exact in a `Double`)
+    // and a `Float` to a `Double`.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool | InferredType::Str => value.to_string(),
+            InferredType::Int { .. } => format!("({value}).toLong()"),
+            InferredType::Float { bits: 32 } => format!("({value}).toDouble()"),
+            _ => value.to_string(),
+        }
     }
 }
 
@@ -762,6 +781,23 @@ impl StaticTarget for RustTarget {
             "matches!(&self.pending_payload, {machine}Payload::{}(ev) if {lowered})",
             filters::to_event_variant(event.to_string())
         )
+    }
+    // The runtime's `ScriptValue` is what its wire helpers render both the
+    // text and the JSON from, so a value built as one crosses exactly as a
+    // script engine's would. A narrow integer widens to `i64` and a `float` to
+    // `f64`, both exactly.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool => format!("::sce_rust_runtime::ScriptValue::Bool({value})"),
+            InferredType::Str => format!("::sce_rust_runtime::ScriptValue::String({value})"),
+            InferredType::Int { .. } => {
+                format!("::sce_rust_runtime::ScriptValue::Int(i64::from({value}))")
+            }
+            InferredType::Float { bits: 32 } => {
+                format!("::sce_rust_runtime::ScriptValue::Double(f64::from({value}))")
+            }
+            _ => format!("::sce_rust_runtime::ScriptValue::Double({value})"),
+        }
     }
 }
 
@@ -1069,6 +1105,15 @@ pub fn lower(
             &plain_renames,
             &rewrites,
         )?;
+        // An invoke the host runs evaluates its request when it starts, at
+        // the state's entry, where no event's payload is in scope.
+        for invoke in &mut state.invokes {
+            if let crate::model::Invoke::Unsupported(info) = invoke {
+                for param in &mut info.base.params {
+                    lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                }
+            }
+        }
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
             let paths = scope.paths(schema);
@@ -1272,7 +1317,8 @@ fn initial_value(
     renames: &HashMap<&str, &str>,
     slot: InferredType,
 ) -> Result<String, Refusal> {
-    let value = transpile_into_receiving(expr, target.expr_target(), ctx, renames, slot)?;
+    // A variable owns its value, so a `string` is made owned on the way in.
+    let value = transpile_into_owned(expr, target.expr_target(), ctx, renames, slot)?;
     if value.can_fail {
         return Err(crate::forge::error::ExprError::UnsupportedConstruct {
             construct: "an initial value that can overflow or fail (a machine that is not yet \
@@ -1497,8 +1543,12 @@ fn lower_action(
 ) -> Result<bool, GenerateError> {
     let target = rewrites.target;
     let lang = target.name();
+    // What a statement writes lands in a place that owns it (a variable, a
+    // record's field, a list's element), so a `string` is made owned on the way
+    // in. A condition's slot is `bool` and a logged value's is untyped, and
+    // neither is a string slot, so they lower exactly as they did.
     let lower = |text: &str, slot: InferredType| {
-        transpile_into_receiving(text, target.expr_target(), ctx, renames, slot).map_err(|r| {
+        transpile_into_owned(text, target.expr_target(), ctx, renames, slot).map_err(|r| {
             GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
         })
     };
@@ -1634,9 +1684,72 @@ fn lower_action(
             action.native_code = target.clear(name);
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
+        // What a `<send>` carries is read from the machine's fields now, when
+        // it runs (W3C SCXML 6.2.3 evaluates its arguments once, at the send).
+        "send" => {
+            for param in &mut action.params {
+                lower_wire_param(param, ctx, renames, rewrites)?;
+            }
+        }
         _ => {}
     }
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
+}
+
+/// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`
+/// (SCE Accepted Subset §2.15), in place: the expression, read from the
+/// machine's fields, as the typed value the backend's wire helpers take
+/// ([`StaticTarget::wire_value`]) — `Param::native_value`, and whether it can
+/// fail.
+///
+/// A static literal is folded at build time and left as it is. Validation
+/// already judged the expression against the same scope and held its type to
+/// [`InferredType::wire_param_slot`], so a refusal here is a lowering this
+/// backend lacks, not a mistake in the document.
+fn lower_wire_param(
+    param: &mut crate::model::Param,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    if param.is_static_literal {
+        return Ok(());
+    }
+    // A `location` names a variable, and reading one is reading it as an
+    // expression.
+    let (written, spelling) = if param.expr.trim().is_empty() {
+        (param.location.clone(), param.location_spelling.clone())
+    } else {
+        (param.expr.clone(), param.expr_spelling.clone())
+    };
+    if written.trim().is_empty() {
+        return Ok(());
+    }
+    let target = rewrites.target;
+    let lang = target.name();
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "<param name=\"{}\"> `{written}` has no {lang} lowering: {why}",
+            param.name
+        ))
+    };
+    let ty = crate::forge::expr::judge_into(
+        &written,
+        ctx,
+        crate::forge::expr::Expected::Hint(InferredType::Unknown),
+    )
+    .map_err(|r| refused(r.error.to_string()))?;
+    let slot = ty
+        .wire_param_slot()
+        .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;
+    // The value is read once and is its own: an owned string, for the typed
+    // value that carries it.
+    let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
+        .map_err(|r| refused(r.error.to_string()))?;
+    rewrites.note(&written, spelling.as_ref(), &value.text);
+    param.native_value = target.wire_value(slot, &value.text);
+    param.native_fails = value.can_fail;
+    Ok(())
 }
 
 /// Every `<elseif>` condition and every block nested inside `action`,
@@ -1864,5 +1977,205 @@ mod tests {
         // is not among the blocks a state's own transitions carry.
         let history = r##"<history id="h"><transition target="counting"><send event="later" target="#_parent" delay="5s"/></transition></history>"##;
         assert_eq!(shape(&counter_in_outer(history)), None);
+    }
+
+    // ── a string a variable holds ───────────────────────────────────────────
+    //
+    // A string inside a Rust expression is borrowed (`&str`) and a variable
+    // holds an owned `String`, so a value written into one has to be made
+    // owned on the way in — as a value read out of one into a host call's
+    // `&str` parameter must NOT be. Kotlin has one `String` for both.
+
+    const WITH_STRING: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="label" sce:type="string" expr="'idle'"/>
+    <data id="other" sce:type="string" expr="'x'"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <assign location="label" expr="'busy'"/>
+      <assign location="other" expr="label"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    /// The initial values of `WITH_STRING`'s fields and the two statements its
+    /// `go` transition lowers to, for `lang`.
+    fn lowered_strings(lang: Language) -> (Vec<String>, Vec<String>) {
+        let mut model = SCXMLParser::new()
+            .parse_string(WITH_STRING, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowering = match lang {
+            Language::Rust => lower_rust(&mut model, "M", &[]),
+            Language::Kotlin => lower_kotlin(&mut model, "M", &[]),
+            other => panic!("{other:?} does not lower sce-static"),
+        }
+        .expect("lowers");
+        let statements = model.states["s"].transitions[0]
+            .actions
+            .iter()
+            .map(|a| a.native_code.clone())
+            .collect();
+        (
+            lowering.fields.iter().map(|f| f.init.clone()).collect(),
+            statements,
+        )
+    }
+
+    #[test]
+    fn a_string_written_into_a_rust_variable_is_made_owned() {
+        let (inits, statements) = lowered_strings(Language::Rust);
+        // A literal is borrowed, and so is a read of another variable.
+        assert!(inits[0].ends_with(".to_string()"), "{inits:?}");
+        assert!(inits[1].ends_with(".to_string()"), "{inits:?}");
+        assert_eq!(statements.len(), 2, "{statements:?}");
+        for statement in &statements {
+            assert!(statement.contains(".to_string()"), "{statements:?}");
+        }
+    }
+
+    // ── a `<param>` read from the machine's fields ──────────────────────────
+    //
+    // What a `<send>` carries is lowered to the typed value the backend's wire
+    // helpers take, so it crosses exactly as a script engine's would: Rust
+    // builds a `ScriptValue`, Kotlin widens to what `valueToWireString` reads.
+
+    const WITH_SEND_PARAMS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="flag" sce:type="bool" expr="true"/>
+    <data id="label" sce:type="string" expr="'x'"/>
+    <data id="small" sce:type="uint8" expr="1"/>
+    <data id="signed" sce:type="int16" expr="-2"/>
+    <data id="real" sce:type="float64" expr="0.5"/>
+    <data id="single" sce:type="float32" expr="0.5"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <send event="out">
+        <param name="flag" expr="flag"/>
+        <param name="label" expr="label"/>
+        <param name="small" expr="small"/>
+        <param name="signed" expr="signed"/>
+        <param name="real" expr="real"/>
+        <param name="single" expr="single"/>
+        <param name="sum" expr="small + 1"/>
+        <param name="lit" expr="'lit'"/>
+        <param name="loc" location="small"/>
+      </send>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    /// `WITH_SEND_PARAMS`'s params after lowering for `lang`, by name: the
+    /// typed value and whether it can fail.
+    fn lowered_params(lang: Language) -> std::collections::BTreeMap<String, (String, bool)> {
+        let mut model = SCXMLParser::new()
+            .parse_string(WITH_SEND_PARAMS, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        match lang {
+            Language::Rust => lower_rust(&mut model, "M", &[]),
+            Language::Kotlin => lower_kotlin(&mut model, "M", &[]),
+            other => panic!("{other:?} does not lower sce-static"),
+        }
+        .expect("lowers");
+        model.states["s"].transitions[0].actions[0]
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), (p.native_value.clone(), p.native_fails)))
+            .collect()
+    }
+
+    #[test]
+    fn a_rust_param_is_a_script_value_of_the_type_the_expression_has() {
+        let params = lowered_params(Language::Rust);
+        let value = |name: &str| params[name].0.as_str();
+        let rt = "::sce_rust_runtime::ScriptValue::";
+        assert!(
+            value("flag").starts_with(&format!("{rt}Bool(")),
+            "{params:?}"
+        );
+        assert!(
+            value("label").starts_with(&format!("{rt}String("))
+                && value("label").contains(".to_string()"),
+            "an owned string: {params:?}"
+        );
+        for narrow in ["small", "signed", "sum", "loc"] {
+            assert!(
+                value(narrow).starts_with(&format!("{rt}Int(i64::from(")),
+                "{narrow}: an integer of at most 32 bits widens to i64: {params:?}"
+            );
+        }
+        assert!(
+            value("real").starts_with(&format!("{rt}Double(")) && !value("real").contains("from"),
+            "{params:?}"
+        );
+        assert!(
+            value("single").starts_with(&format!("{rt}Double(f64::from(")),
+            "{params:?}"
+        );
+    }
+
+    #[test]
+    fn a_kotlin_param_is_widened_to_what_the_wire_helpers_read() {
+        let params = lowered_params(Language::Kotlin);
+        let value = |name: &str| params[name].0.as_str();
+        // A `Boolean`, a `String` and a `Double` are read as they are.
+        for plain in ["flag", "label", "real"] {
+            assert!(
+                !value(plain).is_empty()
+                    && !value(plain).contains("toLong")
+                    && !value(plain).contains("toDouble"),
+                "{plain}: {params:?}"
+            );
+        }
+        // Kotlin's unsigned types are not `Number`, and a `Long` is exact in a
+        // `Double`: so an integer of at most 32 bits is widened to one.
+        for narrow in ["small", "signed", "sum", "loc"] {
+            assert!(value(narrow).ends_with(".toLong()"), "{narrow}: {params:?}");
+        }
+        assert!(value("single").ends_with(".toDouble()"), "{params:?}");
+    }
+
+    #[test]
+    fn only_a_checked_operation_can_fail_and_a_literal_is_left_alone() {
+        for lang in [Language::Rust, Language::Kotlin] {
+            let params = lowered_params(lang);
+            for (name, (value, fails)) in &params {
+                match name.as_str() {
+                    // `small + 1` on a `uint8` is checked.
+                    "sum" => assert!(*fails, "{lang:?} {name}: {params:?}"),
+                    // A string literal is folded at build time and crosses as
+                    // written, so it has no native value at all.
+                    "lit" => assert!(value.is_empty() && !*fails, "{lang:?} {name}: {params:?}"),
+                    _ => assert!(!*fails && !value.is_empty(), "{lang:?} {name}: {params:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_param_naming_a_location_is_read_as_the_variable_it_names() {
+        for lang in [Language::Rust, Language::Kotlin] {
+            let params = lowered_params(lang);
+            assert_eq!(
+                params["loc"].0, params["small"].0,
+                "{lang:?}: `location=\"small\"` and `expr=\"small\"` read the same field"
+            );
+        }
+    }
+
+    #[test]
+    fn a_string_written_into_a_kotlin_variable_needs_no_conversion() {
+        let (inits, statements) = lowered_strings(Language::Kotlin);
+        for text in inits.iter().chain(&statements) {
+            assert!(!text.contains("to_string"), "{inits:?} {statements:?}");
+            assert!(!text.contains("toString"), "{inits:?} {statements:?}");
+        }
     }
 }

@@ -66,12 +66,21 @@ HOST_INVOKER="x-sce-host"
 # delayed host-served send is in the delayed-send queue like any other.
 DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
 
+# The typed-parameter fixture: a `datamodel="sce-static"` machine, so a
+# `<param expr>` is a typed expression over the machine's own fields and not
+# script text. A fourth document because it is the one that needs BOTH
+# declarations — it sends to the host and invokes it — and the other three
+# each hold one axis.
+STATIC_PARAMS_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 "$CODEGEN" generate "$INVOKER_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 "$CODEGEN" generate "$DELAYED_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
+"$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l rust -o "$TMP/" \
+    --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -84,9 +93,11 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "mod statechart_delayed_host_send_sm;"
     echo "mod statechart_host_invoker_sm;"
     echo "mod statechart_host_processor_sm;"
+    echo "mod statechart_static_host_params_sm;"
     echo "pub use statechart_delayed_host_send_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
+    echo "pub use statechart_static_host_params_sm::*;"
 } > "$MODRS"
 
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"

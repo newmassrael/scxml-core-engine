@@ -490,6 +490,33 @@ impl InferredType {
         }
     }
 
+    /// The type a `<param>`'s value is lowered as when it crosses to a host
+    /// (SCE Accepted Subset §2.15), or `None` for one that has no wire spelling
+    /// every backend reads alike.
+    ///
+    /// A `<param>` crosses twice, as text and as a JSON value in the event's
+    /// data, and each backend renders both from its own native type. A bool, a
+    /// string, an integer of at most 32 bits and a real are carried exactly by
+    /// all of them. A 64-bit integer is not: Kotlin's wire helpers read a `Long`
+    /// through a `Double`, so one past 2^53 would cross with its low bits wrong
+    /// and no error, while Rust would carry it exactly — two backends giving one
+    /// document two values. Bytes, a list and a record have no such spelling
+    /// yet. A literal no context typed is the narrowest it can be (`int32`,
+    /// `float64`) rather than the widest ([`Self::to_sce_type`]'s choice), since
+    /// here a wider one is the one that is refused.
+    pub fn wire_param_slot(self) -> Option<InferredType> {
+        match self {
+            Self::Bool | Self::Str | Self::Float { .. } => Some(self),
+            Self::Int { bits, .. } if bits <= 32 => Some(self),
+            Self::UntypedInt => Some(Self::Int {
+                signed: true,
+                bits: 32,
+            }),
+            Self::UntypedFloat => Some(Self::Float { bits: 64 }),
+            _ => None,
+        }
+    }
+
     /// Map an `SceType` from the model layer to an inferred concrete type.
     ///
     /// This is the single entry point from the generator-layer type system

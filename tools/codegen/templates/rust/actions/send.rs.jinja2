@@ -160,14 +160,23 @@
 {# Check if any param requires dynamic expression evaluation (test 567). #}
 {% if has_params %}
 {% set has_dynamic_params = action.params | rejectattr("is_static_literal") | list | length > 0 %}
+{# Under `datamodel="sce-static"` a param's value is lowered to native code
+   (`Param::native_value`) and read from the machine's fields, so it needs no
+   script engine; every other dynamic param is evaluated by one. The two are
+   told apart because the engine's setup below is emitted only for the second
+   kind, and a machine with none has no engine to set up. #}
+{% set has_engine_params = action.params | rejectattr("is_static_literal") | rejectattr("native_value") | list | length > 0 %}
+{% set has_failing_native_params = action.params | selectattr("native_fails") | list | length > 0 %}
 {% else %}
 {% set has_dynamic_params = false %}
+{% set has_engine_params = false %}
+{% set has_failing_native_params = false %}
 {% endif %}
 {# W3C SCXML 5.6.2: a <content expr> is read at send time, and one that fails
    costs what a failing <param> does — reported, the message sent with '' as
    its value, the block ended — so it rides the same flag. #}
 {% set content_expr = action.contentexpr and model.needs_script_engine and not has_params and not has_namelist and not action.content %}
-{% set payload_can_fail = has_dynamic_params or content_expr %}
+{% set payload_can_fail = has_engine_params or has_failing_native_params or content_expr %}
 {# The event name every event-carrying arm uses: the prologue's evaluation
    when there is an `eventexpr`, nothing to resolve otherwise. #}
 {% set dyn_event = action.eventexpr and model.needs_script_engine and not action.event %}
@@ -456,7 +465,7 @@
         ::std::collections::BTreeMap::new();
     // W3C SCXML 6.2: Evaluate <param> expressions at send time
     let event_data_string: String = {
-{% if has_dynamic_params %}
+{% if has_engine_params %}
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
@@ -467,6 +476,27 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
         wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String("{{ param.static_value | escape_rust }}".to_string()));
+{% elif param.native_value and param.native_fails %}
+        // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+        // checked operation that overflows leaves the pair out and says so.
+        match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok({{ param.native_value }})
+        })() {
+            Ok(val) => {
+                wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' overflowed or failed");
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+{% endif %}
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
+{% elif param.native_value %}
+        // The value is read from the machine's field as it stands now.
+        wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push({{ param.native_value }});
 {% elif param.expr %}
         match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
             Ok(val) => {

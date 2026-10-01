@@ -82,6 +82,7 @@ use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge, Sc
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
+use crate::forge::types::InferredType;
 use crate::model::{Action, Datamodel, SCXMLModel};
 
 /// The global of the script engine the library is bound to, so every lowered
@@ -379,6 +380,11 @@ impl StaticTarget for JsTarget {
     // is false and says so: there is no channel to check before it.
     fn payload_guard(&self, _machine: &str, _event: &str, lowered: &str) -> String {
         lowered.to_string()
+    }
+    // The Interpreter's own data model reads the lowered expression where the
+    // document wrote it, so a `<param>` has no typed value to build.
+    fn wire_value(&self, _ty: InferredType, value: &str) -> String {
+        value.to_string()
     }
 }
 

@@ -147,6 +147,11 @@ impl ScriptEngineCauseKind {
     /// (`crate::forge::static_datamodel`) or needs an engine whatever the
     /// document declares.
     ///
+    /// A host-run invoke's cause is its request's `<param>`s: its `srcexpr`,
+    /// `namelist`, `<content expr>` and `idlocation` are refused by the model,
+    /// so none of them reaches the generator under this data model, and each
+    /// `<param>` is lowered like a `<send>`'s (`static_lowering::lower_wire_param`).
+    ///
     /// Exhaustive, so a new cause is decided here rather than falling on
     /// either side by default.
     pub fn is_typed_under_static(&self) -> bool {
@@ -159,6 +164,7 @@ impl ScriptEngineCauseKind {
             | C::ElseIfCondition { .. }
             | C::AssignAction { .. }
             | C::LogExpr { .. }
+            | C::HostInvokeExpr { .. }
             | C::DonedataParam { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
@@ -171,7 +177,6 @@ impl ScriptEngineCauseKind {
             | C::StaticInvokeNamelist { .. }
             | C::MeshRpcSrcExpr { .. }
             | C::MeshRpcRequestExpr { .. }
-            | C::HostInvokeExpr { .. }
             | C::DonedataContent { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
         }
@@ -738,6 +743,13 @@ pub fn record_host_invoke_causes(model: &mut SCXMLModel) {
         for invoke in &state.invokes {
             if let Invoke::Unsupported(info) = invoke {
                 if let Some(cause) = host_invoke_cause(info) {
+                    // The same cut `analyze` makes: under `sce-static` what
+                    // the request evaluates is lowered, so it costs no engine.
+                    if model.datamodel == crate::model::Datamodel::SceStatic
+                        && cause.kind.is_typed_under_static()
+                    {
+                        continue;
+                    }
                     found.push(cause);
                 }
             }

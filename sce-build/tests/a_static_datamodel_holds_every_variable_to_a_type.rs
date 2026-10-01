@@ -745,6 +745,148 @@ fn a_host_run_invokes_param_is_still_accepted() {
     assert!(out.contains("cuont"), "it names what was written:\n{out}");
 }
 
+// ── What a <param> carries across to the host ───────────────────────────
+//
+// A `<param>` of a `<send>` or of an `<invoke>` the host runs is a typed
+// expression, read from the machine's fields when the element runs, and it
+// crosses as text and as a JSON value. The values every backend spells alike
+// are carried; any other is refused where it is written, not dropped or carried
+// differently by two backends.
+
+/// A `sce-static` machine whose `<state>` (line 8) sends to the host from its
+/// `<onentry>`, with `params` on line 11.
+fn sending(params: &str) -> String {
+    machine(&format!(
+        r#"<state id="s">
+    <onentry>
+      <send type="x-sce-host" event="notify">
+        {params}
+      </send>
+    </onentry>
+    <transition event="go" target="done"/>
+  </state>"#
+    ))
+}
+
+#[test]
+fn every_value_a_param_can_carry_is_accepted() {
+    for expr in ["count", "ready", "count + 1", "7", "1.5", "'text'"] {
+        let params = format!(r#"<param name="k" expr="{expr}"/>"#);
+        let (ok, out) = run(&["check"], &sending(&params));
+        assert!(
+            ok,
+            "`{expr}` is a bool, a string, a narrow integer or a real:\n{out}"
+        );
+    }
+    // A location names a variable and is read as one.
+    let (ok, out) = run(
+        &["check"],
+        &sending(r#"<param name="k" location="count"/>"#),
+    );
+    assert!(ok, "a location names a variable:\n{out}");
+}
+
+#[test]
+fn a_param_whose_value_has_no_wire_spelling_is_refused_on_its_line() {
+    // `big` is a 64-bit integer: a backend that reads numbers through a double
+    // would carry one past 2^53 with its low bits wrong, and say nothing.
+    let document = sending(r#"<param name="k" expr="big"/>"#).replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="big" sce:type="int64" expr="0"/>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(
+        !ok,
+        "a 64-bit integer has no wire spelling every backend shares:\n{out}"
+    );
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+}
+
+#[test]
+fn a_param_reading_the_events_payload_is_refused_on_its_line() {
+    // Reading it needs the payload channel's guard around the whole element,
+    // which the lowering of a `<param>` does not yet put there.
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            EVERY_FIELD,
+            r#"<state id="s"><transition event="day.picked" type="internal"><send type="x-sce-host" event="forward"><param name="d" expr="_event.data.dayOfMonth"/></send></transition></state>"#,
+        ),
+    );
+    assert!(!ok, "a payload read in a param has no lowering yet:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
+    assert!(out.contains("payload"), "it says why:\n{out}");
+}
+
+#[test]
+fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
+    // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
+    // would hand to an engine this data model does not have; they are refused,
+    // as the same attributes of every other element are.
+    for invoke in [
+        r#"<invoke type="x-sce-host" id="h" srcexpr="'a'"/>"#,
+        r#"<invoke type="x-sce-host" id="h" namelist="count"/>"#,
+        r#"<invoke type="x-sce-host" id="h"><content expr="count"/></invoke>"#,
+    ] {
+        let document = machine(&format!(
+            "<state id=\"s\">\n    {invoke}\n    <transition event=\"go\" target=\"done\"/>\n  </state>"
+        ));
+        let (ok, out) = run(&["check"], &document);
+        assert!(!ok, "{invoke} has no typed form:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+    }
+}
+
+#[test]
+fn a_static_machine_that_sends_and_invokes_the_host_needs_no_script_engine() {
+    // The manifest says which backends need an engine to run the machine. The
+    // `<param>`s are lowered to native code, so this one needs none; the same
+    // document under `ecmascript` evaluates them in an engine and still does.
+    let document = machine(
+        r#"<state id="s">
+    <onentry><send type="x-sce-host" event="notify"><param name="k" expr="count"/></send></onentry>
+    <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
+    <transition event="done.invoke.h" target="done"/>
+  </state>"#,
+    );
+    let generate = |language: &str, document: &str| {
+        let out_dir = tempdir().expect("tempdir");
+        run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+                "--host-processor",
+                "x-sce-host",
+                "--host-invoker",
+                "x-sce-host",
+            ],
+            document,
+        )
+    };
+    for language in ["rust", "kotlin"] {
+        let (ok, out) = generate(language, &document);
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a sce-static machine's params are read from its fields:\n{out}"
+        );
+    }
+    let ecmascript = document
+        .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
+        .replace(r#" sce:type="uint32""#, "")
+        .replace(r#" sce:type="bool""#, "");
+    let (ok, out) = generate("kotlin", &ecmascript);
+    assert!(ok, "the same document under ecmascript generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":true"),
+        "under ecmascript a param is evaluated by an engine:\n{out}"
+    );
+}
+
 // ── A variable is published by sce:direction="out" ──────────────────────
 
 #[test]

@@ -2640,8 +2640,9 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
-| a `<param>` of an `<invoke type="scxml">` | A child session of this model has native fields of its own, which only its own code sets, and no generated code hands a parent's `<param>` to one: the value would be typed, accepted and never arrive (measured 2026-10-01 on Rust and Kotlin; under `ecmascript` the same document seeds the child's datamodel). Refused at the `<param>` as `scxml/static-datamodel-rule` until a value can land in a field; the child is given a value in an event it takes. A host-run invoke's `<param>` is part of the request the host receives and is judged as any typed expression |
+| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
+| a `<param>` of an `<invoke type="scxml">` | A child session of this model has native fields of its own, which only its own code sets, and no generated code hands a parent's `<param>` to one: the value would be typed, accepted and never arrive (measured 2026-10-01 on Rust and Kotlin; under `ecmascript` the same document seeds the child's datamodel). Refused at the `<param>` as `scxml/static-datamodel-rule` until a value can land in a field; the child is given a value in an event it takes |
+| a `<param>` of a `<send>` or of a host-run `<invoke>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -2653,12 +2654,57 @@ check and the lowering all read, and which shares its payload registration
 with the typed guard path. Each is judged against the
 place it lands in: a `<data expr>` and an `<assign expr>` against the
 variable's type (the `location` must name a declared variable), a
-transition's or `<if>`/`<elseif>`'s `cond` as `bool`, a `<log expr>` or
-`<param expr>` as whatever it is. A name the scope does not carry, and a
+transition's or `<if>`/`<elseif>`'s `cond` as `bool`, a `<log expr>` as
+whatever it is, a `<param expr>` as one of the values a param carries (below).
+A name the scope does not carry, and a
 value of a kind the place does not admit, are refused at the expression's
 own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
+
+**Params.** A `<param>` of a `<send>`, and of an `<invoke>` the host runs
+(§2.12), is a typed expression read from the machine's fields at the moment the
+element runs — W3C SCXML 6.2.3 evaluates a `<send>`'s arguments once, at the
+send, and a start of an invoke is the same instant — and lowered to native
+code, so it needs no script engine and reads the value the field holds now,
+which a copy kept anywhere else would not. A `location` names a variable and is
+read as `expr="<variable>"`. The value crosses twice, as the text a form or a
+host's `params` carries and as a JSON value in `_event.data`, and both are
+rendered from one typed value: a bool is `true` / `false` and a JSON boolean, a
+string is itself and a JSON string, an integer is its decimal digits and a JSON
+number, a real is its decimal spelling and a JSON number. ⚠ The text of a real
+is the backend's own spelling, and the two differ where one writes an exponent
+(Kotlin `1.0E-5`, Rust `0.00001`): the wire helpers every `<param>` already
+crosses through have always done so, and a receiver reads the text as a number.
+Only the
+values every backend renders alike are admitted: a bool, a string, an integer of
+at most 32 bits (`int8` … `uint32`, widened to `i64` / `Long`, which a `double`
+holds exactly) and a real (`float32` widened to `f64` / `Double`, exactly). A
+64-bit integer is refused because a backend that reads a JSON number through a
+`double` carries one past 2^53 with its low bits wrong and no error, while
+another carries it exactly: two backends giving one document two values. Bytes,
+a list and a record have no spelling yet. A value read from the triggering
+event's payload is refused too: reading it needs the payload channel's guard
+around the whole element, which a `<param>` does not yet get.
+
+A value that cannot be computed — a checked integer operation that overflows —
+is the evaluation that failed (W3C SCXML 5.7.1): `error.execution` is raised
+when the document declares it, the pair is left out, and the message still goes
+and the invocation still starts, exactly as a pair a script engine could not
+evaluate. A literal string is folded at build time and crosses as written.
+`sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml`
+holds Rust and Kotlin to it: a run that changes every variable before the send
+and the invoke read them is told from a copy taken at start-up, and a `<param>`
+that overflows is told from one dropped in silence. Measured 2026-10-01, a
+`<param expr>` here had been typed, accepted and never lowered: the Kotlin
+machine sent an empty payload, the Rust machine called a script engine it had
+not been given and did not compile, and a host invoke read a copy of the
+variable inside an engine that `<assign>` never wrote.
+
+Rust writes a string into a variable owned — `"busy".to_string()`, and a read
+of another variable cloned — because a string inside an expression is borrowed
+and a field holds a `String`; a string handed to a host action stays borrowed
+(`&str`). Kotlin has one `String` for both.
 
 **Integer operations.** A machine receives the failures of what it runs
 (SCE_FORGE.md §3.4.1): every integer operation is checked at its own width —

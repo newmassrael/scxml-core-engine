@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `<param>` of a
+  `<send>` or `<invoke>` the HOST serves carries the value of a typed
+  expression, read from the machine's own fields at the moment the send or the
+  invoke happens.
+
+  Until it was lowered, a `<param expr>` here was typed, accepted and then
+  never evaluated against the fields: the Kotlin machine sent an empty payload,
+  the Rust machine called a script engine it had not been given and did not
+  compile, and a host invoke read a copy of the variable inside a script engine
+  that `<assign>` never wrote. Which of the four happened was the backend's, and
+  none of them was the value the document wrote.
+
+  The run `bump`, `go` changes `count`, `ready` and `label` before the send and
+  the invoke read them, so a copy taken at start-up (`count` 3, `ready` false,
+  `label` "idle") is told from the value the fields hold now (`count` 4,
+  `ready` true, `label` "busy"):
+
+    send    count = 4   ready = true   label = "busy"   twice = 8
+            delta = -5  ratio = 1.5
+    invoke  the same
+
+  `twice` is an expression rather than a variable, so a lowering that handled
+  only a bare name would still be wrong here. `delta` (a signed 16-bit
+  integer) and `ratio` (a real) are the other kinds of value a param carries:
+  a negative number and a fraction cross as the text and the JSON number they
+  spell. `boom` is `count * 2000000000`, which a 32-bit field cannot hold: the
+  checked multiplication fails, so its pair is left out and `error.execution` is
+  raised (W3C SCXML 5.7.1) while the message still goes and the invocation
+  still starts. `errors` counts those, one for the send and one for the invoke,
+  so a lowering that dropped the pair without saying so is told from one that
+  reported it.
+
+  Deliberately single-axis: no event payload, no delay, no namelist.
+  `statechart_host_processor.scxml` owns the dispatch under `ecmascript`; this
+  one owns what a typed expression puts on the wire.
+
+  Generated with BOTH host declarations, processor and invoker, naming the type
+  x-sce-host (scripts/regen_host_processor.sh and
+  scripts/regen_host_processor_kotlin.sh name the flags; an XML comment cannot
+  spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_static_host_params">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="3"/>
+    <data id="ready" sce:type="bool" expr="false"/>
+    <data id="label" sce:type="string" expr="'idle'"/>
+    <data id="delta" sce:type="int16" expr="-5"/>
+    <data id="ratio" sce:type="float64" expr="1.5"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="count" expr="count + 1"/>
+      <assign location="ready" expr="true"/>
+      <assign location="label" expr="'busy'"/>
+    </transition>
+    <transition event="go" target="working"/>
+  </state>
+
+  <state id="working">
+    <onentry>
+      <send type="x-sce-host" target="somewhere" event="notify">
+        <param name="count" expr="count"/>
+        <param name="ready" expr="ready"/>
+        <param name="label" expr="label"/>
+        <param name="twice" expr="count * 2"/>
+        <param name="delta" expr="delta"/>
+        <param name="ratio" expr="ratio"/>
+        <param name="boom" expr="count * 2000000000"/>
+      </send>
+    </onentry>
+    <invoke type="x-sce-host" id="h">
+      <param name="count" expr="count"/>
+      <param name="ready" expr="ready"/>
+      <param name="label" expr="label"/>
+      <param name="twice" expr="count * 2"/>
+      <param name="delta" expr="delta"/>
+      <param name="ratio" expr="ratio"/>
+      <param name="boom" expr="count * 2000000000"/>
+    </invoke>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="done.invoke.h" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

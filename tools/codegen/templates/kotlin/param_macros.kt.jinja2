@@ -43,6 +43,37 @@
 {% if typed and not param.envelope_metadata %}
 {{ indent }}putParam({{ typed }}, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% endif %}
+{% elif param.native_value %}
+{# `datamodel="sce-static"`: the value is computed from the machine's own
+   fields, widened to what `valueToWireString` and `putParam` read (a `Long`
+   for an integer, a `Double` for a real), so it crosses exactly as a script
+   engine's would. A checked operation that overflows is the evaluation that
+   failed. A block of its own, because the sites that call this macro unroll it
+   once per param in one scope. #}
+{% if param.native_fails %}
+{{ indent }}try {
+{% else %}
+{{ indent }}run {
+{% endif %}
+{{ indent }}    val v: Any? = {{ param.native_value }}
+{{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + valueToWireString(v)
+{% if typed and not param.envelope_metadata %}
+{{ indent }}    putParam({{ typed }}, "{{ param.name | escape_kotlin }}", v)
+{% endif %}
+{% if param.native_fails %}
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the pair.
+{% if 'error.execution' in model.events %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{% endif %}
+{% if failed_flag %}
+{{ indent }}    {{ failed_flag }} = true
+{% endif %}
+{{ indent }}}
+{% else %}
+{{ indent }}}
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 {{ indent }}try {
 {{ indent }}    // The param crosses as text, and `toString()` is the platform's

@@ -3,6 +3,8 @@
 mod statechart_delayed_host_send_sm;
 mod statechart_host_invoker_sm;
 mod statechart_host_processor_sm;
+mod statechart_static_host_params_sm;
 pub use statechart_delayed_host_send_sm::*;
 pub use statechart_host_invoker_sm::*;
 pub use statechart_host_processor_sm::*;
+pub use statechart_static_host_params_sm::*;

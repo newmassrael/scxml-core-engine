@@ -106,6 +106,30 @@ for src in "$INVOKER_TMP"/*Sm.kt; do
     cp "$src" "$INVOKER_DIR/"
 done
 
+# The typed-parameter fixture: a `datamodel="sce-static"` machine whose `<send>`
+# and `<invoke>` both carry `<param expr>`s over its own fields. It needs BOTH
+# declarations at once, which is why it is a fourth document and not folded into
+# one of the three above. Its own package for the reason the others have theirs.
+STATIC_PARAMS_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml"
+STATIC_PARAMS_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_static_host_params"
+STATIC_PARAMS_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l kotlin -o "$STATIC_PARAMS_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-processor "$HOST_PROCESSOR" \
+    --host-invoker "$HOST_PROCESSOR"
+
+mkdir -p "$STATIC_PARAMS_DIR"
+find "$STATIC_PARAMS_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$STATIC_PARAMS_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${STATIC_PARAMS_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$STATIC_PARAMS_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"
+echo "Regenerated: $STATIC_PARAMS_DIR/ from $STATIC_PARAMS_FIXTURE (--host-processor and --host-invoker $HOST_PROCESSOR)"

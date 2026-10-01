@@ -386,6 +386,78 @@ impl<'a> Judge<'a> {
         )
     }
 
+    /// A `<param>` of a `<send>` or of an `<invoke>` the host runs, judged as
+    /// the value that crosses to the host (SCE Accepted Subset §2.15).
+    ///
+    /// Its expression is read from the machine's fields when the element runs,
+    /// and lowered to native code that makes the value both the text the
+    /// pair crosses as and the JSON value in the event's data. That holds for
+    /// the values every backend spells alike
+    /// ([`InferredType::wire_param_slot`]); any other is refused where it is
+    /// written rather than dropped, or carried differently by two backends. A
+    /// value read from the triggering event's payload is refused too: reading
+    /// it needs the payload channel's guard around the whole element, which the
+    /// lowering of a `<param>` does not yet put there.
+    ///
+    /// `element` names the element a refusal places the param in. A `location`
+    /// is read as an expression naming a variable, which is what it is.
+    fn wire_param(
+        &self,
+        ctx: &TypeCtx<'_>,
+        param: &crate::model::Param,
+        element: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        // A string literal is folded at build time and crosses as written.
+        if param.is_static_literal {
+            return Ok(());
+        }
+        let (written, spelling) = if param.expr.trim().is_empty() {
+            (param.location.as_str(), param.location_spelling.as_ref())
+        } else {
+            (param.expr.as_str(), param.expr_spelling.as_ref())
+        };
+        if written.trim().is_empty() {
+            return Ok(());
+        }
+        let ty = self.expr(
+            ctx,
+            written,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        let at = param.source_location.as_ref();
+        let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
+        let construct = format!("<param name=\"{}\"> of {element}", param.name);
+        if crate::forge::expr::references_event_data_lexically(written) {
+            return Err(self.rule_at(
+                construct,
+                "a <param> of this data model is read from the machine's fields when its \
+                 element runs; one that reads the triggering event's payload has no \
+                 lowering yet, so copy the value into a variable first",
+                line,
+                col,
+                state,
+                written,
+            ));
+        }
+        if ty.wire_param_slot().is_none() {
+            return Err(self.rule_at(
+                construct,
+                "a <param> crosses to the host as text and as a JSON value, which every \
+                 backend spells alike for a bool, a string, an integer of at most 32 bits \
+                 and a real; a 64-bit integer (which a backend that reads numbers through \
+                 a double would carry with its low bits wrong), bytes, a list and a record \
+                 have no such spelling yet",
+                line,
+                col,
+                state,
+                written,
+            ));
+        }
+        Ok(())
+    }
+
     fn actions(
         &self,
         ctx: &TypeCtx<'_>,
@@ -495,14 +567,7 @@ impl<'a> Judge<'a> {
             }
             "send" => {
                 for param in &action.params {
-                    if !param.expr.trim().is_empty() {
-                        self.expr(
-                            ctx,
-                            &param.expr,
-                            param.expr_spelling.as_ref(),
-                            Expected::Hint(InferredType::Unknown),
-                        )?;
-                    }
+                    self.wire_param(ctx, param, "<send>", state)?;
                 }
                 if !action.contentexpr.is_empty() {
                     return Err(self.untyped(
@@ -603,6 +668,7 @@ impl<'a> Judge<'a> {
         // evaluated as script-engine text.
         let namelist = match invoke {
             Invoke::Scxml(info) => info.namelist.as_str(),
+            Invoke::Unsupported(info) => info.namelist.as_str(),
             _ => "",
         };
         let srcexpr = match invoke {
@@ -610,12 +676,20 @@ impl<'a> Judge<'a> {
                 crate::model::MeshRpcTarget::SrcExpr { srcexpr } => srcexpr.as_str(),
                 _ => "",
             },
+            Invoke::Unsupported(info) => info.srcexpr.as_str(),
+            _ => "",
+        };
+        // A host-run invoke's `<content expr>` is evaluated when it starts, as
+        // its `srcexpr` is.
+        let contentexpr = match invoke {
+            Invoke::Unsupported(info) => info.contentexpr.as_str(),
             _ => "",
         };
         for (attr, value) in [
             ("idlocation", base.idlocation.as_str()),
             ("namelist", namelist),
             ("srcexpr", srcexpr),
+            ("contentexpr", contentexpr),
         ] {
             if !value.is_empty() {
                 return Err(self.untyped_at(
@@ -657,6 +731,36 @@ impl<'a> Judge<'a> {
                     written,
                 ));
             }
+        }
+        // A host-run invoke's `<param>`s are the request the host receives, and
+        // are lowered to native code like a `<send>`'s. One typed by
+        // `sce:request` holds the host to the whole record its schema names
+        // and checks each value against its field, which the lowering does not
+        // yet do — so such a request may carry literals and nothing computed,
+        // rather than a `<param>` the host was promised and is not given.
+        if let Invoke::Unsupported(info) = invoke {
+            let element = format!("<invoke id=\"{}\">", base.invoke_id);
+            if !info.request_schema.is_empty() {
+                if let Some(param) = base.params.iter().find(|p| {
+                    !p.is_static_literal && !(p.expr.trim().is_empty() && p.location.is_empty())
+                }) {
+                    let at = param.source_location.as_ref();
+                    return Err(self.rule_at(
+                        format!("<param name=\"{}\"> of {element}", param.name),
+                        "a request typed by sce:request is held to the record its schema \
+                         names, and a value computed from this data model's variables is not \
+                         yet checked against its field: write it as a literal",
+                        at.and_then(|l| l.line).or(line),
+                        at.and_then(|l| l.col).or(col),
+                        state,
+                        &param.expr,
+                    ));
+                }
+            }
+            for param in &base.params {
+                self.wire_param(ctx, param, &element, state)?;
+            }
+            return Ok(());
         }
         for param in &base.params {
             if !param.expr.trim().is_empty() {

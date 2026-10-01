@@ -954,6 +954,26 @@ pub struct Param {
     /// `<data>` side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// Codegen-internal: under `datamodel="sce-static"`, this `<param>`'s
+    /// value as an expression in the backend's own language, read from the
+    /// machine's fields, of the type the backend's wire helpers take for it
+    /// (Kotlin: a `Boolean`, a `Long`, a `Double` or a `String`; Rust: a
+    /// `ScriptValue`). Empty for a param that is a static literal, and for
+    /// every param of a document under another data model, which a script
+    /// engine evaluates. Set by [`crate::forge::static_lowering`], never by the
+    /// parser, so it is outside the IR contract — but the templates read it
+    /// through the serialized model, as they read [`Action::native_code`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_value: String,
+    /// Codegen-internal: whether [`Self::native_value`] can fail — a checked
+    /// integer operation. Then it is not an expression but one that must run
+    /// where its failure is received, and a failure leaves the pair out and
+    /// raises `error.execution` (W3C SCXML 5.7.1), as one a script engine
+    /// could not evaluate does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_fails: bool,
 }
 
 /// §scxml-5.2: Datamodel variable

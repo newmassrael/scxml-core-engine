@@ -270,6 +270,13 @@ enum Position {
     Operand,
     /// Returned from a function, in the type its signature declares.
     Returned,
+    /// Stored in a place that owns it — a statechart's variable, a record's
+    /// field, a list's element. Told from [`Self::Returned`] by what a rename
+    /// has made of a variable read: it is a `Raw` fragment, exactly as a call
+    /// is, but a call's value is a fresh `String` and a variable read is the
+    /// field itself, which moving out of would take it from the machine. So
+    /// here nothing is trusted to be owned already.
+    Owned,
 }
 
 fn transpile_at(
@@ -310,6 +317,34 @@ pub fn transpile_into_receiving(
         renames,
         Expected::Slot(expected),
         Position::Operand,
+    )
+    .map(|lowered| Receiving {
+        text: lowered.text,
+        can_fail: lowered.can_fail,
+    })
+}
+
+/// [`transpile_into_receiving`] for a place that OWNS what it is given: a
+/// variable, a record's field, a list's element. Rust holds a `string` there as
+/// a `String`, and a string inside an expression is borrowed, so the value is
+/// made owned on its way in ([`emit_rust_owned_str`]) — which a place that
+/// only reads what it is handed, a host call's `&str` parameter or a guard's
+/// operand, must NOT do. Every other target and type emits exactly what
+/// [`transpile_into_receiving`] does.
+pub fn transpile_into_owned(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+) -> Result<Receiving, Refusal> {
+    lower_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(expected),
+        Position::Owned,
     )
     .map(|lowered| Receiving {
         text: lowered.text,
@@ -384,6 +419,9 @@ fn lower_at(
         ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
             emit_rust_returned_str(&ast)?
+        }
+        ExprTarget::Rust if position == Position::Owned && expected == InferredType::Str => {
+            emit_rust_owned_str(&ast)?
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?,
         ExprTarget::Go => emit_go(&ast, expected)?,
@@ -5634,6 +5672,34 @@ fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, Refusal> {
             emit_rust_returned_str(alternate)?,
         )),
         ExprKind::Call { .. } | ExprKind::Raw(_) => emit_rust(expr, InferredType::Str),
+        _ => {
+            let borrowed = emit_rust(expr, InferredType::Str)?;
+            Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
+        }
+    }
+}
+
+/// A `string` value made owned for a place that holds a `String`
+/// ([`Position::Owned`]).
+///
+/// [`emit_rust_returned_str`]'s rule, with one change: a `Raw` fragment is NOT
+/// taken to be owned already. After the rename pass a call is `Raw`, and so is
+/// the read of a variable — which is the machine's own field, and assigning it
+/// somewhere else would move it out from behind `&mut self`. A call's fresh
+/// `String` copied once more costs an allocation and is correct; the field
+/// moved out is not.
+fn emit_rust_owned_str(expr: &TypedExpr) -> Result<String, Refusal> {
+    match &expr.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => Ok(format!(
+            "if {} {{ {} }} else {{ {} }}",
+            emit_rust(condition, InferredType::Bool)?,
+            emit_rust_owned_str(consequent)?,
+            emit_rust_owned_str(alternate)?,
+        )),
         _ => {
             let borrowed = emit_rust(expr, InferredType::Str)?;
             Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))

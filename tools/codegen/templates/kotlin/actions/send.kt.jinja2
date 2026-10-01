@@ -31,6 +31,27 @@
 {{ indent }}paramFailed = true
 {% endif %}
 {% endmacro %}
+{# `datamodel="sce-static"`: a `<param>` whose value `Param::native_value` holds
+   as native code, read from the machine's own fields and widened to what
+   `putParam` and `valueToWireString` take. No script engine reads it. One that
+   can fail — a checked operation — is the evaluation that failed: reported, its
+   pair left out, the message still sent (W3C SCXML 5.7.1), as `param_expr_arm`
+   does for one an engine could not read. `raises` is whether the document
+   declares `error.execution`, which a macro body cannot ask of the context. #}
+{% macro native_param_arm(param, map, machine_name, indent, raises) %}
+{% if param.native_fails %}
+{{ indent }}try {
+{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ param.native_value }})
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if raises %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> could not be read")
+{% endif %}
+{{ indent }}    paramFailed = true
+{{ indent }}}
+{% else %}
+{{ indent }}putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ param.native_value }})
+{% endif %}
+{% endmacro %}
 {# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
    One body for the two ways a send reaches it: a type the build saw served by
    the host (`send_type_host_served`, a Mesh send the build lowered among them)
@@ -92,9 +113,15 @@
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {# A <content expr> that fails costs what a failing <param> does (§scxml-5.6.2):
    the message still goes and the block ends after it. #}
-{% set param_ns = namespace(can_fail=(action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content))) %}
+{# `engine` is whether some param is read by a script engine, which the payload
+   binds below only then. A param lowered to native code (`native_value`) needs
+   none, and can fail only when it is a checked operation. #}
+{% set param_ns = namespace(can_fail=(action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content)), engine=false) %}
 {% for param in action.params %}
-{% if not param.is_static_literal %}
+{% if not param.is_static_literal and not param.native_value %}
+{% set param_ns.can_fail = true %}
+{% set param_ns.engine = true %}
+{% elif param.native_fails %}
 {% set param_ns.can_fail = true %}
 {% endif %}
 {% endfor %}
@@ -272,7 +299,7 @@
    `buildJsonFromParams` serialises into `_event.data`; or the `<content>`.
    A `<param>` that cannot be read drops its pair (`param_expr_arm`). #}
 {% if action.params or has_namelist %}
-{% if param_ns.can_fail and model.needs_script_engine %}
+{% if param_ns.engine and model.needs_script_engine %}
             ensureScriptEngine()
             val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -281,6 +308,8 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
             putParam(sendPayload, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
+{% elif param.native_value %}
+{{ native_param_arm(param, 'sendPayload', machine_name, '            ', 'error.execution' in model.events) }}
 {% elif model.needs_script_engine %}
 {{ param_expr_arm(param, 'sendPayload', 'payloadEngine', 'payloadSid', machine_name, '            ') }}
 {% endif %}
