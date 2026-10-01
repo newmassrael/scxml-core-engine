@@ -3454,11 +3454,69 @@ to `scenario set`, and prints nothing.
 
 `origin` is a declaration (`ai-proposed` or `owner-written`) that SCE cannot
 verify and repeats in every result. This surface runs nothing and says nothing
-about any design: which engine drives a machine, and the judgement of its
-observations against these expectations, are not part of it. The sets shipped
-in `sce-build/tests/fixtures/scenario_sets/` (34 scenarios) are held to the
-schema, read, counted and quoted against their specifications by
+about any design: which engine drives a machine is not part of it, and the
+judgement of what an engine observed against these expectations is §2.19. The
+sets shipped in `sce-build/tests/fixtures/scenario_sets/` (34 scenarios) are
+held to the schema, read, counted and quoted against their specifications by
 `every_set_the_product_reads_validates_against_the_wire_schema`.
+
+### §2.19 An observation trace and its judgement — `sce-codegen judge-scenarios`
+
+A scenario set says what a machine is expected to do. What it did is observed by
+a driver: a program separate from SCE that runs a design on an engine, sends the
+events and lets the virtual time pass as each scenario says, and writes an
+observation trace. The comparison is made here, once, so that a second driver on
+a second engine only writes traces and cannot disagree with the first about what
+a result means.
+
+```json
+{ "record": "sce-observation-trace", "v": 1,
+  "engine": { "name": "python-lowering" },
+  "observes": { "outbound": true, "finished": true, "configuration": true,
+                "data": { "unavailable": "the design declares no data" } },
+  "runs": [
+    { "scenario": "T2-boundary",
+      "observations": [
+        { "outbound": [{ "event": "SendRequest" }], "finished": false, "configuration": ["waiting"] },
+        { "outbound": [], "finished": false, "configuration": ["waiting"] },
+        { "outbound": [{ "event": "SendRequest" }], "finished": false, "configuration": ["waiting"] } ] } ] }
+```
+
+There is one observation per step of the scenario. `outbound` lists the events
+the machine sent outward DURING the step, in order, with their payload when they
+have one, and is empty when there were none. `finished` and `configuration` (every
+active state with its ancestors) are the state AFTER the step. `data` holds the
+names the driver could read. `observes` says which of the four a driver can see
+at all, and a channel that is observed is present in every observation. A run the
+driver did not make says why (`refused`) instead of carrying observations.
+
+`sce-codegen judge-scenarios <set> <trace>` writes a summary record, a record per
+scenario (`pass`, `fail`, `not-judged`, `blocked`, `awaiting-decision`), and a
+record for each failed check, each gap and each problem. The comparison:
+`outbound` is the same events in the same order and number, an expected payload
+is a subset of what was sent, and an expected event with no payload checks none;
+`finished` is equal; `condition` is a member of `configuration`; `data` is equal
+as a number, text or boolean, and 3 and 3.0 are one value.
+
+`not-judged` is not `fail`, and the judge keeps them apart on purpose. A driver
+that cannot see a channel must not make a design look wrong, and must not make it
+look right: a scenario that asks about a channel declared unavailable is
+`not-judged` with the driver's reason, and so is one whose run was refused or
+absent, or whose trace is defective (a channel declared observed and missing from
+a step). A check that WAS observed and did not hold is a `fail` even when other
+checks of the same scenario could not be judged: a failure is conclusive and a
+gap is not. A scenario that is `blocked` or `awaiting-decision` is never judged,
+whatever the trace holds. A set that has problems, or a trace that names (by
+`scenario_set.sha256`) another set than the one given, judges nothing, and
+the summary's `judged` is false: a verdict from either would be about nothing.
+
+The summary carries the engine's name, the `origin` of the examples and the
+digest of the set, and says what a pass means: that the machine behaved as these
+examples say, on this engine, over these inputs. It does not say the design is
+right, it does not say the examples are the owner's, and a scenario with a
+`bound` passed only up to it. The command exits 0 with whatever it finds; a file
+that is not a scenario set, or not an observation trace, is refused as
+`cli/closure-input-unusable` and prints nothing.
 
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 

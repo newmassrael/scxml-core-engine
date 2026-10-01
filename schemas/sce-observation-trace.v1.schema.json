@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-observation-trace.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE observation trace (wire schema v1)",
+  "description": "What an engine driver observed when it ran the scenarios of a scenario set against one design: for every step of every scenario, the events the machine sent outward, whether it had finished, which states were active, and the data it could read. Written by a driver, a program separate from SCE, and read by `sce-codegen judge-scenarios`, which compares it with what the scenarios expect. A driver declares in `observes` which of those it can see at all, because a scenario that asks about something the driver cannot see is not judged, which is not the same as failing it. A trace says nothing about whether a design is right: it is the record the judgement is made from. Authoritative reader is sce-build/src/scenario_judge.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["record", "v", "engine", "observes", "runs"],
+  "additionalProperties": false,
+  "definitions": {
+    "name": {
+      "description": "A name from the scenario set or the design: an event, a state, a data item.",
+      "type": "string",
+      "pattern": "^\\S(.*\\S)?$"
+    },
+    "scalar": {
+      "description": "A value a payload field or a data item holds.",
+      "type": ["number", "string", "boolean"]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/scalar" }
+    },
+    "channel": {
+      "description": "`true` when the driver observes this channel, or `{\"unavailable\": why}` when it cannot, with the reason a scenario asking about it will be told.",
+      "oneOf": [
+        { "const": true },
+        {
+          "type": "object",
+          "required": ["unavailable"],
+          "additionalProperties": false,
+          "properties": { "unavailable": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    },
+    "sent": {
+      "description": "An event the machine sent to something outside itself.",
+      "type": "object",
+      "required": ["event"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "$ref": "#/definitions/name" },
+        "payload": { "$ref": "#/definitions/payload" }
+      }
+    },
+    "observation": {
+      "description": "What was seen at the end of one step. Each key is present exactly when its channel is observed: `outbound` lists what was sent outward DURING the step (empty when nothing was), `finished` is the state after, `configuration` is every active state id with its ancestors, `data` holds the names the driver could read.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outbound": { "type": "array", "items": { "$ref": "#/definitions/sent" } },
+        "finished": { "type": "boolean" },
+        "configuration": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/name" }
+        },
+        "data": { "$ref": "#/definitions/payload" }
+      }
+    },
+    "run": {
+      "description": "One scenario. Either `observations`, one per step of the scenario in order, or `refused`, why the driver did not run it (an event the design has no transition for, a design the driver could not build).",
+      "type": "object",
+      "required": ["scenario"],
+      "additionalProperties": false,
+      "properties": {
+        "scenario": { "type": "string", "minLength": 1 },
+        "observations": { "type": "array", "items": { "$ref": "#/definitions/observation" } },
+        "refused": {
+          "type": "object",
+          "required": ["why"],
+          "additionalProperties": false,
+          "properties": { "why": { "type": "string", "minLength": 1 } }
+        }
+      },
+      "oneOf": [{ "required": ["observations"] }, { "required": ["refused"] }]
+    }
+  },
+  "properties": {
+    "record": {
+      "description": "Names this file as an observation trace, so a file of another kind is refused rather than half read.",
+      "const": "sce-observation-trace"
+    },
+    "v": {
+      "description": "The wire version of this record. A file of another version is refused.",
+      "const": 1
+    },
+    "engine": {
+      "description": "Who drove the machine. Repeated in every judgement, because a verdict is about an engine: the same examples can pass on one runtime and fail on another.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string" }
+      }
+    },
+    "design": {
+      "description": "The design that was driven, as the driver names it. Informational: the judge does not read the design.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "scenario_set": {
+      "description": "The scenario set the driver ran, by digest. When given and different from the set being judged, nothing is judged.",
+      "type": "object",
+      "required": ["sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "observes": {
+      "description": "Which channels this driver can see at all.",
+      "type": "object",
+      "required": ["outbound", "finished", "configuration", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "outbound": { "$ref": "#/definitions/channel" },
+        "finished": { "$ref": "#/definitions/channel" },
+        "configuration": { "$ref": "#/definitions/channel" },
+        "data": { "$ref": "#/definitions/channel" }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/run" }
+    }
+  }
+}

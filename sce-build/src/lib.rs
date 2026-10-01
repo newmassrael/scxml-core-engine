@@ -222,6 +222,9 @@ pub mod resolve;
 /// reaches into the other's namespace for shared derive policy.
 pub mod rust_derive_policy;
 pub mod sce_attr;
+/// What an engine driver observed running a scenario set, and the judgement
+/// of it against what the scenarios expect: pass, fail, not judged.
+pub mod scenario_judge;
 /// Examples of what a specification says a machine does, in the owner's
 /// words: the file format, and whether a set of them is usable. The
 /// evidence column `Outcome::NeedsScenario` is waiting for.

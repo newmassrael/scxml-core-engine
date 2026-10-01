@@ -50,7 +50,7 @@ const MIN_TABLE_ROWS: usize = 14;
 /// Raised with the list rather than left where it was: at 24 against 35
 /// probes the floor would not have noticed eleven of them disappearing,
 /// which is the one thing it is here to notice.
-const MIN_PROBES: usize = 37;
+const MIN_PROBES: usize = 38;
 
 /// Rows of §6 this file does not exercise, each with the reason.
 ///
@@ -739,6 +739,15 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
     add(
         "cli/closure-input-unusable-scenario-set",
         vec![s("scenarios"), fx.path("bad.json")],
+        None,
+    );
+    add(
+        "cli/closure-input-unusable-judged-scenario-set",
+        vec![
+            s("judge-scenarios"),
+            fx.path("bad.json"),
+            fx.path("bad.json"),
+        ],
         None,
     );
     add(

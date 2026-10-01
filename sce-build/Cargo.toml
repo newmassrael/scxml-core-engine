@@ -202,6 +202,14 @@ name = "scenario_set_command"
 path = "tests/scenario_set_command.rs"
 required-features = ["cli"]
 
+# `sce-codegen judge-scenarios` judges an observation trace against a scenario
+# set. Spawns sce-codegen for the same reason, with the same hazard: a stale
+# binary refuses the subcommand as a usage error.
+[[test]]
+name = "scenario_judge_command"
+path = "tests/scenario_judge_command.rs"
+required-features = ["cli"]
+
 # `generate --plan` names the files a generation would write. Spawns
 # sce-codegen, so it is held to the same declaration as the targets above:
 # the gate `every_target_that_spawns_the_binary_declares_the_feature` lists it

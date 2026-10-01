@@ -2561,6 +2561,27 @@ enum Commands {
         #[arg(long, value_name = "PATH")]
         specification: Option<String>,
     },
+    /// Judge what an engine driver observed against what a scenario set
+    /// expects.
+    ///
+    /// Takes a scenario set and an observation trace a driver wrote for it,
+    /// and reports, per scenario, `pass`, `fail`, `not-judged`, `blocked` or
+    /// `awaiting-decision`, with each failed check and each gap. It runs
+    /// nothing: the trace is the record of a run made elsewhere.
+    ///
+    /// ⚠ `not-judged` is not `fail`. A check the driver could not see is a gap
+    /// and says why; only a check that was observed and did not hold fails
+    /// the scenario. A pass says the machine behaved as these examples say, on
+    /// the engine the trace names, and nothing larger.
+    ///
+    /// Findings, not refusals: the command exits 0 whatever it finds. A file
+    /// that is not a scenario set, or not an observation trace, is refused.
+    JudgeScenarios {
+        /// Scenario set file (JSON, `sce-scenario-set` v1)
+        set: String,
+        /// Observation trace file (JSON, `sce-observation-trace` v1)
+        trace: String,
+    },
     /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
     /// file. One JSON record per
     /// marker (attribute form and element form both detected);
@@ -3211,6 +3232,7 @@ fn main() {
             file,
             specification,
         } => cmd_scenarios(&file, specification.as_deref()),
+        Commands::JudgeScenarios { set, trace } => cmd_judge_scenarios(&set, &trace),
         Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
         Commands::Pseudo {
@@ -3376,6 +3398,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Manifest { .. }
         | Commands::Requirements { .. }
         | Commands::Scenarios { .. }
+        | Commands::JudgeScenarios { .. }
         | Commands::TransitionTable { .. }
         | Commands::ReviewTable { .. }
         | Commands::Pseudo { .. }
@@ -9651,6 +9674,113 @@ fn cmd_scenarios(file: &str, specification: Option<&str>) {
     for found in &problems {
         lines.push(serde_json::json!({
             "kind": "problem",
+            "scenario": found.scenario,
+            "path": found.path,
+            "code": found.code,
+            "detail": found.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// `judge-scenarios` — judge an observation trace against a scenario set.
+///
+/// One summary record, one record per scenario, then a record for each failed
+/// check, each gap and each problem. Findings, not refusals: the command exits
+/// 0 whatever it finds, and ends the run only for a file that is not a
+/// scenario set or not an observation trace, through the door a requirement
+/// list uses (`cli/closure-input-unusable`).
+fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
+    use sce_build::scenario_judge::{judge, Trace, Verdict};
+
+    let (set, digest) = sce_build::scenario_set::ScenarioSet::load_with_digest(Path::new(set_file))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: set_file.to_string(),
+                what: "scenario set",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        });
+    let trace = Trace::load(Path::new(trace_file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: trace_file.to_string(),
+            what: "observation trace",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let judgement = judge(&set, &digest, &trace);
+    let bounded: Vec<&str> = judgement
+        .verdicts
+        .iter()
+        .filter(|v| v.verdict == Verdict::Pass && v.bound.is_some())
+        .map(|v| v.id.as_str())
+        .collect();
+    let problems = judgement.set_problems.len() + judgement.trace_problems.len();
+    let mut lines = vec![serde_json::json!({
+        "kind": "judgement",
+        "doc_id": set.specification.doc_id,
+        "rev": set.specification.rev,
+        "origin": set.origin.as_str(),
+        "engine": { "name": trace.engine.name, "detail": trace.engine.detail },
+        "set_sha256": digest,
+        "judged": judgement.judged,
+        "scenarios": set.scenarios.len(),
+        "pass": judgement.count(Verdict::Pass),
+        "fail": judgement.count(Verdict::Fail),
+        "not-judged": judgement.count(Verdict::NotJudged),
+        "blocked": judgement.count(Verdict::Blocked),
+        "awaiting-decision": judgement.count(Verdict::AwaitingDecision),
+        "bounded": bounded,
+        "problems": problems,
+        "means": "a pass says the machine behaved as these examples say, on this engine, over \
+                  these inputs; it does not say the design is right, or that the examples are \
+                  the owner's, and a bounded scenario passed only up to its bound",
+    })];
+    for verdict in &judgement.verdicts {
+        lines.push(serde_json::json!({
+            "kind": "verdict",
+            "id": verdict.id,
+            "verdict": verdict.verdict.as_str(),
+            "requirements": verdict.requirements,
+            "bound": verdict.bound,
+            "reason": verdict.reason,
+        }));
+    }
+    for failure in &judgement.failures {
+        lines.push(serde_json::json!({
+            "kind": "failure",
+            "scenario": failure.scenario,
+            "step": failure.step,
+            "check": failure.check,
+            "expected": failure.expected,
+            "observed": failure.observed,
+        }));
+    }
+    for gap in &judgement.gaps {
+        lines.push(serde_json::json!({
+            "kind": "gap",
+            "scenario": gap.scenario,
+            "step": gap.step,
+            "check": gap.check,
+            "why": gap.why,
+        }));
+    }
+    for (source, found) in judgement
+        .set_problems
+        .iter()
+        .map(|p| ("set", p))
+        .chain(judgement.trace_problems.iter().map(|p| ("trace", p)))
+    {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "source": source,
             "scenario": found.scenario,
             "path": found.path,
             "code": found.code,

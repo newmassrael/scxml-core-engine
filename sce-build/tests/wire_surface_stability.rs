@@ -49,6 +49,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-kind-catalog.v1.schema.json",
     "schemas/sce-authoring-profile.v1.schema.json",
     "schemas/sce-scenario-set.v1.schema.json",
+    "schemas/sce-observation-trace.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -225,6 +226,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_set_the_product_reads_validates_against_the_wire_schema",
         "sce-build/src/scenario_set.rs",
     ),
+    (
+        "schemas/sce-observation-trace.v1.schema.json",
+        "every_trace_the_product_reads_validates_against_the_wire_schema",
+        "sce-build/src/scenario_judge.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -295,6 +301,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "the_wire_schema_rejects_what_the_reader_does_not_accept",
         "sce-build/src/scenario_set.rs",
     ),
+    (
+        "schemas/sce-observation-trace.v1.schema.json",
+        "the_wire_schema_rejects_what_the_reader_does_not_accept",
+        "sce-build/src/scenario_judge.rs",
+    ),
 ];
 
 /// The field a surface carries the producing commit in.
@@ -361,6 +372,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          and the specification it quotes is named by `specification.doc_id` \
          and `rev`.",
         "scenario set deliberately does",
+    ),
+    (
+        "schemas/sce-observation-trace.v1.schema.json",
+        "written by an engine driver, a program separate from SCE, and never \
+         emitted by SCE itself: there is no SCE run to stamp, and the \
+         producer a consumer needs to know is the driver, which the trace \
+         names in `engine`. What ties a trace to what it was taken against is \
+         the digest of the scenario set in `scenario_set.sha256`.",
+        "observation trace deliberately does",
     ),
 ];
 

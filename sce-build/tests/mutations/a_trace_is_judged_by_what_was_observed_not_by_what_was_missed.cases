@@ -1,0 +1,130 @@
+# Mutation cases for "a trace is judged by what was observed, not by what was missed".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_trace_is_judged_by_what_was_observed_not_by_what_was_missed.cases`.
+#
+# `sce-codegen judge-scenarios` sets what a scenario set expects against what an
+# engine driver observed. Two things are easy to get wrong and read as success:
+# a check that was never observed counted as a pass, and a gap counted as a
+# failure (which would make a design look wrong because a driver could not see).
+# Each case below takes one of the judge's rules away, or breaks what the
+# command reports of it, and must make a test red: the unit tests of
+# `scenario_judge.rs`, which break a hand-written trace one check at a time, or
+# `scenario_judge_command.rs`, which runs the command.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test scenario_judge_command
+mutation_targets sce-build/src/scenario_judge.rs sce-build/src/scenario_set.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/src/scenario_judge.rs sce-build/tests/scenario_judge_command.rs
+
+# ── A gap is let through as a pass ──────────────────────────────────
+#
+# A scenario with a check nobody could observe has not been shown to hold.
+
+mutation_case "a gap does not stop a scenario from passing" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "    } else if judgement.gaps.len() > gaps_before {",
+     "    } else if false {")
+PY
+
+# ── A failure is outranked by a gap ─────────────────────────────────
+
+mutation_case "a gap outranks a failure in the same scenario" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "    if judgement.failures.len() > failures_before {",
+     "    if judgement.failures.len() > failures_before && judgement.gaps.len() == gaps_before {")
+PY
+
+# ── A channel the driver cannot see is read as a mismatch ───────────
+
+mutation_case "an unavailable channel is not a gap and falls through to the comparison" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if let Some(why) = channel.unavailable() {",
+     "        if let Some(why) = channel.unavailable().filter(|_| false) {")
+PY
+
+# ── A missing observation is read as an empty one ───────────────────
+
+mutation_case "an observation that lacks a declared channel is taken as empty" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if !present {\n",
+     "        if false {\n")
+PY
+
+# ── The comparison itself ───────────────────────────────────────────
+
+mutation_case "events are compared in any number" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        let holds = expected.len() == observed.len()",
+     "        let holds = true")
+PY
+
+# The anchor stops before the block, so the block is read as a negation: an
+# expected payload must then NOT be in what was sent. (An earlier draft of this
+# case kept the block and added `fields.is_empty() ||`, which changes nothing:
+# `all` over no field is already true. An equivalent mutant tests nothing.)
+mutation_case "an expected payload must not be in what was sent" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                    && want.payload.as_ref().is_none_or(|fields| {",
+     "                    && want.payload.as_ref().is_none_or(|fields| !{")
+PY
+
+mutation_case "the event name is not compared" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                want.event == got.event\n",
+     "                true\n")
+PY
+
+mutation_case "a condition may be any state" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if !observed.iter().any(|state| state == expected) {",
+     "        if observed.is_empty() && !expected.is_empty() {")
+PY
+
+mutation_case "whether the machine finished is not compared" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if seen.finished != Some(expected) {",
+     "        if false && seen.finished != Some(expected) {")
+PY
+
+mutation_case "a data value of another number is the same value" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            (Scalar::Integer(a), Scalar::Integer(b)) => a == b,",
+     "            (Scalar::Integer(_), Scalar::Integer(_)) => true,")
+PY
+
+# ── Judging something that should not be judged ─────────────────────
+
+mutation_case "a trace taken against another set is judged all the same" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if named.sha256 != set_digest {",
+     "        if false && named.sha256 != set_digest {")
+PY
+
+mutation_case "a set with problems is judged all the same" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "    if !judgement.set_problems.is_empty() {",
+     "    if false {")
+PY
+
+mutation_case "a blocked scenario is judged by its run" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        Status::Blocked => {\n            return verdict(Verdict::Blocked, scenario.blocked_by.clone());\n        }",
+     "        Status::Blocked => {}")
+PY
+
+mutation_case "the second of two runs is used" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        } else if runs.contains_key(run.scenario.as_str()) {",
+     "        } else if false {")
+PY
+
+# ── The command reports something other than what was found ─────────
+
+mutation_case "the summary counts a not-judged scenario as a pass" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        \"not-judged\": judgement.count(Verdict::NotJudged),",
+     "        \"not-judged\": 0,")
+PY

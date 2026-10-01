@@ -1,0 +1,58 @@
+{
+  "record": "sce-observation-trace",
+  "v": 1,
+  "engine": {"name": "hand-written", "detail": "what a correct retry machine does, written before any driver existed"},
+  "observes": {"outbound": true, "finished": true, "configuration": true, "data": true},
+  "runs": [
+    {
+      "scenario": "T1",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}}
+      ]
+    },
+    {
+      "scenario": "T2-boundary",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}}
+      ]
+    },
+    {
+      "scenario": "T3-at-most-three",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [{"event": "TimeoutError"}], "finished": true, "configuration": ["timed-out"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["timed-out"], "data": {}}
+      ]
+    },
+    {
+      "scenario": "T4-response-completes",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["completed"], "data": {}}
+      ]
+    },
+    {
+      "scenario": "T5-response-stops-the-timer",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["completed"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["completed"], "data": {}}
+      ]
+    },
+    {
+      "scenario": "T6-response-after-a-retry",
+      "observations": [
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [{"event": "SendRequest"}], "finished": false, "configuration": ["waiting"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["completed"], "data": {}},
+        {"outbound": [], "finished": true, "configuration": ["completed"], "data": {}}
+      ]
+    }
+  ]
+}

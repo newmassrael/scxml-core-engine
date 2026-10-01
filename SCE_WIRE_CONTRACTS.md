@@ -43,6 +43,7 @@ governance doc (linked below).
 | Kind catalog (`sce-codegen kinds`) — what each `sce:kind` is for, the evidence a specification offers for it, what separates it from its neighbours, and an embedded example `check` accepts, for an author choosing a kind outside this tree | SCE | `schemas/sce-kind-catalog.v1.schema.json` | `KIND_CATALOG_SCHEMA_STATUS` (`sce-build/src/forge/kind_catalog.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/kind_catalog.rs` (producer, one exhaustive table over `ForgeKind`); read by the authoring MCP's `scxml_kinds` |
 | Authoring profile (`--profile` on `check`, `generate`, `orchestrate`, `accept`, `acceptance-check`) — what a specification's owner configures about how a design is authored for them: a file beside the specification, written by the owner, never emitted by SCE. Every setting belongs to one class the schema fixes (enforced, reported, guidance); the enforced ones are the interface, the spelling of the names a document defines and the anchoring of its evidence, the one guidance setting is a list of instructions nothing checks, and no setting is reported yet | SCE | `schemas/sce-authoring-profile.v1.schema.json` | `PROFILE_SCHEMA_STATUS` (`sce-build/src/authoring_profile.rs`) ↔ `x-sce-schema-status` | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.17 + `sce-build/src/authoring_profile.rs` (producer of nothing and the only reader: a setting this build does not know refuses the whole profile as `cli/profile-unusable`, so a profile written for a newer tool is never half applied); a setting is added without a `v` bump. Its sha256 is pinned by the acceptance record and published on the manifest's `profile` |
 | Scenario set (`sce-codegen scenarios`) — examples of what a specification says a machine does, each anchored to a sentence of it word for word: events sent in, virtual time passing, and what must be observed (events sent outward, whether the machine finished, a named condition, a named data item), written against an interface the owner accepts with them: a file beside the specification, written by the owner or proposed by an AI client for the owner to confirm, never emitted by SCE. It is the input of the evidence column `needs-scenario` waits for; this surface runs nothing and says nothing about any design | SCE | `schemas/sce-scenario-set.v1.schema.json` | `SCENARIO_SET_SCHEMA_STATUS` (`sce-build/src/scenario_set.rs`) ↔ `x-sce-schema-status` | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.18 + `sce-build/src/scenario_set.rs` (producer of nothing and the only reader: a file it does not know is refused as `cli/closure-input-unusable`, so a set written for a newer tool is never half read, while a set that is one and has problems is answered with every problem at once, `PROBLEM_CODES`); a field is added without a `v` bump |
+| Observation trace (`sce-codegen judge-scenarios`) — what an engine driver observed running a scenario set against one design: per step of every scenario, the events sent outward, whether the machine had finished, the active states and the data it could read, with a declaration of which of those the driver can see at all. Written by a driver, a program separate from SCE, never emitted by SCE; read by the judge, which compares it with what the scenarios expect and answers `pass`, `fail`, `not-judged` (a check the driver could not see: a gap, not a failure), `blocked` or `awaiting-decision`. It records a run and says nothing about whether a design is right | SCE | `schemas/sce-observation-trace.v1.schema.json` | `TRACE_SCHEMA_STATUS` (`sce-build/src/scenario_judge.rs`) ↔ `x-sce-schema-status` | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.19 + `sce-build/src/scenario_judge.rs` (producer of nothing and the only reader: a file it does not know is refused as `cli/closure-input-unusable`; a trace that is one and has problems is answered with them and the scenarios it cannot vouch for are `not-judged`, `TRACE_PROBLEM_CODES`); a field is added without a `v` bump |
 | Saved state (a `sce-static` machine's `save()` / `restore()`) | SCE | `schemas/sce-saved-state.v1.schema.json` | `SCHEMA_STATUS` (`backends/rust/runtime/src/saved_state.rs`) and `SavedState.SCHEMA_STATUS` (`backends/kotlin/runtime/.../SavedState.kt`) ↔ `x-sce-schema-status`; each producer's own test reads the header | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.15 "Saving and restoring"; both backends are held to the shared instances in `sce-build/tests/fixtures/static_datamodel/saved/`, which `sce-build/tests/saved_state_schema.rs` validates against the schema |
 | Provenance roster (`sce-codegen provenance-roster`) — per `DiagnosticCode`, whether a diagnostic of that code carries a spec anchor, and the reason when it does not | SCE | none — a TSV stream, `<code>\t<verdict>\t<reason>`, with no checked-in schema file | `PROVENANCE_ROSTER_STATUS` (`sce-build/src/forge/diagnostic.rs`) ↔ this row, guarded by `the_registry_declares_the_rosters_status`; ⚠ it has no schema file, so the reverse walk over `schemas/` + `apis/` cannot reach it and the anchor is per-surface | `pre-release` | `SCE_ERROR_CONTRACT.md` §2.1.2, which directs a consumer to this command as the lookup that settles what an absent `spec_provenance` means; wire held to the producer by `sce-build/tests/cli_provenance_roster_wire.rs` (spawns the binary) |
 | Acceptance record (`sce-codegen accept`) — what a person accepted: the document, every file its parse read, the requirement manifest, the variant, and the specification and decision record it was authored from and the authoring profile it was held to, each by sha256; read back by `acceptance-check` and the authoring MCP's `scxml_acceptance_check` / `scxml_accepted_for` | SCE | none — a bare record naming itself (`record: "sce-acceptance-record"`, `v: 1`), with no checked-in schema file | `ACCEPTANCE_RECORD_STATUS` (`sce-build/src/acceptance_record.rs`) ↔ this row, guarded by `the_registry_declares_the_records_status` | `pre-release` | `sce-build/src/acceptance_record.rs` (producer and the only reader: `from_json` refuses what `take` would not write); an optional field is added without a `v` bump, and `authored_from` is omitted when empty so a record taken without it keeps its bytes. Wire held to the library by `sce-build/tests/cli_acceptance_record_wire.rs` (spawns the binary) |
@@ -205,6 +206,13 @@ promises it does not make and enforcement that does not exist.
    pin. What identifies a scenario set is its own sha256, and the
    specification it quotes is named by `specification.doc_id` and `rev`.
    Registered the same way.
+
+   The observation trace deliberately does **not** carry it either. It is
+   written by an engine driver, a program separate from SCE, and never
+   emitted by SCE itself, so there is no SCE run to stamp; the producer a
+   consumer needs to know is the driver, which the trace names in
+   `engine`. What ties a trace to what it was taken against is the digest
+   of the scenario set in `scenario_set.sha256`. Registered the same way.
 3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
    Consumers MUST ignore unknown fields.
@@ -218,6 +226,7 @@ promises it does not make and enforcement that does not exist.
    - `sourcemap.rs::tests::symbol_lookup_schema_file_declares_status`
    - `authoring_profile.rs::tests::schema_file_declares_status`
    - `scenario_set.rs::tests::schema_file_declares_status`
+   - `scenario_judge.rs::tests::schema_file_declares_status`
    - `saved_state.rs::tests::schema_file_declares_status` (Rust runtime)
      and `StaticDatamodelTest.theSavedStateSchemaFileDeclaresTheStatusThisRuntimeDoes`
      (Kotlin) — one per producer
@@ -267,6 +276,10 @@ promises it does not make and enforcement that does not exist.
      (the four sets shipped as fixtures, each also read, quoted word for
      word against its specification and counted; written by an owner or
      an AI client, so the reader is what is held to the schema)
+   - Observation trace — `every_trace_the_product_reads_validates_against_the_wire_schema`
+     (the trace of a correct retry machine, written by hand before any
+     driver existed, judged `pass` on all six scenarios of its set; a driver
+     is a separate program, so the reader is what is held to the schema)
 
    The negative half is enforced separately, by
    `wire_surface_stability.rs::NEGATIVE_VALIDATION` and
@@ -290,6 +303,9 @@ promises it does not make and enforcement that does not exist.
    - Scenario set — `the_wire_schema_rejects_what_the_reader_does_not_accept`
      (twenty changes to a set it first shows valid, each of which the
      reader must also refuse or find a problem with)
+   - Observation trace — the same name in `scenario_judge.rs`
+     (fifteen changes to a trace it first shows valid; the reader refuses
+     the file, or the judge reports a problem with it)
 
    The authoring grammar is in neither table because it is not validated
    by a test: `forge::xsd_validator` validates input documents against

@@ -164,6 +164,12 @@ pub enum FieldType {
     Boolean,
 }
 
+/// The sha256 of `bytes`, as 64 lowercase hex digits: how a scenario set and an
+/// observation trace name each other.
+pub fn digest_of(bytes: &[u8]) -> String {
+    crate::generator_witness::hex_encode(&crate::generator_witness::sha256_bytes(bytes))
+}
+
 impl FieldType {
     fn name(self) -> &'static str {
         match self {
@@ -206,6 +212,22 @@ impl Scalar {
             Scalar::Integer(_) => "integer",
             Scalar::Number(_) => "number",
             Scalar::Text(_) => "text",
+        }
+    }
+
+    /// Whether two values are the same one. Numbers are compared as numbers,
+    /// so `3` and `3.0` are the same value; text and booleans are compared as
+    /// they are, and a number is never a piece of text.
+    pub fn same_value(&self, other: &Scalar) -> bool {
+        match (self, other) {
+            (Scalar::Boolean(a), Scalar::Boolean(b)) => a == b,
+            (Scalar::Text(a), Scalar::Text(b)) => a == b,
+            (Scalar::Integer(a), Scalar::Integer(b)) => a == b,
+            (Scalar::Number(a), Scalar::Number(b)) => a == b,
+            (Scalar::Integer(a), Scalar::Number(b)) | (Scalar::Number(b), Scalar::Integer(a)) => {
+                (*a as f64) == *b
+            }
+            _ => false,
         }
     }
 }
@@ -384,12 +406,24 @@ fn problem(scenario: Option<&str>, path: String, code: &'static str, detail: Str
 impl ScenarioSet {
     /// Read and shape-check a scenario set from a file.
     pub fn load(path: &Path) -> Result<Self, ScenarioSetError> {
+        Self::load_with_digest(path).map(|(set, _)| set)
+    }
+
+    /// The same, and the sha256 of the file's bytes as written. What identifies
+    /// a scenario set is its digest, which is what an observation trace names
+    /// to say which set it was taken against.
+    pub fn load_with_digest(path: &Path) -> Result<(Self, String), ScenarioSetError> {
         let display = path.display().to_string();
-        let raw = std::fs::read_to_string(path).map_err(|source| ScenarioSetError::Read {
+        let bytes = std::fs::read(path).map_err(|source| ScenarioSetError::Read {
             path: display.clone(),
             source,
         })?;
-        Self::from_json(&raw, &display)
+        let raw = String::from_utf8(bytes.clone()).map_err(|source| ScenarioSetError::Read {
+            path: display.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+        })?;
+        let digest = digest_of(&bytes);
+        Ok((Self::from_json(&raw, &display)?, digest))
     }
 
     /// The reading half, without the filesystem.
