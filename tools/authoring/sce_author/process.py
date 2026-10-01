@@ -220,11 +220,65 @@ def _stopped_by(returncode: int | None, killed_for_time: bool, stderr: str,
     return None
 
 
-def _kill_group(child: subprocess.Popen) -> None:
-    try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+class _Leader:
+    """A child that leads a process group of its own, and the one way its group ends.
+
+    The child is started in a session of its own so that one signal reaches
+    everything it started. That signal is addressed by the leader's pid, and a
+    pid is free for another process from the moment its owner is collected, so
+    the order is fixed here and nowhere else: wait for the leader to END without
+    collecting it, signal the group, and only then collect. `communicate()`,
+    `wait()` and `poll()` all collect, which is why a group used to be killed
+    only on the paths that killed it: a child that ended on its own was collected
+    first and what it had started was left running (measured 2026-10-02).
+
+    `pidfd_open` is what waits without collecting. Where a host has none, the
+    leader is waited for and collected, and the group is signalled anyway: the
+    most that host allows, and `isolation_level` already says such a host is not
+    the one the limits are written for."""
+
+    def __init__(self, child: subprocess.Popen) -> None:
+        self.child = child
+        self._ended = False
+        try:
+            self._pidfd: int | None = os.pidfd_open(child.pid)
+        except (AttributeError, OSError):
+            self._pidfd = None
+
+    def ended(self, timeout: float | None) -> bool:
+        """Whether the leader ended within `timeout` seconds, collecting nothing
+        where the host can wait that way."""
+        if self._pidfd is None:
+            try:
+                self.child.wait(timeout)
+            except subprocess.TimeoutExpired:
+                return False
+            return True
+        # poll(), not select(): a server with many sessions holds descriptors
+        # past what select() can address.
+        poller = select.poll()
+        poller.register(self._pidfd, select.POLLIN)
+        return bool(poller.poll(None if timeout is None else max(0.0, timeout) * 1000))
+
+    def end(self) -> None:
+        """Kill everything the leader started, collect it, release the handle.
+
+        Done once: after the leader is collected its pid belongs to nobody, so a
+        second signal to it could reach a stranger. A caller that collected the
+        child itself before this runs gets the signal anyway (the group outlives
+        its leader for as long as anything is in it), which is the best that
+        order allows."""
+        if self._ended:
+            return
+        self._ended = True
+        try:
+            os.killpg(self.child.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        self.child.wait()
+        if self._pidfd is not None:
+            os.close(self._pidfd)
+            self._pidfd = None
 
 
 def run_isolated(argv: list, *, limits: Limits = Limits(), stdin_text: str = "",
@@ -235,23 +289,29 @@ def run_isolated(argv: list, *, limits: Limits = Limits(), stdin_text: str = "",
     started), the kernel's limits, a scrubbed environment, and a clock outside
     it. Its output goes to files under a limit of their own and is read after it
     ends, so a child that prints without end fills a file to its cap and stops,
-    and the supervisor never holds more than it chose to read."""
+    and the supervisor never holds more than it chose to read.
+
+    Whatever the child started is ended with it, whichever way it ended: on its
+    own, by a limit, or by the clock. What it was told is a file too, so there is
+    no pipe to feed and `communicate()`, which collects the child before its group
+    can be signalled, is not needed (see `_Leader`)."""
     started = time.monotonic()
-    killed_for_time = False
     with tempfile.TemporaryDirectory(prefix="sce_run_") as scratch:
+        in_path = os.path.join(scratch, "stdin")
         out_path = os.path.join(scratch, "stdout")
         err_path = os.path.join(scratch, "stderr")
-        with open(out_path, "wb") as out, open(err_path, "wb") as err:
+        with open(in_path, "wb") as told:
+            told.write(stdin_text.encode("utf-8"))
+        with open(in_path, "rb") as given, open(out_path, "wb") as out, \
+                open(err_path, "wb") as err:
             child = subprocess.Popen(
-                _bounded(argv, limits), stdin=subprocess.PIPE, stdout=out, stderr=err, cwd=cwd,
+                _bounded(argv, limits), stdin=given, stdout=out, stderr=err, cwd=cwd,
                 env=_environment(env), start_new_session=True)
+            leader = _Leader(child)
             try:
-                child.communicate(input=stdin_text.encode("utf-8"),
-                                  timeout=limits.wall_seconds)
-            except subprocess.TimeoutExpired:
-                killed_for_time = True
-                _kill_group(child)
-                child.wait()
+                killed_for_time = not leader.ended(limits.wall_seconds)
+            finally:
+                leader.end()
         cap = limits.output_mb * 1024 * 1024
         output_full = os.path.getsize(out_path) >= cap
         with open(out_path, "rb") as out, open(err_path, "rb") as err:
@@ -325,6 +385,7 @@ class Session:
             _bounded(argv, limits), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self._stderr, cwd=cwd, env=_environment(env), start_new_session=True,
             bufsize=0)
+        self._leader = _Leader(self.child)
         reapers = _REAPERS.get()
         if reapers is not None:
             reapers.append(self)
@@ -375,8 +436,7 @@ class Session:
         """Kill the child and everything it started, and say why. Idempotent."""
         if self._stopped is not None:
             return self._stopped
-        _kill_group(self.child)
-        self.child.wait()
+        self._leader.end()
         self._stderr.flush()
         try:
             with open(self._stderr_path, "rb") as handle:
@@ -392,11 +452,16 @@ class Session:
         return self._stopped
 
     def close(self) -> None:
-        """End the child and release what it held. Safe to call twice."""
+        """End the child and everything it started, and release what it held. Safe
+        to call twice.
+
+        The group is ended whether or not the child still runs. A worker that
+        answered and ended on its own has started nothing the session knows of,
+        and the point is that it does not have to have: what it left running is
+        this session's to end, and `poll()` here used to collect the worker and
+        skip the group (measured 2026-10-02)."""
         with self._lock:
-            if self._stopped is None and self.child.poll() is None:
-                _kill_group(self.child)
-            self.child.wait()
+            self._leader.end()
             for stream in (self.child.stdin, self.child.stdout, self._stderr):
                 try:
                     stream.close()

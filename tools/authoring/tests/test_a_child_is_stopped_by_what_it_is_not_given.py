@@ -36,6 +36,31 @@ def python(code: str) -> list:
     return [sys.executable, "-c", code]
 
 
+def running(pid: int) -> bool:
+    """Alive, and not merely ended and waiting to be collected by its parent.
+
+    Read from /proc rather than by signalling it: a signal reaches a zombie too,
+    and a test that cannot tell the two apart passes or fails by whether the
+    host's init collects orphans promptly."""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as handle:
+            return handle.read().rsplit(b")", 1)[1].split()[0] not in (b"Z", b"X")
+    except (FileNotFoundError, ProcessLookupError):
+        # The file is gone, or the process went between opening it and reading
+        # it (ESRCH): measured under load, and it is exactly what a kill that
+        # lands in that window looks like, so it is an answer and not an error.
+        return False
+
+
+def gone_within(pid: int, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while running(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.02)
+    return True
+
+
 class TestAChildThatEndsOnItsOwn(unittest.TestCase):
     def test_what_it_prints_and_what_it_was_told_come_through(self):
         out = process.run_isolated(python("import sys; print(sys.stdin.read().upper())"),
@@ -124,6 +149,75 @@ class TestWhatTheKillLeavesBehind(unittest.TestCase):
             time.sleep(0.05)
         os.kill(grandchild, signal.SIGKILL)
         self.fail("the process the child started was still running after the kill")
+
+
+# Starts a process that outlives its parent unless somebody ends it, and says its pid.
+LEAVES_ONE = ("import subprocess\n"
+              "p = subprocess.Popen(['sleep', '60'])\n"
+              "print(p.pid, flush=True)\n")
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "watched through /proc")
+class TestWhatAnEndingLeavesBehind(unittest.TestCase):
+    """The kill on a clock reaches everything the child started. So must an end
+    that needed no kill.
+
+    Measured 2026-10-02 against `b4a8f8c674`: a child that started a process and
+    then exited normally left it running, and so did a session whose worker had
+    ended on its own before `close()`. The group was killed only on the paths that
+    killed, and `communicate()` and `poll()` collect the leader on the paths that
+    did not. A design's machine that forks is the same hazard whichever way the
+    machine it forked from ends."""
+
+    def left(self, text: str) -> int:
+        pid = int(text.split()[0])
+        self.addCleanup(self._kill, pid)
+        return pid
+
+    @staticmethod
+    def _kill(pid: int) -> None:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def test_a_child_that_ended_well_leaves_nothing_running(self):
+        out = process.run_isolated(python(LEAVES_ONE), limits=ROOMY)
+        self.assertTrue(out.ended_on_its_own, out)
+        self.assertTrue(gone_within(self.left(out.stdout), 3),
+                        "the process the child started outlived the child")
+
+    def test_a_child_that_exited_with_a_status_leaves_nothing_running(self):
+        out = process.run_isolated(python(LEAVES_ONE + "raise SystemExit(3)\n"), limits=ROOMY)
+        self.assertEqual(3, out.returncode, out)
+        self.assertTrue(gone_within(self.left(out.stdout), 3),
+                        "the process the child started outlived the child")
+
+    def test_a_session_whose_worker_ended_on_its_own_leaves_nothing_once_closed(self):
+        """The worker answers and ends; nothing has collected it when `close()` runs."""
+        session = process.Session(python("import sys\nsys.stdin.readline()\n" + LEAVES_ONE),
+                                  limits=ROOMY)
+        self.addCleanup(session.close)
+        grandchild = self.left(session.exchange(b"go").decode())
+        # Watched without collecting: `poll()` and `wait()` would, and then the
+        # case would be about a caller that did that.
+        self.assertTrue(gone_within(session.child.pid, 5), "the worker did not end")
+        session.close()
+        self.assertTrue(gone_within(grandchild, 3),
+                        "the process the worker started outlived the session")
+
+    def test_a_session_closed_after_its_worker_was_collected_leaves_nothing_either(self):
+        """A caller that waits on `session.child` itself has collected the worker
+        before `close()`. The group is still ended: the signal goes to the group,
+        which outlives its leader for exactly as long as something is in it."""
+        session = process.Session(python("import sys\nsys.stdin.readline()\n" + LEAVES_ONE),
+                                  limits=ROOMY)
+        self.addCleanup(session.close)
+        grandchild = self.left(session.exchange(b"go").decode())
+        session.child.wait(timeout=5)
+        session.close()
+        self.assertTrue(gone_within(grandchild, 3),
+                        "the process the worker started outlived the session")
 
 
 class TestWhatTheChildIsGiven(unittest.TestCase):

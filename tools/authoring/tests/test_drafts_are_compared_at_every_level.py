@@ -72,6 +72,66 @@ NEEDS_DATA = HEAD + """
 """
 
 
+def _start_at_a(text: str) -> str:
+    return text.replace('initial="shut"', 'initial="a"')
+
+
+# Waits for `go`. The settled draft the next two are compared with.
+SETTLES = _start_at_a(HEAD) + """
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>
+"""
+
+# The eventless self-transition is enabled again every time it is taken, so the
+# macrostep never reaches a stable configuration (W3C SCXML 3.13).
+NEVER_SETTLES = _start_at_a(HEAD) + """
+  <state id="a"><transition target="a"/><transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>
+"""
+
+# The same, but only after an input: the first observation is a settled one.
+NEVER_SETTLES_AFTER_GO = _start_at_a(HEAD) + """
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"><transition target="b"/></state>
+</scxml>
+"""
+
+# Three retries 200 ms apart, written two ways. Each is armed when the last one
+# fires, or all three are armed at the start. Walked deadline to deadline they
+# are one machine; moved by a single jump of 600 ms the first is dated from the
+# end of the jump and the second is not, and they part.
+RETRIES_REARMED = _start_at_a(HEAD).replace('initial="a"', 'initial="w0"') + """
+  <state id="w0"><onentry><send event="r" delay="200ms"/></onentry>
+    <transition event="r" target="w1"/></state>
+  <state id="w1"><onentry><send event="r" delay="200ms"/></onentry>
+    <transition event="r" target="w2"/></state>
+  <state id="w2"><onentry><send event="r" delay="200ms"/></onentry>
+    <transition event="r" target="done"/></state>
+  <final id="done"/>
+</scxml>
+"""
+
+RETRIES_ARMED_TOGETHER = _start_at_a(HEAD).replace('initial="a"', 'initial="w0"') + """
+  <state id="w0"><onentry>
+      <send event="r" delay="200ms"/><send event="r" delay="400ms"/>
+      <send event="r" delay="600ms"/></onentry>
+    <transition event="r" target="w1"/></state>
+  <state id="w1"><transition event="r" target="w2"/></state>
+  <state id="w2"><transition event="r" target="done"/></state>
+  <final id="done"/>
+</scxml>
+"""
+
+# A heartbeat: a deadline at every 100 ms, forever.
+HEARTBEAT = _start_at_a(HEAD) + """
+  <state id="a"><onentry><send event="beat" delay="100ms"/></onentry>
+    <transition event="beat" target="a"/></state>
+</scxml>
+"""
+
+
 @unittest.skipUnless(_default_codegen().exists(),
                      "the comparison asks the product; build sce-codegen first")
 class DraftsAreComparedAtEveryLevel(unittest.TestCase):
@@ -123,6 +183,7 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertEqual(behaviour["verdict"], "not judged")
         self.assertEqual(behaviour["distinct_observations"], {"a.scxml": 1, "b.scxml": 1})
         self.assertNotIn("classes", behaviour)
+        self.assertIn("moved nothing", behaviour["why"])
 
     def test_a_draft_the_product_refuses_is_named_and_left_out(self):
         broken = RESTARTS.replace('target="opening"', 'target="nowhere"')
@@ -142,6 +203,57 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertEqual(len(levels["table"]), 1)
         # What the owner is asked is exactly what moved.
         self.assertEqual(report["open_sets"], {"a.scxml": [], "b.scxml": ["unresolved:start"]})
+
+    def test_a_draft_whose_macrostep_never_ends_is_not_a_behaviour(self):
+        """Measured 2026-10-02 against `b4a8f8c674`: this draft and a settled one
+        were reported as behaving alike, because the engine stops such a
+        macrostep and what is left looks like a machine that waits. The scenario
+        driver already refuses it (W3C SCXML 3.13); a comparison that judges it
+        says the opposite of the verdict on the same draft."""
+        for when, never_settles in (("at the start", NEVER_SETTLES),
+                                    ("after an input", NEVER_SETTLES_AFTER_GO)):
+            with self.subTest(when):
+                behaviour = compare(self.drafts(loop=never_settles, settled=SETTLES),
+                                    drives=40, steps=12)["behaviour"]
+                self.assertEqual("not judged", behaviour["verdict"])
+                self.assertEqual(["loop.scxml"], list(behaviour["undriven"]))
+                self.assertIn("stable configuration", behaviour["undriven"]["loop.scxml"])
+                self.assertNotIn("classes", behaviour)
+                # The reason given is the true one: the settled draft did move, so
+                # "the drives moved nothing" would say something false about it.
+                self.assertIn("undriven", behaviour["why"])
+                self.assertNotIn("moved nothing", behaviour["why"])
+
+    def test_a_draft_that_never_settles_does_not_hide_the_ones_that_do(self):
+        renamed = SETTLES.replace('"go"', '"proceed"')
+        behaviour = compare(self.drafts(loop=NEVER_SETTLES, one=SETTLES, two=renamed),
+                            drives=40, steps=12)["behaviour"]
+        self.assertEqual("judged", behaviour["verdict"])
+        self.assertEqual([["one.scxml", "two.scxml"]], behaviour["classes"])
+        self.assertEqual(["loop.scxml"], list(behaviour["undriven"]))
+
+    def test_time_is_walked_from_deadline_to_deadline_not_jumped(self):
+        """The engine dates a timer from the end of the move that fires it, so a
+        machine that re-arms inside one long move is a different run from the
+        same time passing in pieces. `scenario_play` walks to each deadline; a
+        comparison that jumps tells the owner that two drafts of one prose
+        differ when they do not, on a drive no host would make."""
+        behaviour = compare(self.drafts(rearmed=RETRIES_REARMED, together=RETRIES_ARMED_TOGETHER),
+                            drives=40, steps=12)["behaviour"]
+        self.assertEqual("judged", behaviour["verdict"])
+        self.assertEqual([["rearmed.scxml", "together.scxml"]], behaviour["classes"], behaviour)
+
+    def test_a_deadline_at_too_many_instants_is_not_played_to_its_end(self):
+        import importlib
+        from unittest import mock
+
+        with mock.patch.object(importlib.import_module("sce_author.compare"),
+                               "MAX_TIME_STOPS", 5):
+            behaviour = compare(self.drafts(beats=HEARTBEAT, settled=SETTLES),
+                                drives=40, steps=12)["behaviour"]
+        self.assertEqual("not judged", behaviour["verdict"])
+        self.assertEqual(["beats.scxml"], list(behaviour["undriven"]))
+        self.assertIn("more than 5 of its instants", behaviour["undriven"]["beats.scxml"])
 
     def test_one_draft_is_not_a_comparison(self):
         with self.assertRaises(CompareError):

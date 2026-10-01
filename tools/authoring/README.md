@@ -339,6 +339,22 @@ server anything but a wrong value. Three consequences are worth knowing.
   documents as unsafe when threads are running. On Linux a limit that cannot be
   applied is a refusal to start, never a child that runs unbound.
 
+`compare` plays by the driver's rules, not rules of its own. Time moves from one
+deadline to the next, and a draft whose engine stopped a macrostep that would not
+end (W3C SCXML 3.13), or whose time would stop at more than 50,000 instants, is
+left out of the classes (`undriven`, with the engine's words and no suggestion that
+a bigger machine would play it) instead of being classed. Measured 2026-10-02 by an
+outside review, a cyclic eventless draft was classed with one that waits, and two
+retry drafts that pass the same examples were told apart because `compare` moved
+600 ms in one jump. Both rules are written once, in `sce_author/lowering.py`, and a
+scenario and a comparison both go through them.
+
+Whatever a child started is ended with it, however it ended: on its own, by a
+limit, or by the clock. The group is signalled while the child is still uncollected,
+because a collected child's pid belongs to nobody (`process._Leader`). Measured the
+same day, a child that exited normally had left a process behind, and so had a
+session whose worker ended before `close()`.
+
 ⚠ What the driver does not do is as much of the design as what it does. It
 reports what it saw and fills no hole:
 

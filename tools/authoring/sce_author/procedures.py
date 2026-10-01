@@ -18,10 +18,10 @@ with `RemoteModule.procedure(name, **arguments)`.
 
 from __future__ import annotations
 
-from .lowering import SendRecorder
+from .lowering import MAX_TIME_STOPS, SendRecorder, Unplayable, advance, endless_macrostep
 
 
-def trace(module, declared, steps) -> list:
+def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
     """Drive a fresh machine through `steps` and say what was seen after each.
 
     `steps` is a list of `("event", name)` and `("time", ms)`. The result starts
@@ -31,7 +31,16 @@ def trace(module, declared, steps) -> list:
     has ended. A step that makes the machine raise ends the trace with
     `("raised", type name)`: what the draft did, which is a thing to compare.
 
-    This is `compare`'s drive, moved here whole. It used to run in the server."""
+    A drive the engine will not play on ends the trace with
+    `("unplayable", why)` and no observation of it. That is not something the
+    draft did and not something to compare: where such a machine stands is where
+    the engine gave up, and two drafts that both gave up there are not alike.
+    The two ways are the ones a scenario is refused for, through the same
+    functions: a macrostep that never reached a stable configuration (W3C SCXML
+    3.13), and time that would stop at more than `max_time_stops` instants.
+
+    Time moves as `lowering.advance` moves it, deadline to deadline. This is
+    `compare`'s drive, moved here whole. It used to run in the server."""
     recorder = SendRecorder()
     engine = module.create_engine()
     for processor in declared:
@@ -45,6 +54,15 @@ def trace(module, declared, steps) -> list:
         sent = tuple(getattr(r, "event_name", str(r)) for r in recorder.take())
         out.append((leaves, sent, bool(engine.reached_final)))
 
+    def settled() -> bool:
+        endless = endless_macrostep(engine, policy)
+        if endless is not None:
+            out.append(("unplayable", f"the engine stopped {endless}, so what the draft "
+                                      f"does under these drives is not its behaviour"))
+        return endless is None
+
+    if not settled():
+        return out
     observe()
     for kind, value in steps:
         try:
@@ -53,9 +71,15 @@ def trace(module, declared, steps) -> list:
                 if event is not None:
                     engine.send_event(event)
             else:
-                engine.advance_time(value)
+                advance(engine, value, max_time_stops)
+        except Unplayable as exc:
+            out.append(("unplayable", f"a drive {exc}, so the draft cannot be played to "
+                                      f"its end"))
+            break
         except Exception as exc:  # noqa: BLE001 - a raise is what the draft did
             out.append(("raised", type(exc).__name__))
+            break
+        if not settled():
             break
         observe()
     return out

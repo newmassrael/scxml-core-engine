@@ -46,6 +46,10 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from . import process
+# How many instants of virtual time one `advance_ms` step may be cut into. It is
+# `lowering`'s because a comparison walks time by the same rule under the same
+# ceiling; the name stays here so a caller can still play under another.
+from .lowering import MAX_TIME_STOPS
 from .verify import (VerifyError, _default_codegen, _scratch, generate, scenario_judgement,
                      scenario_set_reading)
 
@@ -59,11 +63,6 @@ LIMITS = process.Limits()
 #: How many children play at once. Each is independent, so the order of the
 #: runs in the trace is the set's order whatever finishes first.
 MAX_PARALLEL = 4
-
-#: How many instants of virtual time one `advance_ms` step may be cut into. An
-#: example that arms a timer every millisecond for a day is not one a run can
-#: judge, and a timer that re-arms itself at zero delay never ends.
-MAX_TIME_STOPS = 50_000
 
 #: How many open decisions a refusal quotes. The first few name the cause; a
 #: design with dozens would bury the sentence they sit in.

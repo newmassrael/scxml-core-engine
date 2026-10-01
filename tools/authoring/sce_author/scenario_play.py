@@ -69,7 +69,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 from .errors import VerifyError
-from .lowering import SendRecorder, host_names as _host_names, load
+from .lowering import (SendRecorder, Unplayable, advance, endless_macrostep,
+                       host_names as _host_names, load)
 
 
 class _HttpSeen:
@@ -228,32 +229,14 @@ class _Machine:
         return observations
 
     def _advance(self, engine, ms: int, index: int) -> None:
-        """Move virtual time forward by `ms`, one scheduled instant at a time.
-
-        W3C SCXML 6.2: a delay is measured from when its `<send>` executes. The
-        engine's clock belongs to the host and `advance_time(ms)` sets it to the
-        end of the move before it runs what fell due, so a timer armed while
-        handling a deadline in the middle of a long move is dated from the end
-        of the move. Measured: the retry machine passed three moves of 200 ms
-        and failed one of 600 ms. The engine says how far the next deadline is
-        (`time_until_next_scheduled_ms`), the product's own answer to a host
-        that would otherwise guess a step size, so the move is cut there and
-        the same time passes the same way however an example splits it.
-
-        A run that ends, or a machine that has finished, owes the rest no
-        deadlines."""
-        remaining, stops = ms, 0
-        while remaining > 0 and engine.is_running and not engine.reached_final:
-            due = engine.time_until_next_scheduled_ms()
-            step = remaining if due is None or due > remaining else due
-            engine.advance_time(step)
-            remaining -= step
-            stops += 1
-            if stops > self.max_time_stops:
-                raise _Refusal(
-                    f"step {index} lets {ms} ms pass and the design has a deadline at more "
-                    f"than {self.max_time_stops} of its instants (a timer that re-arms at zero "
-                    f"delay never ends), so the example cannot be played to its end")
+        """Move virtual time forward by `ms`, the way `lowering.advance` moves it:
+        one scheduled instant at a time, never in one jump, so the same time
+        passes the same way however an example splits it."""
+        try:
+            advance(engine, ms, self.max_time_stops)
+        except Unplayable as exc:
+            raise _Refusal(f"step {index} {exc}, so the example cannot be played to "
+                           f"its end") from exc
 
     def _check_unobserved(self, engine, policy, http: _HttpSeen, index: int) -> None:
         """Refuse the run when it did something this driver cannot report."""
@@ -262,16 +245,9 @@ class _Machine:
             raise _Refusal(f"at step {index} the design sent `{request.event_name}` over "
                            f"BasicHTTP to `{request.target}`; this driver observes sends to "
                            f"host-served processors and does not observe HTTP")
-        if engine.truncated_macrosteps():
-            # W3C SCXML 3.13: a macrostep may not terminate, and the engine
-            # stops one after a ceiling. Every other reading of the machine
-            # says it is fine (it runs, it names a state, the call returned),
-            # which is how an endless chain used to pass an example that says
-            # the machine waits.
-            state = engine.last_truncated_macrostep_state()
-            where = f" in `{policy.get_state_name(state)}`" if state is not None else ""
-            raise _Refusal(f"by step {index} the engine stopped a macrostep{where} that did not "
-                           f"reach a stable configuration (W3C SCXML 3.13), so where the "
+        endless = endless_macrostep(engine, policy)
+        if endless is not None:
+            raise _Refusal(f"by step {index} the engine stopped {endless}, so where the "
                            f"machine stands is not the design's behaviour")
         failures = engine.unhandled_error_events() + engine.error_cascade_events()
         if failures:

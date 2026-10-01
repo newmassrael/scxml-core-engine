@@ -54,6 +54,68 @@ class SendRecorder:
         return taken
 
 
+#: How many scheduled instants one move of virtual time may stop at before the
+#: move is given up. A timer that re-arms at zero delay never ends, and a
+#: heartbeat every millisecond over an hour is not worth playing.
+MAX_TIME_STOPS = 50_000
+
+
+class Unplayable(Exception):
+    """The engine will not play a design any further, and the words say what it did.
+
+    They start at the verb, so the caller puts its own subject in front: a
+    scenario says which step, a comparison says which drive. A design's machine
+    that does this does it on any host, which is what separates it from a machine
+    that ran out of time or memory."""
+
+
+def advance(engine, ms: int, max_stops: int = MAX_TIME_STOPS) -> None:
+    """Move virtual time forward by `ms`, one scheduled instant at a time.
+
+    W3C SCXML 6.2: a delay is measured from when its `<send>` executes. The
+    engine's clock belongs to the host and `advance_time(ms)` sets it to the
+    end of the move before it runs what fell due, so a timer armed while
+    handling a deadline in the middle of a long move is dated from the end
+    of the move. Measured: the retry machine passed three moves of 200 ms
+    and failed one of 600 ms. The engine says how far the next deadline is
+    (`time_until_next_scheduled_ms`), the product's own answer to a host
+    that would otherwise guess a step size, so the move is cut there and
+    the same time passes the same way however a caller splits it.
+
+    This is the one place that rule is written: a scenario and a comparison both
+    move time through it, and a comparison that jumped where a scenario walked
+    told the owner that two drafts of one prose differ when they do not.
+
+    A run that ends, or a machine that has finished, owes the rest no
+    deadlines."""
+    remaining, stops = ms, 0
+    while remaining > 0 and engine.is_running and not engine.reached_final:
+        due = engine.time_until_next_scheduled_ms()
+        step = remaining if due is None or due > remaining else due
+        engine.advance_time(step)
+        remaining -= step
+        stops += 1
+        if stops > max_stops:
+            raise Unplayable(
+                f"lets {ms} ms pass and the design has a deadline at more than {max_stops} "
+                f"of its instants (a timer that re-arms at zero delay never ends)")
+
+
+def endless_macrostep(engine, policy) -> str | None:
+    """What the engine stopped, when it stopped a macrostep that would not end.
+
+    W3C SCXML 3.13: a macrostep may not terminate, and the engine stops one after
+    a ceiling. Every other reading of the machine says it is fine (it runs, it
+    names a state, the call returned), which is how an endless chain used to pass
+    an example that says the machine waits, and how a comparison judged it equal
+    to one that waits. None when no macrostep was stopped."""
+    if not engine.truncated_macrosteps():
+        return None
+    state = engine.last_truncated_macrostep_state()
+    where = f" in `{policy.get_state_name(state)}`" if state is not None else ""
+    return f"a macrostep{where} that did not reach a stable configuration (W3C SCXML 3.13)"
+
+
 def host_names(module, part: str) -> dict:
     """The names the generated module gives one part of the document's
     surface, keyed by the id the document wrote.

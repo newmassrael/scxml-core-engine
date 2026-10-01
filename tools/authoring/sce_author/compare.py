@@ -33,6 +33,14 @@ says `not judged` rather than reporting the drafts as alike: measured
 2026-09-29, a comparison without these two rules reported five drafts as
 behaving alike because each had failed with the same error.
 
+⚠ A draft the engine itself stops is one that cannot be driven. A macrostep that
+never reaches a stable configuration (W3C SCXML 3.13), or time that would stop
+at more than `MAX_TIME_STOPS` instants, ends that draft's part, with the engine's
+words. Measured 2026-10-02, such a draft was classed with one that waits, and two
+drafts of one prose were told apart because time was moved in one jump where a
+scenario walks it deadline to deadline. Both rules are `lowering`'s, shared with
+the scenario driver, so a draft cannot be a behaviour here and a refusal there.
+
 ⚠ Each draft is driven with its own event names. SCXML matches an event
 descriptor by prefix (W3C SCXML 3.12.1), so driving one draft's name into
 another tests a behaviour nobody drives; instead two drafts are compared
@@ -58,6 +66,10 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
 from . import process, sandbox
+# The ceiling on the instants one move of time may stop at: `lowering`'s, because
+# a scenario walks time by the same rule. The name stays here so a test can play
+# under a smaller one.
+from .lowering import MAX_TIME_STOPS
 from .verify import (VerifyError, _default_codegen, _scratch, generate, pseudo_page,
                      review_rows, unresolved_markers, validate_scxml)
 
@@ -176,6 +188,14 @@ def classes(values: dict) -> list:
 # ------------------------------------------------------------ behaviour
 
 
+class DraftNotPlayable(CompareError):
+    """The engine itself would not play a draft on under a drive: a macrostep that
+    never reached a stable configuration (W3C SCXML 3.13), or time that would stop
+    at too many instants. Unlike `sandbox.WorkerStopped` it is not about the host:
+    the same draft does it anywhere, so the report says so and does not suggest a
+    bigger machine."""
+
+
 class _Driven:
     """One draft, generated to Python and run from scratch per drive.
 
@@ -183,7 +203,8 @@ class _Driven:
     imported by a worker (`sandbox`), one per draft, and each drive makes a fresh
     engine in it. A draft that loops, grows or crashes stops its own worker
     (`sandbox.WorkerStopped`), not the server; the comparison then reports that
-    draft as one it could not drive."""
+    draft as one it could not drive. One the engine stops (`DraftNotPlayable`) is
+    reported the same way, with the engine's reason."""
 
     def __init__(self, document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path):
         self.build = generate(document, codegen, into)
@@ -199,9 +220,17 @@ class _Driven:
         back in one exchange: a step at a time across the boundary cost 247
         requests and 208 ms where the same drive took 12 ms in process. A
         machine that stops under it is `sandbox.WorkerStopped`, which is not a
-        draft that raised and is not caught as one."""
-        return self.module.procedure("trace", declared=list(self.build.declared),
-                                     steps=[tuple(step) for step in steps])
+        draft that raised and is not caught as one.
+
+        A drive the engine will not play on is `DraftNotPlayable`, never a trace:
+        what the machine did up to there is not its behaviour, and a trace that
+        ended early would be compared with a trace that ended on purpose."""
+        seen = self.module.procedure("trace", declared=list(self.build.declared),
+                                     steps=[tuple(step) for step in steps],
+                                     max_time_stops=MAX_TIME_STOPS)
+        if seen and seen[-1][0] == "unplayable":
+            raise DraftNotPlayable(seen[-1][1])
+        return seen
 
 
 def _relabel(traces: list) -> list:
@@ -367,16 +396,29 @@ def _behaviour(documents: dict, texts: dict, codegen, drives: int, steps: int) -
                                   f"memory, may play it further)")
                 del driven[name]
                 continue
+            except DraftNotPlayable as unplayable:
+                # The engine's own refusal, the same on any host, so no promise
+                # that a bigger machine would play it. Like the draft above it is
+                # not a behaviour, and the first drive that shows it ends its part.
+                undriven[name] = str(unplayable)
+                del driven[name]
+                continue
             own[name] = traces
             distinct[name] = len({json.dumps(o, default=str) for t in traces for o in t})
         judged = [n for n in driven if distinct[n] > 1]
         verdict = {"bound": bound, "undriven": undriven, "distinct_observations": distinct}
         if len(judged) < 2:
+            # Two different reasons look alike from here, and the owner is owed
+            # the one that is true: a draft left out (`undriven`) was not
+            # compared, and drives that moved nothing compared nothing.
+            reason = ("some drafts could not be driven (see `undriven`), and the rest are "
+                      "too few to compare" if undriven else
+                      "the drives moved nothing, so they cannot say whether the drafts "
+                      "behave alike")
             verdict.update(
                 verdict="not judged",
-                why="fewer than two drafts produced more than one observation "
-                    "under these drives: the drives moved nothing, so they "
-                    "cannot say whether the drafts behave alike")
+                why=f"fewer than two drafts produced more than one observation "
+                    f"under these drives: {reason}")
             return verdict
         groups: list = []  # [representative, [members], {member: mapping}]
         witnesses = []
@@ -397,9 +439,10 @@ def _behaviour(documents: dict, texts: dict, codegen, drives: int, steps: int) -
                         witnesses.append(witness)
                 if not placed:
                     groups.append([name, [name], {}])
-        except sandbox.WorkerStopped as stopped:
+        except (sandbox.WorkerStopped, DraftNotPlayable) as stopped:
             # A draft's machine stopped while two were being set side by side (a
-            # renamed input, a shortened drive). What was found so far compares
+            # renamed input, a shortened drive), or the engine gave up on it under
+            # a drive its own alphabet never made. What was found so far compares
             # some drafts and not others, so no class is claimed.
             verdict.update(
                 verdict="not judged",

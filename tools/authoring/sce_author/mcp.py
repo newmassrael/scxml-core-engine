@@ -571,7 +571,8 @@ TOOLS = [
             "each witness and each question only some drafts marked: those "
             "are the places the specification left open or hard to read. "
             "Agreement is not correctness -- drafts can agree and all be "
-            "wrong -- and `not judged` means the drives moved nothing."
+            "wrong -- and `not judged` means the drives moved nothing, or "
+            "too few drafts could be driven to compare (`undriven` says why)."
         ),
         "inputSchema": {
             "type": "object",
