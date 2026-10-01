@@ -32,9 +32,10 @@
 //!
 //! # What it does not lower yet
 //!
-//! `<sce:action>`, an algorithm with more in it than its scalar core
-//! ([`crate::forge::static_js_algorithm`]), and the executable content the walk
-//! does not lower are refused with `generate/unsupported-feature` naming the
+//! `<sce:action>`, an algorithm with a construct
+//! [`crate::forge::static_js_algorithm`] does not spell, and the executable
+//! content the walk does not lower are refused with
+//! `generate/unsupported-feature` naming the
 //! construct, never passed through: an expression left as the author wrote it
 //! would be run by the script engine as ECMAScript, which is the
 //! mis-execution the refusal exists to prevent.
@@ -76,7 +77,8 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
-use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge, SceType};
+use crate::forge::import_source::ImportSource;
+use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType};
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
@@ -616,14 +618,9 @@ fn lower_parsed(
             variable.id
         ))));
     }
-    let algorithms = lowered_algorithms(model, base_dir).map_err(refuse)?;
-    let target = JsTarget::new(
-        algorithms
-            .iter()
-            .map(|(document, algorithm)| (document.clone(), algorithm.symbol.clone()))
-            .collect(),
-    );
-    let installed: Vec<LoweredAlgorithm> = algorithms.into_values().collect();
+    let LoweredCallees { called, installed } =
+        lowered_algorithms(model, base_dir).map_err(refuse)?;
+    let target = JsTarget::new(called);
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
     let lowering = lower(&mut lowered, &machine, &[], &target).map_err(refuse)?;
@@ -640,18 +637,33 @@ fn lower_parsed(
     apply(text, edits).map_err(refuse)
 }
 
+/// The algorithms a statechart calls, and the functions that have to be
+/// installed for those calls to run.
+struct LoweredCallees {
+    /// Each imported algorithm's document name, and the symbol it is installed
+    /// under.
+    called: BTreeMap<String, String>,
+    /// Every function installed: the algorithms the statechart calls and, once
+    /// each, every algorithm those call. A function looks its callee up by name
+    /// when it runs, so the order they are installed in does not matter.
+    installed: Vec<LoweredAlgorithm>,
+}
+
 /// Every algorithm `model` imports, read from beside the document and lowered,
-/// by the name of the document it came from. The walk asks the target for each
+/// with the algorithms those import in turn. The walk asks the target for each
 /// call, so one that is not here is refused there.
 ///
 /// Refused here, by name: an import with no directory to be read from, one that
-/// cannot be read, one that is not an algorithm, one that imports something of
-/// its own, and every construct of its body that has no lowering yet.
+/// cannot be read, one that is not an algorithm, one that calls itself, and
+/// every construct of a body that has no lowering yet.
 fn lowered_algorithms(
     model: &SCXMLModel,
     base_dir: Option<&Path>,
-) -> Result<BTreeMap<String, LoweredAlgorithm>, GenerateError> {
-    let mut lowered = BTreeMap::new();
+) -> Result<LoweredCallees, GenerateError> {
+    let mut lowered = LoweredCallees {
+        called: BTreeMap::new(),
+        installed: Vec::new(),
+    };
     let Some(scope) = StaticScope::of(model) else {
         return Ok(lowered);
     };
@@ -669,34 +681,81 @@ fn lowered_algorithms(
             .ok_or_else(|| what("has no <sce:import> this lowering can read"))?;
         let dir = base_dir
             .ok_or_else(|| what("cannot be read: the document was given with no directory"))?;
-        let parsed = crate::forge::import_source::parse_quietly(dir, import)
-            .ok_or_else(|| what("cannot be read"))?;
-        lowered.insert(
-            callee.document_name.clone(),
-            algorithm_function(parsed, &what)?,
-        );
+        let (parsed, callee_dir) =
+            read_algorithm(dir, import).ok_or_else(|| what("cannot be read"))?;
+        let functions = algorithm_functions(parsed, &callee_dir, &what, &mut Vec::new())?;
+        lowered
+            .called
+            .insert(callee.document_name.clone(), functions[0].symbol.clone());
+        install(&mut lowered.installed, functions);
     }
     Ok(lowered)
 }
 
-/// The algorithm `parsed` is, as the function it becomes. `what` words a
-/// refusal in the caller's own name for the document.
-fn algorithm_function(
-    parsed: ParsedForge,
-    what: &dyn Fn(&str) -> GenerateError,
-) -> Result<LoweredAlgorithm, GenerateError> {
-    if !parsed.imports.is_empty() {
-        return Err(what(
-            "imports another document, which has no ecmascript lowering yet",
-        ));
+/// The document `import` names, read from `base_dir`, and the directory the
+/// imports it makes are resolved from. `None` for one that cannot be read, which
+/// the caller words in its own name for the document.
+fn read_algorithm(base_dir: &Path, import: &ForgeImport) -> Option<(ParsedForge, PathBuf)> {
+    let source = ImportSource::read(base_dir, import).ok()?;
+    let parsed = source.parse().ok().flatten()?;
+    let dir = source
+        .path
+        .parent()
+        .map_or_else(|| base_dir.to_path_buf(), Path::to_path_buf);
+    Some((parsed, dir))
+}
+
+/// `more` added to `into`, a symbol installed once.
+fn install(into: &mut Vec<LoweredAlgorithm>, more: Vec<LoweredAlgorithm>) {
+    for function in more {
+        if !into.iter().any(|held| held.symbol == function.symbol) {
+            into.push(function);
+        }
     }
+}
+
+/// The algorithm `parsed` is, as the function it becomes, followed by the
+/// functions of every algorithm it imports, and theirs. The first is the
+/// document's own. `base_dir` is where its imports are resolved from, and
+/// `what` words a refusal in the caller's own name for the document.
+///
+/// `visiting` holds the symbols being lowered above this one, so an algorithm
+/// that imports itself, however far round, is refused rather than followed
+/// forever (v1 forbids recursion, SCE_FORGE.md §4.12).
+fn algorithm_functions(
+    parsed: ParsedForge,
+    base_dir: &Path,
+    what: &dyn Fn(&str) -> GenerateError,
+    visiting: &mut Vec<String>,
+) -> Result<Vec<LoweredAlgorithm>, GenerateError> {
     let ForgeDocument::Algorithm(algorithm) = parsed.document else {
         return Err(what("is not an algorithm"));
     };
-    Ok(LoweredAlgorithm {
-        symbol: static_js_algorithm::symbol(&algorithm.name),
-        function: static_js_algorithm::lower(&algorithm)?,
-    })
+    let symbol = static_js_algorithm::symbol(&algorithm.name);
+    if visiting.contains(&symbol) {
+        return Err(what("imports itself, which an algorithm may not"));
+    }
+    visiting.push(symbol.clone());
+    let imports =
+        static_js_algorithm::Imports::resolve(&algorithm.name, &parsed.imports, base_dir)?;
+    let mut functions = vec![LoweredAlgorithm {
+        symbol,
+        function: static_js_algorithm::lower(&algorithm, &imports)?,
+    }];
+    for import in parsed
+        .imports
+        .iter()
+        .filter(|import| import.kind == ForgeKind::Algorithm)
+    {
+        let (callee, callee_dir) = read_algorithm(base_dir, import)
+            .ok_or_else(|| what(&format!("imports `{}`, which cannot be read", import.alias)))?;
+        install(
+            &mut functions,
+            algorithm_functions(callee, &callee_dir, what, visiting)?,
+        );
+    }
+    visiting.pop();
+    Ok(functions)
 }
 
 /// An algorithm document lowered on its own, for a caller that runs it in a
@@ -713,8 +772,9 @@ pub struct LoweredAlgorithmDocument {
 
 /// The algorithm document `document` names — an `sce:std/...` document, or a
 /// path — lowered as a statechart's import of it would be, and refused for the
-/// same reasons: it imports another document, or its body holds a construct with
-/// no lowering yet. A refusal names the construct.
+/// same reasons: an import it cannot read, or a construct with no lowering yet.
+/// A refusal names the construct. The algorithms it imports are installed
+/// beside it.
 pub fn lower_algorithm_document(
     document: &str,
 ) -> Result<LoweredAlgorithmDocument, Located<ForgeError>> {
@@ -753,10 +813,14 @@ pub fn lower_algorithm_document(
     })?;
     let what =
         |reason: &str| GenerateError::unsupported(format!("`{document}`: the document {reason}"));
-    let algorithm = algorithm_function(parsed, &what).map_err(refuse)?;
+    let base_dir = path
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    let functions =
+        algorithm_functions(parsed, &base_dir, &what, &mut Vec::new()).map_err(refuse)?;
     Ok(LoweredAlgorithmDocument {
-        symbol: algorithm.symbol.clone(),
-        install: runtime_expression(&[algorithm]),
+        symbol: functions[0].symbol.clone(),
+        install: runtime_expression(&functions),
     })
 }
 
@@ -933,16 +997,29 @@ mod tests {
         assert!(!lowered.install.contains('\n'));
     }
 
-    /// The reasons an import of the document is refused are the reasons the
-    /// document is: what has no lowering yet is named, never half lowered.
+    /// An algorithm that calls another is lowered with it, and with what that
+    /// one calls: every function is installed beside the one the document names,
+    /// once, under its own symbol.
     #[test]
-    fn an_algorithm_document_with_no_lowering_is_refused_by_name() {
-        let imports = lower_algorithm_document("sce:std/time/days_from_civil.scxml")
-            .expect_err("it imports another document");
-        assert!(
-            format!("{imports:?}").contains("imports another document"),
-            "{imports:?}"
-        );
+    fn the_algorithms_an_algorithm_calls_are_installed_beside_it() {
+        let lowered =
+            lower_algorithm_document("sce:std/time/days_from_civil.scxml").expect("lowers");
+        assert_eq!(lowered.symbol, "days_from_civil");
+        for symbol in ["days_from_civil", "days_in_month", "is_leap_year"] {
+            let installed = format!("SceStatic.algorithms.{symbol} = function");
+            assert_eq!(
+                lowered.install.matches(&installed).count(),
+                1,
+                "`{symbol}` is installed once: {}",
+                lowered.install
+            );
+        }
+    }
+
+    /// The reasons an import of the document is refused are the reasons the
+    /// document is: what is not there is named.
+    #[test]
+    fn an_algorithm_document_that_is_not_there_is_refused_by_name() {
         let absent = lower_algorithm_document("sce:std/time/no_such_document.scxml")
             .expect_err("no such document");
         assert!(

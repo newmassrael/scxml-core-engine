@@ -2671,8 +2671,8 @@ enum Commands {
     /// Number holds exactly).
     ///
     /// Refused as `lower` refuses an import of it, with `generate/unsupported-feature`
-    /// naming the construct: an algorithm that imports another document, or
-    /// whose body holds a buffer, list, record, loop over one, or call.
+    /// naming the construct: an algorithm that takes, builds or returns `bytes`,
+    /// or holds a constant, or imports a document it cannot read.
     LowerAlgorithm {
         /// An `sce:std/...` document name, or the path of an algorithm document
         document: String,

@@ -157,9 +157,37 @@ Lowered lower(const std::string &document) {
     return lowered;
 }
 
-/// An argument as script source. An integer past what a Number holds exactly
-/// has no spelling here, and the case that carries one is not asked.
+/// An argument as script source: a list or bytes is an array, a record an
+/// object, each spelled from what it holds. An integer past what a Number holds
+/// exactly has no spelling here, wherever it sits, and the case that carries one
+/// is not asked.
 bool spell(const nlohmann::json &value, std::string &out) {
+    if (value.is_array()) {
+        out = "[";
+        for (size_t index = 0; index < value.size(); ++index) {
+            std::string element;
+            if (!spell(value[index], element)) {
+                return false;
+            }
+            out += (index == 0 ? "" : ", ") + element;
+        }
+        out += "]";
+        return true;
+    }
+    if (value.is_object()) {
+        out = "{";
+        bool first = true;
+        for (const auto &member : value.items()) {
+            std::string element;
+            if (!spell(member.value(), element)) {
+                return false;
+            }
+            out += (first ? "" : ", ") + nlohmann::json(member.key()).dump() + ": " + element;
+            first = false;
+        }
+        out += "}";
+        return true;
+    }
     if (value.is_boolean()) {
         out = value.get<bool>() ? "true" : "false";
         return true;
@@ -226,7 +254,32 @@ Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std:
     return answer;
 }
 
+/// Whether two values are the same: a list or bytes by its elements in order, a
+/// record by its fields whatever order they were written in, and the rest as a
+/// number or a truth value is.
 bool sameValue(const nlohmann::json &got, const nlohmann::json &want) {
+    if (got.is_array() || want.is_array()) {
+        if (!got.is_array() || !want.is_array() || got.size() != want.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < got.size(); ++index) {
+            if (!sameValue(got[index], want[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (got.is_object() || want.is_object()) {
+        if (!got.is_object() || !want.is_object() || got.size() != want.size()) {
+            return false;
+        }
+        for (const auto &member : want.items()) {
+            if (!got.contains(member.key()) || !sameValue(got.at(member.key()), member.value())) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (got.is_boolean() || want.is_boolean()) {
         return got.is_boolean() && want.is_boolean() && got.get<bool>() == want.get<bool>();
     }

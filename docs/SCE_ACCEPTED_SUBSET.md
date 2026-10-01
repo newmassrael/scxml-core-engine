@@ -2942,16 +2942,25 @@ the same expression lowerer and the same typing as the generated backends', so a
 name, an operand type and a checked integer operation are judged as they are for
 Kotlin; a `may-fail` algorithm's failure, and a `<sce:require>` that does not
 hold, are throws, and the expression that called it fails as an overflow of its
-own does. What is lowered of an algorithm today is its scalar core — scalar
-parameters and locals, `<sce:var>`, `<sce:assign>`, `<sce:if>`, `<sce:while>`,
-`<sce:require>`, `<sce:return>`, which is every algorithm of `sce:std/sync`.
+own does. An algorithm is lowered with everything it imports: the algorithms it
+calls are installed beside it, once each, and the event-schemas its records come
+from type its expressions as they do on every backend. A list is an array and a
+record a plain object, as in a statechart, and a parameter is read-only: a
+`<sce:var type="list<T>">` buffer is an array that starts empty, written again
+with each `<sce:append>` and held to its `capacity` (an append past it fails
+`capacity-exceeded`, as on the bounded backends; the heap backends grow instead),
+a record is built whole by its `<sce:set>`s and changed a field at a time by
+`<sce:assign target="r.field">`, which writes the record again, and
+`<sce:foreach>` reads each element of a list in order. What is lowered of an
+algorithm today is `<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`,
+`<sce:while>`, `<sce:foreach>`, `<sce:require>`, `<sce:call>` and
+`<sce:return>`, over scalar, list and record values.
 
-A construct with no lowering yet — `<sce:action>`, an algorithm with a `bytes`,
-list or record parameter or return, a constant, a buffer, `<sce:foreach>`,
-`<sce:call>` or an import of its own, and executable content beyond `<assign>`,
-`<if>`, `<log>`, `<raise>`, `<cancel>`, `<sce:append>`, `<sce:clear>` and a
-`<send>` with no `<param>` — is refused with `generate/unsupported-feature`
-naming it, never passed through half lowered.
+A construct with no lowering yet — `<sce:action>`, an algorithm with a `bytes`
+parameter, return or buffer, a constant, and executable content beyond
+`<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>`, `<sce:append>`,
+`<sce:clear>` and a `<send>` with no `<param>` — is refused with
+`generate/unsupported-feature` naming it, never passed through half lowered.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
