@@ -11737,6 +11737,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "finishMacrostep",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "symbol": "invoke",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

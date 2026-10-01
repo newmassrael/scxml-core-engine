@@ -709,7 +709,7 @@ impl<'a> Judge<'a> {
         // here, accepted, and never arrive. Refused where it is written until
         // a value can land in a field. A host-run invoke's `<param>` is part of
         // the request the host receives, and is judged below.
-        if matches!(invoke, Invoke::Scxml(_)) {
+        if let Invoke::Scxml(info) = invoke {
             if let Some(param) = base.params.first() {
                 let at = param.source_location.as_ref();
                 let written = if param.expr.trim().is_empty() {
@@ -729,6 +729,29 @@ impl<'a> Judge<'a> {
                     at.and_then(|l| l.col).or(col),
                     state,
                     written,
+                ));
+            }
+            // §scxml-6.5: a `<finalize>` runs in the invoking machine before an
+            // event from the child is processed. The model keeps its body as
+            // one script text, so no type rule reaches it, and the generated
+            // code hands that text to a script engine this model never builds
+            // (the Rust body is an empty block; Kotlin finds no engine). A body
+            // written here would be accepted and never run. The model also
+            // synthesizes a body for an empty `<finalize>` from `namelist` and
+            // `<param>`, both refused before this point, so what is left is a
+            // body the author wrote. The model records the `<invoke>`, not the
+            // `<finalize>`, so that is where the refusal sits.
+            if !info.finalize_content.trim().is_empty() {
+                return Err(self.rule_at(
+                    format!("<finalize> of <invoke id=\"{}\">", base.invoke_id),
+                    "a machine of this data model runs no <finalize>: its body is script \
+                     text for an engine this model does not build, so it would be accepted \
+                     and never run; take what the child sent in a transition of the \
+                     invoking state instead",
+                    line,
+                    col,
+                    state,
+                    "",
                 ));
             }
         }

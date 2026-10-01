@@ -722,6 +722,61 @@ fn a_param_is_still_given_to_a_child_under_ecmascript() {
     assert!(ok, "ecmascript hands a param to its child:\n{out}");
 }
 
+// ── A <finalize> is run by no machine of this data model ────────────────
+//
+// The model keeps an `<invoke>`'s `<finalize>` as script text (the parser
+// transpiles its actions to one string), so no type rule reaches it, and the
+// generated code hands that string to a script engine this data model never
+// builds: the Rust body is an empty block and Kotlin reads the engine
+// `executeFinalizeForChildEvent` finds absent. Measured 2026-10-01 on the
+// generated code of a `sce-static` parent: the document was accepted, `check`
+// said nothing, and the assignment never ran.
+
+/// The control and the refusal's document: `invoking` with a `<finalize>` that
+/// assigns `count`, written on the line after the `<invoke>` opens (line 10).
+fn finalizing() -> String {
+    invoking(r#"<finalize><assign location="count" expr="count + 1"/></finalize>"#)
+}
+
+#[test]
+fn a_finalize_no_machine_here_would_run_is_refused_on_its_invoke() {
+    let (ok, out) = run(&["check"], &finalizing());
+    assert!(!ok, "no generated code runs it:\n{out}");
+    // The model records the element the `<finalize>` is written in, not the
+    // `<finalize>` itself, so the refusal sits on the `<invoke>` (line 9).
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+}
+
+#[test]
+fn the_finalize_refusal_names_the_invoke_and_says_what_would_happen() {
+    let (_, out) = run(&["check"], &finalizing());
+    let record = out
+        .lines()
+        .find(|l| l.contains("\"code\":\"scxml/static-datamodel-rule\""))
+        .unwrap_or_else(|| panic!("expected a static-datamodel-rule refusal:\n{out}"));
+    assert!(
+        record.contains("finalize"),
+        "it names the element:\n{record}"
+    );
+    assert!(record.contains("child"), "it names the invoke:\n{record}");
+    assert!(
+        record.contains("never run"),
+        "it says the body would be accepted and not executed:\n{record}"
+    );
+}
+
+#[test]
+fn a_finalize_is_still_run_under_ecmascript() {
+    // The refusal is of this data model's having no engine to run the text, not
+    // of `<finalize>`: `ecmascript` builds one.
+    let document = finalizing()
+        .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
+        .replace(r#" sce:type="uint32""#, "")
+        .replace(r#" sce:type="bool""#, "");
+    let (ok, out) = run(&["check"], &document);
+    assert!(ok, "ecmascript runs a finalize:\n{out}");
+}
+
 #[test]
 fn a_host_run_invokes_param_is_still_accepted() {
     // The refusal is of a CHILD SESSION's `<param>`. A host-run invoke's is part
