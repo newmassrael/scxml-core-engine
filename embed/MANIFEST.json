@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "a918df18b2",
+  "embed_version": "fb0965df577",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 283,
+  "symbol_count": 292,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -327,6 +327,28 @@
       "name": "SCE::NamelistHelper"
     },
     {
+      "header": "common/NoParent.h",
+      "kind": "enum",
+      "name": "SCE::Common::RootStartRefusal",
+      "values": [
+        "NeedsParent"
+      ]
+    },
+    {
+      "header": "common/NoParent.h",
+      "kind": "function",
+      "name": "SCE::Common::reason",
+      "signature": "const char * SCE::Common::reason(RootStartRefusal)"
+    },
+    {
+      "header": "common/NoParent.h",
+      "kind": "struct",
+      "members": [
+        "method void (const ForwardedEvent &) raiseExternal"
+      ],
+      "name": "SCE::Common::NoParent"
+    },
+    {
       "header": "common/SceClock.h",
       "kind": "class",
       "members": [],
@@ -373,6 +395,42 @@
       "kind": "class",
       "members": [],
       "name": "SCE::SendSchedulingHelper"
+    },
+    {
+      "header": "common/SendSchedulingHelper.h",
+      "kind": "struct",
+      "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::string address",
+        "field std::string eventName",
+        "field std::string meshInvokeId",
+        "method ScheduledRoute &(ScheduledRoute &&) noexcept operator=",
+        "method ScheduledRoute &(const ScheduledRoute &) noexcept(false) operator=",
+        "method void () noexcept ~ScheduledRoute",
+        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
+        "method void (ScheduledRoute &&) noexcept ScheduledRoute",
+        "method void (const ScheduledRoute &) noexcept(false) ScheduledRoute"
+      ],
+      "name": "SCE::ScheduledRoute"
+    },
+    {
+      "header": "common/SendSchedulingHelper.h",
+      "kind": "struct",
+      "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::string address",
+        "field std::string eventName",
+        "field std::string meshInvokeId",
+        "method ScheduledRoute &(ScheduledRoute &&) operator=",
+        "method ScheduledRoute &(const ScheduledRoute &) operator=",
+        "method void () ~ScheduledRoute",
+        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
+        "method void (ScheduledRoute &&) ScheduledRoute",
+        "method void (const ScheduledRoute &) ScheduledRoute"
+      ],
+      "name": "SCE::ScheduledRoute"
     },
     {
       "header": "common/SourceLocation.h",
@@ -751,6 +809,28 @@
         "field std::string content",
         "field std::string eventData",
         "field std::string eventName",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string sendId",
+        "field std::string target",
+        "method HostSendRequest &(HostSendRequest &&) operator=",
+        "method HostSendRequest &(const HostSendRequest &) operator=",
+        "method void () noexcept HostSendRequest",
+        "method void () noexcept ~HostSendRequest",
+        "method void (HostSendRequest &&) HostSendRequest",
+        "method void (const HostSendRequest &) HostSendRequest"
+      ],
+      "name": "SCE::HostSendRequest"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::map<std::string, std::vector<std::string>> params",
+        "field std::string content",
+        "field std::string eventData",
+        "field std::string eventName",
+        "field std::string invokeId",
         "field std::string processorType",
         "field std::string sendId",
         "field std::string target",
@@ -768,6 +848,7 @@
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
+        "field std::string eventData",
         "field std::string invokeId",
         "field std::string processorType",
         "field std::string src",
@@ -808,6 +889,7 @@
       "kind": "struct",
       "members": [
         "field std::optional<std::string> doneData",
+        "field std::optional<std::string> refusal",
         "method HostInvokeResponse &(HostInvokeResponse &&) noexcept operator=",
         "method HostInvokeResponse &(const HostInvokeResponse &) noexcept(false) operator=",
         "method void () noexcept HostInvokeResponse",
@@ -821,7 +903,8 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
-        "field std::optional<std::string> doneData"
+        "field std::optional<std::string> doneData",
+        "field std::optional<std::string> refusal"
       ],
       "name": "SCE::HostInvokeResponse"
     },
@@ -1046,13 +1129,31 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasInvocationDeliveryTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::HasInvokeSupportTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasParentDeliveryTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::NeedsEventSchedulerTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::NeedsParentTrait<T>"
     },
     {
       "header": "core/TransitionHelper.h",
@@ -1203,6 +1304,7 @@
         "method EventDescriptor &(const EventDescriptor &) operator=",
         "method bool () const isDelayed",
         "method bool () const isInternal",
+        "method std::string () const payload",
         "method std::vector<std::string> () const validate",
         "method void () ~EventDescriptor",
         "method void (EventDescriptor &&) EventDescriptor",
