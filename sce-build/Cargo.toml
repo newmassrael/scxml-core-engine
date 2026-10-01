@@ -184,6 +184,25 @@ name = "requirement_manifest_closure"
 path = "tests/requirement_manifest_closure.rs"
 required-features = ["cli"]
 
+# The same command over the documents of one design together. Spawns
+# sce-codegen for the reason the target above does, and carries its hazard:
+# `requirements A B C` is a form a stale binary refuses as a usage error, and
+# without this declaration the target builds against whatever sce-codegen is
+# lying in target/.
+[[test]]
+name = "a_design_of_several_documents_is_measured_together"
+path = "tests/a_design_of_several_documents_is_measured_together.rs"
+required-features = ["cli"]
+
+# `generate --plan` names the files a generation would write. Spawns
+# sce-codegen, so it is held to the same declaration as the targets above:
+# the gate `every_target_that_spawns_the_binary_declares_the_feature` lists it
+# beside the target above, and a lane that cannot name both stays red.
+[[test]]
+name = "generation_can_be_planned"
+path = "tests/generation_can_be_planned.rs"
+required-features = ["cli"]
+
 # Requirement-closure RFC Atomic B. Spawns sce-codegen for the same
 # reason the target above does, and carries the same hazard: without
 # the declaration it builds against whatever sce-codegen is lying in

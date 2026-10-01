@@ -1455,8 +1455,8 @@ def _requirements_say(answer: dict) -> str:
     reflected): of the seven whose check went without a list, three gave a table
     with no word about who made it; of the thirteen whose check was measured
     against a list, none said what `implemented` does not show. A GPT run did the
-    same: it headed its column "대조 결과" over its own reading and called no
-    requirement tool at all. An instruction that lives in a tool's description for
+    same: it headed a column "result of the check" (in Korean) over its own
+    reading and called no requirement tool at all. An instruction that lives in a tool's description for
     a second call is not read when the table is written; `show` is, because the
     client prints what it says.
 
