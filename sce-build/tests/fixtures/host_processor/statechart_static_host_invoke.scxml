@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"): an `<invoke>` the HOST runs is part of what a machine is doing,
+  and a saved machine that left it out would restore into a state that says
+  "working" with nobody working.
+
+  `working` hands a job to the host: the invoke carries a typed `<param>` read
+  from the machine's fields (`job`, `label`), an inline `<content>`, a `src`,
+  and a deadline (`_sce_deadline_ms`, which the engine keeps rather than handing
+  to the host). The host answers later, with `done.invoke.h` or `error.invoke.h`,
+  or the deadline does:
+
+    done.invoke.h    leaves `working` for `after`, and records a 1 in `seen`
+    error.invoke.h   leaves `working` for `failed`, and records a 2
+    leave            leaves `working` for `idle`, which cancels the invocation
+
+  The `<param>`s are written in the alphabetical order of their names, which is
+  not a style choice. The request's `event_data` is a JSON object whose keys come
+  out in the order each backend builds them — the document's order on Kotlin,
+  alphabetical on Rust (measured 2026-10-02) — and a saved state holds that text
+  as it was, one text for both backends to write and read. In this order the two
+  agree; the difference itself is not hidden by it, only kept out of a test that
+  is about something else.
+
+  `seen` is a decimal number that grows a digit for each such event, so it says
+  WHICH arrived and in what order, as `trace` does in static_timers.scxml: 1 is
+  a completion, 2 a failure, 12 a completion and then a failure.
+
+  A restore starts the invocation again from the request it was saved with
+  (`restarted`, a new token, the deadline it had left) and never evaluates the
+  element a second time: `job` and `label` may have changed since the start, and
+  the host is owed the values the document sent.
+
+  Generated with the invoker declaration naming the type x-sce-host
+  (scripts/regen_host_processor.sh and scripts/regen_host_processor_kotlin.sh
+  name the flag; an XML comment cannot spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_static_host_invoke">
+  <datamodel>
+    <data id="job" sce:type="uint32" expr="7"/>
+    <data id="label" sce:type="string" expr="'report'"/>
+    <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="job" expr="job + 1"/>
+    </transition>
+    <transition event="start" target="working"/>
+  </state>
+
+  <state id="working">
+    <invoke type="x-sce-host" id="h" src="job://report">
+      <param name="_sce_deadline_ms" expr="5000"/>
+      <param name="job" expr="job"/>
+      <param name="label" expr="label"/>
+      <content>payload</content>
+    </invoke>
+    <transition event="bump">
+      <assign location="job" expr="job + 1"/>
+    </transition>
+    <transition event="done.invoke.h" target="after">
+      <assign location="seen" expr="seen * 10 + 1"/>
+    </transition>
+    <transition event="error.invoke.h" target="failed">
+      <assign location="seen" expr="seen * 10 + 2"/>
+    </transition>
+    <transition event="leave" target="idle"/>
+  </state>
+
+  <state id="after"/>
+  <state id="failed"/>
+</scxml>

@@ -492,6 +492,17 @@ pub trait StatePolicy: Sized + 'static {
         None
     }
 
+    /// The state whose `<invoke>` the document gives the id `invoke_id` and the
+    /// host-run `type` `processor_type`, or `None` when it has no such invoke —
+    /// what a restore judges a saved host-run invocation against.
+    ///
+    /// Generated only when the document has an `<invoke>` a declared host
+    /// invoker serves and saves. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    fn host_invoke_owner(_processor_type: &str, _invoke_id: &str) -> Option<Self::State> {
+        None
+    }
+
     /// The ids of the `<invoke>`s whose child session is running (§scxml-6.4),
     /// in document order. A child that has ended is not running, though the
     /// policy may keep it until its state exits: a restore starts every id

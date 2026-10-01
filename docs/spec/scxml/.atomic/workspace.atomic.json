@@ -10972,6 +10972,21 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "restartInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startRestoredHostInvokes",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "start_host_invoke",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11411,6 +11426,35 @@
         {
           "file": "sce-build/src/forge/static_datamodel.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "symbol": "SavedState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+          "symbol": "SavedHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "staticHostInvokes",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "start_host_invoke",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

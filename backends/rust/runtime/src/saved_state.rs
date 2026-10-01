@@ -113,6 +113,15 @@ pub struct SavedState {
     /// the same id. One whose child has ended is absent — its `done.invoke` is
     /// in the external queue, or already taken — so it is not started twice.
     pub invokes: Vec<String>,
+    /// The `<invoke>`s a declared host invoker is running (§scxml-6.4.1), by
+    /// `(type, id)`. A restored machine starts each again from the request it
+    /// was started with, with the deadline it had left; the host is told it is a
+    /// restart ([`crate::HostInvokeRequest::restarted`]).
+    pub host_invokes: Vec<SavedHostInvoke>,
+    /// The token the next host-run start receives. Carried on, so that a start
+    /// a restored machine makes is never given a token an earlier run already
+    /// handed to a host that may still answer with it.
+    pub host_invoke_token: u64,
     /// The external queue, front first: events a host raised and has not yet
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
@@ -192,6 +201,158 @@ pub struct SavedHostSend {
     pub invoke_id: String,
 }
 
+/// An `<invoke>` a declared host invoker is running, as it is started again
+/// (§scxml-6.4.1): every field is what the request the host was handed carried,
+/// so the restarted invocation reads as the one the document began.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SavedHostInvoke {
+    /// The `type` the `<invoke>` named.
+    pub processor_type: String,
+    /// The invoke's id, which `done.invoke.<id>` names.
+    pub invoke_id: String,
+    /// `<invoke src>`, empty when the document named none.
+    pub src: String,
+    /// `<param>` values by name, ordered by name; a repeated name keeps every
+    /// value in document order. Without the engine's own deadline parameter,
+    /// which `due` holds.
+    pub params: Vec<(String, Vec<String>)>,
+    /// The namelist and `<param>` pairs as JSON, as the request carried them.
+    pub data: String,
+    /// Inline `<content>`, empty when the document carried none.
+    pub content: String,
+    /// When its deadline comes due, in milliseconds since the Unix epoch on the
+    /// wall clock of the host that saved it; `None` for an invocation that has
+    /// none. Already past for one that came due while the machine waited to be
+    /// restarted.
+    pub due: Option<u64>,
+}
+
+/// `params` as a saved state writes them: an object of arrays of texts, in the
+/// order given.
+fn params_to_value(params: &[(String, Vec<String>)]) -> Value {
+    Value::Object(
+        params
+            .iter()
+            .map(|(name, values)| {
+                (
+                    name.clone(),
+                    Value::Array(values.iter().cloned().map(Value::Text).collect()),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// The member `params` of `value`, read as an object of arrays of texts; `what`
+/// names `value` in a refusal.
+fn read_params(value: &Value, what: &str) -> Result<Vec<(String, Vec<String>)>, StateRefusal> {
+    match value.member("params") {
+        Some(Value::Object(members)) => members
+            .iter()
+            .map(|(name, values)| match values {
+                Value::Array(items) => items
+                    .iter()
+                    .map(|v| match v {
+                        Value::Text(s) => Ok(s.clone()),
+                        _ => Err(StateRefusal::new(format!(
+                            "'{what}.params.{name}' holds a value that is not a text"
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(|values| (name.clone(), values)),
+                _ => Err(StateRefusal::new(format!(
+                    "'{what}.params.{name}' is not an array"
+                ))),
+            })
+            .collect(),
+        Some(_) => Err(StateRefusal::new(format!(
+            "'{what}.params' is not an object"
+        ))),
+        None => Err(StateRefusal::new(format!("'{what}' has no 'params'"))),
+    }
+}
+
+/// A moment, as the text a saved state writes it as — milliseconds since the
+/// Unix epoch — which `what` (the member, named in a refusal) holds.
+///
+/// A text of digits, as every 64-bit integer is, and one a signed 64-bit reader
+/// holds too: the format is the same on every backend.
+fn read_moment(written: &str, what: &str) -> Result<u64, StateRefusal> {
+    written
+        .parse::<u64>()
+        .ok()
+        .filter(|d| {
+            // `parse` also reads a leading `+`, which the other backends refuse,
+            // and which no backend writes.
+            *d <= i64::MAX as u64 && written.bytes().all(|b| b.is_ascii_digit())
+        })
+        .ok_or_else(|| {
+            StateRefusal::new(format!(
+                "'{what}' ({written}) is not a whole number of milliseconds"
+            ))
+        })
+}
+
+/// A host-run start's token, as the text a saved state writes it as: digits,
+/// within a signed 64-bit count, as every backend reads one.
+fn read_token(written: &str, what: &str) -> Result<u64, StateRefusal> {
+    written
+        .parse::<u64>()
+        .ok()
+        .filter(|t| *t <= i64::MAX as u64 && written.bytes().all(|b| b.is_ascii_digit()))
+        .ok_or_else(|| {
+            StateRefusal::new(format!(
+                "'{what}' ({written}) is not a whole number a token can be"
+            ))
+        })
+}
+
+impl SavedHostInvoke {
+    fn to_value(&self) -> Value {
+        let text = |s: &str| Value::Text(s.to_string());
+        Value::Object(vec![
+            ("type".to_string(), text(&self.processor_type)),
+            ("id".to_string(), text(&self.invoke_id)),
+            ("src".to_string(), text(&self.src)),
+            ("params".to_string(), params_to_value(&self.params)),
+            ("data".to_string(), text(&self.data)),
+            ("content".to_string(), text(&self.content)),
+            (
+                "due".to_string(),
+                self.due
+                    .map_or(Value::Null, |due| Value::Text(due.to_string())),
+            ),
+        ])
+    }
+
+    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let text = |key: &str| match value.member(key) {
+            Some(Value::Text(s)) => Ok(s.clone()),
+            Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
+            None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        let due = match value.member("due") {
+            Some(Value::Null) => None,
+            Some(Value::Text(written)) => Some(read_moment(written, &format!("{what}.due"))?),
+            Some(_) => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.due' is neither a text nor null"
+                )))
+            }
+            None => return Err(StateRefusal::new(format!("'{what}' has no 'due'"))),
+        };
+        Ok(Self {
+            processor_type: text("type")?,
+            invoke_id: text("id")?,
+            src: text("src")?,
+            params: read_params(value, what)?,
+            data: text("data")?,
+            content: text("content")?,
+            due,
+        })
+    }
+}
+
 impl SavedSend {
     fn to_value(&self) -> Value {
         let text = |s: &str| Value::Text(s.to_string());
@@ -234,20 +395,7 @@ impl SavedSend {
                 ("event".to_string(), text(&host.event)),
                 ("target".to_string(), text(&host.target)),
                 ("content".to_string(), text(&host.content)),
-                (
-                    "params".to_string(),
-                    Value::Object(
-                        host.params
-                            .iter()
-                            .map(|(name, values)| {
-                                (
-                                    name.clone(),
-                                    Value::Array(values.iter().map(|v| text(v)).collect()),
-                                )
-                            })
-                            .collect(),
-                    ),
-                ),
+                ("params".to_string(), params_to_value(&host.params)),
                 ("sendid".to_string(), text(&host.send_id)),
                 ("data".to_string(), text(&host.data)),
                 ("invokeid".to_string(), text(&host.invoke_id)),
@@ -262,22 +410,7 @@ impl SavedSend {
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
             None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
         };
-        let due_text = text("due")?;
-        // A text of digits, as every 64-bit integer is, and one a signed
-        // 64-bit reader holds too: the format is the same on every backend.
-        let due = due_text
-            .parse::<u64>()
-            .ok()
-            .filter(|d| {
-                // `parse` also reads a leading `+`, which the other backends
-                // refuse, and which no backend writes.
-                *d <= i64::MAX as u64 && due_text.bytes().all(|b| b.is_ascii_digit())
-            })
-            .ok_or_else(|| {
-                StateRefusal::new(format!(
-                    "'{what}.due' ({due_text}) is not a whole number of milliseconds"
-                ))
-            })?;
+        let due = read_moment(&text("due")?, &format!("{what}.due"))?;
         let act = match text("act")?.as_str() {
             "raise" => SavedAct::Raise {
                 event: text("event")?,
@@ -291,44 +424,16 @@ impl SavedSend {
                 send_id: text("sendid")?,
                 origin: text("origin")?,
             },
-            "host" => {
-                let params = match value.member("params") {
-                    Some(Value::Object(members)) => members
-                        .iter()
-                        .map(|(name, values)| match values {
-                            Value::Array(items) => items
-                                .iter()
-                                .map(|v| match v {
-                                    Value::Text(s) => Ok(s.clone()),
-                                    _ => Err(StateRefusal::new(format!(
-                                        "'{what}.params.{name}' holds a value that is not a text"
-                                    ))),
-                                })
-                                .collect::<Result<Vec<_>, _>>()
-                                .map(|values| (name.clone(), values)),
-                            _ => Err(StateRefusal::new(format!(
-                                "'{what}.params.{name}' is not an array"
-                            ))),
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    Some(_) => {
-                        return Err(StateRefusal::new(format!(
-                            "'{what}.params' is not an object"
-                        )))
-                    }
-                    None => return Err(StateRefusal::new(format!("'{what}' has no 'params'"))),
-                };
-                SavedAct::Host(SavedHostSend {
-                    processor_type: text("type")?,
-                    event: text("event")?,
-                    target: text("target")?,
-                    content: text("content")?,
-                    params,
-                    send_id: text("sendid")?,
-                    data: text("data")?,
-                    invoke_id: text("invokeid")?,
-                })
-            }
+            "host" => SavedAct::Host(SavedHostSend {
+                processor_type: text("type")?,
+                event: text("event")?,
+                target: text("target")?,
+                content: text("content")?,
+                params: read_params(value, what)?,
+                send_id: text("sendid")?,
+                data: text("data")?,
+                invoke_id: text("invokeid")?,
+            }),
             other => {
                 return Err(StateRefusal::new(format!(
                     "'{what}.act' is '{other}', which is not raise, internal or host"
@@ -359,6 +464,18 @@ pub struct SavedEvent {
     pub origin_type: String,
     /// `_event.invokeid`.
     pub invoke_id: String,
+    /// The token a host-run invocation's completion or failure was stamped
+    /// with when `Engine::complete_host_invoke` accepted it, `None` for any
+    /// other event.
+    ///
+    /// The engine refuses a host `done.invoke` that carries none when it is
+    /// dequeued, because it may be a cancelled run's late reply. A completion
+    /// that was accepted and is still queued has to keep the stamp across a
+    /// save, or the restored machine would refuse the one answer it was
+    /// waiting for. Written as it was, not as a guess from the event's name:
+    /// an event a host raised through the ordinary door and the engine had yet
+    /// to refuse is one the restored machine must still refuse.
+    pub host_invoke_token: Option<u64>,
 }
 
 impl SavedEvent {
@@ -382,13 +499,17 @@ impl SavedEvent {
             &self.origin_type,
             &self.invoke_id,
         ];
-        Value::Object(
-            Self::FIELDS
-                .iter()
-                .zip(values)
-                .map(|(k, v)| ((*k).to_string(), Value::Text(v.clone())))
-                .collect(),
-        )
+        let mut members: Vec<(String, Value)> = Self::FIELDS
+            .iter()
+            .zip(values)
+            .map(|(k, v)| ((*k).to_string(), Value::Text(v.clone())))
+            .collect();
+        members.push((
+            "hostinvoketoken".to_string(),
+            self.host_invoke_token
+                .map_or(Value::Null, |token| Value::Text(token.to_string())),
+        ));
+        Value::Object(members)
     }
 
     fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
@@ -396,6 +517,22 @@ impl SavedEvent {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
             None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        let host_invoke_token = match value.member("hostinvoketoken") {
+            Some(Value::Null) => None,
+            Some(Value::Text(written)) => {
+                Some(read_token(written, &format!("{what}.hostinvoketoken"))?)
+            }
+            Some(_) => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.hostinvoketoken' is neither a text nor null"
+                )))
+            }
+            None => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}' has no 'hostinvoketoken'"
+                )))
+            }
         };
         Ok(Self {
             name: text("name")?,
@@ -405,6 +542,7 @@ impl SavedEvent {
             origin: text("origin")?,
             origin_type: text("origintype")?,
             invoke_id: text("invokeid")?,
+            host_invoke_token,
         })
     }
 }
@@ -460,6 +598,19 @@ impl SavedState {
             (
                 "invokes".to_string(),
                 Value::Array(self.invokes.iter().cloned().map(Value::Text).collect()),
+            ),
+            (
+                "hostinvokes".to_string(),
+                Value::Array(
+                    self.host_invokes
+                        .iter()
+                        .map(SavedHostInvoke::to_value)
+                        .collect(),
+                ),
+            ),
+            (
+                "hostinvoketoken".to_string(),
+                Value::Text(self.host_invoke_token.to_string()),
             ),
             (
                 "external".to_string(),
@@ -531,6 +682,18 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'invokes' is not an array")),
         };
+        let host_invokes = match field("hostinvokes")? {
+            Value::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| SavedHostInvoke::from_value(v, &format!("hostinvokes[{i}]")))
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(StateRefusal::new("'hostinvokes' is not an array")),
+        };
+        let host_invoke_token = match field("hostinvoketoken")? {
+            Value::Text(written) => read_token(written, "hostinvoketoken")?,
+            _ => return Err(StateRefusal::new("'hostinvoketoken' is not a text")),
+        };
         let external = match field("external")? {
             Value::Array(items) => items
                 .iter()
@@ -547,6 +710,8 @@ impl SavedState {
             history,
             pending,
             invokes,
+            host_invokes,
+            host_invoke_token,
             external,
         })
     }
@@ -787,6 +952,8 @@ pub fn save<P: StatePolicy>(
             .into_iter()
             .map(str::to_string)
             .collect(),
+        host_invokes: save_host_invokes(engine, wall_now_ms),
+        host_invoke_token: engine.next_host_invoke_token(),
         external: engine
             .external_queue
             .queued()
@@ -798,20 +965,54 @@ pub fn save<P: StatePolicy>(
                 origin: queued.metadata.origin.clone(),
                 origin_type: queued.metadata.origin_type.clone(),
                 invoke_id: queued.metadata.invoke_id.clone(),
+                host_invoke_token: queued.metadata.host_invoke_token,
             })
             .collect(),
     })
+}
+
+/// Every host-run invocation of `engine` that is running, or was re-armed by a
+/// restore and has yet to start, as a saved state holds it: the request it was
+/// started with and the wall-clock moment its deadline comes due. Ordered by
+/// `(type, id)`.
+fn save_host_invokes<P: StatePolicy>(engine: &Engine<P>, wall_now_ms: u64) -> Vec<SavedHostInvoke> {
+    let now = engine.now_ms();
+    engine
+        .running_host_invokes()
+        .into_iter()
+        .map(|running| {
+            let request = running.request;
+            let mut params: Vec<_> = request.params.into_iter().collect();
+            params.sort_by(|a, b| a.0.cmp(&b.0));
+            SavedHostInvoke {
+                processor_type: request.processor_type,
+                invoke_id: request.invoke_id,
+                src: request.src,
+                params,
+                data: request.event_data,
+                content: request.content,
+                due: running.due_at.map(|ready_at| {
+                    clamp_to_i64(wall_now_ms.saturating_add(ready_at.saturating_sub(now)))
+                }),
+            }
+        })
+        .collect()
 }
 
 /// Every delayed send of `engine` still waiting, as a saved state holds it:
 /// written as the wall-clock moment it comes due, in the order the machine
 /// would deliver them.
 ///
-/// A send the format cannot carry — one routed to a parent or a child session,
-/// or an invocation's deadline — refuses the save. A document that makes one
-/// is generated without the save API, so no generated machine reaches this;
-/// the refusal is for a machine built by hand, where leaving the entry out
-/// would restore a machine that never delivers it and say nothing.
+/// A send the format cannot carry — one routed to a parent or a child session —
+/// refuses the save. A document that makes one is generated without the save
+/// API, so no generated machine reaches this; the refusal is for a machine
+/// built by hand, where leaving the entry out would restore a machine that
+/// never delivers it and say nothing.
+///
+/// The deadline of a running host-run invocation is not a send: it is saved with
+/// the invocation, as its `due` ([`save_host_invokes`]), and left out here. One
+/// that belongs to no running invocation is refused like a send the format
+/// cannot carry.
 fn save_pending<P: StatePolicy>(
     engine: &Engine<P>,
     wall_now_ms: u64,
@@ -821,7 +1022,7 @@ fn save_pending<P: StatePolicy>(
 
     let now = engine.now_ms();
     let name = |event: &P::Event| P::get_event_name(*event).to_string();
-    engine
+    let sends = engine
         .scheduler
         .pending()
         .into_iter()
@@ -875,16 +1076,25 @@ fn save_pending<P: StatePolicy>(
                         invoke_id: request.invoke_id.clone(),
                     })
                 }
-                ScheduledAct::HostInvokeDeadline { invoke_id, .. } => {
-                    return Err(StateRefusal::new(format!(
-                        "the invocation '{invoke_id}' is running, and a saved state does not \
-                         carry an invocation"
-                    )))
+                ScheduledAct::HostInvokeDeadline {
+                    processor_type,
+                    invoke_id,
+                    token,
+                } => {
+                    return if engine.host_invoke_is_running(processor_type, invoke_id, *token) {
+                        Ok(None)
+                    } else {
+                        Err(StateRefusal::new(format!(
+                            "the deadline of the invocation '{invoke_id}' belongs to no \
+                             invocation this machine is running"
+                        )))
+                    };
                 }
             };
-            Ok(SavedSend { due, act })
+            Ok(Some(SavedSend { due, act }))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(sends.into_iter().flatten().collect())
 }
 
 /// A `<history>` of the document, as a generated machine declares it: the id
@@ -1084,6 +1294,7 @@ pub fn enter<P: StatePolicy>(
             queued.metadata.origin = e.origin.clone();
             queued.metadata.origin_type = e.origin_type.clone();
             queued.metadata.invoke_id = e.invoke_id.clone();
+            queued.metadata.host_invoke_token = e.host_invoke_token;
             Ok(queued)
         })
         .collect::<Result<Vec<_>, StateRefusal>>()?;
@@ -1117,6 +1328,32 @@ pub fn enter<P: StatePolicy>(
         }
         restarts.push(id);
     }
+    // And for a host-run one, by the `(type, id)` the document declares: one it
+    // does not have, one whose state the saved configuration does not stand in,
+    // or one named twice is a run the saved machine could not have had.
+    for (i, host) in saved.host_invokes.iter().enumerate() {
+        let (processor_type, id) = (host.processor_type.as_str(), host.invoke_id.as_str());
+        let owner = P::host_invoke_owner(processor_type, id).ok_or_else(|| {
+            StateRefusal::new(format!(
+                "hostinvokes[{i}] is '{id}' of type '{processor_type}', which the document \
+                 does not have a host invoker run"
+            ))
+        })?;
+        if !configuration.contains(&owner) {
+            return Err(StateRefusal::new(format!(
+                "hostinvokes[{i}] is '{id}', whose state the saved configuration does not \
+                 stand in"
+            )));
+        }
+        if saved.host_invokes[..i]
+            .iter()
+            .any(|earlier| earlier.processor_type == processor_type && earlier.invoke_id == id)
+        {
+            return Err(StateRefusal::new(format!(
+                "hostinvokes[{i}] is '{id}', which an earlier entry already names"
+            )));
+        }
+    }
     let mut engine = Engine::new(policy);
     engine.set_clock(clock);
     engine
@@ -1126,10 +1363,48 @@ pub fn enter<P: StatePolicy>(
         engine.raise_external_with_meta(queued);
     }
     arm_pending(&mut engine, pending, wall_now_ms);
+    rearm_host_invokes(&mut engine, &saved.host_invokes, wall_now_ms);
+    engine.set_next_host_invoke_token(saved.host_invoke_token);
     // Last, so what a child sends as it starts stands behind what was already
     // waiting: the saved machine's queue was ahead of it.
     engine.restart_invokes(&restarts);
     Ok(engine)
+}
+
+/// Re-arm each of `host_invokes` on `engine`, in the order a saved state lists
+/// them. None starts here: the host registers its invokers on the engine this
+/// restore returns, so each starts at the top of the first macrostep it drives
+/// (`Engine::start_restored_host_invokes`). A deadline comes due
+/// `due - wall_now_ms` after now on the engine's own clock; one already due
+/// ends the invocation without a start.
+fn rearm_host_invokes<P: StatePolicy>(
+    engine: &mut Engine<P>,
+    host_invokes: &[SavedHostInvoke],
+    wall_now_ms: u64,
+) {
+    use crate::engine::RestoredDeadline;
+
+    let now = engine.now_ms();
+    for host in host_invokes {
+        let deadline = match host.due {
+            None => RestoredDeadline::None,
+            Some(due) if due <= wall_now_ms => RestoredDeadline::Passed,
+            Some(due) => RestoredDeadline::At(now.saturating_add(due - wall_now_ms)),
+        };
+        engine.rearm_host_invoke(
+            crate::HostInvokeRequest {
+                processor_type: host.processor_type.clone(),
+                invoke_id: host.invoke_id.clone(),
+                src: host.src.clone(),
+                params: host.params.iter().cloned().collect(),
+                event_data: host.data.clone(),
+                content: host.content.clone(),
+                token: 0,
+                restarted: true,
+            },
+            deadline,
+        );
+    }
 }
 
 /// A waiting send read against the document: the event it names, resolved, so a
@@ -1368,12 +1643,42 @@ mod tests {
                 },
             ],
             invokes: vec!["worker".to_string(), "spare".to_string()],
-            external: vec![SavedEvent {
-                name: "tick".to_string(),
-                data: "{\"n\":1}".to_string(),
-                event_type: "external".to_string(),
-                ..SavedEvent::default()
-            }],
+            host_invokes: vec![
+                SavedHostInvoke {
+                    processor_type: "x-host".to_string(),
+                    invoke_id: "h".to_string(),
+                    src: "job://1".to_string(),
+                    params: vec![
+                        ("a".to_string(), vec!["1".to_string(), "2".to_string()]),
+                        ("b".to_string(), vec![]),
+                    ],
+                    data: "{\"a\":[1,2]}".to_string(),
+                    content: "body".to_string(),
+                    due: Some(i64::MAX as u64),
+                },
+                SavedHostInvoke {
+                    processor_type: "x-host".to_string(),
+                    invoke_id: "no_deadline".to_string(),
+                    due: None,
+                    ..SavedHostInvoke::default()
+                },
+            ],
+            host_invoke_token: i64::MAX as u64,
+            external: vec![
+                SavedEvent {
+                    name: "tick".to_string(),
+                    data: "{\"n\":1}".to_string(),
+                    event_type: "external".to_string(),
+                    ..SavedEvent::default()
+                },
+                SavedEvent {
+                    name: "done.invoke.h".to_string(),
+                    event_type: "external".to_string(),
+                    invoke_id: "h".to_string(),
+                    host_invoke_token: Some(7),
+                    ..SavedEvent::default()
+                },
+            ],
         };
         let back = SavedState::from_json(&state.to_json()).expect("reads");
         assert_eq!(back, state);

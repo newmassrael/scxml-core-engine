@@ -615,6 +615,8 @@ impl AMeshRequestReachesTheRouterPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

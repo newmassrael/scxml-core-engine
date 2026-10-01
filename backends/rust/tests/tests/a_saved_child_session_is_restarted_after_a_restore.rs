@@ -187,7 +187,7 @@ fn an_event_saved_in_the_queue_reaches_the_child_the_restore_started() {
     // restarted child that takes it when the parent forwards it.
     let text = SHARED_WORKING.replace(
         r#""external":[]"#,
-        r#""external":[{"name":"a","data":"","type":"external","sendid":"","origin":"","origintype":"","invokeid":""}]"#,
+        r#""external":[{"name":"a","data":"","type":"external","sendid":"","origin":"","origintype":"","invokeid":"","hostinvoketoken":null}]"#,
     );
     let mut engine = restored(&text);
     // `a` was queued before the machine was saved and is forwarded to the child

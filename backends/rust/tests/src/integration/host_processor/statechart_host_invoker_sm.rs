@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 08f7d77e31a86a3a7265ac4d858a5a1e799a507b096e52c30f6a6b5c4ec86f7e
+// source-hash: a66104eb0deedfc8aceb708c49f62eda83558d36574f6693311284f4a98b913a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1579,6 +1579,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -1763,6 +1765,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -1839,6 +1843,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -1915,6 +1921,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -1970,6 +1978,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2033,6 +2043,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2088,6 +2100,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2168,6 +2182,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2248,6 +2264,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2303,6 +2321,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2358,6 +2378,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2446,6 +2468,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2509,6 +2533,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -2643,6 +2669,8 @@ impl StatechartHostInvokerPolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

@@ -2898,7 +2898,8 @@ yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait. A saved state holds every
 variable, the machine's own included, the configuration, the current leaf,
 what each `<history>` recorded, the delayed `<send>`s still waiting, the
-`<invoke>`s whose child is running and the
+`<invoke>`s whose child is running, the ones a host is running (with the request
+each was started with) and the
 external queue in order — only the internal queue is empty at a macrostep
 boundary, so an event a host raised and has not yet driven the machine
 through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
@@ -2971,6 +2972,66 @@ a document with an `<invoke>` that restored from a state with no `invokes` would
 stand in "working" with nobody working. `sce-build/tests/fixtures/static_datamodel/static_invoke.scxml`
 and `saved/static_invoke_working.json` hold it on both backends.
 
+**Running host invocations.** An `<invoke>` a declared host invoker serves
+(§scxml-6.4.1) is part of the state for the same reason, and what is lost with
+the process that ran it is the host's side of it. A saved state lists each one
+as `hostinvokes`, ordered by type and then id, with the REQUEST the host was
+handed — `src`, `params` (by name; without the engine's own `_sce_deadline_ms`),
+`data` (the namelist and `<param>` pairs as JSON, as the backend built them),
+`content` — and `due`, the wall-clock moment its deadline comes due, or `null`
+for one without a deadline. Nothing the element reads is evaluated again: the
+request is what the document sent, and `job` or `label` may have changed since.
+
+A restore does not call the host. A Rust host registers its invokers on the
+engine the restore returns, so at that moment nobody could run one, and Kotlin
+does the same so that the two agree: each invocation starts again at the top of
+the first macrostep the host drives, where one the document entered would have
+started, ahead of the saved external queue. It goes through the one start a
+document's own invocation goes through, so the host receives a request with
+`restarted` set (`HostInvokeRequest.restarted`; always `false` for a start the
+document makes), a NEW token, and the deadline it had left — `due` less the wall
+clock the restore was given. A host that kept its own record of the work under
+the id may take it up; one that did not takes it as any other start, which is the
+right reading. An invoker that is not registered by then is the `error.execution`
+a document's own start gets, and a state that leaves before the restart began
+cancels it without telling the host anything: the engine never started it.
+
+`hostinvoketoken` carries the token the next start receives, and a restore carries
+on from it. A token is distinct for every start within one engine (§scxml-6.4: a
+cancelled process's late reply is ignored), and a restored process that counted
+from 0 again would give a restarted invocation the token an earlier run already
+handed to a host that may still answer with it. With the counter carried on, that
+reply is stale. What it cannot cover is a token the earlier process handed out
+AFTER the save, which is a fork and not a restore.
+
+A deadline that came due while the machine was away ends the invocation without a
+start: the host is not asked to begin what it would be told to stop at once, and
+is told nothing — it never began it in this process — while the document receives
+`error.invoke.<id>` with `_event.data` `"deadline"`, as an expiry delivers it.
+`external[].hostinvoketoken` is the stamp an accepted completion carries. The
+engine refuses a host `done.invoke` that has none when it is dequeued, because it
+may be a cancelled run's late reply, so a completion that was accepted and is
+still queued keeps its stamp across a save — written as it was, never inferred
+from the event's name, since an event a host raised through the ordinary door and
+the engine had yet to refuse is one the restored machine must still refuse.
+
+"Running" is started and not ended, as above: an invocation whose completion is
+already queued is absent from `hostinvokes`. One restored and saved again before
+it was driven is still listed, with the same request and deadline, so repeating
+the round trip never loses the work. A restore refuses an invocation the
+document does not hand to a host under that `(type, id)`, one whose state the
+saved configuration does not stand in, one named twice, a `due` that is not a
+whole number of milliseconds, and a token that is not a text of digits within a
+signed 64-bit count; both fields are always present.
+`sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml` and
+`saved/statechart_static_host_invoke_running.json` hold it on both backends.
+
+The request's `event_data` is written in the order its backend built it — the
+document's on Kotlin, alphabetical on Rust — which is an existing difference
+between the two and not one a saved state introduces; the fixture declares its
+`<param>`s alphabetically so a shared instance is one text. A host that compares
+a request as bytes rather than reading it as JSON sees the difference.
+
 A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
 both, and its host calls cannot be made twice), and it is refused, leaving
 the machine as it was, for a state saved from a document of another shape, a
@@ -2996,8 +3057,9 @@ moment.
 
 A saved state is bound to the document's SHAPE, not its source hash: a
 SHA-256 the generator computes over every state with its kind and parent,
-every `<history>` with its id, kind and parent, every `<invoke>` with its id and
-the state that holds it, and every variable with its type and bound
+every `<history>` with its id, kind and parent, every `<invoke type="scxml">` with
+its id and the state that holds it, every `<invoke>` a declared host invoker
+serves with its type as well, and every variable with its type and bound
 (`static_lowering::saved_shape`); a document with no `<history>` or `<invoke>`
 hashes what it did before either was saved. A guard, an action, an initial
 value or a comment changed leaves it restorable, so an app update does not
@@ -3007,10 +3069,11 @@ variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
 A document that waits on ANOTHER SESSION whose start a restore cannot repeat has
-state this version of the format does not carry: an `<invoke>` that is not a
-child session of its own (a host-run one, started with a request the host holds
-and a deadline it may be counting, a mesh-rpc call with one request in flight,
-or a peer on another device), or a delayed `<send>` whose target is a `#_`
+state this version of the format does not carry: a Mesh request (`sce:mesh-rpc`,
+whose one request may already have reached its peer and would be acted on twice
+if sent again — it is told from a host's own invocation by the type SCE reserves
+for it, which a host may not declare), a peer on another device, or a delayed
+`<send>` whose target is a `#_`
 location other than `#_internal` — the parent, an invocation, a child session —
 which is delivered through a session the state does not hold. Such a machine is
 generated WITHOUT `save` /

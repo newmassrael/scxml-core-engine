@@ -129,7 +129,30 @@ for src in "$STATIC_PARAMS_TMP"/*Sm.kt; do
     cp "$src" "$STATIC_PARAMS_DIR/"
 done
 
+# The saving fixture (SCE Accepted Subset §2.15): a `datamodel="sce-static"`
+# machine whose host-run `<invoke>` a saved state carries. Invoker declaration
+# only, and a document of its own because it measures what a restore does with a
+# request. Its own package for the reason the others have theirs.
+STATIC_INVOKE_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"
+STATIC_INVOKE_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_static_host_invoke"
+STATIC_INVOKE_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_INVOKE_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l kotlin -o "$STATIC_INVOKE_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-invoker "$HOST_PROCESSOR"
+
+mkdir -p "$STATIC_INVOKE_DIR"
+find "$STATIC_INVOKE_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$STATIC_INVOKE_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${STATIC_INVOKE_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$STATIC_INVOKE_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_PARAMS_DIR/ from $STATIC_PARAMS_FIXTURE (--host-processor and --host-invoker $HOST_PROCESSOR)"
+echo "Regenerated: $STATIC_INVOKE_DIR/ from $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_PROCESSOR)"

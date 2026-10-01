@@ -1161,6 +1161,21 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         }
     }
 {% endif %}
+{% if static_saved_shape and not no_std and model.invokes | host_invoker %}
+
+    // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
+    // `<invoke>`s a declared host invoker is running, and a restore starts each
+    // again from the request it saved. What it may name is what the document
+    // hands to a host.
+    fn host_invoke_owner(processor_type: &str, invoke_id: &str) -> Option<Self::State> {
+        match (processor_type, invoke_id) {
+{% for invoke_info in model.invokes | host_invoker %}
+            ("{{ invoke_info.invoke_type | escape_rust }}", "{{ invoke_info.invoke_id | escape_rust }}") => Some({{ machine_name }}State::{{ invoke_info.state_name | to_state_variant }}),
+{% endfor %}
+            _ => None,
+        }
+    }
+{% endif %}
 {% if model.invokes | scxml_family %}
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait

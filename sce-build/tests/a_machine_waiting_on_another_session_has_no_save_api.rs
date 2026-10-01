@@ -9,13 +9,14 @@
 // A saved state holds what this session holds: its configuration, its
 // variables, what each `<history>` recorded, the delayed `<send>`s it is
 // waiting to deliver to its own queues or to a host-served processor, the child
-// sessions it is running (a restore starts each again), and its external queue.
-// What it cannot hold is a session whose start a restore cannot repeat — an
-// invocation the host runs, with a request and a deadline of its own, or a
-// delayed send waiting to be delivered to the parent, to an invocation or to a
-// child session. The rule is the safety of the whole feature: a `save()` that
-// left a host-run invocation out would restore a machine that waits for a
-// `done.invoke` nobody will send, and nothing would say so.
+// sessions it is running (a restore starts each again), the invocations a
+// declared host invoker is running (a restore starts each again from the request
+// it was started with), and its external queue. What it cannot hold is a session
+// whose start a restore cannot repeat — a Mesh request, which the peer may
+// already have acted on, or a delayed send waiting to be delivered to the
+// parent, to an invocation or to a child session. The rule is the safety of the
+// whole feature: a `save()` that left a Mesh request out would restore a machine
+// that waits for a `done.invoke` nobody will send, and nothing would say so.
 //
 // It is decided by the shape the generator computes (`saved_shape`), from a
 // model the ANALYZER has already read, so this runs the generator end to end
@@ -45,8 +46,9 @@ fn repo_root() -> PathBuf {
 static SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 
 /// What `sce-codegen generate -l <language>` wrote for `document`, joined, and
-/// whether it succeeded.
-fn generate(language: &str, document: &str) -> (bool, String) {
+/// whether it succeeded. `flags` are handed to the generator as well: the
+/// declarations a host makes (`--host-invoker <type>`).
+fn generate_declaring(language: &str, document: &str, flags: &[&str]) -> (bool, String) {
     let id = SCRATCH_ID.fetch_add(1, Ordering::SeqCst);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
         "no-save-api-{language}-{}-{id}",
@@ -66,6 +68,7 @@ fn generate(language: &str, document: &str) -> (bool, String) {
             dir.to_str().unwrap(),
             "--error-format=json",
         ])
+        .args(flags)
         .current_dir(repo_root())
         .output()
         .expect("spawn sce-codegen");
@@ -128,10 +131,15 @@ fn has_save_api(language: &str, text: &str) -> bool {
 /// each, whether it came with one. A document that does not generate at all
 /// fails the test, so a refusal is never read as "no API".
 fn save_api_per_backend(document: &str) -> Vec<(&'static str, bool)> {
+    save_api_per_backend_declaring(document, &[])
+}
+
+/// [`save_api_per_backend`] for a document its host declared `flags` for.
+fn save_api_per_backend_declaring(document: &str, flags: &[&str]) -> Vec<(&'static str, bool)> {
     SAVE_API
         .iter()
         .map(|(language, _)| {
-            let (ok, text) = generate(language, document);
+            let (ok, text) = generate_declaring(language, document, flags);
             assert!(
                 ok,
                 "{language}: the machine does not generate:\n{text}\n--- document:\n{document}"
@@ -217,20 +225,48 @@ fn a_static_child_session_is_generated_with_the_save_api() {
 }
 
 #[test]
+fn a_host_run_invocation_a_declared_invoker_serves_is_generated_with_the_save_api() {
+    // The saved state holds the request the host was handed and the deadline it
+    // had left, and a restore starts the invocation again from them.
+    let extra = r#"<invoke type="x-sce-host" id="job"/>"#;
+    for (language, has) in
+        save_api_per_backend_declaring(&machine(extra), &["--host-invoker", "x-sce-host"])
+    {
+        assert!(
+            has,
+            "{language}: a host-run invocation is in a saved state, so the machine saves it"
+        );
+    }
+}
+
+#[test]
+fn an_invoke_no_host_serves_is_generated_with_the_save_api() {
+    // Its start is refused with `error.execution`, so nothing is ever running:
+    // a saved state has nothing to say of it, and there is nothing to lose.
+    let extra = r#"<invoke type="x-sce-host" id="job"/>"#;
+    for (language, has) in save_api_per_backend(&machine(extra)) {
+        assert!(
+            has,
+            "{language}: a refused invoke runs nothing, so it takes nothing from the saved state"
+        );
+    }
+}
+
+#[test]
 fn an_invoke_that_a_restore_cannot_start_is_generated_without_it() {
-    // A host-run invocation was started with a request the host received and a
-    // deadline it may be counting: neither is in a saved state, so a machine
-    // that saved one would restore waiting for a `done.invoke` nobody sends.
-    for extra in [
-        r#"<invoke type="x-sce-host" id="child"/>"#,
-        r#"<invoke type="scxml" id="child">
+    // A Mesh request may already have reached its peer, and starting it again
+    // would have the peer act on it twice, so a machine that saved one would
+    // restore either waiting for an answer nobody is sending or asking again.
+    let mesh = r##"<invoke type="sce:mesh-rpc" id="ask" src="#peer">
+      <param name="_mesh_event" expr="'service.request'"/>
+    </invoke>"##;
+    let child = r#"<invoke type="scxml" id="child">
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
       </content>
-    </invoke>
-    <invoke type="x-sce-host" id="other"/>"#,
-    ] {
-        for (language, has) in save_api_per_backend(&machine(extra)) {
+    </invoke>"#;
+    for extra in [mesh.to_string(), format!("{child}{mesh}")] {
+        for (language, has) in save_api_per_backend(&machine(&extra)) {
             assert!(
                 !has,
                 "{language}: an invocation a restore cannot start is not in a saved state, so \

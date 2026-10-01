@@ -869,7 +869,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * what the cancelled process sends is ignored). Distinct for every
          * start of every invocation within one engine.
          */
-        val token: Long = 0
+        val token: Long = 0,
+        /**
+         * Whether this start resumes an invocation a saved machine was running
+         * (SCE Accepted Subset §2.15, "Saving and restoring") and not one the
+         * document just began.
+         *
+         * The process that ran it is gone with the process that saved it, so the
+         * engine starts it again from the request it saved: the same id, the same
+         * parameters, a new [token], and the deadline it had left. A host with no
+         * memory of the invocation takes it as any other start, which is the right
+         * reading; one that kept its own record of the work under the id may pick
+         * it up instead of beginning again. Always `false` for an invocation the
+         * document starts.
+         */
+        val restarted: Boolean = false,
     )
 
     /**
@@ -921,8 +935,48 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * to one state and a state is in the configuration at most once, so the
      * same id is never running twice; a restart replaces the entry, and its
      * new token is what makes the first run's reply stale.
+     *
+     * The request each start was made with is kept beside its token: a saved
+     * machine writes it down, and a restore starts the invocation again from it
+     * rather than evaluating the element a second time.
      */
-    private val startedHostInvokes = mutableMapOf<Pair<String, String>, Long>()
+    private val startedHostInvokes = mutableMapOf<Pair<String, String>, StartedHostInvoke>()
+
+    /** A host-run invocation that was started and has neither completed nor been cancelled. */
+    private class StartedHostInvoke(val token: Long, val request: HostInvokeRequest)
+
+    /**
+     * What a restored host-run invocation has left of its deadline (SCE Accepted
+     * Subset §2.15).
+     */
+    private sealed interface RestoredDeadline {
+        /** The invocation had none. */
+        data object None : RestoredDeadline
+
+        /** It comes due at [atMs] of this engine's own clock. */
+        data class At(val atMs: Long) : RestoredDeadline
+
+        /** It came due while the machine was away. */
+        data object Passed : RestoredDeadline
+    }
+
+    /**
+     * A host-run invocation a saved state listed, waiting for the first
+     * macrostep the host drives to start it again.
+     */
+    private class RestoredHostInvoke(val request: HostInvokeRequest, val deadline: RestoredDeadline)
+
+    /**
+     * The host-run invocations a restore re-armed and the engine has not yet
+     * started again, in the order a saved state listed them.
+     *
+     * Not started by the restore itself: a host may register its invokers after
+     * restoring, and a Rust host must (it registers them on the engine the
+     * restore returns), so both backends start them where an invocation the
+     * document entered would start — at the top of the first macrostep the host
+     * drives, ahead of the events the saved machine had queued.
+     */
+    private val restoredHostInvokes = mutableListOf<RestoredHostInvoke>()
 
     /** The token the next host-run start receives. */
     private var nextHostInvokeToken: Long = 0
@@ -1004,7 +1058,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * invocation the engine already knows is running.
      */
     protected fun performHostInvoke(request: HostInvokeRequest): Boolean {
-        val handler = hostInvokers[request.processorType] ?: return false
+        if (!hostInvokers.containsKey(request.processorType)) return false
         // A [HOST_INVOKE_DEADLINE_PARAM] is the engine's, not the host's: it is
         // taken out of the request and armed with the start. A value that is not
         // a whole number of milliseconds raises `error.execution` and starts
@@ -1025,13 +1079,29 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             return true
         }
+        return startHostInvoke(
+            request.copy(params = request.params - HOST_INVOKE_DEADLINE_PARAM),
+            deadlineMs?.let { saturatingAddMs(engineElapsedMs(), it) },
+        )
+    }
+
+    /**
+     * The start itself, which an invocation the document begins and one a
+     * restore begins again both go through: record the request, hand it to the
+     * host, arm the deadline at [deadlineAtMs] (a moment of the engine's clock),
+     * and take a completion the host reported at once.
+     *
+     * `false` when no invoker is registered.
+     */
+    private fun startHostInvoke(request: HostInvokeRequest, deadlineAtMs: Long?): Boolean {
+        val handler = hostInvokers[request.processorType] ?: return false
         val token = nextHostInvokeToken++
-        val started = request.copy(token = token, params = request.params - HOST_INVOKE_DEADLINE_PARAM)
-        startedHostInvokes[started.processorType to started.invokeId] = token
-        if (deadlineMs != null) {
+        val started = request.copy(token = token)
+        startedHostInvokes[started.processorType to started.invokeId] = StartedHostInvoke(token, started)
+        if (deadlineAtMs != null) {
             scheduledSends.add(
                 ScheduledSendEntry(
-                    fireTimeMs = saturatingAddMs(engineElapsedMs(), deadlineMs),
+                    fireTimeMs = deadlineAtMs,
                     sequenceNum = schedulerSequence++,
                     sendId = "",
                     event = null,
@@ -1060,6 +1130,49 @@ abstract class StateMachineEngine<S : State, E : Event>(
             completeHostInvoke(started.processorType, started.invokeId, token, doneData)
         }
         return true
+    }
+
+    /**
+     * Start the invocations a restore re-armed, as the macrostep's start would
+     * start ones the document had just entered (§scxml-6.4).
+     *
+     * A deadline that came due while the machine was away ends the invocation
+     * without a start: the host is not asked to begin what it would be told to
+     * stop at once, and the document receives the `error.invoke` the deadline
+     * raises. An invoker that is not registered by now is the same error a
+     * document's own start gets.
+     */
+    private fun startRestoredHostInvokes() {
+        if (restoredHostInvokes.isEmpty()) return
+        val restored = restoredHostInvokes.toList()
+        restoredHostInvokes.clear()
+        for (invocation in restored) {
+            val request = invocation.request
+            when (val deadline = invocation.deadline) {
+                RestoredDeadline.Passed -> raiseHostInvokeDeadline(request.invokeId)
+                RestoredDeadline.None, is RestoredDeadline.At -> {
+                    val at = (deadline as? RestoredDeadline.At)?.atMs
+                    if (!startHostInvoke(request, at)) {
+                        resolveEventByName("error.execution")?.let {
+                            raisePlatformError(it, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Tell the document an invocation's deadline passed: `error.invoke.<id>`, or
+     * the generic `error.invoke` when it names no specific one, with
+     * `_event.invokeid` set and `_event.data` the string `"deadline"`.
+     */
+    private fun raiseHostInvokeDeadline(invokeId: String) {
+        val expired = resolveEventByName(ERROR_INVOKE_PREFIX + invokeId)
+            ?: resolveEventByName(ERROR_INVOKE_EVENT)
+            ?: return
+        // The JSON spelling of the string, as every other backend carries it.
+        send(expired, EventMetadata(type = "external", data = "\"deadline\"", invokeId = invokeId))
     }
 
     /**
@@ -1125,7 +1238,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         originType: String,
     ): Boolean {
         val key = processorType to invokeId
-        if (startedHostInvokes[key] != token) return false
+        if (startedHostInvokes[key]?.token != token) return false
         startedHostInvokes.remove(key)
         dropHostInvokeDeadline(token)
         // Under the id the AUTHOR wrote a transition for, or — §scxml-3.12.1 —
@@ -1165,7 +1278,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * so.
      */
     fun cancelHostInvoke(processorType: String, invokeId: String): Boolean {
-        val token = startedHostInvokes.remove(processorType to invokeId) ?: return false
+        // One a restore re-armed and has not started again was never started by
+        // this engine, so there is nothing to tell the host to stop.
+        restoredHostInvokes.removeAll { it.request.processorType == processorType && it.request.invokeId == invokeId }
+        val token = startedHostInvokes.remove(processorType to invokeId)?.token ?: return false
         dropHostInvokeDeadline(token)
         return deliverHostInvokeCancel(processorType, invokeId, token)
     }
@@ -1190,14 +1306,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun expireHostInvoke(deadline: HostInvokeDeadline) {
         val key = deadline.processorType to deadline.invokeId
-        if (startedHostInvokes[key] != deadline.token) return
+        if (startedHostInvokes[key]?.token != deadline.token) return
         startedHostInvokes.remove(key)
         if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) return
-        val expired = resolveEventByName(ERROR_INVOKE_PREFIX + deadline.invokeId)
-            ?: resolveEventByName(ERROR_INVOKE_EVENT)
-            ?: return
-        // The JSON spelling of the string, as every other backend carries it.
-        send(expired, EventMetadata(type = "external", data = "\"deadline\"", invokeId = deadline.invokeId))
+        raiseHostInvokeDeadline(deadline.invokeId)
     }
 
     /**
@@ -2227,6 +2339,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 .toMap(LinkedHashMap()),
             pending = pending,
             invokes = runningInvokes(),
+            hostInvokes = runningHostInvokes(wallNowMs),
+            hostInvokeToken = nextHostInvokeToken,
             external = externalEventQueue.map { queued ->
                 SavedEvent(
                     name = eventNameOf(queued.event)
@@ -2237,9 +2351,47 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     origin = queued.metadata.origin,
                     originType = queued.metadata.originType,
                     invokeId = queued.metadata.invokeId,
+                    hostInvokeToken = queued.metadata.hostInvokeToken,
                 )
             },
         )
+    }
+
+    /**
+     * Every host-run invocation that is running, or was re-armed by a restore
+     * and has yet to start, as a saved state holds it: the request it was
+     * started with and the wall-clock moment its deadline comes due, [wallNowMs]
+     * plus the time left on this machine's [clock]. Ordered by `(type, id)`, so
+     * every backend writes them in the same order.
+     */
+    private fun runningHostInvokes(wallNowMs: Long): List<SavedHostInvoke> {
+        val now = engineElapsedMs()
+        fun dueOf(atMs: Long): Long = saturatingAddMs(wallNowMs, (atMs - now).coerceAtLeast(0L))
+        val running = startedHostInvokes.values.map { started ->
+            val deadlineAt = scheduledSends
+                .firstOrNull { it.hostInvokeDeadline?.token == started.token }
+                ?.fireTimeMs
+            started.request to deadlineAt
+        } + restoredHostInvokes.map { restored ->
+            restored.request to when (val deadline = restored.deadline) {
+                RestoredDeadline.None -> null
+                is RestoredDeadline.At -> deadline.atMs
+                RestoredDeadline.Passed -> now
+            }
+        }
+        return running
+            .sortedWith(compareBy<Pair<HostInvokeRequest, Long?>>({ it.first.processorType }, { it.first.invokeId }))
+            .map { (request, deadlineAt) ->
+                SavedHostInvoke(
+                    processorType = request.processorType,
+                    invokeId = request.invokeId,
+                    src = request.src,
+                    params = request.params,
+                    data = request.eventData,
+                    content = request.content,
+                    due = deadlineAt?.let(::dueOf),
+                )
+            }
     }
 
     /**
@@ -2257,14 +2409,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun pendingSends(wallNowMs: Long): List<SavedSend> {
         val now = engineElapsedMs()
-        return scheduledSends.map { entry ->
+        return scheduledSends.mapNotNull { entry ->
             val due = saturatingAddMs(wallNowMs, (entry.fireTimeMs - now).coerceAtLeast(0L))
             val hostSend = entry.hostSend
             val route = entry.route
+            val deadline = entry.hostInvokeDeadline
             val act = when {
-                entry.hostInvokeDeadline != null -> throw StateRefusal(
-                    "the invocation '${entry.hostInvokeDeadline.invokeId}' is running, and a saved " +
-                        "state does not carry an invocation")
+                // The deadline of a running host-run invocation is not a send:
+                // it is saved with the invocation, as its `due`
+                // ([runningHostInvokes]), and left out here. One that belongs to
+                // no running invocation is refused like a send the format cannot
+                // carry.
+                deadline != null ->
+                    if (startedHostInvokes[deadline.processorType to deadline.invokeId]?.token == deadline.token) {
+                        return@mapNotNull null
+                    } else {
+                        throw StateRefusal(
+                            "the deadline of the invocation '${deadline.invokeId}' belongs to no " +
+                                "invocation this machine is running")
+                    }
                 hostSend != null -> SavedAct.Host(
                     processorType = hostSend.processorType,
                     event = hostSend.eventName,
@@ -2325,7 +2488,75 @@ abstract class StateMachineEngine<S : State, E : Event>(
         savedHistory(saved)
         savedPending(saved)
         savedInvokes(saved, states)
+        savedHostInvokes(saved, states)
         savedExternal(saved)
+    }
+
+    /**
+     * §scxml-6.4.1: the `<invoke>`s of this document a declared host invoker
+     * runs, each as `(type, id)` with the state that holds it — what a restore
+     * judges the host-run invocations a saved state lists against. Overridden by
+     * generated code when the document saves.
+     */
+    protected open val staticHostInvokes: List<Triple<String, String, S>> get() = emptyList()
+
+    /**
+     * The host-run invocations [saved] lists, or the refusal that says which one
+     * this document could not have been running: one it does not hand to a host
+     * (by the `(type, id)` it declares), one whose state the saved configuration
+     * does not stand in, or one named twice.
+     */
+    private fun savedHostInvokes(saved: SavedState, configuration: List<S>): List<SavedHostInvoke> {
+        val seen = HashSet<Pair<String, String>>()
+        saved.hostInvokes.forEachIndexed { i, host ->
+            val owner = staticHostInvokes
+                .firstOrNull { it.first == host.processorType && it.second == host.invokeId }?.third
+                ?: throw StateRefusal(
+                    "hostinvokes[$i] is '${host.invokeId}' of type '${host.processorType}', which the " +
+                        "document does not have a host invoker run")
+            if (owner !in configuration) {
+                throw StateRefusal(
+                    "hostinvokes[$i] is '${host.invokeId}', whose state the saved configuration does not " +
+                        "stand in")
+            }
+            if (!seen.add(host.processorType to host.invokeId)) {
+                throw StateRefusal("hostinvokes[$i] is '${host.invokeId}', which an earlier entry already names")
+            }
+        }
+        return saved.hostInvokes
+    }
+
+    /**
+     * Re-arm each host-run invocation [saved] lists, in the order it lists them.
+     * None starts here: each starts at the top of the first macrostep the host
+     * drives ([startRestoredHostInvokes]). A deadline comes due
+     * `due - wallNowMs` after now on this machine's own clock; one already due
+     * ends the invocation without a start.
+     */
+    private fun rearmHostInvokes(saved: SavedState, wallNowMs: Long) {
+        val now = engineElapsedMs()
+        for (host in saved.hostInvokes) {
+            val due = host.due
+            val deadline = when {
+                due == null -> RestoredDeadline.None
+                due <= wallNowMs -> RestoredDeadline.Passed
+                else -> RestoredDeadline.At(saturatingAddMs(now, due - wallNowMs))
+            }
+            restoredHostInvokes.add(
+                RestoredHostInvoke(
+                    HostInvokeRequest(
+                        processorType = host.processorType,
+                        invokeId = host.invokeId,
+                        src = host.src,
+                        params = host.params,
+                        eventData = host.data,
+                        content = host.content,
+                        restarted = true,
+                    ),
+                    deadline,
+                )
+            )
+        }
     }
 
     /**
@@ -2415,13 +2646,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Behind nothing, in the order they were saved: enterAt left the
         // machine in the host-driven mode, whose queue this is.
         externalEventQueue.addAll(savedExternal(saved))
+        rearmHostInvokes(saved, wallNowMs)
+        nextHostInvokeToken = saved.hostInvokeToken
         // Last, so what a child sends as it starts stands behind what was
         // already waiting: the saved machine's queue was ahead of it. Started as
         // entering the state starts them — deferred, then run together — so a
         // child that ends as it starts raises `done.invoke` the way it would
         // have.
         for ((id, owner) in savedInvokes(saved, states)) restartInvoke(id, owner)
-        executePendingInvokes()
+        startDeferredInvokes()
         onMacrostepComplete(false)
     }
 
@@ -2532,6 +2765,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     origin = e.origin,
                     originType = e.originType,
                     invokeId = e.invokeId,
+                    hostInvokeToken = e.hostInvokeToken,
                 ),
             )
         }
@@ -3609,6 +3843,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * during the macrostep) are executed. Called after drainEventlessAndInternal().
      */
     private fun executePendingInvokes() {
+        startDeferredInvokes()
+        // The host-run invocations a restore re-armed start here too: where an
+        // invocation the document entered would have started, before the
+        // external queue is touched (SCE Accepted Subset §2.15).
+        startRestoredHostInvokes()
+    }
+
+    /**
+     * Start the child sessions entering a state deferred, which is all a restore
+     * runs at once: a host registers the invokers its host-run invocations need
+     * after restoring, so those start with the first macrostep
+     * ([executePendingInvokes]).
+     */
+    private fun startDeferredInvokes() {
         if (pendingInvokes.isEmpty()) return
         val toExecute = pendingInvokes.toList()
         pendingInvokes.clear()

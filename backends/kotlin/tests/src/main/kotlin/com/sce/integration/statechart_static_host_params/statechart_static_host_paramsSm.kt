@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 08f7d77e31a86a3a7265ac4d858a5a1e799a507b096e52c30f6a6b5c4ec86f7e
+// source-hash: a66104eb0deedfc8aceb708c49f62eda83558d36574f6693311284f4a98b913a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
@@ -93,6 +93,85 @@ class StatechartStaticHostParamsStateMachine(
     override fun onMacrostepComplete(truncated: Boolean) {
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "49f6ab9c0a4f795a3d206b842c6bf0d9c0f1f21ac66842cb417665ca60cf32ff"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "count" to SavedValues.of(count),
+            "ready" to SavedValues.of(ready),
+            "label" to SavedValues.of(label),
+            "delta" to SavedValues.of(delta),
+            "ratio" to SavedValues.of(ratio),
+            "errors" to SavedValues.of(errors),
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(saved.variable("count"), "count")
+        val saved2 = SavedValues.bool(saved.variable("ready"), "ready")
+        val saved3 = SavedValues.string(saved.variable("label"), "label")
+        val saved4 = SavedValues.int16(saved.variable("delta"), "delta")
+        val saved5 = SavedValues.float64(saved.variable("ratio"), "ratio")
+        val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
+        count = saved1
+        ready = saved2
+        label = saved3
+        delta = saved4
+        ratio = saved5
+        errors = saved6
+        enterSaved(saved, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
+    // is running, and a restore starts each again from the request it saved. What
+    // it may name is what the document hands to a host.
+    override val staticHostInvokes: List<Triple<String, String, StatechartStaticHostParamsState>> = listOf(
+        Triple("x-sce-host", "h", StatechartStaticHostParamsState.Working),
+    )
 
     override val initialState: StatechartStaticHostParamsState = StatechartStaticHostParamsState.Idle
 

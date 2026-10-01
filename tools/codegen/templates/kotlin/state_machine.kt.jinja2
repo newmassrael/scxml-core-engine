@@ -253,6 +253,17 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     override fun restartInvoke(invokeId: String, state: {{ machine_name }}State) = deferStaticInvoke(invokeId, state)
 {% endif %}
+{% if model.invokes | host_invoker %}
+
+    // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
+    // is running, and a restore starts each again from the request it saved. What
+    // it may name is what the document hands to a host.
+    override val staticHostInvokes: List<Triple<String, String, {{ machine_name }}State>> = listOf(
+{% for invoke_info in model.invokes | host_invoker %}
+        Triple("{{ invoke_info.invoke_type | escape_kotlin }}", "{{ invoke_info.invoke_id | escape_kotlin }}", {{ machine_name }}State.{{ invoke_info.state_name | to_state_class_name }}),
+{% endfor %}
+    )
+{% endif %}
 {% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 

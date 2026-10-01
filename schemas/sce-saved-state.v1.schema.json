@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "invokes", "external"],
+  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "invokes", "hostinvokes", "hostinvoketoken", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -13,7 +13,7 @@
       "const": 1
     },
     "shape": {
-      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke> with its id and the state that holds it, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
+      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -53,17 +53,26 @@
       }
     },
     "invokes": {
-      "description": "The <invoke type=\"scxml\">s whose child session is running (W3C SCXML 6.4), by the id the document gives each, in document order. A child session is not saved: a restore starts each listed one again from its beginning, under the same id, as entering its state would, so a child's progress is lost and `done.invoke.<id>` still names the invocation the document wrote. One whose child has ended is absent, because its done.invoke is in `external` or already taken, and an invocation complete must not run twice. A restore refuses an id the document does not invoke, one whose state the configuration does not stand in, and one named twice. A document with an <invoke> of any other kind — one the host runs, a mesh-rpc call, a mesh peer — has no saved state: what it was started with is not part of this one.",
+      "description": "The <invoke type=\"scxml\">s whose child session is running (W3C SCXML 6.4), by the id the document gives each, in document order. A child session is not saved: a restore starts each listed one again from its beginning, under the same id, as entering its state would, so a child's progress is lost and `done.invoke.<id>` still names the invocation the document wrote. One whose child has ended is absent, because its done.invoke is in `external` or already taken, and an invocation complete must not run twice. A restore refuses an id the document does not invoke, one whose state the configuration does not stand in, and one named twice. A document with an <invoke> a restore cannot start again — a mesh-rpc call, a mesh peer — has no saved state: what it was started with is not part of this one. An <invoke> the host runs is in `hostinvokes`.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
+    },
+    "hostinvokes": {
+      "description": "The <invoke>s a declared host invoker is running (W3C SCXML 6.4.1), ordered by type and then id. A restore starts each again from the request it was started with — the element is not evaluated a second time — with the deadline it had left, at the top of the first macrostep the host drives, ahead of the saved external queue; the host is told it is a restart (`restarted`) and receives a new token. One whose deadline came due while the machine was away is not started: the document receives `error.invoke.<id>` and the host nothing. One whose completion is already in `external` is absent. A restore refuses an invocation the document does not hand to a host under that type and id, one whose state the configuration does not stand in, and one named twice.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/hostInvoke" }
+    },
+    "hostinvoketoken": {
+      "description": "The token the next host-run start receives, a text of digits within a signed 64-bit count. A restore carries on from it, so a start it makes is never given a token an earlier run already handed to a host that may still answer with it.",
+      "$ref": "#/definitions/token"
     },
     "external": {
       "description": "The external queue, front first: events raised to the machine that it has not yet been driven through. Only the internal queue is empty at a macrostep boundary. Restored in this order, behind nothing. A typed payload is not saved; it is lifted again from `data` on delivery.",
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "data", "type", "sendid", "origin", "origintype", "invokeid"],
+        "required": ["name", "data", "type", "sendid", "origin", "origintype", "invokeid", "hostinvoketoken"],
         "additionalProperties": false,
         "properties": {
           "name": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
@@ -72,12 +81,43 @@
           "sendid": { "description": "_event.sendid.", "type": "string" },
           "origin": { "description": "_event.origin.", "type": "string" },
           "origintype": { "description": "_event.origintype.", "type": "string" },
-          "invokeid": { "description": "_event.invokeid.", "type": "string" }
+          "invokeid": { "description": "_event.invokeid.", "type": "string" },
+          "hostinvoketoken": {
+            "description": "The token a host-run invocation's completion or failure was stamped with when the engine accepted it, null for any other event. The engine refuses a host done.invoke that carries none when it is dequeued, because it may be a cancelled run's late reply, so an accepted one that is still queued has to keep its stamp across a save. Written as it was, never inferred from the event's name: an event a host raised through the ordinary door and the engine had yet to refuse must still be refused.",
+            "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/token" }]
+          }
         }
       }
     }
   },
   "definitions": {
+    "token": {
+      "description": "A host-run start's token: a text holding a non-negative decimal whole number no larger than 9223372036854775807 (every 64-bit integer in this format is a text). A reader refuses one outside that range, which a pattern cannot say.",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
+    "hostInvoke": {
+      "description": "An <invoke> a declared host invoker is running, as it is started again: every field is what the request the host was handed carried.",
+      "type": "object",
+      "required": ["type", "id", "src", "params", "data", "content", "due"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "description": "The `type` the <invoke> named.", "type": "string", "minLength": 1 },
+        "id": { "description": "The invoke's id, which done.invoke.<id> names.", "type": "string", "minLength": 1 },
+        "src": { "description": "<invoke src>, empty when the document named none.", "type": "string" },
+        "params": {
+          "description": "<param> values by name, ordered by name; a repeated name keeps every value in document order. Without the engine's own deadline parameter, which `due` holds.",
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "data": { "description": "The namelist and <param> pairs as JSON, as the request carried them, in the order the saving backend built them.", "type": "string" },
+        "content": { "description": "Inline <content>, empty when the document carried none.", "type": "string" },
+        "due": {
+          "description": "When its deadline comes due, as `pending`'s `due` is written; null for an invocation that has none. Already past for one that came due while the machine waited to be restarted.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/due" }]
+        }
+      }
+    },
     "due": {
       "description": "When a waiting send comes due: milliseconds since the Unix epoch on the saving host's wall clock, a text holding a non-negative decimal whole number no larger than 9223372036854775807 (every 64-bit integer in this format is a text). A reader refuses one outside that range, which a pattern cannot say.",
       "type": "string",

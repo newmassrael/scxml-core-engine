@@ -195,7 +195,7 @@ class ASavedChildSessionIsRestartedAfterARestoreTest {
         val text = shared.replace(
             "\"external\":[]",
             "\"external\":[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\"," +
-                "\"origin\":\"\",\"origintype\":\"\",\"invokeid\":\"\"}]",
+                "\"origin\":\"\",\"origintype\":\"\",\"invokeid\":\"\",\"hostinvoketoken\":null}]",
         )
         withRestored(text) { sm ->
             repeat(3) { sm.tick() }

@@ -1213,8 +1213,9 @@ pub fn lower(
 ///
 /// An `<invoke type="scxml">` is named by the saved state too — which child a
 /// restore starts again — so each is part of the shape with its id and the
-/// state that holds it, and a document without one hashes exactly what it did
-/// before invocations were saved.
+/// state that holds it, and so is each `<invoke>` a declared host invoker
+/// serves, with the type as well. A document without either hashes exactly what
+/// it did before invocations were saved.
 ///
 /// `None` for a machine whose state lives partly in a session other than this
 /// one that a restore cannot start again — an `<invoke>` of any other kind
@@ -1271,7 +1272,23 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
     holders.sort_by_key(|s| s.document_order);
     for state in holders {
         for invoke in &state.invokes {
-            let _ = writeln!(text, "invoke {} {}", invoke.base().invoke_id, state.id);
+            match invoke {
+                crate::model::Invoke::Scxml(_) => {
+                    let _ = writeln!(text, "invoke {} {}", invoke.base().invoke_id, state.id);
+                }
+                // A host-run one is named with the type the host serves, which
+                // is part of what a restore starts it with: the same id under
+                // another type is another invocation. One no host serves is
+                // refused when it starts, so a saved state names nothing of it.
+                crate::model::Invoke::Unsupported(info) if info.host_served => {
+                    let _ = writeln!(
+                        text,
+                        "hostinvoke {} {} {}",
+                        info.invoke_type, info.base.invoke_id, state.id
+                    );
+                }
+                _ => {}
+            }
         }
     }
     for var in &scope.variables {
@@ -1326,19 +1343,35 @@ fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
     })
 }
 
-/// Whether the document holds an `<invoke>` that is not a child session this
-/// machine starts itself: any kind but `type="scxml"`, or one whose child is a
-/// peer on another device.
+/// Whether the document holds an `<invoke>` a restore cannot start again: a
+/// mesh call, a peer on another device, or one whose child is chosen by an
+/// expression at run time.
 ///
-/// A saved state names an invocation by its id and a restore starts its child
-/// again from the beginning (§scxml-6.4). That is all a child session of this
-/// model needs: it has no parameters and no `<finalize>` (both refused in
-/// `static_datamodel`), so what it was started with is the document. Another
-/// kind does not reduce to that — a host-run invocation was started with a
-/// request the host received and a deadline it may be holding, a mesh-rpc call
-/// has one request in flight that cannot be sent twice, and a mesh peer is a
-/// session this machine does not own — and a saved state that left one out
-/// would restore a machine waiting on something nobody is doing.
+/// A saved state names an invocation and a restore starts it again
+/// (§scxml-6.4). Two kinds reduce to that:
+///
+/// - a child session (`type="scxml"`) starts from the beginning, and what it
+///   was started with is the document — it has no parameters and no
+///   `<finalize>`, both refused in `static_datamodel`;
+/// - a host-run invocation (`<invoke type>` a declared invoker serves) starts
+///   again from the request it was started with, which the saved state holds,
+///   with the deadline it had left.
+///
+/// One no host serves is refused when it starts (`error.execution`), so nothing
+/// is running and a saved state has nothing to name.
+///
+/// The rest do not reduce: a mesh-rpc call has one request in flight that
+/// cannot be sent twice, a mesh peer is a session this machine does not own,
+/// and a hybrid invoke chooses its child by an expression this data model
+/// refuses. A saved state that left one out would restore a machine waiting on
+/// something nobody is doing.
+///
+/// A mesh-rpc call reaches this point already lowered to a host-served invoke
+/// of the type SCE reserves for it (`lower_mesh_invokes`), so it is told from
+/// a host's own by that type: a host may not declare one under the reserved
+/// prefix, so a host-served invoke that has one is SCE's own. The request such
+/// a call was started with may already have reached its peer, and starting it
+/// again would have the peer act on it twice.
 fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
     model
         .states
@@ -1346,7 +1379,11 @@ fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
         .flat_map(|s| &s.invokes)
         .any(|invoke| match invoke {
             crate::model::Invoke::Scxml(info) => info.remote_mesh_target.is_some(),
-            _ => true,
+            crate::model::Invoke::Unsupported(info) => {
+                info.host_served
+                    && crate::host_processor_analyzer::is_reserved_type(&info.invoke_type)
+            }
+            crate::model::Invoke::Hybrid(_) | crate::model::Invoke::MeshRpc(_) => true,
         })
 }
 
@@ -2036,19 +2073,85 @@ mod tests {
         );
     }
 
+    /// [`shape`] of a document whose host declared an invoker for each of
+    /// `invoke_types`, as the generator reads one.
+    fn shape_declaring(document: &str, invoke_types: &[&str]) -> Option<String> {
+        let mut model = SCXMLParser::new()
+            .parse_string(document, "m")
+            .expect("parses");
+        let types: Vec<String> = invoke_types.iter().map(|t| t.to_string()).collect();
+        crate::host_processor_analyzer::declare_host_surfaces(&mut model, &[], &types)
+            .expect("declares");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_rust(&mut model, "M", &[])
+            .expect("lowers")
+            .saved_shape
+    }
+
     #[test]
-    fn an_invoke_a_restore_cannot_start_has_no_saved_shape() {
-        // A host-run invocation was started with a request the host holds and a
-        // deadline it may be counting; saving the machine would drop both.
+    fn a_host_run_invocation_is_part_of_the_shape_a_saved_state_is_bound_to() {
+        // A host-run invocation was started with a request the saved state
+        // holds, and starts again from it: a document that hands the host a job
+        // has a shape that names the type, the id and the state.
+        let host = r#"<invoke type="x-sce-host" id="h"/>"#;
+        let base = shape(COUNTER).expect("shape");
+        let declared = shape_declaring(&counter_invoking(host), &["x-sce-host"])
+            .expect("an invocation a declared invoker serves has a shape");
+        assert_ne!(declared, base, "the invocation is named");
+        assert_ne!(
+            shape_declaring(
+                &counter_invoking(&host.replace("x-sce-host", "x-other")),
+                &["x-other"]
+            )
+            .expect("shape"),
+            declared,
+            "the type is what the host was handed it under"
+        );
+        assert_ne!(
+            shape_declaring(
+                &counter_invoking(&host.replace(r#"id="h""#, r#"id="g""#)),
+                &["x-sce-host"]
+            )
+            .expect("shape"),
+            declared,
+            "the id is what `done.invoke.<id>` names"
+        );
+        // Beside a child session, both are named.
+        assert_ne!(
+            shape_declaring(
+                &counter_invoking(&format!("{}{host}", child_session("worker"))),
+                &["x-sce-host"]
+            )
+            .expect("shape"),
+            declared
+        );
+    }
+
+    #[test]
+    fn an_invoke_no_host_serves_changes_nothing_a_saved_state_names() {
+        // Its start is refused with `error.execution`, so nothing is running and
+        // a saved state has nothing to say of it: the machine saves, with the
+        // shape it would have without the element.
+        let base = shape(COUNTER).expect("shape");
         assert_eq!(
             shape(&counter_invoking(r#"<invoke type="x-sce-host" id="h"/>"#)),
-            None
+            Some(base)
         );
-        // A child session beside one that cannot be started again is no more
-        // savable than the other alone.
+    }
+
+    #[test]
+    fn an_invoke_a_restore_cannot_start_has_no_saved_shape() {
+        // A Mesh request, before it is lowered to a host-served invoke: its
+        // request may already have reached the peer, and sending it again would
+        // have the peer act on it twice.
+        let mesh = r##"<invoke type="sce:mesh-rpc" id="ask" src="#peer">
+          <param name="_mesh_event" expr="'service.request'"/>
+        </invoke>"##;
+        assert_eq!(shape(&counter_invoking(mesh)), None);
+        // And beside a child session, which on its own would save.
         assert_eq!(
             shape(&counter_invoking(&format!(
-                r#"{}<invoke type="x-sce-host" id="h"/>"#,
+                "{}{mesh}",
                 child_session("worker")
             ))),
             None

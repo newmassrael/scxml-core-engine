@@ -754,6 +754,45 @@ enum HostInvokeEnd {
     Failed,
 }
 
+/// What a restored host-run invocation has left of its deadline
+/// (SCE Accepted Subset §2.15).
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestoredDeadline {
+    /// The invocation had none.
+    None,
+    /// It comes due at this moment of the engine's own clock, which the
+    /// restore worked out from the wall-clock moment the saved state holds.
+    At(SchedTimePoint),
+    /// It came due while the machine was away.
+    Passed,
+}
+
+/// A host-run invocation a saved state listed, waiting for the first macrostep
+/// the host drives to start it again ([`Engine::restored_host_invokes`]).
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone)]
+pub(crate) struct RestoredHostInvoke {
+    /// The request the saved machine started it with, marked
+    /// [`restarted`](crate::host_processor::HostInvokeRequest::restarted).
+    pub(crate) request: crate::host_processor::HostInvokeRequest,
+    /// What is left of its deadline.
+    pub(crate) deadline: RestoredDeadline,
+}
+
+/// A host-run invocation as a save sees it: the request it was started with and
+/// the moment of the engine's clock its deadline comes due, if it has one.
+#[cfg(not(feature = "no_std"))]
+#[derive(Debug, Clone)]
+pub(crate) struct RunningHostInvoke {
+    /// The request the host was handed.
+    pub(crate) request: crate::host_processor::HostInvokeRequest,
+    /// When its deadline comes due, `None` for an invocation without one.
+    /// Already past for one that came due while a restored machine waited to
+    /// start it.
+    pub(crate) due_at: Option<SchedTimePoint>,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Engine<P>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -846,6 +885,16 @@ pub struct Engine<P: StatePolicy> {
     /// See [`Engine::refused_host_invoke_completions`].
     #[cfg(not(feature = "no_std"))]
     pub(crate) refused_host_invoke_completions: u64,
+    /// Host-run invocations a restore re-armed and the engine has not yet
+    /// started again, in the order a saved state listed them.
+    ///
+    /// Not started by the restore itself: a Rust host registers its invokers on
+    /// the engine the restore returns, so at that moment nobody could run one.
+    /// They start where an invocation the document entered would, at the top of
+    /// the first macrostep the host drives (SCE Accepted Subset §2.15), ahead of
+    /// the events the saved machine had queued.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) restored_host_invokes: Vec<RestoredHostInvoke>,
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
@@ -989,6 +1038,8 @@ impl<P: StatePolicy> Engine<P> {
             host_processors: Default::default(),
             #[cfg(not(feature = "no_std"))]
             refused_host_invoke_completions: 0,
+            #[cfg(not(feature = "no_std"))]
+            restored_host_invokes: Vec::new(),
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
@@ -3152,6 +3203,24 @@ impl<P: StatePolicy> Engine<P> {
                 return true;
             }
         };
+        let deadline_at = deadline.map(|ms| self.sched_now_plus(Duration::from_millis(ms)));
+        self.start_host_invoke(request, deadline_at)
+    }
+
+    /// The start itself, which an invocation the document begins and one a
+    /// restore begins again both go through: record the request, hand it to the
+    /// host, arm the deadline at `deadline_at` (a moment of the engine's clock),
+    /// and take a completion the host reported at once.
+    ///
+    /// `false` when no invoker is registered.
+    #[cfg(not(feature = "no_std"))]
+    fn start_host_invoke(
+        &mut self,
+        request: crate::host_processor::HostInvokeRequest,
+        deadline_at: Option<SchedTimePoint>,
+    ) -> bool {
+        let processor_type = request.processor_type.clone();
+        let invoke_id = request.invoke_id.clone();
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
             return false;
         };
@@ -3166,8 +3235,7 @@ impl<P: StatePolicy> Engine<P> {
             }
             return true;
         }
-        if let Some(ms) = deadline {
-            let ready_at = self.sched_now_plus(Duration::from_millis(ms));
+        if let Some(ready_at) = deadline_at {
             self.scheduler.schedule_host_invoke_deadline_at(
                 &processor_type,
                 &invoke_id,
@@ -3183,6 +3251,125 @@ impl<P: StatePolicy> Engine<P> {
             self.complete_host_invoke(&processor_type, &invoke_id, token, &done_data);
         }
         true
+    }
+
+    /// Re-arm a host-run invocation a saved state listed (SCE Accepted Subset
+    /// §2.15): it starts again, from `request`, at the top of the first
+    /// macrostep the host drives. A restore calls this once per invocation, in
+    /// the order the state lists them.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn rearm_host_invoke(
+        &mut self,
+        mut request: crate::host_processor::HostInvokeRequest,
+        deadline: RestoredDeadline,
+    ) {
+        request.restarted = true;
+        self.restored_host_invokes
+            .push(RestoredHostInvoke { request, deadline });
+    }
+
+    /// Start the invocations a restore re-armed, as the macrostep's start would
+    /// start ones the document had just entered (§scxml-6.4).
+    ///
+    /// A deadline that came due while the machine was away ends the invocation
+    /// without a start: the host is not asked to begin what it would be told to
+    /// stop at once, and the document receives the `error.invoke` the deadline
+    /// raises. An invoker that is not registered by now is the same error a
+    /// document's own start gets.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn start_restored_host_invokes(&mut self) {
+        if self.restored_host_invokes.is_empty() {
+            return;
+        }
+        for restored in std::mem::take(&mut self.restored_host_invokes) {
+            let invoke_id = restored.request.invoke_id.clone();
+            match restored.deadline {
+                RestoredDeadline::Passed => self.raise_host_invoke_deadline(&invoke_id),
+                RestoredDeadline::None | RestoredDeadline::At(_) => {
+                    let deadline_at = match restored.deadline {
+                        RestoredDeadline::At(at) => Some(at),
+                        _ => None,
+                    };
+                    if !self.start_host_invoke(restored.request, deadline_at) {
+                        if let Some(evt) = P::get_event_from_name("error.execution") {
+                            self.raise(EventWithMetadata::platform_error(
+                                evt,
+                                "<invoke> names an invoker the host declared but never registered",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The host-run invocations that are running, or re-armed and waiting to
+    /// start, for a save: each with the request it was started with and the
+    /// moment of the engine's clock its deadline comes due. Ordered by
+    /// `(type, id)`, so every backend writes them in the same order.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn running_host_invokes(&self) -> Vec<RunningHostInvoke> {
+        let pending = self.scheduler.pending();
+        let now = self.now_ms();
+        let mut running: Vec<RunningHostInvoke> = self
+            .host_processors
+            .running()
+            .map(|started| RunningHostInvoke {
+                request: started.request.clone(),
+                due_at: pending.iter().find_map(|(ready_at, act)| match act {
+                    ScheduledAct::HostInvokeDeadline { token, .. } if *token == started.token => {
+                        Some(*ready_at)
+                    }
+                    _ => None,
+                }),
+            })
+            .collect();
+        running.extend(
+            self.restored_host_invokes
+                .iter()
+                .map(|restored| RunningHostInvoke {
+                    request: restored.request.clone(),
+                    due_at: match restored.deadline {
+                        RestoredDeadline::None => None,
+                        RestoredDeadline::At(at) => Some(at),
+                        RestoredDeadline::Passed => Some(now),
+                    },
+                }),
+        );
+        running.sort_by(|a, b| {
+            (&a.request.processor_type, &a.request.invoke_id)
+                .cmp(&(&b.request.processor_type, &b.request.invoke_id))
+        });
+        running
+    }
+
+    /// Whether the start `token` of the host-run invocation `(type, id)` is
+    /// running: what decides whether a deadline on the scheduler belongs to one.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn host_invoke_is_running(
+        &self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+    ) -> bool {
+        self.host_processors.running().any(|started| {
+            started.token == token
+                && started.request.processor_type == processor_type
+                && started.request.invoke_id == invoke_id
+        })
+    }
+
+    /// The token the next host-run start receives, which a save writes so that
+    /// a restore carries on from it.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn next_host_invoke_token(&self) -> u64 {
+        self.host_processors.next_token()
+    }
+
+    /// Hand host-run starts tokens from `next` on.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn set_next_host_invoke_token(&mut self, next: u64) {
+        self.host_processors.set_next_token(next);
     }
 
     /// §scxml-6.4: a host-run invocation finished; raise its
@@ -3348,6 +3535,11 @@ impl<P: StatePolicy> Engine<P> {
     /// delivered.
     #[cfg(not(feature = "no_std"))]
     pub fn cancel_host_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
+        // One a restore re-armed and has not started again was never started
+        // by this engine, so there is nothing to tell the host to stop.
+        self.restored_host_invokes.retain(|r| {
+            !(r.request.processor_type == processor_type && r.request.invoke_id == invoke_id)
+        });
         let Some(token) = self
             .host_processors
             .cancel_invoke(processor_type, invoke_id)
@@ -3372,6 +3564,14 @@ impl<P: StatePolicy> Engine<P> {
         {
             return;
         }
+        self.raise_host_invoke_deadline(invoke_id);
+    }
+
+    /// Tell the document an invocation's deadline passed: `error.invoke.<id>`,
+    /// or the generic `error.invoke` when it names no specific one, with
+    /// `_event.invokeid` set and `_event.data` the string `"deadline"`.
+    #[cfg(not(feature = "no_std"))]
+    fn raise_host_invoke_deadline(&mut self, invoke_id: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
         if let Some(evt) = P::get_event_from_name(&event_name)
             .or_else(|| P::get_event_from_name(crate::invoke::ERROR_INVOKE_EVENT))
@@ -3558,6 +3758,11 @@ impl<P: StatePolicy> Engine<P> {
             if concepts::has_invoke_support::<P>() {
                 self.with_policy(|policy, engine| policy.execute_pending_invokes(engine));
             }
+            // The host-run invocations a restore re-armed start here too: where
+            // an invocation the document entered would have started, before the
+            // external queue is touched (SCE Accepted Subset §2.15).
+            #[cfg(not(feature = "no_std"))]
+            self.start_restored_host_invokes();
 
             // §scxml-D-mainEventLoop: invoking may have raised internal error
             // events (and a child that completed synchronously may already

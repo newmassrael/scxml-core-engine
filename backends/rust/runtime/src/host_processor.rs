@@ -255,6 +255,18 @@ pub struct HostInvokeRequest {
     /// the cancelled process sends is ignored). Distinct for every start of
     /// every invocation within one engine.
     pub token: u64,
+    /// Whether this start resumes an invocation a saved machine was running
+    /// (SCE Accepted Subset §2.15, "Saving and restoring") and not one the
+    /// document just began.
+    ///
+    /// The process that ran it is gone with the process that saved it, so the
+    /// engine starts it again from the request it saved: the same id, the same
+    /// parameters, a new `token`, and the deadline it had left. A host with no
+    /// memory of the invocation takes it as any other start, which is the right
+    /// reading; one that kept its own record of the work under the id may pick
+    /// it up instead of beginning again. Always `false` for an invocation the
+    /// document starts.
+    pub restarted: bool,
 }
 
 /// An `<invoke>` the host was running, at the point its state exited.
@@ -346,9 +358,24 @@ pub(crate) struct HostProcessorRegistry {
     /// state is in the configuration at most once, so the same id is never
     /// running twice. A second start under the same id replaces the entry,
     /// and its new token is what makes the first run's late reply stale.
-    started: std::collections::BTreeMap<(String, String), u64>,
+    ///
+    /// The request each start was made with is kept beside its token: a saved
+    /// machine writes it down, and a restore starts the invocation again from
+    /// it rather than evaluating the element a second time. A map ordered by
+    /// `(type, id)`, so the order a save lists them in is every backend's.
+    started: std::collections::BTreeMap<(String, String), StartedInvoke>,
     /// The token the next start receives.
     next_token: u64,
+}
+
+/// A host-run invocation that was started and has neither completed nor been
+/// cancelled: the start's token and the request that made it.
+#[derive(Debug, Clone)]
+pub(crate) struct StartedInvoke {
+    /// Which start this is ([`HostInvokeRequest::token`]).
+    pub(crate) token: u64,
+    /// The request the host was handed, as the engine recorded it.
+    pub(crate) request: HostInvokeRequest,
 }
 
 impl HostProcessorRegistry {
@@ -411,10 +438,30 @@ impl HostProcessorRegistry {
         request.token = token;
         self.started.insert(
             (request.processor_type.clone(), request.invoke_id.clone()),
-            token,
+            StartedInvoke {
+                token,
+                request: request.clone(),
+            },
         );
         let response = handler(HostInvokeEvent::Start(request));
         Some((token, response))
+    }
+
+    /// The invocations running now, ordered by `(type, id)`.
+    pub(crate) fn running(&self) -> impl Iterator<Item = &StartedInvoke> {
+        self.started.values()
+    }
+
+    /// The token the next start receives.
+    pub(crate) fn next_token(&self) -> u64 {
+        self.next_token
+    }
+
+    /// Hand out tokens from `next` on: what a restore does so that a start it
+    /// makes is never given a token an earlier run of the machine already
+    /// handed to a host that may still answer with it.
+    pub(crate) fn set_next_token(&mut self, next: u64) {
+        self.next_token = next;
     }
 
     /// Take the running invocation `(processor_type, invoke_id, token)` out of
@@ -430,7 +477,7 @@ impl HostProcessorRegistry {
         token: u64,
     ) -> bool {
         let key = (processor_type.to_string(), invoke_id.to_string());
-        if self.started.get(&key) != Some(&token) {
+        if self.started.get(&key).map(|s| s.token) != Some(token) {
             return false;
         }
         self.started.remove(&key);
@@ -446,7 +493,7 @@ impl HostProcessorRegistry {
     /// drop that start's pending deadline.
     pub(crate) fn cancel_invoke(&mut self, processor_type: &str, invoke_id: &str) -> Option<u64> {
         let key = (processor_type.to_string(), invoke_id.to_string());
-        let token = self.started.remove(&key)?;
+        let token = self.started.remove(&key)?.token;
         self.deliver_cancel(processor_type, invoke_id, token)
             .then_some(token)
     }

@@ -65,6 +65,13 @@ class StateRefusal(message: String) : Exception(message)
  *   beginning, under the same id. One whose child has ended is absent — its
  *   `done.invoke` is in the external queue, or already taken — so it is not
  *   started twice.
+ * @property hostInvokes the `<invoke>`s a declared host invoker is running
+ *   (§scxml-6.4.1), by `(type, id)`. A restored machine starts each again from
+ *   the request it was started with, with the deadline it had left; the host
+ *   is told it is a restart (`HostInvokeRequest.restarted`).
+ * @property hostInvokeToken the token the next host-run start receives. Carried
+ *   on, so that a start a restored machine makes is never given a token an
+ *   earlier run already handed to a host that may still answer with it.
  * @property external the external queue, front first: events raised to the
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
@@ -78,6 +85,8 @@ class SavedState(
     val history: Map<String, List<String>> = emptyMap(),
     val pending: List<SavedSend> = emptyList(),
     val invokes: List<String> = emptyList(),
+    val hostInvokes: List<SavedHostInvoke> = emptyList(),
+    val hostInvokeToken: Long = 0L,
     val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
@@ -97,6 +106,8 @@ class SavedState(
             "history" to history,
             "pending" to pending.map { it.toJsonValue() },
             "invokes" to invokes,
+            "hostinvokes" to hostInvokes.map { it.toJsonValue() },
+            "hostinvoketoken" to hostInvokeToken.toString(),
             "external" to external.map { it.toJsonValue() },
         )
     )
@@ -104,10 +115,14 @@ class SavedState(
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
             other.current == current && other.variables == variables && other.history == history &&
-            other.pending == pending && other.invokes == invokes && other.external == external
+            other.pending == pending && other.invokes == invokes && other.hostInvokes == hostInvokes &&
+            other.hostInvokeToken == hostInvokeToken && other.external == external
 
     override fun hashCode(): Int =
-        listOf(shape, configuration, current, variables, history, pending, invokes, external).hashCode()
+        listOf(
+            shape, configuration, current, variables, history, pending, invokes, hostInvokes, hostInvokeToken,
+            external,
+        ).hashCode()
 
     companion object {
         /** The format version this runtime writes and reads. */
@@ -156,6 +171,12 @@ class SavedState(
                 .mapIndexed { i, item -> SavedSend.fromJsonValue(item, "pending[$i]") }
             val invokes = (field("invokes") as? List<*> ?: throw StateRefusal("'invokes' is not an array"))
                 .map { text(it, "invokes") }
+            val hostInvokes = (field("hostinvokes") as? List<*> ?: throw StateRefusal("'hostinvokes' is not an array"))
+                .mapIndexed { i, item -> SavedHostInvoke.fromJsonValue(item, "hostinvokes[$i]") }
+            val hostInvokeToken = readToken(
+                field("hostinvoketoken") as? String ?: throw StateRefusal("'hostinvoketoken' is not a text"),
+                "hostinvoketoken",
+            )
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
@@ -166,6 +187,8 @@ class SavedState(
                 history = history,
                 pending = pending,
                 invokes = invokes,
+                hostInvokes = hostInvokes,
+                hostInvokeToken = hostInvokeToken,
                 external = external,
             )
         }
@@ -206,6 +229,19 @@ data class SavedEvent(
     val origin: String = "",
     val originType: String = "",
     val invokeId: String = "",
+    /**
+     * The token a host-run invocation's completion or failure was stamped with
+     * when `completeHostInvoke` accepted it, `null` for any other event.
+     *
+     * The engine refuses a host `done.invoke` that carries none when it is
+     * dequeued, because it may be a cancelled run's late reply. A completion
+     * that was accepted and is still queued has to keep the stamp across a
+     * save, or the restored machine would refuse the one answer it was waiting
+     * for. Written as it was, not as a guess from the event's name: an event a
+     * host raised through the ordinary door and the engine had yet to refuse is
+     * one the restored machine must still refuse.
+     */
+    val hostInvokeToken: Long? = null,
 ) {
     internal fun toJsonValue(): Map<String, Any?> = linkedMapOf(
         "name" to name,
@@ -215,6 +251,7 @@ data class SavedEvent(
         "origin" to origin,
         "origintype" to originType,
         "invokeid" to invokeId,
+        "hostinvoketoken" to hostInvokeToken?.toString(),
     )
 
     internal companion object {
@@ -224,6 +261,12 @@ data class SavedEvent(
                 if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
                 return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
             }
+            if (!members.containsKey("hostinvoketoken")) throw StateRefusal("'$what' has no 'hostinvoketoken'")
+            val hostInvokeToken = when (val written = members["hostinvoketoken"]) {
+                null -> null
+                is String -> readToken(written, "$what.hostinvoketoken")
+                else -> throw StateRefusal("'$what.hostinvoketoken' is neither a text nor null")
+            }
             return SavedEvent(
                 name = text("name"),
                 data = text("data"),
@@ -232,6 +275,107 @@ data class SavedEvent(
                 origin = text("origin"),
                 originType = text("origintype"),
                 invokeId = text("invokeid"),
+                hostInvokeToken = hostInvokeToken,
+            )
+        }
+    }
+}
+
+/**
+ * A host-run invocation's token, as the text a saved state writes it as: digits,
+ * within a signed 64-bit count, as every backend reads one.
+ */
+private fun readToken(written: String, what: String): Long =
+    written.toLongOrNull()?.takeIf { it >= 0 && written.all(Char::isDigit) }
+        ?: throw StateRefusal("'$what' ($written) is not a whole number a token can be")
+
+/**
+ * A moment, as the text a saved state writes it as — milliseconds since the Unix
+ * epoch — which [what] (the member, named in a refusal) holds. A text of digits,
+ * as every 64-bit integer is, and one the other backends hold too.
+ */
+private fun readMoment(written: String, what: String): Long =
+    written.toLongOrNull()?.takeIf { it >= 0 && written.all(Char::isDigit) }
+        ?: throw StateRefusal("'$what' ($written) is not a whole number of milliseconds")
+
+/**
+ * The member `params` of [members], read as an object of arrays of texts, by
+ * name; [what] names [members] in a refusal.
+ */
+private fun readParams(members: Map<*, *>, what: String): Map<String, List<String>> {
+    if (!members.containsKey("params")) throw StateRefusal("'$what' has no 'params'")
+    val params = members["params"] as? Map<*, *> ?: throw StateRefusal("'$what.params' is not an object")
+    val read = LinkedHashMap<String, List<String>>()
+    for ((name, values) in params) {
+        val list = values as? List<*> ?: throw StateRefusal("'$what.params.$name' is not an array")
+        read[name as String] = list.map {
+            it as? String ?: throw StateRefusal("'$what.params.$name' holds a value that is not a text")
+        }
+    }
+    return read
+}
+
+/** `params` as a saved state writes them: by name, so the text one machine writes is every backend's. */
+private fun paramsToJson(params: Map<String, List<String>>): Map<String, Any?> =
+    params.entries.sortedBy { it.key }.associateTo(LinkedHashMap()) { it.key to it.value }
+
+/**
+ * An `<invoke>` a declared host invoker is running, as it is started again
+ * (§scxml-6.4.1): every field is what the request the host was handed carried, so
+ * the restarted invocation reads as the one the document began.
+ *
+ * @property processorType the `type` the `<invoke>` named.
+ * @property invokeId the invoke's id, which `done.invoke.<id>` names.
+ * @property src `<invoke src>`, empty when the document named none.
+ * @property params `<param>` values by name; a repeated name keeps every value in
+ *   document order. Without the engine's own deadline parameter, which [due] holds.
+ * @property data the namelist and `<param>` pairs as JSON, as the request carried them.
+ * @property content inline `<content>`, empty when the document carried none.
+ * @property due when its deadline comes due, in milliseconds since the Unix epoch
+ *   on the wall clock of the host that saved it; `null` for an invocation that has
+ *   none. Already past for one that came due while the machine waited to be
+ *   restarted.
+ */
+data class SavedHostInvoke(
+    val processorType: String,
+    val invokeId: String,
+    val src: String = "",
+    val params: Map<String, List<String>> = emptyMap(),
+    val data: String = "",
+    val content: String = "",
+    val due: Long? = null,
+) {
+    internal fun toJsonValue(): Map<String, Any?> = linkedMapOf(
+        "type" to processorType,
+        "id" to invokeId,
+        "src" to src,
+        "params" to paramsToJson(params),
+        "data" to data,
+        "content" to content,
+        "due" to due?.toString(),
+    )
+
+    internal companion object {
+        fun fromJsonValue(value: Any?, what: String): SavedHostInvoke {
+            val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
+            fun text(key: String): String {
+                if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
+                return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
+            }
+            if (!members.containsKey("due")) throw StateRefusal("'$what' has no 'due'")
+            val due = when (val written = members["due"]) {
+                null -> null
+                is String -> readMoment(written, "$what.due")
+                else -> throw StateRefusal("'$what.due' is neither a text nor null")
+            }
+            return SavedHostInvoke(
+                processorType = text("type"),
+                invokeId = text("id"),
+                src = text("src"),
+                params = readParams(members, what),
+                data = text("data"),
+                content = text("content"),
+                due = due,
             )
         }
     }
@@ -273,8 +417,7 @@ data class SavedSend(val due: Long, val act: SavedAct) {
                     "event" to act.event,
                     "target" to act.target,
                     "content" to act.content,
-                    // By name, so the text one machine writes is every backend's.
-                    "params" to act.params.entries.sortedBy { it.key }.associateTo(LinkedHashMap()) { it.key to it.value },
+                    "params" to paramsToJson(act.params),
                     "sendid" to act.sendId,
                     "data" to act.data,
                     "invokeid" to act.invokeId,
@@ -291,12 +434,7 @@ data class SavedSend(val due: Long, val act: SavedAct) {
                 if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
                 return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
             }
-            // A text of digits, as every 64-bit integer is, and one the other
-            // backends hold too: a moment is a non-negative whole number of
-            // milliseconds.
-            val dueText = text("due")
-            val due = dueText.toLongOrNull()?.takeIf { it >= 0 && dueText.all(Char::isDigit) }
-                ?: throw StateRefusal("'$what.due' ($dueText) is not a whole number of milliseconds")
+            val due = readMoment(text("due"), "$what.due")
             val act = when (val name = text("act")) {
                 "raise" -> SavedAct.Raise(text("event"), text("data"), text("sendid"), text("origin"))
                 "internal" -> SavedAct.Internal(text("event"), text("data"), text("sendid"), text("origin"))
@@ -305,7 +443,7 @@ data class SavedSend(val due: Long, val act: SavedAct) {
                     event = text("event"),
                     target = text("target"),
                     content = text("content"),
-                    params = hostParams(members, what),
+                    params = readParams(members, what),
                     sendId = text("sendid"),
                     data = text("data"),
                     invokeId = text("invokeid"),
@@ -313,19 +451,6 @@ data class SavedSend(val due: Long, val act: SavedAct) {
                 else -> throw StateRefusal("'$what.act' is '$name', which is not raise, internal or host")
             }
             return SavedSend(due, act)
-        }
-
-        private fun hostParams(members: Map<*, *>, what: String): Map<String, List<String>> {
-            if (!members.containsKey("params")) throw StateRefusal("'$what' has no 'params'")
-            val params = members["params"] as? Map<*, *> ?: throw StateRefusal("'$what.params' is not an object")
-            val read = LinkedHashMap<String, List<String>>()
-            for ((name, values) in params) {
-                val list = values as? List<*> ?: throw StateRefusal("'$what.params.$name' is not an array")
-                read[name as String] = list.map {
-                    it as? String ?: throw StateRefusal("'$what.params.$name' holds a value that is not a text")
-                }
-            }
-            return read
         }
     }
 }
