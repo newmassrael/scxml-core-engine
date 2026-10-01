@@ -75,7 +75,7 @@ data class CodecZenohHello(
         w.writeU8(this.cbyte.toByte())?.let { return it }
         w.writeBytes(this.zid)?.let { return it }
         this.num_locators?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         this.locators?.let { _list ->
             for (_e in _list) {

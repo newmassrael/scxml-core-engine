@@ -109,7 +109,7 @@ data class CodecZenohRequest(
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         w.writeU8(this.header.toByte())?.let { return it }
-        w.writeVleU64((rid).toULong())?.let { return it }
+        w.writeVleU64(rid)?.let { return it }
         this.keyexpr.encode(w, (((this.header.toInt() shr 5) and 0x1).toUByte()))?.let { return it }
         this.extensions?.let { _list ->
             for (_e in _list) {

@@ -54,7 +54,7 @@ data class CodecPresentIfVle(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.flags.toByte())?.let { return it }
         this.optional_id?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         return null
     }

@@ -40,13 +40,13 @@ data class CodecZenohDeclQueryable(
         // path appends variable fields last, placing it ahead on the wire).
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU32((id).toUInt())?.let { return it }
+        w.writeVleU32(id)?.let { return it }
         this.wireexpr.encode(w, N)?.let { return it }
         this.ext_type?.let { _v ->
             w.writeU8(_v.toByte())?.let { return it }
         }
         this.ext_value?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         return null
     }

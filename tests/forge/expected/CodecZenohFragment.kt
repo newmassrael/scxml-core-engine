@@ -36,7 +36,7 @@ data class CodecZenohFragment(
         // path appends variable fields last, placing it ahead on the wire).
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU64((sn).toULong())?.let { return it }
+        w.writeVleU64(sn)?.let { return it }
         w.writeBytes(this.payload)?.let { return it }
         return null
     }

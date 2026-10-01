@@ -93,7 +93,7 @@ data class CodecZenohQuery(
             w.writeU8(_v.toByte())?.let { return it }
         }
         this.parameters_len?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         this.parameters?.let { _v ->
             w.writeBytes(_v)?.let { return it }

@@ -108,10 +108,10 @@ data class CodecZenohResponse(
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         w.writeU8(this.header.toByte())?.let { return it }
-        w.writeVleU64((request_id).toULong())?.let { return it }
-        w.writeVleU32((key_id).toUInt())?.let { return it }
+        w.writeVleU64(request_id)?.let { return it }
+        w.writeVleU32(key_id)?.let { return it }
         this.suffix_len?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         this.suffix?.let { _v ->
             w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let { return it }

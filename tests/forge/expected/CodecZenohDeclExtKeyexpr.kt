@@ -89,7 +89,7 @@ data class CodecZenohDeclExtKeyexpr(
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.outer_header.toByte())?.let { return it }
-        w.writeVleU64((total_length).toULong())?.let { return it }
+        w.writeVleU64(total_length)?.let { return it }
         this.inner.encode(w)?.let { return it }
         return null
     }

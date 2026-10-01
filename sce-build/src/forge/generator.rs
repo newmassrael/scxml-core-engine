@@ -13575,16 +13575,14 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         Language::C11 => format!(
             "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u{width_bits}(w, (uint{width_bits}_t)({value_expr})));"
         ),
-        Language::Kotlin => {
-            let to_unsigned = match width_bits {
-                16 => "toUShort",
-                32 => "toUInt",
-                _ => "toULong",
-            };
-            format!(
-                "        w.writeVleU{width_bits}(({value_expr}).{to_unsigned}())?.let {{ return it }}"
-            )
-        }
+        // The value is already of the writer's width: a VLE field's `width_bits`
+        // is derived from its `sce:type` (`uint16`/`uint32`/`uint64`), which
+        // Kotlin spells `UShort`/`UInt`/`ULong`. Converting it again is a
+        // call kotlinc reports as redundant — an error under `-Werror`, which
+        // the compile gate applies.
+        Language::Kotlin => format!(
+            "        w.writeVleU{width_bits}({value_expr})?.let {{ return it }}"
+        ),
         Language::Go => format!(
             "\tif err := codec.WriteVLEU{width_bits}(w, uint{width_bits}({value_expr})); err != nil {{\n\t\treturn err\n\t}}"
         ),

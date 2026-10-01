@@ -83,7 +83,7 @@ data class CodecZenohInitBody(
             w.writeU8((_v.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
         }
         this.cookie_len?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         this.cookie?.let { _v ->
             w.writeBytes(_v)?.let { return it }

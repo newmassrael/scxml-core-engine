@@ -58,8 +58,8 @@ data class CodecZenohSourceInfo(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.header.toByte())?.let { return it }
         w.writeBytes(this.zid)?.let { return it }
-        w.writeVleU32((eid).toUInt())?.let { return it }
-        w.writeVleU32((sn).toUInt())?.let { return it }
+        w.writeVleU32(eid)?.let { return it }
+        w.writeVleU32(sn)?.let { return it }
         return null
     }
 

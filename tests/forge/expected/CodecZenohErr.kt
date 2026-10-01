@@ -98,7 +98,7 @@ data class CodecZenohErr(
                 _e.encode(w)?.let { return it }
             }
         }
-        w.writeVleU64((payload_len).toULong())?.let { return it }
+        w.writeVleU64(payload_len)?.let { return it }
         w.writeBytes(this.payload)?.let { return it }
         return null
     }

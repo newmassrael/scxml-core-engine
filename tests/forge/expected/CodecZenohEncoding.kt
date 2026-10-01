@@ -53,9 +53,9 @@ data class CodecZenohEncoding(
         // path appends variable fields last, placing it ahead on the wire).
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU32((packed_id).toUInt())?.let { return it }
+        w.writeVleU32(packed_id)?.let { return it }
         this.schema_len?.let { _v ->
-        w.writeVleU64((_v).toULong())?.let { return it }
+        w.writeVleU64(_v)?.let { return it }
         }
         this.schema?.let { _v ->
             w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let { return it }

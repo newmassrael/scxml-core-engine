@@ -40,7 +40,7 @@ data class CodecInitCookieBody(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.version.toByte())?.let { return it }
         this.cookie_size?.let { _v ->
-        w.writeVleU16((_v).toUShort())?.let { return it }
+        w.writeVleU16(_v)?.let { return it }
         }
         this.cookie?.let { _v ->
             w.writeBytes(_v)?.let { return it }

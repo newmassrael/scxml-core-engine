@@ -80,7 +80,7 @@ data class CodecZenohDeclare(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.header.toByte())?.let { return it }
         this.interest_id?.let { _v ->
-        w.writeVleU32((_v).toUInt())?.let { return it }
+        w.writeVleU32(_v)?.let { return it }
         }
         this.extensions?.let { _list ->
             for (_e in _list) {

@@ -89,7 +89,7 @@ data class CodecZenohInterest(
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.header.toByte())?.let { return it }
-        w.writeVleU64((id).toULong())?.let { return it }
+        w.writeVleU64(id)?.let { return it }
         this.body?.let { _v ->
             _v.encode(w)?.let { return it }
         }

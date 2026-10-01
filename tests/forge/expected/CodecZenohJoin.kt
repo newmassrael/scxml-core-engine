@@ -83,9 +83,9 @@ data class CodecZenohJoin(
             w.writeU8((_v.toInt() and 0xFF).toByte())?.let { return it }
             w.writeU8((_v.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
         }
-        w.writeVleU64((lease).toULong())?.let { return it }
-        w.writeVleU64((next_sn_reliable).toULong())?.let { return it }
-        w.writeVleU64((next_sn_best_effort).toULong())?.let { return it }
+        w.writeVleU64(lease)?.let { return it }
+        w.writeVleU64(next_sn_reliable)?.let { return it }
+        w.writeVleU64(next_sn_best_effort)?.let { return it }
         return null
     }
 
