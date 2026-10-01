@@ -58,11 +58,38 @@ held = sorted(name for name in sys.modules if name.split(".")[0] in ("sce_runtim
 print(json.dumps({"reply": reply, "engine_modules_held": held}))
 """
 
+# Run in a child for `compare` and `verify`, which drive a design without going
+# through the scenario tool. Reads {"kind", ...} on stdin; prints what the call
+# came to and which engine modules this process holds when it is done.
+CHILD_OTHERS = r"""
+import json, pathlib, sys
+sys.path.insert(0, %(tools)r)
+from sce_author import mcp, process
+request = json.load(sys.stdin)
+process.SESSION_LIMITS = process.Limits(**request["limits"])
+if request["kind"] == "compare":
+    reply = mcp.call_tool("compare", {"documents_text": request["documents"]})
+    out = json.loads(reply["content"][0]["text"])
+else:
+    from sce_author.pack import load_pack
+    from sce_author.verify import verify
+    result = verify(load_pack(pathlib.Path(request["pack"])), pathlib.Path(request["binding"]))
+    out = {"ran": result.ran, "refusal": result.refusal,
+           "results": [{"name": r.name, "refusal": r.refusal, "failures": len(r.failures)}
+                       for r in result.results],
+           "passed": result.passed, "failed": result.failed}
+held = sorted(name for name in sys.modules if name.split(".")[0] in ("sce_runtime", "lupa"))
+print(json.dumps({"out": out, "engine_modules_held": held}))
+"""
+
 HEAD = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" '
         'initial="a"><datamodel><data id="n" expr="0"/></datamodel>')
 
-# Small enough that a case which ends by hitting a limit ends in seconds.
-QUICK = {"wall_seconds": 4.0, "cpu_seconds": 3, "memory_mb": 1024}
+# A loop is ended by its three seconds of processor time, which is how long it
+# takes on any host. The clock stays far away: a FINE example in the same call
+# (nine of them in one case) must not be refused for the machine being busy,
+# which at a load average of 52 on 32 cores it was measured to be (2026-10-02).
+QUICK = {"wall_seconds": 30.0, "cpu_seconds": 3, "memory_mb": 1024}
 
 
 def needs_the_generator(case):
@@ -209,6 +236,131 @@ class TestWhatEndsInAnAnswerBecauseOfTheMachine(unittest.TestCase):
         self.assertEqual({"pass"}, {verdicts[f"F{i}"]["verdict"] for i in range(9)}, verdicts)
         self.assertEqual("not-judged", verdicts["BOMB"]["verdict"], verdicts)
         self.assertEqual("environment", verdicts["BOMB"].get("cause"), verdicts)
+
+
+def run_others(request: dict, *, limit: float = 120) -> tuple:
+    """`(finished, out, held, why)` for `compare` or `verify` run in a child."""
+    def cap_memory():
+        resource.setrlimit(resource.RLIMIT_AS, (4 * 2**30, 4 * 2**30))
+
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", CHILD_OTHERS % {"tools": str(TOOLS)}],
+            input=json.dumps(request), capture_output=True, text=True, timeout=limit,
+            preexec_fn=cap_memory, env={**os.environ})
+    except subprocess.TimeoutExpired:
+        return False, None, [], f"the call had not returned after {limit:.0f} s"
+    if done.returncode != 0:
+        tail = (done.stderr.strip().splitlines() or ["no output"])[-1]
+        return False, None, [], f"the process died (status {done.returncode}): {tail}"
+    printed = json.loads(done.stdout)
+    return True, printed["out"], printed["engine_modules_held"], ""
+
+
+TOGGLE = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">'
+          '<state id="idle">{inside}<transition event="go" target="busy"/></state>'
+          '<state id="busy"><transition event="stop" target="idle"/></state></scxml>')
+LOOPS = ('<onentry><script>while (true) { }</script></onentry>')
+
+
+@needs_the_generator
+class TestACompareThatMeetsAHostileDraft(unittest.TestCase):
+    """`compare` plays every draft. One that never returns used to keep the whole
+    comparison, and the server answering it, from ever finishing."""
+
+    def compare(self, drafts: list) -> tuple:
+        return run_others({"kind": "compare", "documents": drafts,
+                           "limits": {"wall_seconds": 6.0, "cpu_seconds": 120,
+                                      "memory_mb": 1024}})
+
+    def test_the_other_drafts_are_still_compared_and_the_hostile_one_is_named(self):
+        finished, out, held, why = self.compare([
+            {"name": "first.scxml", "text": TOGGLE.format(inside="")},
+            {"name": "second.scxml", "text": TOGGLE.format(inside="")},
+            {"name": "hostile.scxml", "text": TOGGLE.format(inside=LOOPS)},
+        ])
+        self.assertTrue(finished, why)
+        behaviour = out["behaviour"]
+        self.assertEqual("judged", behaviour["verdict"], behaviour)
+        self.assertEqual([["first.scxml", "second.scxml"]], behaviour["classes"], behaviour)
+        self.assertIn("hostile.scxml", behaviour["undriven"], behaviour)
+        self.assertIn("stopped", behaviour["undriven"]["hostile.scxml"])
+        self.assertIn("may play it further", behaviour["undriven"]["hostile.scxml"])
+
+    def test_the_server_that_compared_never_held_the_engine(self):
+        finished, out, held, why = self.compare([
+            {"name": "first.scxml", "text": TOGGLE.format(inside="")},
+            {"name": "second.scxml", "text": TOGGLE.format(inside="")},
+        ])
+        self.assertTrue(finished, why)
+        self.assertEqual("judged", out["behaviour"]["verdict"], out["behaviour"])
+        self.assertEqual([], held)
+
+
+# A statechart the verifier's own tests drive, with its flashing state made to
+# loop. The cases and the binding are theirs.
+def hostile_pack(tmp: pathlib.Path, document: str) -> pathlib.Path:
+    import shutil
+
+    import yaml
+
+    from tests.test_a_statechart_is_driven_not_called import BINDING, CROSSING, EXAMPLES
+
+    for name in ("interface-model.yaml", "conventions.yaml"):
+        shutil.copy(CROSSING / name, tmp / name)
+    (tmp / "signal.scxml").write_text(document, encoding="utf-8")
+    (tmp / "examples.yaml").write_text(yaml.safe_dump(EXAMPLES), encoding="utf-8")
+    (tmp / "b.yaml").write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+    return tmp / "b.yaml"
+
+
+@needs_the_generator
+class TestAVerifyThatMeetsAHostileDocument(unittest.TestCase):
+    """`verify` replays the cases through one machine. A document that never
+    returns used to keep the verifier, and whatever called it, from ever
+    finishing."""
+
+    def verify(self, document: str) -> tuple:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            binding = hostile_pack(root, document)
+            return run_others({"kind": "verify", "pack": str(root), "binding": str(binding),
+                               "limits": {"wall_seconds": 6.0, "cpu_seconds": 120,
+                                          "memory_mb": 1024}})
+
+    def test_a_document_that_loops_when_driven_is_refused_case_by_case(self):
+        """The first case drives the machine into the state that loops. The run
+        is refused with the machine's words; nothing passes, nothing fails, and
+        the call returns."""
+        from tests.test_a_statechart_is_driven_not_called import DOCUMENT
+
+        looping = DOCUMENT.replace(
+            '<onentry>\n      <send event="signal.flashing" type="x-sce-host"/>',
+            '<onentry>\n      <script>while (true) { }</script>\n'
+            '      <send event="signal.flashing" type="x-sce-host"/>')
+        self.assertNotEqual(DOCUMENT, looping)
+        finished, out, held, why = self.verify(looping)
+        self.assertTrue(finished, why)
+        self.assertEqual((0, 0), (out["passed"], out["failed"]), out)
+        refusals = [r["refusal"] for r in out["results"]] + [out["refusal"]]
+        self.assertTrue(any("the process that plays the design stopped" in text
+                            for text in refusals), out)
+        self.assertEqual([], held)
+
+    def test_a_document_that_loops_on_start_is_refused_whole(self):
+        from tests.test_a_statechart_is_driven_not_called import DOCUMENT
+
+        looping = DOCUMENT.replace(
+            '<state id="dark">',
+            '<state id="dark">\n    <onentry><script>while (true) { }</script></onentry>', 1)
+        self.assertNotEqual(DOCUMENT, looping)
+        finished, out, held, why = self.verify(looping)
+        self.assertTrue(finished, why)
+        self.assertFalse(out["ran"], out)
+        self.assertIn("stopped", out["refusal"])
+        self.assertEqual([], held)
 
 
 @needs_the_generator

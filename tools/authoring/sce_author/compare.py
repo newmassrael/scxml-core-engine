@@ -57,8 +57,9 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
-from .verify import (SendRecorder, VerifyError, _default_codegen, _scratch, generate,
-                     load, pseudo_page, review_rows, unresolved_markers, validate_scxml)
+from . import process, sandbox
+from .verify import (VerifyError, _default_codegen, _scratch, generate, pseudo_page,
+                     review_rows, unresolved_markers, validate_scxml)
 
 SCE_NAMESPACE = "http://sce.dev/ext"
 SCXML_NAMESPACE = "http://www.w3.org/2005/07/scxml"
@@ -176,42 +177,31 @@ def classes(values: dict) -> list:
 
 
 class _Driven:
-    """One draft, generated to Python and run from scratch per drive."""
+    """One draft, generated to Python and run from scratch per drive.
+
+    ⚠ The draft's machine is not in this process. The generated module is
+    imported by a worker (`sandbox`), one per draft, and each drive makes a fresh
+    engine in it. A draft that loops, grows or crashes stops its own worker
+    (`sandbox.WorkerStopped`), not the server; the comparison then reports that
+    draft as one it could not drive."""
 
     def __init__(self, document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path):
         self.build = generate(document, codegen, into)
         if self.build.refusal:
             raise VerifyError(self.build.refusal)
-        self.module = load(into, document)
+        self.module = sandbox.load_module(into, document)
 
     def trace(self, steps) -> list:
-        recorder = SendRecorder()
-        engine = self.module.create_engine()
-        for processor in self.build.declared:
-            engine.register_event_processor(processor, recorder)
-        engine.initialize()
-        policy = engine.policy
-        out = []
+        """What a fresh machine did under `steps`: one observation of the start
+        and one after each step, or `("raised", name)` where the draft raised.
 
-        def observe():
-            leaves = tuple(sorted(policy.get_state_name(s) for s in engine.active_leaves))
-            sent = tuple(getattr(r, "event_name", str(r)) for r in recorder.take())
-            out.append((leaves, sent, bool(engine.reached_final)))
-
-        observe()
-        for kind, value in steps:
-            try:
-                if kind == "event":
-                    event = policy.get_event_from_name(value)
-                    if event is not None:
-                        engine.send_event(event)
-                else:
-                    engine.advance_time(value)
-            except Exception as exc:  # noqa: BLE001 - a raise is what the draft did
-                out.append(("raised", type(exc).__name__))
-                break
-            observe()
-        return out
+        The whole drive runs next to the machine (`procedures.trace`) and comes
+        back in one exchange: a step at a time across the boundary cost 247
+        requests and 208 ms where the same drive took 12 ms in process. A
+        machine that stops under it is `sandbox.WorkerStopped`, which is not a
+        draft that raised and is not caught as one."""
+        return self.module.procedure("trace", declared=list(self.build.declared),
+                                     steps=[tuple(step) for step in steps])
 
 
 def _relabel(traces: list) -> list:
@@ -353,7 +343,9 @@ def _behaviour(documents: dict, texts: dict, codegen, drives: int, steps: int) -
     advances = _advances(set().union(*(v.delays_ms for v in vocab.values())))
     bound = {"drives": drives, "steps": steps, "advances_ms": advances}
     driven, undriven, distinct = {}, {}, {}
-    with _scratch() as scratch:
+    # ⚠ `reaping` closes every worker started inside, so no draft's machine is
+    # left running after the answer is given.
+    with process.reaping(), _scratch() as scratch:
         for index, (name, path) in enumerate(documents.items()):
             try:
                 driven[name] = _Driven(path, codegen, scratch / f"draft{index}")
@@ -361,10 +353,20 @@ def _behaviour(documents: dict, texts: dict, codegen, drives: int, steps: int) -
                 undriven[name] = f"{type(exc).__name__}: {exc}"
         # Drives in each draft's own names, for how many observations they make.
         own = {}
-        for name, engine in driven.items():
+        for name, engine in list(driven.items()):
             alphabet = vocab[name].inputs
-            traces = [engine.trace(_spell(d, alphabet))
-                      for d in _drives(len(alphabet), advances, drives, steps)]
+            try:
+                traces = [engine.trace(_spell(d, alphabet))
+                          for d in _drives(len(alphabet), advances, drives, steps)]
+            except sandbox.WorkerStopped as stopped:
+                # The first drive that stops a draft's machine ends that draft's
+                # part in the comparison: the rest of its drives would each wait
+                # for the same clock. It is named with what stopped it, like a
+                # draft that could not be built.
+                undriven[name] = (f"{stopped} (another run, or a machine with more time or "
+                                  f"memory, may play it further)")
+                del driven[name]
+                continue
             own[name] = traces
             distinct[name] = len({json.dumps(o, default=str) for t in traces for o in t})
         judged = [n for n in driven if distinct[n] > 1]
@@ -378,22 +380,32 @@ def _behaviour(documents: dict, texts: dict, codegen, drives: int, steps: int) -
             return verdict
         groups: list = []  # [representative, [members], {member: mapping}]
         witnesses = []
-        for name in judged:
-            placed = False
-            for group in groups:
-                mapping, witness = _alike(group[0], name, driven, vocab, own, advances,
-                                          drives, steps)
-                if mapping is not None:
-                    group[1].append(name)
-                    group[2][name] = mapping
-                    placed = True
-                    break
-                if witness is not None and not any(w["drafts"] == [group[0], name]
-                                                   for w in witnesses):
-                    witness["drafts"] = [group[0], name]
-                    witnesses.append(witness)
-            if not placed:
-                groups.append([name, [name], {}])
+        try:
+            for name in judged:
+                placed = False
+                for group in groups:
+                    mapping, witness = _alike(group[0], name, driven, vocab, own, advances,
+                                              drives, steps)
+                    if mapping is not None:
+                        group[1].append(name)
+                        group[2][name] = mapping
+                        placed = True
+                        break
+                    if witness is not None and not any(w["drafts"] == [group[0], name]
+                                                       for w in witnesses):
+                        witness["drafts"] = [group[0], name]
+                        witnesses.append(witness)
+                if not placed:
+                    groups.append([name, [name], {}])
+        except sandbox.WorkerStopped as stopped:
+            # A draft's machine stopped while two were being set side by side (a
+            # renamed input, a shortened drive). What was found so far compares
+            # some drafts and not others, so no class is claimed.
+            verdict.update(
+                verdict="not judged",
+                why=f"a draft's machine stopped while the drafts were being compared: "
+                    f"{stopped}. No class is claimed from a comparison that did not finish.")
+            return verdict
         verdict.update(
             verdict="judged",
             classes=[g[1] for g in groups],

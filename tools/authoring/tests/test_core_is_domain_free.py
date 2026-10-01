@@ -102,21 +102,56 @@ class CoreIsDomainFree(unittest.TestCase):
         the thing that runs it under limits and a clock outside the process had
         to live where starting a program is already decided. `verify.py` asks
         `process` for the generator's run like everyone else.
+
+        `_bound.py` is the other half of the same decision and the only second
+        name here: the launcher `process` starts every child through, which
+        applies the limits to itself and then becomes the program. It is a file
+        of its own because it is started by path with nothing around it, and it
+        is the one place besides `process.py` where a program is exec'd.
         """
-        allowed = {"process.py"}
+        allowed = {"process.py", "_bound.py"}
+        starters = {"run", "Popen", "call", "check_output", "check_call", "system",
+                    "spawnv", "spawnvp", "posix_spawn", "posix_spawnp", "fork", "forkpty",
+                    "execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp",
+                    "execlpe"}
         offences = []
         for path in sources():
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 spawns = (
                     isinstance(node, ast.Attribute)
-                    and node.attr in {"run", "Popen", "call", "check_output",
-                                      "check_call", "system", "execv", "spawnv"}
+                    and node.attr in starters
                     and isinstance(node.value, ast.Name)
                     and node.value.id in {"subprocess", "os"}
                 )
                 if spawns and path.name not in allowed:
                     offences.append(f"{path.name}:{node.lineno}: spawns a process")
+        self.assertEqual([], offences, "\n".join(offences))
+
+    def test_the_server_side_modules_import_no_generated_code(self):
+        """The modules a server process loads must not import what plays a
+        design. `worker`, `scenario_play` and `procedures` do, and they run only
+        in the processes `process` starts; `lowering` is theirs and `verify` keeps
+        a few of its names for old callers, which is why `verify` may import it
+        but must not CALL `load` itself."""
+        loaders = {"importlib", "runpy"}
+        offences = []
+        for path in sources():
+            if path.name in {"lowering.py", "worker.py", "procedures.py", "scenario_play.py"}:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                        and node.func.id == "load":
+                    offences.append(f"{path.name}:{node.lineno}: calls load() itself")
+                if isinstance(node, ast.Import):
+                    names = {alias.name.split(".")[0] for alias in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = {node.module.split(".")[0]}
+                else:
+                    continue
+                for name in sorted(names & loaders):
+                    offences.append(f"{path.name}:{node.lineno}: imports {name}")
         self.assertEqual([], offences, "\n".join(offences))
 
     def test_the_program_verify_runs_can_be_named_by_the_caller(self):

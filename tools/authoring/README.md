@@ -283,7 +283,8 @@ needs only to write the same trace.
 ⚠ A design is code, and it is never played in the process that serves the
 client. Each example is played by `sce_author/scenario_play.py` in a child
 process of its own, started by `sce_author/process.py` (the one place this
-package starts a program; `test_core_is_domain_free` holds it to one). The child
+package starts a program, with its launcher `_bound.py`;
+`test_core_is_domain_free` holds it to those two). The child
 gets a session of its own, the kernel's limits on processor time, memory, output
 size and open files, no core dump, no new privileges, a scrubbed environment and
 a clock outside it, and the server process never imports the engine or the Lua
@@ -310,8 +311,33 @@ is a namespace, a cgroup or a seccomp filter: those are further layers that a
 host may not offer (a namespace sandbox needs unprivileged user namespaces, which
 AppArmor forbids on a current Ubuntu, so `bwrap` and `unshare -Urn` fail there),
 and a deployment that needs one will ask for it by name and be refused where it
-is absent. A memory-safety
-defect in the Lua binding is contained by none of what is here.
+is absent. A memory-safety defect in the Lua binding is contained by none of what
+is here.
+
+`verify` and `compare` hold to the same rule, and the way they do it differs
+because they drive one machine through many small steps, where a scenario is one
+process per example. The generated module is imported by a worker process
+(`sce_author/worker.py`), one per verification and one per draft, under the same
+limits and a clock for every exchange; the server holds only references to what
+the worker keeps (`sce_author/sandbox.py`). Plain values are copied, a dataclass
+is copied field by field, and anything else (an engine, an enumeration member)
+stays where it is and is named by a number. The wire is JSON and nothing else,
+never `pickle`: a child that runs a hostile design must not be able to hand the
+server anything but a wrong value. Three consequences are worth knowing.
+
+- A worker that is stopped is not asked again. `verify` ends the run with a
+  refusal that says the machine stopped and that a second run may differ;
+  `compare` leaves that one draft out (`undriven`, with the reason) and compares
+  the rest, and says "not judged" if the stop came while two drafts were being set
+  side by side.
+- `compare` runs a whole drive inside the worker and asks once (`procedures.trace`).
+  Asking per step cost 247 requests and 208 ms for a drive that takes 12 ms in
+  process, because each request wakes two processes; one request per drive costs
+  20 ms.
+- Children are started through `sce_author/_bound.py`, which applies the limits to
+  itself and then runs the program, not through `preexec_fn`, which Python
+  documents as unsafe when threads are running. On Linux a limit that cannot be
+  applied is a refusal to start, never a child that runs unbound.
 
 ⚠ What the driver does not do is as much of the design as what it does. It
 reports what it saw and fills no hole:

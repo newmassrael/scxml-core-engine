@@ -68,7 +68,8 @@ import pathlib
 import sys
 import xml.etree.ElementTree as ET
 
-from .verify import SendRecorder, VerifyError, _host_names, load
+from .errors import VerifyError
+from .lowering import SendRecorder, host_names as _host_names, load
 
 
 class _HttpSeen:

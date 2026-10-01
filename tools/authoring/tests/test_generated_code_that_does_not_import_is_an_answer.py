@@ -92,7 +92,12 @@ class VerifyReportsItInsteadOfDying(unittest.TestCase):
                     "map": {"signal.dark": "DARK", "signal.flashing": "FLASHING"}}},
             }), encoding="utf-8")
             said = "the product generated python for signal.scxml that does not import"
-            with mock.patch.object(verify_module, "load", side_effect=VerifyError(said)):
+            # The module is imported by a worker process (`sandbox`), so that is
+            # where a failing import shows up. `test_a_design_is_played_in_a_process_of_its_own`
+            # makes the worker itself fail the same way; this holds that `verify`
+            # turns the words it is given into a refusal and does not die.
+            with mock.patch.object(verify_module.sandbox, "load_module",
+                                   side_effect=VerifyError(said)):
                 result = verify(load_pack(root), binding)
         self.assertFalse(result.ran)
         self.assertEqual(said, result.refusal)

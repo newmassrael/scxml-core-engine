@@ -22,6 +22,15 @@ from sce_author import process
 QUICK = process.Limits(wall_seconds=2.0, cpu_seconds=1, memory_mb=256, output_mb=1,
                        open_files=64)
 
+# ⚠ A case about ANY limit but the clock must not hand the clock a chance to win.
+# Starting two interpreters on a host with a load average of 52 on 32 cores takes
+# longer than a 2 s clock (measured 2026-10-02: a memory-limit case read as
+# `wall-clock`), and a test that depends on how busy the machine is says nothing
+# about the limit it is named for. These limits keep the limit under test short
+# in processor time and the clock far away.
+ROOMY = process.Limits(wall_seconds=60.0, cpu_seconds=1, memory_mb=256, output_mb=1,
+                       open_files=64)
+
 
 def python(code: str) -> list:
     return [sys.executable, "-c", code]
@@ -70,7 +79,9 @@ class TestAChildThatTheLimitsStop(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "the kernel limits are Linux's here")
     def test_a_child_that_asks_for_too_much_memory_is_stopped(self):
-        out = process.run_isolated(python("x = bytearray(2 * 1024**3)"), limits=QUICK)
+        out = process.run_isolated(python("x = bytearray(2 * 1024**3)"),
+                                   limits=process.Limits(wall_seconds=60.0, cpu_seconds=30,
+                                                         memory_mb=256))
         self.assertEqual("memory", out.stopped_by, out)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "the kernel limits are Linux's here")
@@ -78,7 +89,7 @@ class TestAChildThatTheLimitsStop(unittest.TestCase):
         out = process.run_isolated(
             python("import sys\nwhile True:\n    sys.stdout.write('x' * 65536)\n"
                    "    sys.stdout.flush()"),
-            limits=QUICK)
+            limits=ROOMY)
         self.assertEqual("output", out.stopped_by, out)
         self.assertLessEqual(len(out.stdout), 1024 * 1024)
 

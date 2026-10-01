@@ -36,6 +36,14 @@ class IngestError(AuthoringError):
     """A document could not be read. Always names what would read it."""
 
 
+class VerifyError(AuthoringError):
+    """Verification could not be performed. Never a verdict about behaviour.
+
+    Lives here, not in `verify`, because the process that plays a design
+    (`worker`, `scenario_play`) raises it and must not import the whole
+    verifier to do so."""
+
+
 # What reading a file off a disk can raise, other than the file simply not
 # being there: a directory in its place, a permission, a symlink loop, a
 # device that is not a file, bytes that are not text in the encoding claimed.
