@@ -434,19 +434,16 @@ pub mod invoke;
 /// and a machine's saved state. `std` only, like both of them.
 #[cfg(not(feature = "no_std"))]
 pub mod json;
-/// Which reading `§scxml-B-2-8-1` gave a delivered payload.
-///
-/// Deliberately NOT under `scripting`, which is gated out of `no_std`: the
-/// engine counts these readings and is the surface an MCU consumer builds.
-/// That module is named in plain text rather than linked, because a link to
-/// it does not resolve in the very profile this module exists for.
+// The module's own `//!` documents it. A `///` here would be joined to that text and
+// resolved from the crate root, where `Engine` already resolves, so the explicit
+// `crate::Engine` target inside would be flagged by `redundant_explicit_links`.
 pub mod payload_reading;
 pub mod policy;
 /// A `datamodel="sce-static"` machine's whole state, saved and restored as
 /// one JSON document (SCE Accepted Subset §2.15). `std` only.
 #[cfg(not(feature = "no_std"))]
 pub mod saved_state;
-/// Per-machine scheduled-send-id storage policy (SCE Protocol-Synthesis RFC §synth-5-J-2).
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
 pub mod sched_send_id;
 /// ECMAScript engine abstraction.
 ///
