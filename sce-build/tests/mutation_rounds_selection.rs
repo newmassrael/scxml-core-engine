@@ -38,6 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use tempfile::tempdir;
 
@@ -51,18 +52,14 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Run the gate in dry-run mode over a change set from a tree that has no
-/// configured CMake build, and return what it chose.
+/// A copy of the harness, the gate and the corpus under a fresh git index.
 ///
-/// The workflow's runner is such a tree: it asks this dry run which casefiles
-/// a push reaches and configures CMake only when one of them says it needs
-/// it. So the answer has to be available *before* the tree exists, and the
-/// only way to assert that is to ask from somewhere the tree does not.
-/// A copy under a fresh index rather than the checkout itself: the gate
-/// enumerates its corpus with `git ls-files`, so the tree it runs in has to
-/// be a repository, and the one thing this fixture must not have is the
-/// `build/` the real checkout carries.
-fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
+/// A copy rather than the checkout itself: the gate enumerates its corpus with
+/// `git ls-files`, so the tree it runs in has to be a repository, and the one
+/// thing this fixture must not have is the `build/` the real checkout carries.
+/// It is also a tree that is not a cargo workspace, which is the state the
+/// harness's oracle resolution has to answer "no paths" in rather than refuse.
+fn gate_fixture() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
     for entry in ["scripts", "sce-build/tests/mutations"] {
         let dest = dir.path().join(entry);
@@ -81,6 +78,18 @@ fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, S
         !dir.path().join("build/CMakeCache.txt").exists(),
         "this tree was supposed to be the one without a CMake cache"
     );
+    dir
+}
+
+/// Run the gate in dry-run mode over a change set from a tree that has no
+/// configured CMake build, and return what it chose.
+///
+/// The workflow's runner is such a tree: it asks this dry run which casefiles
+/// a push reaches and configures CMake only when one of them says it needs
+/// it. So the answer has to be available *before* the tree exists, and the
+/// only way to assert that is to ask from somewhere the tree does not.
+fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
+    let dir = gate_fixture();
     let changed_file = dir.path().join("changed.txt");
     fs::write(&changed_file, changed.join("\n") + "\n").expect("write change set");
 
@@ -172,24 +181,89 @@ fn selection_for(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
     )
 }
 
-/// Every tracked casefile, and the targets it declares, asked of the harness
-/// that owns the casefile vocabulary.
-fn declared_targets(casefile: &str) -> Vec<String> {
+/// What `scripts/mutate --declares` says about one casefile.
+#[derive(Clone, Default)]
+struct Declaration {
+    runner: Option<String>,
+    targets: Vec<String>,
+    oracles: Vec<String>,
+    needs: Vec<String>,
+}
+
+/// The declarations of `casefiles`, asked of the harness in ONE invocation.
+///
+/// The harness owns the casefile vocabulary, so this asks it rather than
+/// matching the casefiles' text. What changed is how many times it is asked:
+/// the helpers below used to start `scripts/mutate` once per question, and the
+/// tests that sweep the corpus ask hundreds, each start costing about half a
+/// second. That arithmetic, repeated by every test in this file and by the gate
+/// each of them runs, is what carried this binary's unmutated baseline to 297
+/// of the 300 seconds `scripts/mutate` allows it.
+///
+/// Given several casefiles the harness introduces each block with a
+/// `casefile<TAB>path` line; given exactly one it prints no such line, as it
+/// always has. Output before the first header, when there should be one, is a
+/// protocol break and refuses rather than being attributed to the wrong file.
+fn declarations_of(casefiles: &[String]) -> BTreeMap<String, Declaration> {
     let out = Command::new("scripts/mutate")
-        .args(["--declares", casefile])
+        .arg("--declares")
+        .args(casefiles)
         .current_dir(repo_root())
         .output()
         .expect("run scripts/mutate --declares");
     assert!(
         out.status.success(),
-        "`scripts/mutate --declares {casefile}` failed:\n{}",
+        "`scripts/mutate --declares` over {} casefile(s) failed:\n{}",
+        casefiles.len(),
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| line.strip_prefix("target\t"))
-        .map(str::to_string)
-        .collect()
+    let mut found: BTreeMap<String, Declaration> = BTreeMap::new();
+    let mut current: Option<String> = match casefiles {
+        [only] => Some(only.clone()),
+        _ => None,
+    };
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let (key, value) = line.split_once('\t').unwrap_or((line, ""));
+        if key == "casefile" {
+            found.entry(value.to_string()).or_default();
+            current = Some(value.to_string());
+            continue;
+        }
+        let name = current.as_ref().unwrap_or_else(|| {
+            panic!("`scripts/mutate --declares` printed `{line}` before naming a casefile")
+        });
+        let declaration = found.entry(name.clone()).or_default();
+        match key {
+            "runner" => declaration.runner = Some(value.to_string()),
+            "target" => declaration.targets.push(value.to_string()),
+            "oracle" => declaration.oracles.push(value.to_string()),
+            "needs" => declaration.needs.push(value.to_string()),
+            _ => {}
+        }
+    }
+    found
+}
+
+/// The declaration of one casefile, out of a single batch call for the whole
+/// tracked corpus that every test in this process shares.
+///
+/// A casefile that is not in the corpus is asked about on its own, as every
+/// caller used to: nothing here depends on the answer for it being cached.
+fn declaration(casefile: &str) -> Declaration {
+    static CORPUS: OnceLock<BTreeMap<String, Declaration>> = OnceLock::new();
+    let corpus = CORPUS.get_or_init(|| declarations_of(&casefiles()));
+    match corpus.get(casefile) {
+        Some(declaration) => declaration.clone(),
+        None => declarations_of(&[casefile.to_string()])
+            .remove(casefile)
+            .unwrap_or_default(),
+    }
+}
+
+/// Every tracked casefile, and the targets it declares, asked of the harness
+/// that owns the casefile vocabulary.
+fn declared_targets(casefile: &str) -> Vec<String> {
+    declaration(casefile).targets
 }
 
 /// The oracles a casefile resolves: the test whose assertions produced its
@@ -202,21 +276,7 @@ fn declared_targets(casefile: &str) -> Vec<String> {
 /// harness's own header gives: a second reader of the casefile vocabulary is a
 /// copy, and the copy is what goes stale.
 fn declared_oracles(casefile: &str) -> Vec<String> {
-    let out = Command::new("scripts/mutate")
-        .args(["--declares", casefile])
-        .current_dir(repo_root())
-        .output()
-        .expect("run scripts/mutate --declares");
-    assert!(
-        out.status.success(),
-        "`scripts/mutate --declares {casefile}` failed:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| line.strip_prefix("oracle\t"))
-        .map(str::to_string)
-        .collect()
+    declaration(casefile).oracles
 }
 
 /// Every path git tracks, for asking whether a declaration names a real file
@@ -244,21 +304,7 @@ fn copy_tree(from: &Path, to: &Path) {
 /// The services a casefile says its round needs running, asked of the harness
 /// that owns the vocabulary.
 fn declared_needs(casefile: &str) -> Vec<String> {
-    let out = Command::new("scripts/mutate")
-        .args(["--declares", casefile])
-        .current_dir(repo_root())
-        .output()
-        .expect("run scripts/mutate --declares");
-    assert!(
-        out.status.success(),
-        "`scripts/mutate --declares {casefile}` failed:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| line.strip_prefix("needs\t"))
-        .map(str::to_string)
-        .collect()
+    declaration(casefile).needs
 }
 
 /// Whether a casefile drives its round through ctest — the same line the
@@ -270,14 +316,8 @@ fn declares_ctest(casefile: &str) -> bool {
 /// The runner a casefile declares, read from the harness that owns the
 /// casefile vocabulary rather than by matching its text.
 fn declared_runner(casefile: &str) -> String {
-    let out = Command::new("scripts/mutate")
-        .args(["--declares", casefile])
-        .current_dir(repo_root())
-        .output()
-        .expect("run scripts/mutate --declares");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .find_map(|line| line.strip_prefix("runner\t").map(str::to_string))
+    declaration(casefile)
+        .runner
         .unwrap_or_else(|| panic!("{casefile} declares no runner"))
 }
 
@@ -352,8 +392,6 @@ fn a_change_to_a_declared_target_selects_exactly_its_casefiles() {
     );
 }
 
-/// A path that merely looks like a declared target does not select it.
-///
 /// A dry run answers even when what it selects would need a CMake tree.
 ///
 /// This is the case the workflow asks about and the one the gate used to
@@ -362,38 +400,92 @@ fn a_change_to_a_declared_target_selects_exactly_its_casefiles() {
 /// exited 3 before printing it. Measured on the first push to touch a C11
 /// template: the selection step went red for having been asked.
 ///
-/// Driven from a real ctest casefile's declared target rather than a written
-/// path, so a corpus that stops declaring one fails here instead of passing
-/// against a shape nothing has.
+/// Driven from the real ctest casefiles' declared targets rather than a
+/// written path, so a corpus that stops declaring one fails here instead of
+/// passing against a shape nothing has.
+///
+/// ONE RUN FOR ALL OF THEM, AND THE ANSWER CHECKED EXACTLY. This used to run the
+/// gate once per ctest casefile, 47 of them, in a fresh copy of the tree each
+/// time, and that loop alone was 1,924 of the 3,285 seconds this binary takes
+/// serially — the reason its unmutated baseline sat at 257 to 297 of the 300
+/// seconds `scripts/mutate` allows, and so the reason the mutation round for
+/// this very file crossed the cap on 2026-10-01. A run per casefile bought
+/// nothing the one run does not: the property is that the dry run answers
+/// without a tree and says `ctest` for a ctest round, and the change set here
+/// holds every ctest casefile's first target at once.
+///
+/// What a run per casefile did guard — that the gate chooses a casefile for
+/// ITS target, and not by accident of another path in the change set — is held
+/// by comparing the whole answer to the one the declarations imply. The
+/// expected set is the casefiles with a declared target or oracle among the
+/// touched paths, worked out from the same `--declares` answers the gate reads,
+/// and the chosen set has to equal it: a casefile the gate failed to match is
+/// missing from it, and one it matched wrongly is extra, whichever other path
+/// in the change set happened to reach it.
 #[test]
 fn a_dry_run_answers_for_a_casefile_that_would_need_a_cmake_tree() {
-    let ctest_casefiles: Vec<String> = casefiles()
-        .into_iter()
+    let corpus = casefiles();
+    let ctest_casefiles: Vec<String> = corpus
+        .iter()
         .filter(|casefile| declares_ctest(casefile))
+        .cloned()
         .collect();
     assert!(
         !ctest_casefiles.is_empty(),
         "the corpus declares no ctest casefile, so this test asserts nothing"
     );
 
-    for casefile in ctest_casefiles {
-        let targets = declared_targets(&casefile);
-        let target = targets
-            .first()
-            .unwrap_or_else(|| panic!("{casefile} declares no target"));
-        let (ok, chosen, log) = selection_without_a_cmake_tree(&[target]);
-        assert!(
-            ok,
-            "the gate refused to *choose* for want of a tree it would only \
-             need in order to *run*:\n{log}"
-        );
+    let touched: BTreeSet<String> = ctest_casefiles
+        .iter()
+        .map(|casefile| {
+            declared_targets(casefile)
+                .first()
+                .cloned()
+                .unwrap_or_else(|| panic!("{casefile} declares no target"))
+        })
+        .collect();
+    let changed: Vec<&str> = touched.iter().map(String::as_str).collect();
+    let (ok, chosen, log) = selection_without_a_cmake_tree(&changed);
+    assert!(
+        ok,
+        "the gate refused to *choose* for want of a tree it would only \
+         need in order to *run*:\n{log}"
+    );
+
+    let expected: BTreeSet<String> = corpus
+        .iter()
+        .filter(|casefile| {
+            declared_targets(casefile)
+                .into_iter()
+                .chain(declared_oracles(casefile))
+                .any(|path| touched.contains(&path))
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        chosen.keys().cloned().collect::<BTreeSet<_>>(),
+        expected,
+        "⚠ the casefiles chosen for the first target of every ctest casefile must \
+         be exactly the ones whose declarations name one of those paths. Missing \
+         means the gate failed to match a casefile to its own target; extra means \
+         it matched one to a path it does not declare.\n{log}"
+    );
+
+    for casefile in &ctest_casefiles {
         assert_eq!(
-            chosen.get(&casefile).map(String::as_str),
+            chosen.get(casefile).map(String::as_str),
             Some("ctest"),
-            "⚠ {target} must select {casefile} AND report that its round runs \
-             through ctest. Selecting it without saying so leaves the lane to \
+            "⚠ {casefile}'s first target must select it AND report that its round \
+             runs through ctest. Selecting it without saying so leaves the lane to \
              work the runner out for itself, which is the derivation that was \
              wrong for 34 commits. Chose: {chosen:?}\n{log}"
+        );
+    }
+    for (casefile, runner) in &chosen {
+        assert_eq!(
+            runner,
+            &declared_runner(casefile),
+            "⚠ the runner the dry run reports for {casefile} must be the one it declares"
         );
     }
 }
@@ -2063,5 +2155,281 @@ fn the_gate_starts_the_declared_service_for_that_round_and_no_other() {
          server that outlives its gate is what the next suite trips over, which \
          is why the start arms an exit cleanup as well as the scoped stop.\n{}",
         run.log
+    );
+}
+
+// ── Declaring the corpus in one call ───────────────────────────────
+//
+// `scripts/mutate --declares` takes several casefiles and declares them in one
+// process. The gate depends on it for its cost — 169 starts at about half a
+// second each was most of what this binary's unmutated baseline spent — and the
+// tests below are what stop the saving from being a different answer.
+
+/// A casefile the harness accepts, declaring one cargo selector and one target,
+/// for the fixtures below.
+const MINIMAL_CASEFILE: &str = "\
+mutation_tests -p sce-build --test mutation_rounds_selection
+mutation_targets scripts/mutate
+mutation_case \"a case\" <<'PY'
+edit(\"scripts/mutate\", \"a\", \"b\")
+PY
+";
+
+/// The harness's own words for a declaration, unparsed.
+fn declares_raw(casefiles: &[&str]) -> std::process::Output {
+    Command::new("scripts/mutate")
+        .arg("--declares")
+        .args(casefiles)
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares")
+}
+
+/// One call over several casefiles prints exactly what one call each prints.
+///
+/// The whole corpus was compared this way when the batch was written — 169
+/// casefiles, old harness against new, byte for byte — and that comparison is
+/// too slow to run in a binary that every mutation case runs again. A spread
+/// across the corpus is not: it takes in both runners, a casefile that needs a
+/// service, and casefiles from the front, middle and back of the listing, which
+/// is where a state leaking from one declaration into the next would show.
+#[test]
+fn one_call_declares_several_casefiles_exactly_as_one_call_each_would() {
+    let corpus = casefiles();
+    let mut sample: BTreeSet<String> = corpus
+        .iter()
+        .step_by((corpus.len() / 10).max(1))
+        .cloned()
+        .collect();
+    sample.extend(corpus.iter().find(|c| declares_ctest(c)).cloned());
+    sample.extend(
+        corpus
+            .iter()
+            .find(|c| !declared_needs(c).is_empty())
+            .cloned(),
+    );
+    let sample: Vec<String> = sample.into_iter().collect();
+    assert!(
+        sample.len() >= 8,
+        "only {} casefile(s) sampled, so a leak between declarations has little to leak into",
+        sample.len()
+    );
+
+    let mut expected = String::new();
+    for casefile in &sample {
+        let single = declares_raw(&[casefile]);
+        assert!(single.status.success(), "{casefile} did not declare alone");
+        expected.push_str(&format!(
+            "casefile\t{casefile}\n{}",
+            String::from_utf8_lossy(&single.stdout)
+        ));
+    }
+
+    let refs: Vec<&str> = sample.iter().map(String::as_str).collect();
+    let batch = declares_raw(&refs);
+    assert!(
+        batch.status.success(),
+        "the batch did not declare:\n{}",
+        String::from_utf8_lossy(&batch.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&batch.stdout),
+        expected,
+        "⚠ declaring several casefiles in one process must print what declaring \
+         each in a process of its own prints, introduced by a `casefile` line. \
+         Anything else is the batch saying something about a casefile that the \
+         casefile does not say about itself."
+    );
+}
+
+/// A casefile that cannot be declared stops the batch, and is named.
+///
+/// The gate's contract is that a declaration it cannot read is a stop, not a
+/// casefile quietly missing from the selection — "the silent coverage loss the
+/// gate exists to remove". With one call per casefile the gate knew which file
+/// failed because it had asked about it; with one call for all of them the
+/// harness has to say so, and has to stop rather than carry on past it.
+///
+/// The broken casefile misspells a declaration. Sourced with `-e` that kills the
+/// declaration at the typo; with `-e` ignored it would be skipped and the
+/// casefile declared without that line, which is the failure this guards: a
+/// shell rule — `-e` does not apply on the left of `||` — made it reachable.
+#[test]
+fn a_casefile_that_cannot_be_declared_stops_the_batch_and_is_named() {
+    let dir = tempdir().expect("tempdir");
+    let good = dir.path().join("good.cases");
+    let broken = dir.path().join("broken.cases");
+    let after = dir.path().join("after.cases");
+    fs::write(&good, MINIMAL_CASEFILE).expect("write the good casefile");
+    fs::write(&after, MINIMAL_CASEFILE).expect("write the casefile after");
+    fs::write(
+        &broken,
+        "mutation_tests -p sce-build --test mutation_rounds_selection\n\
+         mutation_targest scripts/mutate\n\
+         mutation_targets scripts/mutate\n",
+    )
+    .expect("write the broken casefile");
+
+    let (good_s, broken_s, after_s) = (
+        good.to_str().expect("utf-8"),
+        broken.to_str().expect("utf-8"),
+        after.to_str().expect("utf-8"),
+    );
+    let out = declares_raw(&[good_s, broken_s, after_s]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "⚠ a casefile with a misspelled declaration was declared anyway:\n{stdout}"
+    );
+    assert!(
+        stderr.contains(broken_s),
+        "⚠ the failure must name the casefile it is about, since the caller asked \
+         about all of them at once:\n{stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("casefile\t{good_s}")),
+        "the casefile before the broken one was declared and must be in the output:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains(&format!("casefile\t{after_s}")),
+        "⚠ the batch carried on past a casefile it could not declare:\n{stdout}"
+    );
+}
+
+/// Casefiles declared in one process share nothing, and list a path once.
+///
+/// Sharing a process is safe only because each casefile is declared in a
+/// subshell that starts from the same blank state. If one casefile's targets
+/// reached the next, the gate would select rounds for changes to files their
+/// casefile never named. And a path named twice, or named as nothing at all,
+/// reaches the snapshot and the hash list the restore is checked against — the
+/// reason the list is de-duplicated and the blank entry dropped.
+#[test]
+fn casefiles_declared_in_one_process_share_nothing_and_list_each_path_once() {
+    let dir = tempdir().expect("tempdir");
+    let first = dir.path().join("first.cases");
+    let second = dir.path().join("second.cases");
+    fs::write(
+        &first,
+        "mutation_tests -p sce-build --test mutation_rounds_selection\n\
+         mutation_targets only/in/the/first.rs \"\" \"  \" only/in/the/first.rs\n\
+         mutation_case \"a case\" <<'PY'\npass\nPY\n",
+    )
+    .expect("write the first casefile");
+    fs::write(
+        &second,
+        "mutation_tests -p sce-build --test mutation_rounds_selection\n\
+         mutation_targets only/in/the/second.rs\n\
+         mutation_case \"a case\" <<'PY'\npass\nPY\n\
+         mutation_case \"another\" <<'PY'\npass\nPY\n",
+    )
+    .expect("write the second casefile");
+
+    let both = declarations_of(&[
+        first.to_str().expect("utf-8").to_string(),
+        second.to_str().expect("utf-8").to_string(),
+    ]);
+    let first_d = &both[first.to_str().expect("utf-8")];
+    let second_d = &both[second.to_str().expect("utf-8")];
+
+    assert_eq!(
+        first_d.targets,
+        vec!["only/in/the/first.rs".to_string()],
+        "⚠ a path named twice and two blank entries must come out as the one path"
+    );
+    assert_eq!(
+        second_d.targets,
+        vec!["only/in/the/second.rs".to_string()],
+        "⚠ the second casefile declared something the first one named: a \
+         declaration leaked between casefiles in the same process"
+    );
+}
+
+/// The gate declares the corpus by asking the harness ONCE.
+///
+/// A recording wrapper stands in front of the harness in a copy of the tree and
+/// the gate is run dry over the whole corpus. This is the structure the saving
+/// rests on, and the one thing a correct answer cannot show: a gate that went
+/// back to one call per casefile would select exactly the same rounds, only
+/// 169 times slower, and every other test here would stay green.
+#[test]
+fn the_gate_declares_the_corpus_in_one_call() {
+    let dir = gate_fixture();
+    let scripts = dir.path().join("scripts");
+    fs::rename(scripts.join("mutate"), scripts.join("mutate.real")).expect("move the harness");
+    write_shim(
+        &scripts.join("mutate"),
+        "printf '%s\\n' \"$*\" >> \"$SCE_SHIM_LOG\"\n\
+         exec \"$(dirname \"$0\")/mutate.real\" \"$@\"\n",
+    );
+    let log = dir.path().join("mutate-calls.log");
+
+    let out = gate_shell()
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(dir.path())
+        .env("SCE_MUTATION_ROUNDS", "all")
+        .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
+        .env("SCE_SHIM_LOG", &log)
+        .output()
+        .expect("run the gate");
+    assert!(
+        out.status.success(),
+        "the gate failed in the recording fixture:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let calls: Vec<String> = fs::read_to_string(&log)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.split_whitespace().next() == Some("--declares"))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        calls.len(),
+        1,
+        "⚠ the gate asked the harness for declarations {} times. It must ask once, \
+         for the whole corpus: each call is a process start and a pass over the \
+         workspace, and 169 of them are what this lane's selection test paid for \
+         until 2026-10-01.\n{calls:?}",
+        calls.len()
+    );
+    assert_eq!(
+        calls[0].split_whitespace().count(),
+        1 + casefiles().len(),
+        "⚠ the one call must carry every tracked casefile, or the casefiles left \
+         out are never selected and nothing says so"
+    );
+}
+
+/// A `-p` that names no package falls back to the whole workspace.
+///
+/// The oracle resolution reads the workspace's test sources once and each
+/// casefile looks its selector up in that table. The lookup's scoping rule is
+/// older than the table and is kept exactly: a selector with no `-p`, or one
+/// that names only packages the workspace does not have, reaches every member.
+#[test]
+fn a_selector_naming_no_package_is_resolved_across_the_workspace() {
+    let dir = tempdir().expect("tempdir");
+    let casefile = dir.path().join("no-such-package.cases");
+    fs::write(
+        &casefile,
+        "mutation_tests -p no_such_package_in_this_workspace --test mutation_rounds_selection\n\
+         mutation_targets scripts/mutate\n\
+         mutation_case \"a case\" <<'PY'\npass\nPY\n",
+    )
+    .expect("write the casefile");
+    let path = casefile.to_str().expect("utf-8").to_string();
+
+    let declared = declarations_of(std::slice::from_ref(&path));
+    assert!(
+        declared[&path]
+            .oracles
+            .iter()
+            .any(|oracle| oracle == "sce-build/tests/mutation_rounds_selection.rs"),
+        "⚠ a selector naming a package this workspace lacks must still find its \
+         test target in the member that has it. Oracles: {:?}",
+        declared[&path].oracles
     );
 }

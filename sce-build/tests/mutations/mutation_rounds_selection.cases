@@ -231,8 +231,8 @@ PY
 
 mutation_case "a casefile no longer selects its own round" <<'PY'
 edit("scripts/mutate",
-     """    { printf '%s\\n' "$CASEFILE"; mutation_test_oracles; } | awk 'NF && !seen[$0]++'""",
-     """    mutation_test_oracles | awk 'NF && !seen[$0]++'""")
+     """    { printf '%s\\n' "$CASEFILE"; mutation_test_oracles; } | mutation_unique""",
+     """    mutation_test_oracles | mutation_unique""")
 PY
 
 # ── The cargo test source stops being derived ───────────────────────
@@ -418,4 +418,96 @@ edit("scripts/gates/mutation-rounds.sh",
     fi
 """,
      "")
+PY
+
+# ── The corpus is declared in one call, and the call stays honest ──
+#
+# `scripts/mutate --declares` takes several casefiles and declares them in one
+# process; the gate asks once for all of them. The saving is what carried this
+# casefile's own baseline from 257 seconds to a margin — measured 2026-10-01,
+# 297 of the 300 the harness allows, and over it on a loaded runner — and a
+# saving is only worth having if it is the same answer. Each case below removes
+# one thing that keeps it the same answer, and names the test that must notice.
+#
+# The first three are about what a batch must not do to a declaration, the next
+# two about the list a declaration prints, one about the lookup the batch shares,
+# and the last about the structure the whole saving rests on.
+
+# Without its header a block belongs to nobody: the gate would key every
+# casefile's runner and targets under the previous name, or under none.
+mutation_case "a block in the batch is not introduced by the casefile it is about" <<'PY'
+edit("scripts/mutate",
+     """        (( multi )) && printf 'casefile\\t%s\\n' "$declared"
+""",
+     "")
+PY
+
+# A subshell per casefile is the whole reason sharing a process is safe: the
+# `exit` that ends a declaration then ends only that casefile, and nothing it
+# declared reaches the next. As a brace group the first casefile's `exit 0`
+# would end the script, and the batch would print one block and call it done.
+mutation_case "the casefiles in a batch are declared in one shell and not in one each" <<'PY'
+edit("scripts/mutate",
+     """        set +e
+        (
+            set -e
+            CASEFILE="$declared\"""",
+     """        set +e
+        {
+            set -e
+            CASEFILE="$declared\"""")
+edit("scripts/mutate",
+     """            mutation_init
+        )
+        rc=$?""",
+     """            mutation_init
+        }
+        rc=$?""")
+PY
+
+# `-e` is off in the parent on purpose and has to be on again inside, or a
+# casefile whose own declaration failed is declared without the line that failed
+# and nothing says so. That is the silent coverage loss the gate exists to stop.
+mutation_case "a casefile that fails while being declared is declared anyway" <<'PY'
+edit("scripts/mutate",
+     """        (
+            set -e
+            CASEFILE="$declared\"""",
+     """        (
+            CASEFILE="$declared\"""")
+PY
+
+mutation_case "a path named twice is listed twice" <<'PY'
+edit("scripts/mutate",
+     """        [[ -z "${seen[$line]+set}" ]] || continue
+""",
+     "")
+PY
+
+mutation_case "a blank entry is listed as a path" <<'PY'
+edit("scripts/mutate",
+     """        [[ "$line" == *[![:blank:]]* ]] || continue
+""",
+     "")
+PY
+
+# The table of test sources is read once and looked up per casefile. A selector
+# that names a package the workspace lacks reaches every member, as it always
+# has; without that fallback such a casefile has no oracle side at all, which is
+# indistinguishable from one whose test never changes.
+mutation_case "a selector naming no package finds no test source" <<'PY'
+edit("scripts/mutate",
+     """    (( ${#scope[@]} )) || scope=(${MUTATION_CARGO_PKGS[@]+"${MUTATION_CARGO_PKGS[@]}"})
+""",
+     "")
+PY
+
+# Output and selection are identical whether the gate asks once or 169 times;
+# only the cost differs, and only `the_gate_declares_the_corpus_in_one_call`
+# can tell. This case asks per casefile, with the same headers, so everything
+# else stays green.
+mutation_case "the gate asks the harness once per casefile again" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """    if ! declared="$(scripts/mutate --declares "${CASEFILES[@]}" 2>&1)"; then""",
+     """    if ! declared="$(for _f in "${CASEFILES[@]}"; do printf 'casefile\\t%s\\n' "$_f"; scripts/mutate --declares "$_f" 2>&1; done)"; then""")
 PY

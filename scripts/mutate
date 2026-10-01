@@ -633,6 +633,30 @@ mutation_needs() {
 
 # ── Internals ──────────────────────────────────────────────────────
 
+# The lines on stdin that are not blank, each once, first mention winning.
+#
+# `awk 'NF && !seen[$0]++'` said exactly this, and it was the wrong tool for the
+# one place this script is asked a question thousands of times: the corpus-wide
+# `--declares` below runs it four to six times per casefile, and a fork plus an
+# exec of awk is the bulk of what one declaration cost. Measured 2026-10-01 on
+# this corpus: 0.47 s per casefile, 169 casefiles, and the selection test
+# running the gate dry enough times to cross the 300 s artifact timeout.
+#
+# A line is blank when it has no character that is not a space or a tab, which
+# is awk's `NF` for the default field separator. The line is compared and
+# printed as it arrived, so a path with a trailing space is its own entry, as
+# it was.
+mutation_unique() {
+    local line
+    local -A seen=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == *[![:blank:]]* ]] || continue
+        [[ -z "${seen[$line]+set}" ]] || continue
+        seen[$line]=1
+        printf '%s\n' "$line"
+    done
+}
+
 # Every file a case may edit, of either kind.
 # Every path exactly once, first mention winning. The casefile is sourced on
 # both passes, so an accumulating declaration is seen twice; and a casefile may
@@ -643,7 +667,7 @@ mutation_needs() {
 mutation_all_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
                   ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
-        awk 'NF && !seen[$0]++'
+        mutation_unique
 }
 
 # Every service the round needs, once each — deduplicated for the same reason
@@ -652,7 +676,7 @@ mutation_all_targets() {
 # line would leave the second refusing the port the first holds.
 mutation_all_needs() {
     printf '%s\n' ${MUTATION_NEEDS[@]+"${MUTATION_NEEDS[@]}"} |
-        awk 'NF && !seen[$0]++'
+        mutation_unique
 }
 
 # The test sources a cargo selector names, read out of the manifests.
@@ -672,38 +696,121 @@ mutation_all_needs() {
 # side is empty, and `mutation_cargo_check_selector` reds a metadata failure by
 # name.
 mutation_cargo_oracles() {
+    mutation_cargo_test_sources || return 1
+
+    local -a args=(${MUTATION_RUNNER_ARGS[@]+"${MUTATION_RUNNER_ARGS[@]}"})
+    local -a named_pkgs=() wanted_tests=()
+    local i=0 a
+    while (( i < ${#args[@]} )); do
+        a="${args[i]}"
+        case "$a" in
+            -p|--package)
+                if (( i + 1 < ${#args[@]} )); then
+                    named_pkgs+=("${args[i+1]}"); i=$(( i + 2 )); continue
+                fi ;;
+            --test)
+                if (( i + 1 < ${#args[@]} )); then
+                    wanted_tests+=("${args[i+1]}"); i=$(( i + 2 )); continue
+                fi ;;
+        esac
+        i=$(( i + 1 ))
+    done
+
+    local -a scope=()
+    local pkg test
+
+    # Same scoping rule as the selector check: a selector with no `-p` reaches the
+    # whole workspace, so a target it names may live in any member. A `-p` that
+    # names no member at all falls back to the whole workspace as well, as it
+    # always has.
+    for pkg in ${named_pkgs[@]+"${named_pkgs[@]}"}; do
+        [[ -n "${MUTATION_CARGO_HAS_PKG[$pkg]+set}" ]] && scope+=("$pkg")
+    done
+    (( ${#scope[@]} )) || scope=(${MUTATION_CARGO_PKGS[@]+"${MUTATION_CARGO_PKGS[@]}"})
+
+    for test in ${wanted_tests[@]+"${wanted_tests[@]}"}; do
+        for pkg in ${scope[@]+"${scope[@]}"}; do
+            printf '%s' "${MUTATION_CARGO_SOURCES_OF[$pkg$'\t'$test]-}"
+        done
+    done
+}
+
+# Where the cargo workspace keeps each of its test targets, read ONCE per process.
+#
+# `cargo metadata` and an interpreter start were being paid for again by every
+# casefile, 116 of the 169, and `--declares` over the corpus is called by the
+# gate and by the selection test several times each. Neither answer depends on
+# the casefile: the table is the workspace's, and a casefile only picks rows out
+# of it. So it is built the first time anything asks, by whichever invocation
+# that is, and every later one in the same process reads the file.
+#
+# One row per package (`P<TAB>name`) and one per test target
+# (`T<TAB>package<TAB>target<TAB>path`), in the order cargo reports them, which
+# is the order the lookup above reports them in. A failure is remembered as
+# well as a success: outside a cargo workspace — the selection fixture is one —
+# every casefile would otherwise retry a read that cannot work.
+#
+# AND READ INTO THE SHELL ONCE, not once per casefile. The first version re-read
+# the file for every casefile and that was now the largest single cost of
+# declaring the corpus: about 650 rows, 76,000 iterations of a `read` loop
+# measured over 116 casefiles, 9.5 of 17 traced seconds. The rows go into
+# globals, `--declares` over several casefiles loads them before the first one,
+# and a subshell inherits its parent's variables, so each casefile looks up in
+# memory what was read once.
+MUTATION_CARGO_TEST_SOURCES=""
+MUTATION_CARGO_LOADED=""
+MUTATION_CARGO_PKGS=()
+declare -A MUTATION_CARGO_HAS_PKG=()
+declare -A MUTATION_CARGO_SOURCES_OF=()
+mutation_cargo_test_sources() {
+    case "$MUTATION_CARGO_LOADED" in
+        yes) return 0 ;;
+        no) return 1 ;;
+    esac
+    if mutation_cargo_build_test_sources; then
+        local kind pkg name path
+        while IFS=$'\t' read -r kind pkg name path; do
+            case "$kind" in
+                P) MUTATION_CARGO_PKGS+=("$pkg"); MUTATION_CARGO_HAS_PKG[$pkg]=1 ;;
+                T) MUTATION_CARGO_SOURCES_OF["$pkg"$'\t'"$name"]+="$path"$'\n' ;;
+            esac
+        done <"$MUTATION_CARGO_TEST_SOURCES"
+        MUTATION_CARGO_LOADED=yes
+        return 0
+    fi
+    MUTATION_CARGO_LOADED=no
+    return 1
+}
+
+# The file itself: built by cargo and one interpreter the first time, and reused
+# when it is already there.
+mutation_cargo_build_test_sources() {
+    local table="$WORK/cargo-test-sources.tsv"
+    local failed="$WORK/cargo-test-sources.failed"
+    MUTATION_CARGO_TEST_SOURCES="$table"
+    [[ -e "$failed" ]] && return 1
+    [[ -s "$table" ]] && return 0
     local meta="$WORK/cargo-metadata-oracles.json"
-    cargo metadata --no-deps --format-version 1 >"$meta" 2>/dev/null || return 1
-    python3 - "$meta" "$SCE_REPO_ROOT" "${MUTATION_RUNNER_ARGS[@]}" <<'PY'
+    if ! cargo metadata --no-deps --format-version 1 >"$meta" 2>/dev/null \
+        || ! python3 - "$meta" "$SCE_REPO_ROOT" >"$table" <<'PY'
 import json
 import os
 import sys
 
 meta = json.load(open(sys.argv[1]))
 root = sys.argv[2]
-args = sys.argv[3:]
-
-named_pkgs, wanted_tests = [], []
-i = 0
-while i < len(args):
-    a = args[i]
-    if a in ("-p", "--package") and i + 1 < len(args):
-        named_pkgs.append(args[i + 1]); i += 2; continue
-    if a == "--test" and i + 1 < len(args):
-        wanted_tests.append(args[i + 1]); i += 2; continue
-    i += 1
-
-packages = {p["name"]: p for p in meta["packages"]}
-# Same scoping rule as the selector check: a selector with no `-p` reaches the
-# whole workspace, so a target it names may live in any member.
-scope = [packages[n] for n in named_pkgs if n in packages] or list(packages.values())
-
-for test in wanted_tests:
-    for p in scope:
-        for t in p["targets"]:
-            if t["name"] == test and "test" in t["kind"]:
-                print(os.path.relpath(t["src_path"], root))
+for p in meta["packages"]:
+    print("P\t%s" % p["name"])
+    for t in p["targets"]:
+        if "test" in t["kind"]:
+            print("T\t%s\t%s\t%s" % (p["name"], t["name"], os.path.relpath(t["src_path"], root)))
 PY
+    then
+        rm -f "$table"
+        : >"$failed"
+        return 1
+    fi
+    return 0
 }
 
 # Every file whose change retires this casefile's verdicts from the test side.
@@ -718,7 +825,7 @@ mutation_test_oracles() {
         if [[ "$MUTATION_RUNNER" == cargo ]]; then
             mutation_cargo_oracles || true
         fi
-    } | awk 'NF && !seen[$0]++'
+    } | mutation_unique
 }
 
 # The oracle side plus the casefile.
@@ -729,7 +836,7 @@ mutation_test_oracles() {
 # still reporting CAUGHT. Measured 2026-08-17: editing a casefile selected 0 of
 # 30 casefiles — not even its own.
 mutation_all_oracles() {
-    { printf '%s\n' "$CASEFILE"; mutation_test_oracles; } | awk 'NF && !seen[$0]++'
+    { printf '%s\n' "$CASEFILE"; mutation_test_oracles; } | mutation_unique
 }
 
 # The compiled targets alone, under the same rule and for the same reason.
@@ -745,7 +852,7 @@ mutation_all_oracles() {
 # INCONCLUSIVE with its real verdict discarded.
 mutation_compiled_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} |
-        awk 'NF && !seen[$0]++'
+        mutation_unique
 }
 
 # "<sha> <path>" for each path read on stdin, in the order given. Reads a
@@ -843,7 +950,7 @@ mutation_regenerate() {
             return 1
         fi
     done < <(printf '%s\n' ${MUTATION_REGEN_CMDS[@]+"${MUTATION_REGEN_CMDS[@]}"} |
-                 awk 'NF && !seen[$0]++')
+                 mutation_unique)
 }
 
 # What the last build printed, for the one place a build failure is terminal
@@ -2702,15 +2809,22 @@ mutation_rebaseline() {
 mutation_case() {
     local label="$1"
     local body
-    # Read unconditionally: the heredoc has to be consumed on the declaration
-    # pass too, or the shell would hand its lines to the parser as commands.
-    body="$(cat)"
     if [[ "${MUTATION_PASS:-run}" == "declare" ]]; then
+        # The heredoc has to be consumed on the declaration pass too, or the
+        # shell would hand its lines to the parser as commands. By the shell's
+        # own `read` and not by `$(cat)`: that is a fork and an exec per case,
+        # a casefile has up to a few dozen, and this pass is the one the whole
+        # corpus is declared through. The body is not needed here, so it is not
+        # trimmed either.
+        IFS= read -r -d '' body || true
         # Collected on the pass that sees all of them, which is the only pass
         # that can: the run pass reaches a label and then leaves it behind.
         MUTATION_DECLARED_CASES+=("$label")
         return 0
     fi
+    # Read unconditionally on every other pass, for the same reason: the heredoc
+    # is consumed whether or not this case is the one in this shard.
+    body="$(cat)"
 
     # Whose turn it is. Counted here rather than derived from the label,
     # because two cases may legitimately carry the same prose and the slice is
@@ -3148,10 +3262,13 @@ while (( $# )); do
         # range: a range silently prints the wrong block the first time
         # anything above it grows, and this file's header has grown twice.
         -h|--help)
-            printf 'usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>\n\n'
+            printf 'usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>\n'
+            printf '       scripts/mutate --declares <casefile> <casefile>...\n\n'
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
-            printf '  --declares  print the declared runner, targets, services and case count\n'
+            printf '  --declares  print the declared runner, targets, services and case count;\n'
+            printf '              given several casefiles it declares them all in this one process,\n'
+            printf '              each block introduced by a "casefile<TAB>path" line\n'
             printf '  --shard I/N run the I-th contiguous slice of the declared cases, so a\n'
             printf '              casefile too large for one CI job is covered by N of them\n\n'
             printf 'SCE_MUTATION_REPORT_DIR=<dir>  keep each ctest run'\''s console and JUnit\n'
@@ -3168,6 +3285,69 @@ while (( $# )); do
     esac
     shift
 done
+
+# `--declares` over any number of casefiles, in this one process.
+#
+# The gate asks for the declaration of every casefile in the corpus — 169 on
+# 2026-10-01 — and used to start this script once for each, paying for a start,
+# a parse and the same two reads of the workspace 169 times. That cost is what
+# the selection test multiplies by the number of times it runs the gate, and it
+# is why that test's baseline sat at 257 to 297 seconds against a 300 second cap.
+#
+# EACH CASEFILE IS DECLARED IN A SUBSHELL, which is what makes it safe to share a
+# process. A subshell starts from this shell's state, and this shell has sourced
+# nothing — a casefile is only sourced here and on the single-casefile path
+# below — so every casefile begins from the same blank declaration it would have
+# had in a process of its own, and what one declares cannot reach the next. The
+# EXIT trap above is not inherited by a subshell either, so a casefile that
+# `exit`s cannot take the scratch directory the others share with it.
+#
+# `set -e` IS TURNED OFF AROUND THE SUBSHELL AND ON AGAIN INSIDE IT, and the
+# reason is a rule of the shell rather than a style: a subshell on the left of
+# `||`, or in an `if`, runs with `-e` ignored for everything inside it, so a
+# casefile whose own command failed would be declared anyway. As a plain
+# statement it keeps `-e`, which is what a process of its own would have had.
+#
+# With more than one casefile each block is introduced by a `casefile<TAB>path`
+# line, because a reader of the whole stream has to know whose `runner` it is
+# looking at. With exactly one the output is what it has always been, byte for
+# byte, so every existing caller is unchanged.
+mutation_declares_main() {
+    local multi=0 declared rc=0
+    (( $# > 1 )) && multi=1
+    # Read the workspace's test sources HERE, once, so that every subshell below
+    # inherits them already loaded. Only when there are several casefiles to
+    # share it between: a single one reads it lazily, if its runner is cargo,
+    # exactly as before. A workspace that cannot be read is remembered as such
+    # and each casefile reports no oracle paths from it, as before.
+    (( multi )) && { mutation_cargo_test_sources || true; }
+    for declared in "$@"; do
+        [[ -f "$declared" ]] || { red "no such casefile: $declared"; return 2; }
+        (( multi )) && printf 'casefile\t%s\n' "$declared"
+        set +e
+        (
+            set -e
+            CASEFILE="$declared"
+            MUTATION_PASS=declare
+            # shellcheck disable=SC1090
+            source "$CASEFILE"
+            mutation_shard_resolve
+            mutation_init
+        )
+        rc=$?
+        set -e
+        if (( rc != 0 )); then
+            (( multi )) && red "mutate: could not read the declaration of $declared (exit $rc)"
+            return "$rc"
+        fi
+    done
+    return 0
+}
+
+if [[ "$MUTATION_MODE" == "declares" ]] && (( ${#MUTATION_ARGV[@]} >= 1 )); then
+    mutation_declares_main "${MUTATION_ARGV[@]}"
+    exit $?
+fi
 
 if (( ${#MUTATION_ARGV[@]} != 1 )); then
     echo "usage: scripts/mutate [--check|--declares] [--shard I/N] <casefile>" >&2

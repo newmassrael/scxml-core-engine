@@ -125,23 +125,34 @@ declare -A RUNNER_OF=()
 declare -A TARGETS_OF=()
 declare -A NEEDS_OF=()
 declare -A CASES_OF=()
-for casefile in "${CASEFILES[@]}"; do
-    if ! declared="$(scripts/mutate --declares "$casefile" 2>&1)"; then
-        sce_gate_fail "could not read the declaration of $casefile:
-$declared
+# The whole corpus is declared by ONE call. It used to be one call per casefile,
+# 169 of them on 2026-10-01 at about half a second each, and this gate runs once
+# per push and several times over inside the test that holds it. `--declares`
+# given several casefiles prints each block under a `casefile<TAB>path` line,
+# which is what the first arm below reads.
+#
+# A casefile whose declaration cannot be read stops that call, and with it this
+# gate, naming the casefile in the last lines it printed: passing over it would
+# be the silent coverage loss the gate exists to remove.
+if (( ${#CASEFILES[@]} )); then
+    if ! declared="$(scripts/mutate --declares "${CASEFILES[@]}" 2>&1)"; then
+        sce_gate_fail "could not read the declarations of the corpus; the last lines scripts/mutate printed:
+$(tail -n 20 <<<"$declared")
 A casefile whose declaration cannot be read is one this gate cannot decide
 about, and passing over it would be the silent coverage loss the gate exists
 to remove."
     fi
+    casefile=""
     while IFS=$'\t' read -r key value; do
         case "$key" in
+            casefile) casefile="$value" ;;
             runner) RUNNER_OF["$casefile"]="$value" ;;
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
             needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
             cases) CASES_OF["$casefile"]="$value" ;;
         esac
     done <<<"$declared"
-done
+fi
 
 # ── How many jobs one casefile is worth ───────────────────────────
 #
