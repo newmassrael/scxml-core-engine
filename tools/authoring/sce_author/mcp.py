@@ -478,7 +478,11 @@ TOOLS = [
             "list does not hold -- with a count and the ids per outcome. Tell "
             "the owner each missing and dangling id. It is data, not a "
             "verdict, and `denominator` says whether the list is the "
-            "specification's own or a reading of it (`synthesized`)."
+            "specification's own or a reading of it (`synthesized`). Without "
+            "a list `requirements` says `not measured`: a table of "
+            "requirements you write then is your own reading, and `show` says "
+            "to label it so. `implemented` means a state or transition carries "
+            "the id; SCE has not checked that it does what the sentence says."
         ),
         "inputSchema": {
             "type": "object",
@@ -516,7 +520,9 @@ TOOLS = [
             "sce:req=\"R3\" -- and the answer carries `requirements`, the "
             "product's own outcome for each id, with node paths that name "
             "their document (`draft.scxml#states.idle`). Tell the owner each "
-            "missing and dangling id."
+            "missing and dangling id. Without a list `requirements` says "
+            "`not measured`, as for validate_scxml, and `show` says what to "
+            "tell the owner about a requirement table of your own."
         ),
         "inputSchema": {
             "type": "object",
@@ -1406,9 +1412,56 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
                       "line of `open`, and that no owner acceptance is recorded: "
                       "`accepted` is the product's verdict on the document, not "
                       "the owner's.")
+    answer["show"] += _requirements_say(answer)
     return {"content": [{"type": "text",
                          "text": json.dumps(answer, indent=2, ensure_ascii=False) + "\n"},
                         *({"type": "text", "text": block} for block in blocks)]}
+
+
+_UNMEASURED = ("If your reply has a table of the requirements and where the design "
+               "reflects them, say that SCE has not measured it, because no "
+               "requirement list was given, and that the table is your own reading "
+               "of the specification. To have SCE measure it, make the list from the "
+               "quotes you tabulated with scxml_requirement_set, put its ids on the "
+               "states and transitions as sce:req, and check again with its "
+               "manifest_text.")
+
+_MEASURED = ("Give the owner `requirements` as SCE's: the count and the ids per "
+             "outcome, each missing and dangling id by name. Say that `implemented` "
+             "means a state or transition carries the id, and that SCE has not "
+             "checked that it does what the sentence says.")
+
+_UNREADABLE = ("The requirement list could not be read, so nothing was measured "
+               "against it: say so, and do not present a requirement table as "
+               "SCE's.")
+
+
+def _requirements_say(answer: dict) -> str:
+    """What the client is told to say about requirements, and the field that
+    makes the same fact readable by a program.
+
+    ⚠ Why this rides on the check. Measured 2026-10-01 (Sonnet, twenty runs, the
+    owner asked for the requirements as verbatim quotes and where each is
+    reflected): of the seven whose check went without a list, three gave a table
+    with no word about who made it; of the thirteen whose check was measured
+    against a list, none said what `implemented` does not show. A GPT run did the
+    same: it headed its column "대조 결과" over its own reading and called no
+    requirement tool at all. An instruction that lives in a tool's description for
+    a second call is not read when the table is written; `show` is, because the
+    client prints what it says.
+
+    ⚠ The field is set HERE, with the sentence, so the fact and its wording
+    cannot disagree: no list gives `not measured`, and a list leaves what the
+    product measured.
+    """
+    measured = answer.get("requirements")
+    if measured is None:
+        answer["requirements"] = {"verdict": "not measured",
+                                  "reason": "no requirement list was given"}
+        return " " + _UNMEASURED
+    if measured.get("verdict") == "measured":
+        return " " + _MEASURED
+    return " " + _UNREADABLE
 
 
 def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,

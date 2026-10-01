@@ -124,11 +124,39 @@ class TheOwnersListIsTheDenominator(unittest.TestCase):
         self.assertEqual("refused", answer["verdict"])
         self.assertNotIn("requirements", answer)
 
-    def test_without_a_list_the_answer_is_what_it_was(self):
+    def test_without_a_list_the_answer_says_it_measured_nothing_and_what_to_say(self):
         result = call("validate_scxml", document_text=lamp(), document_name="lamp.scxml")
         answer = json.loads(result["content"][0]["text"])
         self.assertEqual("accepted", answer["verdict"])
-        self.assertNotIn("requirements", answer)
+        # A program can read that nothing was measured, and the client is told
+        # to label a requirement table it writes as its own reading.
+        self.assertEqual({"verdict": "not measured",
+                          "reason": "no requirement list was given"},
+                         answer["requirements"])
+        self.assertIn("SCE has not measured it", answer["show"])
+        self.assertIn("your own reading", answer["show"])
+        self.assertIn("scxml_requirement_set", answer["show"])
+        self.assertNotIn("does what the sentence says", answer["show"])
+
+    def test_a_measured_answer_says_what_implemented_does_not_show(self):
+        result = call("validate_scxml", document_text=lamp(), document_name="lamp.scxml",
+                      manifest_text=manifest_text())
+        answer = json.loads(result["content"][0]["text"])
+        # Said where the client reads it: `implemented` is a node carrying an id,
+        # and the product has not looked at what that node does.
+        self.assertIn("carries the id", answer["show"])
+        self.assertIn("has not checked that it does what the sentence says",
+                      answer["show"])
+        # ...and not the sentence for a design nobody measured.
+        self.assertNotIn("has not measured it", answer["show"])
+
+    def test_an_unreadable_list_is_not_presented_as_a_measurement(self):
+        result = call("validate_scxml", document_text=lamp(), document_name="lamp.scxml",
+                      manifest_text='{"not": "a manifest"}')
+        answer = json.loads(result["content"][0]["text"])
+        self.assertIn("could not be read", answer["show"])
+        self.assertIn("do not present a requirement table as SCE's", answer["show"])
+        self.assertNotIn("carries the id", answer["show"])
 
     def test_a_list_handed_as_a_path_is_read_in_place(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -230,10 +258,16 @@ class TheListReachesTheCheckADesignWithCompanionsGoesThrough(unittest.TestCase):
         self.assertEqual(["R99"], measured["ids"]["dangling"])
         self.assertIn("R3", measured["ids"]["missing"])
 
-    def test_without_a_list_the_set_answer_is_what_it_was(self):
+    def test_without_a_list_the_set_answer_says_it_measured_nothing_too(self):
         answer = self.check(closed_lamp())
         self.assertEqual("accepted", answer["verdict"])
-        self.assertNotIn("requirements", answer)
+        self.assertEqual("not measured", answer["requirements"]["verdict"])
+        self.assertIn("SCE has not measured it", answer["show"])
+
+    def test_a_measured_set_answer_says_what_implemented_does_not_show(self):
+        answer = self.check(closed_lamp(), manifest_text=manifest_text())
+        self.assertIn("has not checked that it does what the sentence says",
+                      answer["show"])
 
     def test_a_set_the_product_refuses_is_not_measured(self):
         refused = closed_lamp().replace("</scxml>", '  <state id="orphan"/>\n</scxml>')

@@ -368,6 +368,21 @@ claims, so a schema that claims nothing does not make every requirement `missing
 -- and each node path names its document (`draft.scxml#states.idle`). Until
 2026-10-01 only `validate_scxml` took the list, and a design with companion files
 could not be given it in the check it had to make.
+Both checks say what to tell the owner about requirements, in `show`, and set
+`requirements` to match: with no list, `{"verdict": "not measured"}` and a
+sentence that a requirement table the client writes is its own reading, with how
+to have SCE measure it; with a measured list, a sentence that `implemented` means
+a state or transition carries the id and SCE has not checked that it does what the
+sentence says. Measured 2026-10-01 (Sonnet, four cases, five runs each, the owner
+asking for the requirements as verbatim quotes and where each is reflected, no
+profile and no list): before the sentences, `scxml_requirement_set` was called in 12
+of 20 runs, and none of the 13 whose check was measured said what `implemented`
+does not show; after, it was called in 20 of 20 and 12 of the 17 measured runs said
+it. The remaining five reported the outcomes with no such word. One run per arm,
+the arms run at different times, and the labels read by a person from the final
+reply. GPT (Codex, reasoning effort none) gave a table with no word about its
+source and called no requirement tool (2026-10-01): that client is not measured
+here.
 `render_scxml_pseudocode` runs `sce-codegen pseudo` and returns the review page
 as its FIRST block and, as a second block, a note on what the page was rendered
 from: the sha256 of the document, the product's check of that same document
