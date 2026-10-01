@@ -72,7 +72,14 @@ exclude = ["/target", "/build", "/embed"]
 # a build machine it rewrote the far side's goldens and exited 0, which is the
 # silent green this key exists to prevent, measured 2026-09-11 while repairing
 # the byte-buffer-build pre-size.
-writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN"]
+#
+# `UPDATE_EXPECT` is the same shape and joined for the same reason: it is what
+# turns `cargo test … schema_drift` (the AST schema under `apis/`) and
+# `error_contract_catalog` (the generated table in SCE_ERROR_CONTRACT.md) into
+# writers of TRACKED files. Undeclared, a regeneration of the AST schema was
+# sent to a build machine, rewrote the far side's copy, and exited 0 with the
+# local schema untouched (2026-10-01).
+writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN", "UPDATE_EXPECT"]
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
