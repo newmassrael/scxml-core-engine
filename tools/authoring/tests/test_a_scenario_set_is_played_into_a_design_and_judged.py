@@ -401,23 +401,67 @@ class TestWhatTheEngineDoesNotShow(Played):
                 self.assertIn("could not start the design", record["reason"])
         self.assertEqual(0, self.summary(answer)["fail"], self.summary(answer))
 
-    def test_a_name_matched_by_prefix_that_the_design_reads_is_refused(self):
-        """W3C SCXML 3.12.1: `request.new` matches a transition on `request`
-        and `_event.name` stays `request.new`. The generated engines carry an
-        event as the descriptor they declared, so the machine would be told
-        `request`; a design reading the name then fails an example it meets.
-        Refused, naming the cause, rather than failed."""
-        reads = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
-                 'datamodel="ecmascript" initial="ready"><state id="ready">'
-                 '<transition event="request" cond="_event.name == \'request.new\'" '
-                 'target="done"/></state><final id="done"/></scxml>')
+    @staticmethod
+    def named(event: str, guard: str, script: str = "") -> str:
+        """A machine that finishes when its guard holds, on a transition for
+        `event`. `script` is the design's own helper code."""
+        return ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '
+                f'datamodel="ecmascript" initial="ready">{script}<state id="ready">'
+                f'<transition event="{event}" cond="{guard}" target="done"/></state>'
+                '<final id="done"/></scxml>')
+
+    # W3C SCXML 5.10 + 3.12.1: `request.new` matches a transition on `request`
+    # and `_event.name` is `request.new`. Every spelling of reading it.
+    READS_THE_NAME = {
+        "a guard": ("_event.name == 'request.new'", ""),
+        "a bracket": ("_event['name'] == 'request.new'", ""),
+        "a computed key": ("_event['na' + 'me'] == 'request.new'", ""),
+        "a helper that aliases the event": (
+            "isNew()", "<script>function isNew() { var e = _event; "
+                       "return e.name == 'request.new'; }</script>"),
+        "a helper handed the event": (
+            "isNew(_event)", "<script>function isNew(e) { return e.name == "
+                             "'request.new'; }</script>"),
+    }
+
+    def test_a_design_sees_the_name_an_input_arrived_under_however_it_reads_it(self):
+        """The engine carries an event as the descriptor the design declares,
+        so a design reading the name was told `request` for `request.new`: a
+        correct design failed its example, and a wrong one passed. A first
+        repair scanned the design's text for `_event.name` and refused; an
+        outside review showed a helper function and a computed key walk past a
+        scan, so the name itself now travels with the event."""
         spec = self.one_example(["request.new"],
                                 [{"send": "request.new", "expect": {"finished": True}}])
-        answer = self.play_set(spec, reads)
-        self.assertEqual({"E1": "not-judged"}, self.verdicts(answer), answer["judgement"])
-        reason = self.reason_of(answer)
-        self.assertIn("_event.name", reason)
-        self.assertIn("request.new", reason)
+        for how, (guard, script) in self.READS_THE_NAME.items():
+            with self.subTest(reads=how):
+                answer = self.play_set(spec, self.named("request", guard, script))
+                self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+
+    def test_a_design_that_would_finish_on_the_longer_name_is_failed_not_passed(self):
+        """The other direction: an example that says the machine stays in
+        `ready` when `request.new` arrives, against a design that finishes on
+        exactly that name. With the shorter name reported this design stayed
+        put and the example PASSED."""
+        spec = self.one_example(["request.new"],
+                                [{"send": "request.new",
+                                  "expect": {"condition": "ready", "finished": False}}],
+                                ["ready"])
+        for how, (guard, script) in self.READS_THE_NAME.items():
+            with self.subTest(reads=how):
+                answer = self.play_set(spec, self.named("request", guard, script))
+                self.assertEqual({"E1": "fail"}, self.verdicts(answer), answer["judgement"])
+
+    def test_the_shorter_name_is_still_the_name_when_that_is_what_arrives(self):
+        spec = self.one_example(["request"],
+                                [{"send": "request", "expect": {"finished": True}}])
+        answer = self.play_set(spec, self.named("request", "_event.name == 'request'"))
+        self.assertEqual({"E1": "pass"}, self.verdicts(answer), answer["judgement"])
+        longer = self.play_set(
+            self.one_example(["request.new"],
+                             [{"send": "request.new", "expect": {"finished": False}}]),
+            self.named("request", "_event.name == 'request'"))
+        self.assertEqual({"E1": "pass"}, self.verdicts(longer), longer["judgement"])
 
     def test_a_name_matched_by_prefix_that_the_design_never_reads_is_delivered(self):
         quiet = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" '

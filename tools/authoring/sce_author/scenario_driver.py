@@ -27,11 +27,15 @@ tempted to fill a hole are closed on purpose.
     A design the engine cannot start is refused for every example, with what
     the engine said, never a traceback for the whole call.
 
-    An input the design answers only through a shorter event name (`request`
-    for `request.new`, W3C SCXML 3.12.1) is delivered under the shorter name,
-    because the generated engines carry an event as the descriptor they
-    declared. A design that reads `_event.name` is refused such an example: it
-    would be told a name it is not sent.
+    An input is delivered under the name the example gives it. The generated
+    engines carry an event as the descriptor the design declares, and W3C SCXML
+    3.12.1 lets `request.new` match a transition on `request`, so the shorter
+    member used to be what `_event.name` reported. The longer name now rides
+    with the event (`EventMetadata.name`) and is what the machine reads however
+    it reads it: in a guard, through a helper function, through a variable, by
+    a computed key. A first version scanned the design's text for `_event.name`
+    and refused such an example, which a helper function or a computed key
+    walked straight past.
 
     A run during which the engine raised an `error.*` event that no state
     answered is refused, not observed (W3C SCXML 3.12.2). The machine did not
@@ -64,7 +68,6 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
-import re
 import xml.etree.ElementTree as ET
 
 from .verify import (SendRecorder, VerifyError, _default_codegen, _host_names, _scratch,
@@ -131,22 +134,6 @@ def _resolve_event(policy, name: str):
     return None, None
 
 
-# `_event.name`, however it is spelled. W3C SCXML 5.10: the name the event
-# arrived under, which is what a prefix-matched event keeps and the generated
-# engines do not.
-_READS_EVENT_NAME = re.compile(r"""_event\s*(?:\.\s*name\b|\[\s*['"]name['"]\s*\])""")
-
-
-def _reads_event_name(document: pathlib.Path) -> bool:
-    """Whether the design reads `_event.name` in any attribute or text.
-    Comments are not read: the parser drops them."""
-    for node in ET.parse(document).getroot().iter():
-        texts = [node.text or "", *(str(value) for value in node.attrib.values())]
-        if any(_READS_EVENT_NAME.search(text) for text in texts):
-            return True
-    return False
-
-
 #: How many instants of virtual time one `advance_ms` step may be cut into. An
 #: example that arms a timer every millisecond for a day is not one a run can
 #: judge, and a timer that re-arms itself at zero delay never ends.
@@ -186,7 +173,6 @@ class _Design:
         self.data = data
         self.refusal = ""
         self.module = None
-        self.reads_event_name = False
         self.readers: dict = {}
         self.data_unavailable = ""
         self.unreadable: dict = {}
@@ -201,7 +187,6 @@ class _Design:
                             f"scenario drives a statechart")
             return
         self.module = load(into, document)
-        self.reads_event_name = _reads_event_name(document)
         if data:
             try:
                 self.readers = _host_names(self.module, "readers")
@@ -265,15 +250,14 @@ class _Design:
                         raise _Refusal(f"step {index} sends `{step['send']}`, and the design "
                                        f"names no event that answers it, so the example's "
                                        f"input reaches nothing in it")
-                    if declared != step["send"] and self.reads_event_name:
-                        raise _Refusal(
-                            f"step {index} sends `{step['send']}`, which the design answers "
-                            f"through its event `{declared}` (W3C SCXML 3.12.1), and the "
-                            f"engine reports that event to the machine as `{declared}`, not as "
-                            f"`{step['send']}`; this design reads `_event.name`, so what it "
-                            f"did would not be what it does when `{step['send']}` arrives")
-                    payload = step.get("payload")
-                    engine.send_event(event, EventMetadata(data=payload) if payload else None)
+                    # W3C SCXML 5.10: the machine is told the name the event
+                    # arrived under. The event itself is the enumeration member
+                    # of the descriptor the design declares (3.12.1), so a
+                    # longer name rides beside it, whatever a guard or a helper
+                    # function does with `_event.name`.
+                    carried = step["send"] if declared != step["send"] else ""
+                    engine.send_event(event, EventMetadata(data=step.get("payload") or "",
+                                                           name=carried))
                 elif "advance_ms" in step:
                     self._advance(engine, step["advance_ms"], index)
             except _Refusal:

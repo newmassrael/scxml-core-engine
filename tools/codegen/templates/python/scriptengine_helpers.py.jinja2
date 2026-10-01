@@ -690,10 +690,16 @@
         # Handed to the engine on the spot rather than returned up: this frame
         # already holds `engine_ref` AND the event the reading belongs to,
         # which is the pairing the count needs.
+        #
+        # §scxml-5.10: `_event.name` is the name the event ARRIVED under. The
+        # enumeration member below is the descriptor the document declares, and
+        # a longer name that matched it through W3C SCXML 3.12.1 (`request.new`
+        # for a transition on `request`) rides in `metadata.name`. Without it a
+        # guard reading the name was told the shorter one.
         reading = engine_ref._script_engine.set_current_event(
             self._session_id,
             _SetCurrentEventArgs(
-                event_name=_EVENT_NAMES.get(event, ""),
+                event_name=metadata.name or _EVENT_NAMES.get(event, ""),
                 event_data=_coerce_event_data_str(metadata.data),
                 event_type=metadata.event_type,
                 send_id=metadata.send_id,

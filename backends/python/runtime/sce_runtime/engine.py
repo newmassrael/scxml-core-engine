@@ -1426,6 +1426,9 @@ class Engine(Generic[S, E]):
                 event = self._policy.get_event_from_name(".".join(parts))
             if event is None:
                 return
+            # §scxml-5.10: the machine is told the name the event arrived
+            # under, not the shorter descriptor it was matched through.
+            metadata.name = event_name
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:

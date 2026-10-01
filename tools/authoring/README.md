@@ -301,11 +301,15 @@ reports what it saw and fills no hole:
   session's; a design that starts one (`<invoke>`) does not start in this loader
   today, because the generated parent imports the child's module by a bare name,
   and every example of it is refused with the engine's words, not a traceback.
-- An input the design answers only through a shorter event name (`request` for
-  `request.new`, W3C SCXML 3.12.1) is delivered under the shorter name, because
-  the generated engines carry an event as the descriptor they declared. A design
-  that reads `_event.name` is refused such an example; one that does not is
-  played.
+- An input is delivered under the name the example gives it. The generated
+  engines carry an event as the descriptor the design declares, and W3C SCXML
+  3.12.1 lets `request.new` match a transition on `request`, so a design reading
+  `_event.name` used to be told `request`. The longer name now travels with the
+  event, and every way of reading it sees it: a guard, a helper function, a
+  variable, a computed key. (A first version scanned the design's text for
+  `_event.name` and refused the example; an outside review showed a helper
+  function and a computed key walk past a text scan, so the cause was fixed
+  instead of detected.)
 - An output the interface sends through a route (`via`) counts only when the
   design sent it through that route. A design that leaves by another door is not
   what the owner accepted, and counting its event would pass it.

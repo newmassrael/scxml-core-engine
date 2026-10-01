@@ -5264,6 +5264,11 @@
           "file": "sce/src/events/ParentEventTarget.cpp",
           "symbol": "ParentEventTarget::send",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "send_external_by_name",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
