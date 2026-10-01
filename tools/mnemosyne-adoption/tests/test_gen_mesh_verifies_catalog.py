@@ -35,6 +35,14 @@ class FakeRepo:
             fh.write(body)
         return path
 
+    def write_at(self, relative, body):
+        """A file at a repo-relative path, for a tree other than tests/mesh."""
+        path = os.path.join(self.dir, *relative.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(body)
+        return path
+
     def run(self, *extra):
         return subprocess.run(
             [sys.executable, SCRIPT, "--repo-root", self.dir, "--out", self.out, *extra],
@@ -102,6 +110,35 @@ class GenMeshVerifiesCatalogTest(unittest.TestCase):
         self.assertEqual([e["file"] for e in entries],
                          ["tests/mesh/AlphaTest.cpp", "tests/mesh/ZuluTest.cpp"])
         self.assertEqual(entries[0]["section_ids"], ["mesh-10.5", "mesh-10.6"])
+
+    def test_the_kotlin_host_core_tests_are_enrolled(self):
+        # The WebSocket binding's client is Kotlin, so its witnesses are Kotlin
+        # tests. A marker in a tree the generator does not read is an
+        # unchecked claim: the file would declare a section and the catalog
+        # would never list it.
+        repo = FakeRepo(["mesh-18", "mesh-18.1"])
+        repo.write_at("backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+                      "// SCE-VERIFIES: mesh-18 mesh-18.1\npackage com.sce.mesh\n")
+        repo.write_at("backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RouterTest.kt",
+                      "// SCE-VERIFIES: mesh-18\npackage com.sce.mesh\n")
+        self.assertEqual(repo.run().returncode, 0)
+        self.assertEqual(repo.catalog()["entries"], [
+            {"file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/RouterTest.kt",
+             "section_ids": ["mesh-18"]},
+            {"file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+             "section_ids": ["mesh-18", "mesh-18.1"]},
+        ])
+
+    def test_a_generated_kotlin_file_cannot_declare_itself_a_witness(self):
+        # `jvmTest/.../generated/` holds the peer table the build writes from
+        # deploy.yaml. It is output, not a test, so a marker copied into it by
+        # a template must not reach the catalog.
+        repo = FakeRepo(["mesh-18"])
+        repo.write_at(
+            "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/client/ClientMeshPeers.kt",
+            "// SCE-VERIFIES: mesh-18\npackage com.sce.generated.client\n")
+        self.assertEqual(repo.run().returncode, 0)
+        self.assertEqual(repo.catalog()["entries"], [])
 
     def test_check_detects_a_stale_catalog(self):
         repo = FakeRepo(["mesh-10.5", "mesh-10.6"])

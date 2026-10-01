@@ -2899,15 +2899,15 @@
       "bindings": [
         {
           "file": "backends/rust/mesh/src/wss.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
-          "kind": "references"
+          "kind": "verifies"
         },
         {
           "file": "backends/rust/mesh/examples/wss_peer.rs",
@@ -2915,19 +2915,23 @@
         },
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
-          "kind": "references"
+          "kind": "verifies"
         },
         {
           "file": "sce-build/src/mesh/topology.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/rust/mesh/Cargo.toml",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mesh_error_format_json.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -2939,7 +2943,7 @@
       "bindings": [
         {
           "file": "backends/rust/mesh/src/wss.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Link.kt",
@@ -2947,7 +2951,7 @@
         },
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/review.rs",
@@ -2955,7 +2959,7 @@
         },
         {
           "file": "sce-build/src/mesh/topology.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/transport/mod.rs",
@@ -2972,6 +2976,10 @@
         {
           "file": "backends/rust/mesh/src/peers.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+          "kind": "verifies"
         }
       ]
     },
@@ -2983,11 +2991,19 @@
       "bindings": [
         {
           "file": "backends/rust/mesh/src/wss.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
-          "kind": "references"
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
+          "kind": "verifies"
         }
       ]
     },
@@ -2999,7 +3015,7 @@
       "bindings": [
         {
           "file": "backends/rust/mesh/src/wss.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "backends/rust/mesh/src/endpoint.rs",
@@ -3011,7 +3027,7 @@
         },
         {
           "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/mesh/topology.rs",
@@ -3028,6 +3044,10 @@
         {
           "file": "backends/rust/mesh/src/peers.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+          "kind": "verifies"
         }
       ]
     },
@@ -3044,6 +3064,18 @@
         {
           "file": "sce-build/src/host_processor_analyzer.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/src/wss.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmMain/kotlin/com/sce/mesh/WssClient.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
+          "kind": "verifies"
         }
       ]
     },
@@ -3074,7 +3106,7 @@
         },
         {
           "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
-          "kind": "references"
+          "kind": "verifies"
         },
         {
           "file": "backends/rust/mesh/src/peers.rs",
@@ -3099,6 +3131,14 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mesh_error_format_json.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce-build/tests/mesh_rpc_backend_contract.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -4528,6 +4568,90 @@
       "target_kind": "section",
       "target_id": "mesh-9.5",
       "reason": "the citation moved to deliverRouted when the delivery was unified on rebase"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "the Rust server and client of the WebSocket binding; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "the Kotlin client of the WebSocket binding; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "validate_wss_extras_partial refuses a wss binding no core could dial; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "the wss descriptor marks it served_by HostCore with no C++ layout; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.1",
+      "reason": "the path prefix and the upgrade verdict that answers 404 for an unbound name; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.1",
+      "reason": "the client dials the path that names it and refuses a name a path cannot carry; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.1",
+      "reason": "the dialing side carries the url and the accepting side none; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.2",
+      "reason": "one envelope per binary message; a text message closes with 1003; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.2",
+      "reason": "one envelope per binary message; a text message closes with 1003; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.3",
+      "reason": "ready on upgrade, lost on close or an unanswered ping, reconnect by redialing; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18.3",
+      "reason": "ready on upgrade, lost on close or failure, reconnect by redialing; this file is the binding's production code, not a description of it; coverage counts only implements"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "this test drives the section's behaviour against a real socket and declares it in SCE-VERIFIES"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-18",
+      "reason": "the Kotlin core and the Rust core read each other's envelopes over one real WebSocket; declared in SCE-VERIFIES"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "mesh-19",
+      "reason": "both cores build their routers from the peer tables generated from one deploy.yaml; declared in SCE-VERIFIES"
     }
   ],
   "frames": {},

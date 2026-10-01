@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// SCE-VERIFIES: mesh-19
 
 //! SCE Mesh §9.5 `<invoke type="sce:mesh-rpc">` — which route serves it on
 //! each backend is a contract, and this file is what makes it one.

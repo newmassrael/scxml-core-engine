@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-18 mesh-18.2 mesh-18.4 mesh-19
+//
 // The Kotlin core against the Rust core over one real WebSocket (SCE_MESH.md
-// §mesh-18). The Rust side is backends/rust/mesh/examples/wss_peer.rs, a
+// §18). The Rust side is backends/rust/mesh/examples/wss_peer.rs, a
 // server machine that answers each `ping` with a `pong` carrying the same
 // `_event.data`; the build hands its path in as `sce.mesh.wssPeer`.
 //
 // What it proves is what the two cores' shared literal tests cannot: the Rust
 // core decodes an envelope the Kotlin core encoded, and the Kotlin core
-// decodes one the Rust core encoded, on the wire the binding fixes. Both
-// sides build their routers from the peer tables the build generated from
-// one deployment (tests/mesh/wss_loopback/deploy.yaml, SCE_MESH.md
-// §mesh-19), so the configuration they agree on is the one deploy.yaml says.
+// decodes one the Rust core encoded, on the wire the binding fixes (one
+// envelope per binary message, §18.2). That pairs the Rust core's
+// tokio-tungstenite server with the Kotlin core's OkHttp client, the one
+// pairing across languages that §18.4's table lists. Both sides build
+// their routers from the peer tables the build generated from one deployment
+// (tests/mesh/wss_loopback/deploy.yaml, SCE_MESH.md §19), so the
+// configuration they agree on is the one deploy.yaml says.
 
 package com.sce.mesh
 

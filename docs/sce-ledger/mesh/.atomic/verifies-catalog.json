@@ -2,6 +2,31 @@
   "format": "verifies-catalog/v1",
   "entries": [
     {
+      "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
+      "section_ids": [
+        "mesh-18",
+        "mesh-18.2",
+        "mesh-18.4",
+        "mesh-19"
+      ]
+    },
+    {
+      "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/WssClientTest.kt",
+      "section_ids": [
+        "mesh-18",
+        "mesh-18.1",
+        "mesh-18.2",
+        "mesh-18.3"
+      ]
+    },
+    {
+      "file": "sce-build/tests/mesh_error_format_json.rs",
+      "section_ids": [
+        "mesh-18",
+        "mesh-19"
+      ]
+    },
+    {
       "file": "sce-build/tests/mesh_external_config.rs",
       "section_ids": [
         "mesh-13"
@@ -11,6 +36,12 @@
       "file": "sce-build/tests/mesh_invoke_cycle.rs",
       "section_ids": [
         "mesh-7.7"
+      ]
+    },
+    {
+      "file": "sce-build/tests/mesh_rpc_backend_contract.rs",
+      "section_ids": [
+        "mesh-19"
       ]
     },
     {

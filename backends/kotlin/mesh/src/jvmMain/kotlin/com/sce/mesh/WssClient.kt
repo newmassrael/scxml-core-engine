@@ -5,7 +5,8 @@
 // socket plumbing between one server link and the router core, and nothing
 // else. It dials `<base>/sce-mesh/1/<own>`, reports what happens on the link
 // as [LinkEvent]s, and is the [Transport] the core's sends reach the socket
-// through.
+// through. It is the Kotlin row of the implementations table (§mesh-18.4),
+// which lists a client and no server.
 //
 // OkHttp calls back on its own threads, so [events] runs there; the host
 // posts each event to the thread that steps its engine and calls [deliver]

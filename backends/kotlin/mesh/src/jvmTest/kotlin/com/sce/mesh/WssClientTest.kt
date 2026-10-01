@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The OkHttp client of the WebSocket binding (SCE_MESH.md §mesh-18) against a
+// SCE-VERIFIES: mesh-18 mesh-18.1 mesh-18.2 mesh-18.3
+//
+// The OkHttp client of the WebSocket binding (SCE_MESH.md §18) against a
 // real WebSocket server, the Kotlin twin of the Rust binding's socket tests.
+// It pins what the client puts on the wire and how it reports the link: the
+// path that names the client (§18.1), one envelope per binary message and
+// the 1003 close a text message earns (§18.2), and the ready and lost
+// edges (§18.3).
 
 package com.sce.mesh
 
@@ -30,6 +36,7 @@ class WssClientTest {
     private val server = MockWebServer()
     private val serverSockets = LinkedBlockingQueue<WebSocket>()
     private val serverReceived = LinkedBlockingQueue<ByteArray>()
+    private val serverCloseCodes = LinkedBlockingQueue<Int>()
     private val clientEvents = LinkedBlockingQueue<LinkEvent>()
 
     /** The server machine's side of the link, as a peer writing and reading envelopes. */
@@ -44,8 +51,9 @@ class WssClientTest {
         }
 
         // Answer a close, so the closing handshake completes and the server
-        // can shut down.
+        // can shut down, and keep the status the client closed with.
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            serverCloseCodes += code
             webSocket.close(1000, null)
         }
     }
@@ -185,6 +193,21 @@ class WssClientTest {
             """{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"server","transport":"wss"}""",
             endpoint.takeEvents().single().metadata.data,
         )
+    }
+
+    @Test
+    fun aTextMessageIsAProtocolErrorClosedWithStatus1003() {
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(serverListener).build())
+        client().connect()
+        assertEquals(LinkEvent.Ready("server"), clientEvents.next())
+
+        // An envelope is a binary message; text is not one (§18.2).
+        serverSockets.next().send("this is text, not an envelope")
+
+        val lost = clientEvents.next()
+        assertIs<LinkEvent.Lost>(lost)
+        assertEquals("server", lost.peer)
+        assertEquals(1003, serverCloseCodes.next())
     }
 
     @Test

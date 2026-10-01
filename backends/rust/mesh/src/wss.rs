@@ -13,7 +13,8 @@
 //!
 //! The server accepts on any stream the host hands it — a TCP stream, or one
 //! its TLS acceptor already wrapped — and the client dials a `ws://` or
-//! `wss://` URL, with rustls for the latter.
+//! `wss://` URL, with rustls for the latter. Both ends are tokio-tungstenite,
+//! the Rust row of the implementations table (§mesh-18.4).
 
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
