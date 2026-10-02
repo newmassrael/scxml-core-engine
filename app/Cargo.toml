@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The specification workbench application.
+#
+# A workspace of its own, not a member of the repository's root workspace, on
+# purpose: the desktop shell links a GUI toolkit (WebKitGTK on Linux, WebView2 on
+# Windows) and every Rust lane of the root workspace would then need it
+# installed. Everything here that has no screen lives in `../app-core`, which IS
+# a root member and is tested there. This workspace holds the two entrances to
+# it that do have one:
+#
+#   src-tauri/   the desktop application (Tauri 2)
+#   web-shell/   the same commands over HTTP, for developing the screen on a
+#                machine that has no display (see README.md). It is a separate
+#                program, so a release build of the application cannot contain it.
+#
+# The screen itself is `ui/`, TypeScript, served to either entrance.
+
+[workspace]
+resolver = "2"
+members = ["src-tauri", "web-shell"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+repository = "https://github.com/newmassrael/scxml-core-engine"
+authors = ["newmassrael <newmassrael@gmail.com>"]
+
+[workspace.dependencies]
+sce-app-core = { path = "../app-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+warnings = "deny"

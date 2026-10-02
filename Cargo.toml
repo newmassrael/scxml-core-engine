@@ -22,6 +22,9 @@ members = [
     "backends/rust/mesh",
     "app-core",
 ]
+# The application links a GUI toolkit and is a workspace of its own (see
+# app/Cargo.toml); the root lanes neither build nor need it.
+exclude = ["app"]
 
 [workspace.package]
 version = "0.1.0"

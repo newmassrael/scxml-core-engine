@@ -1,0 +1,306 @@
+/*
+  SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+  SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+*/
+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --surface: #f4f5f7;
+  --text: #1b1f24;
+  --muted: #5b6573;
+  --line: #d3d8df;
+  --accent: #1f5fbf;
+  --accent-text: #ffffff;
+  --warn-bg: #fff4d6;
+  --warn-line: #d9a400;
+  --error-bg: #fde8e8;
+  --error-line: #c13b3b;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --surface: #1d2229;
+    --text: #e6e9ee;
+    --muted: #9aa5b3;
+    --line: #333b46;
+    --accent: #6ba6ff;
+    --accent-text: #0b1220;
+    --warn-bg: #3a3012;
+    --warn-line: #b88a00;
+    --error-bg: #3b1d1d;
+    --error-line: #d65a5a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.top h1 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.top .root {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.works {
+  padding: 12px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.works h2,
+.works h3 {
+  margin: 12px 0 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.works ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-link {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.work-link:hover {
+  background: var(--bg);
+}
+
+.work-link[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.new-work {
+  display: flex;
+  gap: 6px;
+}
+
+.new-work input {
+  flex: 1;
+  min-width: 0;
+}
+
+.work {
+  padding: 12px 16px;
+  min-width: 0;
+}
+
+.pane h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.source {
+  width: 100%;
+  min-height: 46vh;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 var(--mono);
+  tab-size: 4;
+}
+
+.source:read-only {
+  background: var(--surface);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.status {
+  min-width: 8em;
+}
+
+.rev {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button[type="submit"],
+#save {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.banner-warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+}
+
+.banner-error {
+  background: var(--error-bg);
+  border-color: var(--error-line);
+}
+
+.banner p {
+  margin: 4px 0;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history h3 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+.history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.history code {
+  font-family: var(--mono);
+}
+
+.token-form {
+  max-width: 34rem;
+  margin: 24px 16px;
+}
+
+.token-form input {
+  width: 100%;
+  margin: 8px 0;
+}
+
+.unreadable {
+  margin-top: 8px;
+  color: var(--error-line);
+}
+
+/* A phone: the works fold above the text instead of beside it. */
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .works {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 38vh;
+  }
+
+  .top .root {
+    display: none;
+  }
+
+  .source {
+    min-height: 40vh;
+  }
+}

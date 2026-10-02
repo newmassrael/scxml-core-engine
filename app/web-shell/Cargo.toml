@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-web-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The workbench's commands over HTTP, for developing and viewing the screen on a machine with no display"
+publish = false
+
+[lib]
+name = "sce_web_shell"
+
+[[bin]]
+name = "sce-web-shell"
+path = "src/main.rs"
+
+# hyper, not a smaller server: every wait on a client has to be bounded here (a
+# request that announces a body and never sends it must not hold anything the
+# next request needs), and a server library that cannot bound them is the one
+# thing this program cannot use. The same stack is already in the lock file
+# because Tauri brings it.
+[dependencies]
+sce-app-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+getrandom = "0.4"
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "signal", "macros"] }
+
+[lints]
+workspace = true

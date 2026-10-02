@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window may call the commands this application registers and nothing else: no file system, no shell, no network.",
+  "windows": ["main"],
+  "permissions": []
+}
