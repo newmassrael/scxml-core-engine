@@ -46,6 +46,7 @@
 pub mod builtins;
 pub mod lua;
 pub mod parser;
+pub mod reads;
 pub mod resolve;
 pub mod scope;
 

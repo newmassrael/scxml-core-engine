@@ -94,6 +94,12 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/parentSend" }
     },
+    "computed_routes": {
+      "description": "Every <send> that picks its processor or target by expression (typeexpr, targetexpr), in the order written, with the document's data items those expressions name and the ids of the questions open on the send or on those items. A route decided by the datamodel when the send runs is a route the specification may never have decided: the draft wrote targetexpr=\"callerTarget\" because a send needs a target, and the owner has not said who the caller is. A consumer that plays the design reads it to tell a run that stopped on such a route (blocked by that decision) from one that stopped on a defect. Present exactly when the run is one statechart document; omitted (not []) when there is none.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/computedRoute" }
+    },
     "surface": { "$ref": "#/definitions/surface" },
     "unresolved": {
       "description": "Every sce:unresolved / sce:assumed marker the document this run read carries — the records `sce-codegen unresolved` prints, in the same order. A marker blocks only --strict-unresolved, so the run succeeds either way; this is how its result says that a question is still open (kind unresolved) or a value was chosen without the specification (kind assumed). On a document-set run, the markers of every member, each record naming the file it was written in. Omitted (not []) when there are none.",
@@ -299,6 +305,36 @@
         "location": { "$ref": "#/definitions/location" },
         "decisions": {
           "description": "The ids of the questions the specification leaves open that are marked on this send (sce:unresolved; a value chosen without an answer, sce:assumed, is not one). A send to #_parent that carries one is a route nobody decided: the draft wrote #_parent because a send needs a target, and the owner has not said who the caller is. A consumer that plays the design says that the example is blocked by that decision, and not that the engine had no parent. Omitted when the send is written without one.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "computedRoute": {
+      "type": "object",
+      "required": ["state"],
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "description": "The event attribute verbatim. Absent when the site names its event with eventexpr.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "description": "The state whose executable content carries the send.",
+          "type": "string",
+          "minLength": 1
+        },
+        "location": { "$ref": "#/definitions/location" },
+        "reads": {
+          "description": "The document's own data items the typeexpr and targetexpr name, in the order first written. What the expressions name, not what their values derive from: a route that goes through a function or _event data is not traced further. Omitted when they name none.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "decisions": {
+          "description": "The ids of the questions the specification leaves open (sce:unresolved; a value chosen without an answer, sce:assumed, is not one) that sit on this send or on a data item in reads, each once. Omitted when the route rests on none.",
           "type": "array",
           "minItems": 1,
           "items": { "type": "string", "minLength": 1 }

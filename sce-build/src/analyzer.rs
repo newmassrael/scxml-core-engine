@@ -49,6 +49,11 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // host's root-start policy asks and the manifest cannot disagree.
     model.needs_parent = crate::parent_send_analyzer::needs_parent(model);
 
+    // The open questions a `<send>`'s computed route rests on, written onto
+    // the send from the one reading the manifest's `computed_routes`
+    // publishes, for the backend that carries them.
+    crate::computed_route_analyzer::annotate(model);
+
     // §scxml-6.4.1: an invoke's generated id is written to `idlocation` the
     // same way a sendid is; the `<send>` half is set in `analyze_action`.
     if model.states.values().any(|state| {

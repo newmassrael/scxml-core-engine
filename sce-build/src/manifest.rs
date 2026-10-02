@@ -454,6 +454,16 @@ pub struct Manifest<'a> {
     /// when there are none, matching [`Self::host_processor_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub parent_sends: &'a [crate::parent_send_analyzer::ParentSend],
+    /// Which `<send>`s choose their processor or target by expression
+    /// (`typeexpr`, `targetexpr`), with the data items those expressions name
+    /// and the ids of the questions open on the send or on those items
+    /// ([`crate::computed_route_analyzer`]). A consumer that plays the design
+    /// reads it to tell a run that stopped on a route the specification never
+    /// decided from one that stopped on a defect. Present exactly when the run
+    /// is one statechart document, for the reason [`Self::parent_sends`] is, and
+    /// omitted (not `[]`) when there are none.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub computed_routes: &'a [crate::computed_route_analyzer::ComputedRoute],
     /// What the statechart this run read presents to the outside: the events a
     /// caller can deliver, the events it sends out of the session, its states
     /// and its data items ([`crate::design_surface::Surface`]). Present exactly
@@ -840,6 +850,7 @@ mod tests {
                 needs_mesh_router: None,
                 needs_parent: None,
                 parent_sends: &[],
+                computed_routes: &[],
                 surface: None,
                 unresolved: &[],
                 open: Vec::new(),
@@ -902,6 +913,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -937,6 +949,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -978,6 +991,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1040,6 +1054,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1087,6 +1102,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1142,6 +1158,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1181,6 +1198,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1227,6 +1245,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),
@@ -1275,6 +1294,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            computed_routes: &[],
             surface: None,
             unresolved: &[],
             open: Vec::new(),

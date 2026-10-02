@@ -970,6 +970,10 @@ struct GenerateReport {
     /// kind, or a document set, whose answer is not a union — see
     /// `Manifest::needs_parent`).
     parent_sends: Option<Vec<sce_build::parent_send_analyzer::ParentSend>>,
+    /// Every `<send>` of the ONE statechart this run read that picks its
+    /// processor or target by expression — see `Manifest::computed_routes`;
+    /// `None` when the run is not one statechart document.
+    computed_routes: Option<Vec<sce_build::computed_route_analyzer::ComputedRoute>>,
     /// What the ONE statechart this run read presents to the outside — see
     /// `Manifest::surface`; `None` when the run is not one statechart document.
     surface: Option<sce_build::design_surface::Surface>,
@@ -1111,6 +1115,7 @@ fn build_manifest<'a>(
         }),
         needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
         parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
+        computed_routes: report.computed_routes.as_deref().unwrap_or(&[]),
         unresolved: &report.unresolved,
         // What a document leaves open is the union over a set's members — a
         // question one of them asks is one the set leaves — so `unresolved`
@@ -4843,6 +4848,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_script_engine = Some(model.needs_script_engine);
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
             report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
+            report.computed_routes = Some(sce_build::computed_route_analyzer::records(&model));
             report.surface = Some(sce_build::design_surface::Surface::of(&model));
             report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
@@ -5932,6 +5938,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         report.needs_script_engine = Some(model.needs_script_engine);
         report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
         report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
+        report.computed_routes = Some(sce_build::computed_route_analyzer::records(&model));
         report.surface = Some(sce_build::design_surface::Surface::of(&model));
         // Projected from the list the analyzer stored on the model in the
         // same statement that set the flag — not recomputed here, which

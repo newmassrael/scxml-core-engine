@@ -85,6 +85,12 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // Rust data, never fed into a minijinja template, so omitting an absent
     // `event` (an `eventexpr` site) or `location` is the wire convention.
     "parent_send_analyzer.rs",
+    // `ComputedRoute` — the stdout manifest's `computed_routes` wire shape
+    // (SCE_ERROR_CONTRACT.md §10), the sibling of the one above for the sends
+    // that choose their route at run time: serialised straight to JSON for the
+    // CLI manifest and never fed into a minijinja template, so omitting an
+    // absent `event`, `location`, `reads` or `decisions` is the wire convention.
+    "computed_route_analyzer.rs",
     // `UnresolvedRecord` — the `sce-codegen unresolved` NDJSON record and
     // the stdout manifest's `unresolved` list, one type for both
     // (SCE_ERROR_CONTRACT.md §10): serialised straight to JSON and never

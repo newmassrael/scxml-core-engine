@@ -333,6 +333,13 @@ name = "a_machine_that_sends_to_its_parent_says_so"
 path = "tests/a_machine_that_sends_to_its_parent_says_so.rs"
 required-features = ["cli"]
 
+# `computed_routes` on the manifest the real binary writes: which sends choose
+# their route at run time and which open questions that choice rests on.
+[[test]]
+name = "a_send_whose_route_is_computed_says_what_it_rests_on"
+path = "tests/a_send_whose_route_is_computed_says_what_it_rests_on.rs"
+required-features = ["cli"]
+
 # `acceptance-impact` through the binary: which of several acceptances a change
 # to a shared profile touches, the lapse as data beside its sentence.
 [[test]]

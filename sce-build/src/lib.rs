@@ -63,6 +63,7 @@ pub mod comment_text;
 /// directory, not in the worktree's own.
 #[cfg(test)]
 mod commit_stamp;
+pub mod computed_route_analyzer;
 pub mod conformance;
 /// What a statechart presents to the outside (events it takes, events it sends
 /// out, states, data) and whether that is the interface its owner accepted. The

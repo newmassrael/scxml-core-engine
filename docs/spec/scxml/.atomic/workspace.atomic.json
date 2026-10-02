@@ -9275,6 +9275,10 @@
           "file": "sce-build/src/scxml_self_send.rs",
           "symbol": "sends_to_internal_queue",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/computed_route_analyzer.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

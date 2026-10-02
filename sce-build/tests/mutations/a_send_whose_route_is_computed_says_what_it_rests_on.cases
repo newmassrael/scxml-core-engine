@@ -1,0 +1,141 @@
+# Mutation cases for "a send whose route is computed says what that route rests on".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_send_whose_route_is_computed_says_what_it_rests_on.cases`.
+#
+# A draft writes `targetexpr="callerTarget"` because a send needs a target, while the
+# specification never says who the caller is: the question is on the data item the route
+# reads, not on the send. A scenario run of such a design ended in `error.communication`
+# and the verdict called it the design's. The manifest now lists every send that writes a
+# `typeexpr` or a `targetexpr` (`computed_routes`), with the data items its route names
+# (`reads`) and the questions open on the send or on any of them (`decisions`), and the same
+# reading is written onto the send (`route_decisions`) for the machine the generator emits.
+# Things easy to get wrong and read as success: a value chosen without an answer
+# (`sce:assumed`) listed as a question, a question never read off the data item or the
+# send, a name after a `.` read as though it were a variable, a `typeexpr` ignored, a
+# question listed twice, an empty list written where the field should be absent, and an
+# annotation that misses the sends nested in an `<if>` or a history's default transition.
+#
+# Each case below takes one of those away and must make a test red: the unit tests of the
+# two modules (`--lib`), or `a_send_whose_route_is_computed_says_what_it_rests_on.rs`,
+# which reads the manifest the binary writes and validates it against the wire schema.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test a_send_whose_route_is_computed_says_what_it_rests_on
+mutation_targets sce-build/src/computed_route_analyzer.rs sce-build/src/ecmascript/reads.rs
+mutation_oracles sce-build/src/computed_route_analyzer.rs sce-build/src/ecmascript/reads.rs sce-build/tests/a_send_whose_route_is_computed_says_what_it_rests_on.rs
+
+# ── What the manifest says of a send ────────────────────────────────
+
+mutation_case "a value chosen without an answer on a data item is listed as a question" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "            if marker.kind == MarkerKind::Unresolved && !entry.contains(&marker.id) {",
+     "            if !entry.contains(&marker.id) {")
+PY
+
+mutation_case "a value chosen without an answer on the send is listed as a question" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        .filter(|marker| marker.kind == MarkerKind::Unresolved)\n        .map(|marker| marker.id.clone());",
+     "        .map(|marker| marker.id.clone());")
+PY
+
+mutation_case "the questions on the send itself are never read" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    for id in own.chain(read) {",
+     "    for id in own.take(0).chain(read) {")
+PY
+
+mutation_case "the questions on the data items are never read" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    for id in own.chain(read) {",
+     "    for id in own.chain(read.take(0)) {")
+PY
+
+mutation_case "a question two items share is listed twice" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        if !decisions.contains(&id) {",
+     "        if true {")
+PY
+
+mutation_case "a name that is not a declared data item is listed as a read" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "            if data.contains_key(name.as_str()) && !reads.contains(&name) {",
+     "            if !reads.contains(&name) {")
+PY
+
+mutation_case "the type expression is not read" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    for expression in [&send.typeexpr, &send.targetexpr] {",
+     "    for expression in [&send.targetexpr] {")
+PY
+
+mutation_case "a send with a literal route is listed" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    if send.typeexpr.is_empty() && send.targetexpr.is_empty() {",
+     "    if send.typeexpr.is_empty() && send.targetexpr.is_empty() && false {")
+PY
+
+mutation_case "one written site is listed once for each time it is walked" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    routes.dedup();\n",
+     "")
+PY
+
+mutation_case "a send with no question is written with an empty list" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    #[serde(skip_serializing_if = \"Vec::is_empty\")]\n    pub decisions: Vec<String>,",
+     "    pub decisions: Vec<String>,")
+PY
+
+mutation_case "a send that reads no data item is written with an empty list" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "    #[serde(skip_serializing_if = \"Vec::is_empty\")]\n    pub reads: Vec<String>,",
+     "    pub reads: Vec<String>,")
+PY
+
+# ── What the generated machine is told ──────────────────────────────
+
+mutation_case "the annotation carries the data items and not the questions" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "                    .map(|reading| reading.decisions)",
+     "                    .map(|reading| reading.reads)")
+PY
+
+mutation_case "a send nested in an if is not annotated" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "                walk(block, data);",
+     "                let _ = (block, data);")
+PY
+
+mutation_case "a send in a state's blocks is not annotated" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "            walk(block, &data);",
+     "            let _ = (block, &data);")
+PY
+
+mutation_case "a send in a history's default transition is not annotated" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        walk(&mut history.default_actions, &data);",
+     "        let _ = (&mut history.default_actions, &data);")
+PY
+
+# ── What the lexer says an expression reads ─────────────────────────
+
+mutation_case "a member after a dot is read as a variable" <<'PY'
+edit("sce-build/src/ecmascript/reads.rs",
+     "            if !after_dot && !names.contains(name) {",
+     "            if !names.contains(name) {")
+PY
+
+mutation_case "a name written twice is listed twice" <<'PY'
+edit("sce-build/src/ecmascript/reads.rs",
+     "            if !after_dot && !names.contains(name) {",
+     "            if !after_dot {")
+PY

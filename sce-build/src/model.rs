@@ -331,6 +331,19 @@ pub struct Action {
     #[serde(default)]
     pub send_type_host_served: bool,
 
+    /// The ids of the open questions (`sce:unresolved`) this `<send>`'s
+    /// computed route rests on: those marked on the send itself and on the
+    /// data its `typeexpr` / `targetexpr` name (§scxml-6.2.4). Empty for a
+    /// send with a literal route and for one whose route rests on no question.
+    ///
+    /// Set once, by [`crate::computed_route_analyzer::annotate`], from the
+    /// same reading the manifest's `computed_routes` publishes, so the
+    /// generated machine and the manifest cannot name different questions. A
+    /// backend that lets a host tell a failure of such a send from a fault of
+    /// the document reads it; the others ignore it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub route_decisions: Vec<String>,
+
     pub label: String,
     // if/elseif/else
     pub cond: String,
@@ -3442,6 +3455,23 @@ impl State {
         blocks.extend(self.transitions.iter().map(|t| t.actions.as_slice()));
         blocks.push(self.initial_transition_actions.as_slice());
         blocks.push(self.initial_history_default_actions.as_slice());
+        blocks
+    }
+
+    /// [`Self::executable_blocks`], for a pass that rewrites what it finds.
+    /// The same blocks in the same order: a block added to one is added to
+    /// both here, where the two are side by side.
+    pub fn executable_blocks_mut(&mut self) -> Vec<&mut [Action]> {
+        let mut blocks: Vec<&mut [Action]> = Vec::new();
+        blocks.extend(self.on_entry_blocks.iter_mut().map(Vec::as_mut_slice));
+        blocks.extend(self.on_exit_blocks.iter_mut().map(Vec::as_mut_slice));
+        blocks.extend(
+            self.transitions
+                .iter_mut()
+                .map(|t| t.actions.as_mut_slice()),
+        );
+        blocks.push(self.initial_transition_actions.as_mut_slice());
+        blocks.push(self.initial_history_default_actions.as_mut_slice());
         blocks
     }
 
