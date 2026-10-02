@@ -81,7 +81,7 @@ std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
 
         // Create event with parent session as target
         std::string eventName = event.eventName;
-        // W3C SCXML 5.6.2 + 5.10: the payload is assembled by the one rule
+        // §scxml-5.6.2 + 5.10: the payload is assembled by the one rule
         // every SCXML-processor target shares (Test 233, 178). A copy of it
         // here once dropped `typedParams` — `<param expr="42"/>` crossed as
         // `{"value":"42"}` — and a later one dropped `<content>`.

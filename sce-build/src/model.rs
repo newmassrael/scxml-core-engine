@@ -368,7 +368,7 @@ pub struct Action {
     pub cond_constant: Option<bool>,
     /// An `<if>`'s place among the document's `<if>`s, from 1 in the order
     /// the parser meets them; 0 on every other action. A backend names the
-    /// local that records a failed `cond` (W3C SCXML 5.9.1 + 4.9) after it,
+    /// local that records a failed `cond` (§scxml-5.9.1 + 4.9) after it,
     /// so an `<if>` nested in another's branch, or two in one block, never
     /// declare the same name in a language that refuses shadowing.
     #[serde(default)]
@@ -445,7 +445,7 @@ pub struct Action {
     ///
     /// When set, `native_code` is not a statement but an expression that runs
     /// the statement where its failure is received and is `true` when it
-    /// failed, `error.execution` already raised. W3C SCXML 4.9 ends the block
+    /// failed, `error.execution` already raised. §scxml-4.9 ends the block
     /// the element sits in on an error, and which block that is — and what
     /// leaves it — is the backend's to say from where it renders the action,
     /// so the dispatcher emits the exit after a `true`.
@@ -461,8 +461,8 @@ pub struct Action {
     pub native_cond: String,
     /// Codegen-internal: whether [`Self::native_cond`] can fail. A condition
     /// that cannot be evaluated is false and raises `error.execution`
-    /// (W3C SCXML 5.9.1), so the selection goes on, and once the `<if>` has
-    /// run W3C SCXML 4.9 ends its block as it does for any element that
+    /// (§scxml-5.9.1), so the selection goes on, and once the `<if>` has
+    /// run §scxml-4.9 ends its block as it does for any element that
     /// raised. The condition itself sets the `<if>`'s failure flag; when this
     /// is set the dispatcher declares the flag and ends the block after the
     /// chain — of this condition and of each `<elseif>`'s
@@ -969,7 +969,7 @@ pub struct Param {
     /// Codegen-internal: whether [`Self::native_value`] can fail — a checked
     /// integer operation. Then it is not an expression but one that must run
     /// where its failure is received, and a failure leaves the pair out and
-    /// raises `error.execution` (W3C SCXML 5.7.1), as one a script engine
+    /// raises `error.execution` (§scxml-5.7.1), as one a script engine
     /// could not evaluate does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]

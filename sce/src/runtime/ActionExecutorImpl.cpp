@@ -430,7 +430,7 @@ bool ActionExecutorImpl::isAddressedSessionReachable(const std::string &target) 
     if (SendHelper::isChildInvokeTarget(target)) {
         return !SessionRegistry::instance().getInvokeSessionId(sessionId_, SendHelper::extractInvokeId(target)).empty();
     }
-    // W3C SCXML C.1: `#_parent`, written or evaluated, names the session that
+    // §scxml-C-1: `#_parent`, written or evaluated, names the session that
     // invoked this one, and a session its host started has none. Judged here,
     // with the others, so the error ends the block (4.9) instead of arriving
     // from the dispatcher after the rest of the block has run.
@@ -1040,10 +1040,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
         // ALL script engine operations complete - now safe to call EventDispatcher
 
-        // W3C SCXML C.1 + 6.4: a target naming a session or an invocation that
+        // §scxml-C-1 + 6.4: a target naming a session or an invocation that
         // is not there is decided here, when the send is, as every generated
         // engine decides it — error.communication, nothing delivered, and the
-        // error ends the block (W3C SCXML 4.9). Left to the dispatcher, the
+        // error ends the block (§scxml-4.9). Left to the dispatcher, the
         // same error arrived after the rest of the block had already run.
         if (!isAddressedSessionReachable(target)) {
             SCE_LOG_ERROR("ActionExecutorImpl: <send> target '{}' names a session this processor cannot reach", target);

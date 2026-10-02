@@ -5590,7 +5590,7 @@ impl SCXMLParser {
 /// Whether a static `<send target>` names a destination only the running
 /// session can find — so that a send to it may raise `error.communication`.
 ///
-/// W3C SCXML C.1 + 6.4: `#_scxml_<sessionid>` names a session, which is this
+/// §scxml-C-1 + 6.4: `#_scxml_<sessionid>` names a session, which is this
 /// one or none this processor can reach, and `#_<invokeid>` names an
 /// invocation, which may not exist or may not be running. The bare
 /// `#_scxml_` names this session's own queue (test 190) and `#_internal`

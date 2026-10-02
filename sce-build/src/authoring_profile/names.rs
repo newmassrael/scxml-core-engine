@@ -25,7 +25,7 @@
 //! - the platform's own events (`error.*`, `done.state.*`, `done.invoke.*`) and
 //!   any name that begins with an underscore belong to the platform;
 //! - a descriptor that is a pattern (`door.*`) matches events and declares
-//!   none, so it is not a name (W3C SCXML 3.12.1, [`crate::event_descriptor`]).
+//!   none, so it is not a name (§scxml-3.12.1, [`crate::event_descriptor`]).
 //!
 //! # What a style is
 //!
@@ -38,7 +38,7 @@
 //!
 //! # Prefix-free events
 //!
-//! W3C SCXML 3.12.1 matches an event descriptor by token prefix, so a
+//! §scxml-3.12.1 matches an event descriptor by token prefix, so a
 //! transition on `door` also takes `door.open`. The `prefix_free` rule is a
 //! correctness rule in the form of a naming rule: no literal event name of the
 //! document, and no name its event-schemas declare, is a token prefix of

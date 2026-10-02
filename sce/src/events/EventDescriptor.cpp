@@ -7,7 +7,7 @@
 namespace SCE {
 
 std::string EventDescriptor::payload() const {
-    // W3C SCXML 5.6.2 + B.2 (test 561): the output of <content> is the
+    // §scxml-5.6.2 + B.2 (test 561): the output of <content> is the
     // message's data, and it takes precedence over any other source.
     if (!content.empty()) {
         return content;

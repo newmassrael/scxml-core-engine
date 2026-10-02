@@ -1006,7 +1006,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "scxml/recording-intercepted")]
     ScxmlRecordingIntercepted,
     /// A `<send>` a statechart addresses to itself whose event no
-    /// transition takes, so it is queued and thrown away (W3C SCXML 6.2.4). A
+    /// transition takes, so it is queued and thrown away (§scxml-6.2.4). A
     /// `--lint` finding, NeutralOrDeterministic: the repair is the
     /// author's — name the receiver, or add the transition that takes it.
     #[serde(rename = "scxml/self-send-discarded")]

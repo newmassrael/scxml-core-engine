@@ -234,7 +234,7 @@ struct HostInvokeResponse {
     /// `done.invoke`, which is what §scxml-6.4 says.
     std::optional<std::string> doneData;
     /// The host could not start the invocation at all: `_event.data` for the
-    /// `error.execution` the engine raises instead (W3C SCXML 6.4.1 — an
+    /// `error.execution` the engine raises instead (§scxml-6.4.1 — an
     /// invocation that cannot be started is an error of the element, not an
     /// `error.invoke` of a process that ran). Text, or JSON when the host
     /// reports a structured reason. A refused invocation never started: its

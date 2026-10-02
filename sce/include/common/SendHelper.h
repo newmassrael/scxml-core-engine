@@ -561,7 +561,7 @@ public:
     // delivered by event NAME through the machine's own policy
     // (`deliverToParent`, generated beside the parent pointer), the one path
     // its immediate and delayed forms share, and it raises error.communication
-    // when a session its host started has no parent (W3C SCXML C.1).
+    // when a session its host started has no parent (§scxml-C-1).
 
 #ifdef SCE_ENABLE_HTTP
     /**

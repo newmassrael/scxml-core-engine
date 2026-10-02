@@ -1047,6 +1047,22 @@
           "file": "backends/go/runtime/host_processor.go",
           "symbol": "endHostInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event.py",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/authoring_profile.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/authoring_profile/names.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2207,6 +2223,11 @@
         },
         {
           "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/SemanticError.h",
+          "symbol": "SemanticUnsupportedDatamodel",
           "kind": "references"
         }
       ],
@@ -4414,6 +4435,22 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeCancelAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_js.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5268,6 +5305,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "send_external_by_name",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event.py",
           "kind": "references"
         }
       ],
@@ -6925,6 +6966,22 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/events/EventDescriptor.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/events/EventDescriptor.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/events/InvokeEventTarget.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/events/ParentEventTarget.cpp",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7062,6 +7119,10 @@
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7545,6 +7606,22 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeIfAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_js.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_js_algorithm.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8543,6 +8620,19 @@
         {
           "file": "backends/rust/runtime/src/saved_state.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scheduler.py",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/StatePolicyConcepts.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "ScheduledRoute",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8696,6 +8786,10 @@
         {
           "file": "backends/go/runtime/helpers.go",
           "symbol": "WireParamsFromTypedParams",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "references"
         }
       ],
@@ -9123,6 +9217,33 @@
           "file": "sce-build/src/forge/static_lowering.rs",
           "symbol": "delays_a_send_to_another_session",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/send_target.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/RootStartRefusal.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/open_matters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "needsParent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "rootStartRefusal",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_self_send.rs",
+          "symbol": "sends_to_internal_queue",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9322,6 +9443,10 @@
         },
         {
           "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "kind": "references"
         }
       ],
@@ -11455,6 +11580,21 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "start_host_invoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "has_refusal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeResponse",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "refusal",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14134,6 +14274,46 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "deliver_by_name",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/send_target.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/RootStartRefusal.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/NoParent.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/events/EventDispatcherImpl.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "deliverRouted",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "static_target_may_be_unreachable",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverScheduled",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::isAddressedSessionReachable",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -323,7 +323,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         SCE_LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}",
                      !weakParentSM.expired(), parentSessionId);
 
-        // W3C SCXML 6.4 + C.1: the invoked session has ended, so `#_<invokeid>`
+        // §scxml-6.4 + C.1: the invoked session has ended, so `#_<invokeid>`
         // no longer names a session to reach — a send to it now, or a delayed
         // one coming due, reports error.communication rather than handing the
         // event to a session that will never process it. Only this run's

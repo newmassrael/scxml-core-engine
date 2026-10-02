@@ -1435,7 +1435,7 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
 /// Capitalize state/event names for C++ enums.
 ///
 /// `.` and `-` are written `_` first: both are legal in an XML Name and in
-/// an event name (W3C SCXML 3.12.1), and neither in a C++ identifier. Event
+/// an event name (§scxml-3.12.1), and neither in a C++ identifier. Event
 /// names always had this; state ids did not, and a state `door-open` was
 /// declared `Door-open`, which clang-format then printed as `Door - open`
 /// (measured 2026-09-29; `sce-build/tests/generated_names.rs`).
@@ -1909,7 +1909,7 @@ pub fn to_event_class_name(name: String) -> String {
         .join(".")
 }
 
-/// One dot-separated token of an event name (W3C SCXML 3.12.1) as the Kotlin
+/// One dot-separated token of an event name (§scxml-3.12.1) as the Kotlin
 /// class it becomes: `door.open` is `Door.Open`, one nested type per token.
 ///
 /// The event tree ([`crate::kotlin::render_event_tree`]) declares these

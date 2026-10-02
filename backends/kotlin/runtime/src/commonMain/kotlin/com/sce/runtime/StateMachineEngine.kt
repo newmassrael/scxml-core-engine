@@ -1779,7 +1779,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Whether the document sends to its parent session — a literal
-     * `<send target="#_parent">` (W3C SCXML 6.2.4) — the generate manifest's
+     * `<send target="#_parent">` (§scxml-6.2.4) — the generate manifest's
      * `needs_parent`, read by [rootStartRefusal]. `open` with a `false`
      * default for the reason [needsEventScheduler] gives.
      */
@@ -1790,7 +1790,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * by an `<invoke>` — should refuse to start it, and why; `null` when it
      * need not.
      *
-     * W3C SCXML 6.2.4: `#_parent` names the session that invoked this one, and
+     * §scxml-6.2.4: `#_parent` names the session that invoked this one, and
      * a root has none. [initialize] and [start] still run such a machine — each
      * such send then raises `error.communication`, which is the default. This
      * answers for a host that would rather not start it at all.

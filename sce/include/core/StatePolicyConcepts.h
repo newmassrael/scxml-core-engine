@@ -124,7 +124,7 @@ struct HasChildSessionDeliveryTrait<
            std::declval<const std::string &>(), std::declval<const SCE::Common::ForwardedEvent &>()))>>
     : std::true_type {};
 
-/// W3C SCXML 6.2 + 6.4: policy can deliver a delayed send's event to one of
+/// §scxml-6.2 + 6.4: policy can deliver a delayed send's event to one of
 /// its invocations by invoke id, answering whether that invocation was there
 /// to take it. Only a policy that invokes has children to deliver to.
 template <typename P, typename = void> struct HasInvocationDeliveryTrait : std::false_type {};
@@ -135,7 +135,7 @@ struct HasInvocationDeliveryTrait<
            std::declval<const std::string &>(), std::declval<const SCE::Common::ForwardedEvent &>()))>>
     : std::true_type {};
 
-/// W3C SCXML 6.2 + 6.4: policy can deliver a delayed send's event to the
+/// §scxml-6.2 + 6.4: policy can deliver a delayed send's event to the
 /// session that invoked it, answering whether that session was there. Only an
 /// invoked machine has a parent.
 template <typename P, typename = void> struct HasParentDeliveryTrait : std::false_type {};

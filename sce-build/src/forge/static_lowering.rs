@@ -275,7 +275,7 @@ pub trait StaticTarget {
     /// nothing is appended — and, when `value_can_fail`, when computing
     /// `value` fails, where `failed` runs (both raise `error.execution`).
     /// Either way the statement has raised an error, and the block it stands
-    /// in ends (W3C SCXML 4.9), which is the dispatcher's to do.
+    /// in ends (§scxml-4.9), which is the dispatcher's to do.
     fn append(
         &self,
         target: &str,
@@ -293,7 +293,7 @@ pub trait StaticTarget {
     /// expression that is `true` when it failed: it is run where its failure
     /// is received, a failure stops it before it writes anything, and
     /// `failed` runs instead (E12 D5). An error ends the block the element
-    /// stands in (W3C SCXML 4.9); which block that is, and what leaves it,
+    /// stands in (§scxml-4.9); which block that is, and what leaves it,
     /// the dispatcher knows from where it renders the action, so it acts on
     /// the `true`.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String;
@@ -312,7 +312,7 @@ pub trait StaticTarget {
     /// The statement that records, on the `<if>` numbered `if_ordinal`, that
     /// one of its conditions failed. The `<if>` runs its chain on — a
     /// condition that cannot be evaluated is false — and then ends its block
-    /// (W3C SCXML 4.9), as any element that raised does.
+    /// (§scxml-4.9), as any element that raised does.
     fn condition_failed_flag(&self, if_ordinal: u32) -> String;
     /// What `_event.data` is read through inside a guard or statement of an
     /// `event` carrying a typed payload.
@@ -1636,7 +1636,7 @@ fn lower_action(
     let failed = |construct: String| execution_failure(rewrites, &construct);
     // `write(value)`, received where it stands when `value` can fail — and
     // then an expression that says whether it did, which the dispatcher acts
-    // on by ending the block (W3C SCXML 4.9) — with whether it can.
+    // on by ending the block (§scxml-4.9) — with whether it can.
     let statement =
         |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| -> (String, bool) {
             let written = write(&value.text);
@@ -1722,7 +1722,7 @@ fn lower_action(
         // Past the bound nothing is appended and `error.execution` says so —
         // the processor's own signal for an error in executing the document,
         // raised the way every other execution error of the backend is — and
-        // the block ends (W3C SCXML 4.9), as it does for a value that could
+        // the block ends (§scxml-4.9), as it does for a value that could
         // not be computed. So an append can always fail.
         "sce_append" => {
             reads_payload = reads(&action.expr);
@@ -1766,7 +1766,7 @@ fn lower_action(
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
         }
         // What a `<send>` carries is read from the machine's fields now, when
-        // it runs (W3C SCXML 6.2.3 evaluates its arguments once, at the send).
+        // it runs (§scxml-6.2.3 evaluates its arguments once, at the send).
         "send" => {
             for param in &mut action.params {
                 lower_wire_param(param, ctx, renames, rewrites)?;

@@ -50,7 +50,7 @@ struct HostSendRequest;
 struct HostInvokeDeadline;
 
 /**
- * @brief W3C SCXML 6.2: where a delayed `<send>`'s event goes when it comes due
+ * @brief §scxml-6.2: where a delayed `<send>`'s event goes when it comes due
  *
  * A `delay` postpones a send; it does not change where the send goes. The
  * target is resolved when the send is made, and this records the answer so

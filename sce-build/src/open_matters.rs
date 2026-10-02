@@ -64,7 +64,7 @@ pub enum OpenKind {
     /// statechart to them.
     Interface,
     /// The machine sends an event to ITSELF with no target, and something
-    /// takes it. W3C SCXML 6.2.4 puts that on the EXTERNAL queue, the one a
+    /// takes it. §scxml-6.2.4 puts that on the EXTERNAL queue, the one a
     /// caller delivers to, so a caller can send the same name and take the
     /// same transition: for a timer, a way to skip the wait. Whether a caller
     /// should be able to is the owner's to say, and a closed interface does not
@@ -116,7 +116,7 @@ pub fn interface_left_open(model: &crate::model::SCXMLModel) -> Vec<String> {
 /// The events a statechart sends ITSELF with no target that something takes,
 /// in the order they are first written: what a caller can send too.
 ///
-/// ⚠ W3C SCXML 6.2.4: a `<send>` with no target goes to the session's
+/// ⚠ §scxml-6.2.4: a `<send>` with no target goes to the session's
 /// EXTERNAL queue, the one a caller delivers to, so an outside party can send
 /// the same name and reach the same transition. What the statechart puts on
 /// its INTERNAL queue — a `<raise>`, a send to `#_internal` — is left out, by
@@ -517,7 +517,7 @@ mod tests {
     }
 
     /// What a caller can send is what the machine sends ITSELF with no target
-    /// and something takes (W3C SCXML 6.2.4: the external queue). Every other
+    /// and something takes (§scxml-6.2.4: the external queue). Every other
     /// shape is a control, each a different event so one that took a shape it
     /// should not, or missed the one it should, is named.
     #[test]

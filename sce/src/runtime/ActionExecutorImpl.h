@@ -153,17 +153,17 @@ private:
     /**
      * @brief Evaluate a `cond`, reporting whether it could be evaluated
      *
-     * W3C SCXML 5.9.1: a cond that cannot be evaluated as a boolean raises
+     * §scxml-5.9.1: a cond that cannot be evaluated as a boolean raises
      * error.execution and is treated as false. `std::nullopt` says it could
      * not — which an `<if>` needs, since the error then ends its block
-     * (W3C SCXML 4.9); a plain `false` cannot tell the two apart.
+     * (§scxml-4.9); a plain `false` cannot tell the two apart.
      */
     std::optional<bool> evaluateConditionReportingFailure(const std::string &condition);
 
     /**
      * @brief Whether a `<send>` target that names a session can reach it
      *
-     * W3C SCXML C.1 + 6.4: `#_scxml_<sessionid>` names a session, found by
+     * §scxml-C-1 + 6.4: `#_scxml_<sessionid>` names a session, found by
      * id among the sessions this processor runs — the bare prefix names the
      * sender's own — and `#_<invokeid>` names an invocation of the sending
      * session, which reaches nothing once it has not started or has ended.

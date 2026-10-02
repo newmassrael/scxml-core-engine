@@ -334,7 +334,7 @@ impl StaticTarget for JsTarget {
     // written again with the value at its end. A full list makes the library
     // throw, which the Interpreter answers as it does any assignment that
     // fails: nothing is written, `error.execution` is raised, and the block
-    // ends (W3C SCXML 4.9) — the outcome the generated backends give.
+    // ends (§scxml-4.9) — the outcome the generated backends give.
     fn append(
         &self,
         target: &str,
@@ -357,8 +357,8 @@ impl StaticTarget for JsTarget {
     }
     // The script engine's own channel: a library call that throws stops the
     // statement before it writes, a condition that throws is false, and
-    // `error.execution` is raised either way (W3C SCXML 5.9.1, 3.12.2) — and
-    // W3C SCXML 4.9 ends the block, which the Interpreter does for any
+    // `error.execution` is raised either way (§scxml-5.9.1, 3.12.2) — and
+    // §scxml-4.9 ends the block, which the Interpreter does for any
     // element that raised. Nothing here is spelled: the document's own
     // executable content is what runs.
     fn receiving_statement(&self, statement: &str, _failed: &str) -> String {

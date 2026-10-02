@@ -24,7 +24,7 @@ namespace SCE::Common {
  *
  * A generated machine that sends to `#_parent` is a class template over its
  * parent's type, because an invoking parent hands itself in. A host starting
- * the same machine has no parent to hand in, and W3C SCXML C.1 still lets it
+ * the same machine has no parent to hand in, and §scxml-C-1 still lets it
  * run: the send then raises error.communication on the sender's own queue.
  * This type is the default for that template parameter, so the host writes
  * `machine<> sm;` and the policy's parent pointer stays null.
@@ -42,7 +42,7 @@ struct NoParent {
  * @brief Why `StaticExecutionEngine::initializeAsRoot` refused a start.
  *
  * The default is to run such a machine — its `#_parent` sends then raise
- * error.communication (W3C SCXML C.1). A host that would rather not start a
+ * error.communication (§scxml-C-1). A host that would rather not start a
  * machine that needs a parent, when it has none to give, asks for the refusal
  * by starting it with `initializeAsRoot`.
  */

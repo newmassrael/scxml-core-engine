@@ -14,7 +14,7 @@ namespace SCE {
 namespace {
 
 /**
- * W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+ * §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
  * target, it MUST place the error error.communication on the internal event
  * queue of the session that attempted to send the event."
  *
@@ -110,7 +110,7 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
 
             // Schedule the event for delayed execution. A delayed send's
             // dispatch happens when it fires, so that is where a missing
-            // target is reported (W3C SCXML C.1). A platform event's sender
+            // target is reported (§scxml-C-1). A platform event's sender
             // is the engine, not a document, and is left as it was.
             std::shared_ptr<IEventTarget> scheduledTarget =
                 isPlatform ? target : std::make_shared<DispatchReportingTarget>(target);

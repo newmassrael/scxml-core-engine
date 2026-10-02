@@ -213,7 +213,7 @@ class HostInvokeResponse:
     #: ``done.invoke``, which is what §scxml-6.4 says.
     done_data: Optional[str] = None
     #: The host could not start the invocation at all: ``_event.data`` for
-    #: the ``error.execution`` the engine raises instead (W3C SCXML 6.4.1 —
+    #: the ``error.execution`` the engine raises instead (§scxml-6.4.1 —
     #: an invocation that cannot be started is an error of the element, not
     #: an ``error.invoke`` of a process that ran). Text, or JSON when the host
     #: reports a structured reason, as a Mesh router does with SCE_MESH.md
@@ -265,7 +265,7 @@ def parse_host_invoke_deadline_ms(written: str) -> Optional[int]:
 
 
 #: The prefix SCE keeps for the Event I/O Processors and invoke types it
-#: defines itself: `MESH_PROCESSOR_TYPE` and ``sce:mesh-rpc``. W3C SCXML 6.2.5
+#: defines itself: `MESH_PROCESSOR_TYPE` and ``sce:mesh-rpc``. §scxml-6.2.5
 #: leaves the processor set open to the platform, and SCE shares that
 #: namespace with its host; a host registering a handler under ``sce:`` would
 #: not add a processor but replace one of SCE's, with nothing on the wire

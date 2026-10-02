@@ -34,7 +34,7 @@ struct EventDescriptor {
     // to the stringified pair, so `_event.data.d[0] === 1` read false for a
     // document that had sent the Number 1 (measured 2026-08-16).
     std::map<std::string, std::vector<ScriptValue>> typedParams;
-    std::string content;  // The output of <content> (W3C SCXML 5.6.2)
+    std::string content;  // The output of <content> (§scxml-5.6.2)
 
     // Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
     std::chrono::milliseconds logicalExecuteTime{0};  // Scheduled logical time (0 = not set, use current time)
@@ -63,7 +63,7 @@ struct EventDescriptor {
     /**
      * @brief The data this message carries to whichever session receives it
      *
-     * W3C SCXML 5.6.2 + 5.10: one rule for every SCXML-processor target. It
+     * §scxml-5.6.2 + 5.10: one rule for every SCXML-processor target. It
      * was a private method of the internal target, so an event sent to
      * `#_parent` or to `#_<invokeid>` dropped its `<content>` and arrived
      * with no data while the same send to this session carried it.

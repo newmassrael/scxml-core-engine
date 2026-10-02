@@ -792,7 +792,7 @@ fn stamp_wildcard_descriptors(model: &mut SCXMLModel) {
     }
 }
 
-/// The event-set entry that stands for `event="*"` (W3C SCXML 3.12.1). It is
+/// The event-set entry that stands for `event="*"` (§scxml-3.12.1). It is
 /// not an event a document raises: each backend's templates either skip it or
 /// give it a member of its own.
 pub const WILDCARD_EVENT: &str = "Wildcard";

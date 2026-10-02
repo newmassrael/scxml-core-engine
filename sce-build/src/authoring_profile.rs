@@ -298,7 +298,7 @@ pub enum ProfileError {
         problem: EventProblem,
     },
     /// An event name is a token prefix of another, so a descriptor on the
-    /// shorter one also matches the longer (W3C SCXML 3.12.1).
+    /// shorter one also matches the longer (§scxml-3.12.1).
     #[error("{}", messages::event_prefix(profile.as_deref(), prefix, longer))]
     EventPrefixOfAnother {
         /// The profile's `name`, when it has one.

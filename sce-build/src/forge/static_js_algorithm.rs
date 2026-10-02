@@ -50,7 +50,7 @@
 //! call of an algorithm that fails throws through the caller, and the
 //! expression of the statechart that called the algorithm fails as it does for
 //! an overflow of its own: the statement is skipped, the guard is false, and
-//! `error.execution` is raised (W3C SCXML 5.9.1, 3.12.2).
+//! `error.execution` is raised (§scxml-5.9.1, 3.12.2).
 
 use crate::forge::const_fold::{self, ConstSite, ConstValue};
 use crate::forge::error::GenerateError;

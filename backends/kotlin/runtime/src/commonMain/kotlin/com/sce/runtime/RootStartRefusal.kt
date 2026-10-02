@@ -8,7 +8,7 @@ package com.sce.runtime
  * refused to start a machine.
  *
  * The default is to run such a machine — its `#_parent` sends then raise
- * `error.communication` (W3C SCXML C.1). A host that would rather not start a
+ * `error.communication` (§scxml-C-1). A host that would rather not start a
  * machine that needs a parent, when it has none to give, asks for the refusal
  * by starting it with one of the `AsRoot` entry points.
  */
@@ -17,7 +17,7 @@ enum class RootStartRefusal(
     val reason: String,
 ) {
     /**
-     * W3C SCXML 6.2.4: the document sends to `#_parent`, and a session its host
+     * §scxml-6.2.4: the document sends to `#_parent`, and a session its host
      * started has no parent to reach.
      */
     NEEDS_PARENT("the machine sends to #_parent and was started with no parent session"),

@@ -36,9 +36,9 @@ class EventMetadata:
     # unchanged. The Python twin of the Go `EventMetadata.TypedPayload any` /
     # Kotlin `EventMetadata.typedPayload: Any?`.
     typed_payload: Any = None
-    # W3C SCXML 5.10: `_event.name` is the name the event ARRIVED under. An
+    # §scxml-5.10: `_event.name` is the name the event ARRIVED under. An
     # event is carried as the enumeration member of the descriptor the document
-    # declares, and W3C SCXML 3.12.1 lets `request.new` match a transition on
+    # declares, and §scxml-3.12.1 lets `request.new` match a transition on
     # `request`, so the member alone loses the longer name. Set by a host that
     # sends by a name more specific than any the document declares, and by
     # `Engine.send_external_by_name` when it resolves a name through a prefix.

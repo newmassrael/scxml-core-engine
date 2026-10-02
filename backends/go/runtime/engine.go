@@ -967,7 +967,7 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 	case TargetInternal:
 		route = ScheduledRoute{Kind: RouteInternalQueue}
 	case TargetParent:
-		// W3C SCXML C.1: a session nothing invoked has no parent to address,
+		// §scxml-C-1: a session nothing invoked has no parent to address,
 		// delayed or not.
 		parent, ok := any(e.policy).(ParentDelivery)
 		if !ok || !parent.HasParentSession() {
@@ -1046,7 +1046,7 @@ func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID,
 // deliverRouted delivers a delayed send whose wait is over to the target it
 // named.
 //
-// W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+// §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
 // target, it MUST place the error error.communication on the internal event
 // queue of the session that attempted to send the event." For a delayed send
 // the dispatch is this delivery, so an invocation that has ended in the

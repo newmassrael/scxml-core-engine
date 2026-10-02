@@ -133,7 +133,7 @@ pub fn event_tree_class_name(key: &str) -> String {
 }
 
 /// The member a node declares inside its own interface when it is both an
-/// event and the prefix of others (`foo` beside `foo.zoo`, W3C SCXML 3.12.1).
+/// event and the prefix of others (`foo` beside `foo.zoo`, §scxml-3.12.1).
 pub const EVENT_TREE_SELF_MEMBER: &str = "Self";
 
 /// Render event tree as Kotlin sealed interface hierarchy code.

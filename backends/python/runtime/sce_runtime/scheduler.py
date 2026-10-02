@@ -75,7 +75,7 @@ class ScheduledEvent(Generic[E]):
     #: the engine's, not the document's, so no ``<cancel sendid>`` can name
     #: it — and leaves through `drop_host_invoke_deadline` or by firing.
     host_invoke_deadline: Any = field(default=None, compare=False)
-    #: W3C SCXML 6.2 — the `ScheduledRoute` the delayed send resolved when it
+    #: §scxml-6.2 — the `ScheduledRoute` the delayed send resolved when it
     #: was made, or ``None`` for this session's own external queue.
     route: Optional[ScheduledRoute] = field(default=None, compare=False)
 

@@ -44,7 +44,7 @@ pub enum InterfaceCrossing {
     /// raises it.
     Receives,
     /// A transition takes it, and the only thing that gives it to the
-    /// statechart is a `<send>` to itself with no target. W3C SCXML 6.2.4 puts
+    /// statechart is a `<send>` to itself with no target. §scxml-6.2.4 puts
     /// that on the session's EXTERNAL queue, the one a caller delivers to, so
     /// a caller can send the same name: it crosses the interface as surely as
     /// an event no one declared, and unlike a `<raise>` or a send to

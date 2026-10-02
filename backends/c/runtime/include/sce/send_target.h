@@ -3,7 +3,7 @@
 
 /**
  * @file send_target.h
- * @brief Where a `<send>` to the SCXML Event I/O Processor goes (W3C SCXML 6.2.4, C.1)
+ * @brief Where a `<send>` to the SCXML Event I/O Processor goes (§scxml-6.2.4, C.1)
  *
  * The C copy of the table C++ `SendHelper::classifyTarget` holds, and every
  * channel's: a `target` written in the document and a `targetexpr` evaluated
@@ -37,7 +37,7 @@ typedef enum {
 } sce_send_target_kind_t;
 
 /**
- * @brief Whether a target value names nothing (W3C SCXML C.1)
+ * @brief Whether a target value names nothing (§scxml-C-1)
  *
  * An empty value, or the datamodel's no-value: ECMAScript's `undefined` and
  * `nil`, the spelling a Lua-lowered `undefined` reads back as. Such a target
@@ -51,7 +51,7 @@ static inline bool sce_send_target_names_nothing(const char *target) {
 }
 
 /**
- * @brief Classify a target value (W3C SCXML 6.2.4, C.1)
+ * @brief Classify a target value (§scxml-6.2.4, C.1)
  *
  * A URI of another scheme — an http(s) URL included, which only a BasicHTTP
  * send reaches — is SCE_SEND_TARGET_UNSUPPORTED, as it is for every generated

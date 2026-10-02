@@ -1170,7 +1170,7 @@ public:
     /**
      * @brief Deliver a delayed send whose wait is over to the target it named
      *
-     * W3C SCXML C.1: "If the SCXML Processor cannot dispatch the event to the
+     * §scxml-C-1: "If the SCXML Processor cannot dispatch the event to the
      * target, it MUST place the error error.communication on the internal
      * event queue of the session that attempted to send the event." For a
      * delayed send the dispatch is this delivery, so an invocation that has
@@ -3229,7 +3229,7 @@ public:
         }
         const auto response = it->second(event);
         if (response.has_value() && response->refusal.has_value()) {
-            // W3C SCXML 6.4.1: the host could not start it, so it never
+            // §scxml-6.4.1: the host could not start it, so it never
             // started — taken back out of the running set with its deadline
             // dropped, and the element's error raised with what the host said.
             startedHostInvokes_.erase(std::make_pair(request.processorType, request.invokeId));

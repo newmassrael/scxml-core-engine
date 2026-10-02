@@ -461,7 +461,7 @@ private:
 
 // The root declares a `datamodel` this engine does not run.
 //
-// W3C SCXML §3.2 lets a platform define data models beyond `null` and
+// §scxml-3.2 lets a platform define data models beyond `null` and
 // `ecmascript`, and SCE defines one — `sce-static` (SCE Accepted Subset
 // §2.15), whose variables are typed and whose integer operations are checked.
 // Generated code runs it. The Interpreter does not: it hands every

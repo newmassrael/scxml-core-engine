@@ -66,7 +66,7 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
 
         // Prepare event data
         std::string eventName = event.eventName;
-        // W3C SCXML 5.6.2 + 5.10: the payload is assembled by the one rule
+        // §scxml-5.6.2 + 5.10: the payload is assembled by the one rule
         // every SCXML-processor target shares, so a `<content>` or a typed
         // `<param>` reaches an invoked child as it reaches this session.
         std::string eventData = event.payload();
