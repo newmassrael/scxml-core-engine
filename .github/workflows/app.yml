@@ -1,0 +1,71 @@
+name: Workbench application
+
+# The specification workbench (`app/`): its screen (TypeScript), the browser
+# shell and the desktop shell (Tauri). It is a workspace of its own, excluded from
+# the root one, so no other lane builds it; what has no screen lives in
+# `app-core/`, which rust-workspace-tests.yml already runs.
+#
+# `scripts/gates/app.sh` is the whole of what is judged. This file only installs
+# what that script needs and calls it, so the lane and a local run cannot differ
+# in what they check.
+#
+# The paths include `app-core/`: the screen's tests read the contract file the
+# core's tests write, and a change to either side has to be judged against the
+# other.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'app-core/**'
+      - '.github/workflows/app.yml'
+      - 'scripts/gates/app.sh'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'app-core/**'
+      - '.github/workflows/app.yml'
+      - 'scripts/gates/app.sh'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  app:
+    name: Screen, browser shell and desktop shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install the libraries Tauri links on Linux
+        # The desktop shell is compiled by clippy even though nothing opens a
+        # window here; compiling it needs WebKitGTK's development files.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev pkg-config build-essential
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/target
+          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-app-
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Application gate
+        run: scripts/gate app

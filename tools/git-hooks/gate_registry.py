@@ -204,6 +204,9 @@ COST_MEASURED: dict[str, str] = {
     # 72s with the opt-1 one `Cargo.toml` now builds, under load 23. The
     # figure is a stopwatch read of the gate's own work, not paced.
     "authoring-core": "2026-09-24",
+    # Run once end to end through `bx` on 2026-10-03, warm: 66s. Not taken by
+    # `scripts/gate --measure`, which is refused locally for this repository.
+    "app": "2026-10-03",
     # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
     # the same figure the table already carried. That is the point rather
     # than an anticlimax: the NUMBER was right and unaskable, and what the
@@ -983,6 +986,26 @@ GATES: dict[str, dict] = {
                    "so the 86 run-driven cases are judged, not skipped.",
         "cost_s": 72,
         "summary": "authoring core is domain-free, and its refusals still fire",
+    },
+    # The specification workbench (`app/`): a workspace of its own, excluded from
+    # the root one because the desktop shell links a GUI toolkit. The part with
+    # no screen is `app-core/`, which `workspace-tests` already runs.
+    #
+    # `ci_only` for the number: 66s with every artefact warm, but the first
+    # compile of the Tauri shell took 295s on a 32-core machine, and a push
+    # that touched `app/` on a cold tree would carry that alone past the
+    # ceiling. The figure declared is the warm one, on the basis this table's
+    # header gives.
+    "app": {
+        "workflows": ["app.yml"],
+        "runner_workflow": True,
+        "ci_only": "66s warm (npm ci, typecheck, 46 screen tests, bundle, "
+                   "fmt, clippy over the Tauri shell, 18 browser-shell "
+                   "tests), 295s for the Tauri shell's first compile alone. "
+                   "app.yml needs WebKitGTK's development files on the "
+                   "runner, which a push hook cannot assume.",
+        "cost_s": 66,
+        "summary": "workbench screen, browser shell and desktop shell",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate
