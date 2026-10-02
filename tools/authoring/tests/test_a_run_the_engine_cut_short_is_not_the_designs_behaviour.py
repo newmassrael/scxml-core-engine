@@ -71,6 +71,23 @@ RAISES_AT_START = _HEAD + f"""
 </scxml>
 """
 
+# The same failure, from a send whose route is read from data. Open, the specification
+# never says who the caller is; plain, nothing is open and the draft is at fault.
+_ROUTE_DATA = ('<data id="callerTarget" expr="\'#_nobody\'"{open}/>')
+_OPEN = (' sce:unresolved="caller-target" '
+         'sce:unresolved-reason="the specification does not say who the caller is"')
+_SEND_BY_ROUTE = '<send event="ping" targetexpr="callerTarget"/>'
+
+RAISES_ON_AN_OPEN_ROUTE = _HEAD + f"""
+  <datamodel>{_ROUTE_DATA.format(open=_OPEN)}</datamodel>
+  <state id="dark"><onentry>{_SEND_BY_ROUTE}</onentry>
+    <transition event="train.approaching" target="flashing"/></state>
+  <state id="flashing"><onentry>{FLASH}</onentry></state>
+</scxml>
+"""
+
+RAISES_ON_A_PLAIN_ROUTE = RAISES_ON_AN_OPEN_ROUTE.replace(_OPEN, "")
+
 RAISES_AFTER_AN_INPUT = _HEAD + f"""
   <state id="dark"><transition event="train.approaching" target="flashing"/></state>
   <state id="flashing"><onentry>{FLASH}{NOWHERE}</onentry>
@@ -143,6 +160,27 @@ class AVerdictIsOnlyAsTrueAsTheRun(unittest.TestCase):
             (r.name, r.refusal, r.failures) for r in result.results])
         for one in result.results:
             self.assertIn(why, one.refusal)
+
+    # -- the failure is a route nobody has decided: whose question it is ---
+
+    def test_a_route_that_rests_on_an_open_decision_says_so_when_it_fails(self):
+        """The send's route is read from a data item the specification leaves
+        open. The run is refused as any unanswered error is, and the sentence
+        also says it is the owner's question: a verification that only said "no
+        state answered it" sent the draft back to be mended for a fault it does not
+        have (the scenario driver already said it was blocked by the decision)."""
+        result = self.run_cases(
+            RAISES_ON_AN_OPEN_ROUTE, case("a train is detected", "APPROACHING", "FLASHING"))
+        self.assertFalse(result.ran, "a design that raised was judged")
+        self.assertIn("no state answered", result.refusal)
+        self.assertIn("open decision `caller-target`", result.refusal)
+
+    def test_the_same_failure_without_an_open_decision_is_not_called_one(self):
+        result = self.run_cases(
+            RAISES_ON_A_PLAIN_ROUTE, case("a train is detected", "APPROACHING", "FLASHING"))
+        self.assertFalse(result.ran)
+        self.assertIn("no state answered", result.refusal)
+        self.assertNotIn("open decision", result.refusal)
 
     def test_a_macrostep_cut_after_an_input_withholds_that_case_and_the_rest(self):
         self.withheld_from_the_first_case(LOOPS_AFTER_AN_INPUT, "stable configuration")

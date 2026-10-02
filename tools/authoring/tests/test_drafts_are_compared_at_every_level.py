@@ -124,6 +124,39 @@ RAISES_UNANSWERED = _start_at_a(HEAD) + """
 </scxml>
 """
 
+# The same failure, but the target is read from a data item the specification leaves
+# open: the draft wrote a route because a send needs one, and nobody has said who the
+# caller is. That is the owner's question and not a fault of the draft, and the
+# comparison has to say so (the scenario driver already does).
+RAISES_ON_AN_OPEN_ROUTE = _start_at_a(HEAD) + """
+  <datamodel>
+    <data id="callerTarget" expr="'#_nobody'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+  </datamodel>
+  <state id="a"><onentry><send event="ping" targetexpr="callerTarget"/></onentry>
+    <transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>
+"""
+
+# The same route, and the fault is the event name's: it reads a field of data no drive
+# carries (W3C SCXML 5.9.2), which the product accepts and the engine refuses at run
+# time. (An undeclared variable would be refused by the product before anything ran.)
+# No answer to the route's question would mend it, so it stays the draft's.
+RAISES_BESIDE_AN_OPEN_ROUTE = _start_at_a(HEAD) + """
+  <datamodel>
+    <data id="callerTarget" expr="'#_nobody'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+  </datamodel>
+  <state id="a">
+    <transition event="go" target="b">
+      <send eventexpr="_event.data.name" targetexpr="callerTarget"/>
+    </transition>
+  </state>
+  <state id="b"/>
+</scxml>
+"""
+
 # After `go`, entering `b` sends the machine an external event that it answers by
 # sending the same one again. Every macrostep ends, so the microstep ceiling never
 # applies, and the engine call that handles `go` never returned: the only bound was
@@ -295,6 +328,37 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertIn("no state answered", behaviour["undriven"]["raises.scxml"])
         self.assertIn("error.", behaviour["undriven"]["raises.scxml"])
         self.assertNotIn("classes", behaviour)
+
+    def test_a_draft_whose_open_route_fails_says_whose_question_it_is(self):
+        """Measured 2026-10-02: the scenario driver called this run blocked by the
+        open decision, and the comparison said only that the engine raised an error
+        and no state answered it, which sends the draft back to be mended for a
+        fault it does not have. The route fails because nobody said who the caller
+        is, and the owner is the one to answer."""
+        behaviour = compare(self.drafts(open=RAISES_ON_AN_OPEN_ROUTE, clean=SETTLES),
+                            drives=40, steps=12)["behaviour"]
+        why = behaviour["undriven"]["open.scxml"]
+        self.assertIn("no state answered", why)
+        self.assertIn("open decision `caller-target`", why)
+
+    def test_a_fault_beside_an_open_route_is_still_the_drafts(self):
+        behaviour = compare(self.drafts(beside=RAISES_BESIDE_AN_OPEN_ROUTE, clean=SETTLES),
+                            drives=40, steps=12)["behaviour"]
+        why = behaviour["undriven"]["beside.scxml"]
+        self.assertIn("no state answered", why)
+        self.assertNotIn("open decision", why)
+
+    def test_the_same_route_without_a_question_is_not_called_one(self):
+        plain = (RAISES_ON_AN_OPEN_ROUTE
+                 .replace(' sce:unresolved="caller-target"', "")
+                 .replace('\n          sce:unresolved-reason="the specification does not say '
+                          'who the caller is"', ""))
+        self.assertNotIn("sce:unresolved", plain)
+        behaviour = compare(self.drafts(plain=plain, clean=SETTLES),
+                            drives=40, steps=12)["behaviour"]
+        why = behaviour["undriven"]["plain.scxml"]
+        self.assertIn("no state answered", why)
+        self.assertNotIn("open decision", why)
 
     def test_a_draft_that_raises_an_error_nothing_answers_does_not_hide_the_others(self):
         renamed = SETTLES.replace('"go"', '"proceed"')

@@ -83,7 +83,7 @@ from .errors import VerifyError
 from .lowering import (PARENT_TARGET, SendRecorder, Unplayable, advance,
                        decisions_behind_unanswered_error, endless_event_chain,
                        endless_macrostep, host_names as _host_names, load,
-                       unanswered_error)
+                       route_decision_clause, unanswered_error)
 
 
 class _HttpSeen:
@@ -394,13 +394,12 @@ class _Machine:
                 # Another machine fails the same way, and so does any design that
                 # leaves the question open, so the example is blocked by it and
                 # not failed by the design (`cause: decision`).
-                asked = ", ".join(f"`{decision}`" for decision in decisions)
                 raise _Refusal(
-                    f"by step {index} the engine {unanswered}, and the send that failed chose "
-                    f"where it goes from data the specification leaves open (open decision "
-                    f"{asked}). The machine was given no answer, and the driver does not invent "
-                    f"one, so the example is blocked by that decision: once the owner answers "
-                    f"it, the example can be played.{self.opened}", cause="decision")
+                    f"by step {index} the engine {unanswered}, and "
+                    f"{route_decision_clause(decisions)}. The machine was given no answer, and "
+                    f"the driver does not invent one, so the example is blocked by that "
+                    f"decision: once the owner answers it, the example can be played."
+                    f"{self.opened}", cause="decision")
             raise _Refusal(f"by step {index} the engine {unanswered}, so what the machine did "
                            f"from there is not the design's behaviour.{self.opened}")
 

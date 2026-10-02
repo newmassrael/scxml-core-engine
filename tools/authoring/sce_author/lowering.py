@@ -162,21 +162,33 @@ def unanswered_error(engine, policy) -> str | None:
 
 
 def decisions_behind_unanswered_error(engine) -> tuple:
-    """The open decisions the `<send>` behind an unanswered error rested on:
-    the ids the generated machine told the engine when it began a send whose
-    route (`typeexpr`, `targetexpr`) is chosen at run time from data the
-    specification leaves open (W3C SCXML 6.2.4).
+    """The open decisions the ROUTE of the `<send>` behind an unanswered error
+    rested on: the ids the generated machine raised the route's failure with, for
+    a send whose route (`typeexpr`, `targetexpr`) is chosen at run time from data
+    the specification leaves open (W3C SCXML 6.2.4).
 
-    An unanswered error from such a send is the owner's question showing
+    An unanswered failure of such a route is the owner's question showing
     through, not a fault the design could have avoided: the draft wrote a route
     because a send needs one, and nobody has said where it goes. Empty when
-    nothing went unanswered and when the error did not come from such a send.
+    nothing went unanswered and when the error was not a failure of such a route
+    (the same send failing in its event name or its delay is the draft's).
     Empty says the machine named no question, not that none exists: the caller
     treats the error as it treats every unanswered error, and does not guess a
     decision from the shape of the failure."""
     if engine.last_unhandled_error() is None:
         return ()
     return tuple(engine.last_unhandled_error_rests_on())
+
+
+def route_decision_clause(decisions: tuple) -> str:
+    """The words every consumer of a run uses to say a failure was a send's route
+    resting on an open decision, so the owner is asked the question and the draft
+    is not mended for a fault it does not have. One spelling: the scenario driver,
+    a comparison and a verification all say it, and a second sentence would drift
+    from the first."""
+    asked = ", ".join(f"`{decision}`" for decision in decisions)
+    return (f"the send that failed chose where it goes from data the specification "
+            f"leaves open (open decision {asked})")
 
 
 def stopped_run(engine, policy) -> str | None:
@@ -196,7 +208,17 @@ def stopped_run(engine, policy) -> str | None:
     chain = endless_event_chain(engine, policy)
     if chain is not None:
         return f"stopped {chain}"
-    return unanswered_error(engine, policy)
+    unanswered = unanswered_error(engine, policy)
+    if unanswered is None:
+        return None
+    # A failure of a route that rests on an open decision is the owner's to
+    # answer, and a comparison or a verification that only said "raised and no
+    # state answered it" sent the draft back to be mended for a fault it does not
+    # have. Only the machine's own naming of the question counts (no guessing).
+    decisions = decisions_behind_unanswered_error(engine)
+    if decisions:
+        return f"{unanswered}, and {route_decision_clause(decisions)}"
+    return unanswered
 
 
 def host_names(module, part: str) -> dict:
