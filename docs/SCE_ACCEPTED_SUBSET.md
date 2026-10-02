@@ -3341,7 +3341,7 @@ the owner keeps beside the specification:
 | `names` | enforced | How the names a document defines are spelled, by class of name. See below. |
 | `evidence` | enforced | `"anchored"`: every `<sce:evidence>` of the `<sce:kind-basis>` carries a `provenance` anchor. An unanchored one is refused as `profile/evidence-unanchored`, quoting the evidence. |
 | `traceability` | enforced | `"required"`: every state and every transition claims a requirement (`sce:req`). One that claims none is refused as `profile/element-untraced`, naming it. See below. |
-| `house_rules` | reported | The owner's standing answers to gaps that recur, each `{id, rule}`. A draft that applies one cites it, `sce:assumed="<id>"`; every citation is listed. See below. |
+| `house_rules` | reported | The owner's standing answers to gaps that recur, each `{id, rule}` and, where the owner's words were kept, `quote` and `confirmation`. A draft that applies one cites it, `sce:assumed="<id>"`; every citation is listed. See below. |
 | `guidance` | guidance | Instructions to whoever writes the document, handed over as written. Nothing checks them. |
 
 Every setting belongs to one class and the schema fixes it, not the file:
@@ -3535,6 +3535,19 @@ profile's own lapse: `house rule H1, which the design applied at 3 places, now s
 profile. An edit to a rule the design never applied lapses the profile and names no
 rule, and a profile that no longer loads names none either, since a rule it cannot
 be read for is not said to be unchanged.
+
+A rule may say where it came from. `quote` is the owner's own words, copied as they
+were said; `confirmation` is `relayed` where a client reported that the owner said
+yes to the rule as worded. The word is modest on purpose: the product was not in
+the conversation, so it records a client's report and never "the owner confirmed".
+A rule written into the profile by hand carries neither, and is never read as
+confirmed. `confirmation` needs the `quote` (a yes says what it was a yes to), and
+an empty `quote` is refused. Each applied rule in the acceptance record repeats both
+(`applied_rules[].quote`, `.confirmation`, omitted when absent), so the acceptance
+says on what authority the design applied it. They are recorded as the rule stood
+at acceptance and are not compared afterwards: the lapse of a rule is about what it
+says. The authoring server's `scxml_house_rule` makes such rules from the owner's
+words and saves nothing until the client reports the owner's yes.
 
 The scenario set (§2.18) is pinned the same way under the role `examples`:
 `accept --scenarios` and `acceptance-check --scenarios`, at most one, compared by

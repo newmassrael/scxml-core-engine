@@ -23,6 +23,7 @@ So the shape a caller gets is:
     render_scxml_diagram    draw it as print figures, one SVG per container
     scxml_unresolved        what it marks as not decided yet
     scxml_requirement_set   the requirements a specification states, from the words quoted
+    scxml_house_rule        a standing rule the owner said, from their words, and only on their yes
     scxml_requirements      what it claims, or each requirement's outcome
     scxml_acceptance_report the page the owner reads before accepting
     scxml_accept            record the OWNER's acceptance, on their word only
@@ -71,7 +72,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import load_pack
 from .pseudo import render as render_pseudo
-from . import requirement_set
+from . import house_rule, requirement_set
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -153,8 +154,12 @@ SERVER_INSTRUCTIONS = (
     "with sce:assumed=\"<rule id>\" on the element it applies to, so that the "
     "answer says every place a rule was applied. Never apply a rule without "
     "citing it, never cite one that does not answer the gap, and never write "
-    "a rule yourself. Pass the profile to decisions too, so a citation of a "
-    "rule is not refused as an uncited guess. "
+    "a rule yourself: when the OWNER states a standing rule in their own words, "
+    "put it with scxml_house_rule, which keeps their words beside it and saves "
+    "nothing until they say yes. A rule that says `relayed` was reported "
+    "to have been confirmed by the owner, and the product could not see it; "
+    "say so when you apply it. Pass the profile to decisions too, so a "
+    "citation of a rule is not refused as an uncited guess. "
     "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
@@ -883,6 +888,55 @@ TOOLS = [
                 },
                 "doc_id": {"type": "string", "description":
                            "A short name for the specification; default `spec`."},
+            },
+        },
+    },
+    {
+        "name": "scxml_house_rule",
+        "description": (
+            "Make a standing rule the OWNER said into a house rule of their "
+            "authoring profile, so a draft applies it instead of asking. Use it "
+            "only when the owner states a rule in their own words (\"just ignore "
+            "anything the screen does not mention\"); never to write a rule "
+            "yourself, and never to make a draft pass. Give `rules`: one object "
+            "per rule, with `quote` (the owner's words, copied exactly), `rule` "
+            "(the standing answer, in your wording) and optionally `id`; give "
+            "`owner_words` (or `owner_words_text`) -- the text the owner wrote -- "
+            "when you hold it, and every quote is then held to it word for word. "
+            "Give `profile` (or `profile_text`) to add to the owner's profile; "
+            "without one this starts a profile that holds nothing but these "
+            "rules. The first call SAVES NOTHING: it returns `tell_the_owner`, "
+            "the rule beside their own words, for you to show them. Only when the "
+            "owner says yes to the rules as worded, call it again with the same "
+            "`rules` and `owner_confirmed: true`, and it returns `profile_text`, "
+            "which you save (this tool writes no file). Never set "
+            "`owner_confirmed` on your own say-so. The profile records each such "
+            "rule as `relayed` -- you reported that the owner said yes; the "
+            "product was not in the conversation -- and every acceptance that "
+            "applied the rule repeats the owner's words and that word. Ids "
+            "(H1, H2, ...) are assigned here unless you give one token."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["rules"],
+            "properties": {
+                **_file_input("profile", "the owner's authoring profile"),
+                **_file_input("owner_words", "the owner's own words"),
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["quote", "rule"],
+                        "properties": {
+                            "quote": {"type": "string"},
+                            "rule": {"type": "string"},
+                            "id": {"type": "string"},
+                        },
+                    },
+                },
+                "owner_confirmed": {"type": "boolean", "description":
+                                    "True only after the owner said yes to these rules as "
+                                    "worded in `tell_the_owner`."},
             },
         },
     },
@@ -1918,6 +1972,48 @@ def _requirement_set_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(reply, indent=2, ensure_ascii=False) + "\n")
 
 
+def _staged_text(staging: _Staging, path: pathlib.Path | None, what: str) -> str | None:
+    """The text of a file the caller handed over, or None when none was."""
+    if path is None:
+        return None
+    located = path if path.is_absolute() else staging.dir / path
+    try:
+        return located.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ToolArgumentError(f"{what} cannot be read as text: {error}") from error
+
+
+def _house_rule_tool(args: dict, staging: _Staging) -> dict:
+    profile = _staged_text(staging, staging.file(
+        args, "profile", "the owner's authoring profile", "profile.json", required=False),
+        "the profile")
+    owner_words = _staged_text(staging, staging.file(
+        args, "owner_words", "the owner's own words", "owner-words.txt", required=False),
+        "the owner's words")
+    confirmed = args.get("owner_confirmed", False)
+    if not isinstance(confirmed, bool):
+        raise ToolArgumentError("'owner_confirmed' has to be true or false")
+    try:
+        built = house_rule.build(profile, args.get("rules"), owner_words=owner_words,
+                                 confirmed=confirmed)
+    except house_rule.HouseRuleError as error:
+        raise ToolArgumentError(str(error)) from error
+    if built.profile_text is not None:
+        # ⚠ Held to the product's own reader before it is offered: what a profile
+        # may hold is the product's to say, and a profile it refuses is not one
+        # to hand an owner as saved.
+        made = staging.write("house-rule-profile.json", built.profile_text, "profile")
+        probe = staging.write(
+            "house-rule-probe.scxml",
+            '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">'
+            '<state id="s"/></scxml>', "document")
+        _, refusal = unresolved_markers(probe, profile=made, cwd=staging.dir)
+        if refusal:
+            raise ToolArgumentError("the profile this would make is not one the product "
+                                    f"reads, so nothing is offered: {refusal}")
+    return _text(json.dumps(house_rule.answer(built), indent=2, ensure_ascii=False) + "\n")
+
+
 def _requirements_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the SCXML document", "document.scxml")
     manifest = staging.file(args, "manifest", "the requirement manifest",
@@ -2059,6 +2155,7 @@ def _with_open_at_acceptance(report: str, record: pathlib.Path) -> str:
     # later change to the profile is compared against.
     if written.get("applied_rules"):
         answer["applied_rules"] = written["applied_rules"]
+        answer["applied_rules_standing"] = house_rule.standing(written["applied_rules"])
     return json.dumps(answer, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -2154,6 +2251,7 @@ _PACK_FREE = {
     "render_scxml_diagram": _diagram_tool,
     "scxml_unresolved": _unresolved_tool,
     "scxml_requirement_set": _requirement_set_tool,
+    "scxml_house_rule": _house_rule_tool,
     "scxml_requirements": _requirements_tool,
     "scxml_acceptance_report": _acceptance_report_tool,
     "scxml_accept": _accept_tool,

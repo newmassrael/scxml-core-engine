@@ -833,6 +833,24 @@ fully read — an unknown setting, another version — is refused whole as
 tell the assistant never to write a profile or to edit one to make a draft
 pass: which boundary a design is held to is the owner's decision.
 
+**scxml_house_rule** is the one way a rule gets into a profile without anyone
+writing JSON. The owner says a standing rule in their own words; the assistant
+brings those words with the rule it makes of them (`rules: [{quote, rule}]`, and
+the owner's text as `owner_words` when it holds it, which every quote is then held
+to word for word). The first call saves nothing: it returns `tell_the_owner`, the
+rule beside the owner's own words. Only when the owner says yes to the rules as
+worded does the assistant call it again with `owner_confirmed: true`, and the tool
+returns the profile text (it writes no file) with each new rule as
+`{id, rule, quote, confirmation: "relayed"}`. `relayed` is a client's report that
+the owner said yes: the product was not in the conversation and says only that.
+Ids are the lowest `H<n>` not in use unless one token is given; a rule that
+repeats one the profile holds, a quote that is not in the owner's words, or an id
+that names two rules is refused; and the profile it returns is read by the product
+before it is offered. Every acceptance that applied a rule repeats the owner's
+words and the word `relayed` in `applied_rules` and says, rule by rule, on what
+authority it stands (`applied_rules_standing`). A rule written into the profile by
+hand carries neither, and the answer says so of it.
+
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends
 on. A forge document's report shows the review-table lines that claim it,
