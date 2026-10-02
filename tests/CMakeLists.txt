@@ -398,7 +398,7 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends static_host_call)
+foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends static_host_call static_payload)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml

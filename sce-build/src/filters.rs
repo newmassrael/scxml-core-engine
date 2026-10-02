@@ -1424,6 +1424,10 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     register_event_wire_filters(env);
     env.add_filter("capitalize", capitalize_state);
     env.add_filter("to_cpp_event_variant", to_cpp_event_variant);
+    // The spelling the typed payload channel names an event's tag value and
+    // its payload struct by (`build_cpp_event_payload`), which is not the
+    // event enum's.
+    env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
     env.add_filter("split", filter_split);

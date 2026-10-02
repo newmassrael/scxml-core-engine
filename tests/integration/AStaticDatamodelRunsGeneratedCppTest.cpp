@@ -30,6 +30,7 @@
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_sm.h"
 
 #include <filesystem>
 #include <fstream>
@@ -73,9 +74,11 @@ public:
         machine_.initialize();
     }
 
-    /// An event goes in, and the macrostep it starts runs to the end.
-    void send(const std::string &name) {
-        machine_.raiseExternal(name);
+    /// An event goes in, and the macrostep it starts runs to the end. `data` is
+    /// the event's payload as JSON text, from which the machine lifts the typed
+    /// fields its schema names.
+    void send(const std::string &name, const std::string &data = "") {
+        machine_.raiseExternal(name, data);
         machine_.step();
     }
 
@@ -108,7 +111,7 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
     for (const auto &step : scenario["steps"]) {
         SCOPED_TRACE(machine + " step " + std::to_string(index++) + ": " + step.value("note", std::string{}));
         if (step.contains("event")) {
-            driver.send(step["event"].get<std::string>());
+            driver.send(step["event"].get<std::string>(), step.contains("data") ? step["data"].dump() : "");
         }
         const auto &expect = step["expect"];
         if (expect.value("ended", false)) {
@@ -156,6 +159,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnOverflowingOperationFailsInsteadOfW
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_overflow", driver);
+}
+
+// An event's typed payload is read in a guard and in assignments, and a
+// computation that does not fit skips its assignment and says so.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventsTypedPayloadIsReadInAGuardAndInContent) {
+    using Machine = G::static_payload::static_payload;
+    Driver<Machine> driver({
+        {"day", [](const Machine &m) { return json(m.day()); }},
+        {"late", [](const Machine &m) { return json(m.late()); }},
+        {"sinceEpoch", [](const Machine &m) { return json(m.sinceEpoch()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_payload", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

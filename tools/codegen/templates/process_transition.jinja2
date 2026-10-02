@@ -158,6 +158,17 @@ public:
                     this->ensureScriptEngine();
                     [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
+{#  SCE Accepted Subset §2.15: content that reads the event's typed payload
+    cannot run for a delivery that did not carry one, and an error stops the
+    block it arose in (W3C SCXML 4.9) — so the check guards the whole content,
+    once, before any of it runs. It raises nothing: the engine already said
+    `error.execution` where it failed to read the delivery, and one unreadable
+    delivery is one error. #}
+{% if trans.content_reads_payload %}
+                    if (pendingPayloadTag_ != {{ cpp_payload_tag }}::{{ trans.event | to_event_variant }}) {
+                        return;
+                    }
+{% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                    ") -}}

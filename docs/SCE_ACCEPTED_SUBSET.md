@@ -3043,10 +3043,15 @@ C++ lowers the scalar core through the same walk, and refuses the rest by name
 (`CppTarget::unsupported`: `generate/unsupported-feature`, "has no C++ lowering
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 `<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
-data model, `In()`, and a `<sce:action>` whose arguments are typed expressions
-of the machine's variables. A list, a record, an enum or bytes variable, a
-typed event payload, an `<invoke>`, a `<donedata>`, `<foreach>` and an imported
-algorithm are not lowered yet. Each variable is a member of the
+data model, `In()`, a `<sce:action>` whose arguments are typed expressions
+of the machine's variables, and an event's typed payload. A list, a record, an
+enum or bytes variable, an `<invoke>`, a `<donedata>`, `<foreach>` and an
+imported algorithm are not lowered yet. A guard that reads `_event.data` is
+the payload channel's own shape, `pendingPayloadTag_ == <Machine>PayloadTag::<Event>
+&& (…)`, over the `pending<Event>Payload_` member the engine fills; content that
+reads it opens with the same tag check and does not run for a delivery that
+carried none, raising nothing (the engine already said `error.execution` where
+it failed to read the delivery). Each variable is a member of the
 generated policy, `v_<snake_case id>`, initialised where it is declared; a
 published one has a reader of the author's spelling (`count()`), on the policy
 and forwarded by the machine, by value or as `const std::string&`. The
@@ -3062,8 +3067,10 @@ host call's arguments that can fail are computed into locals the same way, and
 the host is called only when none of them failed; otherwise `error.execution`
 is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
-scenarios `static_counter`, `static_counter_bound`, `static_overflow` and
-`static_block_ends` against the generated machines, and drives `static_host_call`
+scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
+`static_block_ends` and `static_payload` against the generated machines (an
+event's `data` goes in as the JSON text every other producer fills, and the
+machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes

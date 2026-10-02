@@ -1965,9 +1965,6 @@ impl StaticTarget for CppTarget {
                 var.id
             ));
         }
-        if !model.imported_event_schemas.is_empty() {
-            return Some("a typed event payload".to_string());
-        }
         for state in model.states.values() {
             let blocks = state
                 .on_entry_blocks
@@ -2149,13 +2146,23 @@ impl StaticTarget for CppTarget {
     fn condition_failed_flag(&self, if_ordinal: u32) -> String {
         format!("ifCondFailed{if_ordinal} = true;")
     }
-    // Asked of every transition, and a typed payload is refused, so no event
-    // carries one to read and the name is never spelled.
-    fn payload_accessor(&self, _event: &str) -> String {
-        String::new()
+    // The member the payload channel fills when the engine dequeues an event
+    // of this name (`build_cpp_event_payload`), read by the typed guards and
+    // by a `<sce:action>`'s arguments alike.
+    fn payload_accessor(&self, event: &str) -> String {
+        format!(
+            "pending{}Payload_",
+            filters::to_event_variant(event.to_string())
+        )
     }
-    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    // The tag says which event's payload the channel holds now, so a guard
+    // that reads this event's fields holds only for a delivery that carried
+    // them.
+    fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "pendingPayloadTag_ == {machine}PayloadTag::{} && ({lowered})",
+            filters::to_event_variant(event.to_string())
+        )
     }
     fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
         unreachable!("refused by CppTarget::unsupported")

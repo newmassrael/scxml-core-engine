@@ -2728,7 +2728,15 @@ fn render_cpp(
     // payload channel is built, as every backend that lowers one does.
     let static_lowering =
         crate::forge::static_lowering::lower_cpp(&mut model_lowered, &native_machine_name)?;
-    let payload = crate::forge::generator::build_cpp_event_payload(model, &native.payload_events);
+    // The events whose typed payload a lowered expression reads are ones the
+    // payload channel must carry, besides those a native action reads.
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .iter()
+        .chain(static_lowering.payload_events.iter())
+        .cloned()
+        .collect();
+    let payload = crate::forge::generator::build_cpp_event_payload(model, &payload_events);
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
     if model.datamodel != crate::model::Datamodel::SceStatic {
@@ -2799,6 +2807,9 @@ fn render_cpp(
         has_native_actions => native.any,
         native_actions_interface => &native.interface_name,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        // The enum naming which event's typed payload the channel holds
+        // (`build_cpp_event_payload`), for content that reads one.
+        cpp_payload_tag => format!("{native_machine_name}PayloadTag"),
         // Mirrored from the .h context: the `.inl` carries no namespace of
         // its own, but its invoke/child-send bodies reference sibling
         // machines via `::SCE::Generated::<child>` and must carry the same
