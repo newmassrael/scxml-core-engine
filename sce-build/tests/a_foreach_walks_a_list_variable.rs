@@ -123,10 +123,7 @@ fn a_loop_variable_is_a_name_nothing_in_scope_already_means() {
         (r#"item="v" index="total""#, "total"),
         (r#"item="v" index="v""#, "v"),
     ] {
-        refused(
-            &format!(r#"<foreach array="picked" {written}/>"#),
-            &format!("{name}"),
-        );
+        refused(&format!(r#"<foreach array="picked" {written}/>"#), name);
     }
     refused(
         r#"<foreach array="picked" item="v"><foreach array="picked" item="v"/></foreach>"#,
