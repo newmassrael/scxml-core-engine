@@ -16567,6 +16567,27 @@
         { "args": [true, true, 0, 2, 2, 1], "expected": 412, "note": "fuzz" }
       ]
     },
+    "stable_point": {
+      "fixture": "stable_point",
+      "signature": "(cursors: list<u64>, lastSeen: list<i64>, now: i64, maxIdle: i64) -> u64 may-fail",
+      "formula": "the least cursor among the devices whose cursor moved within maxIdle of now, 0 when none takes part; a list of another length than the cursors, or a negative maxIdle, fails 'precondition', and a difference now - lastSeen that overflows int64 fails 'overflow' (the standard document sce:std/merge/stable_point.scxml; no reference implementation runs it, so the cases are the document's definition)",
+      "cases": [
+        { "args": [[5, 3, 9], [100, 100, 100], 100, 50], "expected": 3, "note": "every device takes part: the least cursor" },
+        { "args": [[5, 3, 9], [100, 10, 100], 100, 50], "expected": 5, "note": "the device at cursor 3 idle for 90 is left out" },
+        { "args": [[5, 3, 9], [100, 50, 100], 100, 50], "expected": 3, "note": "idle for exactly maxIdle still takes part" },
+        { "args": [[5, 3, 9], [100, 49, 100], 100, 50], "expected": 5, "note": "idle for one more is left out" },
+        { "args": [[5, 3, 9], [10, 10, 10], 100, 50], "expected": 0, "note": "every device idle: nothing is stable" },
+        { "args": [[], [], 100, 50], "expected": 0, "note": "an empty group" },
+        { "args": [[7], [100], 100, 50], "expected": 7, "note": "a single device" },
+        { "args": [[4, 0], [100, 100], 100, 50], "expected": 0, "note": "a device that has read nothing holds the point at 0" },
+        { "args": [[4, 0], [100, 10], 100, 50], "expected": 4, "note": "a device that has read nothing and is idle is left out" },
+        { "args": [[5, 3], [100, 200], 100, 50], "expected": 3, "note": "a reading ahead of now is not idle" },
+        { "args": [[9223372036854775807, 9223372036854775806], [0, 0], 0, 0], "expected": 9223372036854775806, "note": "cursors past int32" },
+        { "args": [[5, 3], [100], 100, 50], "fails": "precondition", "note": "the lists differ in length" },
+        { "args": [[5], [100], 100, -1], "fails": "precondition", "note": "a negative bound" },
+        { "args": [[5], [-1], 9223372036854775807, 50], "fails": "overflow", "note": "now - lastSeen overflows" }
+      ]
+    },
     "sync_failure": {
       "fixture": "sync_failure",
       "signature": "(kind: u8, status: i32) -> u8 may-fail",

@@ -1805,6 +1805,23 @@
       }
     },
     {
+      "name": "stable_point",
+      "document": "sce:std/merge/stable_point.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "stable_point",
+      "args": [
+        { "list_of": "u64" },
+        { "list_of": "i64" },
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "sync_failure",
       "document": "sce:std/sync/sync_failure.scxml",
       "kind": "algorithm",

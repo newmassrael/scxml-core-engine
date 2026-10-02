@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/stable_point.scxml — the arrival number up to which every
+  device that still takes part has read the operations a server keeps: the
+  stable point a server folds its log into a snapshot at, and the point
+  orset_live's stable set is taken at.
+
+  `cursors[k]` is device k's read cursor, the arrival number of the last
+  operation it has read (0 when it has read none), and `lastSeen[k]` the wall
+  time (milliseconds) its cursor last advanced. The stable point is the least
+  cursor among the devices whose cursor moved within `maxIdle` milliseconds of
+  `now`: an operation at or before it has been read by all of them, so it can
+  be folded. A device idle for longer is left out, or a phone left in a drawer
+  would hold the whole group's compaction back for good; when it returns it is
+  given the snapshot again from the start and sends only its own operations
+  that were not yet uploaded, so nothing folded away is brought back.
+  `maxIdle` is a deployment policy, not this algorithm's.
+
+  With no device taking part — an empty group, or every device idle — nothing
+  is known to be read by all, and the answer is 0: nothing is folded. The
+  difference `now - lastSeen[k]` of two int64 readings can overflow, so it is
+  checked (may-fail); a reading ahead of `now` is not idle.
+
+  A cursor list and a reading list of different lengths, or a negative
+  `maxIdle`, fail `precondition`.
+
+  cursors [5, 3, 9], lastSeen [100, 100, 100], now 100, maxIdle 50 → 3 ·
+  lastSeen [100, 10, 100] (the device at cursor 3 idle for 90) → 5 ·
+  lastSeen [100, 50, 100] (idle for exactly maxIdle is still taking part) → 3.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="stable_point" version="1.0">
+  <sce:signature>
+    <sce:param name="cursors" type="list&lt;uint64&gt;"/>
+    <sce:param name="lastSeen" type="list&lt;int64&gt;"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="maxIdle" type="int64"/>
+    <sce:return type="uint64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="len(cursors) === len(lastSeen)"/>
+    <sce:require cond="maxIdle &gt;= 0"/>
+    <sce:var name="stable" type="uint64" init="0"/>
+    <sce:var name="taking" type="bool" init="false"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:while cond="i &lt; len(cursors)">
+      <sce:if cond="now - lastSeen[i] &lt;= maxIdle">
+        <sce:if cond="!taking || cursors[i] &lt; stable">
+          <sce:assign target="stable" expr="cursors[i]"/>
+        </sce:if>
+        <sce:assign target="taking" expr="true"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="stable"/>
+  </sce:body>
+</scxml>
