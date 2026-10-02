@@ -1853,11 +1853,34 @@ class Engine(Generic[S, E]):
         so a step coarser than the document's delays does not merely
         arrive late, it steps over deadlines the document distinguishes
         between. The generated W3C wrappers move time in fixed 50 ms
-        steps for exactly this reason: nothing told them any better."""
+        steps for exactly this reason: nothing told them any better.
+
+        ⚠ The session's OWN scheduler is not the whole answer. `advance_time`
+        ticks every active invoke child by the same delta (W3C SCXML 6.4: a
+        child `<send delay>` fires at the same absolute time on both sides), so
+        a child's deadline is a deadline of this machine's clock too: a host that
+        walks time by this answer and was told only the parent's stepped over the
+        child's, and a child that re-arms a timer was dated from the end of the
+        move. Measured 2026-10-02: a child that speaks 400 ms after it starts, by
+        two timers of 200, had spoken at 600 ms in three moves of 200 and had not
+        in one move of 600. The answer is the nearest of the session's own and
+        each unfinished child's (a child's own children included, since it asks the
+        same question)."""
+        soonest: Optional[int] = None
         next_due = self._scheduler.peek_next_due_ms()
-        if next_due is None:
-            return None
-        return max(0, next_due - self._now_ms)
+        if next_due is not None:
+            soonest = max(0, next_due - self._now_ms)
+        for invoke in self._active_invokes.values():
+            if invoke.is_done():
+                continue
+            child = getattr(invoke, "child", None)
+            ask = getattr(child, "time_until_next_scheduled_ms", None)
+            if ask is None:
+                continue
+            due = ask()
+            if due is not None and (soonest is None or due < soonest):
+                soonest = due
+        return soonest
 
     @property
     def now_ms(self) -> int:

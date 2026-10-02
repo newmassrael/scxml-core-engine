@@ -220,6 +220,15 @@ def load(into: pathlib.Path, document: pathlib.Path):
     main = generated_module_of(emitted, document)
     (into / "__init__.py").write_text("", encoding="utf-8")
     sys.path.insert(0, str(into.parent))
+    # ⚠ A statechart that starts a child session imports the child's module by its
+    # bare name (`import child_sm`, at the moment it starts the child). The
+    # generator writes a design's modules into one flat directory and expects a
+    # host to put that directory on its path; this loader is that host. It is safe
+    # here, and not in a long-lived server, because a process loads ONE design: a
+    # scenario's child process, a verification's worker, a draft's worker, so no
+    # second design's `child_sm` can answer for the first's.
+    if str(into) not in sys.path:
+        sys.path.insert(0, str(into))
     parent_spec = importlib.util.spec_from_file_location(
         into.name, into / "__init__.py", submodule_search_locations=[str(into)])
     parent = importlib.util.module_from_spec(parent_spec)

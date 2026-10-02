@@ -400,10 +400,15 @@ reports what it saw and fills no hole:
   from the end of the move that fires it, so 600 ms in one step and 200 ms three
   times were two runs of one machine (the retry machine passed the second and
   failed the first). The same time now passes the same way however an example
-  splits it. The engine says when its own deadlines fall and nothing of a child
-  session's; a design that starts one (`<invoke>`) does not start in this loader
-  today, because the generated parent imports the child's module by a bare name,
-  and every example of it is refused with the engine's words, not a traceback.
+  splits it. A child session is played too: a statechart that starts one
+  (`<invoke src>`) is handed over with the child among its documents (the first is
+  the statechart, the others what it uses), every document is built beside it, and
+  the parent imports the child's module by its bare name from that directory. The
+  engine's next deadline counts each active child's own, because `advance_time`
+  ticks the children by the same delta: before, a child that re-arms a timer was
+  dated from the end of a long move (measured 2026-10-02: a child that speaks at
+  400 ms by two timers of 200 had spoken at 600 ms in three moves and had not in
+  one). A document the product refuses refuses the design, and the reason names it.
 - An input is delivered under the name the example gives it. The generated
   engines carry an event as the descriptor the design declares, and W3C SCXML
   3.12.1 lets `request.new` match a transition on `request`, so a design reading

@@ -44,10 +44,19 @@ def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
     Time moves as `lowering.advance` moves it, deadline to deadline. This is
     `compare`'s drive, moved here whole. It used to run in the server."""
     recorder = SendRecorder()
-    engine = module.create_engine()
-    for processor in declared:
-        engine.register_event_processor(processor, recorder)
-    engine.initialize()
+    try:
+        engine = module.create_engine()
+        for processor in declared:
+            engine.register_event_processor(processor, recorder)
+        engine.initialize()
+    except Exception as exc:  # noqa: BLE001 - a machine that cannot start is the draft's answer
+        # What the engine said, as the draft's own answer and not a traceback out
+        # of the comparison: a draft that starts a child session whose module is
+        # not there (one document per draft) dies here, and used to take the whole
+        # comparison with it.
+        return [("unplayable", f"the engine could not start the draft: "
+                               f"{type(exc).__name__}: {exc}, so nothing it does is its "
+                               f"behaviour")]
     policy = engine.policy
     out: list = []
 

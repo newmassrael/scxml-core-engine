@@ -399,12 +399,17 @@ class TestWhatTheEngineDoesNotShow(Played):
         played at all: the generated parent imports the child's module by a
         bare name the loader does not put on the path, and `initialize()` died
         with ModuleNotFoundError, which took the whole call down with it. Each
-        example is refused with what the engine said instead. A design that
-        starts a child is the trigger today; any failure to start is the case."""
+        example is refused with what the engine said instead.
+
+        The design's other documents are built beside it now, so the trigger is
+        a child the call was never handed: the design starts one whose module
+        nothing built. Any failure to start is the case."""
         parent = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">'
-                  '<state id="a"><invoke type="scxml"><content>'
-                  '<scxml version="1.0" initial="c"><state id="c"/></scxml></content></invoke>'
+                  '<state id="a"><invoke type="scxml" src="child.scxml"/>'
                   '<transition event="go" target="b"/></state><state id="b"/></scxml>')
+        (self.work / "child.scxml").write_text(
+            '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">'
+            '<state id="c"/></scxml>', encoding="utf-8")
         spec = self.one_example(["go"], [{"send": "go", "expect": {"condition": "b"}}],
                                 ["a", "b"])
         spec["scenarios"].append({"id": "E2", "quote": "an example", "steps": [
@@ -415,6 +420,7 @@ class TestWhatTheEngineDoesNotShow(Played):
         for record in answer["judgement"]:
             if record["kind"] == "verdict":
                 self.assertIn("could not start the design", record["reason"])
+                self.assertIn("child_sm", record["reason"])
         self.assertEqual(0, self.summary(answer)["fail"], self.summary(answer))
 
     @staticmethod

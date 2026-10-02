@@ -1690,7 +1690,11 @@ def _scenarios_tool(args: dict, staging: _Staging) -> dict:
     read = read_scenario_set(chosen, located(specification) if specification else None)
     usable = any(r.get("kind") == "scenario-set" and r.get("usable") for r in read)
     withheld = staging.designs_withheld
-    played = run_scenarios(chosen, located(documents[0])) if usable and withheld is None else None
+    # The rest of the design goes with the statechart: a child session it starts is
+    # one of them, and is built beside it.
+    rest = tuple(located(path) for path in documents[1:])
+    played = (run_scenarios(chosen, located(documents[0]), others=rest)
+              if usable and withheld is None else None)
     return _text(json.dumps(scenario_answer(read, played, withheld=withheld), indent=2,
                             ensure_ascii=False) + "\n")
 

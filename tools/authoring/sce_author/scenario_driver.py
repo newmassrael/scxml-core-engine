@@ -50,8 +50,8 @@ from . import process
 # `lowering`'s because a comparison walks time by the same rule under the same
 # ceiling; the name stays here so a caller can still play under another.
 from .lowering import MAX_TIME_STOPS
-from .verify import (VerifyError, _default_codegen, _scratch, generate, scenario_judgement,
-                     scenario_set_reading)
+from .verify import (VerifyError, _default_codegen, _scratch, generate, generate_companions,
+                     scenario_judgement, scenario_set_reading)
 
 ENGINE_NAME = "Python lowering"
 RECORD = "sce-observation-trace"
@@ -109,7 +109,7 @@ class _Built:
     and the Lua machine are the children's."""
 
     def __init__(self, document: pathlib.Path, codegen: pathlib.Path,
-                 into: pathlib.Path, serves: tuple) -> None:
+                 into: pathlib.Path, serves: tuple, others: tuple = ()) -> None:
         self.document = document
         self.into = into
         self.refusal = ""
@@ -121,6 +121,10 @@ class _Built:
         if kind != "statechart":
             self.refusal = (f"{document.name} is a {kind or 'document of no known kind'}, and a "
                             f"scenario drives a statechart")
+            return
+        # The rest of the design, built beside it: a child session the statechart
+        # starts imports its module by name when it starts it.
+        self.refusal = generate_companions(others, codegen, into, serves=serves)
 
     @property
     def generator(self) -> str | None:
@@ -165,9 +169,13 @@ def _in_a_child(request: dict, limits: process.Limits) -> dict:
 
 
 def drive(scenario_set: pathlib.Path, document: pathlib.Path,
-          codegen: pathlib.Path | None = None, *, limits: process.Limits | None = None) -> dict:
+          codegen: pathlib.Path | None = None, *, limits: process.Limits | None = None,
+          others: tuple = ()) -> dict:
     """The observation trace of every runnable scenario in the set, played
     against the design `document` on the Python lowering.
+
+    `others` are the rest of the design: the documents the statechart uses, a
+    child session it starts among them. They are built beside it.
 
     The set is read for what a driver needs and no more; whether it is a
     usable set is `sce-codegen scenarios`' answer, and `judge-scenarios`
@@ -189,7 +197,8 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
     data = list(interface.get("data") or [])
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     with _scratch() as scratch:
-        built = _Built(document, codegen, scratch / "design", serves)
+        built = _Built(document, codegen, scratch / "design", serves,
+                       tuple(pathlib.Path(other) for other in others))
         if built.refusal:
             # The design could not be built, or is not a statechart: the same
             # on every machine, and no child has anything to play into.
@@ -258,10 +267,10 @@ def _records(report: str, refusal: str, what: str) -> list:
 
 
 def run(scenario_set: pathlib.Path, document: pathlib.Path,
-        codegen: pathlib.Path | None = None) -> dict:
+        codegen: pathlib.Path | None = None, others: tuple = ()) -> dict:
     """Drive the set against the design, and have the product judge what was
     seen: `{"trace": ..., "judgement": [records]}`."""
-    trace = drive(scenario_set, document, codegen)
+    trace = drive(scenario_set, document, codegen, others=others)
     return {"trace": trace, "judgement": judge(scenario_set, trace, codegen)}
 
 

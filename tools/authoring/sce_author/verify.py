@@ -423,6 +423,29 @@ def generate(document: pathlib.Path, codegen: pathlib.Path,
     return build
 
 
+def generate_companions(documents, codegen: pathlib.Path, into: pathlib.Path,
+                        backend: str = "python", serves: tuple[str, ...] = ()) -> str:
+    """Build the rest of a design beside its own module, and say why not if one
+    will not build: `""`, or the refusal naming the document.
+
+    A statechart that starts a child session (`<invoke src>`) imports the child's
+    module when it starts it, and a design is the documents the owner handed over
+    together: the statechart first, and the others it uses. Only the first was
+    built, so the child was never there and the parent died starting it. Every
+    other document is built into the same directory, the way the generator expects
+    a design's modules to sit.
+
+    ⚠ A refusal of ANY of them is the design's. These are documents the owner
+    handed over as part of it, the driver's claim is about the Python lowering of
+    all of them, and one that cannot be lowered is a design that cannot be played
+    as handed over. The product's own words follow the document's name."""
+    for document in documents:
+        built = generate(pathlib.Path(document), codegen, into, backend, serves)
+        if built.refusal:
+            return f"{pathlib.Path(document).name} could not be built: {built.refusal}"
+    return ""
+
+
 def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
           host_processors, backend: str) -> Build:
     """One run of the generator. Its refusal, or its manifest.
@@ -2250,10 +2273,19 @@ class StatechartRun:
         # The sink lives where the machine does: the sends are made in the
         # process that plays the design and come back as copies (`sandbox`).
         self.recorder = module.new_recorder()
-        self.engine = module.create_engine()
-        for processor in build.declared:
-            self.engine.register_event_processor(processor, self.recorder)
-        self.engine.initialize()
+        try:
+            self.engine = module.create_engine()
+            for processor in build.declared:
+                self.engine.register_event_processor(processor, self.recorder)
+            self.engine.initialize()
+        except sandbox.WorkerStopped:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a machine that cannot start is the answer
+            # The engine's own words, as a refusal of the run: a design whose child
+            # session cannot be started (`No module named 'child_sm'`) used to leave
+            # `verify` with a traceback and the owner with no answer.
+            raise VerifyError(f"the engine could not start the design: "
+                              f"{type(exc).__name__}: {exc}") from exc
         # A machine that is cut short or fails on its way into the initial
         # configuration is not the design's, and no case read off it can be.
         self.check(" while the machine was starting")
