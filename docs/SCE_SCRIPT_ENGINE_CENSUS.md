@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 264
+engine-documents 265
 native-prefix-documents 2
-datamodel-variable-init 449
-transition-guard 242
-assign-action 388
+datamodel-variable-init 456
+transition-guard 244
+assign-action 403
 child-invoke-needs-script-engine 55
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 67
+send-dynamic-attr 69
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -358,6 +358,15 @@ never spelled correctly.
   data items, two assigns and two `targetexpr` sends raised
   `datamodel-variable-init` by three (446 to 449), `assign-action` by two
   (386 to 388) and `send-dynamic-attr` by two (65 to 67).
+  ⚠ **2026-10-02, deliberately:** `tests/integration/external_chain_is_bounded.scxml`
+  (one engine document, and it has to be one: its `zero_expr` outcome needs a
+  `delayexpr`, which `sce-static` refuses; seven data items, fifteen assigns,
+  two guards, and two `delayexpr` sends)
+  raised `engine-documents` by one (264 to 265), `datamodel-variable-init` by
+  seven (449 to 456), `assign-action` by fifteen (388 to 403),
+  `transition-guard` by two (242 to 244) and `send-dynamic-attr` by two (67 to
+  69). It landed without this entry, so `main` read red until this one; the
+  block was re-derived from this test's output, not merged.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
