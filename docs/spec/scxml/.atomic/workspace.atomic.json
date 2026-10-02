@@ -11667,6 +11667,14 @@
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "refusal",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/INativeActionHost.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17341,6 +17349,42 @@
         },
         {
           "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/actions/NativeAction.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/ActionParser.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/ParsingCommon.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IActionExecutor.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/INativeActionHost.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
           "kind": "references"
         }
       ],

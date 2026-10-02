@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "3415f3a8c6f",
+  "embed_version": "928c9006a02",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 294,
+  "symbol_count": 296,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -95,6 +95,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::LogAction"
+    },
+    {
+      "header": "actions/NativeAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::NativeAction"
     },
     {
       "header": "actions/RaiseAction.h",
@@ -1797,6 +1803,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::IExecutionContext"
+    },
+    {
+      "header": "runtime/INativeActionHost.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::INativeActionHost"
     },
     {
       "header": "runtime/InterpreterDocument.h",

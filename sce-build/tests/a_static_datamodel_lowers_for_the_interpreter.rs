@@ -103,12 +103,18 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // Floor: a scan that found nothing to lower would pass. What is lowered
     // today — scalars, checked integers, the typed payload, lists, records and
     // calls of scalar algorithms — is at least these nine machines, and the
-    // floor rises as the lowering grows (`static_host_call` needs a host action
-    // and is the one left).
+    // floor rises as the lowering grows.
     assert!(
         lowered.len() >= 9,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
+    );
+    // A host operation is performed by the host installed on the machine
+    // (`INativeActionHost`), so `static_host_call` lowers: its arguments are
+    // expressions, lowered as any are.
+    assert!(
+        lowered.iter().any(|name| name == "static_host_call"),
+        "static_host_call is lowered for the Interpreter: lowered {lowered:?}"
     );
     // What is refused says which construct, so an author knows what to change.
     for (name, text) in &refused {

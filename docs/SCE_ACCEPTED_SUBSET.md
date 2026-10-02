@@ -2192,6 +2192,29 @@ machine asked the host to do, answer with an event, check the snapshot. A
 `bytes` argument is recorded as a `List<Byte>` copy, so a recorded call
 compares by value. The other five backends do not generate one yet.
 
+**The Interpreter** loads a document at run time and has no interface to
+generate, so its host is `INativeActionHost` (`sce/include/runtime/`),
+installed with `StateMachine::setNativeActionHost` before `start()` — an
+`<onentry>` of the initial state performs its actions during `start()`, the
+reason the AOT host is a constructor requirement. The action's `name` is the
+operation, and each `<sce:arg expr>` is an expression of the document's data
+model, evaluated when the action runs, in document order, to a `bool`, an
+integer, a real or a string; the host answers whether it performed the
+operation. An action nobody performs is **not dropped**: no host installed, a
+host that answers it provides no such operation, an argument that cannot be
+evaluated, and an argument that is no value a host operation takes (an array,
+an object, `undefined`) each raise `error.execution` — the rule §scxml-6.4.1
+gives an `<invoke>` of a type the processor does not implement — and an
+argument that fails stops the action before the host is called. It runs wherever
+executable content does (inside an `<if>` too: the Interpreter has no v1
+placement rule). A child session an `<invoke>` starts has no host of its own.
+Until this existed the Interpreter's action parser skipped the element like any
+foreign one (§scxml-4.10), and the document's request vanished with no event.
+`tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp` holds it, and
+`sce-codegen lower` lowers a `sce-static` document's arguments for it, so
+`static_host_call` replays on the Interpreter with the same calls the
+generated backends' hosts are given.
+
 The host arrives where the machine is CONSTRUCTED on every backend, not
 through a setter, and that is a requirement rather than a style: an
 `<onentry>` in the initial state performs its act during
@@ -3308,10 +3331,13 @@ of numbers, a `bytes` buffer is appended to as a list is (an append of a `bytes`
 value extends it), and a `<sce:const>` table is built when the algorithm is
 installed, by the same evaluator every backend's is.
 
-A construct with no lowering yet — `<sce:action>`, a `bytes` literal, and
-executable content beyond `<assign>`, `<if>`, `<log>`, `<raise>`, `<cancel>`,
-`<sce:append>`, `<sce:clear>` and a `<send>` with no `<param>` — is refused with
+A construct with no lowering yet — a `bytes` literal, a top-level `<script>`,
+an `<invoke>`, a `<donedata>` of a state, and a `<send>` that carries a
+`<param>` or a `<content expr>` — is refused with
 `generate/unsupported-feature` naming it, never passed through half lowered.
+`<sce:action>` is lowered (§2.11): its `<sce:arg>` expressions are lowered as
+any expression is, and the action is performed by the host installed on the
+machine.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the Kotlin and Rust backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the

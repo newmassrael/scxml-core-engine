@@ -26,6 +26,7 @@
 // constructs have no lowering yet is refused with a typed diagnostic naming
 // the construct, and starts being replayed the day the lowering covers it.
 
+#include "runtime/INativeActionHost.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -226,6 +227,65 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
                                     << " scenarios, not yet lowered: " << notYetLowered.size();
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
+    }
+}
+
+namespace {
+
+/// A host that performs every operation and records each call as the JSON of
+/// its arguments.
+class RecordingHost : public INativeActionHost {
+public:
+    bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &args) override {
+        nlohmann::json values = nlohmann::json::array();
+        for (const auto &arg : args) {
+            if (const auto *flag = std::get_if<bool>(&arg)) {
+                values.push_back(*flag);
+            } else if (const auto *whole = std::get_if<int64_t>(&arg)) {
+                values.push_back(*whole);
+            } else if (const auto *real = std::get_if<double>(&arg)) {
+                values.push_back(*real);
+            } else if (const auto *text = std::get_if<std::string>(&arg)) {
+                values.push_back(*text);
+            } else {
+                values.push_back(nullptr);
+            }
+        }
+        calls.push_back({name, values});
+        return true;
+    }
+
+    std::vector<std::pair<std::string, nlohmann::json>> calls;
+};
+
+}  // namespace
+
+// `static_host_call` is the one fixture with no scenario: its host operation is
+// the host's, so what it holds is the calls the host was given. The generated
+// backends hold the same calls in their own tests (a generated recording host
+// on Rust and Kotlin); here the Interpreter performs the action through the host
+// installed on the machine, with the arguments its engine computes from the
+// lowered expressions — a variable, and a comparison over it.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHostActionIsPerformedWithTheValuesItsArgumentsComputeTo) {
+    const Lowered lowered = lower(kFixtures / "static_host_call.scxml");
+    ASSERT_TRUE(lowered.ok) << "`<sce:action>` is lowered for the Interpreter now: " << lowered.refusal.dump();
+
+    const auto host = std::make_shared<RecordingHost>();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    machine->setNativeActionHost(host);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document));
+    ASSERT_TRUE(machine->start());
+    for (int retry = 0; retry < 4; ++retry) {
+        machine->processEvent("retry", "");
+    }
+
+    ASSERT_EQ(host->calls.size(), 4u) << "one call per entry of `idle`; the fourth retry finds `attempts < 3` false";
+    const std::vector<std::pair<int, bool>> expected = {{0, false}, {1, false}, {2, false}, {3, true}};
+    for (std::size_t n = 0; n < expected.size(); ++n) {
+        SCOPED_TRACE("call " + std::to_string(n));
+        EXPECT_EQ(host->calls[n].first, "showAttempts");
+        EXPECT_EQ(host->calls[n].second, nlohmann::json::array({expected[n].first, expected[n].second}))
+            << "each with the datamodel as it stood";
     }
 }
 

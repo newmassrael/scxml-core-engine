@@ -51,6 +51,7 @@ public:
     bool executeSendAction(const SendAction &action) override;
     bool executeCancelAction(const CancelAction &action) override;
     bool executeForeachAction(const ForeachAction &action) override;
+    bool executeNativeAction(const NativeAction &action) override;
     bool evaluateCondition(const std::string &condition) override;
 
     // Test verification methods

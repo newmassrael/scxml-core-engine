@@ -1646,6 +1646,11 @@ bool StateMachine::setupJSEnvironment() {
         }
     }
 
+    // The host of the machine's `<sce:action>`s, if one was installed before start
+    if (nativeActionHost_ && cachedExecutorImpl_) {
+        cachedExecutorImpl_->setNativeActionHost(nativeActionHost_);
+    }
+
     // Pass EventRaiser to ActionExecutor if available
     if (eventRaiser_ && actionExecutor_) {
         actionExecutor_->setEventRaiser(eventRaiser_);
@@ -1943,6 +1948,14 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     // ARCHITECTURE.md Zero Duplication: Shared block orchestration between Interpreter and AOT
     SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_,
                                                                                     stateId);
+}
+
+// §scxml-G-7: the host of the machine's `<sce:action>`s
+void StateMachine::setNativeActionHost(std::shared_ptr<INativeActionHost> host) {
+    nativeActionHost_ = std::move(host);
+    if (cachedExecutorImpl_) {
+        cachedExecutorImpl_->setNativeActionHost(nativeActionHost_);
+    }
 }
 
 // EventDispatcher management

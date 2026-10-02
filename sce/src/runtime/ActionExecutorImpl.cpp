@@ -7,6 +7,7 @@
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
 #include "actions/LogAction.h"
+#include "actions/NativeAction.h"
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
@@ -34,6 +35,7 @@
 #include "events/InvokeEventTarget.h"
 #include "events/ParentEventTarget.h"
 #include "runtime/ExecutionContextImpl.h"
+#include "runtime/INativeActionHost.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <atomic>
@@ -1198,6 +1200,64 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         }
         return false;
     }
+}
+
+void ActionExecutorImpl::setNativeActionHost(std::shared_ptr<INativeActionHost> host) {
+    nativeActionHost_ = std::move(host);
+}
+
+bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {
+    // §scxml-G-7: a custom action element names an operation the platform
+    // performs. The host is the platform here, and an operation nobody performs
+    // is not dropped: §scxml-6.4.1 gives an element the processor does not
+    // implement `error.execution`, and the same rule applies to this one.
+    SCE_LOG_DEBUG("Executing native action: {}", action.getOperation());
+
+    auto fail = [&](const std::string &reason) {
+        SCE_LOG_ERROR("Native action '{}' failed: {}", action.getOperation(), reason);
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", "<sce:action name='" + action.getOperation() + "'>: " + reason);
+        }
+        return false;
+    };
+
+    if (!isSessionReady()) {
+        return fail("the session is not ready");
+    }
+    if (!nativeActionHost_) {
+        return fail("no host is installed to perform it");
+    }
+
+    // Every argument is computed before the host is called: a value that cannot
+    // be computed, or is no value a host operation takes, stops the action
+    // before it happens, as an expression that fails stops an <assign>.
+    std::vector<ScriptValue> values;
+    values.reserve(action.getArguments().size());
+    try {
+        ensureCurrentEventSet();
+        for (const auto &argument : action.getArguments()) {
+            auto result = scriptEngine_.evaluateExpression(sessionId_, argument.expr).get();
+            if (!result.isSuccess()) {
+                return fail("the argument `" + argument.expr + "` could not be evaluated: " + result.getErrorMessage());
+            }
+            const ScriptValue &value = result.getInternalValue();
+            const bool takenByAHost = std::holds_alternative<bool>(value) || std::holds_alternative<int64_t>(value) ||
+                                      std::holds_alternative<double>(value) ||
+                                      std::holds_alternative<std::string>(value);
+            if (!takenByAHost) {
+                return fail("the argument `" + argument.expr +
+                            "` is not a bool, a number or a string, which is what a host operation takes");
+            }
+            values.push_back(value);
+        }
+    } catch (const std::exception &e) {
+        return fail(std::string("an argument could not be evaluated: ") + e.what());
+    }
+
+    if (!nativeActionHost_->performNativeAction(action.getOperation(), values)) {
+        return fail("the host provides no such operation");
+    }
+    return true;
 }
 
 bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {

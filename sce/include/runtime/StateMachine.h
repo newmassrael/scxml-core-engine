@@ -39,6 +39,7 @@ namespace SCE {
 class StateNode;
 class TransitionNode;
 class ActionExecutorImpl;  // Forward declaration for cached pointer optimization
+class INativeActionHost;
 
 /**
  * @brief Dummy policy struct for EntryExitHelper template instantiation
@@ -605,6 +606,18 @@ public:
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
     /**
+     * @brief §scxml-G-7: install the host this machine's `<sce:action>`s are performed by
+     *
+     * Install it before `start()`: an `<onentry>` of the initial state performs
+     * its actions during `start()`, so a host installed afterwards arrives one
+     * action too late. A native action nobody performs raises `error.execution`.
+     * A child session started by an `<invoke>` has no host of its own.
+     *
+     * @param host The host (see `INativeActionHost`)
+     */
+    void setNativeActionHost(std::shared_ptr<INativeActionHost> host);
+
+    /**
      * @brief §scxml-6.4.3: Set completion callback for top-level final state notification
      *
      * This callback is invoked when the StateMachine reaches a top-level final state,
@@ -879,6 +892,9 @@ private:
 
     // Event dispatching for delayed events and external targets
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
+
+    // The host this machine's `<sce:action>`s are performed by
+    std::shared_ptr<INativeActionHost> nativeActionHost_;
 
     // EventRaiser: holds both of Appendix D's queues
     std::shared_ptr<IEventRaiser> eventRaiser_;

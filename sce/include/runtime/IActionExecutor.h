@@ -17,6 +17,7 @@ class AssignAction;
 class SendAction;
 class CancelAction;
 class ForeachAction;
+class NativeAction;
 class IEventRaiser;
 
 /**
@@ -89,6 +90,14 @@ public:
      * @return true if execution was successful
      */
     virtual bool executeForeachAction(const ForeachAction &action) = 0;
+
+    /**
+     * @brief Execute a native action (a host operation, §scxml-G-7)
+     * @param action NativeAction to execute
+     * @return true if the host performed it; false when it could not be (the
+     *         executor has raised `error.execution`)
+     */
+    virtual bool executeNativeAction(const NativeAction &action) = 0;
 
     // Low-level primitives (for internal use)
     /**

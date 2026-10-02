@@ -10,6 +10,7 @@
 namespace SCE {
 
 const std::string ParsingCommon::Constants::SCXML_NAMESPACE = "http://www.w3.org/2005/07/scxml";
+const std::string ParsingCommon::Constants::SCE_NAMESPACE = "http://sce.dev/ext";
 const std::string ParsingCommon::Constants::CODE_NAMESPACE = "http://tempuri.org/code";
 const std::string ParsingCommon::Constants::CTX_NAMESPACE = "http://tempuri.org/context";
 const std::string ParsingCommon::Constants::DI_NAMESPACE = "http://www.omg.org/spec/SCXML/20150901/DI";
@@ -64,6 +65,10 @@ bool ParsingCommon::isScxmlNamespace(const std::shared_ptr<IXMLElement> &element
     // SCE_WIRE_CONTRACTS.md carries the same distinction on the
     // producer side.
     return element->getNamespace() == Constants::SCXML_NAMESPACE;
+}
+
+bool ParsingCommon::isSceNamespace(const std::shared_ptr<IXMLElement> &element) {
+    return element && element->getNamespace() == Constants::SCE_NAMESPACE;
 }
 
 std::vector<std::shared_ptr<IXMLElement>> ParsingCommon::findChildElements(const std::shared_ptr<IXMLElement> &element,

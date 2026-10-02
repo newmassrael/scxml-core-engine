@@ -7,6 +7,7 @@
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
 #include "actions/LogAction.h"
+#include "actions/NativeAction.h"
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
@@ -315,6 +316,12 @@ bool MockActionExecutor::executeForeachAction(const ForeachAction &action) {
     // In real tests, this would be mocked with EXPECT_CALL
     (void)action;
     return true;  // Foreach always succeeds in mock
+}
+
+bool MockActionExecutor::executeNativeAction(const NativeAction &action) {
+    // A host operation is the host's, and this mock has none to perform.
+    (void)action;
+    return true;
 }
 
 // MockExecutionContext implementation

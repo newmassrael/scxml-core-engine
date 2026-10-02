@@ -7,6 +7,7 @@
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
 #include "actions/LogAction.h"
+#include "actions/NativeAction.h"
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
@@ -259,6 +260,23 @@ SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &e
 }
 
 std::shared_ptr<SCE::IActionNode>
+SCE::ActionParser::parseNativeAction(const std::shared_ptr<IXMLElement> &actionElement) {
+    // The node is made whatever the element lacks: a `<sce:action>` with no
+    // `name` names no operation, which the host answers by providing none, and
+    // that is an `error.execution` where it runs rather than a node that was
+    // never made.
+    const std::string operation = actionElement->hasAttribute("name") ? actionElement->getAttribute("name") : "";
+    auto action = std::make_shared<SCE::NativeAction>(operation);
+    for (const auto &child : actionElement->getChildren()) {
+        if (ParsingCommon::isSceNamespace(child) && ParsingCommon::matchNodeName(child->getName(), "arg")) {
+            action->addArgument(child->hasAttribute("expr") ? child->getAttribute("expr") : "",
+                                child->hasAttribute("name") ? child->getAttribute("name") : "");
+        }
+    }
+    return action;
+}
+
+std::shared_ptr<SCE::IActionNode>
 SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionElement) {
     if (!actionElement) {
         SCE_LOG_WARN("Null action element");
@@ -274,6 +292,15 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
     //
     // ⚠ Until 2026-09-24 only `isActionNode` asked, so `<x:raise>` in an
     // <onentry> still raised and `<x:if>` still branched on that path.
+    //
+    // One element of another namespace is this engine's own: SCE's
+    // `<sce:action>`, a host operation (§scxml-G-7). It was skipped here
+    // like any foreign element until it was given a meaning, so a document
+    // that asked the host to do something had that dropped without a word.
+    if (ParsingCommon::isSceNamespace(actionElement) &&
+        ParsingCommon::matchNodeName(actionElement->getName(), "action")) {
+        return parseNativeAction(actionElement);
+    }
     if (!ParsingCommon::isScxmlNamespace(actionElement)) {
         SCE_LOG_DEBUG("ActionParser: '{}' is not SCXML's executable content; skipped", actionElement->getName());
         return nullptr;

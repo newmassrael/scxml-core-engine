@@ -1174,6 +1174,7 @@ add_executable(integration_tests
     # origin — and the generated engines never had the sites.
     integration/EventBindingAcrossAMacrostepTest.cpp
     integration/HostCallTakesTheExternalQueueTest.cpp
+    integration/NativeActionRunsUnderTheInterpreterTest.cpp
     integration/ReentrantDeliveryWaitsItsTurnTest.cpp
     integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
     integration/UnseenEventIsReportedTest.cpp

@@ -25,6 +25,7 @@ public:
      */
     struct Constants {
         static const std::string SCXML_NAMESPACE;
+        static const std::string SCE_NAMESPACE;
         static const std::string CODE_NAMESPACE;
         static const std::string CTX_NAMESPACE;
         static const std::string DI_NAMESPACE;
@@ -51,6 +52,13 @@ public:
      * `http://example.com/framework`, not the SCXML URI.
      */
     static bool isScxmlNamespace(const std::shared_ptr<IXMLElement> &element);
+
+    /**
+     * @brief True when `element`'s namespace URI is SCE's extension namespace
+     *        (`http://sce.dev/ext`) — the namespace of `<sce:action>` and
+     *        `<sce:arg>`, which are the Interpreter's to run (§scxml-G-7).
+     */
+    static bool isSceNamespace(const std::shared_ptr<IXMLElement> &element);
 
     /**
      * @brief Find child elements with matching local name AND the W3C

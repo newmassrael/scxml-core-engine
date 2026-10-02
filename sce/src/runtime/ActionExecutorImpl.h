@@ -19,6 +19,7 @@ namespace SCE {
 // Forward declarations
 class IEventDispatcher;
 class IActionNode;
+class INativeActionHost;
 
 // Import EventMetadata from core namespace (Single Source of Truth)
 using Core::EventMetadata;
@@ -55,6 +56,7 @@ public:
     bool executeSendAction(const SendAction &action) override;
     bool executeCancelAction(const CancelAction &action) override;
     bool executeForeachAction(const ForeachAction &action) override;
+    bool executeNativeAction(const NativeAction &action) override;
 
     // Low-level primitives
     bool executeScript(const std::string &script) override;
@@ -119,6 +121,12 @@ public:
      */
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
+    /**
+     * @brief Install the host the machine's `<sce:action>`s are performed by
+     * @param host The host, or null to leave every native action unperformed
+     */
+    void setNativeActionHost(std::shared_ptr<INativeActionHost> host);
+
 private:
     IScriptEngine &scriptEngine_;
     /// §scxml-B-2-8-1: which rung the last bound payload got — see
@@ -136,6 +144,7 @@ private:
     std::optional<ScriptValue> currentTypedData_;  // §scxml-5.10: Typed event data (engine-agnostic)
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
+    std::shared_ptr<INativeActionHost> nativeActionHost_;
 
     // Assignment context tracking to prevent _event updates during assign actions
 

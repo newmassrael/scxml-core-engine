@@ -213,6 +213,11 @@ impl StaticTarget for JsTarget {
     fn name(&self) -> &'static str {
         LOWERED_DATAMODEL
     }
+    // The Interpreter performs `<sce:action>` through the host installed on the
+    // machine (`INativeActionHost`), with the arguments its engine computes.
+    fn lowers_host_action_arguments(&self) -> bool {
+        true
+    }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         let symbol = self.algorithms.get(document_name)?;
         Some(Callee {
@@ -433,7 +438,9 @@ fn unsupported_action(action: &Action) -> Option<String> {
         }
         "send" => None,
         "sce_append" | "sce_clear" => None,
-        "native_action" => Some("<sce:action>".to_string()),
+        // A host operation: the Interpreter performs it through its host, and
+        // the arguments are expressions the walk lowers.
+        "native_action" => None,
         other => Some(format!("a <{other}> action")),
     }
 }

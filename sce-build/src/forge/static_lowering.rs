@@ -225,6 +225,14 @@ pub trait StaticTarget {
     /// Interpreter's ecmascript lowering is one, and `Language` means a backend
     /// every forge kind and every conformance run must cover.
     fn name(&self) -> &'static str;
+    /// Whether this target leaves a `<sce:action>` as the document wrote it and
+    /// lowers each `<sce:arg>` expression where it stands — the Interpreter's
+    /// ecmascript, whose engine evaluates the arguments and hands them to the
+    /// host. A generated backend renders the whole call into a host trait
+    /// instead (`forge::native_action`), and is not asked.
+    fn lowers_host_action_arguments(&self) -> bool {
+        false
+    }
     /// How a call of the imported algorithm `document_name` is spelled, and
     /// the line that imports it — or `None` for a target that does not reach
     /// algorithms yet, which refuses a document that calls one rather than
@@ -2204,6 +2212,16 @@ fn lower_action(
                 action.native_loop_prologue = prologue;
             }
             return lower_actions(&mut action.actions, &inner, renames, rewrites);
+        }
+        // A host operation whose arguments the Interpreter's engine computes
+        // when the action runs: each is lowered as any expression is, to the
+        // value the host takes (a wide integer passes the library's `out`).
+        "native_action" if target.lowers_host_action_arguments() => {
+            for param in &mut action.params {
+                reads_payload |= reads(&param.expr);
+                let value = lower(&param.expr, InferredType::Unknown)?;
+                rewrites.note(&param.expr, param.expr_spelling.as_ref(), &value.text);
+            }
         }
         // What a `<send>` carries is read from the machine's fields now, when
         // it runs (§scxml-6.2.3 evaluates its arguments once, at the send).

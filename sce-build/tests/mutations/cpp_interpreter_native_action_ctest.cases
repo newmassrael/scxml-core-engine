@@ -1,0 +1,74 @@
+# Mutation cases for "an <sce:action> is a host operation, and one nobody
+# performs is error.execution", C++ Interpreter.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_interpreter_native_action_ctest.cases`.
+#
+# `<sce:action>` is an element of SCE's namespace, and the Interpreter's action
+# parser skips every element that is not SCXML's (§scxml-4.10). Until the
+# element was given a meaning, a document that asked its host to do something
+# had the request dropped with no event and no diagnostic. The Interpreter now
+# parses it to a `NativeAction`, evaluates each `<sce:arg>` to a typed value,
+# and hands the operation to the `INativeActionHost` installed before `start()`;
+# an operation nobody performs raises `error.execution` (the rule §scxml-6.4.1
+# gives an element the processor does not implement).
+# `NativeActionRunsUnderTheInterpreterTest` is the oracle.
+#
+# What is easy to get wrong and reads as success: a parser that goes back to
+# skipping the element (nothing fails but the host, which is never called), an
+# action with no host that returns quietly, a host's refusal that is not an
+# error, and an argument handed to the host as whatever it evaluated to — an
+# array or `undefined` is no value a host operation takes.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/parsing/ActionParser.cpp sce/src/runtime/ActionExecutorImpl.cpp sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp
+
+# The parser reads the element as any foreign element again: skipped, the host
+# is never asked and the document's request is gone.
+mutation_case "the parser skips <sce:action> as it skips a foreign element" <<'PY'
+edit("sce/src/parsing/ActionParser.cpp",
+     "    if (ParsingCommon::isSceNamespace(actionElement) &&\n        ParsingCommon::matchNodeName(actionElement->getName(), \"action\")) {\n",
+     "    if (false && ParsingCommon::isSceNamespace(actionElement) &&\n        ParsingCommon::matchNodeName(actionElement->getName(), \"action\")) {\n")
+PY
+
+# An action with no host to perform it returns without a word.
+mutation_case "an action with no host is not an error" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "        return fail(\"no host is installed to perform it\");\n",
+     "        return true;\n")
+PY
+
+# The host answers that it provides no such operation, and the answer is read as
+# success.
+mutation_case "a host's refusal is not an error" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "        return fail(\"the host provides no such operation\");\n",
+     "        return true;\n")
+PY
+
+# An argument that is no bool, number or string is handed to the host as it is.
+mutation_case "an argument no host operation takes reaches the host" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "            if (!takenByAHost) {\n",
+     "            if (false && !takenByAHost) {\n")
+PY
+
+# An argument that cannot be evaluated is passed on as undefined: the host runs
+# with a value the document never computed.
+mutation_case "an argument that cannot be evaluated is passed on" <<'PY'
+edit("sce/src/runtime/ActionExecutorImpl.cpp",
+     "            if (!result.isSuccess()) {\n                return fail(\"the argument `\"",
+     "            if (false && !result.isSuccess()) {\n                return fail(\"the argument `\"")
+PY
+
+# The host installed before start is not given to the executor the machine
+# makes: an <onentry> action performed during start() has no host.
+mutation_case "the host installed before start never reaches the executor" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    if (nativeActionHost_ && cachedExecutorImpl_) {\n        cachedExecutorImpl_->setNativeActionHost(nativeActionHost_);\n    }\n\n    // Pass EventRaiser to ActionExecutor if available",
+     "    // Pass EventRaiser to ActionExecutor if available")
+PY

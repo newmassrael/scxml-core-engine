@@ -42,6 +42,13 @@ public:
     std::shared_ptr<SCE::IActionNode> parseActionNode(const std::shared_ptr<IXMLElement> &actionNode);
 
     /**
+     * @brief Parse a `<sce:action>` — a host operation (§scxml-G-7) — and its `<sce:arg>`s
+     * @param actionElement The `<sce:action>` element
+     * @return The native action node; never null
+     */
+    std::shared_ptr<SCE::IActionNode> parseNativeAction(const std::shared_ptr<IXMLElement> &actionElement);
+
+    /**
      * @brief Parse external execution action node
      * @param externalActionNode XML external execution action node
      * @return Created action node
