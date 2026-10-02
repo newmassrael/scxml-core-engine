@@ -828,7 +828,7 @@ SCXML, the way `MAX_MACROSTEP_MICROSTEPS` is, and so it has to be visible.
    pops eight entries at it, each due before it, and there are only as many of
    those as were armed when the tick began, so they are never the runaway and
    must not be cut by a small `B`. An engine that delivers a zero delay straight
-   to the queue (Python) is already bounded by item 1, and one whose positive
+   to the queue (Python, the C++ Interpreter) is already bounded by item 1, and one whose positive
    delays are dated after the instant being processed cannot re-arm into it.
 6. **The default's basis.** 10,000 is above the longest invocation measured
    (6 external events, over every design the authoring suite plays) by three
@@ -849,7 +849,16 @@ for one reads the other:
 | Kotlin | `truncatedEventChains(): Int` | `lastTruncatedEvent(): E?` | `maxExternalEventsPerCall()`, `setMaxExternalEventsPerCall(n)` |
 | C11 | `<prefix>_truncated_event_chains(sm)` | `<prefix>_last_truncated_event(sm, &out) -> bool` | `<prefix>_max_external_events_per_call(sm)`, `<prefix>_set_max_external_events_per_call(sm, n)`, `SCE_MAX_EXTERNAL_EVENTS_PER_CALL` |
 | C++ AOT | `truncatedEventChains()` | `lastTruncatedEvent()` (`std::optional`) | `maxExternalEventsPerCall()`, `setMaxExternalEventsPerCall(n)` |
-| C++ Interpreter | `Statistics::truncatedEventChains` | `Statistics::lastTruncatedEvent` (name) | `StateMachine::setMaxExternalEventsPerCall(n)` |
+| C++ Interpreter | `Statistics::truncatedEventChains` | `Statistics::lastTruncatedEvent` (name) | `StateMachine::getMaxExternalEventsPerCall()`, `StateMachine::setMaxExternalEventsPerCall(n)` |
+
+Both C++ engines hold one `Core::ExternalEventBudget` (`sce/include/core/ExternalEventBudget.h`),
+which is the one place the default, the comparison, the count, the head and the
+refusal of a budget below one are written; each engine asks it before it takes
+an event and reports through its own accessors above. The Interpreter's loop asks
+its raiser to name the head of the external queue without taking it
+(`IEventRaiser::peekQueuedEventName`), because a refusal must leave the queue as
+the host left it, and taking an event and putting it back would append it behind
+everything queued after it.
 
 Where the engine already gates its truncation diagnostics out of a small build
 (Rust's `no_macrostep_diagnostics`), the BOUND stays in and only the count and
@@ -862,7 +871,16 @@ this one; it holds only one event at a time in a chain that sends the next.
 returns to the host, so there is no call to hand back, and a cut there would
 need a different signal. The C++ Interpreter has no `tick` or `advance_time`:
 its scheduler delivers from a thread, so only `processEvent` and `start` are
-bound by it.
+bound by it. Measured 2026-10-02 on the Interpreter: a delay that is zero,
+written out or evaluated from an expression, is delivered straight to the
+external queue and never reaches that scheduler, so a chain through one is cut by
+item 1 and the call returns (`zero` and `zero_expr` hold there); a chain that
+bounces between a parent and the child it invoked is cut on the parent's budget,
+since each session runs a loop of its own and the parent takes every event the
+child sends it. What stays outside is a chain through a POSITIVE delay, on that
+thread: it is the heartbeat item 5 describes, paced by the clock and not a call
+that fails to return, and `timed` has no deterministic form on an engine whose
+clock the host cannot move.
 
 **Fixture.** `tests/integration/external_chain_is_bounded.scxml` holds the
 outcomes every engine answers the same way: `spin` (cut at exactly `B`, the rest
@@ -922,6 +940,7 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | `HistoryHelper` | 3.11 | History state recording/restoration |
 | `EntryExitHelper` | 3.7, 3.8 | State entry/exit action execution |
 | `EventMatchingHelper` | 5.9.3 | Event descriptor prefix matching |
+| `ExternalEventBudget` | 3.13 | The external-event budget of one main-loop invocation: default, comparison, cut count and head, host-set limit (see "External-Event Budget") |
 
 Appendix D's microstep is written once, in `MicrostepAlgorithms`, over these
 helpers. An engine hands it a Host: the document as `EntrySetAlgorithms` reads

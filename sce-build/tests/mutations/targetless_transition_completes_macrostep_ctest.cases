@@ -137,12 +137,12 @@ PY
 
 mutation_case "the interpreter returns from a targetless transition without walking the chain" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    runMainEventLoop();""",
-     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    if (result.toState != result.fromState) {
-        runMainEventLoop();
-    }""")
+     """    runMainEventLoop(1);
+    if (topLevelFinalReached_) {""",
+     """    if (result.toState != result.fromState) {
+        runMainEventLoop(1);
+    }
+    if (topLevelFinalReached_) {""")
 PY
 
 # ── C++ Interpreter: the chain walked to its end ───────────────────

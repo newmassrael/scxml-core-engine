@@ -141,6 +141,15 @@ std::optional<Core::EventMetadata> MockEventRaiser::takeQueuedEvent(EventQueue q
     return event;
 }
 
+std::optional<std::string> MockEventRaiser::peekQueuedEventName(EventQueue queue) {
+    const auto entry =
+        std::find_if(held_.begin(), held_.end(), [queue](const auto &candidate) { return candidate.second == queue; });
+    if (entry == held_.end()) {
+        return std::nullopt;
+    }
+    return entry->first.name;
+}
+
 bool MockEventRaiser::enqueue(const Core::EventMetadata &event, EventQueue queue) {
     held_.emplace_back(event, queue);
     return true;

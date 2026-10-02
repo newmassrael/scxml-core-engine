@@ -52,6 +52,7 @@ public:
     bool hasQueuedEvents() const override;
     bool hasQueuedInternalEvents() const override;
     std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) override;
+    std::optional<std::string> peekQueuedEventName(EventQueue queue) override;
     bool enqueue(const Core::EventMetadata &event, EventQueue queue) override;
 
     void getEventQueues(std::vector<EventSnapshot> &outInternal,

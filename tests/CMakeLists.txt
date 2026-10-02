@@ -1203,6 +1203,7 @@ add_executable(integration_tests
     integration/AHybridInvokeCarriesItsArgumentsTest.cpp
     integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp
     integration/AChildTimerIsADeadlineOfItsParentAotTest.cpp
+    integration/ExternalChainIsBoundedTest.cpp
     integration/ExternalChainIsBoundedAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp

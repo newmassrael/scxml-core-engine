@@ -1,5 +1,5 @@
 # Mutation cases for "a call that drains a self-refilling external queue is
-# handed back", C++ AOT engine.
+# handed back", C++ AOT engine: the places where THIS engine asks the budget.
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/cpp_external_event_budget_ctest.cases`.
@@ -16,13 +16,17 @@
 # `zero_expr` both hold the same-instant bound.
 # `tests/integration/external_chain_is_bounded.scxml` is the document.
 #
-# What is easy to get wrong and reads as success: a budget off by one in either
-# direction (the chain that ENDS at exactly the budget is the case that tells
-# them apart), the host's own event not counted as the first of its invocation, a
-# refusal that swallows the event it declined (the chain stops short and never
-# finishes), a cut that is not counted, and a same-instant bound that counts what
-# it must not: a clock the host moved a long way pops many entries at ONE
-# reading and they are not a runaway.
+# The arithmetic itself (the comparison, the count, the head, what a host may
+# set) is `core/ExternalEventBudget.h`, shared with the Interpreter, and its
+# mutations are `external_event_budget_helper_ctest.cases`. What is left here is
+# what only this engine decides: that it asks before it takes an event, where it
+# asks from, what it names when it is cut, and where its loop starts counting.
+#
+# What is easy to get wrong and reads as success: the host's own event not
+# counted as the first of its invocation, a refusal that swallows the event it
+# declined (the chain stops short and never finishes), and a same-instant bound
+# that counts what it must not: a clock the host moved a long way pops many
+# entries at ONE reading and they are not a runaway.
 #
 # A mutation that removes a bound leaves the binary spinning, and the harness
 # caps every run, so "did not terminate" is the verdict that case is held to.
@@ -36,22 +40,10 @@ mutation_oracles tests/integration/ExternalChainIsBoundedAotTest.cpp
 
 # ── The refusal itself ──────────────────────────────────────────────
 
-mutation_case "the drain has no budget at all" <<'PY'
+mutation_case "the drain never asks the budget" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "            if (taken >= maxExternalEventsPerCall_) {",
-     "            if (false) {")
-PY
-
-mutation_case "the budget is one event more than it says" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "            if (taken >= maxExternalEventsPerCall_) {",
-     "            if (taken > maxExternalEventsPerCall_) {")
-PY
-
-mutation_case "the budget is one event fewer than it says" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "            if (taken >= maxExternalEventsPerCall_) {",
-     "            if (taken + 1 >= maxExternalEventsPerCall_) {")
+     "            if (!externalEventBudget_.admitNext(\n                    taken, [this]",
+     "            if (false && !externalEventBudget_.admitNext(\n                    taken, [this]")
 PY
 
 # ── The host's own event is the first of its invocation ─────────────
@@ -68,28 +60,15 @@ PY
 
 # ── The refusal leaves the queue alone ──────────────────────────────
 #
-# Popping before asking consumes the event the drain then declines to run. The
-# chain is still bounded and the count still moves, so only the `resume` outcome
-# can see it: it stops a link short of its end and never finishes.
+# The head is named only when the budget refuses, and naming it by popping it
+# consumes the event the drain then declines to run. The chain is still bounded
+# and the count still moves, so only the `resume` outcome can see it: it stops a
+# link short of its end and never finishes.
 
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "                recordTruncatedEventChain(externalQueue_.front().event);\n                break;",
-     "                recordTruncatedEventChain(externalQueue_.front().event);\n                (void)externalQueue_.pop();\n                break;")
-PY
-
-# ── The cut is said ─────────────────────────────────────────────────
-
-mutation_case "a cut is not counted" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "        ++truncatedEventChains_;\n",
-     "        truncatedEventChains_ += 0;\n")
-PY
-
-mutation_case "the cut does not say which event it was still taking" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "        hasTruncatedEvent_ = head.has_value();",
-     "        hasTruncatedEvent_ = head.has_value() && false;")
+     "[this] { return std::optional<Event>(externalQueue_.front().event); }",
+     "[this] { const Event refused = externalQueue_.front().event; (void)externalQueue_.pop(); return std::optional<Event>(refused); }")
 PY
 
 # ── The budget is the invocation's own, from a clean start ──────────
@@ -108,8 +87,8 @@ PY
 
 mutation_case "the scheduler's same-instant pops have no budget" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "                    if (poppedDueAtReading >= maxExternalEventsPerCall_) {",
-     "                    if (false) {")
+     "                    if (!externalEventBudget_.admitNext(poppedDueAtReading, [&head] {",
+     "                    if (false && !externalEventBudget_.admitNext(poppedDueAtReading, [&head] {")
 PY
 
 # The bound must count entries due AT the reading, not every entry popped at it.
@@ -121,24 +100,4 @@ mutation_case "the same-instant bound counts entries that came due earlier" <<'P
 edit("sce/include/static/StaticExecutionEngine.h",
      "head && head->fireTime == now) {",
      "head && head->fireTime <= now) {")
-PY
-
-# ── What a host may set ─────────────────────────────────────────────
-
-mutation_case "a budget that takes no event is accepted" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "        if (limit < 1) {\n            return false;\n        }",
-     "        if (limit < 1 && false) {\n            return false;\n        }")
-PY
-
-mutation_case "a budget the host sets is ignored" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "        maxExternalEventsPerCall_ = limit;\n        return true;",
-     "        return true;")
-PY
-
-mutation_case "the default budget is not the documented one" <<'PY'
-edit("sce/include/static/StaticExecutionEngine.h",
-     "static constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10000;",
-     "static constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 1000;")
 PY

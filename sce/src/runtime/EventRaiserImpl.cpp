@@ -734,7 +734,7 @@ bool EventRaiserImpl::hasQueuedInternalEvents() const {
     return synchronousQueue_.top().priority == EventPriority::INTERNAL;
 }
 
-std::optional<Core::EventMetadata> EventRaiserImpl::takeQueuedEvent(EventQueue queue) {
+template <typename Visit> auto EventRaiserImpl::overTheHeadOf(EventQueue queue, Visit &&visit) {
     const EventPriority wanted = queue == EventQueue::Internal ? EventPriority::INTERNAL : EventPriority::EXTERNAL;
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
@@ -751,25 +751,45 @@ std::optional<Core::EventMetadata> EventRaiserImpl::takeQueuedEvent(EventQueue q
         }
     }
 
-    std::optional<Core::EventMetadata> taken;
-    if (!synchronousQueue_.empty() && synchronousQueue_.top().priority == wanted) {
-        const QueuedEvent &head = synchronousQueue_.top();
-        const bool isExternal = wanted == EventPriority::EXTERNAL;
-        taken = Core::EventMetadata(head.eventName, head.eventData,
-                                    EventTypeHelper::classifyEventType(head.eventName, isExternal), head.sendId,
-                                    head.invokeId, head.originType, head.origin);
-        taken->typedData = head.typedData;
-        // No `lastProcessedEvent` record, unlike a dispatch. Taking is not
-        // processing — a machine that has reached its final state empties its
-        // queues through here — and the interactive runner reads that record
-        // right after the step it drove, to learn which event the step was.
-        synchronousQueue_.pop();
-    }
+    const bool hasHead = !synchronousQueue_.empty() && synchronousQueue_.top().priority == wanted;
+    auto result = visit(synchronousQueue_, hasHead, wanted == EventPriority::EXTERNAL);
 
     for (auto &event : setAside) {
         synchronousQueue_.push(std::move(event));
     }
-    return taken;
+    return result;
+}
+
+std::optional<Core::EventMetadata> EventRaiserImpl::takeQueuedEvent(EventQueue queue) {
+    return overTheHeadOf(queue, [](auto &synchronousQueue, bool hasHead, bool isExternal) {
+        std::optional<Core::EventMetadata> taken;
+        if (hasHead) {
+            const QueuedEvent &head = synchronousQueue.top();
+            taken = Core::EventMetadata(head.eventName, head.eventData,
+                                        EventTypeHelper::classifyEventType(head.eventName, isExternal), head.sendId,
+                                        head.invokeId, head.originType, head.origin);
+            taken->typedData = head.typedData;
+            // No `lastProcessedEvent` record, unlike a dispatch. Taking is not
+            // processing — a machine that has reached its final state empties its
+            // queues through here — and the interactive runner reads that record
+            // right after the step it drove, to learn which event the step was.
+            synchronousQueue.pop();
+        }
+        return taken;
+    });
+}
+
+std::optional<std::string> EventRaiserImpl::peekQueuedEventName(EventQueue queue) {
+    // Nothing the peek touched is observable afterwards: the head stays where it
+    // is, and the events set aside above it go back with the timestamp and
+    // sequence they were queued under.
+    return overTheHeadOf(queue, [](auto &synchronousQueue, bool hasHead, bool) {
+        std::optional<std::string> name;
+        if (hasHead) {
+            name = synchronousQueue.top().eventName;
+        }
+        return name;
+    });
 }
 
 bool EventRaiserImpl::enqueue(const Core::EventMetadata &event, EventQueue queue) {

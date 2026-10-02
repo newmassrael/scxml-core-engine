@@ -1,0 +1,88 @@
+# Mutation cases for "a call that drains a self-refilling external queue is
+# handed back", the arithmetic both C++ engines share.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/external_event_budget_helper_ctest.cases`.
+#
+# `core/ExternalEventBudget.h` is the one place the C++ AOT engine and the
+# Interpreter spell the contract in ARCHITECTURE.md "External-Event Budget":
+# the number (10,000), the comparison that decides whether one more event may be
+# taken, the count of invocations handed back, the head of the queue at the last
+# cut, and what a host may set. A mutation here moves BOTH engines, and each
+# engine's driver is a witness, so the oracles are both: a case that only one of
+# them could see would say the other engine's arithmetic is unwatched.
+#
+# What is easy to get wrong and reads as success: a budget off by one in either
+# direction (the chain that ENDS at exactly the budget is the case that tells
+# them apart), a cut that is not counted, a cut that does not name what it was
+# still taking, and a budget a host sets that is ignored or that takes no event.
+#
+# A mutation that removes the bound leaves the binary spinning, and the harness
+# caps every run, so "did not terminate" is the verdict that case is held to.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/core/ExternalEventBudget.h
+mutation_oracles tests/integration/ExternalChainIsBoundedAotTest.cpp tests/integration/ExternalChainIsBoundedTest.cpp
+
+# ── The comparison ──────────────────────────────────────────────────
+
+mutation_case "the budget is never spent" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        return taken >= limit();",
+     "        return false;")
+PY
+
+mutation_case "the budget is one event more than it says" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        return taken >= limit();",
+     "        return taken > limit();")
+PY
+
+mutation_case "the budget is one event fewer than it says" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        return taken >= limit();",
+     "        return taken + 1 >= limit();")
+PY
+
+mutation_case "an event that is granted is not counted" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        ++taken;\n        return true;",
+     "        return true;")
+PY
+
+# ── The cut is said ─────────────────────────────────────────────────
+
+mutation_case "a cut is not counted" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        ++cuts_;\n",
+     "        cuts_ += 0;\n")
+PY
+
+mutation_case "the cut does not say which event it was still taking" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        head_ = std::move(head);",
+     "        head_.reset();")
+PY
+
+# ── What a host may set ─────────────────────────────────────────────
+
+mutation_case "a budget that takes no event is accepted" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        if (limit < 1) {\n            return false;\n        }",
+     "        if (limit < 1 && false) {\n            return false;\n        }")
+PY
+
+mutation_case "a budget the host sets is ignored" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "        limit_.store(limit, std::memory_order_relaxed);\n        return true;",
+     "        return true;")
+PY
+
+mutation_case "the default budget is not the documented one" <<'PY'
+edit("sce/include/core/ExternalEventBudget.h",
+     "inline constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10000;",
+     "inline constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 1000;")
+PY

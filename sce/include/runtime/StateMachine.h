@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/EntrySetHelper.h"
+#include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "core/LogMacros.h"
@@ -518,9 +519,54 @@ public:
         /// The name of the most recent event that count recorded, empty while
         /// it is zero.
         std::string lastUnseenEventName;
+        /// Invocations of the main event loop this engine handed back with an
+        /// external event still queued, because the invocation had already taken
+        /// `getMaxExternalEventsPerCall()` of them (ARCHITECTURE.md
+        /// "External-Event Budget").
+        ///
+        /// `truncatedMacrosteps` counts a macrostep that does not end; this
+        /// counts the other way a call fails to return: every macrostep ends,
+        /// and each one queues the event that starts the next (a `<send>` with
+        /// no target, answered by a transition that sends it again). The
+        /// specification bounds neither, and an engine that ran either to the
+        /// letter would have `processEvent` or `start` never return while
+        /// `isRunning` stays true and nothing says anything went wrong. This is
+        /// that sign.
+        ///
+        /// Counted when the loop still had work after the budget. A call that
+        /// takes exactly the budget and empties the queue counts zero: a long
+        /// backlog is ordinary, an endless one is not. The events left queued
+        /// stay queued, so a host that calls again gets another budget and the
+        /// machine goes on from where it was. Only `processEvent` and `start`
+        /// run the loop here: this engine has no `tick`, and its scheduler
+        /// delivers each delayed event on a thread of its own, as a call of its
+        /// own.
+        uint32_t truncatedEventChains = 0;
+        /// The name of the event at the head of the queue when that last
+        /// happened, empty while the count is zero. In a chain that sends
+        /// itself an event it is that event: the count says a call did not
+        /// reach quiet and this says what it was still taking.
+        std::string lastTruncatedEvent;
     };
 
     Statistics getStatistics() const;
+
+    /// @brief The most external events one invocation of the main event loop may take
+    uint32_t getMaxExternalEventsPerCall() const;
+
+    /**
+     * @brief Let a host choose the budget of one invocation of the main event loop
+     *
+     * A host that hands the machine a backlog it means the machine to work
+     * through in one call knows its size, and this engine does not. Settable at
+     * any time and from any thread; the default is
+     * `Core::DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL`.
+     *
+     * Refused below one — returns false and changes nothing: a budget that takes
+     * no event is a machine that cannot run, not a stricter one, since every call
+     * would hand control back with the queue untouched and say it had been cut.
+     */
+    bool setMaxExternalEventsPerCall(uint32_t limit);
 
     /**
      * @brief Register a history state for tracking
@@ -787,6 +833,12 @@ private:
     uint32_t truncatedMacrosteps_ = 0;
     std::string lastTruncatedMacrostepState_;
     bool macrostepTruncated_ = false;
+    /// The budget of one invocation of the main event loop, the invocations
+    /// handed back with an external event still queued, and the name of the
+    /// event at the head of the queue when that last happened. The AOT engine
+    /// holds the same class, so the number and the arithmetic are written once.
+    /// Reported through `Statistics::truncatedEventChains`.
+    Core::ExternalEventBudget<std::string> externalEventBudget_;
     /// §scxml-B-2-8-1: deliveries whose payload announced structure and could
     /// not be read as one, and the name of the last such event. Reported
     /// through `Statistics::undecodablePayloads` — the count lives here
@@ -903,7 +955,10 @@ private:
     std::optional<Transition> firstEnabledTransition(const std::string &state, const std::string &eventName);
     void takeMicrostep(const std::vector<Transition> &transitions, const std::string &eventName);
     void enterInitialConfiguration();
-    void runMainEventLoop();
+    /// @param alreadyTaken External events this invocation has spent before it
+    ///        starts: `processEvent` handles the host's own event directly and
+    ///        then runs the loop, and that event is the first of its invocation.
+    void runMainEventLoop(uint32_t alreadyTaken = 0);
     /// The outer loop's one step: take the next external event and start the
     /// macrostep it opens. False when the external queue is empty.
     bool takeNextExternalEvent();

@@ -197,6 +197,25 @@ public:
     virtual std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) = 0;
 
     /**
+     * @brief Name the event `takeQueuedEvent` would take from one queue, and
+     *        leave the queue exactly as it is
+     *
+     * For a caller that has to decide whether to take the next event before it
+     * takes it. The main event loop asks the external-event budget (ARCHITECTURE.md
+     * "External-Event Budget") once it has seen that an event is waiting, and a
+     * refusal must leave that event where it was: taking it and putting it back
+     * would append it behind everything queued after it, with a sequence of its
+     * own, and the queue would no longer be the one the host left.
+     *
+     * Not a copy of the event: a name is all the loop reports, and the payload
+     * is read when the event is taken.
+     *
+     * @param queue The queue to look at, named for the reason `takeQueuedEvent`'s is
+     * @return The name of the event at the head of that queue, or std::nullopt when it is empty
+     */
+    virtual std::optional<std::string> peekQueuedEventName(EventQueue queue) = 0;
+
+    /**
      * @brief Append an event to one of the two queues without dispatching it
      *
      * For an event handed to a state machine while that machine's own

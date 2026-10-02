@@ -33,6 +33,7 @@
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueManager.h"
+#include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/MicrostepAlgorithms.h"
@@ -274,28 +275,6 @@ public:
      * but still reported.
      */
     static constexpr uint32_t MAX_MACROSTEP_MICROSTEPS = 1000;
-
-    /**
-     * @brief How many external events one invocation of the main event loop may
-     *        take off the queue before this engine hands control back — see
-     *        `truncatedEventChains()` and ARCHITECTURE.md "External-Event Budget",
-     *        the contract every engine here holds
-     *
-     * A machine that answers an event by sending itself the next one, with no
-     * target, never lets the external queue empty. Every macrostep of it ends,
-     * so `MAX_MACROSTEP_MICROSTEPS` never applies, and the loop takes the next
-     * event whenever the queue is not empty: the host call that drove it did not
-     * return. §scxml-3.13 lets a macrostep fail to end and says nothing of a
-     * chain of macrosteps, so, as with the microstep ceiling, the number is this
-     * engine's to choose and the decline has to be visible.
-     *
-     * The default is the one the contract states: three orders of magnitude
-     * above the longest invocation measured over the authoring suite (6 external
-     * events). It is a margin and not a proof, and a host that hands a machine a
-     * backlog it means to work through in one call can choose another
-     * (`setMaxExternalEventsPerCall`).
-     */
-    static constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10000;
 
     /**
      * @brief Event with metadata for §scxml-5.10 compliance
@@ -810,12 +789,9 @@ private:
     // The budget of one invocation of the main event loop, the invocations this
     // engine handed back with an external event still queued, and the event at
     // the head of the queue when that last happened — see
-    // `truncatedEventChains()`. `hasTruncatedEvent_` is separate because the zero
-    // value of the generated `Event` enum is a real event.
-    uint32_t maxExternalEventsPerCall_ = DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL;
-    uint32_t truncatedEventChains_ = 0;
-    Event lastTruncatedEvent_{};
-    bool hasTruncatedEvent_ = false;
+    // `truncatedEventChains()`. The Interpreter holds the same class, so the
+    // number and the arithmetic are written once.
+    Core::ExternalEventBudget<Event> externalEventBudget_;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     // §scxml-6.2.5: handlers for the Event I/O Processor types this host
@@ -1873,7 +1849,7 @@ public:
      * `tick()`).
      */
     uint32_t truncatedEventChains() const {
-        return truncatedEventChains_;
+        return externalEventBudget_.cuts();
     }
 
     /**
@@ -1887,15 +1863,12 @@ public:
      * says a call did not reach quiet and this says what it was still taking.
      */
     std::optional<Event> lastTruncatedEvent() const {
-        if (!hasTruncatedEvent_) {
-            return std::nullopt;
-        }
-        return lastTruncatedEvent_;
+        return externalEventBudget_.lastCutHead();
     }
 
     /// @brief The most external events one invocation of the main event loop may take
     uint32_t maxExternalEventsPerCall() const {
-        return maxExternalEventsPerCall_;
+        return externalEventBudget_.limit();
     }
 
     /**
@@ -1903,18 +1876,14 @@ public:
      *
      * A host that hands the machine a backlog it means the machine to work
      * through in one call knows its size, and this engine does not. Settable at
-     * any time.
+     * any time. The default is `Core::DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL`.
      *
      * Refused below one — returns false and changes nothing: a budget that takes
      * no event is a machine that cannot run, not a stricter one, since every call
      * would hand control back with the queue untouched and say it had been cut.
      */
     bool setMaxExternalEventsPerCall(uint32_t limit) {
-        if (limit < 1) {
-            return false;
-        }
-        maxExternalEventsPerCall_ = limit;
-        return true;
+        return externalEventBudget_.setLimit(limit);
     }
 
     /**
@@ -2057,7 +2026,7 @@ protected:
      */
     void runMainEventLoop(uint32_t alreadyTaken = 0) {
         // External events this invocation has taken off the queue, against
-        // `maxExternalEventsPerCall_`. A local, because the budget is one
+        // `externalEventBudget_`. A local, because the budget is one
         // invocation's: a cut leaves the queue as it is and the next invocation
         // gets a budget of its own (ARCHITECTURE.md "External-Event Budget"). The
         // host's own event is the first of its invocation, so a door that handles
@@ -2126,30 +2095,13 @@ protected:
             // bounds none of this: a machine that sends itself an external event
             // on every one never empties the queue. Past the budget the queue is
             // left exactly as it is and the call hands back, counted.
-            if (taken >= maxExternalEventsPerCall_) {
-                recordTruncatedEventChain(externalQueue_.front().event);
+            if (!externalEventBudget_.admitNext(
+                    taken, [this] { return std::optional<Event>(externalQueue_.front().event); })) {
                 break;
             }
-            ++taken;
             if (!processNextExternalEvent()) {
                 break;
             }
-        }
-    }
-
-    /**
-     * @brief Say that a call was handed back with work still waiting: the count,
-     *        and what it was still taking
-     *
-     * The bound itself is enforced by the caller; this is only the report.
-     * `head` is null for a due scheduler entry that delivers no event of this
-     * machine's.
-     */
-    void recordTruncatedEventChain(std::optional<Event> head) {
-        ++truncatedEventChains_;
-        hasTruncatedEvent_ = head.has_value();
-        if (head) {
-            lastTruncatedEvent_ = *head;
         }
     }
 
@@ -3121,12 +3073,11 @@ public:
                         reading = now;
                         poppedDueAtReading = 0;
                     }
-                    if (poppedDueAtReading >= maxExternalEventsPerCall_) {
-                        recordTruncatedEventChain(head->ownEvent ? std::optional<Event>(*head->ownEvent)
-                                                                 : std::nullopt);
+                    if (!externalEventBudget_.admitNext(poppedDueAtReading, [&head] {
+                            return head->ownEvent ? std::optional<Event>(*head->ownEvent) : std::nullopt;
+                        })) {
                         break;
                     }
-                    ++poppedDueAtReading;
                 }
                 if (!scheduler_.popReadyAct(now, event, eventData, sendId, origin, hostSend, deadline, route)) {
                     break;

@@ -2023,12 +2023,11 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL",
+          "file": "backends/c/runtime/include/sce/types.h",
           "kind": "references"
         },
         {
-          "file": "backends/c/runtime/include/sce/types.h",
+          "file": "sce/include/core/ExternalEventBudget.h",
           "kind": "references"
         }
       ],
@@ -21163,6 +21162,12 @@
       "target_kind": "section",
       "target_id": "scxml-6.2.2",
       "reason": "2ffe887dc0 read every engine's send delay as the one CSS2 time and cites it as §scxml-6.2 in all seven engines; the C parser is bound to §scxml-6.2 with its six siblings."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The constant moved to core/ExternalEventBudget.h, shared with the Interpreter; the AOT engine no longer declares it"
     }
   ],
   "frames": {},

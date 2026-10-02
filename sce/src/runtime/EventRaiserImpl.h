@@ -332,6 +332,12 @@ public:
     std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) override;
 
     /**
+     * @brief Name what `takeQueuedEvent` would take, leaving the queue as it is
+     *        — see IEventRaiser::peekQueuedEventName
+     */
+    std::optional<std::string> peekQueuedEventName(EventQueue queue) override;
+
+    /**
      * @brief Append an event to one of the two queues, never dispatching it —
      *        see IEventRaiser::enqueue
      */
@@ -399,6 +405,20 @@ private:
      * @return true if event caused successful state transition, false otherwise
      */
     bool executeEventCallback(const QueuedEvent &event);
+
+    /**
+     * @brief Look at, or take, the head of one of the two queues
+     *
+     * The one place that knows the external queue's head is not the structure's
+     * head. `takeQueuedEvent` and `peekQueuedEventName` differ only in what they
+     * do with it, so both hand that to @p visit and the walk past the INTERNAL
+     * events queued above it is written once.
+     *
+     * @param visit Called under the queue's lock, with the queue, whether the wanted
+     *              queue has a head, and whether it is the external one; returns what
+     *              this call returns
+     */
+    template <typename Visit> auto overTheHeadOf(EventQueue queue, Visit &&visit);
 
     // Event callback
     EventCallback eventCallback_;

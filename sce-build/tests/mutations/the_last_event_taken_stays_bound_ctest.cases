@@ -28,11 +28,9 @@ mutation_oracles tests/integration/EventBindingAcrossAMacrostepTest.cpp
 
 mutation_case "the host's event is bound again after the loop took others" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    runMainEventLoop();
+     """    runMainEventLoop(1);
     if (topLevelFinalReached_) {""",
-     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    runMainEventLoop();
+     """    runMainEventLoop(1);
     bindCurrentEvent(event);
     if (topLevelFinalReached_) {""")
 PY

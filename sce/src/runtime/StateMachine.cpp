@@ -479,7 +479,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                   eventName, eventData, sessionId_, originSessionId);
 
     const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    runMainEventLoop();
+    // The host's own event is the first external event of this invocation of the
+    // loop (ARCHITECTURE.md "External-Event Budget"): it was processed directly
+    // above rather than queued first, so the loop starts with one spent.
+    runMainEventLoop(1);
     if (topLevelFinalReached_) {
         finishAtTopLevelFinal();
     }
@@ -728,7 +731,13 @@ void StateMachine::enterInitialConfiguration() {
                                                      std::nullopt, document_->documentInitialTargets(), false}});
 }
 
-void StateMachine::runMainEventLoop() {
+void StateMachine::runMainEventLoop(uint32_t alreadyTaken) {
+    // External events this invocation has taken off the queue, against
+    // `externalEventBudget_`. A local, because the budget is one invocation's: a
+    // cut leaves the queue as it is and the next invocation gets a budget of its
+    // own (ARCHITECTURE.md "External-Event Budget").
+    uint32_t taken = alreadyTaken;
+
     // §scxml-D-mainEventLoop: one macrostep after another. Each completes on
     // eventless transitions and internal events alone — an eventless
     // selection first, and only when it finds nothing the next internal
@@ -808,6 +817,20 @@ void StateMachine::runMainEventLoop() {
         // The outer loop. A refused chain does not hold the external queue
         // back: the next external event opens a macrostep with a budget of its
         // own, and it is often the very event that gets the machine out.
+        //
+        // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
+        // bounds none of this: a machine that sends itself an external event on
+        // every one never empties the queue. The budget is asked once an event is
+        // seen waiting and BEFORE it leaves the queue, so past the budget the
+        // queue is left exactly as it is and the call hands back, counted.
+        const std::optional<std::string> waiting =
+            eventRaiser_ ? eventRaiser_->peekQueuedEventName(EventQueue::External) : std::nullopt;
+        if (!waiting) {
+            break;
+        }
+        if (!externalEventBudget_.admitNext(taken, [&waiting] { return waiting; })) {
+            break;
+        }
         if (!takeNextExternalEvent()) {
             break;
         }
@@ -1381,6 +1404,10 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // configuration from one this engine stopped walking.
     stats.truncatedMacrosteps = truncatedMacrosteps_;
     stats.lastTruncatedMacrostepState = lastTruncatedMacrostepState_;
+    // The external queue's chain is this class's own loop as well, and its
+    // arithmetic is `Core::ExternalEventBudget`'s, shared with the AOT engine.
+    stats.truncatedEventChains = externalEventBudget_.cuts();
+    stats.lastTruncatedEvent = externalEventBudget_.lastCutHead().value_or(std::string{});
     // §scxml-B-2-8-1: counted here rather than in the executor because the
     // executor binds one event at a time and has nowhere to keep a tally,
     // while this is the object a host holds. The executor answers which rung
@@ -1394,6 +1421,14 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     stats.unseenExternalEvents = unseenExternalEvents_;
     stats.lastUnseenEventName = lastUnseenEventName_;
     return stats;
+}
+
+uint32_t StateMachine::getMaxExternalEventsPerCall() const {
+    return externalEventBudget_.limit();
+}
+
+bool StateMachine::setMaxExternalEventsPerCall(uint32_t limit) {
+    return externalEventBudget_.setLimit(limit);
 }
 
 bool StateMachine::initializeFromModel() {

@@ -1,0 +1,112 @@
+# Mutation cases for "a call that drains a self-refilling external queue is
+# handed back", C++ Interpreter.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_interpreter_external_event_budget_ctest.cases`.
+#
+# A machine that answers an event by sending itself the next one, with no
+# target, never lets the external queue empty, and every macrostep of it ends, so
+# the microstep ceiling never applies: `processEvent` did not return. The
+# Interpreter takes at most `getMaxExternalEventsPerCall()` external events in one
+# invocation of its main event loop, leaves the rest queued, and counts the cut
+# (ARCHITECTURE.md "External-Event Budget", rules 1-4). `processEvent` handles the
+# host's event directly, so the loop it runs starts with one event spent. Only
+# `processEvent` and `start` run the loop here: this engine has no `tick`, and a
+# delay of zero is delivered straight to the external queue, so the drain's
+# budget is the only bound there is to hold. `tests/integration/
+# external_chain_is_bounded.scxml` is the document.
+#
+# The arithmetic itself (the comparison, the count, the head, what a host may
+# set) is `core/ExternalEventBudget.h`, shared with the AOT engine, and its
+# mutations are `external_event_budget_helper_ctest.cases`. What is left here is
+# what only this engine decides: that it asks before it takes an event, that it
+# asks without moving the queue, where its loop starts counting, and what it
+# publishes.
+#
+# What is easy to get wrong and reads as success: the host's own event not
+# counted as the first of its invocation, a peek that consumes the event it
+# names (the chain stops short and never finishes, and the count still moves), a
+# cut that does not say which event it was still taking, and a statistic that
+# is never published.
+#
+# A mutation that removes the bound leaves the binary spinning, and the harness
+# caps every run, so "did not terminate" is the verdict that case is held to.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/StateMachine.cpp sce/src/runtime/EventRaiserImpl.cpp
+mutation_oracles tests/integration/ExternalChainIsBoundedTest.cpp
+
+# ── The refusal itself ──────────────────────────────────────────────
+
+mutation_case "the drain never asks the budget" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "        if (!externalEventBudget_.admitNext(taken, [&waiting] { return waiting; })) {",
+     "        if (false && !externalEventBudget_.admitNext(taken, [&waiting] { return waiting; })) {")
+PY
+
+# ── The host's own event is the first of its invocation ─────────────
+#
+# `processEvent` handles the event directly and then runs the loop, so the loop
+# starts with one spent. A door that starts at zero gives the host's call one
+# event more than the budget says: `spin` then leaves `links == B`, not `B - 1`.
+
+mutation_case "processEvent's loop starts with nothing spent" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    runMainEventLoop(1);\n    if (topLevelFinalReached_) {",
+     "    runMainEventLoop(0);\n    if (topLevelFinalReached_) {")
+PY
+
+mutation_case "an invocation starts with one event already spent" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    uint32_t taken = alreadyTaken;",
+     "    uint32_t taken = alreadyTaken + 1;")
+PY
+
+# ── The refusal leaves the queue alone ──────────────────────────────
+#
+# Naming the head by taking it consumes the event the loop then declines to run.
+# The chain is still bounded and the count still moves, so only the outcomes that
+# finish a chain across two calls can see it: it stops a link short of its end.
+
+mutation_case "the peek consumes the event it names" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     "            name = synchronousQueue.top().eventName;\n",
+     "            name = synchronousQueue.top().eventName;\n            synchronousQueue.pop();\n")
+PY
+
+# ── The cut is said ─────────────────────────────────────────────────
+
+mutation_case "the cut does not say which event it was still taking" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "[&waiting] { return waiting; }",
+     "[] { return std::optional<std::string>{}; }")
+PY
+
+mutation_case "the statistics never publish the count" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    stats.truncatedEventChains = externalEventBudget_.cuts();",
+     "    stats.truncatedEventChains = 0;")
+PY
+
+mutation_case "the statistics never publish the head of the cut" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    stats.lastTruncatedEvent = externalEventBudget_.lastCutHead().value_or(std::string{});",
+     "    stats.lastTruncatedEvent = std::string{};")
+PY
+
+# ── What a host may set ─────────────────────────────────────────────
+
+mutation_case "a budget the host sets is ignored" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    return externalEventBudget_.setLimit(limit);",
+     "    return true;")
+PY
+
+mutation_case "the budget reads back as the default whatever the host set" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    return externalEventBudget_.limit();",
+     "    return Core::DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL;")
+PY
