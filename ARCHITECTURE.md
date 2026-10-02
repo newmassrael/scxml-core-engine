@@ -836,6 +836,23 @@ SCXML, the way `MAX_MACROSTEP_MICROSTEPS` is, and so it has to be visible.
    measured on no engine. An engine that adopts the budget runs its own W3C
    lane under it before it lands, and a test that needs more fails there, which
    is the guard.
+7. **A jump of a host-owned clock is one late tick, not a replay of the instants
+   it jumped.** `advance_time(ms)` sets the reading `ms` later and ticks, so the
+   entries due at or before the new reading are popped under that one reading
+   (item 5), and what their handlers arm is dated from it. It is therefore NOT
+   splitting-invariant: `advance_time(1000)` over a heartbeat that re-arms
+   itself every 100 ms pops the beat armed before the jump and arms the next
+   for 1100, where ten `advance_time(100)` pops ten beats. That is deliberate,
+   and is what a machine on a real clock does when its host stalls and the next
+   tick arrives late: one tick under the late reading. A simulation that must
+   see every beat steps the clock as finely as the beats are spaced; a harness
+   that wants the late tick jumps. Making the jump visit each due instant in
+   order would make a simulated stall unlike a real one, and would move every
+   engine's scheduler off the one reading item 5's bound is written against.
+   What the host's step size must not change is the order entries are
+   delivered in, nor whether a `<cancel>` reaches an entry that an earlier
+   entry's macrostep runs before it has been delivered (§scxml-6.2): each due
+   entry is delivered one macrostep apart.
 
 **Accessors**, mirroring `truncated_macrosteps` and
 `last_truncated_macrostep_state` in each runtime's own style, so a host written
