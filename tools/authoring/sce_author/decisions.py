@@ -57,6 +57,7 @@ from .check import read_document
 from .counterfactual import candidate_site
 from .errors import READ_ERRORS, AuthoringError, describe_path
 from .pack import _validate
+from .structured import RepeatedKey, read_json
 from .verify import requirement_records, unresolved_markers
 
 RECORD_SCHEMA = "decisions.v1.schema.json"
@@ -103,7 +104,11 @@ def load_record(path: pathlib.Path) -> DecisionRecord:
             raise DecisionRecordError(describe_path(path)) from exc
         raise DecisionRecordError(f"{path}: cannot be read as text ({exc})") from exc
     try:
-        doc = json.loads(text)
+        doc = read_json(text)
+    except RepeatedKey as exc:
+        # ⚠ The owner's answer is what a draft is held to. An answer written
+        # twice in one decision keeps the last and says nothing.
+        raise DecisionRecordError(f"{path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise DecisionRecordError(f"{path}: not well-formed JSON ({exc})") from exc
     _validate(doc, RECORD_SCHEMA, path, error=DecisionRecordError)

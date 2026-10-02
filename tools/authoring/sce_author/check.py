@@ -35,6 +35,7 @@ import yaml
 from . import delivery, landing
 from .errors import READ_ERRORS, PackError, describe_path
 from .pack import RULE_COMMENTARY, SCHEMA_DIR, Pack, _validate, rule_text
+from .structured import RepeatedKey, read_json, read_yaml
 
 
 def _keys_that_hold_no_symbol() -> frozenset:
@@ -537,7 +538,9 @@ def read_binding(path: pathlib.Path) -> dict:
             raise PackError(describe_path(path)) from exc
         raise PackError(f"{path}: cannot be read as text ({exc})") from exc
     try:
-        doc = json.loads(text) if path.suffix == ".json" else yaml.safe_load(text)
+        doc = read_json(text) if path.suffix == ".json" else read_yaml(text)
+    except RepeatedKey as exc:
+        raise PackError(f"{path}: {exc}") from exc
     except (yaml.YAMLError, json.JSONDecodeError) as exc:
         first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc
         raise PackError(f"{path}: not a well-formed binding ({first})") from exc

@@ -1393,6 +1393,32 @@ right reading -- a condition that holds whenever anything is running has
 nothing to observe -- and that is exactly why it has to be written down rather
 than left to look like a fact.
 
+A reading is an expression over the inputs the pack declares: names, `!`, `&&`,
+`||` and brackets, and `true`/`false`. ⚠ The table used to be read as a bag of
+identifiers, so anything else was ignored without a word: a misspelt input read
+NO input and the condition the specification states was missing from every
+check, and a stray `&&&` or `(` changed nothing at all. The loader now refuses
+an expression outside that language, and a name that no `inputs` entry (of any
+of the pack's files) declares, naming the phrase and the inputs there are.
+
+A pack file is refused when a mapping writes a key twice. YAML and JSON both
+keep the LAST value and say nothing, so `{ACTIVE: 1, ACTIVE: 0}` was `ACTIVE: 0`,
+an entry that wrote `role` twice changed role, and a phrase written twice
+changed its reading (reproduced for both formats). The refusal names the key and
+the lines. The same reader holds a binding and the owner's decision record. The
+interface model already refused an ADDRESS declared twice across entries; two
+spellings of one phrase in one file are refused for the same reason, while a
+later conventions file replacing an earlier one's reading stays the documented
+layering. A precondition input's `rule` is held to the pack it is in: an
+address the interface model does not declare, a protocol the conventions do not
+declare, or a protocol parameter left out or pointing at an undeclared address
+is refused when the pack is loaded, the same two facts `check` holds a binding
+to.
+
+⚠ What none of this can do is say that the pack is RIGHT. A pack that is
+consistent with itself can still describe the platform wrongly; that is for
+whoever produces it, and `review` reports figures about it without a verdict.
+
 `pattern` is where this kind of document writes a precondition, with a named
 group `phrase`. With it, `questions` looks up every precondition the prose
 writes; without it the table cannot be matched against the prose, and

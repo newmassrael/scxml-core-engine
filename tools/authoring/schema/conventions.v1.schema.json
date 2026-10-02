@@ -78,7 +78,7 @@
               }
             ]
           },
-          "description": "Normalised phrase to an expression over the inputs above. A string is a plain reading. The object form records that the reading is an ASSUMPTION about the platform, with its reason. ⚠ An expression that reads no input at all -- `true`, `false` -- MUST use the object form: it removes the condition from everything a case can exercise, so a pass says nothing about it, and the pack is refused rather than let that happen without a reason on record."
+          "description": "Normalised phrase to an expression over the inputs above: names, `!`, `&&`, `||` and brackets, and every name is one of those inputs (or `true`, `false`). The loader refuses an expression that is not in that language and a name no input declares: a name nobody declares reads nothing, so the condition would be missing from every check. A phrase written twice is refused too, in one file; a later file may replace an earlier file's reading. A string is a plain reading. The object form records that the reading is an ASSUMPTION about the platform, with its reason. ⚠ An expression that reads no input at all -- `true`, `false` -- MUST use the object form: it removes the condition from everything a case can exercise, so a pass says nothing about it, and the pack is refused rather than let that happen without a reason on record."
         },
         "pattern": {
           "type": "string",

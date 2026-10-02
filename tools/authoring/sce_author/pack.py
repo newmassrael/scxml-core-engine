@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 import yaml
 
 from .errors import READ_ERRORS, AuthoringError, PackError, describe_path
+from .expression import LITERALS, ExpressionError
+from .expression import names as expression_names
+from .structured import RepeatedKey, read_json, read_yaml
 
 try:
     import jsonschema
@@ -44,9 +47,12 @@ def _read(path: pathlib.Path):
             raise PackError(describe_path(path)) from exc
         raise PackError(f"{path}: cannot be read as text ({exc})") from exc
     try:
-        if path.suffix == ".json":
-            return json.loads(text)
-        return yaml.safe_load(text)
+        return read_json(text) if path.suffix == ".json" else read_yaml(text)
+    except RepeatedKey as exc:
+        # ⚠ Refused, not resolved: the library keeps the last value and says
+        # nothing, which is how a value space, an entry's role and a phrase's
+        # reading each changed with no error (reproduced for both formats).
+        raise PackError(f"{path}: {exc}") from exc
     except (yaml.YAMLError, json.JSONDecodeError) as exc:
         first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc
         raise PackError(f"{path}: not well-formed ({first})") from exc
@@ -367,7 +373,7 @@ class Conventions:
 
     def precondition_reads(self, expression: str) -> set[str]:
         """The precondition inputs an expression from the table names."""
-        return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)) & set(self.precondition_inputs)
+        return set(expression_names(expression)) & set(self.precondition_inputs)
 
 
 # What a binding rule says about how it READS is everything but these: what
@@ -381,21 +387,30 @@ def rule_text(rule: dict) -> str:
                           default_flow_style=True, sort_keys=False, width=10_000).strip()
 
 
-# The two literals an expression may carry without reading anything.
-_LITERALS = frozenset({"true", "false"})
-
-
 def reads_no_input(expression: str) -> bool:
     """Does this expression name nothing a case could drive?
 
-    ⚠ Decided on the expression's own identifiers rather than against the
-    declared inputs. Asking "does it name a declared input" would also catch an
+    ⚠ Decided on the expression's own names rather than against the declared
+    inputs. Asking "does it name a declared input" would also catch an
     expression naming an UNDECLARED one, which is a different defect with a
-    different remedy, and reporting it here would send its author to write a
-    reason for a constant they never wrote.
+    different remedy (declare the input, or mend its spelling), and reporting
+    it here would send its author to write a reason for a constant they never
+    wrote. That one is refused on its own, in `load_conventions`.
     """
-    names = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
-    return all(n.lower() in _LITERALS for n in names)
+    return all(n.lower() in LITERALS for n in expression_names(expression))
+
+
+def _compiled(path: pathlib.Path, where: str, pattern: str) -> re.Pattern:
+    """A regular expression the pack wrote, or a refusal that names it.
+
+    ⚠ `re.error` used to leave here as itself: a pack with one malformed
+    pattern reached the command line as a traceback out of the `re` module,
+    naming neither the file nor the field."""
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        raise PackError(f"{path}: {where} {pattern!r} is not a regular "
+                        f"expression ({exc})") from exc
 
 
 def load_conventions(paths: list[pathlib.Path]) -> Conventions:
@@ -416,12 +431,14 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
     protocols: dict[str, dict] = {}
     host: dict = {}
     rules: dict[str, dict] = {}
+    phrase_files: dict[str, pathlib.Path] = {}
 
     for path in paths:
         doc = _read(path)
         _validate(doc, "conventions.v1.schema.json", path)
         for nc in doc["name_classes"]:
-            classes.append(NameClass(re.compile(nc["pattern"]), nc["role"]))
+            classes.append(NameClass(_compiled(path, "name_classes pattern", nc["pattern"]),
+                                     nc["role"]))
         pre = doc.get("preconditions") or {}
         for name, described in (pre.get("inputs") or {}).items():
             if isinstance(described, dict):
@@ -432,8 +449,26 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
                 # A later file that only describes the input withdraws the
                 # rule an earlier one gave for it.
                 rules.pop(name, None)
+        spelt: dict[str, str] = {}
         for raw, reading in (pre.get("phrases") or {}).items():
             key = raw.strip().lower()
+            # ⚠ Two spellings of one phrase in ONE file are one key once case
+            # and spacing are set aside, and the table keeps the later: the
+            # same silent last-wins as a key written twice, one step past what
+            # the file reader can see. Across files a later file replacing an
+            # earlier reading is the layering this loader documents.
+            if key in spelt:
+                raise PackError(
+                    f"{path}: preconditions.phrases {spelt[key]!r} and {raw!r} are "
+                    f"one phrase once case and spacing are set aside, and the "
+                    f"table would keep only the later reading")
+            spelt[key] = raw
+            expression = reading["expression"] if isinstance(reading, dict) else reading
+            try:
+                expression_names(expression)
+            except ExpressionError as exc:
+                raise PackError(f"{path}: preconditions.phrases {raw!r}: {exc}") from exc
+            phrase_files[key] = path
             if isinstance(reading, dict):
                 phrases[key] = reading["expression"]
                 assumed[key] = reading["assumed"]
@@ -460,13 +495,15 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
                     f"it and every report that reaches the phrase can name it."
                 )
         if pre.get("pattern"):
-            phrase_pattern = re.compile(pre["pattern"])
+            phrase_pattern = _compiled(path, "preconditions.pattern", pre["pattern"])
             if "phrase" not in phrase_pattern.groupindex:
                 raise PackError(
                     f"{path}: preconditions.pattern needs the named group "
                     f"`phrase` -- without it the core cannot say which part "
                     f"of a match is the precondition to look up"
                 )
+        for n in pre.get("normalise") or []:
+            _compiled(path, "preconditions.normalise from", n["from"])
         normalise += [(n["from"], n["to"]) for n in (pre.get("normalise") or [])]
         gate_off += doc.get("gate_off") or []
         gate_off_note = doc.get("gate_off_note") or gate_off_note
@@ -477,9 +514,9 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         protocols.update(doc.get("protocols") or {})
         host.update(doc.get("host") or {})
         if doc.get("duration_pattern"):
-            duration = re.compile(doc["duration_pattern"])
+            duration = _compiled(path, "duration_pattern", doc["duration_pattern"])
         if doc.get("comparison_pattern"):
-            comparison = re.compile(doc["comparison_pattern"])
+            comparison = _compiled(path, "comparison_pattern", doc["comparison_pattern"])
             missing = {"name", "op", "token"} - set(comparison.groupindex)
             if missing:
                 raise PackError(
@@ -487,6 +524,23 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
                     f"{', '.join(sorted(missing))} — without them the core "
                     f"cannot say what was compared against what"
                 )
+
+    # ⚠ Held to the inputs once every file has said its part: a later file may
+    # declare an input an earlier one's phrase reads. A name no file declares
+    # reads NOTHING, so the condition the prose states is missing from every
+    # check with nothing to say so; the likeliest cause is a misspelling, and
+    # the declared inputs are named so that it can be seen.
+    for key, expression in phrases.items():
+        unknown = [n for n in dict.fromkeys(expression_names(expression))
+                   if n.lower() not in LITERALS and n not in inputs]
+        if unknown:
+            raise PackError(
+                f"{phrase_files[key]}: preconditions.phrases {key!r} reads "
+                f"{expression!r}, and {', '.join(map(repr, unknown))} "
+                f"{'is' if len(unknown) == 1 else 'are'} not declared in "
+                f"preconditions.inputs ({', '.join(sorted(inputs)) or 'none declared'}) "
+                f"-- a name nobody declares reads nothing, so the condition would "
+                f"be missing from every check")
 
     return Conventions(
         name_classes=classes,
@@ -705,12 +759,51 @@ def load_pack(root: pathlib.Path) -> Pack:
     # the questions must never do is pretend the silence of an absent example
     # set is the silence of a clean one -- see `examples_are_absent`.
     example_paths = [root / c for c in EXAMPLE_FILES if (root / c).is_file()]
+    model = load_model(_pick(root, MODEL_FILES, "interface-model"))
+    conventions = load_conventions(_pick(root, CONVENTION_FILES, "conventions"))
+    _hold_rules_to_the_model(root, conventions, model)
     return Pack(
         root=root,
-        model=load_model(_pick(root, MODEL_FILES, "interface-model")),
-        conventions=load_conventions(_pick(root, CONVENTION_FILES, "conventions")),
+        model=model,
+        conventions=conventions,
         examples=load_examples(example_paths) if example_paths else Examples(),
     )
+
+
+def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
+                             model: Model) -> None:
+    """Refuse a precondition rule that reads what the pack does not declare.
+
+    A rule is a binding input as the platform writes it, and `check` holds a
+    document's binding to the same two facts when it meets one: a protocol is
+    one the pack declares, and an address is one the model declares. A rule
+    that fails them is not a rule `check` could hold a binding to -- the
+    precondition would be compared with a reading that reads nothing here --
+    and it loaded without a word. (An `event`, `previous_of` or `state_of`
+    rule names things of the binding, which a pack cannot see.)
+    """
+    for name, rule in sorted(conventions.precondition_rules.items()):
+        where = f"{root}: preconditions.inputs {name!r} rule"
+        protocol = rule.get("protocol")
+        if protocol:
+            declared = conventions.protocols.get(protocol)
+            if declared is None:
+                raise PackError(f"{where} reads through protocol {protocol!r}, which "
+                                f"the pack's `protocols` does not declare")
+            for parameter in declared.get("parameters") or ():
+                address = (rule.get("parameters") or {}).get(parameter)
+                if address is None:
+                    raise PackError(f"{where} reads through protocol {protocol!r}, "
+                                    f"which needs parameter {parameter!r}")
+                if address not in model.by_address:
+                    raise PackError(f"{where} gives {parameter!r} the address "
+                                    f"{address!r}, which the interface model does "
+                                    f"not declare")
+            continue
+        address = rule.get("address")
+        if address and address not in model.by_address:
+            raise PackError(f"{where} reads address {address!r}, which the "
+                            f"interface model does not declare")
 
 
 def gate_off_value(conventions: Conventions, values: dict[str, int] | None) -> str | None:
