@@ -847,12 +847,27 @@ the specification owner compares the page and the figures with the prose. The
 pack-based `check` and `pseudo` tools below serve the separate
 interface-integration workflow.
 
+    python3 -m sce_author check-pack --pack <dir>
     python3 -m sce_author brief     --pack <dir> --prose <file>...
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --binding <file>
     python3 -m sce_author coverage  --pack <dir> --binding <file>...
     python3 -m sce_author pseudo                 --binding <file>
+
+**check-pack** lists everything wrong with a pack in one pass: a key written
+twice, a file that does not fit its schema (every place it departs, not the
+first), a phrase that is not an expression, a name no input declares, a regular
+expression that does not compile, a rule that reads an address or protocol the
+pack does not declare, and an examples file that contradicts itself. Every other
+command refuses at the first problem, so a pack with three mistakes took three
+runs to learn about; a pack is prepared by the people who build it and handed to
+a specification owner already verified, and they need all of them at once. It
+reads the pack through the same loader the other commands use, so each sentence
+is the one that loader would have refused with, and the first listed is the one
+it refuses with. What could not be checked is printed as `not checked:`: a model
+that did not load whole is not used to accuse the rules that read it. It exits 0
+only for a pack with nothing wrong and nothing skipped.
 
 **brief** assembles one page for whoever writes the document: the prose, the
 addresses and value spaces it touches, the precondition vocabulary, and the

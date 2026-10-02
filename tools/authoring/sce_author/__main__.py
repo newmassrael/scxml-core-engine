@@ -26,7 +26,7 @@ from .decisions import summary as decisions_summary
 from .errors import AuthoringError
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
-from .pack import load_pack
+from .pack import check_pack, load_pack
 from .prose import load_prose
 from .pseudo import render as render_pseudo
 from .questions import ask
@@ -282,6 +282,31 @@ def cmd_verify(args) -> int:
     return 1 if result.failed else 0
 
 
+def cmd_check_pack(args) -> int:
+    """Everything wrong with a pack, in one pass.
+
+    Every other command refuses at the first problem, so a pack with three
+    mistakes took three round trips to learn about. A pack is prepared by the
+    people who build it and handed to a specification owner already verified,
+    so the builder needs all of them at once, and what could not be checked
+    because something it depends on did not load.
+
+    Exit 0 only for a pack with no problem and nothing skipped. A refusal to
+    read the pack at all is not special-cased: it is the first problem listed."""
+    report = check_pack(pathlib.Path(args.pack))
+    for number, problem in enumerate(report.problems, 1):
+        print(f"problem {number}: {problem}")
+    for what in report.skipped:
+        print(f"not checked: {what}")
+    if report.clean:
+        print(f"{report.root}: no problem found (the pack loads, and every rule it "
+              f"states is held to what it declares)")
+        return 0
+    print(f"{report.root}: {len(report.problems)} problem(s), "
+          f"{len(report.skipped)} check(s) not made")
+    return 1
+
+
 def cmd_review(args) -> int:
     """Numbers about the pack, and no verdict on it.
 
@@ -398,6 +423,10 @@ def main(argv=None) -> int:
     q.add_argument("--prose", required=True, nargs="+")
     q.add_argument("--out", help="write every question as NDJSON (the screen shows counts only)")
     q.set_defaults(fn=cmd_questions)
+
+    cp = with_pack(sub.add_parser(
+        "check-pack", help="list everything wrong with a pack at once, not just the first"))
+    cp.set_defaults(fn=cmd_check_pack)
 
     r = with_pack(sub.add_parser(
         "review", help="measure the pack itself, which every other command trusts"))

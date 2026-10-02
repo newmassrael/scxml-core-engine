@@ -32,8 +32,46 @@ MODEL_FILES = ("interface-model.yaml", "interface-model.yml", "interface-model.j
 CONVENTION_FILES = ("conventions.yaml", "conventions.yml", "conventions.json")
 
 
-def _read(path: pathlib.Path):
-    """Read a pack file, or refuse in a sentence that names it.
+class Problems:
+    """Where a loader says what is wrong with a pack.
+
+    ONE implementation serves two callers. The loader every command uses
+    refuses at the first problem, in the sentence it always did. The pack check
+    keeps going and lists every one, because a pack with three mistakes used to
+    cost three round trips to learn about, and a person preparing a pack for a
+    specification owner needs all three at once.
+
+    A loader site never decides which it is serving: it states the problem and
+    carries on with the value that cannot mislead a later site (nothing, where
+    there is nothing to read). `skipped` is for what a check could not hold the
+    pack to because something it depends on did not load: a list of problems
+    that does not say so reads as a pack that passed everything else."""
+
+    def __init__(self, collect: bool = False) -> None:
+        self.collect = collect
+        self.found: list[AuthoringError] = []
+        self.skipped: list[str] = []
+
+    def refuse(self, error: AuthoringError, cause: BaseException | None = None) -> None:
+        """Raise `error` at once, or keep it and let the loader go on."""
+        if self.collect:
+            self.found.append(error)
+        elif cause is None:
+            raise error
+        else:
+            raise error from cause
+
+    def skip(self, what: str) -> None:
+        self.skipped.append(what)
+
+
+#: The default every caller outside the pack check gets: the first problem raises.
+FIRST_PROBLEM = Problems()
+
+
+def _read(path: pathlib.Path, problems: Problems = FIRST_PROBLEM):
+    """Read a pack file, or refuse in a sentence that names it. None when the
+    refusal was kept and not raised, since there is then nothing to read.
 
     ⚠ Everything here used to travel to the caller as whatever the library
     raised. A pack whose model was binary reached the command line as a YAML
@@ -44,40 +82,49 @@ def _read(path: pathlib.Path):
         text = path.read_text(encoding="utf-8")
     except READ_ERRORS as exc:
         if not path.is_file():
-            raise PackError(describe_path(path)) from exc
-        raise PackError(f"{path}: cannot be read as text ({exc})") from exc
+            problems.refuse(PackError(describe_path(path)), exc)
+        else:
+            problems.refuse(PackError(f"{path}: cannot be read as text ({exc})"), exc)
+        return None
     try:
         return read_json(text) if path.suffix == ".json" else read_yaml(text)
     except RepeatedKey as exc:
         # ⚠ Refused, not resolved: the library keeps the last value and says
         # nothing, which is how a value space, an entry's role and a phrase's
         # reading each changed with no error (reproduced for both formats).
-        raise PackError(f"{path}: {exc}") from exc
+        problems.refuse(PackError(f"{path}: {exc}"), exc)
     except (yaml.YAMLError, json.JSONDecodeError) as exc:
         first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc
-        raise PackError(f"{path}: not well-formed ({first})") from exc
+        problems.refuse(PackError(f"{path}: not well-formed ({first})"), exc)
+    return None
 
 
 def _validate(doc, schema_name: str, path: pathlib.Path,
-              error: type[AuthoringError] = PackError) -> None:
+              error: type[AuthoringError] = PackError,
+              problems: Problems = FIRST_PROBLEM) -> bool:
     """Refuse `doc` unless it validates against `schema_name`, as `error`.
+    True when it does. Where the refusal is kept and not raised, EVERY place the
+    document departs from the schema is kept, in the order the document has them,
+    and the answer is False: a document that does not fit its schema cannot be
+    read further, since what its parts mean is what the schema says they are.
 
     `error` because not every file this core validates is part of a pack: the
     owner's decision record is read against its own schema, and a refusal of
     it saying "pack" would send its reader to the wrong file."""
     if jsonschema is None:
-        raise error(
+        problems.refuse(error(
             f"jsonschema is not installed, so {path} cannot be validated. "
             "Refusing rather than loading an unchecked file."
-        )
+        ))
+        return False
     schema = json.loads((SCHEMA_DIR / schema_name).read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(
         schema, format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER)
     errors = sorted(validator.iter_errors(doc), key=lambda e: list(e.path))
-    if errors:
-        first = errors[0]
-        where = " -> ".join(str(p) for p in first.path) or "(document root)"
-        raise error(f"{path}: {where}: {first.message}")
+    for departure in errors:
+        where = " -> ".join(str(p) for p in departure.path) or "(document root)"
+        problems.refuse(error(f"{path}: {where}: {departure.message}"))
+    return not errors
 
 
 @dataclass(frozen=True)
@@ -207,35 +254,40 @@ class Model:
 _YAML_BOOLEANS = "ON OFF YES NO TRUE FALSE Y N"
 
 
-def _check_symbols(where: str, values) -> None:
+def _check_symbols(where: str, values, problems: Problems = FIRST_PROBLEM) -> None:
     for symbol in values or ():
         if isinstance(symbol, str):
             continue
-        raise PackError(
+        problems.refuse(PackError(
             f"{where}: a value space is keyed by {symbol!r}, which is not a "
             f"symbol. YAML reads bare {_YAML_BOOLEANS} as booleans -- quote "
             f"them (\"ON\": 1) so they stay the names the platform uses."
-        )
+        ))
 
 
-def _range(spec: dict) -> tuple | None:
+def _range(spec: dict, where: str = "", problems: Problems = FIRST_PROBLEM) -> tuple | None:
     bounds = spec.get("range")
     if not bounds:
         return None
     low, high = bounds.get("minimum"), bounds.get("maximum")
     if low is not None and high is not None and low > high:
-        raise PackError(f"range minimum {low} is above its maximum {high}")
+        problems.refuse(PackError(
+            f"{where + ': ' if where else ''}range minimum {low} is above its maximum {high}"))
+        return None
     return (low, high)
 
 
-def _entry(raw: dict) -> Entry:
+def _entry(raw: dict, where: str = "", problems: Problems = FIRST_PROBLEM) -> Entry:
     fields: list[Field] = []
+    here = f"{where}: {raw['address']}" if where else ""
     if "fields" in raw:
         for fname, fspec in raw["fields"].items():
             fields.append(Field(fname, fspec.get("values"), fspec.get("type"),
-                                _range(fspec)))
+                                _range(fspec, f"{here} field {fname!r}" if here else "",
+                                       problems)))
     else:
-        fields.append(Field("", raw.get("values"), raw.get("type"), _range(raw)))
+        fields.append(Field("", raw.get("values"), raw.get("type"),
+                            _range(raw, here, problems)))
     return Entry(
         address=raw["address"],
         role=raw["role"],
@@ -245,7 +297,7 @@ def _entry(raw: dict) -> Entry:
     )
 
 
-def load_model(paths: list[pathlib.Path]) -> Model:
+def load_model(paths: list[pathlib.Path], problems: Problems = FIRST_PROBLEM) -> Model:
     """Merge any number of interface-model files.
 
     Several files because a platform's model is usually published in pieces and
@@ -254,27 +306,34 @@ def load_model(paths: list[pathlib.Path]) -> Model:
     copies would disagree about a value space and nothing would say so.
     """
     model = Model()
+    before = len(problems.found)
     for path in paths:
-        doc = _read(path)
-        _validate(doc, "interface-model.v1.schema.json", path)
+        doc = _read(path, problems)
+        if doc is None or not _validate(doc, "interface-model.v1.schema.json", path,
+                                        problems=problems):
+            continue
         for raw in doc["entries"]:
-            entry = _entry(raw)
+            entry = _entry(raw, str(path), problems)
             for fld in entry.fields:
-                _check_symbols(f"{path}: {entry.address}", fld.values)
+                _check_symbols(f"{path}: {entry.address}", fld.values, problems)
             if entry.address in model.by_address:
-                raise PackError(
+                problems.refuse(PackError(
                     f"{path}: address {entry.address!r} is already declared. "
                     "Two declarations of one address cannot both be believed."
-                )
+                ))
+                continue
             model.by_address[entry.address] = entry
             model.entries.append(entry)
             for name in entry.names:
                 model.by_name.setdefault(name, []).append(entry)
-    if not model.entries:
-        raise PackError(
+    # ⚠ Said only when nothing else was: a model that is empty because its file
+    # did not load is that file's problem, and listing it twice makes a pack
+    # with one mistake look like one with two.
+    if not model.entries and len(problems.found) == before:
+        problems.refuse(PackError(
             "the interface model is empty. An empty model answers every "
             "question cleanly, which is indistinguishable from a correct one."
-        )
+        ))
     return model
 
 
@@ -400,8 +459,10 @@ def reads_no_input(expression: str) -> bool:
     return all(n.lower() in LITERALS for n in expression_names(expression))
 
 
-def _compiled(path: pathlib.Path, where: str, pattern: str) -> re.Pattern:
-    """A regular expression the pack wrote, or a refusal that names it.
+def _compiled(path: pathlib.Path, where: str, pattern: str,
+              problems: Problems = FIRST_PROBLEM) -> re.Pattern | None:
+    """A regular expression the pack wrote, or a refusal that names it. None
+    where the refusal was kept and not raised.
 
     ⚠ `re.error` used to leave here as itself: a pack with one malformed
     pattern reached the command line as a traceback out of the `re` module,
@@ -409,11 +470,13 @@ def _compiled(path: pathlib.Path, where: str, pattern: str) -> re.Pattern:
     try:
         return re.compile(pattern)
     except re.error as exc:
-        raise PackError(f"{path}: {where} {pattern!r} is not a regular "
-                        f"expression ({exc})") from exc
+        problems.refuse(PackError(f"{path}: {where} {pattern!r} is not a regular "
+                                  f"expression ({exc})"), exc)
+        return None
 
 
-def load_conventions(paths: list[pathlib.Path]) -> Conventions:
+def load_conventions(paths: list[pathlib.Path],
+                     problems: Problems = FIRST_PROBLEM) -> Conventions:
     classes: list[NameClass] = []
     inputs: dict[str, str] = {}
     phrases: dict[str, str] = {}
@@ -434,11 +497,14 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
     phrase_files: dict[str, pathlib.Path] = {}
 
     for path in paths:
-        doc = _read(path)
-        _validate(doc, "conventions.v1.schema.json", path)
+        doc = _read(path, problems)
+        if doc is None or not _validate(doc, "conventions.v1.schema.json", path,
+                                        problems=problems):
+            continue
         for nc in doc["name_classes"]:
-            classes.append(NameClass(_compiled(path, "name_classes pattern", nc["pattern"]),
-                                     nc["role"]))
+            pattern = _compiled(path, "name_classes pattern", nc["pattern"], problems)
+            if pattern is not None:
+                classes.append(NameClass(pattern, nc["role"]))
         pre = doc.get("preconditions") or {}
         for name, described in (pre.get("inputs") or {}).items():
             if isinstance(described, dict):
@@ -458,16 +524,19 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
             # the file reader can see. Across files a later file replacing an
             # earlier reading is the layering this loader documents.
             if key in spelt:
-                raise PackError(
+                problems.refuse(PackError(
                     f"{path}: preconditions.phrases {spelt[key]!r} and {raw!r} are "
                     f"one phrase once case and spacing are set aside, and the "
-                    f"table would keep only the later reading")
+                    f"table would keep only the later reading"))
+                continue
             spelt[key] = raw
             expression = reading["expression"] if isinstance(reading, dict) else reading
             try:
                 expression_names(expression)
             except ExpressionError as exc:
-                raise PackError(f"{path}: preconditions.phrases {raw!r}: {exc}") from exc
+                problems.refuse(
+                    PackError(f"{path}: preconditions.phrases {raw!r}: {exc}"), exc)
+                continue
             phrase_files[key] = path
             if isinstance(reading, dict):
                 phrases[key] = reading["expression"]
@@ -485,7 +554,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
             # costs one line and makes every report that reaches the phrase
             # say why it was allowed.
             if reads_no_input(phrases[key]) and key not in assumed:
-                raise PackError(
+                problems.refuse(PackError(
                     f"{path}: preconditions.phrases {raw!r} reads as "
                     f"{phrases[key]!r}, which names no input -- the condition "
                     f"the prose states is removed from everything a case can "
@@ -493,18 +562,23 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
                     f"{{expression: {phrases[key]!r}, assumed: \"<why this "
                     f"holds on this platform>\"}} so the reason travels with "
                     f"it and every report that reaches the phrase can name it."
-                )
+                ))
         if pre.get("pattern"):
-            phrase_pattern = _compiled(path, "preconditions.pattern", pre["pattern"])
-            if "phrase" not in phrase_pattern.groupindex:
-                raise PackError(
+            compiled = _compiled(path, "preconditions.pattern", pre["pattern"], problems)
+            if compiled is not None and "phrase" not in compiled.groupindex:
+                problems.refuse(PackError(
                     f"{path}: preconditions.pattern needs the named group "
                     f"`phrase` -- without it the core cannot say which part "
                     f"of a match is the precondition to look up"
-                )
+                ))
+                compiled = None
+            # A pattern that was refused is not kept: it would replace a good
+            # one an earlier file gave, with one that cannot be used.
+            if compiled is not None:
+                phrase_pattern = compiled
         for n in pre.get("normalise") or []:
-            _compiled(path, "preconditions.normalise from", n["from"])
-        normalise += [(n["from"], n["to"]) for n in (pre.get("normalise") or [])]
+            if _compiled(path, "preconditions.normalise from", n["from"], problems) is not None:
+                normalise.append((n["from"], n["to"]))
         gate_off += doc.get("gate_off") or []
         gate_off_note = doc.get("gate_off_note") or gate_off_note
         neutral += doc.get("neutral_symbols") or []
@@ -514,16 +588,21 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         protocols.update(doc.get("protocols") or {})
         host.update(doc.get("host") or {})
         if doc.get("duration_pattern"):
-            duration = _compiled(path, "duration_pattern", doc["duration_pattern"])
+            compiled = _compiled(path, "duration_pattern", doc["duration_pattern"], problems)
+            if compiled is not None:
+                duration = compiled
         if doc.get("comparison_pattern"):
-            comparison = _compiled(path, "comparison_pattern", doc["comparison_pattern"])
-            missing = {"name", "op", "token"} - set(comparison.groupindex)
+            compiled = _compiled(path, "comparison_pattern", doc["comparison_pattern"],
+                                 problems)
+            missing = {"name", "op", "token"} - set(compiled.groupindex) if compiled else None
             if missing:
-                raise PackError(
+                problems.refuse(PackError(
                     f"{path}: comparison_pattern needs the named group(s) "
                     f"{', '.join(sorted(missing))} — without them the core "
                     f"cannot say what was compared against what"
-                )
+                ))
+            elif compiled is not None:
+                comparison = compiled
 
     # ⚠ Held to the inputs once every file has said its part: a later file may
     # declare an input an earlier one's phrase reads. A name no file declares
@@ -534,13 +613,13 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         unknown = [n for n in dict.fromkeys(expression_names(expression))
                    if n.lower() not in LITERALS and n not in inputs]
         if unknown:
-            raise PackError(
+            problems.refuse(PackError(
                 f"{phrase_files[key]}: preconditions.phrases {key!r} reads "
                 f"{expression!r}, and {', '.join(map(repr, unknown))} "
                 f"{'is' if len(unknown) == 1 else 'are'} not declared in "
                 f"preconditions.inputs ({', '.join(sorted(inputs)) or 'none declared'}) "
                 f"-- a name nobody declares reads nothing, so the condition would "
-                f"be missing from every check")
+                f"be missing from every check"))
 
     return Conventions(
         name_classes=classes,
@@ -611,14 +690,16 @@ class Case:
                                (float(self.elapsed_ms), float(self.elapsed_ms)))
 
 
-def _elapsed(raw, where: str) -> tuple:
+def _elapsed(raw, where: str, problems: Problems = FIRST_PROBLEM) -> tuple:
     """A record's `elapsed_ms` as (exact value or None, window or None)."""
     if raw is None:
         return None, None
     if isinstance(raw, dict):
         lo, hi = float(raw["min"]), float(raw["max"])
         if lo > hi:
-            raise PackError(f"{where}: elapsed_ms window has min {lo} above max {hi}")
+            problems.refuse(PackError(
+                f"{where}: elapsed_ms window has min {lo} above max {hi}"))
+            return None, None
         return (lo if lo == hi else None), (lo, hi)
     return float(raw), (float(raw), float(raw))
 
@@ -674,7 +755,7 @@ class Examples:
                    for v in list(c.given.values()) + list(c.expect.values()))
 
 
-def _delivered(step: dict, where: str) -> tuple | None:
+def _delivered(step: dict, where: str, problems: Problems = FIRST_PROBLEM) -> tuple | None:
     """The step's `delivered`, or None where the record does not say.
 
     Refused where it names an address the step did not drive: a delivery is
@@ -685,18 +766,21 @@ def _delivered(step: dict, where: str) -> tuple | None:
     delivered = tuple(step["delivered"])
     stray = sorted(set(delivered) - set(step.get("drove") or ()))
     if stray:
-        raise PackError(f"{where}: `delivered` names {stray}, which the step did "
-                        f"not drive -- a delivery is of a drive")
+        problems.refuse(PackError(f"{where}: `delivered` names {stray}, which the step did "
+                                  f"not drive -- a delivery is of a drive"))
+        return None
     return delivered
 
 
-def load_examples(paths: list[pathlib.Path]) -> Examples:
+def load_examples(paths: list[pathlib.Path], problems: Problems = FIRST_PROBLEM) -> Examples:
     origin, driven, expected, count = "", set(), set(), 0
     cases: list[Case] = []
     independent = ordered = False
     for path in paths:
-        doc = _read(path)
-        _validate(doc, "examples.v1.schema.json", path)
+        doc = _read(path, problems)
+        if doc is None or not _validate(doc, "examples.v1.schema.json", path,
+                                        problems=problems):
+            continue
         origin = doc.get("origin") or origin
         independent = independent or bool(doc.get("independent_cases"))
         ordered = ordered or bool(doc.get("ordered"))
@@ -713,17 +797,19 @@ def load_examples(paths: list[pathlib.Path]) -> Examples:
                 step_given = dict(step.get("given") or {})
                 driven |= set(step_given)
                 step_name = f"{name} (before {index})"
-                exact, window = _elapsed(step.get("elapsed_ms"), f"{path}: {step_name}")
+                exact, window = _elapsed(step.get("elapsed_ms"), f"{path}: {step_name}",
+                                         problems)
                 before.append(Case(step_name, step_given, {}, exact,
                                    tuple(step.get("drove") or ()), variant,
                                    elapsed_window=window,
-                                   delivered=_delivered(step, f"{path}: {step_name}")))
-            exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}")
+                                   delivered=_delivered(step, f"{path}: {step_name}",
+                                                        problems)))
+            exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}", problems)
             cases.append(Case(name, given, expect, exact,
                               tuple(case.get("drove") or ()),
                               variant, tuple(before), elapsed_window=window,
                               observed=case.get("observed") or "any",
-                              delivered=_delivered(case, f"{path}: {name}")))
+                              delivered=_delivered(case, f"{path}: {name}", problems)))
     return Examples(origin, frozenset(driven), frozenset(expected), count,
                     tuple(cases), independent, ordered)
 
@@ -736,42 +822,91 @@ class Pack:
     examples: Examples = field(default_factory=Examples)
 
 
-def _pick(root: pathlib.Path, candidates: tuple[str, ...], what: str) -> list[pathlib.Path]:
+def _pick(root: pathlib.Path, candidates: tuple[str, ...], what: str,
+          problems: Problems = FIRST_PROBLEM) -> list[pathlib.Path]:
     found = [root / c for c in candidates if (root / c).is_file()]
     extra = sorted(root.glob(f"{what}.d/*.yaml")) + sorted(root.glob(f"{what}.d/*.json"))
     if not found and not extra:
-        raise PackError(
+        problems.refuse(PackError(
             f"{root}: no {what} file. Expected one of {', '.join(candidates)}, "
             f"or a {what}.d/ directory of them."
-        )
+        ))
     return found + extra
 
 
 EXAMPLE_FILES = ("examples.yaml", "examples.yml", "examples.json")
 
 
-def load_pack(root: pathlib.Path) -> Pack:
+def _load(root: pathlib.Path, problems: Problems) -> Pack | None:
+    """The pack at `root`, read once for both callers (`load_pack` refuses at the
+    first problem, `check_pack` lists them all). None only where problems were
+    kept and the pack could not be assembled from what loaded."""
     root = pathlib.Path(root)
     if not root.is_dir():
-        raise PackError(f"{root}: not a directory")
+        problems.refuse(PackError(f"{root}: not a directory"))
+        return None
     # Examples are optional: a specification being written for the first time
     # has none, and that is the normal case rather than a broken pack. What
     # the questions must never do is pretend the silence of an absent example
     # set is the silence of a clean one -- see `examples_are_absent`.
     example_paths = [root / c for c in EXAMPLE_FILES if (root / c).is_file()]
-    model = load_model(_pick(root, MODEL_FILES, "interface-model"))
-    conventions = load_conventions(_pick(root, CONVENTION_FILES, "conventions"))
-    _hold_rules_to_the_model(root, conventions, model)
-    return Pack(
-        root=root,
-        model=model,
-        conventions=conventions,
-        examples=load_examples(example_paths) if example_paths else Examples(),
-    )
+    # ⚠ The order is the order a refusal is met in: the loader that raises at the
+    # first problem names whichever of these comes first, and a pack with two
+    # mistakes should keep telling its author about the same one first.
+    model_paths = _pick(root, MODEL_FILES, "interface-model", problems)
+    before = len(problems.found)
+    model = load_model(model_paths, problems) if model_paths else None
+    model_clean = model is not None and len(problems.found) == before
+    convention_paths = _pick(root, CONVENTION_FILES, "conventions", problems)
+    conventions = load_conventions(convention_paths, problems) if convention_paths else None
+    if model is not None and conventions is not None:
+        if model_clean:
+            _hold_rules_to_the_model(root, conventions, model, problems)
+        else:
+            # ⚠ Not held to a model that did not load whole: an address it should
+            # declare may be the one in the file that failed, and the check would
+            # then accuse a rule of reading what the pack does declare.
+            problems.skip("the rules in preconditions.inputs were not held to the "
+                          "interface model, which did not load cleanly")
+    examples = load_examples(example_paths, problems) if example_paths else Examples()
+    if model is None or conventions is None:
+        return None
+    return Pack(root=root, model=model, conventions=conventions, examples=examples)
+
+
+def load_pack(root: pathlib.Path) -> Pack:
+    pack = _load(root, FIRST_PROBLEM)
+    assert pack is not None  # the first problem raised; nothing was kept
+    return pack
+
+
+@dataclass
+class PackReport:
+    """Everything wrong with a pack at once, and what could not be checked.
+
+    `problems` are the sentences `load_pack` would have refused with, one each,
+    in the order the loader met them; `skipped` is what a check could not hold
+    the pack to because something it depends on did not load. A pack is clean
+    only when both are empty."""
+
+    root: pathlib.Path
+    problems: list[AuthoringError]
+    skipped: list[str]
+
+    @property
+    def clean(self) -> bool:
+        return not self.problems and not self.skipped
+
+
+def check_pack(root: pathlib.Path) -> PackReport:
+    """Read the pack at `root` the way every command does, and keep going."""
+    problems = Problems(collect=True)
+    _load(root, problems)
+    return PackReport(pathlib.Path(root), problems.found, problems.skipped)
 
 
 def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
-                             model: Model) -> None:
+                             model: Model, problems: Problems = FIRST_PROBLEM) -> None:
     """Refuse a precondition rule that reads what the pack does not declare.
 
     A rule is a binding input as the platform writes it, and `check` holds a
@@ -788,22 +923,27 @@ def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
         if protocol:
             declared = conventions.protocols.get(protocol)
             if declared is None:
-                raise PackError(f"{where} reads through protocol {protocol!r}, which "
-                                f"the pack's `protocols` does not declare")
+                problems.refuse(PackError(
+                    f"{where} reads through protocol {protocol!r}, which "
+                    f"the pack's `protocols` does not declare"))
+                continue
             for parameter in declared.get("parameters") or ():
                 address = (rule.get("parameters") or {}).get(parameter)
                 if address is None:
-                    raise PackError(f"{where} reads through protocol {protocol!r}, "
-                                    f"which needs parameter {parameter!r}")
-                if address not in model.by_address:
-                    raise PackError(f"{where} gives {parameter!r} the address "
-                                    f"{address!r}, which the interface model does "
-                                    f"not declare")
+                    problems.refuse(PackError(
+                        f"{where} reads through protocol {protocol!r}, "
+                        f"which needs parameter {parameter!r}"))
+                elif address not in model.by_address:
+                    problems.refuse(PackError(
+                        f"{where} gives {parameter!r} the address "
+                        f"{address!r}, which the interface model does "
+                        f"not declare"))
             continue
         address = rule.get("address")
         if address and address not in model.by_address:
-            raise PackError(f"{where} reads address {address!r}, which the "
-                            f"interface model does not declare")
+            problems.refuse(PackError(
+                f"{where} reads address {address!r}, which the "
+                f"interface model does not declare"))
 
 
 def gate_off_value(conventions: Conventions, values: dict[str, int] | None) -> str | None:
