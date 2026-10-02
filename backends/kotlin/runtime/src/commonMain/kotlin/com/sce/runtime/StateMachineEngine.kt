@@ -290,6 +290,28 @@ private const val MAX_ERROR_CASCADE_DEPTH = 100
  */
 private const val MAX_MACROSTEP_MICROSTEPS = 1000
 
+/**
+ * How many external events one invocation of the main event loop may take off
+ * the queue before this engine hands control back — see
+ * [StateMachineEngine.truncatedEventChains] and ARCHITECTURE.md "External-Event
+ * Budget", the contract every engine here holds.
+ *
+ * A machine that answers an event by sending itself the next one, with no
+ * target, never lets the external queue empty. Every macrostep of it ends, so
+ * [MAX_MACROSTEP_MICROSTEPS] never applies, and the loop takes the next event
+ * whenever the queue is not empty: the host call that drove it did not return.
+ * §scxml-3.13 lets a macrostep fail to end and says nothing of a chain of
+ * macrosteps, so, as with the microstep ceiling, the number is this engine's to
+ * choose and the decline has to be visible.
+ *
+ * The default is the one the contract states: three orders of magnitude above
+ * the longest invocation measured over the authoring suite (6 external events).
+ * It is a margin and not a proof, and a host that hands a machine a backlog it
+ * means to work through in one call can choose another
+ * ([StateMachineEngine.setMaxExternalEventsPerCall]).
+ */
+private const val DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10_000
+
 abstract class StateMachineEngine<S : State, E : Event>(
     protected val scriptEngine: ScxmlScriptEngine? = null
 ) {
@@ -1697,6 +1719,24 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var truncatedMacrostepCount: Int = 0
     private var lastTruncatedMacrostep: S? = null
     private var macrostepTruncated: Boolean = false
+
+    /**
+     * The budget of one invocation of the main event loop, the invocations this
+     * engine handed back with an external event still queued, and the event at
+     * the head of the queue when that last happened. See
+     * [truncatedEventChains].
+     */
+    private var maxExternalEventsPerCallValue: Int = DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL
+    private var truncatedEventChainCount: Int = 0
+    private var lastTruncatedEventValue: E? = null
+
+    /**
+     * The clock reading the scheduler pops of entries due AT it are counted
+     * against, and how many have been — the same-instant bound of rule 5 in the
+     * contract. See [promoteNextDueSend].
+     */
+    private var poppedDueAtReadingMs: Long = -1L
+    private var poppedDueAtReading: Int = 0
 
     /**
      * Microsteps taken by the macrostep now in progress, against
@@ -3164,6 +3204,70 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun lastTruncatedMacrostepState(): S? = lastTruncatedMacrostep
 
     /**
+     * How many invocations of the main event loop this engine handed back with
+     * an external event still queued, because the invocation had already taken
+     * [maxExternalEventsPerCall] of them (ARCHITECTURE.md "External-Event
+     * Budget").
+     *
+     * [truncatedMacrosteps] counts a macrostep that does not end; this counts
+     * the other way a call fails to return: every macrostep ends, and each one
+     * queues the event that starts the next (`<send event="again"/>`, no target,
+     * answered by a transition that sends it again). The specification bounds
+     * neither, and an engine that ran either to the letter would never return,
+     * with [currentState] answering and no sign that anything went wrong. This
+     * is that sign.
+     *
+     * Counted when the loop still had work after the budget. A call that takes
+     * exactly the budget and empties the queue counts zero: a long backlog is
+     * ordinary, an endless one is not. The events left queued stay queued, so a
+     * host that calls again gets another budget and the machine goes on from
+     * where it was; what the host learns is that this call did not reach quiet.
+     *
+     * A cut of the same-instant bound on the scheduler counts here too (see
+     * [tick]). Synchronous mode only: the coroutine mode never returns to the
+     * host, so there is no call to hand back.
+     */
+    fun truncatedEventChains(): Int = truncatedEventChainCount
+
+    /**
+     * The event at the head of the queue when this engine last handed a call
+     * back that way, or `null` while [truncatedEventChains] is zero — and for a
+     * cut of the scheduler whose due entry delivers no event of this machine's.
+     * In a chain that sends itself an event it is that event: the count says a
+     * call did not reach quiet and this says what it was still taking.
+     */
+    fun lastTruncatedEvent(): E? = lastTruncatedEventValue
+
+    /** The most external events one invocation of the main event loop may take. */
+    fun maxExternalEventsPerCall(): Int = maxExternalEventsPerCallValue
+
+    /**
+     * Let a host choose the budget of one invocation. A host that hands the
+     * machine a backlog it means the machine to work through in one call knows
+     * its size, and this engine does not. Settable at any time.
+     *
+     * Refused below one, and changes nothing: a budget that takes no event is a
+     * machine that cannot run, not a stricter one — every call would hand
+     * control back with the queue untouched and say it had been cut.
+     */
+    fun setMaxExternalEventsPerCall(limit: Int) {
+        require(limit >= 1) {
+            "the budget of one call is a whole number of events, at least one; got $limit"
+        }
+        maxExternalEventsPerCallValue = limit
+    }
+
+    /**
+     * Say that a call was handed back with work still waiting: the count, and
+     * what it was still taking. The bound itself is enforced by the caller; this
+     * is only the report.
+     */
+    private fun recordTruncatedEventChain(head: E?) {
+        truncatedEventChainCount++
+        lastTruncatedEventValue = head
+    }
+
+    /**
      * Destroy script engine session and release resources (sync mode cleanup).
      * Call after test assertions. Does not reset state — [currentState] remains readable.
      */
@@ -3195,6 +3299,41 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val now = engineElapsedMs()
         if (scheduledSends.isEmpty() || scheduledSends.first().fireTimeMs > now) {
             return false
+        }
+        // A scheduler that can deliver an entry due at the instant it is popping
+        // is a drain that refills itself: an entry a handler re-arms at that same
+        // reading (a `delay` of zero, which reaches this scheduler here, or a
+        // `delayexpr` that evaluates to zero) is due now, so [tick] pops it in
+        // the same call, and each pass takes ONE event, so the budget on the
+        // external drain never trips. The pops of entries due AT the reading are
+        // bounded by the same budget, reset when the reading advances
+        // (ARCHITECTURE.md "External-Event Budget", rule 5).
+        //
+        // Entries due AT the reading, not every entry popped at it: the reading
+        // is latched for the whole tick, so a host that jumps the clock a long
+        // way pops every entry that came due on the way at ONE reading, and those
+        // are due at earlier instants. A handler arms relative to the latched
+        // reading, so what it arms is due at the reading itself or after it, and
+        // only the first kind can be popped by this tick. A clock the host moved
+        // is bounded by how far it moved and is not cut.
+        val next = scheduledSends.first()
+        if (next.fireTimeMs == now) {
+            if (poppedDueAtReadingMs != now) {
+                poppedDueAtReadingMs = now
+                poppedDueAtReading = 0
+            }
+            if (poppedDueAtReading >= maxExternalEventsPerCallValue) {
+                // Justification (UNCHECKED_CAST): scheduledSends erases the event
+                // type to Any; an entry that delivers an event of this machine's
+                // own (no route, or the internal queue) holds an E, by the same
+                // construction [promoteNextDueSend] relies on below.
+                val ownsEvent = next.hostSend == null && next.hostInvokeDeadline == null &&
+                    (next.route == null || next.route == ScheduledRoute.InternalQueue)
+                @Suppress("UNCHECKED_CAST")
+                recordTruncatedEventChain(if (ownsEvent) next.event as E else null)
+                return false
+            }
+            poppedDueAtReading++
         }
         val entry = scheduledSends.removeAt(0)
         if (entry.hostSend != null) {
@@ -3430,6 +3569,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * the queue.
      */
     private fun runMainEventLoop() {
+        // External events this invocation has taken off the queue, against
+        // [maxExternalEventsPerCall]. A local, because the budget is one
+        // invocation's: a cut leaves the queue as it is and the next invocation
+        // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
+        var taken = 0
         while (true) {
             // W3C SCXML Appendix D: complete the macrostep on eventless
             // transitions and internal events alone.
@@ -3465,6 +3609,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // before the external dequeue.
             macrostepSettled()
             if (externalEventQueue.isEmpty()) break
+            // Every macrostep this loop runs ends, so [MAX_MACROSTEP_MICROSTEPS]
+            // bounds none of this: a machine that sends itself an external event
+            // on every one never empties the queue. Past the budget the queue is
+            // left exactly as it is and the call hands back, counted.
+            if (taken >= maxExternalEventsPerCallValue) {
+                recordTruncatedEventChain(externalEventQueue.first().event)
+                break
+            }
+            taken++
             processNextExternalEvent()
         }
     }

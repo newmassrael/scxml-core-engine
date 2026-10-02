@@ -209,6 +209,8 @@ stage "External-event budget document Rust tree"
 scripts/regen_external_chain_is_bounded.sh
 stage "External-event budget document Go tree"
 scripts/regen_external_chain_is_bounded_go.sh
+stage "External-event budget document Kotlin tree"
+scripts/regen_external_chain_is_bounded_kotlin.sh
 stage "External-event budget document Python tree"
 scripts/regen_external_chain_is_bounded_python.sh
 

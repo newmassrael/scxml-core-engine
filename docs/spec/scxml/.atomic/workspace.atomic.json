@@ -2016,6 +2016,11 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "defaultMaxExternalEventsPerCall",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
