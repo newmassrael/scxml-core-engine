@@ -340,12 +340,15 @@ and answers it by sending it again ends every macrostep, so the microstep ceilin
 never applied, and the engine call never returned: the processor-time limit stopped
 it after 25.5 s and called it the machine's doing, when a design that does this does
 it on every host. The engine now takes at most `max_external_events_per_call`
-external events in one call (10,000 unless the host chooses another), hands the call
-back with the rest still queued, and counts it (`truncated_event_chains`, with
-`last_truncated_event`). The driver reads that through `lowering.stopped_run`, so
-the same design is `not-judged`, cause `design`, in about 3 s, naming the event it
-was still taking. It is a ceiling this engine chooses and not a rule of W3C SCXML,
-as the microstep ceiling is; the other runtimes have no such ceiling yet.
+external events in one invocation of its main event loop (10,000 unless the host
+chooses another; a `send_event` is one invocation, and `advance_time` runs one per
+due scheduled entry), hands the call back with the rest still queued, and counts it
+(`truncated_event_chains`, with `last_truncated_event`). The driver reads that
+through `lowering.stopped_run`, so the same design is `not-judged`, cause `design`,
+in about 3 s, naming the event it was still taking. It is a ceiling this engine
+chooses and not a rule of W3C SCXML, as the microstep ceiling is. The contract the
+other runtimes are held to is ARCHITECTURE.md "External-Event Budget"; none of them
+has the ceiling yet.
 
 A refusal carries a `cause`. `design` means what the design did made the example
 unplayable (an error no state answered, an open route, a macrostep the engine

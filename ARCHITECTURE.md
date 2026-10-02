@@ -770,6 +770,110 @@ it:
 
 Do NOT write a new delay parser; call the engine's reader above.
 
+### External-Event Budget (Single Source of Truth)
+
+A machine can answer an event by sending itself the next one, with no target,
+which puts it on the external queue a host delivers to. Every macrostep of such
+a machine ends, so `MAX_MACROSTEP_MICROSTEPS` (§scxml-3.13: Appendix D lets a
+macrostep fail to end, and says nothing of a chain of macrosteps) never applies,
+and the main event loop takes the next external event whenever the queue is not
+empty. A host call that drains it does not return.
+
+Measured 2026-10-02 on the Python runtime through the authoring driver, whose
+only bound on such a design was its processor-time limit: it ran 25.5 s and was
+judged the machine's doing ("another machine may differ"), when a design that
+does this does it on every host. Every engine has the same loop shape and none
+had a budget on it; the Python runtime is the first to hold the one below. A
+budget on the host's side is not possible, since the loop is inside the engine
+call and the host has no point to count from.
+
+**The contract.** It is a ceiling this engine chooses and not a rule of W3C
+SCXML, the way `MAX_MACROSTEP_MICROSTEPS` is, and so it has to be visible.
+
+1. **What is counted.** The external events one invocation of the main event
+   loop takes from the external queue and processes. The host's own event is
+   the first of its invocation, whether the engine queues it first (Rust, Go,
+   Kotlin, C, Python) or processes it directly (both C++ engines'
+   `processEvent`, which handle the host's event and then run the loop: they
+   start with one spent). So `spin` below leaves `links == B - 1`.
+2. **The budget `B`.** 10,000 unless the host chooses another, settable at any
+   time, and never below one: a value below one, or not a whole number, is
+   refused and changes nothing, since a budget that takes no event is a machine
+   that cannot run and not a stricter one.
+3. **A cut.** When an invocation has taken `B` events and the queue still holds
+   one, it stops taking events, leaves the queue exactly as it is, and counts
+   the cut. The machine keeps running; the next invocation gets a budget of its
+   own and goes on from where this one stopped. An invocation that takes exactly
+   `B` and empties the queue refused nothing and counts nothing: a long chain
+   that ends is not a runaway.
+4. **The unit is the invocation, not the host call.** `send`, `process_event`,
+   `step` and `initialize` run the loop once. `tick` and `advance_time` run it
+   once per due scheduled entry and once more at the end, each invocation with a
+   budget of its own. What is unbounded is a drain that refills itself; a clock
+   the host moved is bounded by how far it moved, and a heartbeat every
+   millisecond across a long jump must not be refused for taking many entries.
+5. **A scheduler that can re-deliver at the instant it is popping.** A
+   delivery due at the instant being processed (a `delay` of zero that goes
+   through the scheduler rather than straight to the queue) can be re-armed by
+   its own handler while the same `tick` or `advance_time` is still popping, and
+   a budget on the drain alone never trips, since each pass takes one event. An
+   engine whose scheduler can do that bounds the pops made at one clock reading
+   by the same `B`, reset when the reading advances, and counts the cut the same
+   way. An engine that delivers a zero delay straight to the queue (Python) is
+   already bounded by item 1, and one whose positive delays are dated after the
+   instant being processed cannot re-arm into it.
+6. **The default's basis.** 10,000 is above the longest invocation measured
+   (6 external events, over every design the authoring suite plays) by three
+   orders of magnitude, and is a margin and not a proof: the W3C corpus was
+   measured on no engine. An engine that adopts the budget runs its own W3C
+   lane under it before it lands, and a test that needs more fails there, which
+   is the guard.
+
+**Accessors**, mirroring `truncated_macrosteps` and
+`last_truncated_macrostep_state` in each runtime's own style, so a host written
+for one reads the other:
+
+| Engine | Count | Head of the queue at the last cut | Budget |
+|--------|-------|-----------------------------------|--------|
+| Python | `truncated_event_chains()` | `last_truncated_event()` | `max_external_events_per_call()`, `set_max_external_events_per_call(n)`, `MAX_EXTERNAL_EVENTS_PER_CALL` |
+| Rust | `truncated_event_chains() -> u32` | `last_truncated_event() -> Option<P::Event>` | `max_external_events_per_call()`, `set_max_external_events_per_call(n)` |
+| Go | `TruncatedEventChains() uint32` | `LastTruncatedEvent() (E, bool)` | `MaxExternalEventsPerCall()`, `SetMaxExternalEventsPerCall(n)` |
+| Kotlin | `truncatedEventChains(): Int` | `lastTruncatedEvent(): E?` | `maxExternalEventsPerCall()`, `setMaxExternalEventsPerCall(n)` |
+| C11 | `<prefix>_truncated_event_chains(sm)` | `<prefix>_last_truncated_event(sm, &out) -> bool` | `<prefix>_max_external_events_per_call(sm)`, `<prefix>_set_max_external_events_per_call(sm, n)`, `SCE_MAX_EXTERNAL_EVENTS_PER_CALL` |
+| C++ AOT | `truncatedEventChains()` | `lastTruncatedEvent()` (`std::optional`) | `maxExternalEventsPerCall()`, `setMaxExternalEventsPerCall(n)` |
+| C++ Interpreter | `Statistics::truncatedEventChains` | `Statistics::lastTruncatedEvent` (name) | `StateMachine::setMaxExternalEventsPerCall(n)` |
+
+Where the engine already gates its truncation diagnostics out of a small build
+(Rust's `no_macrostep_diagnostics`), the BOUND stays in and only the count and
+the head may be compiled out, as with `truncated_macrosteps`: the flag that
+enforces the ceiling is not a diagnostic. C11's external queue is a fixed ring
+(`SCE_MAX_EVENTS`) that drops on overflow, which is a different bound and not
+this one; it holds only one event at a time in a chain that sends the next.
+
+**Out of scope, and why.** Kotlin's coroutine mode (`start(scope)`) never
+returns to the host, so there is no call to hand back, and a cut there would
+need a different signal. The C++ Interpreter has no `tick` or `advance_time`:
+its scheduler delivers from a thread, so only `processEvent` and `start` are
+bound by it.
+
+**Fixture.** `tests/integration/external_chain_is_bounded.scxml` holds the
+outcomes every engine answers the same way: `spin` (cut at exactly `B`, the rest
+left queued), `bounded` (six events: refused nothing at `B = 6`, cut with one
+`lap` queued at `B = 5`), `resume` (a chain of thirty finished by the next call
+at `B = 20`), `zero` (a chain through a static `delay="0ms"`: the call returns
+and the cut is counted), `zero_expr` (the same through `delayexpr="'0ms'"`),
+and `timed` (eight pulses at later instants: never refused, however small `B`
+is). The two zero outcomes are not the same test: an engine may read a STATIC
+zero delay as undelayed (the Rust template does), which sends it straight to the
+queue where item 1 bounds it, while an expression has no value to read at
+generation time, so an engine whose scheduler delivers a delay that evaluates to
+zero reaches its same-instant bound (item 5) only through `zero_expr`. The
+document is an ecmascript one for that reason; `sce-static` refuses `delayexpr`.
+It sits beside its drivers rather than under
+`integration_resources/`, a stem there being a seven-channel contract, until each
+engine has its driver; the Python one is
+`backends/python/tests/integration/external_chain_is_bounded/`.
+
 ### LuaDOMBinding
 
 Provides JavaScript-compatible DOM API over shared `XMLDOMWrapper`:

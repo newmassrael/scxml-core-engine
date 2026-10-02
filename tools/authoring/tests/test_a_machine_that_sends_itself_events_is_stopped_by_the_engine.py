@@ -9,7 +9,10 @@ processor-time limit: stopped after 25.5 s and judged `environment`, "another
 machine may differ", when a design that does this does it on every host.
 
 The engine now takes at most `max_external_events_per_call` external events in one
-call, and a call it hands back with events still queued is counted
+invocation of its main event loop (a `send_event` is one; ARCHITECTURE.md
+"External-Event Budget" is the contract, and the per-engine outcomes are held by
+`backends/python/tests/integration/external_chain_is_bounded/`), and an invocation
+it hands back with events still queued is counted
 (`truncated_event_chains`, with `last_truncated_event`). It is a ceiling this engine
 chooses and not a rule of W3C SCXML, as the microstep ceiling is: the specification
 bounds neither. What is asserted here is the engine's own part, run in a process of

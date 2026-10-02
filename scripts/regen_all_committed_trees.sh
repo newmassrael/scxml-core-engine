@@ -201,6 +201,13 @@ scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
 stage "Child-deadline document Python tree"
 scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
 
+# The external-event budget's document sits outside `integration_resources/` for
+# the arity reason, with its own cause: only the Python runtime holds the budget
+# so far (ARCHITECTURE.md "External-Event Budget"), and a stem there is a
+# seven-channel contract. Each engine's tree is added here with its driver.
+stage "External-event budget document Python tree"
+scripts/regen_external_chain_is_bounded_python.sh
+
 # The Mesh trees are generated from the standard library's stdlib/mesh by
 # their own scripts, and this script did not know about them — so a change
 # to what a source-hash covers left all three stale with nothing here to

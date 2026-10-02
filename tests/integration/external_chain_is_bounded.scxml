@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The chain built from EXTERNAL events: a machine that answers an event by
+     sending itself the next one, with no target, which puts it on the queue a
+     host delivers to.
+
+     W3C SCXML 3.13 ends a macrostep where nothing is enabled by NULL and the
+     internal queue is empty, and Appendix D lets a macrostep fail to end. It
+     says nothing of a chain of macrosteps. Every macrostep of this machine
+     ends: that is why `MAX_MACROSTEP_MICROSTEPS`, the ceiling that
+     `internal_chain_is_bounded` and `eventless_macrostep_is_bounded` hold, never
+     applies to it. The main event loop takes the next external event whenever
+     the queue is not empty, and here it never is, so a host call that drains it
+     did not return.
+
+     Measured 2026-10-02 on the Python runtime through the authoring driver,
+     whose only bound on such a design was its processor-time limit: stopped
+     after 25.5 s and judged the machine's doing ("another machine may differ")
+     when a design that does this does it on every host. The Rust runtime's
+     `run_main_event_loop` has the same shape (read, not run) and the other
+     engines are held to the contract in ARCHITECTURE.md "External-Event
+     Budget".
+
+     Outcomes this document separates. Each is one machine, entered from `idle`
+     and never left, so the chain of one outcome cannot answer another's:
+
+       poke     one ordinary transition      control: proves a run fired
+       spin     a chain that cannot stop     the engine takes its budget of
+                                             events in the call, leaves the
+                                             rest queued and says it did
+       bounded  a chain that STOPS by itself exactly the budget a test gives
+                                             it, and refused nothing: a long
+                                             chain is not a runaway
+       resume   a chain LONGER than a call   the refused events were left on
+                but finite                   the queue: the next call finishes
+                                             them
+       zero     a chain through the clock    `delay="0ms"`: due at the instant
+                that never advances          being processed. An engine reads a
+                                             STATIC zero delay as undelayed (the
+                                             Rust template does) or hands it to
+                                             its scheduler (not measured on all
+                                             of them), so what this holds is
+                                             only that the call returns
+       zero_expr the same, through          `delayexpr="'0ms'"`: an expression
+                 an expression              has no static value to read as
+                                             undelayed, so an engine that
+                                             schedules it pops a due entry,
+                                             runs the handler, and finds it has
+                                             armed another that is due NOW. Each
+                                             pass takes one event, so a budget
+                                             on the drain alone never trips and
+                                             the popping call never returns.
+                                             This is the outcome that holds the
+                                             same-instant bound (ARCHITECTURE.md
+                                             rule 5) on an engine whose
+                                             scheduler can do that
+       timed    a chain that is finite       the events are due at LATER
+                because the clock is         instants, so the budget does not
+                                             refuse them however small it is
+
+     `bounded` is exactly six events and that is deliberate. The host's own
+     event counts as the first of a call (the engine takes it off the queue, or
+     processes it directly where it has no queue to take it from, and either way
+     it is the first), so `bounded` is the host's `bounded`, then five `lap`s:
+     four that send the next and a fifth that sends nothing. A budget of six
+     takes all of them and refuses nothing, a budget of five refuses the call
+     with one `lap` still queued. An off-by-one in either direction is
+     arithmetic here, not a judgement.
+
+     `spin` counts the events it handles in `links`: the host's `spin` is the
+     first event of the call, so a budget of B leaves `links == B - 1` and one
+     `link` queued.
+
+     Deliberately single-axis: no `<raise>`, no `<invoke>`, no `<parallel>`, no
+     failing expression. `internal_chain_is_bounded` owns the chain built from
+     `<raise>`, `eventless_macrostep_is_bounded` the one built from transitions
+     that need no event, `error_cascade_is_bounded` the one built from errors.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="external_chain_is_bounded">
+    <datamodel>
+        <!-- Written by the control transition only. A host that reads a
+             counter of zero cannot tell "the run never happened" from "the
+             run happened and did nothing". -->
+        <data id="pokes" expr="0"/>
+        <!-- Events the unbounded chain handled. -->
+        <data id="links" expr="0"/>
+        <!-- Events the finite chain handled: five, the last of which sends
+             nothing. -->
+        <data id="laps" expr="0"/>
+        <!-- Events of the chain longer than a call: thirty. -->
+        <data id="beats" expr="0"/>
+        <!-- Events the zero-delay chain handled. How many is NOT asserted: it
+             depends on whether an engine delivers a zero delay through its
+             scheduler or straight to the queue, and what is held is that the
+             call returns. -->
+        <data id="blinks" expr="0"/>
+        <!-- The same, through `delayexpr`. -->
+        <data id="exprs" expr="0"/>
+        <!-- Events of the chain that is finite because the clock is. -->
+        <data id="pulses" expr="0"/>
+    </datamodel>
+
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="spin" target="spin"/>
+        <transition event="bounded" target="bounded"/>
+        <transition event="resume" target="resuming"/>
+        <transition event="zero" target="zeroing"/>
+        <transition event="zero_expr" target="zeroing_expr"/>
+        <transition event="timed" target="timing"/>
+    </state>
+
+    <!-- A chain that cannot end. The state is entered once, so its `onentry`
+         runs once and starts the chain; every link answers by sending the next.
+         The transitions are TARGETLESS: a self transition would re-run
+         `onentry` and start a second chain beside the first, and the count
+         would then measure two. -->
+    <state id="spin">
+        <onentry><send event="link"/></onentry>
+        <transition event="link">
+            <assign location="links" expr="links + 1"/>
+            <send event="link"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- Five events and then nothing: four links that each send the next, and a
+         fifth that is the last. Two transitions rather than an `<if>` so the
+         choice is document-order selection, which every backend resolves the
+         same way. -->
+    <state id="bounded">
+        <onentry><send event="lap"/></onentry>
+        <transition event="lap" cond="laps &lt; 4">
+            <assign location="laps" expr="laps + 1"/>
+            <send event="lap"/>
+        </transition>
+        <transition event="lap">
+            <assign location="laps" expr="laps + 1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- Thirty events: longer than any call a test gives it a budget for, and
+         finite. What it measures is what the refusal did with the events it
+         would not take: an engine that dropped the queue stops short and never
+         finishes, and one that ran the chain anyway finishes it in the first
+         call. Neither can be told from the correct answer by any other outcome
+         here. -->
+    <state id="resuming">
+        <onentry><send event="beat"/></onentry>
+        <transition event="beat" cond="beats &lt; 29">
+            <assign location="beats" expr="beats + 1"/>
+            <send event="beat"/>
+        </transition>
+        <transition event="beat">
+            <assign location="beats" expr="beats + 1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- A chain through a delay of zero. It is due at the instant being
+         processed, so an engine whose scheduler delivers it as a due entry pops
+         it, runs the handler, and finds the handler has armed another that is
+         due now. Each pass takes one event off the queue, so a budget on the
+         drain alone never trips, and the call that is popping never returns.
+         The clock never moves. -->
+    <state id="zeroing">
+        <onentry><send event="blink" delay="0ms"/></onentry>
+        <transition event="blink">
+            <assign location="blinks" expr="blinks + 1"/>
+            <send event="blink" delay="0ms"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- The same chain through an expression. A delay that is an expression has
+         no value until it runs, so there is nothing to read at generation time
+         and an engine cannot take it for undelayed: whatever it does with a
+         delay that evaluates to zero is what this measures. The document is an
+         ecmascript one for that reason; `sce-static` refuses `delayexpr`. -->
+    <state id="zeroing_expr">
+        <onentry><send event="blink" delayexpr="'0ms'"/></onentry>
+        <transition event="blink">
+            <assign location="exprs" expr="exprs + 1"/>
+            <send event="blink" delayexpr="'0ms'"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- Eight events, each due one millisecond after the last, armed together
+         when the state is entered. Walked a millisecond at a time they come one
+         to a call; moved by one jump of eight they come eight in one call. Either
+         way every one is due at a LATER instant than the one before, so the
+         chain is finite because the clock is, and it is not a runaway however
+         small the budget: a legitimate time-driven workload is not refused. -->
+    <state id="timing">
+        <onentry>
+            <send event="pulse" delay="1ms"/>
+            <send event="pulse" delay="2ms"/>
+            <send event="pulse" delay="3ms"/>
+            <send event="pulse" delay="4ms"/>
+            <send event="pulse" delay="5ms"/>
+            <send event="pulse" delay="6ms"/>
+            <send event="pulse" delay="7ms"/>
+            <send event="pulse" delay="8ms"/>
+        </onentry>
+        <transition event="pulse">
+            <assign location="pulses" expr="pulses + 1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+</scxml>

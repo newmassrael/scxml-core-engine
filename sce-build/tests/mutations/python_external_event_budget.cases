@@ -1,0 +1,110 @@
+# Mutation cases for "a call that drains a self-refilling external queue is
+# handed back".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_external_event_budget.cases`.
+#
+# A machine that answers an event by sending itself the next one, with no
+# target, never lets the external queue empty, and every macrostep of it ends, so
+# the microstep ceiling never applies: the call did not return. The Python engine
+# takes at most `max_external_events_per_call` events in one invocation of its main
+# event loop, leaves the rest queued, and counts the cut. ARCHITECTURE.md
+# "External-Event Budget" is the contract and
+# `tests/integration/external_chain_is_bounded.scxml` the document.
+#
+# Four things are easy to get wrong and read as success: a budget that is off by
+# one in either direction (the chain that ENDS at exactly the budget is the case
+# that tells them apart), a refusal that swallows the event it declined (the chain
+# stops short and never finishes), a cut that is not counted (the host sees a
+# machine that is running and has returned), and a budget a host can set to a
+# value that takes no event.
+#
+# Python compiles nothing, so the module on disk is the artifact and every edit
+# here is a `mutation_runtime_targets`. The document the oracle imports is
+# GENERATED and gitignored, so its regeneration is declared.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/external_chain_is_bounded/
+mutation_regen scripts/regen_external_chain_is_bounded_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
+mutation_oracles backends/python/tests/integration/external_chain_is_bounded/test_external_chain_is_bounded_aot.py
+
+# ── The refusal itself ──────────────────────────────────────────────
+
+mutation_case "the drain has no budget at all" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if taken >= self._max_external_events_per_call:",
+     "            if False:")
+PY
+
+mutation_case "the budget is one event more than it says" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if taken >= self._max_external_events_per_call:",
+     "            if taken > self._max_external_events_per_call:")
+PY
+
+mutation_case "the budget is one event fewer than it says" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if taken >= self._max_external_events_per_call:",
+     "            if taken >= self._max_external_events_per_call - 1:")
+PY
+
+# ── The refusal leaves the queue alone ──────────────────────────────
+#
+# Popping before asking consumes the event the drain then declines to run. The
+# chain is still bounded and the count still moves, so only the `resume` outcome
+# can see it: it stops a link short of its end and never finishes, because the
+# link that would have continued it was thrown away.
+
+mutation_case "the drain swallows the event it refused" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                self._truncated_event_chains += 1\n",
+     "                self._truncated_event_chains += 1\n                self._external_queue.popleft()\n")
+PY
+
+# ── The cut is said ─────────────────────────────────────────────────
+
+mutation_case "a cut is not counted" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                self._truncated_event_chains += 1\n",
+     "                self._truncated_event_chains += 0\n")
+PY
+
+mutation_case "the cut does not say which event it was still taking" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                self._last_truncated_event = self._external_queue[0].event\n",
+     "                self._last_truncated_event = None\n")
+PY
+
+# ── One budget per invocation, not one for the engine's life ────────
+#
+# A counter that is never reset is spent by the first call, so the next call of a
+# chain longer than one budget is cut at once and never finishes.
+
+mutation_case "the count of events taken survives the invocation" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        taken = 0\n        while True:\n            # §scxml-D-mainEventLoop: complete the macrostep",
+     "        taken = getattr(self, \"_taken_for_life\", 0)\n        while True:\n            self._taken_for_life = taken\n            # §scxml-D-mainEventLoop: complete the macrostep")
+PY
+
+# ── What a host may set ─────────────────────────────────────────────
+
+mutation_case "a budget that takes no event is accepted" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:",
+     "        if isinstance(limit, bool) or not isinstance(limit, int):")
+PY
+
+mutation_case "a refused budget is stored anyway" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:",
+     "        self._max_external_events_per_call = limit\n        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:")
+PY
+
+mutation_case "the default budget is not the documented one" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "MAX_EXTERNAL_EVENTS_PER_CALL = 10_000",
+     "MAX_EXTERNAL_EVENTS_PER_CALL = 1_000")
+PY

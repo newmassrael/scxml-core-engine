@@ -91,6 +91,15 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh" >/dev/null \
     || sce_gate_fail "Python child-deadline generation"
 
+# The external-event budget's document, for the same reason: it sits under
+# `tests/integration/` rather than `integration_resources/` until every engine
+# has a driver for it (a stem there is a seven-channel contract, and only the
+# Python runtime holds the budget so far: ARCHITECTURE.md "External-Event
+# Budget"), so `generate-integration` never sees it, and its gitignored `_sm.py`
+# would be a module nothing produced.
+"$SCE_REPO_ROOT/scripts/regen_external_chain_is_bounded_python.sh" >/dev/null \
+    || sce_gate_fail "Python external-event budget generation"
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 

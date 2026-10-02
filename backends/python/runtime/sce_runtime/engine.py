@@ -150,8 +150,20 @@ MAX_ERROR_CASCADE_DEPTH = 100
 # still reported.
 MAX_MACROSTEP_MICROSTEPS = 1000
 
-# How many external events one host call may take off the queue before this
-# engine hands control back — see `Engine.truncated_event_chains`.
+# How many external events one INVOCATION of the main event loop may take off
+# the queue before this engine hands control back — see
+# `Engine.truncated_event_chains` and ARCHITECTURE.md "External-Event Budget".
+#
+# The unit is the invocation, not the host call, and the two differ: `send_event`
+# and `initialize` run the loop once, while `advance_time` runs it once per due
+# scheduled entry and once more at the end, each with a budget of its own. That
+# is deliberate. What is unbounded is a drain that refills itself; a clock the
+# host moved is bounded by how far it moved, and a legitimate time-driven
+# workload (a heartbeat every millisecond across a long jump) must not be
+# refused for taking many entries. A scheduler that could deliver a due-now entry
+# again while the same call is still popping would need a bound of its own, and
+# this one cannot: a zero delay goes straight to the external queue here, and a
+# positive one is dated after the instant being processed.
 #
 # `send_event`, `advance_time` and `initialize` each run the main event loop
 # until the external queue is empty. A machine whose handler sends itself an
@@ -887,9 +899,11 @@ class Engine(Generic[S, E]):
         return self._last_truncated_macrostep_state
 
     def truncated_event_chains(self) -> int:
-        """How many host calls this engine handed back with external events
-        still queued, because the call had already taken
-        `max_external_events_per_call` of them.
+        """How many times this engine handed a main-event-loop invocation back
+        with external events still queued, because it had already taken
+        `max_external_events_per_call` of them. One host call is one invocation
+        for `send_event` and `initialize` and several for `advance_time`; the
+        host's own event counts as the first of its invocation.
 
         `truncated_macrosteps` counts a macrostep that does not end; this counts
         the other way a call fails to return: every macrostep ends, and each one
@@ -916,12 +930,13 @@ class Engine(Generic[S, E]):
         return self._last_truncated_event
 
     def max_external_events_per_call(self) -> int:
-        """The most external events one host call may take. See
-        `MAX_EXTERNAL_EVENTS_PER_CALL`."""
+        """The most external events one invocation of the main event loop may
+        take (the name says `call` because for `send_event` and `initialize` the
+        two are the same). See `MAX_EXTERNAL_EVENTS_PER_CALL`."""
         return self._max_external_events_per_call
 
     def set_max_external_events_per_call(self, limit: int) -> None:
-        """Let a host choose the budget of one call. A host that hands the
+        """Let a host choose the budget of one invocation. A host that hands the
         machine a backlog it means the machine to work through in one call
         knows its size, and this engine does not.
 
@@ -2010,12 +2025,14 @@ class Engine(Generic[S, E]):
         same reason: a state entered by event N's transition must have its
         invokes started before N+1 comes off the queue.
 
-        One call takes at most `max_external_events_per_call` external events.
-        Each iteration above ends a macrostep, so `MAX_MACROSTEP_MICROSTEPS`
-        bounds none of this: a machine that sends itself an external event on
-        every one never empties the queue, and this loop did not return. Past
-        the budget the queue is left as it is and the call hands back, counted
-        in `truncated_event_chains`.
+        One invocation of this loop takes at most `max_external_events_per_call`
+        external events. Each iteration above ends a macrostep, so
+        `MAX_MACROSTEP_MICROSTEPS` bounds none of this: a machine that sends
+        itself an external event on every one never empties the queue, and this
+        loop did not return. Past the budget the queue is left as it is and the
+        invocation hands back, counted in `truncated_event_chains`. `advance_time`
+        invokes this once per due scheduled entry, each with a budget of its own:
+        see the comment on `MAX_EXTERNAL_EVENTS_PER_CALL`.
         """
         taken = 0
         while True:
