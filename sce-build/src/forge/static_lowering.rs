@@ -1957,11 +1957,11 @@ impl StaticTarget for CppTarget {
         if let Some(var) = scope.variables.iter().find(|v| {
             !matches!(
                 v.value_type.as_ref().and_then(|t| t.scalar()),
-                Some(ty) if !matches!(ty, SceType::Enum(_) | SceType::Bytes)
+                Some(ty) if !matches!(ty, SceType::Bytes)
             )
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a list, record, enum or bytes type",
+                "<data id=\"{}\"> of a list, record or bytes type",
                 var.id
             ));
         }
@@ -2039,6 +2039,50 @@ impl StaticTarget for CppTarget {
     fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
         unreachable!("refused by CppTarget::unsupported")
     }
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
+    }
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::Cpp, enum_name, variant)
+    }
+    // A scoped enumeration over the enum document's own carrier, each variant
+    // holding the value the document declares for it. `sceLogName` answers the
+    // name the document gives a value, which is what a `<log>` shows and what a
+    // host compares to a scenario: a scoped enum has no `fmt` spelling.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    {} = {},\n",
+                    self.enum_variant(&model.name, &v.name),
+                    v.value
+                )
+            })
+            .collect();
+        let names: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    case {ty}::{}: return \"{}\";\n",
+                    self.enum_variant(&model.name, &v.name),
+                    filters::escape_cpp(v.name.clone())
+                )
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
+             enum class {ty} : {} {{\n{variants}}};\n\n\
+             /// The name the enum document declares for `value`.\n\
+             inline const char *sceLogName({ty} value) {{\n    switch (value) {{\n{names}    }}\n    return \"\";\n}}",
+            crate::forge::generator::cpp_type(&model.underlying_type)
+        )
+    }
     fn list_type(&self, _elem: &SceType) -> String {
         unreachable!("refused by CppTarget::unsupported")
     }
@@ -2060,12 +2104,14 @@ impl StaticTarget for CppTarget {
     fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
         unreachable!("refused by CppTarget::unsupported")
     }
+    // Through `sceLogName`, which an enum declares beside its type and every
+    // other value passes through unchanged.
     fn log(&self, label: &str, value: &str) -> String {
         if label.is_empty() {
-            format!("SCE_LOG_INFO(\"{{}}\", {value});")
+            format!("SCE_LOG_INFO(\"{{}}\", sceLogName({value}));")
         } else {
             format!(
-                "SCE_LOG_INFO(\"{{}}: {{}}\", \"{}\", {value});",
+                "SCE_LOG_INFO(\"{{}}: {{}}\", \"{}\", sceLogName({value}));",
                 filters::escape_cpp(label.to_string())
             )
         }

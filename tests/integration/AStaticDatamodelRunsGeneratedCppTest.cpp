@@ -27,6 +27,7 @@
 
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_enum_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
 #include "static_overflow_sm.h"
@@ -172,6 +173,29 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventsTypedPayloadIsReadInAGuardAnd
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_payload", driver);
+}
+
+// An enum variable holds a variant of its enum, is compared with `===` and
+// `!==` to a variant or to another variable of the same enum, and takes a
+// conditional of two variants. The scenario names a value as the enum document
+// does, so the host's enum is read back by `sceLogName`.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumVariableHoldsAVariantOfItsEnum) {
+    namespace E = G::static_enum;
+
+    // `previous` is the machine's own, which the scenario states anyway: the
+    // probe reaches the policy that holds it.
+    struct Probe : E::static_enum {
+        const E::static_enumPolicy &policy() const {
+            return this->policy_;
+        }
+    };
+
+    Driver<Probe> driver({
+        {"layout", [](const Probe &m) { return json(std::string(E::sceLogName(m.layout()))); }},
+        {"previous", [](const Probe &m) { return json(std::string(E::sceLogName(m.policy().v_previous))); }},
+        {"changes", [](const Probe &m) { return json(m.changes()); }},
+    });
+    replay("static_enum", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

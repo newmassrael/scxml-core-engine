@@ -260,9 +260,10 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 
 #[test]
 fn cpp_names_each_construct_it_does_not_lower_yet() {
-    // C++ lowers scalar variables, guards, `<assign>`, `<if>`, `<log>` and
-    // `In()`. What is past that is refused by name where the document is read,
-    // not left as an undefined name in the generated code.
+    // C++ lowers scalar and enum variables, guards, `<assign>`, `<if>`, `<log>`,
+    // `In()`, host actions and an event's typed payload. What is past that is
+    // refused by name where the document is read, not left as an undefined name
+    // in the generated code.
     let cases = [
         (
             "a list variable",
@@ -270,7 +271,7 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
                 "sce-static",
                 r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>"#,
             ),
-            "of a list, record, enum or bytes type",
+            "of a list, record or bytes type",
         ),
         ("an <invoke>", invoking(""), "an <invoke>"),
     ];

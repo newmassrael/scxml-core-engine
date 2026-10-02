@@ -283,6 +283,20 @@ enum class History : uint8_t {
     {% endfor %}
 };
 
+{% if static_fields %}
+{# SCE Accepted Subset §2.15: the types a `sce-static` machine's variables
+   are held in, declared in the machine's own unit. `sceLogName` is how a
+   `<log>` shows a value: an enum declares one beside its type, which names the
+   value as the enum document does, and every other value passes through. #}
+template <typename T> const T &sceLogName(const T &value) {
+    return value;
+}
+
+{% if static_type_defs %}
+{{ static_type_defs }}
+
+{% endif %}
+{% endif %}
 {% if event_payload_active %}
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
