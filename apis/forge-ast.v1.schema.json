@@ -201,6 +201,13 @@
         "target": {
           "type": "string"
         },
+        "target_decisions": {
+          "description": "The ids of the open questions this `<send>`'s `targetexpr` rests on, as [`Self::type_decisions`] is for the `typeexpr`: those marked on the send itself and on the data the `targetexpr` names. The delivery to the address it produces rests on them too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "target_unsupported": {
           "default": false,
           "description": "`true` when a written `target` is a value the SCXML Event I/O Processor cannot address (§scxml-6.2.4) — decided by [`crate::host_processor_analyzer::is_unsupported_scxml_target`] and read by every backend's send template, which refuses the send with error.execution as it refuses an unsupported `type`.",
@@ -217,6 +224,13 @@
         },
         "type": {
           "type": "string"
+        },
+        "type_decisions": {
+          "description": "The ids of the open questions (`sce:unresolved`) this `<send>`'s `typeexpr` rests on: those marked on the send itself and on the data the `typeexpr` names (§scxml-6.2.4). Empty for a send with no `typeexpr` and for one whose `typeexpr` rests on no question.\n\n⚠ Kept apart from [`Self::target_decisions`], not merged into one list: the type and the target fail independently, and a failure of the type that no answer about the target would mend is not the target's question (measured 2026-10-02: a send whose target was open and whose type named a variable nobody declared was reported as waiting on the caller).\n\nSet once, by [`crate::computed_route_analyzer::annotate`], from the same reading the manifest's `computed_routes` publishes, so the generated machine and the manifest cannot name different questions. A backend that lets a host tell a failure of such a send from a fault of the document reads it; the others ignore it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "typeexpr": {
           "type": "string"
