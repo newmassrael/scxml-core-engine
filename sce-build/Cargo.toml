@@ -832,6 +832,26 @@ path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_foreach_walks_a_list_variable"
+path = "tests/a_foreach_walks_a_list_variable.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "a_list_holds_records"
+path = "tests/a_list_holds_records.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "a_record_holds_an_enum_field"
+path = "tests/a_record_holds_an_enum_field.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "an_enum_variable_holds_a_variant_of_its_enum"
+path = "tests/an_enum_variable_holds_a_variant_of_its_enum.rs"
+required-features = ["cli"]
+
+[[test]]
 # Spawns `sce-codegen` and reads what it wrote, so the binary has to exist.
 name = "a_machine_waiting_on_another_session_has_no_save_api"
 path = "tests/a_machine_waiting_on_another_session_has_no_save_api.rs"
