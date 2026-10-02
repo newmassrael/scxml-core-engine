@@ -77,6 +77,37 @@
 //! different acceptance, and the digest is the whole of what makes them
 //! different.
 //!
+//! The scenario set ([`crate::scenario_set`]) is the fourth, under
+//! [`crate::acceptance_record::SourceRole::Examples`], and like the profile it
+//! is held to and not authored from: the examples whose passing closed a
+//! requirement (`scenario-passed`, [`crate::scenario_closure`]) are part of what
+//! the owner accepted the design WITH. A set edited afterwards is another set,
+//! and an acceptance that went on answering for it would be reading the old
+//! examples' passes as the new ones'. The record pins the set's BYTES and says
+//! nothing of how its scenarios came out: that is a run's, on an engine, and is
+//! asked again by `requirements --scenarios --trace`.
+//!
+//! # Which rules of the profile the design applied
+//!
+//! ```text
+//!   applied_rules   each house rule the design    "the profile changed" says
+//!                   cited, as the profile worded  nothing a reader can act on;
+//!                   it, and at how many places    "H2 changed, applied at 3
+//!                                                 places" does
+//! ```
+//!
+//! A design accepted under a profile cites house rules (`sce:assumed="H1"`) as
+//! the owner's standing answers, and the profile is pinned by its bytes. When
+//! those bytes move the lapse says the profile did, which is true of every rule
+//! in it and useful for none. The record keeps the TEXT of each rule the design
+//! applied, as it read when the design was accepted, so that a profile that
+//! changes afterwards can be compared rule by rule ([`Lapse::Rule`]): this rule
+//! now says something else, and this design relied on it at this many places; or
+//! this rule is gone. It also puts the content a reader needs in the record
+//! itself: a developer reading an acceptance need not ask for the profile to
+//! learn what `H1` meant. Optional, and omitted when the design applied none, so
+//! a record that never needed it keeps the bytes it always had.
+//!
 //! # What was still open when a person accepted
 //!
 //! ```text
@@ -136,14 +167,18 @@ pub enum SourceRole {
     /// The authoring profile the design was held to
     /// ([`crate::authoring_profile`]); one at most.
     Profile,
+    /// The scenario set whose examples the design was held to
+    /// ([`crate::scenario_set`]); one at most.
+    Examples,
 }
 
 impl SourceRole {
     /// Every role, in the order a record lists them.
-    pub const ALL: [SourceRole; 3] = [
+    pub const ALL: [SourceRole; 4] = [
         SourceRole::Specification,
         SourceRole::Decisions,
         SourceRole::Profile,
+        SourceRole::Examples,
     ];
 
     /// How the design stands to a file of this role, for a sentence that
@@ -153,7 +188,7 @@ impl SourceRole {
     fn relation(self) -> &'static str {
         match self {
             SourceRole::Specification | SourceRole::Decisions => "authored from",
-            SourceRole::Profile => "held to",
+            SourceRole::Profile | SourceRole::Examples => "held to",
         }
     }
 }
@@ -164,8 +199,23 @@ impl fmt::Display for SourceRole {
             SourceRole::Specification => "specification",
             SourceRole::Decisions => "decision record",
             SourceRole::Profile => "authoring profile",
+            SourceRole::Examples => "scenario set",
         })
     }
+}
+
+/// One house rule the design applied, as the profile worded it when the design
+/// was accepted, and at how many places the design cites it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppliedRule {
+    /// The id the design writes (`sce:assumed="H1"`).
+    pub id: String,
+    /// What the profile said the rule was, verbatim.
+    pub rule: String,
+    /// How many markers of the design cite it. Applying one rule twice is two
+    /// places for the owner to confirm and the rule is one.
+    pub places: usize,
 }
 
 /// One file the design was authored from.
@@ -215,6 +265,12 @@ pub struct AcceptanceRecord {
     /// design was authored from and held to, sorted by role and path. Empty when the record was taken
     /// without them — see the module docs.
     pub authored_from: Vec<SourcePin>,
+    /// The house rules of the pinned authoring profile that the design cited,
+    /// each as the profile worded it and with the number of places that cite
+    /// it, sorted by id. Empty when the design cited none — and always empty
+    /// for a record taken without a profile, which cannot tell a house rule
+    /// from a value chosen without an answer. See the module docs.
+    pub applied_rules: Vec<AppliedRule>,
     /// What the design left to a person when it was accepted: the open
     /// questions, the values chosen without the specification, a parent it
     /// needs, a processor the host must serve ([`crate::open_matters`]).
@@ -241,6 +297,8 @@ struct RecordWire {
     inputs: Vec<InputPin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     authored_from: Vec<SourcePin>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    applied_rules: Vec<AppliedRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
 }
@@ -281,6 +339,17 @@ pub enum Lapse {
         path: String,
         recorded_sha256: String,
         current_sha256: Option<String>,
+    },
+    /// A house rule the design applied no longer reads as it did: the
+    /// profile's bytes moved (`Source` says so) and, read now, the rule has
+    /// other words (`current` is them) or is gone (`current` is `None`). Only
+    /// said when the profile still loads; a profile that does not is `Source`'s
+    /// to report, and a rule it cannot be read for is not said to be unchanged.
+    Rule {
+        id: String,
+        places: usize,
+        recorded: String,
+        current: Option<String>,
     },
     /// The files a caller asked about are not the ones the design was
     /// authored from — compared by content, so the same specification under
@@ -343,6 +412,30 @@ impl fmt::Display for Lapse {
                     role.relation()
                 ),
             },
+            Lapse::Rule {
+                id,
+                places,
+                recorded,
+                current,
+            } => {
+                let at = if *places == 1 {
+                    "1 place".to_string()
+                } else {
+                    format!("{places} places")
+                };
+                match current {
+                    Some(now) => write!(
+                        f,
+                        "house rule `{id}`, which the design applied at {at}, now says \
+                         {now:?}; it said {recorded:?} when the design was accepted"
+                    ),
+                    None => write!(
+                        f,
+                        "house rule `{id}`, which the design applied at {at} and which \
+                         said {recorded:?}, is no longer in the profile"
+                    ),
+                }
+            }
             Lapse::NotAuthoredFrom {
                 role,
                 pinned,
@@ -493,10 +586,12 @@ impl AcceptanceRecord {
         // run under that profile does: an `sce:assumed` that cites one of its
         // house rules is the owner's standing answer, not a value chosen
         // without one.
-        let house_rules = house_rule_ids_of(sources)?;
-        let house_rule_ids: Vec<&str> = house_rules.iter().map(String::as_str).collect();
-        let (inputs, open_at_acceptance) = read_design(&root, &document_path, &house_rule_ids)
+        let house_rules = house_rules_of(sources)?;
+        let house_rule_ids: Vec<&str> = house_rules.iter().map(|(id, _)| id.as_str()).collect();
+        let (inputs, reading) = read_design(&root, &document_path, &house_rule_ids)
             .map_err(|failure| failure.into_take_error(document))?;
+        let applied_rules = applied_rules_of(&house_rules, &reading.cited);
+        let open_at_acceptance = reading.open;
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
             authored_from.push(SourcePin {
@@ -513,6 +608,7 @@ impl AcceptanceRecord {
             manifest: manifest_pin,
             inputs,
             authored_from,
+            applied_rules,
             open_at_acceptance,
         })
     }
@@ -605,13 +701,19 @@ impl AcceptanceRecord {
             let current_sha256 = std::fs::read(root.join(&pin.path))
                 .ok()
                 .map(|bytes| hex_encode(&sha256_bytes(&bytes)));
-            if current_sha256.as_deref() != Some(pin.sha256.as_str()) {
+            let moved = current_sha256.as_deref() != Some(pin.sha256.as_str());
+            if moved {
                 lapses.push(Lapse::Source {
                     role: pin.role,
                     path: pin.path.clone(),
                     recorded_sha256: pin.sha256.clone(),
-                    current_sha256,
+                    current_sha256: current_sha256.clone(),
                 });
+            }
+            // The profile's bytes moved: say which of the rules the design
+            // applied moved with them. Only from a profile that loads now.
+            if moved && pin.role == SourceRole::Profile && current_sha256.is_some() {
+                self.rule_lapses(&root.join(&pin.path), &mut lapses);
             }
         }
 
@@ -625,7 +727,7 @@ impl AcceptanceRecord {
         // What was open is a fact about the moment of acceptance and not a
         // thing to re-judge: a design that changed is a lapse by its bytes.
         let current = match read_design(&root, &canonical(&document_path)?, &[]) {
-            Ok((inputs, _open)) => inputs,
+            Ok((inputs, _reading)) => inputs,
             Err(DesignFailure::Parse(detail)) => {
                 lapses.push(Lapse::Unparseable {
                     path: self.document.clone(),
@@ -672,6 +774,31 @@ impl AcceptanceRecord {
         Ok(lapses)
     }
 
+    /// Which of the rules the design applied no longer read as they did, read
+    /// from the profile now at `profile`. A profile that does not load says
+    /// nothing here: its bytes moved, `Source` has said so, and a rule it
+    /// cannot be read for is not reported as unchanged.
+    fn rule_lapses(&self, profile: &Path, lapses: &mut Vec<Lapse>) {
+        let Ok(now) = crate::authoring_profile::AuthoringProfile::load(profile) else {
+            return;
+        };
+        for applied in &self.applied_rules {
+            let current = now
+                .house_rules()
+                .iter()
+                .find(|rule| rule.id == applied.id)
+                .map(|rule| rule.rule.clone());
+            if current.as_deref() != Some(applied.rule.as_str()) {
+                lapses.push(Lapse::Rule {
+                    id: applied.id.clone(),
+                    places: applied.places,
+                    recorded: applied.rule.clone(),
+                    current,
+                });
+            }
+        }
+    }
+
     /// The record as committed: pretty JSON with a trailing newline, so a
     /// re-take that pins the same design writes the same bytes.
     pub fn to_json(&self) -> String {
@@ -683,6 +810,7 @@ impl AcceptanceRecord {
             manifest: self.manifest.clone(),
             inputs: self.inputs.clone(),
             authored_from: self.authored_from.clone(),
+            applied_rules: self.applied_rules.clone(),
             open_at_acceptance: self.open_at_acceptance.clone(),
         };
         let mut text = serde_json::to_string_pretty(&wire)
@@ -742,12 +870,44 @@ impl AcceptanceRecord {
                 detail: "an input path is pinned more than once".to_string(),
             });
         }
+        // A rule is applied from a profile, so a record that names rules and
+        // pins no profile cites something it cannot be checked against, and a
+        // rule named twice leaves open which wording the design relied on.
+        let mut applied_rules = wire.applied_rules;
+        if !applied_rules.is_empty() && !authored_from.iter().any(|p| p.role == SourceRole::Profile)
+        {
+            return Err(RecordError::Format {
+                detail: "applied rules are named, and no authoring profile is pinned for them \
+                         to have come from"
+                    .to_string(),
+            });
+        }
+        let before = applied_rules.len();
+        applied_rules.sort();
+        applied_rules.dedup_by(|a, b| a.id == b.id);
+        if applied_rules.len() != before {
+            return Err(RecordError::Format {
+                detail: "a house rule is named more than once among the applied rules".to_string(),
+            });
+        }
+        if let Some(blank) = applied_rules
+            .iter()
+            .find(|r| r.id.is_empty() || r.places == 0)
+        {
+            return Err(RecordError::Format {
+                detail: format!(
+                    "applied rule {:?} has no id or no place that cites it",
+                    blank.id
+                ),
+            });
+        }
         Ok(AcceptanceRecord {
             variant: wire.variant,
             document: wire.document,
             manifest: wire.manifest,
             inputs,
             authored_from,
+            applied_rules,
             open_at_acceptance: wire.open_at_acceptance,
         })
     }
@@ -780,6 +940,7 @@ fn check_sources(sorted: &[SourcePin]) -> Result<(), RecordError> {
             "authoring profiles",
             "one authoring profile",
         ),
+        (SourceRole::Examples, "scenario sets", "one set of examples"),
     ] {
         let count = sorted.iter().filter(|p| p.role == role).count();
         if count > 1 {
@@ -817,11 +978,11 @@ impl From<RecordError> for DesignFailure {
     }
 }
 
-/// The ids of the house rules of the authoring profile among `sources`, or
+/// The house rules of the authoring profile among `sources` as `(id, rule)`, or
 /// none when the record is taken under no profile. The profile is read through
 /// its own reader; one that cannot be read is refused here in its words, though
 /// the command line has already refused it before it got this far.
-fn house_rule_ids_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<String>, RecordError> {
+fn house_rules_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<(String, String)>, RecordError> {
     let Some((_, path)) = sources
         .iter()
         .find(|(role, _)| *role == SourceRole::Profile)
@@ -834,21 +995,53 @@ fn house_rule_ids_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<String>, Rec
         }
     })?;
     Ok(profile
-        .house_rule_ids()
-        .into_iter()
-        .map(str::to_string)
+        .house_rules()
+        .iter()
+        .map(|rule| (rule.id.clone(), rule.rule.clone()))
         .collect())
 }
 
-/// Every file a parse of `document` reads, pinned relative to `root`, and
-/// what the design leaves to a person ([`crate::open_matters`]).
+/// The rules the design cited, as the profile worded them: `cited` is the
+/// `(id, places)` the design's markers name, and an id the profile does not hold
+/// is not a house rule and is not here.
+fn applied_rules_of(
+    house_rules: &[(String, String)],
+    cited: &[(String, usize)],
+) -> Vec<AppliedRule> {
+    let mut applied: Vec<AppliedRule> = cited
+        .iter()
+        .filter_map(|(id, places)| {
+            house_rules
+                .iter()
+                .find(|(known, _)| known == id)
+                .map(|(_, rule)| AppliedRule {
+                    id: id.clone(),
+                    rule: rule.clone(),
+                    places: *places,
+                })
+        })
+        .collect();
+    applied.sort();
+    applied
+}
+
+/// What reading a design says besides the files it read: what it leaves to a
+/// person ([`crate::open_matters`]) and how many places cite each house rule of
+/// the profile it is read under.
+struct DesignReading {
+    open: Vec<crate::open_matters::OpenMatter>,
+    cited: Vec<(String, usize)>,
+}
+
+/// Every file a parse of `document` reads, pinned relative to `root`, and what
+/// reading it said ([`DesignReading`]).
 fn read_design(
     root: &Path,
     document: &Path,
     house_rule_ids: &[&str],
-) -> Result<(Vec<InputPin>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
+) -> Result<(Vec<InputPin>, DesignReading), DesignFailure> {
     let mut pins: BTreeMap<String, String> = BTreeMap::new();
-    let (files, open) = design_inputs(document, house_rule_ids)?;
+    let (files, reading) = design_inputs(document, house_rule_ids)?;
     for path in std::iter::once(document.to_path_buf()).chain(files) {
         let path = canonical(&path)?;
         pins.insert(relative(root, &path)?, file_sha256(&path)?);
@@ -857,7 +1050,7 @@ fn read_design(
         .into_iter()
         .map(|(path, sha256)| InputPin { path, sha256 })
         .collect();
-    Ok((inputs, open))
+    Ok((inputs, reading))
 }
 
 /// The files other than `document` that its parse reads, for either
@@ -876,7 +1069,7 @@ fn read_design(
 fn design_inputs(
     document: &Path,
     house_rule_ids: &[&str],
-) -> Result<(Vec<PathBuf>, Vec<crate::open_matters::OpenMatter>), DesignFailure> {
+) -> Result<(Vec<PathBuf>, DesignReading), DesignFailure> {
     let text = std::fs::read_to_string(document).map_err(|source| {
         DesignFailure::Record(RecordError::Read {
             path: document.display().to_string(),
@@ -903,9 +1096,17 @@ fn design_inputs(
             // The same reading the acceptance report makes, so what a
             // person was shown as open and what the record keeps as open
             // are one list.
+            let open = crate::open_matters::of_statechart_under(&model, house_rule_ids);
+            // And the places that cite each house rule, from the same
+            // markers `of_statechart_under` reads.
+            let mut markers = crate::unresolved_check::unresolved_records(&model);
+            crate::unresolved_check::cite_house_rules(&mut markers, house_rule_ids);
             Ok((
                 inputs,
-                crate::open_matters::of_statechart_under(&model, house_rule_ids),
+                DesignReading {
+                    open,
+                    cited: crate::unresolved_check::applied_house_rules(&markers),
+                },
             ))
         }
         crate::Pipeline::Forge => {
@@ -925,6 +1126,7 @@ fn design_inputs(
                 .map_err(|located| unparseable(located.error.to_string()))?;
             crate::unresolved_check::cite_house_rules(&mut markers, house_rule_ids);
             let open = crate::open_matters::of(&markers, &[], &[], &[], &[]);
+            let cited = crate::unresolved_check::applied_house_rules(&markers);
             // A `sce:std/...` document is read from the library compiled
             // into the generator; it has no file to pin, and moves only
             // with the generator itself.
@@ -935,7 +1137,7 @@ fn design_inputs(
                     .chain(imports)
                     .filter(|path| !crate::forge::stdlib::names_standard(path))
                     .collect(),
-                open,
+                DesignReading { open, cited },
             ))
         }
     }

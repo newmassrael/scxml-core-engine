@@ -2473,6 +2473,16 @@ enum Commands {
         /// answers for this profile and for no other.
         #[arg(long, value_name = "PATH")]
         profile: Option<String>,
+        /// The scenario set whose examples the design is held to, if there
+        /// is one.
+        ///
+        /// Pinned by its bytes beside the design: the examples whose passing
+        /// closed a requirement are part of what the owner accepted it WITH,
+        /// and a set edited afterwards is another set. The record says nothing
+        /// of how the scenarios came out; that is a run's, on an engine
+        /// (`requirements --scenarios --trace`).
+        #[arg(long, value_name = "PATH")]
+        scenarios: Option<String>,
     },
     /// Judge the claims that point OUT of a document — Requirement-closure
     /// RFC §5.2e/§5.2f.
@@ -2523,6 +2533,10 @@ enum Commands {
         /// request that names one, and the reverse.
         #[arg(long, value_name = "PATH")]
         profile: Option<String>,
+        /// The scenario set the question is about. Compared by content, and
+        /// a role left out is part of the answer, as for the profile.
+        #[arg(long, value_name = "PATH")]
+        scenarios: Option<String>,
     },
     Requirements {
         /// SCXML file path. Several documents are read as ONE design, and
@@ -3316,13 +3330,19 @@ fn main() {
             source,
             decisions,
             profile,
+            scenarios,
         } => cmd_accept(
             &scxml,
             &manifest,
             &variant,
             &root,
             &out,
-            &authored_from(&source, decisions.as_deref(), profile.as_deref()),
+            &authored_from(
+                &source,
+                decisions.as_deref(),
+                profile.as_deref(),
+                scenarios.as_deref(),
+            ),
             error_format,
         ),
         Commands::AcceptanceCheck {
@@ -3332,11 +3352,17 @@ fn main() {
             source,
             decisions,
             profile,
+            scenarios,
         } => cmd_acceptance_check(
             &record,
             &variant,
             &root,
-            &authored_from(&source, decisions.as_deref(), profile.as_deref()),
+            &authored_from(
+                &source,
+                decisions.as_deref(),
+                profile.as_deref(),
+                scenarios.as_deref(),
+            ),
         ),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml, profile } => {
@@ -9314,12 +9340,13 @@ fn cmd_acceptance_report(
 }
 
 /// Pin what a person accepted — Requirement-closure RFC §8.3.
-/// `--source`, `--decisions` and `--profile`, as the roles the acceptance
-/// record pins them under.
+/// `--source`, `--decisions`, `--profile` and `--scenarios`, as the roles the
+/// acceptance record pins them under.
 fn authored_from(
     sources: &[String],
     decisions: Option<&str>,
     profile: Option<&str>,
+    scenarios: Option<&str>,
 ) -> Vec<(sce_build::acceptance_record::SourceRole, PathBuf)> {
     use sce_build::acceptance_record::SourceRole;
     sources
@@ -9327,7 +9354,29 @@ fn authored_from(
         .map(|s| (SourceRole::Specification, PathBuf::from(s)))
         .chain(decisions.map(|d| (SourceRole::Decisions, PathBuf::from(d))))
         .chain(profile.map(|p| (SourceRole::Profile, PathBuf::from(p))))
+        .chain(scenarios.map(|s| (SourceRole::Examples, PathBuf::from(s))))
         .collect()
+}
+
+/// The scenario set among `sources`, read through its own door: a file that is
+/// no scenario set is refused as unusable and not pinned as the examples a design
+/// was held to. Its problems are findings and are not refused here: a set that
+/// cannot close a requirement is still what the design was held to.
+fn check_scenario_set(sources: &[(sce_build::acceptance_record::SourceRole, PathBuf)]) {
+    let Some((_, path)) = sources
+        .iter()
+        .find(|(role, _)| *role == sce_build::acceptance_record::SourceRole::Examples)
+    else {
+        return;
+    };
+    if let Err(e) = sce_build::scenario_set::ScenarioSet::load(path) {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: path.to_string_lossy().into_owned(),
+            what: "scenario set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        });
+    }
 }
 
 fn cmd_accept(
@@ -9346,6 +9395,7 @@ fn cmd_accept(
     // command failed and nothing about why.
     let design = read_design(scxml, error_format);
     let _ = load_requirement_manifest(manifest);
+    check_scenario_set(sources);
 
     // A design is accepted under the profile it is held to. The profile is
     // read through its own door, and a document that departs from it is
@@ -9469,6 +9519,7 @@ fn cmd_acceptance_check(
         .find(|(role, _)| *role == sce_build::acceptance_record::SourceRole::Profile)
         .map(|(_, path)| path.to_string_lossy().into_owned());
     let _ = load_profile(profile_path.as_deref());
+    check_scenario_set(asked);
     let text =
         fs::read_to_string(record).unwrap_or_else(|e| unusable("read", format!("{record}: {e}")));
     let loaded = sce_build::acceptance_record::AcceptanceRecord::from_json(&text)

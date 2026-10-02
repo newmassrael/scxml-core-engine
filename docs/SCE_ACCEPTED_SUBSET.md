@@ -3521,6 +3521,31 @@ statement that this design is what they accept. `acceptance-check --profile`
 asks whether the record was taken under this profile. A design is *held to* a
 profile rather than authored from it, and the lapse sentences say so.
 
+The record also keeps WHICH house rules the design applied, as `applied_rules`:
+each rule the design cites (`sce:assumed="H1"` that the profile holds), with the
+text the profile gave it when the design was accepted and the number of places
+that cite it, sorted by id; a rule the profile holds and the design never cites is
+not there, and neither is an id the profile does not hold. Optional, omitted when
+empty, and refused when read if no profile is pinned for the rules to have come
+from, if a rule is named twice, or at no place. It is the content a reader of the
+acceptance needs without asking for the profile. And when the profile's bytes move
+and it still loads, the lapse names each applied rule that moved, beside the
+profile's own lapse: `house rule H1, which the design applied at 3 places, now says
+"…"; it said "…" when the design was accepted`, or that it is no longer in the
+profile. An edit to a rule the design never applied lapses the profile and names no
+rule, and a profile that no longer loads names none either, since a rule it cannot
+be read for is not said to be unchanged.
+
+The scenario set (§2.18) is pinned the same way under the role `examples`:
+`accept --scenarios` and `acceptance-check --scenarios`, at most one, compared by
+content, a role left out being part of the answer. The examples whose passing
+closed a requirement (`scenario-passed`, §2.19) are part of what the owner accepted
+the design WITH, and a set edited afterwards is another set. The record pins the
+set's bytes and says nothing of how its scenarios came out: that is a run's, on an
+engine, asked again by `requirements --scenarios --trace`. A file that is no
+scenario set is refused as `cli/closure-input-unusable` and not pinned; a set with
+problems is a finding, not a refusal.
+
 What a profile cannot configure: the obligation to mark a guess, W3C SCXML
 semantics, the kind catalog and `<sce:kind-basis>`, and acceptance by a person.
 No setting is named so that it could. The open-interface line of §2.16 stays
@@ -5003,7 +5028,7 @@ or SCE-internal issues.
 | `mesh/codegen-template-read` | Mesh Codegen | Mesh template asset read |
 | `mesh/codegen-template-render` | Mesh Codegen | Mesh template rendering failure |
 | `mesh/io` | Mesh Io | Generic mesh codegen filesystem failure |
-| `cli/acceptance-lapsed` | Cli | `sce-codegen acceptance-check` found that the manifest, the variant or a file the design was read from moved since the acceptance record was taken; not preventable by authoring SCXML (a person accepts again with `sce-codegen accept`, or reverts what moved) |
+| `cli/acceptance-lapsed` | Cli | `sce-codegen acceptance-check` found that the manifest, the variant, a file the design was read from, authored from or held to (the profile and the scenario set among them) or a house rule it applied moved since the acceptance record was taken; not preventable by authoring SCXML (a person accepts again with `sce-codegen accept`, or reverts what moved) |
 | `cli/reserved-host-type` | Cli | A host declared a `<send>` or `<invoke>` type under `sce:` (`--host-processor`, `--host-invoker`, or the same lists on the `build.rs` facade) — the prefix SCE keeps for the processors it defines itself (`sce:mesh`, `sce:mesh-rpc`), so the declaration would replace one of them with nothing on the wire saying so; not preventable by authoring SCXML (the host picks another prefix, such as `x-`) |
 | `cli/requirement-closure-broken` | Cli | `sce-codegen requirement-closure` found a claim that points out of its document and does not land in the manifests given — a `delegated` destination that never took the requirement, a delegation cycle, a decomposition child that does not exist, or a destination no manifest on the command line describes; not preventable by authoring SCXML (edit the manifest, or name the missing manifest) |
 | `cli/review-table-unavailable` | Cli | `sce-codegen review-table` was asked for a kind SCE reads no requirement annotation in — no node of that kind is read for `sce:req`, so the requirement column would be empty on every row for a reason that is about SCE rather than about the document; reported instead of rendering an empty table, which a reviewer would read as a clean result. ⚠ "reads", not "the grammar refuses": a `sce:req` on a W3C-namespace element of a forge document (the `<scxml>` root, a `<data>`) is accepted by `schemas/sce-forge.xsd` — its `processContents="lax"` wildcards accept any attribute carrying no global declaration — and, being read by nobody, is refused when the parse ends as `validation/sce-attribute-unread` (since 2026-09-28; before that it was dropped in silence). Not preventable by authoring (the repair is to admit `sce:req` on that kind's nodes in `schemas/sce-forge-ext.xsd`, read it through `collect_sce_req`, and answer for the kind in `forge::requirement_nodes`) |

@@ -283,6 +283,91 @@ fn the_specification_a_design_was_authored_from_is_pinned_and_asked_about() {
     assert!(String::from_utf8_lossy(&lapsed.stderr).contains("authored from"));
 }
 
+const SET_TEXT: &str = r#"{"record":"sce-scenario-set","v":1,
+  "specification":{"doc_id":"nl","rev":"1"},"origin":"ai-proposed",
+  "interface":{"inputs":[],"outputs":[]},
+  "scenarios":[{"id":"S1","quote":"Waiting ends on a tick.",
+    "steps":[{"advance_ms":5,"expect":{"outbound":[]}}]}]}"#;
+
+/// `--scenarios` reaches the record as a role of its own, and the examples
+/// edited afterwards lapse the acceptance: the passes that closed a requirement
+/// were the old set's. A file that is no scenario set is refused through its own
+/// door and not pinned as the examples the design was held to.
+#[test]
+fn the_examples_a_design_was_held_to_are_pinned_and_a_changed_set_lapses_it() {
+    let root = design_root();
+    let set = root.path().join("spec/examples.json");
+    fs::write(&set, SET_TEXT).expect("write the set");
+    let accept_with = |file: &Path| {
+        run(
+            &[
+                "accept",
+                &root.path().join(HOST).display().to_string(),
+                "--manifest",
+                &root.path().join(MANIFEST).display().to_string(),
+                "--variant",
+                "base",
+                "--root",
+                &root.path().display().to_string(),
+                "--out",
+                &root.path().join(RECORD).display().to_string(),
+                "--scenarios",
+                &file.display().to_string(),
+            ],
+            root.path(),
+        )
+    };
+
+    let taken = accept_with(&set);
+    assert!(taken.status.success(), "{taken:?}");
+    let record = fs::read_to_string(root.path().join(RECORD)).expect("record written");
+    assert!(record.contains("\"role\": \"examples\""), "{record}");
+    assert!(record.contains("\"spec/examples.json\""), "{record}");
+
+    let check = || {
+        run(
+            &[
+                "acceptance-check",
+                &root.path().join(RECORD).display().to_string(),
+                "--variant",
+                "base",
+                "--root",
+                &root.path().display().to_string(),
+                "--scenarios",
+                &set.display().to_string(),
+            ],
+            root.path(),
+        )
+    };
+    let held = check();
+    assert!(held.status.success(), "{held:?}");
+
+    fs::write(&set, SET_TEXT.replace("a tick", "a tock")).expect("edit the set");
+    let lapsed = check();
+    assert_eq!(lapsed.status.code(), Some(20), "{lapsed:?}");
+    assert_eq!(codes(&lapsed), vec!["cli/acceptance-lapsed".to_string()]);
+    let said = String::from_utf8_lossy(&lapsed.stderr);
+    assert!(
+        said.contains("the scenario set this design was held to changed"),
+        "{said}"
+    );
+
+    // A file that is no scenario set is refused, and nothing is written.
+    let not_a_set = root.path().join("spec/not-a-set.json");
+    fs::write(&not_a_set, r#"{"record":"sce-authoring-profile","v":1}"#).expect("write");
+    fs::remove_file(root.path().join(RECORD)).expect("clear the record");
+    let refused = accept_with(&not_a_set);
+    assert_eq!(refused.status.code(), Some(20), "{refused:?}");
+    assert_eq!(
+        codes(&refused),
+        vec!["cli/closure-input-unusable".to_string()]
+    );
+    assert!(
+        !root.path().join(RECORD).exists(),
+        "a refused acceptance wrote a record"
+    );
+}
+
 /// The record has no schema file, so the registry's row and
 /// `ACCEPTANCE_RECORD_STATUS` are the two places its stability lives —
 /// `SCE_WIRE_CONTRACTS.md` requires one commit to move both.

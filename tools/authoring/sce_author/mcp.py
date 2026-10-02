@@ -284,6 +284,9 @@ _AUTHORED_FROM_INPUT = {
     },
     **_file_input("decisions", "the owner's decision record"),
     **_PROFILE_INPUT,
+    **_file_input("scenarios",
+                  "the scenario set (JSON) whose examples the design is held to: "
+                  "pinned by its bytes, so a set edited afterwards lapses the acceptance"),
 }
 
 TOOLS = [
@@ -928,7 +931,15 @@ TOOLS = [
             "specification the design was written from (`sources`) and the "
             "owner's decision record if there is one: the record pins them "
             "too, so scxml_accepted_for can hand this design back when the "
-            "same specification is asked for again."
+            "same specification is asked for again. When the design was "
+            "held to an authoring profile (`profile`) and a scenario set "
+            "(`scenarios`, the examples whose passing closed a requirement), "
+            "give both: the record pins the set by its bytes, so a set "
+            "edited afterwards lapses the acceptance, and it keeps the text of "
+            "each house rule the design applied (`applied_rules` in the "
+            "answer: tell the owner what each rule said), so a profile that "
+            "changes later is reported rule by rule, with the places the "
+            "design relied on each."
         ),
         "inputSchema": {
             "type": "object",
@@ -1922,10 +1933,11 @@ def _acceptance_report_tool(args: dict, staging: _Staging) -> dict:
 
 def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
     """The specification files (`sources` / `sources_text`), the decision
-    record (`decisions` / `decisions_text`) and the authoring profile
-    (`profile` / `profile_text`) a design was authored from and held to, or a
-    question is about. All optional; `aside` stages text apart from the
-    files a record names (see `_Staging.write_aside`)."""
+    record (`decisions` / `decisions_text`), the authoring profile
+    (`profile` / `profile_text`) and the scenario set (`scenarios` /
+    `scenarios_text`) a design was authored from and held to, or a question is
+    about. All optional; `aside` stages text apart from the files a record
+    names (see `_Staging.write_aside`)."""
     sources: list[pathlib.Path] = []
     if args.get("sources") is not None or args.get("sources_text") is not None:
         if aside and args.get("sources_text") is not None:
@@ -1967,7 +1979,20 @@ def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
                                       args["profile_text"], "profile")
     else:
         profile = _profile_file(args, staging)
-    return sources, decisions, profile
+    # The scenario set is read by the product alone, as the profile is: `accept`
+    # and `acceptance-check` refuse a file that is no scenario set as
+    # `cli/closure-input-unusable`, so a specification handed over in its place
+    # is refused where the set is used.
+    if aside and args.get("scenarios_text") is not None:
+        if args.get("scenarios") is not None:
+            raise ToolArgumentError("give 'scenarios' or 'scenarios_text', not both")
+        name = args.get("scenarios_name")
+        scenarios = staging.write_aside("scenarios.json" if name is None else name,
+                                        args["scenarios_text"], "scenarios")
+    else:
+        scenarios = staging.file(args, "scenarios", "the scenario set", "scenarios.json",
+                                 required=False)
+    return sources, decisions, profile, scenarios
 
 
 def _accept_tool(args: dict, staging: _Staging) -> dict:
@@ -1978,11 +2003,12 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
         # The owner's own tree: the record names their files where they are.
         if root is None or out is None:
             raise ToolArgumentError("'root' and 'out' go together")
-        sources, decisions, profile = _authored_from(args, staging)
+        sources, decisions, profile, scenarios = _authored_from(args, staging)
         report, refusal = accept_design(
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
-            variant, root, out, sources=sources, decisions=decisions, profile=profile)
+            variant, root, out, sources=sources, decisions=decisions, profile=profile,
+            scenarios=scenarios)
         if refusal:
             return _failure(refusal)
         return _text(_with_open_at_acceptance(report, out))
@@ -1996,11 +2022,11 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     document = staging.file(args, "document", "the accepted SCXML document", "document.scxml")
     manifest = staging.file(args, "manifest", "the requirement manifest",
                             "requirements.manifest.json")
-    sources, decisions, profile = _authored_from(args, staging)
+    sources, decisions, profile, scenarios = _authored_from(args, staging)
     record = pathlib.Path("acceptance.json")
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
                                     record, sources=sources, decisions=decisions,
-                                    profile=profile, cwd=staging.dir)
+                                    profile=profile, scenarios=scenarios, cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))
@@ -2017,11 +2043,17 @@ def _with_open_at_acceptance(report: str, record: pathlib.Path) -> str:
     acceptance of a finished design answers exactly as it did.
     """
     answer = json.loads(report)
-    open_ = json.loads(record.read_text(encoding="utf-8")).get("open_at_acceptance")
+    written = json.loads(record.read_text(encoding="utf-8"))
+    open_ = written.get("open_at_acceptance")
     if open_:
         answer["accepted_with"] = [matter["message"] for matter in open_]
         answer["next"] = ("this design was accepted with the matters in `accepted_with` "
                           "still open: say so to the owner, who decided to accept it")
+    # The house rules the design applied, as the profile worded them: the content
+    # a reader of this acceptance needs without asking for the profile, and what a
+    # later change to the profile is compared against.
+    if written.get("applied_rules"):
+        answer["applied_rules"] = written["applied_rules"]
     return json.dumps(answer, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -2054,9 +2086,10 @@ def _staged_record(args: dict, staging: _Staging):
 def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     record, root, cwd = _staged_record(args, staging)
-    sources, decisions, profile = _authored_from(args, staging, aside=True)
+    sources, decisions, profile, scenarios = _authored_from(args, staging, aside=True)
     return _answer(*acceptance_holds(record, variant, root, sources=sources,
-                                     decisions=decisions, profile=profile, cwd=cwd))
+                                     decisions=decisions, profile=profile,
+                                     scenarios=scenarios, cwd=cwd))
 
 
 def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
@@ -2072,13 +2105,14 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     """
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     record, root, cwd = _staged_record(args, staging)
-    sources, decisions, profile = _authored_from(args, staging, aside=True)
+    sources, decisions, profile, scenarios = _authored_from(args, staging, aside=True)
     if not sources:
         raise ToolArgumentError(
             "'sources' or 'sources_text' is required: the specification whose "
             "accepted design is asked for")
     report, refusal = acceptance_holds(record, variant, root, sources=sources,
-                                       decisions=decisions, profile=profile, cwd=cwd)
+                                       decisions=decisions, profile=profile,
+                                       scenarios=scenarios, cwd=cwd)
     if refusal:
         return _failure(refusal)
     answer = json.loads(report)

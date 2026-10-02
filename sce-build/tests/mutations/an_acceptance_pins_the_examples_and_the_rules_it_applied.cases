@@ -1,0 +1,105 @@
+# Mutation cases for "an acceptance pins the examples and the rules it applied".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_acceptance_pins_the_examples_and_the_rules_it_applied.cases`.
+#
+# An acceptance record pinned the profile by its bytes, so a profile that changed
+# lapsed it with a sentence true of every rule and useful for none; and the scenario
+# set whose passing closed a requirement was not pinned at all. The record now keeps
+# the scenario set as a role of its own and the house rules the design applied, as
+# the profile worded them, so a profile that moves is reported rule by rule. Four
+# things are easy to get wrong and read as success: a rule recorded that the design
+# never cited (or one it did cite left out), a rule reported when the profile moved
+# only in a rule the design never applied, a record read back that names rules it
+# cannot have come from, and the command line pinning the set under another role or
+# not reading it at all.
+#
+# Each case below takes one of those away and must make a test red: the library
+# tests of `an_acceptance_pins_the_examples_and_the_rules_it_applied.rs`, the lapse
+# tests, or `cli_acceptance_record_wire.rs`, which runs the command.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_acceptance_pins_the_examples_and_the_rules_it_applied --test an_acceptance_record_lapses_when_what_was_accepted_moves --test cli_acceptance_record_wire
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/unresolved_check.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/an_acceptance_pins_the_examples_and_the_rules_it_applied.rs sce-build/tests/an_acceptance_record_lapses_when_what_was_accepted_moves.rs sce-build/tests/cli_acceptance_record_wire.rs
+
+# ── Which rules the design applied ──────────────────────────────────
+
+mutation_case "a rule the design cited is not recorded" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "    let mut applied: Vec<AppliedRule> = cited\n        .iter()",
+     "    let mut applied: Vec<AppliedRule> = cited[..0]\n        .iter()")
+PY
+
+mutation_case "a rule cited at several places is recorded at one" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "                    places: *places,",
+     "                    places: 1,")
+PY
+
+mutation_case "a marker that cites no house rule is counted as applying one" <<'PY'
+edit("sce-build/src/unresolved_check.rs",
+     "    for record in records.iter().filter(|r| r.house_rule) {",
+     "    for record in records.iter().filter(|r| !r.house_rule) {")
+PY
+
+# ── What a moved profile says about them ────────────────────────────
+
+mutation_case "a rule that now says something else is not reported" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            if current.as_deref() != Some(applied.rule.as_str()) {",
+     "            if current.is_none() {")
+PY
+
+mutation_case "a rule that is gone is reported as unchanged" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            if current.as_deref() != Some(applied.rule.as_str()) {",
+     "            if current.is_some() && current.as_deref() != Some(applied.rule.as_str()) {")
+PY
+
+# ── What a record may say when it is read back ──────────────────────
+
+mutation_case "applied rules with no profile pinned are read back" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        if !applied_rules.is_empty() && !authored_from.iter().any(|p| p.role == SourceRole::Profile)",
+     "        if false && !applied_rules.is_empty() && !authored_from.iter().any(|p| p.role == SourceRole::Profile)")
+PY
+
+mutation_case "a rule named twice is read back" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        if applied_rules.len() != before {",
+     "        if applied_rules.len() != before && false {")
+PY
+
+mutation_case "a rule cited at no place is read back" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            .find(|r| r.id.is_empty() || r.places == 0)",
+     "            .find(|r| r.id.is_empty())")
+PY
+
+# ── The scenario set as a role ──────────────────────────────────────
+
+mutation_case "two scenario sets are pinned as one design's examples" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        (SourceRole::Examples, \"scenario sets\", \"one set of examples\"),\n",
+     "")
+PY
+
+mutation_case "the command line pins the set under another role" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        .chain(scenarios.map(|s| (SourceRole::Examples, PathBuf::from(s))))",
+     "        .chain(scenarios.map(|s| (SourceRole::Decisions, PathBuf::from(s))))")
+PY
+
+mutation_case "accept does not read the set through its own door" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    check_scenario_set(sources);",
+     "    let _ = sources;")
+PY

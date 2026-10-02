@@ -1082,16 +1082,18 @@ def acceptance_page(document: pathlib.Path, manifest: pathlib.Path, variant: str
     return (json.loads(report)["page"], "") if report else ("", refusal)
 
 
-def _authored_from(sources, decisions, profile=None) -> list[str]:
+def _authored_from(sources, decisions, profile=None, scenarios=None) -> list[str]:
     """`--source` for each specification file, `--decisions` for the decision
-    record and `--profile` for the authoring profile, as `accept` and
-    `acceptance-check` take them."""
+    record, `--profile` for the authoring profile and `--scenarios` for the
+    scenario set, as `accept` and `acceptance-check` take them."""
     args = []
     for source in sources:
         args += ["--source", str(source)]
     if decisions is not None:
         args += ["--decisions", str(decisions)]
     args += _profile_args(profile)
+    if scenarios is not None:
+        args += ["--scenarios", str(scenarios)]
     return args
 
 
@@ -1100,6 +1102,7 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   codegen: pathlib.Path | None = None, *,
                   sources=(), decisions: pathlib.Path | None = None,
                   profile: pathlib.Path | None = None,
+                  scenarios: pathlib.Path | None = None,
                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
@@ -1114,10 +1117,14 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
     under it first and refuses a statechart that departs from it, so an
     acceptance is never recorded under a profile the design breaks; it is
     pinned beside the others, and the record then answers for this profile
-    and no other."""
+    and no other. The record also keeps the text of each house rule the design
+    cited, so a profile that changes afterwards is compared rule by rule.
+
+    `scenarios` is the scenario set whose examples the design is held to:
+    pinned by its bytes, so a set edited afterwards lapses the acceptance."""
     args = ["accept", str(document), "--manifest", str(manifest),
             "--variant", variant, "--root", str(root), "--out", str(out),
-            *_authored_from(sources, decisions, profile)]
+            *_authored_from(sources, decisions, profile, scenarios)]
     # The command prints nothing; what it did is the record at `out`.
     return _product_answer(args, codegen, answer="record",
                            read=lambda _stdout: str(out), cwd=cwd)
@@ -1127,18 +1134,20 @@ def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
                      codegen: pathlib.Path | None = None, *,
                      sources=(), decisions: pathlib.Path | None = None,
                      profile: pathlib.Path | None = None,
+                     scenarios: pathlib.Path | None = None,
                      cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Whether an acceptance record still holds (`sce-codegen
     acceptance-check`): `holds`, or `lapsed` with the product's record of
     what moved. A lapsed acceptance is an answer, returned as the report.
 
-    With `sources`, `decisions` or `profile`, holding also means the design
-    was authored from exactly those files and held to that profile, compared
-    by content. A role left out is part of the answer: a design accepted under
-    no profile does not answer for a request that names one, and the
-    reverse."""
+    With `sources`, `decisions`, `profile` or `scenarios`, holding also means
+    the design was authored from exactly those files and held to that profile
+    and set of examples, compared by content. A role left out is part of the
+    answer: a design accepted under no profile does not answer for a request
+    that names one, and the reverse. A profile that moved is said rule by rule
+    for the rules the design applied."""
     args = ["acceptance-check", str(record), "--variant", variant,
-            "--root", str(root), *_authored_from(sources, decisions, profile)]
+            "--root", str(root), *_authored_from(sources, decisions, profile, scenarios)]
     report, refusal = _product_answer(args, codegen, answer="record",
                                       read=lambda _stdout: str(record),
                                       verdicts=("holds", "refused"),

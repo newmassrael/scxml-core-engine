@@ -242,6 +242,20 @@ pub fn cite_house_rules(records: &mut [UnresolvedRecord], house_rule_ids: &[&str
     }
 }
 
+/// The house rules the records cite, each id with the number of places that cite
+/// it, in the order each id is first written. Only the records
+/// [`cite_house_rules`] marked: the profile is what says an id is a rule.
+pub fn applied_house_rules(records: &[UnresolvedRecord]) -> Vec<(String, usize)> {
+    let mut counted: Vec<(String, usize)> = Vec::new();
+    for record in records.iter().filter(|r| r.house_rule) {
+        match counted.iter_mut().find(|(id, _)| *id == record.id) {
+            Some((_, places)) => *places += 1,
+            None => counted.push((record.id.clone(), 1)),
+        }
+    }
+    counted
+}
+
 impl UnresolvedRecord {
     /// The record for `marker`, placed at `location` — the marker's own
     /// position already moved to where its author wrote it, which only the

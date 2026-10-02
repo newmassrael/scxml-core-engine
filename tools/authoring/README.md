@@ -811,6 +811,14 @@ record, so a design accepted under one profile is not the answer for another
 (`scxml_accepted_for` says the design was *held to* a different profile, and a
 role left out is part of the answer), and `scxml_accept` refuses a statechart
 that departs from the profile instead of recording the owner accepting it.
+The scenario set whose examples closed a requirement is pinned the same way
+(`scenarios` on the three acceptance tools, role `examples`): a set edited
+afterwards lapses the acceptance. And the record keeps the text of each house rule
+the design applied, with the places that cite it (`applied_rules`, which
+`scxml_accept` returns so the owner is told what each rule said), so a profile that
+changes later is reported rule by rule: `house rule H1, which the design applied at
+3 places, now says "…"; it said "…" when the design was accepted`. A rule the design
+never applied lapses the profile and is not named.
 This server passes the file to the product untouched. Only the product reads a
 profile, so a setting it adds needs no edit here, and a profile it cannot
 fully read — an unknown setting, another version — is refused whole as

@@ -129,6 +129,7 @@ fn named(lapses: &[Lapse]) -> Vec<String> {
             Lapse::Added { path } => format!("added {path}"),
             Lapse::Unparseable { path, .. } => format!("unparseable {path}"),
             Lapse::Source { role, path, .. } => format!("source {role} {path}"),
+            Lapse::Rule { id, .. } => format!("rule {id}"),
             Lapse::NotAuthoredFrom { role, .. } => format!("not authored from {role}"),
         })
         .collect();
