@@ -146,19 +146,28 @@ edit("backends/rust/runtime/src/host_processor.rs",
         let response: Option<HostInvokeResponse> = None;""")
 PY
 
+# The record is built and dropped rather than deleted: it is the only place a
+# `StartedInvoke` is constructed, so removing the insert would leave the type
+# unused and deny-warnings would refuse the tree — INCONCLUSIVE, not a verdict.
 mutation_case "the invocation is never recorded as started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
      """        self.started.insert(
             (request.processor_type.clone(), request.invoke_id.clone()),
-            token,
+            StartedInvoke {
+                token,
+                request: request.clone(),
+            },
         );""",
-     "")
+     """        let _ = StartedInvoke {
+            token,
+            request: request.clone(),
+        };""")
 PY
 
 mutation_case "cancel is delivered for an invocation that never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        let token = self.started.remove(&key)?;""",
-     """        let token = self.started.remove(&key).unwrap_or_default();""")
+     """        let token = self.started.remove(&key)?.token;""",
+     """        let token = self.started.remove(&key).map(|s| s.token).unwrap_or_default();""")
 PY
 
 # The whole call is replaced rather than its head renamed: the call closes
@@ -186,7 +195,7 @@ PY
 # deny-warnings refuses — INCONCLUSIVE, measured in CI on 0aa9b150e8.
 mutation_case "a stale token completes the invocation" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     "        if self.started.get(&key) != Some(&token) {",
+     "        if self.started.get(&key).map(|s| s.token) != Some(token) {",
      """        let _ = token;
         if !self.started.contains_key(&key) {""")
 PY
