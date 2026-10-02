@@ -178,6 +178,48 @@
                 }
 {% endif %}
 {% endmacro %}
+{#
+    §scxml-6.4.1: under `datamodel="sce-static"`, the values the invoke's
+    `<param>`s and `namelist` give the child's variables, into `child_policy`
+    before the child initializes. The build lowered each (`Param::native_seed`)
+    to a value of the child variable's own type, read from this machine's
+    fields now — when the invoke is executed, at the macrostep's end — and the
+    child takes them through its `accept_params`.
+
+    A value that cannot be computed costs `error.execution` and that one value
+    (§scxml-5.7.1): the child still starts, one value short.
+#}
+{% macro invoke_seed_static_child(invoke_info, model, machine_name) %}
+{% set ns = namespace(any=false) %}
+{% for param in invoke_info.params %}
+{% if param.native_seed %}
+{% set ns.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns.any %}
+                // W3C SCXML 6.4.1: hand the child the values this invoke names
+                {
+                    let mut seed = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}InvokeParams::default();
+{% for param in invoke_info.params %}
+{% if param.native_seed and param.native_fails %}
+                    match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_seed }}) })() {
+                        Ok(value) => seed.{{ param.name | to_snake_case }} = Some(value),
+                        Err(_) => {
+                            // W3C SCXML 5.7.1: report the failure and leave the value out.
+                            ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+{% endif %}
+                        }
+                    }
+{% elif param.native_seed %}
+                    seed.{{ param.name | to_snake_case }} = Some({{ param.native_seed }});
+{% endif %}
+{% endfor %}
+                    child_policy.accept_params(seed);
+                }
+{% endif %}
+{% endmacro %}
 {% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
                 // Engine DI Parity RFC: pass parent's script engine when child needs it.
@@ -315,6 +357,9 @@
                 }
 
 {{ invoke_seed_child(invoke_info, invoke_info, model, machine_name) }}
+{% if static_fields %}
+{{ invoke_seed_static_child(invoke_info, model, machine_name) }}
+{% endif %}
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),

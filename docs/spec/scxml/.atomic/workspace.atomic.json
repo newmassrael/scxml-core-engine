@@ -11675,6 +11675,10 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

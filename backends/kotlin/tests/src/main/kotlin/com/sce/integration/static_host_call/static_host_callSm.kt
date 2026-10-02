@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml
@@ -79,6 +79,20 @@ class StaticHostCallStateMachine(
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `attempts` datamodel variable, the machine's own. */
     private var attempts: UInt = 0.toUInt()
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var attempts: UInt? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.attempts?.let { attempts = it }
+    }
 
     /**
      * What a host observes: the full active configuration — every active

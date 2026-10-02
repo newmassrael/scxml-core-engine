@@ -7220,6 +7220,10 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     common.child_needs_script_engine = child_model.needs_script_engine;
     common.child_datamodel_vars =
         Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
+    // §scxml-6.4.1: a static parent types each value it hands the child
+    // against the variable it lands in, which only a static child declares.
+    common.child_static_variables =
+        (child_model.datamodel == Datamodel::SceStatic).then(|| child_model.variables.clone());
     // §scxml-6.2 (test187/207): mirror the child's own scheduler
     // requirement. The child's codegen emits `_tick` only when
     // its scheduler queue is non-empty; the parent's invoke driver

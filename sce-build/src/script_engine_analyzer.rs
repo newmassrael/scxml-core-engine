@@ -168,7 +168,11 @@ impl ScriptEngineCauseKind {
             | C::DonedataParam { .. }
             // A `<foreach>` the model admits walks a list variable, and is
             // lowered to a native loop over its typed elements.
-            | C::ForeachAction { .. } => true,
+            | C::ForeachAction { .. }
+            // A child session's `namelist` the model admits names variables
+            // the child declares, and is lowered with its `<param>`s to values
+            // read from the machine's fields (`static_lowering::lower_child_arguments`).
+            | C::StaticInvokeNamelist { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
             | C::SendNamelist { .. }
@@ -176,7 +180,6 @@ impl ScriptEngineCauseKind {
             | C::InlineScriptAction { .. }
             | C::CancelExpr { .. }
             | C::HybridInvoke { .. }
-            | C::StaticInvokeNamelist { .. }
             | C::MeshRpcSrcExpr { .. }
             | C::MeshRpcRequestExpr { .. }
             | C::DonedataContent { .. }

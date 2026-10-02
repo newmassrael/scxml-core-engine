@@ -2664,8 +2664,8 @@ line of the element or attribute that breaks it:
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
-| a `<param>` of an `<invoke type="scxml">` | A child session of this model has native fields of its own, which only its own code sets, and no generated code hands a parent's `<param>` to one: the value would be typed, accepted and never arrive (measured 2026-10-01 on Rust and Kotlin; under `ecmascript` the same document seeds the child's datamodel). Refused at the `<param>` as `scxml/static-datamodel-rule` until a value can land in a field; the child is given a value in an event it takes |
-| a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. Under `ecmascript` the same document runs it |
+| a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
+| a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` of a `<send>` or of a host-run `<invoke>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
@@ -2729,6 +2729,46 @@ Rust writes a string into a variable owned — `"busy".to_string()`, and a read
 of another variable cloned — because a string inside an expression is borrowed
 and a field holds a `String`; a string handed to a host action stays borrowed
 (`&str`). Kotlin has one `String` for both.
+
+**Child sessions.** An `<invoke type="scxml">` hands its child the values its
+`<param>`s and `namelist` name (W3C SCXML 6.4.1), each to the child's variable of
+the same name; a `namelist` name is the `<param name="x" expr="x"/>` it
+abbreviates. Under this model a child's variable is a native field that only the
+child's own code sets, so a value is accepted only where the child gives it a
+field to arrive in: the child is a `sce-static` document (written inline, or beside
+this document under `src`), declares the name as a top-level `<data>`, and declares
+it as a bool, a string, an integer or a real. The value is held to that variable's
+type as an `<assign>` to it would be, read from the invoking machine's fields when
+the invoke executes — at the end of the macrostep that entered its state, after
+the entry actions, not when the state was entered — and lowered to native code, so
+it costs no script engine. A name the child does not declare, a variable of
+another kind, a name handed twice and a child under another data model are refused
+at the `<param>` as `scxml/static-datamodel-rule`: each would be typed, accepted
+and never delivered (measured 2026-10-01 on Rust and Kotlin, when no generated code
+handed a parent's `<param>` to a child).
+
+Each generated `sce-static` machine with such a variable carries the way in:
+Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
+`accept_params`, each variable `null` / `None` when nothing is handed it and
+keeping the value its `<data>` gave it. The invoking machine builds one from its
+fields and gives it to the child before the child starts. A value that cannot be
+computed — a checked integer operation that overflows — is the evaluation that
+failed (W3C SCXML 5.7.1): `error.execution` is raised when the document declares
+it, that one value is left out, and the child still starts. The witness is
+`sce-build/tests/fixtures/static_datamodel/static_invoke_params.scxml`, driven on
+Rust and Kotlin: its child ends only when it holds both a `<param>`'s value, read
+after the entry action that changes it, and a `namelist`'s, and a child handed
+nothing keeps its declared values and never ends.
+
+A child is handed its values once, when it starts: a field the machine changes
+while the child runs does not reach it. A restore starts each running child again
+from its beginning (§2.15, "Saving and restoring"), and a start evaluates its
+arguments, so the restarted child is handed what the restored machine's fields
+hold, which differs from what the first start read when a field changed while the
+child ran. That is the one definition of a start, not a loss: the child's own
+progress is not saved either, so a saved state carries no copy of the values it
+was handed. The fixture holds it: `watcher` is handed 7, `bump` makes the field 8
+while it runs, and a restored machine's new `watcher` is handed 8.
 
 **Integer operations.** A machine receives the failures of what it runs
 (SCE_FORGE.md §3.4.1): every integer operation is checked at its own width —

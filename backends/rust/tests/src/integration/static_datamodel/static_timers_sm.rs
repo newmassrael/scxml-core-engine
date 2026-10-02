@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -299,6 +299,14 @@ impl StaticTimersPersist for Engine<StaticTimersPolicy> {
     }
 }
 
+/// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+/// machine's variables before it starts. A variable left `None` keeps the
+/// value its `<data>` gave it.
+#[derive(Default)]
+pub struct StaticTimersInvokeParams {
+    pub trace: Option<u32>,
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -337,6 +345,14 @@ impl StaticTimersPolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+        }
+    }
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    pub fn accept_params(&mut self, params: StaticTimersInvokeParams) {
+        if let Some(value) = params.trace {
+            self.trace = value;
         }
     }
 

@@ -637,30 +637,42 @@ fn a_whole_record_is_assigned_only_from_a_record_by_name() {
     assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
 }
 
-// ── A child session is given no <param> ─────────────────────────────────
+// ── A child session is handed what its invoke's <param>s and namelist name ──
 //
 // Under `sce-static` a variable is a native field, and a field is set by the
-// machine's own code. An `<invoke type="scxml">` starts a child session whose
-// datamodel is that child's own fields, and no generated code hands a parent's
-// `<param>` to one: the document is accepted, generates, and the child never
-// sees the value. (Under `ecmascript` the same document generates
-// `setInvokeParams`.) Measured 2026-10-01 on Rust and Kotlin. A refusal where
-// the `<param>` is written is the honest state until a value can arrive in a
-// field.
+// machine's own code, so a value handed to a child session is accepted only
+// where the child gives it a field to arrive in: the child is a `sce-static`
+// document this build read, declares the name as a top-level `<data>`, and
+// declares it as a bool, a string, an integer or a real; the value is held to
+// that type as an `<assign>` to it would be. Anything else would be typed here,
+// accepted, and never delivered — measured 2026-10-01 on Rust and Kotlin, when
+// no generated code handed a parent's `<param>` to a child — so it is refused
+// where it is written. Each of Rust and Kotlin delivers the value
+// (`a_static_child_is_handed_its_params` in each backend's tests).
 
 /// A `sce-static` parent holding `count: uint32`, whose first state invokes a
 /// child session with `params` written inside the `<invoke>`. The `<state>`
 /// opens on line 8 and the `<invoke>` on line 9, so a param written on its own
 /// line is on line 10.
 fn invoking(params: &str) -> String {
+    invoking_with(
+        "",
+        params,
+        r#"<data id="start" sce:type="uint32" expr="0"/>"#,
+    )
+}
+
+/// [`invoking`], with `invoke_attrs` on the `<invoke>` and `child_data` as the
+/// child's `<datamodel>`.
+fn invoking_with(invoke_attrs: &str, params: &str, child_data: &str) -> String {
     machine(&format!(
         r#"<state id="s">
-    <invoke type="scxml" id="child">
+    <invoke type="scxml" id="child" {invoke_attrs}>
       {params}
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                version="1.0" initial="busy" datamodel="sce-static">
-          <datamodel><data id="start" sce:type="uint32" expr="0"/></datamodel>
+          <datamodel>{child_data}</datamodel>
           <state id="busy"><transition event="finish" target="end"/></state>
           <final id="end"/>
         </scxml>
@@ -673,7 +685,7 @@ fn invoking(params: &str) -> String {
 
 #[test]
 fn a_child_session_with_no_param_is_accepted() {
-    // The control: the document the refusals below differ from only by a
+    // The control: the document the cases below differ from only by a
     // `<param>`.
     for lang in ["rust", "kotlin"] {
         let (ok, out) = run(&["check", "-l", lang], &invoking(""));
@@ -682,40 +694,153 @@ fn a_child_session_with_no_param_is_accepted() {
 }
 
 #[test]
-fn a_param_the_child_session_would_never_receive_is_refused_on_its_line() {
+fn a_value_the_child_declares_a_variable_for_is_accepted() {
     for (what, param) in [
         ("an expression", r#"<param name="start" expr="count"/>"#),
         ("a literal", r#"<param name="start" expr="7"/>"#),
         ("a location", r#"<param name="start" location="count"/>"#),
+        (
+            "a computed value",
+            r#"<param name="start" expr="count + 1"/>"#,
+        ),
     ] {
-        let (ok, out) = run(&["check"], &invoking(param));
-        assert!(!ok, "{what}: no code hands it to the child:\n{out}");
-        assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+        for lang in ["rust", "kotlin"] {
+            let (ok, out) = run(&["check", "-l", lang], &invoking(param));
+            assert!(ok, "{lang}, {what}: the child declares `start`:\n{out}");
+        }
     }
 }
 
 #[test]
-fn the_refusal_names_the_param_and_what_the_child_lacks() {
-    let (_, out) = run(
+fn a_namelist_name_is_handed_as_the_param_it_abbreviates() {
+    // `namelist="count"` is `<param name="count" expr="count"/>`, so the child
+    // declares `count` and the value is the parent's.
+    let document = invoking_with(
+        r#"namelist="count""#,
+        "",
+        r#"<data id="count" sce:type="uint32" expr="0"/>"#,
+    );
+    for lang in ["rust", "kotlin"] {
+        let (ok, out) = run(&["check", "-l", lang], &document);
+        assert!(ok, "{lang}: the child declares `count`:\n{out}");
+    }
+    let (ok, out) = run(
         &["check"],
-        &invoking(r#"<param name="start" expr="count"/>"#),
+        &invoking_with(
+            r#"namelist="count""#,
+            "",
+            r#"<data id="other" sce:type="uint32" expr="0"/>"#,
+        ),
     );
-    let record = out
-        .lines()
-        .find(|l| l.contains("\"code\":\"scxml/static-datamodel-rule\""))
-        .unwrap_or_else(|| panic!("expected a static-datamodel-rule refusal:\n{out}"));
-    assert!(record.contains("start"), "it names the param:\n{record}");
-    assert!(
-        record.contains("child session"),
-        "it says whose datamodel the value has nowhere to arrive in:\n{record}"
+    assert!(!ok, "the child declares no `count`:\n{out}");
+    assert!(out.contains("count"), "it names what was written:\n{out}");
+}
+
+/// A child written beside the document, declaring `start: uint32`.
+const CHILD_BESIDE: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="busy" datamodel="sce-static">
+  <datamodel><data id="start" sce:type="uint32" expr="0"/></datamodel>
+  <state id="busy"><transition event="finish" target="end"/></state>
+  <final id="end"/>
+</scxml>
+"##;
+
+/// `invoking`, with the child in a document beside the parent (`src`) rather
+/// than written inside the `<invoke>`. The `<param>` is on line 10 here too.
+fn invoking_beside(params: &str) -> String {
+    machine(&format!(
+        r#"<state id="s">
+    <invoke type="scxml" id="child" src="child.scxml">
+      {params}
+    </invoke>
+    <transition event="done.invoke.child" target="done"/>
+  </state>"#
+    ))
+}
+
+#[test]
+fn a_child_written_beside_the_document_is_held_to_its_own_variables() {
+    let siblings = [("child.scxml", CHILD_BESIDE)];
+    for lang in ["rust", "kotlin"] {
+        let (ok, out) = run_beside(
+            &["check", "-l", lang],
+            &invoking_beside(r#"<param name="start" expr="count"/>"#),
+            &siblings,
+        );
+        assert!(ok, "{lang}: the child beside declares `start`:\n{out}");
+    }
+    let (ok, out) = run_beside(
+        &["check"],
+        &invoking_beside(r#"<param name="other" expr="count"/>"#),
+        &siblings,
     );
+    assert!(!ok, "the child beside declares no `other`:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+}
+
+#[test]
+fn a_value_the_child_has_no_variable_for_is_refused_on_its_param() {
+    for (what, param, says) in [
+        (
+            "a name the child does not declare",
+            r#"<param name="other" expr="count"/>"#,
+            "declares no top-level",
+        ),
+        (
+            "two values for one name",
+            r#"<param name="start" expr="count"/><param name="start" expr="7"/>"#,
+            "handed this name twice",
+        ),
+        (
+            "a param whose value is blank",
+            r#"<param name="start" expr=" "/>"#,
+            "names none",
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &invoking(param));
+        assert!(!ok, "{what}: the value would never arrive:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+        assert!(out.contains(says), "{what}: it says why:\n{out}");
+    }
+}
+
+#[test]
+fn a_value_of_another_type_than_the_childs_variable_is_refused() {
+    // The value is held to the variable's type as an `<assign>` to it would be:
+    // a bool does not land in a `uint32`.
+    let (ok, out) = run(
+        &["check"],
+        &invoking(r#"<param name="start" expr="ready"/>"#),
+    );
+    assert!(!ok, "a bool is not a uint32:\n{out}");
+    assert!(out.contains("ready"), "it names what was written:\n{out}");
+}
+
+#[test]
+fn a_child_under_another_data_model_is_given_no_typed_value() {
+    // Nothing here knows the type of a variable an engine holds, so the value
+    // has no typed place to arrive in.
+    let document = invoking_with(
+        "",
+        r#"<param name="start" expr="count"/>"#,
+        r#"<data id="start" expr="0"/>"#,
+    )
+    .replacen(
+        r#"initial="busy" datamodel="sce-static""#,
+        r#"initial="busy" datamodel="ecmascript""#,
+        1,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "an ecmascript child has no typed variable:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
 }
 
 #[test]
 fn a_param_is_still_given_to_a_child_under_ecmascript() {
-    // The refusal is of this data model's lacking a field to arrive in, not of
-    // `<param>`: under `ecmascript` the value is seeded into the child's
-    // datamodel.
+    // The refusals above are of this data model's lacking a typed field to
+    // arrive in, not of `<param>`: under `ecmascript` the value is seeded into
+    // the child's datamodel.
     let document = invoking(r#"<param name="start" expr="count"/>"#)
         .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
         .replace(r#" sce:type="uint32""#, "")
@@ -733,6 +858,12 @@ fn a_param_is_still_given_to_a_child_under_ecmascript() {
 // `executeFinalizeForChildEvent` finds absent. Measured 2026-10-01 on the
 // generated code of a `sce-static` parent: the document was accepted, `check`
 // said nothing, and the assignment never ran.
+//
+// Running one natively is not a matter of lowering the body: a `<finalize>` runs
+// before the next event from ANY of the child's events is processed, to read that
+// event's `_event.data`, and no type rule reaches a payload that arrives from
+// whichever event comes next. A body that reads no payload has no consumer, so it
+// stays refused until a typed form of the payload exists.
 
 /// The control and the refusal's document: `invoking` with a `<finalize>` that
 /// assigns `count`, written on the line after the `<invoke>` opens (line 10).
@@ -765,6 +896,27 @@ fn the_finalize_refusal_names_the_invoke_and_says_what_would_happen() {
         record.contains("never run"),
         "it says the body would be accepted and not executed:\n{record}"
     );
+}
+
+#[test]
+fn an_empty_finalize_beside_a_param_is_refused_as_the_update_it_stands_for() {
+    // §scxml-6.5.2 gives an empty `<finalize/>` the meaning "update each
+    // `<param location>` from the event's data of that name", and the model
+    // writes that update out as script text. Now that a child's `<param>` is
+    // accepted, the pair reaches the same refusal a written body does, rather
+    // than being accepted and never run.
+    let (ok, out) = run(
+        &["check"],
+        &invoking(r#"<param name="start" location="count"/><finalize/>"#),
+    );
+    assert!(!ok, "the update it stands for is never run:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+    assert!(out.contains("finalize"), "it names the element:\n{out}");
+
+    // An empty `<finalize/>` with nothing to update is inert, as the clause
+    // leaves it.
+    let (ok, out) = run(&["check"], &invoking("<finalize/>"));
+    assert!(ok, "there is nothing for it to update:\n{out}");
 }
 
 #[test]

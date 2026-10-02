@@ -1008,11 +1008,23 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_value: String,
-    /// Codegen-internal: whether [`Self::native_value`] can fail — a checked
-    /// integer operation. Then it is not an expression but one that must run
-    /// where its failure is received, and a failure leaves the pair out and
-    /// raises `error.execution` (§scxml-5.7.1), as one a script engine
-    /// could not evaluate does.
+    /// Codegen-internal: under `datamodel="sce-static"`, the value an
+    /// `<invoke type="scxml">` hands the child's variable named
+    /// [`Self::name`] (§scxml-6.4.1), as an expression in the backend's own
+    /// language of that variable's own type, read from the invoking machine's
+    /// fields. A `namelist` name is lowered to the same shape, as the `<param>`
+    /// it abbreviates. Empty for every other param. Set by
+    /// [`crate::forge::static_lowering`], outside the IR contract, for the
+    /// reason [`Self::native_value`] gives.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_seed: String,
+    /// Codegen-internal: whether [`Self::native_value`] or
+    /// [`Self::native_seed`] can fail — a checked integer operation. Then it
+    /// is not an expression but one that must run where its failure is
+    /// received, and a failure leaves the pair out and raises
+    /// `error.execution` (§scxml-5.7.1), as one a script engine could not
+    /// evaluate does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_fails: bool,
@@ -1506,6 +1518,17 @@ pub struct InvokeSessionCommon {
     pub use_specific_event: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
+    /// §scxml-6.4.1: the child's own top-level `<data>`, as declared, when the
+    /// child is a `datamodel="sce-static"` document this build could read;
+    /// `None` for a child under another data model or one that could not be
+    /// read. A static parent holds each `<param>` and `namelist` name it hands
+    /// the child to one of these, so a value is typed against the variable it
+    /// lands in rather than accepted and dropped. Derived beside
+    /// [`Self::child_datamodel_vars`], from the same child model; not part of
+    /// the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_static_variables: Option<Vec<Variable>>,
     /// §scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML
     /// may address its parent — the child model's
     /// [`SCXMLModel::may_address_parent`], a literal `#_parent` or a
@@ -1749,6 +1772,30 @@ pub struct ScxmlInvokeInfo {
     /// this field is only a diagnostic payload until Session 2 lands.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_mesh_transport: Option<String>,
+}
+
+impl ScxmlInvokeInfo {
+    /// §scxml-6.4.1: what this invoke hands its child — each `<param>`, then
+    /// each `namelist` name as the `<param name="x" expr="x"/>` it abbreviates.
+    /// One list, so the judge and the lowering of a static invoke read the
+    /// same arguments in the same order. A `namelist` name carries the
+    /// `<invoke>`'s own position, which is the only one the model records for
+    /// it.
+    pub fn arguments(&self) -> Vec<Param> {
+        let at = self.common.base.source_location.clone();
+        self.common
+            .base
+            .params
+            .iter()
+            .cloned()
+            .chain(self.namelist.split_whitespace().map(|name| Param {
+                name: name.to_string(),
+                expr: name.to_string(),
+                source_location: at.clone(),
+                ..Param::default()
+            }))
+            .collect()
+    }
 }
 
 /// §scxml-6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).

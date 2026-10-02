@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_foreach.scxml
@@ -64,6 +64,32 @@ class StaticForeachStateMachine(
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
     var errors: UInt = 0.toUInt()
         private set
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var total: UInt? = null
+        var weighted: UInt? = null
+        var small: UByte? = null
+        var crossings: UInt? = null
+        var visited: UInt? = null
+        var finished: UInt? = null
+        var errors: UInt? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.total?.let { total = it }
+        params.weighted?.let { weighted = it }
+        params.small?.let { small = it }
+        params.crossings?.let { crossings = it }
+        params.visited?.let { visited = it }
+        params.finished?.let { finished = it }
+        params.errors?.let { errors = it }
+    }
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(

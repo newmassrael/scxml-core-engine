@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -385,6 +385,23 @@ impl StaticBlockEndsPersist for Engine<StaticBlockEndsPolicy> {
     }
 }
 
+/// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+/// machine's variables before it starts. A variable left `None` keeps the
+/// value its `<data>` gave it.
+#[derive(Default)]
+pub struct StaticBlockEndsInvokeParams {
+    pub a: Option<u8>,
+    pub b: Option<u8>,
+    pub after_assign: Option<u8>,
+    pub then_ran: Option<u8>,
+    pub else_ran: Option<u8>,
+    pub after_if: Option<u8>,
+    pub in_branch: Option<u8>,
+    pub after_branch: Option<u8>,
+    pub after_ok: Option<u8>,
+    pub errors: Option<u8>,
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -459,6 +476,41 @@ impl StaticBlockEndsPolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+        }
+    }
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    pub fn accept_params(&mut self, params: StaticBlockEndsInvokeParams) {
+        if let Some(value) = params.a {
+            self.a = value;
+        }
+        if let Some(value) = params.b {
+            self.b = value;
+        }
+        if let Some(value) = params.after_assign {
+            self.after_assign = value;
+        }
+        if let Some(value) = params.then_ran {
+            self.then_ran = value;
+        }
+        if let Some(value) = params.else_ran {
+            self.else_ran = value;
+        }
+        if let Some(value) = params.after_if {
+            self.after_if = value;
+        }
+        if let Some(value) = params.in_branch {
+            self.in_branch = value;
+        }
+        if let Some(value) = params.after_branch {
+            self.after_branch = value;
+        }
+        if let Some(value) = params.after_ok {
+            self.after_ok = value;
+        }
+        if let Some(value) = params.errors {
+            self.errors = value;
         }
     }
 

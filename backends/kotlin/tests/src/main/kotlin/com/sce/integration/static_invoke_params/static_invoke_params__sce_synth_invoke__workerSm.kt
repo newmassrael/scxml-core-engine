@@ -2,42 +2,37 @@
 // source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_params__sce_synth_invoke__worker.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_counter.scxml:13 :: _machine
+// SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:3 :: _machine
 
-package com.sce.integration.static_counter
+package com.sce.integration.static_invoke_params
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticCounterState : State {
-    data object Counting : StaticCounterState
-    data object Done : StaticCounterState
+sealed interface StaticInvokeParamsSceSynthInvokeWorkerState : State {
+    data object Leaf : StaticInvokeParamsSceSynthInvokeWorkerState
+    data object Waiting : StaticInvokeParamsSceSynthInvokeWorkerState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticCounterEvent : Event {
-    data object Go : StaticCounterEvent
-    data object Tick : StaticCounterEvent
+sealed interface StaticInvokeParamsSceSynthInvokeWorkerEvent : Event {
+
 }
 // --- State Machine (W3C SCXML) ---
 
-class StaticCounterStateMachine(
-) : StateMachineEngine<StaticCounterState, StaticCounterEvent>() {
+class StaticInvokeParamsSceSynthInvokeWorkerStateMachine(
+) : StateMachineEngine<StaticInvokeParamsSceSynthInvokeWorkerState, StaticInvokeParamsSceSynthInvokeWorkerEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
-    /** W3C SCXML 5.2: the `ready` datamodel variable, published (`sce:direction="out"`). */
-    var ready: Boolean = false
-        private set
-    /** W3C SCXML 5.2: the `step` datamodel variable, the machine's own. */
-    private var step: UInt = 1.toUInt()
+    /** W3C SCXML 5.2: the `start` datamodel variable, the machine's own. */
+    private var start: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `enabled` datamodel variable, the machine's own. */
+    private var enabled: Boolean = false
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -45,44 +40,29 @@ class StaticCounterStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
-        var count: UInt? = null
-        var ready: Boolean? = null
-        var step: UInt? = null
+        var start: UInt? = null
+        var enabled: Boolean? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.ready?.let { ready = it }
-        params.step?.let { step = it }
+        params.start?.let { start = it }
+        params.enabled?.let { enabled = it }
     }
-
-    /** The published variables as one immutable value, in declaration order. */
-    data class Data(
-        val count: UInt,
-        val ready: Boolean,
-    )
 
     /**
      * What a host observes: the full active configuration — every active
-     * state, each region of a `<parallel>` included — and the published
-     * variables, taken together at a macrostep boundary. `truncated` is
+     * state, each region of a `<parallel>` included — taken together at a macrostep boundary. `truncated` is
      * `true` when that macrostep was stopped at the microstep ceiling, so the
      * configuration is not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticCounterState>,
-        val data: Data,
+        val configuration: Set<StaticInvokeParamsSceSynthInvokeWorkerState>,
         val truncated: Boolean,
     )
 
-    private fun currentData(): Data = Data(
-        count = count,
-        ready = ready,
-    )
-
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
-        Snapshot(emptySet(), currentData(), false)
+        Snapshot(emptySet(), false)
     )
 
     /**
@@ -95,7 +75,7 @@ class StaticCounterStateMachine(
         get() = _snapshot
 
     override fun onMacrostepComplete(truncated: Boolean) {
-        _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
+        _snapshot.value = Snapshot(activeConfiguration, truncated)
     }
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
@@ -105,7 +85,7 @@ class StaticCounterStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6"
+    val savedShape: String = "e1e1861edcac3f5bdfe86401e82341a6b0e0d3386d6b98bfe5a4df301c6dcbfe"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -121,9 +101,8 @@ class StaticCounterStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "ready" to SavedValues.of(ready),
-            "step" to SavedValues.of(step),
+            "start" to SavedValues.of(start),
+            "enabled" to SavedValues.of(enabled),
         ),
         wallNowMs,
     )
@@ -149,19 +128,17 @@ class StaticCounterStateMachine(
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("count"), "count")
-        val saved2 = SavedValues.bool(saved.variable("ready"), "ready")
-        val saved3 = SavedValues.uint32(saved.variable("step"), "step")
-        count = saved1
-        ready = saved2
-        step = saved3
+        val saved1 = SavedValues.uint32(saved.variable("start"), "start")
+        val saved2 = SavedValues.bool(saved.variable("enabled"), "enabled")
+        start = saved1
+        enabled = saved2
         enterSaved(saved, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
 
-    override val initialState: StaticCounterState = StaticCounterState.Counting
+    override val initialState: StaticInvokeParamsSceSynthInvokeWorkerState = StaticInvokeParamsSceSynthInvokeWorkerState.Waiting
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -179,70 +156,63 @@ class StaticCounterStateMachine(
     // not about a run.
 
     // W3C SCXML 3.7: Check if state is a <final> element
-    override fun isFinalState(state: StaticCounterState): Boolean = when (state) {
-        is StaticCounterState.Done -> true
+    override fun isFinalState(state: StaticInvokeParamsSceSynthInvokeWorkerState): Boolean = when (state) {
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Leaf -> true
         else -> false
     }
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<StaticCounterState, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<StaticInvokeParamsSceSynthInvokeWorkerState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<StaticCounterState, HistoryId>> =
-            listOf(StateTarget(StaticCounterState.Counting))
+        val documentInitialTargetList: List<EntryTarget<StaticInvokeParamsSceSynthInvokeWorkerState, HistoryId>> =
+            listOf(StateTarget(StaticInvokeParamsSceSynthInvokeWorkerState.Waiting))
 
-        // W3C SCXML 3.13: counting's transition 0, as the microstep reads it.
-        val transitionCountingAt0 = EnabledTransition<StaticCounterState, HistoryId>(
-            StaticCounterState.Counting,
-            emptyList(),
+        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
+        val transitionWaitingAt0 = EnabledTransition<StaticInvokeParamsSceSynthInvokeWorkerState, HistoryId>(
+            StaticInvokeParamsSceSynthInvokeWorkerState.Waiting,
+            listOf(StateTarget(StaticInvokeParamsSceSynthInvokeWorkerState.Leaf)),
             0,
-            hasActions = true,
-            isInternal = true,
-        )
-
-        // W3C SCXML 3.13: counting's transition 1, as the microstep reads it.
-        val transitionCountingAt1 = EnabledTransition<StaticCounterState, HistoryId>(
-            StaticCounterState.Counting,
-            listOf(StateTarget(StaticCounterState.Done)),
-            1,
             hasActions = false,
             isInternal = false,
         )
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticCounterState? = when (stateId) {
-        "counting" -> StaticCounterState.Counting
-        "done" -> StaticCounterState.Done
+    override fun resolveState(stateId: String): StaticInvokeParamsSceSynthInvokeWorkerState? = when (stateId) {
+        "leaf" -> StaticInvokeParamsSceSynthInvokeWorkerState.Leaf
+        "waiting" -> StaticInvokeParamsSceSynthInvokeWorkerState.Waiting
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticCounterState): String = when (state) {
-        is StaticCounterState.Counting -> "counting"
-        is StaticCounterState.Done -> "done"
+    override fun stateIdOf(state: StaticInvokeParamsSceSynthInvokeWorkerState): String = when (state) {
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Leaf -> "leaf"
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Waiting -> "waiting"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: StaticCounterState): Int = when (state) {
-        is StaticCounterState.Counting -> 0
-        is StaticCounterState.Done -> 1
+    override fun documentOrderOf(state: StaticInvokeParamsSceSynthInvokeWorkerState): Int = when (state) {
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Leaf -> 1
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Waiting -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticCounterEvent? = when (name) {
-        "go" -> StaticCounterEvent.Go
-        "tick" -> StaticCounterEvent.Tick
+    override fun resolveEventByName(name: String): StaticInvokeParamsSceSynthInvokeWorkerEvent? = when (name) {
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticCounterEvent): String? = when (event) {
-        is StaticCounterEvent.Go -> "go"
-        is StaticCounterEvent.Tick -> "tick"
-    }
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `StaticInvokeParamsSceSynthInvokeWorkerEvent` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: StaticInvokeParamsSceSynthInvokeWorkerEvent): String? = null
 
 
 
@@ -254,12 +224,11 @@ class StaticCounterStateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: StaticCounterState,
-        event: StaticCounterEvent?
-    ): EnabledTransition<StaticCounterState, HistoryId>? = when (state) {
-        is StaticCounterState.Counting -> when {
-            event is StaticCounterEvent.Tick && count < 10.toUInt() && isStateActive("counting") -> transitionCountingAt0
-            event is StaticCounterEvent.Go && ready -> transitionCountingAt1
+        state: StaticInvokeParamsSceSynthInvokeWorkerState,
+        event: StaticInvokeParamsSceSynthInvokeWorkerEvent?
+    ): EnabledTransition<StaticInvokeParamsSceSynthInvokeWorkerState, HistoryId>? = when (state) {
+        is StaticInvokeParamsSceSynthInvokeWorkerState.Waiting -> when {
+            event == null && start == 7.toUInt() && enabled -> transitionWaitingAt0
             else -> null
         }
         else -> null
@@ -267,62 +236,38 @@ class StaticCounterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_counter.scxml:13 :: _machine
-    override fun onEntry(state: StaticCounterState, isDefaultEntry: Boolean) {
+    // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:3 :: _machine
+    override fun onEntry(state: StaticInvokeParamsSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticCounterState.Counting -> {
-                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/1
-                run {
-
-            println("count: " + count)
-                }
-            }
-            is StaticCounterState.Done -> {
-                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
+            is StaticInvokeParamsSceSynthInvokeWorkerState.Leaf -> {
+                // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:12 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
+            }
+            is StaticInvokeParamsSceSynthInvokeWorkerState.Waiting -> {
+                // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:9 :: waiting :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_counter.scxml:13 :: _machine
-    override fun onExit(state: StaticCounterState) {
+    // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:3 :: _machine
+    override fun onExit(state: StaticInvokeParamsSceSynthInvokeWorkerState) {
         when (state) {
-            is StaticCounterState.Counting -> {
-                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
+            is StaticInvokeParamsSceSynthInvokeWorkerState.Leaf -> {
+                // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:12 :: leaf :: _state_body
             }
-            is StaticCounterState.Done -> {
-                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
+            is StaticInvokeParamsSceSynthInvokeWorkerState.Waiting -> {
+                // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:9 :: waiting :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_counter.scxml:13 :: _machine
-    override fun executeTransitionContent(source: StaticCounterState, transitionIndex: Int) {
+    // SCE-MAP: static_invoke_params__sce_synth_invoke__worker.scxml:3 :: _machine
+    override fun executeTransitionContent(source: StaticInvokeParamsSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
-        is StaticCounterState.Counting -> when (transitionIndex) {
-            0 -> {
-                // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
-
-            if (try { count = com.sce.forge.runtime.SceChecked.add(count, step); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
-
-
-            if (count == 5.toUInt()) {
-
-            ready = true
-            } else if (count > 7.toUInt()) {
-
-            ready = false
-            }
-            }
-            else -> {}
-        }
         else -> {}
         }
     }

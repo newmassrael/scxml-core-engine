@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends.scxml
@@ -66,6 +66,38 @@ class StaticBlockEndsStateMachine(
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
     var errors: UByte = 0.toUByte()
         private set
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var a: UByte? = null
+        var b: UByte? = null
+        var afterAssign: UByte? = null
+        var thenRan: UByte? = null
+        var elseRan: UByte? = null
+        var afterIf: UByte? = null
+        var inBranch: UByte? = null
+        var afterBranch: UByte? = null
+        var afterOk: UByte? = null
+        var errors: UByte? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.a?.let { a = it }
+        params.b?.let { b = it }
+        params.afterAssign?.let { afterAssign = it }
+        params.thenRan?.let { thenRan = it }
+        params.elseRan?.let { elseRan = it }
+        params.afterIf?.let { afterIf = it }
+        params.inBranch?.let { inBranch = it }
+        params.afterBranch?.let { afterBranch = it }
+        params.afterOk?.let { afterOk = it }
+        params.errors?.let { errors = it }
+    }
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(

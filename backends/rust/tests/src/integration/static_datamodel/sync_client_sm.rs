@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cbe6524cc6d7a04c90586ae8e0fecdcc124ec753fe76818a098fd6c81c01547f
+// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -467,6 +467,22 @@ impl SyncClientPersist for Engine<SyncClientPolicy> {
     }
 }
 
+/// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+/// machine's variables before it starts. A variable left `None` keeps the
+/// value its `<data>` gave it.
+#[derive(Default)]
+pub struct SyncClientInvokeParams {
+    pub by_token: Option<bool>,
+    pub full_listing: Option<bool>,
+    pub outcome: Option<u8>,
+    pub retry_at: Option<i64>,
+    pub deleted: Option<u32>,
+    pub uploaded: Option<u32>,
+    pub discarded: Option<u32>,
+    pub pages: Option<u32>,
+    pub refusals: Option<u32>,
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -542,6 +558,38 @@ impl SyncClientPolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+        }
+    }
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    pub fn accept_params(&mut self, params: SyncClientInvokeParams) {
+        if let Some(value) = params.by_token {
+            self.by_token = value;
+        }
+        if let Some(value) = params.full_listing {
+            self.full_listing = value;
+        }
+        if let Some(value) = params.outcome {
+            self.outcome = value;
+        }
+        if let Some(value) = params.retry_at {
+            self.retry_at = value;
+        }
+        if let Some(value) = params.deleted {
+            self.deleted = value;
+        }
+        if let Some(value) = params.uploaded {
+            self.uploaded = value;
+        }
+        if let Some(value) = params.discarded {
+            self.discarded = value;
+        }
+        if let Some(value) = params.pages {
+            self.pages = value;
+        }
+        if let Some(value) = params.refusals {
+            self.refusals = value;
         }
     }
 

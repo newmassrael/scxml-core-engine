@@ -532,6 +532,9 @@
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                     setInvokeParams(childSM, invokeParams)
 {% endif %}
+{% if static_fields %}
+{{ param_macros.seed_static_child(inv, 'childSM', model, machine_name, '                    ') }}
+{% endif %}
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
 {# §scxml-6.5: the `<finalize>` body is authored content, and this channel is
    the one that needs no lowering for it — Kotlin evaluates through Rhino, a

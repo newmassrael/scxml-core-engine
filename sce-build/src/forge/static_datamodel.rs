@@ -201,6 +201,17 @@ fn variable_type(var: &Variable) -> InferredType {
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
+/// The type a value handed to the child's variable `var` is held to
+/// (§scxml-6.4.1), or `None` for a variable no value can be handed to — a
+/// list, a record, an enum or bytes. The one rule the judge and the lowering of
+/// a child's arguments share.
+pub(crate) fn seed_slot(var: &Variable) -> Option<InferredType> {
+    match var.value_type.as_ref()?.scalar()? {
+        crate::forge::model::SceType::Bytes | crate::forge::model::SceType::Enum(_) => None,
+        scalar => Some(InferredType::from_sce_type(scalar)),
+    }
+}
+
 /// The enum each variable declared `enum:<alias>` holds, by the variable's id,
 /// and each enum field of a record variable, by its `<id>.<field>` path —
 /// what [`crate::forge::static_enum`] asks to tell an enum value from a number
@@ -1063,6 +1074,80 @@ impl<'a> Judge<'a> {
         ))
     }
 
+    /// §scxml-6.4.1: each `<param>` and `namelist` name of an `<invoke
+    /// type="scxml">` is bound, in the child session it starts, to the child's
+    /// variable of the same name. Under this model that variable is a native
+    /// field, which only the child's own code sets, so a value is accepted only
+    /// where the child hands it one: the child must be a `sce-static` document
+    /// this build read, must declare the name as a top-level `<data>`, and the
+    /// value must be of that variable's type — the check an `<assign>` to it
+    /// would get. A name the child does not declare would be dropped, as would
+    /// a value handed to a list, a record, an enum or bytes, so each is refused
+    /// where it is written rather than accepted and never delivered.
+    fn child_arguments(
+        &self,
+        ctx: &TypeCtx<'_>,
+        info: &crate::model::ScxmlInvokeInfo,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let base = &info.common.base;
+        let element = format!("<invoke id=\"{}\">", base.invoke_id);
+        let mut handed = std::collections::BTreeSet::new();
+        for param in info.arguments() {
+            let (written, spelling) = if param.expr.trim().is_empty() {
+                (param.location.as_str(), param.location_spelling.as_ref())
+            } else {
+                (param.expr.as_str(), param.expr_spelling.as_ref())
+            };
+            let at = param.source_location.as_ref();
+            let refuse = |rule: &str| {
+                self.rule_at(
+                    format!("<param name=\"{}\"> of {element}", param.name),
+                    rule,
+                    at.and_then(|l| l.line),
+                    at.and_then(|l| l.col),
+                    state,
+                    written,
+                )
+            };
+            if written.trim().is_empty() {
+                return Err(refuse(
+                    "a <param> hands the child a value, and this one names none: give it an \
+                     expr or a location",
+                ));
+            }
+            if !handed.insert(param.name.clone()) {
+                return Err(refuse(
+                    "the child is handed this name twice, and one value would hide the other: \
+                     hand it once",
+                ));
+            }
+            let Some(declared) = info.common.child_static_variables.as_deref() else {
+                return Err(refuse(
+                    "the child of this invoke is not a datamodel=\"sce-static\" document this \
+                     build read, so the value has no typed variable to arrive in: write the \
+                     child inline or beside this document, under the same data model",
+                ));
+            };
+            let Some(variable) = declared.iter().find(|v| v.id == param.name) else {
+                return Err(refuse(&format!(
+                    "the child declares no top-level <data id=\"{}\">, so the value would be \
+                     dropped: declare it in the child, or hand a name it does declare",
+                    param.name
+                )));
+            };
+            let Some(slot) = seed_slot(variable) else {
+                return Err(refuse(&format!(
+                    "the child's `{}` is a list, a record, an enum or bytes, and a value is \
+                     handed only to a bool, a string, an integer or a real",
+                    param.name
+                )));
+            };
+            self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+        }
+        Ok(())
+    }
+
     fn invoke(
         &self,
         ctx: &TypeCtx<'_>,
@@ -1086,11 +1171,11 @@ impl<'a> Judge<'a> {
         let base = invoke.base();
         let at = base.source_location.as_ref();
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
-        // A `namelist` reads datamodel variables by name at entry, and a
-        // mesh-rpc `srcexpr` names its peer by an expression — both are
-        // evaluated as script-engine text.
+        // A host-run invoke's `namelist` reads datamodel variables by name at
+        // entry, and a mesh-rpc `srcexpr` names its peer by an expression —
+        // both are evaluated as script-engine text. A child session's
+        // `namelist` is judged with its `<param>`s ([`Self::child_arguments`]).
         let namelist = match invoke {
-            Invoke::Scxml(info) => info.namelist.as_str(),
             Invoke::Unsupported(info) => info.namelist.as_str(),
             _ => "",
         };
@@ -1124,36 +1209,10 @@ impl<'a> Judge<'a> {
                 ));
             }
         }
-        // §scxml-6.4.1: an `<invoke type="scxml">` hands each `<param>` to the
-        // child session it starts, to be bound as a variable of the child's
-        // datamodel. Under this model that datamodel is the child's own native
-        // fields, which only the child's code sets, and no generated code
-        // delivers a parent's `<param>` to one — so the value would be typed
-        // here, accepted, and never arrive. Refused where it is written until
-        // a value can land in a field. A host-run invoke's `<param>` is part of
-        // the request the host receives, and is judged below.
+        // A host-run invoke's `<param>` is part of the request the host
+        // receives, and is judged below.
         if let Invoke::Scxml(info) = invoke {
-            if let Some(param) = base.params.first() {
-                let at = param.source_location.as_ref();
-                let written = if param.expr.trim().is_empty() {
-                    &param.location
-                } else {
-                    &param.expr
-                };
-                return Err(self.rule_at(
-                    format!(
-                        "<param name=\"{}\"> of <invoke id=\"{}\">",
-                        param.name, base.invoke_id
-                    ),
-                    "a child session of this data model has native fields of its own and \
-                     is handed no <param>: the value would be dropped, so give the child \
-                     the value in an event it takes",
-                    at.and_then(|l| l.line).or(line),
-                    at.and_then(|l| l.col).or(col),
-                    state,
-                    written,
-                ));
-            }
+            self.child_arguments(ctx, info, state)?;
             // §scxml-6.5: a `<finalize>` runs in the invoking machine before an
             // event from the child is processed. The model keeps its body as
             // one script text, so no type rule reaches it, and the generated
@@ -1161,9 +1220,9 @@ impl<'a> Judge<'a> {
             // (the Rust body is an empty block; Kotlin finds no engine). A body
             // written here would be accepted and never run. The model also
             // synthesizes a body for an empty `<finalize>` from `namelist` and
-            // `<param>`, both refused before this point, so what is left is a
-            // body the author wrote. The model records the `<invoke>`, not the
-            // `<finalize>`, so that is where the refusal sits.
+            // `<param>`, so a `<finalize/>` beside either reaches this refusal
+            // as well. The model records the `<invoke>`, not the `<finalize>`,
+            // so that is where the refusal sits.
             if !info.finalize_content.trim().is_empty() {
                 return Err(self.rule_at(
                     format!("<finalize> of <invoke id=\"{}\">", base.invoke_id),

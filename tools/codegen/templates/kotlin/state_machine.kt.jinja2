@@ -101,6 +101,39 @@ class {{ machine_name }}StateMachine(
     private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
 {% endif %}
 {% endfor %}
+{# §scxml-6.4.1: a variable a parent may hand a value to — a bool, a string, an
+   integer or a real. A list, a record, an enum and bytes are not seeded; the
+   static judge refuses a value handed to one. #}
+{% set ns_seed = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% set ns_seed.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_seed.any %}
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        var {{ field.name }}: {{ field.ty }}? = null
+{% endif %}
+{% endfor %}
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        params.{{ field.name }}?.let { {{ field.name }} = it }
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
 {% if static_published %}
 
     /** The published variables as one immutable value, in declaration order. */

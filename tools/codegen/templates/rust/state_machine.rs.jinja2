@@ -444,6 +444,29 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ──
 {{ host_invoker_interface }}
 {% endif %}
+{# §scxml-6.4.1: a variable a parent may hand a value to — a bool, a string, an
+   integer or a real. A list, a record, an enum and bytes are not seeded; the
+   static judge refuses a value handed to one. #}
+{% set ns_seed = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% set ns_seed.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_seed.any %}
+/// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+/// machine's variables before it starts. A variable left `None` keeps the
+/// value its `<data>` gave it.
+#[derive(Default)]
+pub struct {{ machine_name }}InvokeParams {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+    pub {{ field.name }}: Option<{{ field.ty }}>,
+{% endif %}
+{% endfor %}
+}
+
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -734,6 +757,20 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// to — read back, e.g. a recording host's calls, since the machine owns it.
     pub fn actions(&self) -> &A {
         &self.actions
+    }
+{% endif %}
+{% if ns_seed.any %}
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    pub fn accept_params(&mut self, params: {{ machine_name }}InvokeParams) {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        if let Some(value) = params.{{ field.name }} {
+            self.{{ field.name }} = value;
+        }
+{% endif %}
+{% endfor %}
     }
 {% endif %}
 {% for field in static_published %}

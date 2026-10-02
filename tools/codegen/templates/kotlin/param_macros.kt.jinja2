@@ -136,3 +136,40 @@
 {{ indent }}}
 {% endif %}
 {% endmacro %}
+
+{# §scxml-6.4.1: under `datamodel="sce-static"`, the values the invoke's
+   `<param>`s and `namelist` give the child's variables, into `child` (the
+   child machine already built) before it starts. The build lowered each
+   (`Param::native_seed`) to a value of the child variable's own type, read
+   from this machine's fields now — when the invoke is executed, at the
+   macrostep's end — and the child takes them through its `acceptParams`.
+
+   A value that cannot be computed costs `error.execution` and that one value
+   (W3C SCXML 5.7.1): the child still starts, one value short. #}
+{% macro seed_static_child(inv, child, model, machine_name, indent) %}
+{% set ns = namespace(any=false) %}
+{% for param in inv.params %}
+{% if param.native_seed %}
+{% set ns.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns.any %}
+{{ indent }}// W3C SCXML 6.4.1: hand the child the values this invoke names
+{{ indent }}val childSeed = {{ inv.child_class }}StateMachine.InvokeParams()
+{% for param in inv.params %}
+{% if param.native_seed and param.native_fails %}
+{{ indent }}try {
+{{ indent }}    childSeed.{{ param.name | to_camel_case }} = {{ param.native_seed }}
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{{ indent }}    // W3C SCXML 5.7.1: report the failure and leave the value out.
+{% if 'error.execution' in model.events %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{% endif %}
+{{ indent }}}
+{% elif param.native_seed %}
+{{ indent }}childSeed.{{ param.name | to_camel_case }} = {{ param.native_seed }}
+{% endif %}
+{% endfor %}
+{{ indent }}{{ child }}.acceptParams(childSeed)
+{% endif %}
+{% endmacro %}

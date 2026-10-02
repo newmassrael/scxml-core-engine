@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"):
+  an <invoke type="scxml"> hands its child the values its <param>s and `namelist`
+  name (W3C SCXML 6.4.1), each to the child's variable of the same name, of that
+  variable's own type — and a variable nothing hands a value to keeps the one its
+  <data> gave it.
+
+  `working` invokes `worker`, which ends the moment it holds the two values it is
+  waiting for:
+
+    start    handed by `<param name="start" expr="base"/>`; the child wants 7
+    enabled  handed by `namelist="enabled"`; the child wants true
+
+  `base` starts at 4 and `working`'s <onentry> adds 3, so the value that arrives
+  is the one the machine holds when the invoke EXECUTES — at the end of the
+  macrostep that entered the state, after its entry actions — and not the one it
+  held when the state was entered. A child that was handed less (4, or nothing)
+  would stay `waiting`, and the parent would stay in `working`.
+
+  `worker` ending moves the parent on, counting itself in `completed`. `plain`
+  invokes `control`, the same child handed nothing: it keeps its declared
+  `start = 0` and `enabled = false`, never ends, and `completed` stays at 1
+  (`done.invoke.control` would add 100).
+
+  `plain` also invokes `watcher`, handed `start = base` (7), which ends only at 8.
+  `bump` raises `base` to 8 while `watcher` runs, and `watcher` does not see it:
+  a child is handed its values once, when it starts. A machine saved there and
+  restored starts `watcher` again from its beginning (W3C SCXML 6.4, as
+  `static_invoke.scxml` shows), and a start evaluates its arguments, so the new
+  `watcher` is handed 8 and ends (`done.invoke.watcher` adds 10).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_invoke_params">
+  <datamodel>
+    <data id="base" sce:type="uint32" expr="4"/>
+    <data id="enabled" sce:type="bool" expr="true"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <onentry>
+      <assign location="base" expr="base + 3"/>
+    </onentry>
+    <invoke type="scxml" id="worker" namelist="enabled">
+      <param name="start" expr="base"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="0"/>
+            <data id="enabled" sce:type="bool" expr="false"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="start === 7 &amp;&amp; enabled" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.worker" target="plain">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+  </state>
+  <state id="plain">
+    <invoke type="scxml" id="control">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="0"/>
+            <data id="enabled" sce:type="bool" expr="false"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="start === 7 &amp;&amp; enabled" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.control">
+      <assign location="completed" expr="completed + 100"/>
+    </transition>
+    <invoke type="scxml" id="watcher">
+      <param name="start" expr="base"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="0"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="start === 8" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="bump">
+      <assign location="base" expr="base + 1"/>
+    </transition>
+    <transition event="done.invoke.watcher">
+      <assign location="completed" expr="completed + 10"/>
+    </transition>
+  </state>
+</scxml>

@@ -1351,10 +1351,16 @@ pub fn lower(
         // An invoke the host runs evaluates its request when it starts, at
         // the state's entry, where no event's payload is in scope.
         for invoke in &mut state.invokes {
-            if let crate::model::Invoke::Unsupported(info) = invoke {
-                for param in &mut info.base.params {
-                    lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+            match invoke {
+                crate::model::Invoke::Unsupported(info) => {
+                    for param in &mut info.base.params {
+                        lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                    }
                 }
+                crate::model::Invoke::Scxml(info) => {
+                    lower_child_arguments(info, &plain_ctx, &plain_renames, &rewrites)?;
+                }
+                _ => {}
             }
         }
         for transition in &mut state.transitions {
@@ -2288,6 +2294,57 @@ fn lower_wire_param(
     rewrites.note(&written, spelling.as_ref(), &value.text);
     param.native_value = target.wire_value(slot, &value.text);
     param.native_fails = value.can_fail;
+    Ok(())
+}
+
+/// Lower what an `<invoke type="scxml">` hands its child (§scxml-6.4.1): each
+/// `<param>` and each `namelist` name, as the value of the child's variable of
+/// the same name, in the backend's own language — `Param::native_seed`, and
+/// whether it can fail. The `namelist` is folded into the params
+/// ([`crate::model::ScxmlInvokeInfo::arguments`]) and cleared, so the
+/// templates read one list.
+///
+/// Validation already held each value to the type of the variable it lands in
+/// ([`crate::forge::static_datamodel`]), so a refusal here is a lowering this
+/// backend lacks, not a mistake in the document.
+fn lower_child_arguments(
+    info: &mut crate::model::ScxmlInvokeInfo,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let mut arguments = info.arguments();
+    if arguments.is_empty() {
+        return Ok(());
+    }
+    let target = rewrites.target;
+    let lang = target.name();
+    let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
+    for param in &mut arguments {
+        let (written, spelling) = if param.expr.trim().is_empty() {
+            (param.location.clone(), param.location_spelling.clone())
+        } else {
+            (param.expr.clone(), param.expr_spelling.clone())
+        };
+        let refused = |why: String| {
+            GenerateError::unsupported(format!(
+                "<param name=\"{}\"> `{written}` has no {lang} lowering: {why}",
+                param.name
+            ))
+        };
+        let slot = declared
+            .iter()
+            .find(|v| v.id == param.name)
+            .and_then(crate::forge::static_datamodel::seed_slot)
+            .ok_or_else(|| refused("the child declares no variable it can be handed to".into()))?;
+        let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
+            .map_err(|r| refused(r.error.to_string()))?;
+        rewrites.note(&written, spelling.as_ref(), &value.text);
+        param.native_seed = value.text;
+        param.native_fails = value.can_fail;
+    }
+    info.common.base.params = arguments;
+    info.namelist.clear();
     Ok(())
 }
 
