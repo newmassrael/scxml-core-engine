@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# sce-app-core — the part of the specification workbench that has no screen.
+#
+# A works folder holds one folder per work, and a work holds the specification
+# text as a chain of immutable, content-addressed revisions. The desktop app,
+# its browser shell and the authoring MCP all read and write that folder through
+# this crate (the MCP through the `sce-work` command), so there is ONE
+# implementation of what a save is and of what makes two saves conflict.
+#
+# Nothing here links a GUI toolkit: this crate is a member of the root
+# workspace and is built and tested by the lanes that already run there. The
+# application itself lives in `app/`, a workspace of its own, for that reason.
+
+[package]
+name = "sce-app-core"
+version.workspace = true
+edition.workspace = true
+# `std::fs::File::lock` is how a save is serialised across processes, on every
+# platform, without a dependency. It is stable from 1.89, which is above the
+# workspace floor the runtime crates keep for embedded targets.
+rust-version = "1.89"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Works folder, immutable source revisions and the command layer shared by the desktop app and the MCP"
+
+[lib]
+name = "sce_app_core"
+
+[[bin]]
+name = "sce-work"
+path = "src/bin/sce_work.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+# The `sce-work` command: the same operations as JSON in and out, so a process
+# that is not Rust (the authoring MCP) writes through this crate and not through
+# a second implementation of it.
+cli = ["dep:clap"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { workspace = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

@@ -1,0 +1,668 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The works folder.
+//!
+//! ```text
+//! <root>/
+//!   <work-id>/
+//!     work.json          the work's identity and title
+//!     source/<digest>.txt   every saved text, named by its own SHA-256, never rewritten
+//!     source.head        the digest of the current text, one line
+//!     source.log         one JSON line per save: digest, parent digest, time
+//!     .lock              what a save holds while it checks and moves the pointer
+//! ```
+//!
+//! The files are the truth. Nothing else (an index, a database) may hold a fact
+//! that the folder does not, because a folder that two processes write and a
+//! second place that one of them updates will, sooner or later, disagree.
+//!
+//! A save is an optimistic compare-and-swap on the current digest. The caller
+//! says which revision its text was written from (`base`), and the store refuses
+//! a base that is no longer current rather than overwrite what it has not seen.
+
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::clock::{Clock, SystemClock};
+use crate::error::StoreError;
+use crate::lock;
+use crate::revision::Revision;
+
+/// The most a single source text may hold.
+pub const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
+
+/// How long a save waits for another save of the same work.
+pub const LOCK_WAIT: Duration = Duration::from_secs(30);
+
+const WORK_FILE: &str = "work.json";
+const SOURCE_DIR: &str = "source";
+const HEAD_FILE: &str = "source.head";
+const LOG_FILE: &str = "source.log";
+const LOCK_FILE: &str = ".lock";
+const WORK_FORMAT: &str = "sce-work";
+const WORK_VERSION: u32 = 1;
+const ID_SUFFIX_HEX: usize = 8;
+const ID_SLUG_MAX: usize = 40;
+const TITLE_MAX_CHARS: usize = 200;
+
+/// The name of a work's folder: ASCII on purpose, so a title in any script and a
+/// path on any filesystem never have to agree about encoding.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct WorkId(String);
+
+impl WorkId {
+    /// Accept an id only if it names a folder directly under the root: no
+    /// separators, no dots, nothing a path could climb out through.
+    pub fn parse(text: &str) -> Result<Self, StoreError> {
+        let mut chars = text.chars();
+        let first_ok = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+        let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if first_ok && rest_ok && text.len() <= 80 {
+            Ok(WorkId(text.to_string()))
+        } else {
+            Err(StoreError::InvalidId {
+                id: text.to_string(),
+            })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for WorkId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for WorkId {
+    type Error = StoreError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        WorkId::parse(&text)
+    }
+}
+
+impl From<WorkId> for String {
+    fn from(id: WorkId) -> String {
+        id.0
+    }
+}
+
+/// A work: its identity and the name a person gave it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Work {
+    pub id: WorkId,
+    pub title: String,
+    pub created_at: String,
+}
+
+/// `work.json` as written. Unknown fields are kept out of the reading on purpose
+/// and allowed in the file: a later version may add to it.
+#[derive(Debug, Serialize, Deserialize)]
+struct WorkFile {
+    format: String,
+    v: u32,
+    id: WorkId,
+    title: String,
+    created_at: String,
+}
+
+/// A folder under the root that looked like a work and could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Unreadable {
+    pub id: String,
+    pub reason: String,
+}
+
+/// Every work, and every folder that should have been one and was not readable.
+///
+/// The second list is not an afterthought: a work that silently disappears from
+/// the list because its `work.json` was damaged looks, to the person, like a work
+/// that was deleted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Listing {
+    pub works: Vec<Work>,
+    pub unreadable: Vec<Unreadable>,
+}
+
+/// One saved text and the revision it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceText {
+    pub revision: Revision,
+    pub text: String,
+}
+
+/// One line of a work's history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub revision: Revision,
+    pub parent: Option<Revision>,
+    pub saved_at: String,
+}
+
+/// What a save did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "outcome", rename_all = "kebab-case")]
+pub enum Saved {
+    /// A new revision is now current.
+    Saved {
+        revision: Revision,
+        parent: Option<Revision>,
+    },
+    /// The text is the current revision's own: nothing was written.
+    Unchanged { revision: Revision },
+}
+
+/// A works folder.
+#[derive(Debug, Clone)]
+pub struct WorkStore<C: Clock = SystemClock> {
+    root: PathBuf,
+    clock: C,
+}
+
+impl WorkStore<SystemClock> {
+    /// The works folder at `root`. The folder is created by the first work.
+    pub fn at(root: impl Into<PathBuf>) -> Self {
+        WorkStore {
+            root: root.into(),
+            clock: SystemClock,
+        }
+    }
+}
+
+impl<C: Clock> WorkStore<C> {
+    /// The same, stamping saves with `clock`.
+    pub fn with_clock(root: impl Into<PathBuf>, clock: C) -> Self {
+        WorkStore {
+            root: root.into(),
+            clock,
+        }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    fn work_dir(&self, id: &WorkId) -> PathBuf {
+        self.root.join(id.as_str())
+    }
+
+    /// The folder of an existing work, or `NotFound`.
+    fn existing(&self, id: &WorkId) -> Result<PathBuf, StoreError> {
+        let dir = self.work_dir(id);
+        if dir.join(WORK_FILE).is_file() {
+            Ok(dir)
+        } else {
+            Err(StoreError::NotFound {
+                what: format!("work `{}`", id.as_str()),
+            })
+        }
+    }
+
+    /// Start a work. Its folder is created exclusively, so two creations never
+    /// share one.
+    pub fn create_work(&self, title: &str) -> Result<Work, StoreError> {
+        let title = validate_title(title)?;
+        fs::create_dir_all(&self.root).map_err(|e| StoreError::io(&self.root, e))?;
+        let slug = slug_of(&title);
+        for attempt in 0..8u64 {
+            let id = WorkId::parse(&format!("{slug}-{}", id_suffix(&title, attempt)))?;
+            let dir = self.work_dir(&id);
+            match fs::create_dir(&dir) {
+                Ok(()) => {
+                    let work = Work {
+                        id: id.clone(),
+                        title: title.clone(),
+                        created_at: self.clock.now(),
+                    };
+                    let file = WorkFile {
+                        format: WORK_FORMAT.to_string(),
+                        v: WORK_VERSION,
+                        id,
+                        title: work.title.clone(),
+                        created_at: work.created_at.clone(),
+                    };
+                    let mut bytes = serde_json::to_vec_pretty(&file)
+                        .map_err(|e| StoreError::corrupt(&dir, e.to_string()))?;
+                    bytes.push(b'\n');
+                    atomic_write(&dir.join(WORK_FILE), &bytes)?;
+                    return Ok(work);
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(StoreError::io(&dir, e)),
+            }
+        }
+        Err(StoreError::corrupt(
+            &self.root,
+            "eight generated ids were all taken, which a random suffix does not do",
+        ))
+    }
+
+    /// Every work, oldest first, and what could not be read.
+    pub fn list_works(&self) -> Result<Listing, StoreError> {
+        let mut listing = Listing {
+            works: Vec::new(),
+            unreadable: Vec::new(),
+        };
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(listing),
+            Err(e) => return Err(StoreError::io(&self.root, e)),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|e| StoreError::io(&self.root, e))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(id) = WorkId::parse(&name) else {
+                continue;
+            };
+            if !entry.path().is_dir() {
+                continue;
+            }
+            match self.read_work_file(&id) {
+                Ok(work) => listing.works.push(work),
+                Err(e) => listing.unreadable.push(Unreadable {
+                    id: name,
+                    reason: e.to_string(),
+                }),
+            }
+        }
+        listing
+            .works
+            .sort_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)));
+        listing.unreadable.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(listing)
+    }
+
+    /// One work.
+    pub fn read_work(&self, id: &WorkId) -> Result<Work, StoreError> {
+        self.existing(id)?;
+        self.read_work_file(id)
+    }
+
+    fn read_work_file(&self, id: &WorkId) -> Result<Work, StoreError> {
+        let path = self.work_dir(id).join(WORK_FILE);
+        let bytes = fs::read(&path).map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                StoreError::corrupt(&path, "the folder has no work.json")
+            } else {
+                StoreError::io(&path, e)
+            }
+        })?;
+        let file: WorkFile = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::corrupt(&path, e.to_string()))?;
+        if file.format != WORK_FORMAT || file.v != WORK_VERSION {
+            return Err(StoreError::corrupt(
+                &path,
+                format!(
+                    "format `{}` v{}, expected `{WORK_FORMAT}` v{WORK_VERSION}",
+                    file.format, file.v
+                ),
+            ));
+        }
+        if file.id != *id {
+            return Err(StoreError::corrupt(
+                &path,
+                format!(
+                    "the file says it is `{}` and sits in the folder of `{}`",
+                    file.id.as_str(),
+                    id.as_str()
+                ),
+            ));
+        }
+        Ok(Work {
+            id: file.id,
+            title: file.title,
+            created_at: file.created_at,
+        })
+    }
+
+    /// The revision that is current, or `None` for a work nothing was saved to.
+    pub fn head(&self, id: &WorkId) -> Result<Option<Revision>, StoreError> {
+        let dir = self.existing(id)?;
+        read_head(&dir)
+    }
+
+    /// The text of `revision`, or of the current one when none is named.
+    /// `None` only for a work with no text yet.
+    ///
+    /// The bytes read are hashed and compared with the name they were stored
+    /// under, so a file that was edited by hand, truncated by a crash or damaged
+    /// by a disk is refused instead of being handed over as the revision it
+    /// claims to be.
+    pub fn read_source(
+        &self,
+        id: &WorkId,
+        revision: Option<&Revision>,
+    ) -> Result<Option<SourceText>, StoreError> {
+        let dir = self.existing(id)?;
+        let wanted = match revision {
+            Some(revision) => revision.clone(),
+            None => match read_head(&dir)? {
+                Some(head) => head,
+                None => return Ok(None),
+            },
+        };
+        let path = source_path(&dir, &wanted);
+        let bytes = fs::read(&path).map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                if revision.is_some() {
+                    StoreError::NotFound {
+                        what: format!("revision {} of `{}`", wanted.short(), id.as_str()),
+                    }
+                } else {
+                    StoreError::corrupt(&path, "the current revision has no file")
+                }
+            } else {
+                StoreError::io(&path, e)
+            }
+        })?;
+        if Revision::of(&bytes) != wanted {
+            return Err(StoreError::corrupt(
+                &path,
+                "its bytes do not hash to the name it is stored under",
+            ));
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|_| StoreError::corrupt(&path, "the text is not valid UTF-8"))?;
+        Ok(Some(SourceText {
+            revision: wanted,
+            text,
+        }))
+    }
+
+    /// Save `text` as the work's next revision, from `base`.
+    ///
+    /// `base` is the revision the caller's text was written from: `None` for the
+    /// first text of a work, otherwise the revision it read. It must be the
+    /// current one. A `None` for a work that already has text is refused too,
+    /// because a caller that never read the work has not seen what it would
+    /// replace.
+    pub fn save_source(
+        &self,
+        id: &WorkId,
+        text: &str,
+        base: Option<&Revision>,
+    ) -> Result<Saved, StoreError> {
+        if text.len() > MAX_SOURCE_BYTES {
+            return Err(StoreError::TooLarge {
+                bytes: text.len(),
+                limit: MAX_SOURCE_BYTES,
+            });
+        }
+        let dir = self.existing(id)?;
+        // The check and the move of the pointer are one step under this lock.
+        // Without it two saves from one base both pass the check and the later
+        // silently replaces the earlier.
+        let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
+
+        let current = read_head(&dir)?;
+        if current.as_ref() != base {
+            return Err(StoreError::Conflict {
+                base: base.cloned(),
+                current,
+            });
+        }
+        let revision = Revision::of(text.as_bytes());
+        if current.as_ref() == Some(&revision) {
+            return Ok(Saved::Unchanged { revision });
+        }
+
+        // The text first, then the log, then the pointer. A crash anywhere
+        // leaves the previous revision current and at most one unreferenced
+        // file or one trailing log line, neither of which a reader trusts.
+        let source_dir = dir.join(SOURCE_DIR);
+        fs::create_dir_all(&source_dir).map_err(|e| StoreError::io(&source_dir, e))?;
+        let path = source_path(&dir, &revision);
+        // A file already stored under this digest is reused only if it still
+        // hashes to it. One that does not (damaged since it was written) is
+        // replaced, because the pointer is about to name it.
+        let intact = fs::read(&path).is_ok_and(|bytes| Revision::of(&bytes) == revision);
+        if !intact {
+            atomic_write(&path, text.as_bytes())?;
+        }
+        let entry = HistoryEntry {
+            revision: revision.clone(),
+            parent: current.clone(),
+            saved_at: self.clock.now(),
+        };
+        append_log(&dir.join(LOG_FILE), &entry)?;
+        atomic_write(&dir.join(HEAD_FILE), format!("{revision}\n").as_bytes())?;
+        Ok(Saved::Saved {
+            revision,
+            parent: current,
+        })
+    }
+
+    /// Every save, oldest first.
+    ///
+    /// A final line without its newline that does not parse is a save that was
+    /// interrupted while it was being logged (the pointer moves after the log, so
+    /// that save never took effect) and is left out. Any other line that does not
+    /// parse is damage, and says so.
+    pub fn history(&self, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
+        let dir = self.existing(id)?;
+        let path = dir.join(LOG_FILE);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(StoreError::io(&path, e)),
+        };
+        let ends_cleanly = text.ends_with('\n');
+        let lines: Vec<&str> = text.lines().collect();
+        let mut entries = Vec::with_capacity(lines.len());
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<HistoryEntry>(line) {
+                Ok(entry) => entries.push(entry),
+                Err(_) if !ends_cleanly && index + 1 == lines.len() => {}
+                Err(e) => {
+                    return Err(StoreError::corrupt(
+                        &path,
+                        format!("line {} is not a save record: {e}", index + 1),
+                    ))
+                }
+            }
+        }
+        Ok(entries)
+    }
+}
+
+/// Where the default works folder is: `SCE_WORKS_DIR` when set, otherwise the
+/// platform's per-user data directory.
+///
+/// One definition, read by every process that opens the folder, so the app and
+/// the MCP do not each guess a different place.
+pub fn default_root() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("SCE_WORKS_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    let data = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    };
+    data.map(|dir| dir.join("sce-workbench").join("works"))
+}
+
+fn validate_title(title: &str) -> Result<String, StoreError> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err(StoreError::InvalidTitle {
+            reason: "it is empty".to_string(),
+        });
+    }
+    if trimmed.chars().count() > TITLE_MAX_CHARS {
+        return Err(StoreError::InvalidTitle {
+            reason: format!("it is longer than {TITLE_MAX_CHARS} characters"),
+        });
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(StoreError::InvalidTitle {
+            reason: "it holds a control character".to_string(),
+        });
+    }
+    Ok(trimmed.to_string())
+}
+
+/// The readable part of a work's folder name: the ASCII letters and digits of
+/// the title, hyphen-joined, or `work` when the title has none (a title in
+/// another script keeps its own name; only the folder is plain).
+fn slug_of(title: &str) -> String {
+    let mut slug = String::new();
+    let mut pending_hyphen = false;
+    for c in title.chars() {
+        if c.is_ascii_alphanumeric() {
+            if pending_hyphen && !slug.is_empty() {
+                slug.push('-');
+            }
+            pending_hyphen = false;
+            slug.push(c.to_ascii_lowercase());
+        } else {
+            pending_hyphen = true;
+        }
+        if slug.len() >= ID_SLUG_MAX {
+            break;
+        }
+    }
+    if slug.is_empty() {
+        "work".to_string()
+    } else {
+        slug
+    }
+}
+
+static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Eight hexadecimal characters that differ between creations of the same title.
+fn id_suffix(title: &str, attempt: u64) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut hasher = Sha256::new();
+    hasher.update(title.as_bytes());
+    hasher.update([0]);
+    hasher.update(nanos.to_le_bytes());
+    hasher.update(std::process::id().to_le_bytes());
+    hasher.update(counter.to_le_bytes());
+    hasher.update(attempt.to_le_bytes());
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(ID_SUFFIX_HEX);
+    for byte in digest.iter().take(ID_SUFFIX_HEX / 2) {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex
+}
+
+fn source_path(dir: &Path, revision: &Revision) -> PathBuf {
+    dir.join(SOURCE_DIR).join(format!("{revision}.txt"))
+}
+
+fn read_head(dir: &Path) -> Result<Option<Revision>, StoreError> {
+    let path = dir.join(HEAD_FILE);
+    match fs::read_to_string(&path) {
+        Ok(text) => Revision::parse(text.trim())
+            .map(Some)
+            .map_err(|e| StoreError::corrupt(&path, e.to_string())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(StoreError::io(&path, e)),
+    }
+}
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Write `bytes` to `path` so a reader sees the old file or the whole new one,
+/// never a part: a temporary file beside it, flushed to disk, renamed over it.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let temporary = parent.join(format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| -> io::Result<()> {
+        let mut file = File::create(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&temporary);
+        return Err(StoreError::io(path, e));
+    }
+    sync_directory(parent);
+    Ok(())
+}
+
+/// Make the rename itself durable. Unix only, and best effort: a directory
+/// cannot be opened as a file on Windows, whose rename is already durable
+/// enough for a pointer the next save re-checks.
+fn sync_directory(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(handle) = File::open(dir) {
+        let _ = handle.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
+fn append_log(path: &Path, entry: &HistoryEntry) -> Result<(), StoreError> {
+    let mut line =
+        serde_json::to_string(entry).map_err(|e| StoreError::corrupt(path, e.to_string()))?;
+    line.push('\n');
+    drop_torn_tail(path).map_err(|e| StoreError::io(path, e))?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| StoreError::io(path, e))?;
+    file.write_all(line.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|e| StoreError::io(path, e))
+}
+
+/// Cut a log back to its last complete line.
+///
+/// A save interrupted while it was logging leaves a final line without its
+/// newline. That save never took effect (the pointer moves after the log), so
+/// the fragment says nothing, and left in place the next save would be glued to
+/// it and both lines would be lost.
+fn drop_torn_tail(path: &Path) -> io::Result<()> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if bytes.is_empty() || bytes.ends_with(b"\n") {
+        return Ok(());
+    }
+    let keep = bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+    let file = OpenOptions::new().write(true).open(path)?;
+    file.set_len(keep as u64)?;
+    file.sync_all()
+}
