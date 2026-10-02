@@ -41,6 +41,9 @@ use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_enum_sm::{
+    StaticRecordEnumPersist, StaticRecordEnumPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
     StaticRecordFieldsPersist, StaticRecordFieldsPolicy,
 };
@@ -222,6 +225,17 @@ fn static_record_fields_updates_a_record_a_field_at_a_time() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_fields.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_enum_holds_an_enum_in_a_field_of_a_record() {
+    replay(
+        Engine::new(StaticRecordEnumPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_enum.json"
         ),
     );
 }

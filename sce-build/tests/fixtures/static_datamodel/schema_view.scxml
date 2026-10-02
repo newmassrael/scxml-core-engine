@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How a calendar screen is shown: the record type `static_record_enum.scxml`'s
+  `record:View` variables are held in (SCE Accepted Subset §2.15). `layout`
+  is an enum field, so a machine that holds the record imports the same enum
+  under the alias this schema writes (`ViewMode`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_view"
+       sce:event-name="view.shown">
+  <sce:import src="enum_view_mode.scxml" kind="enum" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" sce:direction="in"/>
+    <data id="zoom" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

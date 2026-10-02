@@ -281,6 +281,7 @@ impl StaticTarget for JsTarget {
         _ty: &str,
         _alias: &str,
         _schema: &crate::forge::model::EventSchemaModel,
+        _enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         String::new()
     }

@@ -54,10 +54,14 @@ fn class_of(
     match &node.kind {
         // `<alias>.<variant>`: the variant itself was judged against the
         // enum's own set by the expression pass that ran before this one.
-        ExprKind::Member { object, .. } => {
+        ExprKind::Member { object, property } => {
             if let ExprKind::Ident(alias) = &object.kind {
                 if ctx.lookup_enum(alias).is_some() {
                     return Ok(Some(alias.clone()));
+                }
+                // `<record>.<field>`: a field of a record that holds an enum.
+                if let Some(held) = var_alias(&format!("{alias}.{property}")) {
+                    return Ok(Some(held));
                 }
             }
             nothing_but(node, ctx, var_alias)

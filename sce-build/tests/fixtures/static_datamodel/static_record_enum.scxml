@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a record with an
+  enum field. `shown` is a `View` whose `layout` is a `ViewMode`: it starts at a
+  variant, is compared with `===` and assigned a variant like a variable of the
+  enum, is appended whole to a list, and is read back through a loop's record
+  item (`v.layout`). The machine imports the enum under the alias the schema
+  writes, and holds the field in its own type for it.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticScenarioTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="viewing" datamodel="sce-static" name="static_record_enum">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="shown" sce:type="record:View" sce:direction="out">
+      <sce:set name="layout" expr="ViewMode.month"/>
+      <sce:set name="zoom" expr="1"/>
+    </data>
+    <data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="weeks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="flips" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="viewing">
+    <!-- A month and a week trade places: the enum field is compared and
+         assigned a variant. -->
+    <transition event="toggle" cond="shown.layout === ViewMode.month" type="internal">
+      <assign location="shown.layout" expr="ViewMode.week"/>
+      <assign location="flips" expr="flips + 1"/>
+    </transition>
+    <transition event="toggle" cond="shown.layout === ViewMode.week" type="internal">
+      <assign location="shown.layout" expr="ViewMode.month"/>
+      <assign location="flips" expr="flips + 1"/>
+    </transition>
+    <transition event="agenda" type="internal">
+      <assign location="shown.layout" expr="ViewMode.agenda_list"/>
+    </transition>
+    <transition event="zoom" type="internal">
+      <assign location="shown.zoom" expr="shown.zoom + 1"/>
+    </transition>
+    <!-- The record, with its enum field, is appended whole. -->
+    <transition event="remember" type="internal">
+      <sce:append target="seen" expr="shown"/>
+    </transition>
+    <!-- The enum field of a loop's record item is compared. -->
+    <transition event="count" type="internal">
+      <assign location="weeks" expr="0"/>
+      <foreach array="seen" item="v">
+        <if cond="v.layout === ViewMode.week">
+          <assign location="weeks" expr="weeks + 1"/>
+        </if>
+      </foreach>
+    </transition>
+    <!-- A whole record, enum field included, comes back from the loop item. -->
+    <transition event="recall" type="internal">
+      <foreach array="seen" item="v">
+        <assign location="shown" expr="v"/>
+      </foreach>
+    </transition>
+    <transition event="forget" type="internal">
+      <sce:clear target="seen"/>
+    </transition>
+  </state>
+</scxml>

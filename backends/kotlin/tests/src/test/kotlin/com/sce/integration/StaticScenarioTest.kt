@@ -28,6 +28,7 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
+import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
@@ -255,6 +256,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_fields"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRecordEnumHoldsAnEnumInAFieldOfARecord() {
+        val sm = StaticRecordEnumStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_enum"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

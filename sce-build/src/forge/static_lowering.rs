@@ -255,7 +255,16 @@ pub trait StaticTarget {
     fn record_type(&self, machine: &str, alias: &str) -> String;
     /// The declaration of [`Self::record_type`], one field per schema field in
     /// the schema's order.
-    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String;
+    ///
+    /// `enum_types` is the type each enum a field holds is declared as
+    /// ([`Self::enum_type`]), by the enum alias the schema writes.
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String;
     /// The identifier of schema field `id` on the record type.
     fn record_field(&self, id: &str) -> String;
     /// A record value built whole from `(field identifier, value)` pairs.
@@ -437,16 +446,22 @@ impl StaticTarget for KotlinTarget {
             filters::to_pascal_case(alias.to_string())
         )
     }
-    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String {
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
         let params: Vec<String> = schema
             .fields
             .iter()
             .map(|field| {
-                format!(
-                    "val {}: {}",
-                    self.record_field(&field.id),
-                    crate::forge::generator::kotlin_type(&field.sce_type)
-                )
+                let field_ty = match &field.sce_type {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::kotlin_type(other).to_string(),
+                };
+                format!("val {}: {field_ty}", self.record_field(&field.id))
             })
             .collect();
         // Its saved form (`com.sce.runtime.SavedValues`) lives on the type: an
@@ -458,23 +473,31 @@ impl StaticTarget for KotlinTarget {
             .fields
             .iter()
             .map(|field| {
-                format!(
-                    "\"{}\" to SavedValues.of({})",
-                    field.id,
-                    self.record_field(&field.id)
-                )
+                let member = self.record_field(&field.id);
+                match &field.sce_type {
+                    // An enum is saved by its own type, as a variable of it is.
+                    SceType::Enum(_) => format!("\"{}\" to {member}.toSaved()", field.id),
+                    _ => format!("\"{}\" to SavedValues.of({member})", field.id),
+                }
             })
             .collect();
         let reads: Vec<String> = schema
             .fields
             .iter()
             .map(|field| {
-                format!(
-                    "{name} = SavedValues.{ty}(SavedValues.field(value, what, \"{id}\"), \"$what.{id}\")",
-                    name = self.record_field(&field.id),
-                    ty = field.sce_type.as_attr(),
-                    id = field.id
-                )
+                let name = self.record_field(&field.id);
+                let id = &field.id;
+                let saved = format!("SavedValues.field(value, what, \"{id}\")");
+                match &field.sce_type {
+                    SceType::Enum(reference) => format!(
+                        "{name} = {}.fromSaved({saved}, \"$what.{id}\")",
+                        enum_types[&reference.alias]
+                    ),
+                    other => format!(
+                        "{name} = SavedValues.{}({saved}, \"$what.{id}\")",
+                        other.as_attr()
+                    ),
+                }
             })
             .collect();
         format!(
@@ -746,16 +769,22 @@ impl StaticTarget for RustTarget {
     }
     // Plain data by the record rule, so `Copy` — the derive set a plain
     // event-schema payload takes from the one policy that decides it.
-    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String {
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
         let fields: String = schema
             .fields
             .iter()
             .map(|field| {
-                format!(
-                    "    pub {}: {},\n",
-                    self.record_field(&field.id),
-                    crate::forge::generator::rust_type(&field.sce_type)
-                )
+                let field_ty = match &field.sce_type {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::rust_type(other).to_string(),
+                };
+                format!("    pub {}: {field_ty},\n", self.record_field(&field.id))
             })
             .collect();
         format!(
@@ -1121,10 +1150,7 @@ pub fn lower(
     // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
-    let mut type_defs = Vec::new();
-    let mut saved_records = Vec::new();
-    let mut saved_enums = Vec::new();
-    let mut declared_types = BTreeSet::new();
+    let mut declarations = TypeDeclarations::new(target, machine, &imported_enums);
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
@@ -1149,15 +1175,7 @@ pub fn lower(
                         var.id
                     ))
                 })?;
-                let ty = declare_record(
-                    target,
-                    machine,
-                    alias,
-                    schema,
-                    &mut declared_types,
-                    &mut type_defs,
-                    &mut saved_records,
-                )?;
+                let ty = declarations.record(alias, schema)?;
                 let mut values = Vec::with_capacity(schema.fields.len());
                 for field in &schema.fields {
                     let init = var
@@ -1216,15 +1234,7 @@ pub fn lower(
                                 var.id
                             ))
                         })?;
-                        let record_ty = declare_record(
-                            target,
-                            machine,
-                            alias,
-                            schema,
-                            &mut declared_types,
-                            &mut type_defs,
-                            &mut saved_records,
-                        )?;
+                        let record_ty = declarations.record(alias, schema)?;
                         (
                             target.record_list_type(&record_ty),
                             target.record_list_view(&record_ty),
@@ -1263,32 +1273,14 @@ pub fn lower(
             // however many variables name it. Saved as the variant's declared
             // name, which the type reads back (see [`StaticEnumType`]).
             if let SceType::Enum(reference) = ty {
-                let alias = &reference.alias;
-                let (Some(enum_ty), Some(enum_model)) =
-                    (target.enum_type(machine, alias), imported_enums.get(alias))
-                else {
-                    return Err(GenerateError::unsupported(format!(
+                let enum_ty = declarations.enum_type(&reference.alias).map_err(|_| {
+                    GenerateError::unsupported(format!(
                         "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang} \
                          lowering yet",
                         var.id,
                         ty.as_attr()
-                    )));
-                };
-                if declared_types.insert(enum_ty.clone()) {
-                    type_defs.push(target.enum_def(&enum_ty, alias, enum_model));
-                    saved_enums.push(StaticEnumType {
-                        ty: enum_ty.clone(),
-                        alias: alias.clone(),
-                        variants: enum_model
-                            .variants
-                            .iter()
-                            .map(|v| StaticEnumVariant {
-                                declared: v.name.clone(),
-                                ident: target.enum_variant(&enum_model.name, &v.name),
-                            })
-                            .collect(),
-                    });
-                }
+                    ))
+                })?;
                 let init = initial_value(&var.expr, target, &ctx, &renames, InferredType::Unknown)
                     .map_err(|r| refused("the initial value", &var.expr, r))?;
                 rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
@@ -1431,60 +1423,120 @@ pub fn lower(
     Ok(StaticLowering {
         fields,
         payload_events,
-        type_defs,
+        type_defs: declarations.type_defs,
         imports,
-        records: saved_records,
-        enums: saved_enums,
+        records: declarations.records,
+        enums: declarations.enums,
         saved_shape,
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
     })
 }
 
-/// The type a `record:<alias>` value is held in — of a record variable or of a
-/// list's elements — declared in the machine's own file the first time any
-/// variable names it, with what a saved state writes of it.
-///
-/// A schema with an enum-typed field is refused: its type is the enum
-/// document's, which the machine's unit does not import.
-fn declare_record(
-    target: &dyn StaticTarget,
-    machine: &str,
-    alias: &str,
-    schema: &EventSchemaModel,
-    declared_types: &mut BTreeSet<String>,
-    type_defs: &mut Vec<String>,
-    saved_records: &mut Vec<StaticRecord>,
-) -> Result<String, GenerateError> {
-    if let Some(field) = schema
-        .fields
-        .iter()
-        .find(|f| matches!(f.sce_type, SceType::Enum(_)))
-    {
-        return Err(GenerateError::unsupported(format!(
-            "record:{alias} has the enum-typed field `{}`, which has no {} lowering in a \
-             statechart yet",
-            field.id,
-            target.name()
-        )));
+/// The enum and record types a `sce-static` machine declares in its own file,
+/// each the first time any variable names it, with what a saved state writes of
+/// each. One owner for both, because a record's field can hold an enum: the
+/// record's declaration asks for the enum's.
+struct TypeDeclarations<'t> {
+    target: &'t dyn StaticTarget,
+    machine: &'t str,
+    imported_enums: &'t std::collections::BTreeMap<String, EnumModel>,
+    declared: BTreeSet<String>,
+    type_defs: Vec<String>,
+    records: Vec<StaticRecord>,
+    enums: Vec<StaticEnumType>,
+}
+
+impl<'t> TypeDeclarations<'t> {
+    fn new(
+        target: &'t dyn StaticTarget,
+        machine: &'t str,
+        imported_enums: &'t std::collections::BTreeMap<String, EnumModel>,
+    ) -> Self {
+        Self {
+            target,
+            machine,
+            imported_enums,
+            declared: BTreeSet::new(),
+            type_defs: Vec::new(),
+            records: Vec::new(),
+            enums: Vec::new(),
+        }
     }
-    let ty = target.record_type(machine, alias);
-    if declared_types.insert(ty.clone()) {
-        type_defs.push(target.record_def(&ty, alias, schema));
-        saved_records.push(StaticRecord {
-            ty: ty.clone(),
-            fields: schema
-                .fields
-                .iter()
-                .map(|f| StaticRecordField {
-                    id: f.id.clone(),
-                    name: target.record_field(&f.id),
-                    saved_type: f.sce_type.as_attr(),
-                })
-                .collect(),
-        });
+
+    /// The type a value of the enum imported as `alias` is held in, declared
+    /// the first time it is asked for. `Err` carries what the target cannot do:
+    /// it has no enum type, or the document imports no such enum.
+    fn enum_type(&mut self, alias: &str) -> Result<String, String> {
+        let (Some(ty), Some(model)) = (
+            self.target.enum_type(self.machine, alias),
+            self.imported_enums.get(alias),
+        ) else {
+            return Err(alias.to_string());
+        };
+        if self.declared.insert(ty.clone()) {
+            self.type_defs.push(self.target.enum_def(&ty, alias, model));
+            self.enums.push(StaticEnumType {
+                ty: ty.clone(),
+                alias: alias.to_string(),
+                variants: model
+                    .variants
+                    .iter()
+                    .map(|v| StaticEnumVariant {
+                        declared: v.name.clone(),
+                        ident: self.target.enum_variant(&model.name, &v.name),
+                    })
+                    .collect(),
+            });
+        }
+        Ok(ty)
     }
-    Ok(ty)
+
+    /// The type a `record:<alias>` value is held in — of a record variable or
+    /// of a list's elements.
+    ///
+    /// A field of an enum is held in the machine's own type for that enum, so
+    /// the statechart imports it under the alias the schema writes — the
+    /// convention the typed payload's width check already keeps — and is
+    /// refused naming the alias when it does not.
+    fn record(&mut self, alias: &str, schema: &EventSchemaModel) -> Result<String, GenerateError> {
+        let mut enum_types = std::collections::BTreeMap::new();
+        for field in &schema.fields {
+            if let SceType::Enum(reference) = &field.sce_type {
+                let ty = self.enum_type(&reference.alias).map_err(|enum_alias| {
+                    GenerateError::unsupported(format!(
+                        "record:{alias} has the enum-typed field `{}`, whose enum `{enum_alias}` \
+                         this document does not import under that alias (<sce:import \
+                         kind=\"enum\" as=\"{enum_alias}\">) or {} has no enum type for",
+                        field.id,
+                        self.target.name()
+                    ))
+                })?;
+                enum_types.insert(reference.alias.clone(), ty);
+            }
+        }
+        let ty = self.target.record_type(self.machine, alias);
+        if self.declared.insert(ty.clone()) {
+            self.type_defs
+                .push(self.target.record_def(&ty, alias, schema, &enum_types));
+            self.records.push(StaticRecord {
+                ty: ty.clone(),
+                fields: schema
+                    .fields
+                    .iter()
+                    .map(|f| StaticRecordField {
+                        id: f.id.clone(),
+                        name: self.target.record_field(&f.id),
+                        saved_type: match &f.sce_type {
+                            SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                            other => other.as_attr(),
+                        },
+                    })
+                    .collect(),
+            });
+        }
+        Ok(ty)
+    }
 }
 
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
@@ -1606,27 +1658,42 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
                     field.id,
                     field.sce_type.as_attr()
                 );
-            }
-        }
-        // An enum's variants are its type: one renamed or removed leaves a
-        // saved value no variant of it, so the shape refuses before a value
-        // is read. By name, so reordering them leaves a saved state
-        // restorable — it holds the declared name, not a position.
-        if let Some(SceType::Enum(reference)) = var.value_type.as_ref().and_then(|t| t.scalar()) {
-            if let Some(enum_model) = model.imported_enums.get(&reference.alias) {
-                let mut names: Vec<&str> = enum_model
-                    .variants
-                    .iter()
-                    .map(|v| v.name.as_str())
-                    .collect();
-                names.sort_unstable();
-                for name in names {
-                    let _ = writeln!(text, "variant {}.{name}", var.id);
+                if let SceType::Enum(reference) = &field.sce_type {
+                    write_variants(
+                        &mut text,
+                        model,
+                        &reference.alias,
+                        &format!("{}.{}", var.id, field.id),
+                    );
                 }
             }
         }
+        if let Some(SceType::Enum(reference)) = var.value_type.as_ref().and_then(|t| t.scalar()) {
+            write_variants(&mut text, model, &reference.alias, &var.id);
+        }
     }
     Some(format!("{:x}", Sha256::digest(text.as_bytes())))
+}
+
+/// The variants of the enum imported as `alias`, one line each under `holder` —
+/// a variable, or a record's field. An enum's variants are its type: one
+/// renamed or removed leaves a saved value no variant of it, so the shape
+/// refuses before a value is read. By name and sorted, so reordering them
+/// leaves a saved state restorable — it holds the declared name, not a
+/// position.
+fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &str) {
+    use std::fmt::Write as _;
+    if let Some(enum_model) = model.imported_enums.get(alias) {
+        let mut names: Vec<&str> = enum_model
+            .variants
+            .iter()
+            .map(|v| v.name.as_str())
+            .collect();
+        names.sort_unstable();
+        for name in names {
+            let _ = writeln!(text, "variant {holder}.{name}");
+        }
+    }
 }
 
 /// Whether the document makes a delayed `<send>` that, when it comes due, is

@@ -1,0 +1,36 @@
+{
+  "machine": "static_record_enum",
+  "about": "A record with an enum field: it starts at a variant, is compared and assigned a variant like a variable of the enum, is appended whole to a list with its enum field, and is read through a loop's record item. A saved record holds the field as the variant's declared name, `agenda_list`, not the constant a backend spells for it. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the record starts at the variants and numbers its sets give",
+      "expect": { "state": "viewing", "variables": { "shown": { "layout": "month", "zoom": 1 }, "seen": [], "weeks": 0, "flips": 0 } } },
+
+    { "event": "toggle", "expect": { "variables": { "shown": { "layout": "week", "zoom": 1 }, "flips": 1 } } },
+    { "note": "a field of the record is updated alone: the layout is kept",
+      "event": "zoom", "expect": { "variables": { "shown": { "layout": "week", "zoom": 2 } } } },
+    { "event": "remember", "expect": { "variables": { "seen": [ { "layout": "week", "zoom": 2 } ] } } },
+
+    { "event": "toggle", "expect": { "variables": { "shown": { "layout": "month", "zoom": 2 }, "flips": 2 } } },
+    { "note": "the list holds a copy: the record changed since does not change it",
+      "event": "remember", "expect": { "variables": { "seen": [
+        { "layout": "week", "zoom": 2 },
+        { "layout": "month", "zoom": 2 } ] } } },
+
+    { "note": "a variant spelled with an underscore is saved as the document wrote it",
+      "event": "agenda", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+    { "note": "neither toggle guard holds for an agenda: nothing changes",
+      "event": "toggle", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 }, "flips": 2 } } },
+    { "event": "remember", "expect": { "variables": { "seen": [
+        { "layout": "week", "zoom": 2 },
+        { "layout": "month", "zoom": 2 },
+        { "layout": "agenda_list", "zoom": 2 } ] } } },
+
+    { "note": "one of the three seen is a week: the enum field of the loop's record item is compared",
+      "event": "count", "expect": { "variables": { "weeks": 1 } } },
+
+    { "note": "a whole record, enum field included, from the last item the loop saw",
+      "event": "recall", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+    { "event": "forget", "expect": { "variables": { "seen": [] } } },
+    { "event": "count", "expect": { "variables": { "weeks": 0 } } }
+  ]
+}

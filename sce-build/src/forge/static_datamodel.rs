@@ -57,7 +57,8 @@ pub fn check(
         schemas: &model.imported_records,
         loop_records: Default::default(),
         loop_names: Default::default(),
-        enum_vars: enum_variables(&scope),
+        enum_vars: enum_variables(&scope, &model.imported_records),
+        loop_enum_paths: Default::default(),
         diag_label,
         read: Default::default(),
     };
@@ -78,6 +79,16 @@ pub fn check(
         if let Some(alias) = judge.enum_vars.get(&var.id) {
             judge.enum_variable(&plain, var, alias, &model.imported_enums)?;
             continue;
+        }
+        if let Some(alias) = var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+            .and_then(crate::forge::model::ListElemType::record_alias)
+        {
+            if let Some(schema) = model.imported_records.get(alias) {
+                judge.schema_enums_imported(var, alias, schema)?;
+            }
         }
         if var.expr.trim().is_empty() {
             continue;
@@ -190,22 +201,43 @@ fn variable_type(var: &Variable) -> InferredType {
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
-/// The enum each variable declared `enum:<alias>` holds, by the variable's id
-/// — what [`crate::forge::static_enum`] asks to tell an enum value from a
-/// number that happens to share its inferred type.
-fn enum_variables(scope: &StaticScope) -> std::collections::BTreeMap<String, String> {
-    scope
-        .variables
+/// The enum each variable declared `enum:<alias>` holds, by the variable's id,
+/// and each enum field of a record variable, by its `<id>.<field>` path —
+/// what [`crate::forge::static_enum`] asks to tell an enum value from a number
+/// that happens to share its inferred type.
+fn enum_variables(
+    scope: &StaticScope,
+    records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+) -> std::collections::BTreeMap<String, String> {
+    let mut held = std::collections::BTreeMap::new();
+    for var in &scope.variables {
+        let Some(value_type) = var.value_type.as_ref() else {
+            continue;
+        };
+        if let Some(crate::forge::model::SceType::Enum(reference)) = value_type.scalar() {
+            held.insert(var.id.clone(), reference.alias.clone());
+        }
+        if let Some(schema) = value_type.record_alias().and_then(|a| records.get(a)) {
+            held.extend(enum_fields(&var.id, schema));
+        }
+    }
+    held
+}
+
+/// Each enum field of a record of `schema` held under the name `holder`, by
+/// its `<holder>.<field>` path and the alias of the enum it holds.
+fn enum_fields(
+    holder: &str,
+    schema: &crate::forge::model::EventSchemaModel,
+) -> Vec<(String, String)> {
+    schema
+        .fields
         .iter()
-        .filter_map(|var| {
-            let Some(crate::forge::model::SceType::Enum(reference)) = var
-                .value_type
-                .as_ref()
-                .and_then(crate::forge::model::AlgorithmValueType::scalar)
-            else {
-                return None;
-            };
-            Some((var.id.clone(), reference.alias.clone()))
+        .filter_map(|field| match &field.sce_type {
+            crate::forge::model::SceType::Enum(reference) => {
+                Some((format!("{holder}.{}", field.id), reference.alias.clone()))
+            }
+            _ => None,
         })
         .collect()
 }
@@ -219,6 +251,9 @@ struct Judge<'a> {
     /// The record items of the `<foreach>`es the walk is inside, each with the
     /// alias of the schema it holds — a record an append may take by name.
     loop_records: std::cell::RefCell<Vec<(String, String)>>,
+    /// The enum fields of the record items of the `<foreach>`es the walk is
+    /// inside, by `<item>.<field>` path with the alias of the enum each holds.
+    loop_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
     /// Every item and index of the `<foreach>`es the walk is inside: values
     /// the loop binds and the body reads, and does not write.
     loop_names: std::cell::RefCell<Vec<String>>,
@@ -288,7 +323,19 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         expr: &str,
     ) -> Result<Option<String>, crate::forge::expr::Refusal> {
-        crate::forge::static_enum::value_enum(expr, ctx, &|name| self.enum_vars.get(name).cloned())
+        crate::forge::static_enum::value_enum(expr, ctx, &|name| self.enum_of(name))
+    }
+
+    /// The alias of the enum the variable, record field or loop's record
+    /// item's field at `path` holds, if it holds one.
+    fn enum_of(&self, path: &str) -> Option<String> {
+        self.enum_vars.get(path).cloned().or_else(|| {
+            self.loop_enum_paths
+                .borrow()
+                .iter()
+                .find(|(held, _)| held == path)
+                .map(|(_, alias)| alias.clone())
+        })
     }
 
     /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant
@@ -438,13 +485,60 @@ impl<'a> Judge<'a> {
             var.value_type_spelling.as_ref(),
         )
         .map_err(|error| Located::in_file(error, self.diag_label))?;
+        self.schema_enums_imported(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
+            // A field of an enum starts at one of its variants, as a variable
+            // of it does.
+            if let crate::forge::model::SceType::Enum(reference) = &field.sce_type {
+                self.expr_of_enum(
+                    ctx,
+                    &init.expr,
+                    init.expr_spelling.as_ref(),
+                    &reference.alias,
+                )?;
+                continue;
+            }
             self.expr(
                 ctx,
                 &init.expr,
                 init.expr_spelling.as_ref(),
                 Expected::Slot(InferredType::from_sce_type(&field.sce_type)),
             )?;
+        }
+        Ok(())
+    }
+
+    /// A record whose schema has an enum field holds it in the machine's own
+    /// type for that enum, so the document imports the enum under the alias the
+    /// schema writes. Judged where the record is declared, in a variable or in
+    /// the elements of a list, and only when the imports were read: without
+    /// sibling files there is no schema either.
+    fn schema_enums_imported(
+        &self,
+        var: &Variable,
+        alias: &str,
+        schema: &crate::forge::model::EventSchemaModel,
+    ) -> Result<(), Located<ForgeError>> {
+        for field in &schema.fields {
+            let crate::forge::model::SceType::Enum(reference) = &field.sce_type else {
+                continue;
+            };
+            if self.enums.iter().any(|e| e.alias == reference.alias) {
+                continue;
+            }
+            let spelling = var.value_type_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("<data id=\"{}\"> of record:{alias}", var.id),
+                &format!(
+                    "the field `{}` of record:{alias} holds the enum `{}`: the document \
+                     imports it under that alias, <sce:import kind=\"enum\" as=\"{}\">",
+                    field.id, reference.alias, reference.alias
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                &reference.alias,
+            ));
         }
         Ok(())
     }
@@ -689,8 +783,8 @@ impl<'a> Judge<'a> {
                 )?;
                 // An enum variable's slot is its enum, which no inferred type
                 // names: the value must be one of that enum's.
-                if let Some(alias) = self.enum_vars.get(location) {
-                    self.expr_of_enum(ctx, &action.expr, action.spellings.get("expr"), alias)?;
+                if let Some(alias) = self.enum_of(location) {
+                    self.expr_of_enum(ctx, &action.expr, action.spellings.get("expr"), &alias)?;
                 } else {
                     self.expr(
                         ctx,
@@ -896,11 +990,18 @@ impl<'a> Judge<'a> {
             crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
             crate::forge::model::ListElemType::Scalar(_) => None,
         };
+        let enum_paths = record_item
+            .as_deref()
+            .and_then(|alias| self.schemas.get(alias))
+            .map(|schema| enum_fields(item, schema))
+            .unwrap_or_default();
+        let enum_paths_bound = enum_paths.len();
         if let Some(alias) = &record_item {
             self.loop_records
                 .borrow_mut()
                 .push((item.to_string(), alias.clone()));
         }
+        self.loop_enum_paths.borrow_mut().extend(enum_paths);
         let bound = 1 + usize::from(!index.is_empty());
         {
             let mut names = self.loop_names.borrow_mut();
@@ -912,6 +1013,8 @@ impl<'a> Judge<'a> {
         let judged = self.actions(&inner, &action.actions, state);
         let kept = self.loop_names.borrow().len() - bound;
         self.loop_names.borrow_mut().truncate(kept);
+        let kept = self.loop_enum_paths.borrow().len() - enum_paths_bound;
+        self.loop_enum_paths.borrow_mut().truncate(kept);
         if record_item.is_some() {
             self.loop_records.borrow_mut().pop();
         }

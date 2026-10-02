@@ -2800,8 +2800,22 @@ does not import the enum document's generated type — so the variable is the
 machine's own `<Machine><Alias>Enum`, whose variants are spelled as the enum
 document's own generation spells them (`enum_naming::variant_ident`: Rust
 `AgendaList`, Kotlin `AGENDA_LIST`). It carries no integer: a host that needs
-the enum document's value reads it by name. A record whose schema has an
-enum-typed field is still refused.
+the enum document's value reads it by name.
+
+**A record's enum field.** An event-schema field declared `enum:<alias>` is held
+in a record as the machine's own enum type for it, so a record variable (or a
+list of records) of such a schema needs the document to import the enum under
+the alias the schema writes — the convention the typed payload's width check
+already keeps; one that does not is `scxml/static-datamodel-rule` on the
+`sce:type`, naming the alias. The field is judged as a variable of the enum is:
+its `<sce:set>` and an `<assign location="shown.layout">` take a variant (or
+another value of the enum), it is compared with `===` and `!==` to its own
+enum, and it takes no number. It reads the same through a `<foreach>`'s record
+item (`v.layout === ViewMode.week`), which is read and not written. A saved
+record holds the field as the variant's declared name, and the saved shape
+names each enum field's variants as a variable's are.
+`scenarios/static_record_enum.json` holds this on every engine that runs the
+model.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one
@@ -2855,7 +2869,7 @@ expr="draft"/>` takes a record **by its name** — a record variable declared
 `record:Day`, or the item of a `<foreach>` over a list of `Day` — and the list
 holds a copy of it as it stands then. Anything else written there is
 `scxml/static-datamodel-rule` on the `expr`, which says which names it takes.
-A schema with an enum-typed field is refused as a record variable's is. The host
+A schema with an enum-typed field is held as a record variable's is (above). The host
 reads a published list through the snapshot (an immutable `List<…Record>` in
 Kotlin, a slice in Rust); a saved state writes it as an array of the record's
 objects, and the saved shape names the record's fields.

@@ -69,7 +69,7 @@ PY
 # holds a name is refused because the enum document was reordered.
 mutation_case "the order variants are declared in is part of the shape" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                names.sort_unstable();\n",
+     "        names.sort_unstable();\n",
      "")
 PY
 
@@ -78,6 +78,6 @@ PY
 # its values were read.
 mutation_case "the variants are not part of the shape" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                    let _ = writeln!(text, \"variant {}.{name}\", var.id);\n",
-     "                    let _ = (&mut text, name);\n")
+     "            let _ = writeln!(text, \"variant {holder}.{name}\");\n",
+     "            let _ = (&mut *text, holder, name);\n")
 PY

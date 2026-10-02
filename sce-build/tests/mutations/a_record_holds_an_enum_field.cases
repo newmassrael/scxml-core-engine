@@ -1,0 +1,57 @@
+# Mutation cases for "a record holds an enum field"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_record_holds_an_enum_field.cases
+#
+# An enum field is typed `Unknown` by the expression typer, so what keeps
+# `gear.speed + 1`, `gear.speed === 0` and `gear.speed = 3` out of generated
+# code that does not compile is the judge's knowledge of which paths hold an
+# enum: the record variable's fields, a loop's record item's fields, and the
+# import the machine's own type for the enum rests on. Each case takes one
+# away and has to turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test a_record_holds_an_enum_field
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/a_record_holds_an_enum_field.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_enum.rs
+
+# A `<record>.<field>` path is no enum value: the comparison of the field with a
+# number, and the field in arithmetic, pass the judge.
+mutation_case "a record's field is not an enum value" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "                if let Some(held) = var_alias(&format!(\"{alias}.{property}\")) {\n",
+     "                if let Some(held) = var_alias(&format!(\"{alias}.{property}\")).filter(|_| false) {\n")
+PY
+
+# A record variable's fields are not entered as enum paths: the same, for a
+# record variable rather than a loop's item.
+mutation_case "a record variable's enum fields are unknown" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            held.extend(enum_fields(&var.id, schema));\n",
+     "            let _ = enum_fields(&var.id, schema);\n")
+PY
+
+# A loop's record item's enum fields are not entered while its body is judged.
+mutation_case "a loop item's enum fields are unknown" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        self.loop_enum_paths.borrow_mut().extend(enum_paths);\n",
+     "        drop(enum_paths);\n")
+PY
+
+# The enum a field holds is not required to be imported: the machine has no
+# type to hold it in, and the lowering refuses where the author cannot see.
+mutation_case "the enum a field holds need not be imported" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            if self.enums.iter().any(|e| e.alias == reference.alias) {\n",
+     "            if true {\n")
+PY
+
+# A record field's start is judged as a number's: `Unit.metric` or `1` starts it.
+mutation_case "an enum field starts at any expression" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                    &reference.alias,\n                )?;\n                continue;\n",
+     "                    &reference.alias,\n                ).ok();\n                continue;\n")
+PY
