@@ -256,12 +256,20 @@ pub struct Observation {
 /// out, memory, a crash, a kill). Another machine may play it to the end, and a
 /// verdict saying otherwise would be a statement about load.
 ///
+/// `decision`: the design leaves a question open that the example needs
+/// answered (a send whose route nobody decided), so the example is BLOCKED by
+/// that decision. It is neither the design's defect nor the machine's: the
+/// owner has not said who the caller is, and every play of the example would
+/// have to invent the answer. The verdict is `blocked` and `why` names the
+/// decision, as it does for an example the set itself marks blocked.
+///
 /// Absent means the driver did not say, which is not the same as `design`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Cause {
     Design,
     Environment,
+    Decision,
 }
 
 impl Cause {
@@ -269,6 +277,7 @@ impl Cause {
         match self {
             Cause::Design => "design",
             Cause::Environment => "environment",
+            Cause::Decision => "decision",
         }
     }
 }
@@ -606,6 +615,17 @@ fn scenario_verdict(
         );
     };
     if let Some(refused) = &run.refused {
+        // A run the design's own open question stopped is BLOCKED by that
+        // question, as one the set marks blocked is: the owner decides it, and
+        // neither the design nor the machine is to blame. Said in the driver's
+        // words, which name the decision.
+        if refused.cause == Some(Cause::Decision) {
+            return verdict(
+                Verdict::Blocked,
+                Some(format!("blocked by an open decision: {}", refused.why.0)),
+                Some(Cause::Decision),
+            );
+        }
         return not_judged(
             judgement,
             format!("the driver did not run it: {}", refused.why.0),
@@ -1536,6 +1556,49 @@ mod tests {
     }
 
     #[test]
+    fn a_run_an_open_decision_stopped_is_blocked_by_it_and_is_no_gap() {
+        // The design sends to its parent because a send needs a target, and the
+        // owner has not said who the caller is. Every play of the example would
+        // have to invent the answer, so the example is blocked, as one the set
+        // marks blocked is: not `not-judged` (nobody could not judge it, the
+        // owner has not decided it) and not a gap in what the driver could see.
+        let judgement = change(|t| {
+            t["runs"][0] = json!({"scenario": "S1", "refused": {
+                "why": "`SendRequest` goes to its parent and nobody decided that (`caller-target`)",
+                "cause": "decision"}});
+        });
+        let s1 = judgement
+            .verdicts
+            .iter()
+            .find(|v| v.id == "S1")
+            .expect("S1");
+        assert_eq!(s1.verdict, Verdict::Blocked);
+        assert_eq!(s1.cause, Some(Cause::Decision));
+        let reason = s1.reason.as_deref().expect("a reason");
+        assert!(
+            reason.starts_with("blocked by an open decision: "),
+            "{reason}"
+        );
+        assert!(reason.contains("`caller-target`"), "{reason}");
+        assert!(
+            judgement.gaps.is_empty(),
+            "a blocked example is a verdict and not a gap: {:?}",
+            judgement.gaps
+        );
+        // The set already holds one example marked blocked: this adds exactly one
+        // to it, and takes none from the ones that were judged.
+        let untouched = change(|_| {});
+        assert_eq!(
+            judgement.count(Verdict::Blocked),
+            untouched.count(Verdict::Blocked) + 1
+        );
+        assert_eq!(
+            judgement.count(Verdict::NotJudged),
+            untouched.count(Verdict::NotJudged)
+        );
+    }
+
+    #[test]
     fn a_gap_about_a_step_has_no_cause_to_give() {
         // A refusal is the driver's statement about a whole run. A check it
         // could not see is a different kind of gap and is not given one.
@@ -1821,7 +1884,7 @@ mod tests {
                 }),
             ),
             (
-                "a refusal whose cause is neither design nor environment",
+                "a refusal whose cause is none of design, environment or decision",
                 Box::new(|t| {
                     t["runs"][0] = json!({"scenario": "S1",
                         "refused": {"why": "no", "cause": "bad luck"}});

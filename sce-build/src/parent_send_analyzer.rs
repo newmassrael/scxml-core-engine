@@ -47,6 +47,17 @@ pub struct ParentSend {
     /// carries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<SourceLocation>,
+    /// The ids of the questions the specification leaves open that are marked
+    /// ON this send (`sce:unresolved`, the kind that is a question and not a
+    /// value chosen without an answer). A send to `#_parent` that carries one is
+    /// a route nobody decided: the draft wrote `#_parent` because a send needs a
+    /// target, and the owner has not said who the caller is. A consumer that
+    /// plays the design reads it to say so, and not that the engine had no
+    /// parent: an example that needs this send is blocked by that decision, which
+    /// is not a defect of the design and not a fact about the machine that ran
+    /// it. Empty when the send is written without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<String>,
 }
 
 /// Every `<send target="#_parent">` in `model`, ordered by where it is
@@ -61,6 +72,12 @@ pub fn analyze(model: &SCXMLModel) -> Vec<ParentSend> {
             event: (!send.event.is_empty()).then(|| send.event.clone()),
             state: state_id.to_string(),
             location: send.source_location.clone(),
+            decisions: send
+                .unresolved
+                .iter()
+                .filter(|marker| marker.kind == crate::provenance::MarkerKind::Unresolved)
+                .map(|marker| marker.id.clone())
+                .collect(),
         })
         .collect();
     sends.sort_by_key(|s| {

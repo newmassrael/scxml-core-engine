@@ -424,6 +424,7 @@ mod tests {
             event: event.map(str::to_string),
             state: "s".into(),
             location: None,
+            decisions: Vec::new(),
         }
     }
 

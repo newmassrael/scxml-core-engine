@@ -286,7 +286,13 @@
           "type": "string",
           "minLength": 1
         },
-        "location": { "$ref": "#/definitions/location" }
+        "location": { "$ref": "#/definitions/location" },
+        "decisions": {
+          "description": "The ids of the questions the specification leaves open that are marked on this send (sce:unresolved; a value chosen without an answer, sce:assumed, is not one). A send to #_parent that carries one is a route nobody decided: the draft wrote #_parent because a send needs a target, and the owner has not said who the caller is. A consumer that plays the design says that the example is blocked by that decision, and not that the engine had no parent. Omitted when the send is written without one.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "openMatter": {

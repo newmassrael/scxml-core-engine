@@ -1,0 +1,72 @@
+# Mutation cases for "a send to the parent that carries an open question names it, and
+# an example it blocks is blocked by that decision".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_send_to_the_parent_that_carries_an_open_question_names_it.cases`.
+#
+# A draft writes `#_parent` because a send needs a target, while the specification never
+# says who the caller is. A consumer that plays the design used to read the engine's
+# `error.communication` and call the run the design's. The manifest now names, on each
+# send to the parent, the questions marked on it (`parent_sends[].decisions`), and the
+# judge calls a run that a driver stopped for such a question `blocked`, with the cause
+# `decision`, and not `not-judged`. Four things are easy to get wrong and read as success:
+# a value chosen without an answer (`sce:assumed`) listed as though it were a question, the
+# questions never read off the send, an empty list written where the field should be
+# absent, and a blocked example that loses the cause or the decision's name on the way to
+# the verdict.
+#
+# Each case below takes one of those away and must make a test red: the unit tests of
+# `scenario_judge.rs`, or `a_machine_that_sends_to_its_parent_says_so.rs`, which reads the
+# manifest the binary writes and validates it against the wire schema.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test a_machine_that_sends_to_its_parent_says_so
+mutation_targets sce-build/src/parent_send_analyzer.rs sce-build/src/scenario_judge.rs
+mutation_oracles sce-build/src/scenario_judge.rs sce-build/tests/a_machine_that_sends_to_its_parent_says_so.rs
+
+# ── What the manifest says of a send ────────────────────────────────
+
+mutation_case "a value chosen without an answer is listed as a question" <<'PY'
+edit("sce-build/src/parent_send_analyzer.rs",
+     "                .filter(|marker| marker.kind == crate::provenance::MarkerKind::Unresolved)\n",
+     "")
+PY
+
+mutation_case "the assumed markers are listed and the questions are not" <<'PY'
+edit("sce-build/src/parent_send_analyzer.rs",
+     "                .filter(|marker| marker.kind == crate::provenance::MarkerKind::Unresolved)",
+     "                .filter(|marker| marker.kind != crate::provenance::MarkerKind::Unresolved)")
+PY
+
+mutation_case "a send with no question is written with an empty list" <<'PY'
+edit("sce-build/src/parent_send_analyzer.rs",
+     "    #[serde(skip_serializing_if = \"Vec::is_empty\")]\n    pub decisions: Vec<String>,",
+     "    pub decisions: Vec<String>,")
+PY
+
+# ── What the judge makes of a run a decision stopped ────────────────
+
+mutation_case "a run an open decision stopped is judged not-judged" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        if refused.cause == Some(Cause::Decision) {",
+     "        if refused.cause == Some(Cause::Decision) && false {")
+PY
+
+mutation_case "a blocked example forgets that a decision blocked it" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                Some(Cause::Decision),\n            );",
+     "                None,\n            );")
+PY
+
+mutation_case "a blocked example drops the decision's name from its reason" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "                Some(format!(\"blocked by an open decision: {}\", refused.why.0)),",
+     "                Some(\"blocked by an open decision\".to_string()),")
+PY

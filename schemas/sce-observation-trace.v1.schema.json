@@ -113,8 +113,8 @@
           "properties": {
             "why": { "type": "string", "minLength": 1 },
             "cause": {
-              "description": "Whether the refusal would be the same on another machine. `design`: what the design did made the example unplayable (an error no state answered, an open route, a budget counted out, a macrostep cut short, a design that would not start). `environment`: something about the machine that ran it did (time, memory, a crash, a kill), and another machine may play the example to its end. Absent: the driver did not say, which is not `design`.",
-              "enum": ["design", "environment"]
+              "description": "Whether the refusal would be the same on another machine. `design`: what the design did made the example unplayable (an error no state answered, an open route, a budget counted out, a macrostep cut short, a design that would not start). `environment`: something about the machine that ran it did (time, memory, a crash, a kill), and another machine may play the example to its end. `decision`: the design leaves a question open that the example needs answered (a send whose route nobody decided), so the example is BLOCKED by that decision, which is neither the design's defect nor the machine's, and `why` names the decision. Absent: the driver did not say, which is not `design`.",
+              "enum": ["design", "environment", "decision"]
             }
           }
         }

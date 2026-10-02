@@ -126,6 +126,61 @@ fn every_send_to_the_parent_is_published() {
     );
 }
 
+/// A send to the parent that carries a question the specification leaves open
+/// names it. The draft wrote `#_parent` because a send needs a target, and the
+/// owner has not said who the caller is: a consumer that plays the design reads
+/// the id off the site, and says the example is blocked by that decision and not
+/// that the engine had no parent. Only a QUESTION is one: a value chosen without
+/// an answer (`sce:assumed`) is applied and is not a route nobody decided.
+#[test]
+fn a_send_to_the_parent_that_carries_an_open_question_names_it() {
+    let m = manifest(
+        "asks",
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="asks" initial="idle">
+  <state id="idle">
+    <onentry>
+      <send event="asked" target="#_parent" sce:unresolved="caller-target"
+            sce:unresolved-reason="the specification does not say who the caller is"/>
+      <send event="assumed" target="#_parent" sce:assumed="parent-by-default"
+            sce:assumed-reason="the standing rule says a notice goes to the parent"/>
+      <send event="plain" target="#_parent"/>
+    </onentry>
+  </state>
+</scxml>
+"##,
+    );
+    let sends = m["parent_sends"]
+        .as_array()
+        .expect("parent_sends is listed");
+    let named: Vec<(&str, Vec<&str>)> = sends
+        .iter()
+        .map(|s| {
+            (
+                s["event"].as_str().expect("event"),
+                s["decisions"]
+                    .as_array()
+                    .map(|d| d.iter().map(|id| id.as_str().expect("an id")).collect())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("asked", vec!["caller-target"]),
+            ("assumed", vec![]),
+            ("plain", vec![])
+        ],
+        "{m}"
+    );
+    assert!(
+        sends[1].get("decisions").is_none() && sends[2].get("decisions").is_none(),
+        "omitted, not []: {m}"
+    );
+}
+
 /// `false` is an answer, not an absent field — a host reads the need off
 /// the manifest, so silence would read as "unknown".
 #[test]
