@@ -116,7 +116,17 @@
         "name": { "type": "string", "minLength": 1 },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "judged": { "type": "integer", "minimum": 0 },
-        "guidance": { "type": "integer", "minimum": 1 }
+        "guidance": { "type": "integer", "minimum": 1 },
+        "house_rules": {
+          "description": "How many house rules the profile holds (held) and how many distinct ones this run's documents cite with sce:assumed (cited). Omitted when the profile holds none. It is here because the product cannot see a rule applied WITHOUT its citation: a draft that applied every rule and cited none reads, in the rest of the manifest, as one that applied none, and the acceptance record then names no applied rule. cited is an explicit zero when none is cited, not a field left out.",
+          "type": "object",
+          "required": ["held", "cited"],
+          "additionalProperties": false,
+          "properties": {
+            "held": { "type": "integer", "minimum": 1 },
+            "cited": { "type": "integer", "minimum": 0 }
+          }
+        }
       }
     },
     "host_processor_causes": {

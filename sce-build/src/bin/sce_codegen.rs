@@ -1141,7 +1141,23 @@ fn build_manifest<'a>(
                 &report.self_delivered,
             )
         },
-        profile: report.profile.clone(),
+        profile: report.profile.clone().map(|mut info| {
+            // The citations are the run's own records marked `house_rule`, one
+            // per distinct id: applying a rule at three places is one rule.
+            if let Some(used) = info.house_rules.as_mut() {
+                used.cited = u32::try_from(
+                    report
+                        .unresolved
+                        .iter()
+                        .filter(|record| record.house_rule)
+                        .map(|record| record.id.as_str())
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
+                )
+                .expect("a run does not cite four billion rules");
+            }
+            info
+        }),
         surface: report.surface.as_ref(),
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
@@ -4159,6 +4175,15 @@ fn profile_info(
         judged: u32::try_from(judged).expect("a run does not name four billion statecharts"),
         guidance: u32::try_from(profile.guidance().len())
             .expect("a profile does not hold four billion instructions"),
+        // What the run cites is the manifest's to count, once its records
+        // are known (`build_manifest`); the rules held are the profile's.
+        house_rules: (!profile.house_rules().is_empty()).then(|| {
+            sce_build::manifest::HouseRuleUse {
+                held: u32::try_from(profile.house_rules().len())
+                    .expect("a profile does not hold four billion rules"),
+                cited: 0,
+            }
+        }),
     }
 }
 

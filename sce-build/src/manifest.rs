@@ -253,6 +253,24 @@ pub struct ProfileInfo {
     /// guidance would otherwise read as though the guidance had been held to.
     #[serde(skip_serializing_if = "is_zero")]
     pub guidance: u32,
+    /// The profile's house rules and how many of them this run's documents
+    /// cite. Omitted when the profile holds none. It is here because the
+    /// product cannot see a rule applied WITHOUT its citation: a draft that
+    /// applied every rule and cited none reads, in the rest of the manifest, as
+    /// one that applied none, and the acceptance record then names no applied
+    /// rule. Said as two numbers so that `cited: 0` of `held: 3` is an explicit
+    /// zero a reader sees, and not the silence of a field left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub house_rules: Option<HouseRuleUse>,
+}
+
+/// How many house rules a profile holds and how many a run cites.
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HouseRuleUse {
+    /// The rules the profile holds.
+    pub held: u32,
+    /// How many DISTINCT of them the run's documents cite (`sce:assumed`).
+    pub cited: u32,
 }
 
 fn is_zero(count: &u32) -> bool {
@@ -830,6 +848,7 @@ mod tests {
                     sha256: "0".repeat(64),
                     judged: 1,
                     guidance,
+                    house_rules: None,
                 }),
                 host_processor_causes: &[],
                 host_processor_types: &[],

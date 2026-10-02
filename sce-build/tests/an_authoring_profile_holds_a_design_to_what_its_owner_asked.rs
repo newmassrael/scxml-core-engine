@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use sce_build::acceptance_record::{AcceptanceRecord, SourceRole};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 const CODEGEN: &str = env!("CARGO_BIN_EXE_sce-codegen");
@@ -1211,6 +1212,70 @@ fn citing(rule: &str) -> String {
              sce:assumed-reason=\"the specification names no event for this state\">"
         ),
     )
+}
+
+/// The product cannot see a rule applied without its citation, so it says what
+/// it can see: how many house rules the profile holds and how many DISTINCT ones
+/// the run cites. A draft that applied every rule and cited none reads as one
+/// that applied none, and the zero has to be a number a reader sees.
+#[test]
+fn a_run_says_how_many_of_the_profiles_house_rules_it_cites() {
+    let dir = design("profile-house-rules-counted");
+    let two = r#"{"record":"sce-authoring-profile","v":1,
+        "house_rules":[{"id":"H1","rule":"An unmentioned event is ignored."},
+                       {"id":"H2","rule":"A timer's event is addressed to #_internal."}]}"#;
+    fs::write(dir.join("two.json"), two).expect("write");
+    fs::write(dir.join("citing.scxml"), citing("H1")).expect("write");
+    // The same rule at two places is one rule cited, and an id the profile
+    // does not hold is no rule at all.
+    fs::write(
+        dir.join("twice.scxml"),
+        citing("H1").replace(
+            "<state id=\"running\"/>",
+            "<state id=\"running\" sce:assumed=\"H1\" \
+             sce:assumed-reason=\"the specification names no event for this state\"/>",
+        ),
+    )
+    .expect("write");
+    fs::write(dir.join("stranger.scxml"), citing("H9")).expect("write");
+
+    let used = |document: &str, profile: &str| {
+        manifest(&run(
+            &dir,
+            &["check", document, "-l", "rust", "--profile", profile],
+        ))["profile"]["house_rules"]
+            .clone()
+    };
+    assert_eq!(
+        used("citing.scxml", "two.json"),
+        json!({"held": 2, "cited": 1})
+    );
+    assert_eq!(
+        used("twice.scxml", "two.json"),
+        json!({"held": 2, "cited": 1})
+    );
+    assert_eq!(
+        used("stranger.scxml", "two.json"),
+        json!({"held": 2, "cited": 0})
+    );
+    // Nothing cited is an explicit zero, not a field left out.
+    assert_eq!(
+        used("closed.scxml", "two.json"),
+        json!({"held": 2, "cited": 0})
+    );
+    // A profile that holds no rule has nothing to say about citing them.
+    let none = manifest(&run(
+        &dir,
+        &[
+            "check",
+            "closed.scxml",
+            "-l",
+            "rust",
+            "--profile",
+            "profile.json",
+        ],
+    ));
+    assert!(none["profile"].get("house_rules").is_none(), "{none}");
 }
 
 /// A house rule is the owner's standing answer, so a citation of one is said

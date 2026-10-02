@@ -1,0 +1,53 @@
+# Mutation cases for "a run says how many of the profile's house rules it cites".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_run_says_how_many_house_rules_it_cites.cases`.
+#
+# The product cannot see a rule applied without its citation, so it says what it CAN
+# see: the manifest's `profile.house_rules` is `{held, cited}`, the rules the profile
+# holds and the DISTINCT ones the run's documents cite. Measured 2026-10-02, a client
+# handed a profile of three rules applied all of them and cited none, and the number is
+# what lets the check's answer say so. Four things are easy to get wrong and read as
+# success: counting citations instead of rules (one rule at three places is one rule),
+# counting a marker that cites no rule of the profile, a profile with no rules being
+# given a count of its own, and the cited count left at zero.
+#
+# Each case below takes one of those away and must make a test red:
+# `an_authoring_profile_holds_a_design_to_what_its_owner_asked.rs`, which runs the
+# binary over documents that cite a rule once, twice, a stranger and none.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_authoring_profile_holds_a_design_to_what_its_owner_asked
+mutation_targets sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/src/bin/sce_codegen.rs sce-build/tests/an_authoring_profile_holds_a_design_to_what_its_owner_asked.rs
+
+mutation_case "a rule cited at two places is counted twice" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                        .collect::<std::collections::BTreeSet<_>>()\n",
+     "                        .collect::<Vec<_>>()\n")
+PY
+
+mutation_case "a marker that cites no rule of the profile is counted" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                        .filter(|record| record.house_rule)\n",
+     "")
+PY
+
+mutation_case "a profile that holds no rule is given a count" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        house_rules: (!profile.house_rules().is_empty()).then(|| {",
+     "        house_rules: profile.house_rules().is_empty().then(|| {")
+PY
+
+mutation_case "the cited count is never filled in" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                used.cited = u32::try_from(",
+     "                used.cited = 0 * u32::try_from(")
+PY
