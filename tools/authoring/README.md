@@ -335,10 +335,22 @@ Measured 2026-10-01 against the tool as a client calls it, before and after:
 | Nine fine examples and a tenth that loops | the whole call hung | nine `pass`, the tenth `not-judged` |
 | Cyclic `<raise>`, deep recursion, a timer every millisecond | ended, in the engine or the driver's bound | the same, cause `design` |
 
+⚠ The first row changed on 2026-10-02. A design that sends itself an external event
+and answers it by sending it again ends every macrostep, so the microstep ceiling
+never applied, and the engine call never returned: the processor-time limit stopped
+it after 25.5 s and called it the machine's doing, when a design that does this does
+it on every host. The engine now takes at most `max_external_events_per_call`
+external events in one call (10,000 unless the host chooses another), hands the call
+back with the rest still queued, and counts it (`truncated_event_chains`, with
+`last_truncated_event`). The driver reads that through `lowering.stopped_run`, so
+the same design is `not-judged`, cause `design`, in about 3 s, naming the event it
+was still taking. It is a ceiling this engine chooses and not a rule of W3C SCXML,
+as the microstep ceiling is; the other runtimes have no such ceiling yet.
+
 A refusal carries a `cause`. `design` means what the design did made the example
 unplayable (an error no state answered, an open route, a macrostep the engine
-cut short, a design that would not start) and another machine would refuse it
-too. `environment` means the machine that ran it stopped it (time, memory,
+cut short, a chain of external events the engine handed back, a design that would
+not start) and another machine would refuse it too. `environment` means the machine that ran it stopped it (time, memory,
 output, a crash) and another machine may play it to the end, so a second run may
 differ; the answer says so. Every reply states the `isolation` the run really had
 (`process+rlimit` on Linux, and a plain `process` where the kernel does not
@@ -377,7 +389,8 @@ server anything but a wrong value. Three consequences are worth knowing.
 
 `compare` plays by the driver's rules, not rules of its own. Time moves from one
 deadline to the next, and a draft whose engine stopped a macrostep that would not
-end (W3C SCXML 3.13), or whose time would stop at more than 50,000 instants, is
+end (W3C SCXML 3.13), handed a call back from a chain of external events that would
+not end, or whose time would stop at more than 50,000 instants, is
 left out of the classes (`undriven`, with the engine's words and no suggestion that
 a bigger machine would play it) instead of being classed. Measured 2026-10-02 by an
 outside review, a cyclic eventless draft was classed with one that waits, and two
@@ -407,7 +420,10 @@ reports what it saw and fills no hole:
 - An example is refused too when the engine stopped a macrostep that would not
   end (W3C SCXML 3.13): every other reading of such a machine says it is fine.
   Measured 2026-10-01 by an outside review, a cyclic eventless transition passed
-  an example that says the machine waits in its state.
+  an example that says the machine waits in its state. So is one whose engine call
+  was handed back from a chain of external events it was still taking (the machine
+  sends itself an event and answers it by sending it again): the verdict is the
+  design's, and names the event.
 - The interface the examples were accepted with is held to what the design
   presents, in both directions, and the answer says where they part (`interface`).
   The product writes the design's side on its manifest (`surface`: the events a

@@ -116,6 +116,26 @@ def endless_macrostep(engine, policy) -> str | None:
     return f"a macrostep{where} that did not reach a stable configuration (W3C SCXML 3.13)"
 
 
+def endless_event_chain(engine, policy) -> str | None:
+    """What the engine stopped, when it handed a call back with external events
+    still queued: a machine that answers each event by sending itself the next.
+
+    Every macrostep of such a machine ends, so `endless_macrostep` never sees it,
+    and the engine call did not return: the driver's only bound was its
+    processor-time limit, which stopped the run after 25 s and called it the
+    machine's doing (`environment`) when a design that does this does it on every
+    host (measured 2026-10-02). The engine takes at most
+    `max_external_events_per_call` events in one call and counts the call it
+    handed back, so the verdict is the same on any host and arrives at once.
+    None when no call was handed back."""
+    if not engine.truncated_event_chains():
+        return None
+    last = engine.last_truncated_event()
+    still = f", still taking `{policy.get_event_name(last)}`" if last is not None else ""
+    return (f"a chain of external events that did not end: one call took "
+            f"{engine.max_external_events_per_call()} of them and more were queued{still}")
+
+
 def unanswered_error(engine, policy) -> str | None:
     """What the engine raised that no state answered, as a clause after "the engine".
 
@@ -138,8 +158,9 @@ def unanswered_error(engine, policy) -> str | None:
 
 def stopped_run(engine, policy) -> str | None:
     """Why the engine's run is not the design's behaviour, as a clause after "the
-    engine": it stopped a macrostep that would not end, or it raised an error
-    nothing answered. None when neither happened.
+    engine": it stopped a macrostep that would not end, it handed a call back
+    from a chain of external events that would not end, or it raised an error
+    nothing answered. None when none happened.
 
     ⚠ The one place that says so, for every consumer that reads a verdict off a
     run: a scenario, a comparison and a verification. Each of them used to carry
@@ -149,6 +170,9 @@ def stopped_run(engine, policy) -> str | None:
     endless = endless_macrostep(engine, policy)
     if endless is not None:
         return f"stopped {endless}"
+    chain = endless_event_chain(engine, policy)
+    if chain is not None:
+        return f"stopped {chain}"
     return unanswered_error(engine, policy)
 
 

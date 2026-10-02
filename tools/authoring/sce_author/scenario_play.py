@@ -69,8 +69,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 from .errors import VerifyError
-from .lowering import (SendRecorder, Unplayable, advance, endless_macrostep,
-                       host_names as _host_names, load, unanswered_error)
+from .lowering import (SendRecorder, Unplayable, advance, endless_event_chain,
+                       endless_macrostep, host_names as _host_names, load,
+                       unanswered_error)
 
 
 class _HttpSeen:
@@ -248,6 +249,10 @@ class _Machine:
         endless = endless_macrostep(engine, policy)
         if endless is not None:
             raise _Refusal(f"by step {index} the engine stopped {endless}, so where the "
+                           f"machine stands is not the design's behaviour")
+        chain = endless_event_chain(engine, policy)
+        if chain is not None:
+            raise _Refusal(f"by step {index} the engine stopped {chain}, so where the "
                            f"machine stands is not the design's behaviour")
         unanswered = unanswered_error(engine, policy)
         if unanswered is not None:

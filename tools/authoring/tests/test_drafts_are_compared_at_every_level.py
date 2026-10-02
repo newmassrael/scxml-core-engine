@@ -124,6 +124,17 @@ RAISES_UNANSWERED = _start_at_a(HEAD) + """
 </scxml>
 """
 
+# After `go`, entering `b` sends the machine an external event that it answers by
+# sending the same one again. Every macrostep ends, so the microstep ceiling never
+# applies, and the engine call that handles `go` never returned: the only bound was
+# the driver's processor-time limit, which called it the machine's doing.
+SENDS_ITSELF = _start_at_a(HEAD) + """
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"><onentry><send event="again"/></onentry>
+    <transition event="again" target="b"/></state>
+</scxml>
+"""
+
 # Three retries 200 ms apart, written two ways. Each is armed when the last one
 # fires, or all three are armed at the start. Walked deadline to deadline they
 # are one machine; moved by a single jump of 600 ms the first is dated from the
@@ -292,6 +303,20 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertEqual("judged", behaviour["verdict"])
         self.assertEqual([["one.scxml", "two.scxml"]], behaviour["classes"])
         self.assertEqual(["raises.scxml"], list(behaviour["undriven"]))
+
+    def test_a_draft_that_keeps_sending_itself_events_is_not_a_behaviour(self):
+        """The engine hands such a call back after a fixed number of external
+        events and counts it (`truncated_event_chains`), and `lowering.stopped_run`
+        says so for every consumer: a comparison classed this draft by where the
+        run happened to stop, which is nowhere the document says."""
+        behaviour = compare(self.drafts(chain=SENDS_ITSELF, clean=SETTLES),
+                            drives=40, steps=12)["behaviour"]
+        self.assertEqual("not judged", behaviour["verdict"])
+        self.assertEqual(["chain.scxml"], list(behaviour["undriven"]))
+        self.assertIn("a chain of external events that did not end",
+                      behaviour["undriven"]["chain.scxml"])
+        self.assertIn("`again`", behaviour["undriven"]["chain.scxml"])
+        self.assertNotIn("classes", behaviour)
 
     def test_time_is_walked_from_deadline_to_deadline_not_jumped(self):
         """The engine dates a timer from the end of the move that fires it, so a

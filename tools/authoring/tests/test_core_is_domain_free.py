@@ -165,6 +165,8 @@ class CoreIsDomainFree(unittest.TestCase):
         to disagree with the first."""
         asked_in_lowering = {
             "advance_time", "truncated_macrosteps", "last_truncated_macrostep_state",
+            "truncated_event_chains", "last_truncated_event",
+            "max_external_events_per_call",
             "unhandled_error_events", "error_cascade_events", "last_unhandled_error",
             "last_error_cascade_event",
         }

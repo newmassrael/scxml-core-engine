@@ -177,6 +177,25 @@ class TestWhatEndsInAnAnswerBecauseOfTheDesign(unittest.TestCase):
             [{"advance_ms": 100000, "expect": {"condition": "a"}}], max_time_stops=300)
         self.assertIn("300", verdict["reason"])
 
+    def test_a_design_that_re_sends_itself_at_zero_delay_is_stopped_by_the_engine(self):
+        """W3C SCXML Appendix D: one external event is one macrostep and the loop
+        runs while the queue is not empty, so this is legal and never ends. This
+        used to be a refusal about the MACHINE: the engine never handed the call
+        back, the driver's processor-time limit stopped it after 25 s, and the
+        answer said another machine might play it further (`environment`). A
+        design that does this does it on every host, so the engine now takes at
+        most a fixed number of external events in one call and says it handed the
+        call back (`truncated_event_chains`), and the verdict is the design's, at
+        once and the same everywhere. Measured 2026-10-02: 26.4 s `environment`
+        before, 3.5 s `design` after."""
+        verdict = self.refused(
+            HEAD + '<state id="a"><onentry><send event="t" delay="0ms"/></onentry>'
+                   '<transition event="t" target="a"/></state></scxml>',
+            [{"expect": {"condition": "a"}}])
+        self.assertIn("a chain of external events that did not end", verdict["reason"])
+        self.assertIn("still taking `t`", verdict["reason"])
+        self.assertNotIn("did not finish", verdict["reason"])
+
 
 @needs_the_generator
 class TestWhatEndsInAnAnswerBecauseOfTheMachine(unittest.TestCase):
@@ -192,16 +211,6 @@ class TestWhatEndsInAnAnswerBecauseOfTheMachine(unittest.TestCase):
         self.assertEqual("not-judged", verdict["verdict"], out.reply)
         self.assertIn(verdict.get("cause"), causes, verdict)
         return verdict
-
-    def test_a_design_that_re_sends_itself_at_zero_delay_ends_in_a_refusal(self):
-        """W3C SCXML Appendix D: one external event is one macrostep and the loop
-        runs while the queue is not empty, so this is legal and never ends. The
-        engine is right; the caller needs a bound."""
-        verdict = self.ends_in_a_refusal(
-            HEAD + '<state id="a"><onentry><send event="t" delay="0ms"/></onentry>'
-                   '<transition event="t" target="a"/></state></scxml>',
-            [{"expect": {"condition": "a"}}])
-        self.assertIn("did not finish", verdict["reason"])
 
     def test_an_endless_script_loop_ends_in_a_refusal(self):
         """The loop is inside Lua's C code: no timer in the process can stop it,
