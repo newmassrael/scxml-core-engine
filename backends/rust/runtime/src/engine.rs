@@ -148,6 +148,26 @@ pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;
 /// instead, which is coarser but still reported.
 pub(crate) const MAX_MACROSTEP_MICROSTEPS: usize = 1000;
 
+/// How many external events one invocation of the main event loop may take off
+/// the queue before this engine hands control back — see
+/// [`Engine::truncated_event_chains`] and ARCHITECTURE.md "External-Event
+/// Budget", the contract every engine here holds.
+///
+/// A machine that answers an event by sending itself the next one, with no
+/// target, never lets the external queue empty. Every macrostep of it ends, so
+/// [`MAX_MACROSTEP_MICROSTEPS`] never applies, and the loop takes the next event
+/// whenever the queue is not empty: the host call that drove it did not return.
+/// §scxml-3.13 lets a macrostep fail to end and says nothing of a chain of
+/// macrosteps, so, as with the microstep ceiling, the number is this engine's to
+/// choose and the decline has to be visible.
+///
+/// The default is the one the contract states: three orders of magnitude above
+/// the longest invocation measured over the authoring suite (6 external
+/// events). It is a margin and not a proof, and a host that hands a machine a
+/// backlog it means to work through in one call can choose another
+/// ([`Engine::set_max_external_events_per_call`]).
+pub(crate) const MAX_EXTERNAL_EVENTS_PER_CALL: u32 = 10_000;
+
 /// Comparable timestamp used by the scheduler: `u64` millisecond ticks read
 /// from `<P::Hal as Hal>::now_ticks_ms()` under both std and no_std.
 ///
@@ -371,6 +391,26 @@ impl<E, S> ScheduledEntry<E, S> {
     fn is_host_invoke_deadline(&self) -> bool {
         false
     }
+
+    /// The event this entry delivers to this machine's own queues, when it is
+    /// one — what a host is told a cut left waiting. A delayed send routed to a
+    /// child or a parent, a host-served send and a host invocation's deadline
+    /// carry no event of this machine's, and answer `None`.
+    #[cfg(not(feature = "no_std"))]
+    fn own_event(&self) -> Option<&E> {
+        match &self.act {
+            ScheduledAct::Raise { event, .. } => Some(event),
+            ScheduledAct::Routed { event, .. } => event.as_ref(),
+            ScheduledAct::HostSend(_) | ScheduledAct::HostInvokeDeadline { .. } => None,
+        }
+    }
+
+    /// The event this entry delivers; under `--features=no_std` every entry is
+    /// one.
+    #[cfg(feature = "no_std")]
+    fn own_event(&self) -> Option<&E> {
+        Some(&self.event)
+    }
 }
 
 impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
@@ -580,6 +620,26 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// the wrapper that reads `<P::Hal>::now_ticks_ms()`.
     pub fn has_ready_events_at(&self, now: SchedTimePoint) -> bool {
         self.entries.iter().any(|e| e.ready_at <= now)
+    }
+
+    /// The ready entry [`pop_ready_act_at`](Self::pop_ready_act_at) would take
+    /// next, left where it is: the instant it came due, and the event it
+    /// delivers to this machine's own queues (see `ScheduledEntry::own_event`),
+    /// which is `None` for an entry that delivers none. `None` when nothing is
+    /// ready.
+    ///
+    /// The same-instant bound reads it before popping: an entry due AT `now` is
+    /// the only kind a handler can arm during the tick that pops it, and a cut
+    /// reports the event it was still popping.
+    pub(crate) fn next_ready_at_with_event(
+        &self,
+        now: SchedTimePoint,
+    ) -> Option<(SchedTimePoint, Option<&E>)> {
+        self.entries
+            .iter()
+            .filter(|e| e.ready_at <= now)
+            .min_by_key(|e| e.ready_at)
+            .map(|e| (e.ready_at, e.own_event()))
     }
 
     /// When the earliest still-queued entry comes due, whether or not it is
@@ -979,6 +1039,25 @@ pub struct Engine<P: StatePolicy> {
     /// `last_truncated_macrostep_state`.
     #[cfg(not(feature = "no_macrostep_diagnostics"))]
     pub(crate) last_truncated_macrostep_state: Option<P::State>,
+    /// External events one invocation of the main event loop may take — see
+    /// [`max_external_events_per_call`](Self::max_external_events_per_call).
+    ///
+    /// Present on every profile: it is the BOUND, not the report, so
+    /// `no_macrostep_diagnostics` leaves it in.
+    pub(crate) max_external_events_per_call: u32,
+    /// Invocations of the main event loop this engine handed back with an
+    /// external event still queued — see
+    /// [`truncated_event_chains`](Self::truncated_event_chains).
+    ///
+    /// Gone under `no_macrostep_diagnostics` with its sibling below, for the
+    /// reason `truncated_macrosteps` is: per-ENGINE RAM, whether or not anything
+    /// reads it.
+    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    pub(crate) truncated_event_chains: u32,
+    /// The event at the head of the queue the last time a call was handed back
+    /// that way — see [`last_truncated_event`](Self::last_truncated_event).
+    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    pub(crate) last_truncated_event: Option<P::Event>,
     /// Microsteps taken by the macrostep now in progress, against
     /// [`MAX_MACROSTEP_MICROSTEPS`].
     ///
@@ -1063,6 +1142,11 @@ impl<P: StatePolicy> Engine<P> {
             truncated_macrosteps: 0,
             #[cfg(not(feature = "no_macrostep_diagnostics"))]
             last_truncated_macrostep_state: None,
+            max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
+            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            truncated_event_chains: 0,
+            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            last_truncated_event: None,
             macrostep_microsteps_taken: 0,
             macrostep_truncated: false,
             donedata_at_final: SceString::new(),
@@ -1603,8 +1687,42 @@ impl<P: StatePolicy> Engine<P> {
         // told to cancel. Measured 2026-08-19 across the Rust, Go and Python
         // backends alike, the Python one on a virtual clock where the host's
         // step size alone decided it.
+        //
+        // A scheduler that can deliver an entry due at the instant it is popping
+        // is a drain that refills itself: an entry a handler re-arms at that
+        // same reading (a `delayexpr` that evaluates to zero, which has no
+        // static value to be read as undelayed) is due now, so this loop pops it
+        // in the same call, and each pass takes ONE event, so the budget on the
+        // external drain never trips. The pops of entries due AT one clock
+        // reading are bounded by the same budget, reset when the reading
+        // advances (ARCHITECTURE.md "External-Event Budget", rule 5).
+        //
+        // Entries due AT the reading, not every entry popped at it: the reading
+        // is latched for the whole tick, so a host that jumps the clock a long
+        // way pops every entry that came due on the way at ONE reading, and those
+        // are due at earlier instants. A handler arms relative to the latched
+        // reading, so what it arms is due at the reading itself or after it, and
+        // only the first kind can be popped by this tick. A clock the host moved
+        // is bounded by how far it moved and is not cut; a heartbeat across a long
+        // jump arms its next beat after the reading and is not popped here at all.
+        let mut reading: Option<SchedTimePoint> = None;
+        let mut popped_due_at_reading: u32 = 0;
         loop {
             let now = self.sched_now();
+            if reading != Some(now) {
+                reading = Some(now);
+                popped_due_at_reading = 0;
+            }
+            if let Some((due, head)) = self.scheduler.next_ready_at_with_event(now) {
+                if due == now {
+                    if popped_due_at_reading >= self.max_external_events_per_call {
+                        let head = head.copied();
+                        self.record_truncated_event_chain(head);
+                        break;
+                    }
+                    popped_due_at_reading += 1;
+                }
+            }
             #[cfg(not(feature = "no_std"))]
             {
                 let Some(act) = self.scheduler.pop_ready_act_at(now) else {
@@ -2013,6 +2131,69 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "no_macrostep_diagnostics"))]
     pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
         self.last_truncated_macrostep_state
+    }
+
+    /// How many invocations of the main event loop this engine handed back with
+    /// an external event still queued, because the invocation had already taken
+    /// [`max_external_events_per_call`](Self::max_external_events_per_call) of
+    /// them (ARCHITECTURE.md "External-Event Budget").
+    ///
+    /// [`truncated_macrosteps`](Self::truncated_macrosteps) counts a macrostep
+    /// that does not end; this counts the other way a call fails to return:
+    /// every macrostep ends, and each one queues the event that starts the next
+    /// (`<send event="again"/>`, no target, answered by a transition that sends
+    /// it again). The specification bounds neither, and an engine that ran
+    /// either to the letter would never return, with `get_current_state`
+    /// answering, `is_running` true and no sign that anything went wrong. This is
+    /// that sign.
+    ///
+    /// Counted when the loop still had work after the budget. A call that takes
+    /// exactly the budget and empties the queue counts zero: a long backlog is
+    /// ordinary, an endless one is not. The events left queued stay queued, so a
+    /// host that calls again gets another budget and the machine goes on from
+    /// where it was; what the host learns is that this call did not reach quiet.
+    ///
+    /// A cut of the same-instant bound on the scheduler counts here too (see
+    /// [`tick`](Self::tick)).
+    ///
+    /// Absent under `no_macrostep_diagnostics`, for the reason
+    /// `truncated_macrosteps` is: the BOUND stays in, only this report is
+    /// compiled out.
+    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    pub fn truncated_event_chains(&self) -> u32 {
+        self.truncated_event_chains
+    }
+
+    /// The event at the head of the queue when this engine last handed a call
+    /// back that way, or `None` while
+    /// [`truncated_event_chains`](Self::truncated_event_chains) is zero. In a
+    /// chain that sends itself an event it is that event: the count says a call
+    /// did not reach quiet and this says what it was still taking. For a cut of
+    /// the scheduler it is the event of the due entry left waiting, and `None`
+    /// when that entry delivers no event of this machine's.
+    ///
+    /// Absent under `no_macrostep_diagnostics`, for the reason its sibling is.
+    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    pub fn last_truncated_event(&self) -> Option<P::Event> {
+        self.last_truncated_event
+    }
+
+    /// The most external events one invocation of the main event loop may take.
+    /// Present on every profile: it is the bound, not the report.
+    pub fn max_external_events_per_call(&self) -> u32 {
+        self.max_external_events_per_call
+    }
+
+    /// Let a host choose the budget of one invocation. A host that hands the
+    /// machine a backlog it means the machine to work through in one call knows
+    /// its size, and this engine does not. Settable at any time.
+    ///
+    /// A budget of zero takes no event, so every call would hand control back
+    /// with the queue untouched and say it had been cut: a machine that cannot
+    /// run, not a stricter one. The contract refuses it, and here the type does:
+    /// a [`NonZeroU32`](core::num::NonZeroU32) cannot hold it.
+    pub fn set_max_external_events_per_call(&mut self, limit: core::num::NonZeroU32) {
+        self.max_external_events_per_call = limit.get();
     }
 
     /// Whether the macrostep the last host call drove was stopped at
@@ -3743,6 +3924,11 @@ impl<P: StatePolicy> Engine<P> {
     /// by event N's transition must have its invokes started before N+1 comes
     /// off the queue.
     pub(crate) fn run_main_event_loop(&mut self) {
+        // External events this invocation has taken off the queue, against
+        // `max_external_events_per_call`. A local, because the budget is one
+        // invocation's: a cut leaves the queue as it is and the next invocation
+        // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
+        let mut taken: u32 = 0;
         loop {
             // §scxml-D-mainEventLoop: complete the macrostep on eventless
             // transitions and internal events alone.
@@ -3801,10 +3987,40 @@ impl<P: StatePolicy> Engine<P> {
                 continue;
             }
 
+            if !self.external_queue.has_events() {
+                break;
+            }
+            // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
+            // bounds none of this: a machine that sends itself an external event
+            // on every one never empties the queue. Past the budget the queue is
+            // left exactly as it is and the call hands back, counted.
+            if taken >= self.max_external_events_per_call {
+                let head = self
+                    .external_queue
+                    .queued()
+                    .next()
+                    .map(|queued| queued.event);
+                self.record_truncated_event_chain(head);
+                break;
+            }
+            taken += 1;
             if !self.process_next_external_event() {
                 break;
             }
         }
+    }
+
+    /// Say that a call was handed back with work still waiting: the count, and
+    /// what it was still taking. The bound itself is enforced by the caller; this
+    /// is only the report, which `no_macrostep_diagnostics` compiles out.
+    pub(crate) fn record_truncated_event_chain(&mut self, head: Option<P::Event>) {
+        #[cfg(not(feature = "no_macrostep_diagnostics"))]
+        {
+            self.truncated_event_chains = self.truncated_event_chains.saturating_add(1);
+            self.last_truncated_event = head;
+        }
+        #[cfg(feature = "no_macrostep_diagnostics")]
+        let _ = head;
     }
 
     /// §scxml-D-mainEventLoop's inner loop: take microsteps on eventless

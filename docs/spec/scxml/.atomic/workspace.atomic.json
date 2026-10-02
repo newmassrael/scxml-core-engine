@@ -2006,6 +2006,11 @@
         {
           "file": "sce-build/src/gui_structure.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "MAX_EXTERNAL_EVENTS_PER_CALL",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

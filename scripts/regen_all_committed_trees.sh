@@ -202,9 +202,11 @@ stage "Child-deadline document Python tree"
 scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
 
 # The external-event budget's document sits outside `integration_resources/` for
-# the arity reason, with its own cause: only the Python runtime holds the budget
-# so far (ARCHITECTURE.md "External-Event Budget"), and a stem there is a
-# seven-channel contract. Each engine's tree is added here with its driver.
+# the arity reason, with its own cause: it holds each engine to one contract
+# (ARCHITECTURE.md "External-Event Budget"), and a stem there is a seven-channel
+# contract. Each engine's tree is added here with its driver.
+stage "External-event budget document Rust tree"
+scripts/regen_external_chain_is_bounded.sh
 stage "External-event budget document Python tree"
 scripts/regen_external_chain_is_bounded_python.sh
 

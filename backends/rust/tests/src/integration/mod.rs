@@ -36,6 +36,12 @@
 //! is no driver for them to carry and no harness to wait for. It lives at
 //! `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`, beside
 //! its C++ AOT driver.
+//!
+//! `external_chain_is_bounded` is the fourth, outside for the arity reason: it
+//! holds an engine to ARCHITECTURE.md "External-Event Budget", engine by engine,
+//! and a stem under `integration_resources/` is a seven-channel contract. It
+//! lives at `tests/integration/external_chain_is_bounded.scxml`, beside its
+//! drivers.
 
 pub mod a_bad_donedata_pair_is_ignored;
 pub mod a_bad_invoke_argument_is_reported_once;
@@ -76,6 +82,7 @@ pub mod event_origin_is_a_location;
 pub mod event_schema_native;
 pub mod event_type_names_its_queue;
 pub mod eventless_macrostep_is_bounded;
+pub mod external_chain_is_bounded;
 pub mod host_event_reaches_the_child;
 pub mod host_processor;
 pub mod internal_chain_is_bounded;
