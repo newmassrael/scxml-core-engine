@@ -36,6 +36,7 @@
 #include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
+#include "core/MacrostepCeilings.h"
 #include "core/MicrostepAlgorithms.h"
 #include "core/ParallelTransitionHelper.h"
 // §scxml-6.2.5: the request/reply shape a host-declared Event I/O Processor is
@@ -223,58 +224,15 @@ public:
     /// selection answers it.
     using TransitionInfo = SCE::Core::EnabledTransition<State, History>;
 
-    /**
-     * @brief How many links an `error.*` chain may have before the engine
-     *        stops feeding it — see `errorCascadeEvents()`
-     *
-     * §scxml-3.12.2 says what to do with an error event nothing matches. It
-     * does not say what to do when something *does* match it and that handler
-     * fails too: the failure raises the same error, the same transition
-     * answers it, and the machine has no way out. Nothing in the specification
-     * bounds that, so the number is this engine's to choose.
-     *
-     * A hundred links is far past any repair strategy a document plausibly
-     * spells (a handler that tries a fallback, then a second one, is three)
-     * and far short of a number a host would wait through.
-     */
-    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = 100;
+    /// How many links an `error.*` chain may have before the engine stops
+    /// feeding it — see `errorCascadeEvents()`. The number, and why it is that
+    /// one, is `Core::MAX_ERROR_CASCADE_DEPTH`, shared with the Interpreter.
+    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = Core::MAX_ERROR_CASCADE_DEPTH;
 
-    /**
-     * @brief How many microsteps one macrostep may take before this engine
-     *        stops taking them — see `truncatedMacrosteps()`
-     *
-     * The specification defines a macrostep as a chain of microsteps ending in
-     * a configuration where nothing is enabled by NULL and the internal queue
-     * is empty, and its Principles and Constraints say in as many words that
-     * such a chain need not exist: *"A microstep always terminates. A
-     * macrostep may not. A macrostep that does not terminate may be said to
-     * consist of an infinitely long sequence of microsteps. This is currently
-     * allowed."*
-     *
-     * So the ceiling is not conformance — it is this engine declining a
-     * document the specification permits, which is exactly why the decline has
-     * to be visible.
-     *
-     * One budget for the whole inner loop, not one per branch. Appendix D's
-     * loop takes a microstep on an eventless transition *or* on an internal
-     * event, and a document alternating the two is one chain, not two:
-     * budgeting the branches separately leaves that chain unbounded, which is
-     * what a per-call counter on the eventless branch alone did here until
-     * 2026-08-20.
-     *
-     * Ten times `MAX_ERROR_CASCADE_DEPTH`, and deliberately not equal to it.
-     * This is the backstop; the cascade ceiling is a diagnostic that names the
-     * error a handler keeps failing on, and a backstop that fires first makes
-     * that diagnostic unreachable. Measured 2026-08-20: with both at a
-     * hundred, a handler that raises one event of its own per link — two
-     * microsteps a link, which is what a document that logs before it fails
-     * looks like — was cut at fifty links by this ceiling and
-     * `errorCascadeEvents()` never moved. The factor of ten is the headroom
-     * that keeps the specific report reachable for a handler raising up to
-     * eight events a link; a busier one is cut here instead, which is coarser
-     * but still reported.
-     */
-    static constexpr uint32_t MAX_MACROSTEP_MICROSTEPS = 1000;
+    /// How many microsteps one macrostep may take before this engine stops
+    /// taking them — see `truncatedMacrosteps()`. The number, and why it is that
+    /// one, is `Core::MAX_MACROSTEP_MICROSTEPS`, shared with the Interpreter.
+    static constexpr uint32_t MAX_MACROSTEP_MICROSTEPS = Core::MAX_MACROSTEP_MICROSTEPS;
 
     /**
      * @brief Event with metadata for §scxml-5.10 compliance

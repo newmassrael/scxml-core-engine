@@ -1378,6 +1378,10 @@
         {
           "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/MacrostepCeilings.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

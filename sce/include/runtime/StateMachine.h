@@ -8,6 +8,7 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "core/LogMacros.h"
+#include "core/MacrostepCeilings.h"
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
@@ -804,27 +805,10 @@ private:
     std::vector<Transition> selectionCandidates_{};
 
     /// How many microsteps one macrostep may take before this engine stops
-    /// taking them. The clause defines a macrostep as a chain ending where
-    /// nothing is enabled by NULL and no internal event is left, and the
-    /// specification's Principles and Constraints say that chain need not
-    /// exist ("A macrostep may not [terminate] ... This is currently
-    /// allowed"), so the ceiling is this engine declining a document the
-    /// specification permits — which is why `Statistics::truncatedMacrosteps`
-    /// publishes the decline instead of a log line carrying it alone. It is
-    /// the AOT engine's `MAX_MACROSTEP_MICROSTEPS`, the same number for the
-    /// same reason.
-    ///
-    /// One budget for the whole inner loop, not one per branch: a document
-    /// that alternates an eventless transition with a `<raise>` is one chain,
-    /// and budgeting the branches separately leaves it unbounded.
-    ///
-    /// Ten times the error-cascade depth, and deliberately not equal to it.
-    /// This is the backstop; the cascade ceiling is a diagnostic that names
-    /// the error a handler keeps failing on, and a backstop that fires first
-    /// makes that diagnostic unreachable — measured 2026-08-20, with both at a
-    /// hundred a handler that raises one event of its own per link was cut at
-    /// fifty links here and the cascade count never moved.
-    static constexpr int MAX_MACROSTEP_MICROSTEPS = 1000;
+    /// taking them; `Statistics::truncatedMacrosteps` publishes the decline. The
+    /// number, and why it is that one, is `Core::MAX_MACROSTEP_MICROSTEPS`,
+    /// shared with the AOT engine.
+    static constexpr uint32_t MAX_MACROSTEP_MICROSTEPS = Core::MAX_MACROSTEP_MICROSTEPS;
 
     /// Macrosteps stopped at that ceiling with the chain still going, and the
     /// state the drain was in when it last happened. `macrostepTruncated_`

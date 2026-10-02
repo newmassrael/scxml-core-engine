@@ -753,7 +753,7 @@ void StateMachine::runMainEventLoop(uint32_t alreadyTaken) {
         while (isRunning_ && !macrostepTruncated_) {
             const std::vector<Transition> enabled = selectTransitions(std::string{});
             if (!enabled.empty()) {
-                if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
+                if (macrostepMicrostepsTaken_ >= MAX_MACROSTEP_MICROSTEPS) {
                     // The chain is still going one microstep past the budget.
                     // The microstep is refused rather than taken — selection
                     // moves nothing, so refusing it is exact.
@@ -1527,7 +1527,7 @@ bool StateMachine::mayTakeMicrostep() {
         // budget for asking again.
         return false;
     }
-    if (macrostepMicrostepsTaken_ < static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
+    if (macrostepMicrostepsTaken_ < MAX_MACROSTEP_MICROSTEPS) {
         return true;
     }
     // Work is still queued one microstep past the budget, which is the case

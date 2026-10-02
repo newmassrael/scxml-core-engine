@@ -5,6 +5,7 @@
 
 #include "IEventRaiser.h"
 #include "SCXMLTypes.h"
+#include "core/MacrostepCeilings.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -52,17 +53,11 @@ public:
      * @brief How many links an `error.*` chain may have before this raiser
      *        stops feeding it — see `getErrorCascadeEvents()`
      *
-     * §scxml-3.12.2 says what to do with an error event nothing matches. It
-     * does not say what to do when something *does* match it and that handler
-     * fails too, so the number is this engine's to choose.
-     *
-     * A hundred links is far past any repair strategy a document plausibly
-     * spells (a handler that tries a fallback, then a second one, is three)
-     * and far short of a number a host would wait through. Here it also caps
-     * recursion: executable content runs a nested drain, so each link is a
-     * stack frame.
+     * The number, and why it is that one, is `Core::MAX_ERROR_CASCADE_DEPTH`,
+     * shared with the AOT engine. Here it also caps recursion: executable
+     * content runs a nested drain, so each link is a stack frame.
      */
-    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = 100;
+    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = Core::MAX_ERROR_CASCADE_DEPTH;
 
     using EventCallback = std::function<bool(const std::string &, const std::string &)>;
     using EventCallbackWithOrigin = std::function<bool(const std::string &, const std::string &, const std::string &)>;
