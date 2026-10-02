@@ -1650,6 +1650,7 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
                       "the owner's.")
     answer["show"] += _requirements_say(answer)
     answer["show"] += _behaviour_say(answer)
+    answer["show"] += _house_rules_say(answer)
     return {"content": [{"type": "text",
                          "text": json.dumps(answer, indent=2, ensure_ascii=False) + "\n"},
                         *({"type": "text", "text": block} for block in blocks)]}
@@ -1753,6 +1754,42 @@ def _behaviour_say(answer: dict) -> str:
     answer["behaviour"] = {"verdict": "not played",
                            "reason": "no scenario set was played into this design"}
     return " " + _UNPLAYED
+
+
+_RULES_UNCITED = (
+    "The profile holds {held} house rule(s) and this document cites none of them. "
+    "The product cannot see a rule you applied without its citation, so an "
+    "acceptance of this design would say it applied none, and the owner would "
+    "not be told that a standing answer, and not the specification, decided what "
+    "it does. For each rule you applied, put sce:assumed=\"<rule id>\" with an "
+    "sce:assumed-reason on the element it applies to and check again; for a rule "
+    "you did not apply nothing is needed, and never cite one you did not apply.")
+
+
+def _house_rules_say(answer: dict) -> str:
+    """What the client is told when the profile holds house rules and the design
+    cites none, and the field that makes the same fact readable by a program.
+
+    ⚠ Why this rides on the check. Measured 2026-10-02 (Sonnet, headless, a
+    profile of three house rules handed over, four specifications, eight runs):
+    all eight applied the rules (every timer event was addressed to `#_internal`)
+    and named H1 to H3 in their closing words, and none cited one in the
+    document. The server's instructions say to cite; the instruction was not
+    what the client acted on, and the product cannot see an uncited rule. So the
+    fact the product CAN see is said where the client reads it: how many rules
+    the profile holds and how many this document cites, both from the manifest.
+
+    ⚠ Said only for an explicit zero. A design that cites some of the rules may
+    have applied the others no more than it needed to, and a sentence about the
+    uncited ones would push the client to cite what it did not apply.
+    """
+    used = (((answer.get("manifest") or {}).get("profile") or {}).get("house_rules"))
+    if not used:
+        return ""
+    answer["house_rules"] = {"held": used["held"], "cited": used["cited"]}
+    if used["cited"] != 0:
+        return ""
+    return " " + _RULES_UNCITED.format(held=used["held"])
 
 
 _SCENARIO_EVIDENCE_SAYS = (

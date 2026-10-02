@@ -3485,6 +3485,17 @@ decision record has, and the authoring core's `decisions` check is what licenses
 a citation — it refuses an `sce:assumed` that cites neither a decision nor one of
 the profile's rules.
 
+So the manifest says what it can see about it: under a profile that holds house
+rules, `profile.house_rules` is `{held, cited}`, the rules the profile holds and how
+many distinct ones the run cites (a rule applied at three places is one; an id the
+profile does not hold is none). `cited: 0` of `held: 3` is an explicit zero, because
+a design that applied every rule and cited none reads, in the rest of the manifest,
+as one that applied none, and an acceptance of it records no applied rule. Measured
+2026-10-02, eight drafts under a profile of three rules all applied them and none
+cited one; once the check's answer said `held 3, cited 0`, all eight cited, each on
+the element the rule applies to. The product still cannot say that a citation is
+RIGHT.
+
 A forge document is judged only where a setting reaches its kind. `evidence`
 reaches every kind that states a kind basis. `names` reaches an event-schema
 document: the event it declares (`sce:event-name`) is a name of the `event`

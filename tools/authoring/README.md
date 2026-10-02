@@ -811,7 +811,12 @@ citation apart from the values chosen without an answer (`open`, kind
 `house-rule`; `house_rule` on the marker's record), and the `decisions` tool,
 given the profile, does not refuse the citation as an uncited guess. What
 nothing can see is a rule applied without its citation, which is the limit the
-decision record has too.
+decision record has too. What the product can see it says: the check's answer
+carries `house_rules: {held, cited}` and, when the profile holds rules and the
+design cites none, a sentence saying so and how to cite. Measured 2026-10-02 (eight
+headless runs, a profile of three rules): without the sentence all eight applied
+the rules and cited none; with it all eight cited, each on the element the rule
+applies to.
 
 An acceptance pins the profile beside the specification and the decision
 record, so a design accepted under one profile is not the answer for another
