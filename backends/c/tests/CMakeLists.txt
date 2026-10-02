@@ -1224,6 +1224,48 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # A machine that answers an event by sending itself the next one never lets the
+    # external queue empty, and every macrostep of it ends, so the microstep
+    # ceiling never applies: the host call that drained it did not return. The
+    # fixture holds every engine to one budget on external events
+    # (ARCHITECTURE.md "External-Event Budget"). Named through SCXML_FILE rather
+    # than by stem for the reason `scripts/regen_external_chain_is_bounded.sh`
+    # states: a stem under `integration_resources/` is a seven-channel commitment.
+    sce_generate_static_integration_c_test(external_chain_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/external_chain_is_bounded.scxml"
+    )
+
+    add_executable(sce_c_integration_external_chain_is_bounded
+        integration/test_external_chain_is_bounded.c
+        ${INTEGRATION_C_TEST_external_chain_is_bounded_SOURCES}
+    )
+    # This backend bounds the delayed-send queue at SCE_MAX_SCHEDULED
+    # (sce/types.h, 4 by default), its documented resource limit, and drops what
+    # does not fit. The `timed` outcome arms eight pulses at once, so this one
+    # target raises it to eight: what is measured is that a chain finite because
+    # the clock is is not refused, not that four of the pulses fit.
+    target_compile_definitions(sce_c_integration_external_chain_is_bounded PRIVATE
+        SCE_MAX_SCHEDULED=8
+    )
+    target_link_libraries(sce_c_integration_external_chain_is_bounded PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_external_chain_is_bounded PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_external_chain_is_bounded PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_external_chain_is_bounded
+        COMMAND sce_c_integration_external_chain_is_bounded
+    )
+    set_tests_properties(c11_integration_external_chain_is_bounded PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.3 + Appendix D: a compound state entered only because the
     # target lies inside it takes no default initial child. Appendix D asks that
     # as two functions — `addDescendantStatesToEnter` for the target,

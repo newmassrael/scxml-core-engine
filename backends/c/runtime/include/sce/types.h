@@ -116,6 +116,31 @@
 #define SCE_MAX_MACROSTEP_MICROSTEPS 1000u
 #endif
 
+// How many external events one invocation of the main event loop may take off
+// the queue before the engine hands control back (`_truncated_event_chains`,
+// ARCHITECTURE.md "External-Event Budget", the contract every engine holds).
+//
+// A machine that answers an event by sending itself the next one, with no
+// target, never lets the external queue empty. Every macrostep of it ends, so
+// SCE_MAX_MACROSTEP_MICROSTEPS never applies, and the loop takes the next event
+// whenever the queue is not empty: the host call that drove it did not return.
+// §scxml-3.13 lets a macrostep fail to end and says nothing of a chain of
+// macrosteps, so, as with the microstep ceiling, the number is this engine's to
+// choose and the decline has to be visible.
+//
+// This is not the ring's bound. The external queue is a fixed ring
+// (SCE_MAX_EVENTS) that drops on overflow, and a chain that sends the next
+// event holds one at a time, so the ring never fills and never stopped it.
+//
+// The default is the one the contract states: three orders of magnitude above
+// the longest invocation measured over the authoring suite (6 external events).
+// It is a margin and not a proof, and a host that hands a machine a backlog it
+// means to work through in one call can choose another
+// (`_set_max_external_events_per_call`).
+#ifndef SCE_MAX_EXTERNAL_EVENTS_PER_CALL
+#define SCE_MAX_EXTERNAL_EVENTS_PER_CALL 10000u
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used

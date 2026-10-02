@@ -2026,6 +2026,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -1,0 +1,136 @@
+# Mutation cases for "a call that drains a self-refilling external queue is
+# handed back", C11 template.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/c11_external_event_budget_ctest.cases`.
+#
+# A machine that answers an event by sending itself the next one, with no
+# target, never lets the external queue empty, and every macrostep of it ends, so
+# the microstep ceiling never applies: the call did not return. The C11 machine
+# takes at most `_max_external_events_per_call` events in one invocation of its
+# main event loop, leaves the rest queued, and counts the cut; and it bounds the
+# scheduler entries due AT one clock reading popped by one tick by the same
+# budget (ARCHITECTURE.md "External-Event Budget", rules 1-5). This engine hands a
+# STATIC zero delay to its scheduler, so `zero` and `zero_expr` both hold the
+# same-instant bound. `tests/integration/external_chain_is_bounded.scxml` is the
+# document.
+#
+# The target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry. The external queue here is a
+# fixed ring (SCE_MAX_EVENTS) that drops on overflow, which is a different bound
+# and not this one.
+#
+# What is easy to get wrong and reads as success: a budget off by one in either
+# direction (the chain that ENDS at exactly the budget is the case that tells
+# them apart), a refusal that swallows the event it declined (the chain stops
+# short and never finishes), a cut that is not counted, and a same-instant bound
+# that counts what it must not: a clock the host moved a long way pops many
+# entries at ONE reading and they are not a runaway.
+#
+# A mutation that removes a bound leaves the binary spinning, and the harness
+# caps every run, so "did not terminate" is the verdict that case is held to.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_external_chain_is_bounded$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 backends/c/runtime/include/sce/types.h
+mutation_oracles backends/c/tests/integration/test_external_chain_is_bounded.c
+
+# ── The refusal itself ──────────────────────────────────────────────
+
+mutation_case "the drain has no budget at all" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (taken >= external_event_budget(sm)) {\n            record_truncated_event_chain(sm, sm->external_queue",
+     "        if (taken == UINT32_MAX) {\n            record_truncated_event_chain(sm, sm->external_queue")
+PY
+
+mutation_case "the budget is one event more than it says" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (taken >= external_event_budget(sm)) {\n            record_truncated_event_chain(sm, sm->external_queue",
+     "        if (taken > external_event_budget(sm)) {\n            record_truncated_event_chain(sm, sm->external_queue")
+PY
+
+mutation_case "the budget is one event fewer than it says" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (taken >= external_event_budget(sm)) {\n            record_truncated_event_chain(sm, sm->external_queue",
+     "        if (taken + 1u >= external_event_budget(sm)) {\n            record_truncated_event_chain(sm, sm->external_queue")
+PY
+
+# ── The refusal leaves the queue alone ──────────────────────────────
+#
+# Popping before asking consumes the event the drain then declines to run. The
+# chain is still bounded and the count still moves, so only the `resume` outcome
+# can see it: it stops a link short of its end and never finishes.
+
+mutation_case "the drain swallows the event it refused" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            record_truncated_event_chain(sm, sm->external_queue.buf[sm->external_queue.head].event, true);\n            break;",
+     "            record_truncated_event_chain(sm, sm->external_queue.buf[sm->external_queue.head].event, true);\n            sm->external_queue.head = (uint16_t)((sm->external_queue.head + 1u) % (uint16_t)SCE_MAX_EVENTS);\n            sm->external_queue.count = (uint16_t)(sm->external_queue.count - 1u);\n            break;")
+PY
+
+# ── The cut is said ─────────────────────────────────────────────────
+
+mutation_case "a cut is not counted" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sm->truncated_event_chains++;\n",
+     "    sm->truncated_event_chains += 0u;\n")
+PY
+
+mutation_case "the cut does not say which event it was still taking" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sm->has_truncated_event = has_head;\n",
+     "    sm->has_truncated_event = has_head && false;\n")
+PY
+
+# ── The budget is the invocation's own, from a clean start ──────────
+
+mutation_case "an invocation starts with one event already spent" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    uint32_t taken = 0u;\n    while (true) {",
+     "    uint32_t taken = 1u;\n    while (true) {")
+PY
+
+# ── The scheduler cannot refill itself without end ──────────────────
+#
+# A static `delay="0ms"` and a `delayexpr` that evaluates to zero both reach this
+# engine's scheduler. Without the same-instant bound the tick that pops one finds
+# each handler has armed another due at the same reading, and never returns.
+
+mutation_case "the scheduler's same-instant pops have no budget" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (popped_due_at_reading >= external_event_budget(sm)) {",
+     "            if (popped_due_at_reading == UINT32_MAX) {")
+PY
+
+# The bound must count entries due AT the reading, not every entry popped at it.
+# The reading is latched for the whole tick, so a host that jumps the clock eight
+# milliseconds pops eight entries at ONE reading, seven of them due earlier: a
+# bound on pops at the reading would refuse a legitimate time-driven chain.
+
+mutation_case "the same-instant bound counts entries that came due earlier" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (sm->scheduled_queue.count != 0u && sm->scheduled_queue.buf[0].fire_time_ms == now_ms) {",
+     "        if (sm->scheduled_queue.count != 0u && sm->scheduled_queue.buf[0].fire_time_ms <= now_ms) {")
+PY
+
+# ── What a host may set ─────────────────────────────────────────────
+
+mutation_case "a budget that takes no event is accepted" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    if (sm == NULL || limit < 1u) {\n        return false;\n    }\n    sm->max_external_events_per_call = limit;",
+     "    if (sm == NULL) {\n        return false;\n    }\n    sm->max_external_events_per_call = limit;")
+PY
+
+mutation_case "a budget the host sets is ignored" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sm->max_external_events_per_call = limit;\n    return true;",
+     "    return true;")
+PY
+
+mutation_case "the default budget is not the documented one" <<'PY'
+edit("backends/c/runtime/include/sce/types.h",
+     "#define SCE_MAX_EXTERNAL_EVENTS_PER_CALL 10000u",
+     "#define SCE_MAX_EXTERNAL_EVENTS_PER_CALL 1000u")
+PY

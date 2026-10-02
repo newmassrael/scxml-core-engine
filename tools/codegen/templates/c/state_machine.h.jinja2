@@ -538,6 +538,17 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     bool has_truncated_macrostep;
     bool macrostep_truncated;
     uint32_t macrostep_microsteps_taken;
+    /* The budget of one invocation of the main event loop, the invocations
+       this engine handed back with an external event still queued, and the
+       event at the head of the queue when that last happened. Zero in
+       `max_external_events_per_call` means "not chosen", which is the default:
+       the setter refuses zero, so the two cannot be confused. `has_truncated_event`
+       is separate because the event enum's zero value is a real event. See
+       `_truncated_event_chains` below. */
+    uint32_t max_external_events_per_call;
+    uint32_t truncated_event_chains;
+    {{ csym_prefix }}{{ model.name }}_event_t last_truncated_event;
+    bool has_truncated_event;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
        session, and the address that reaches it. Issued in `_init` rather
@@ -1199,6 +1210,52 @@ uint32_t {{ csym_prefix }}{{ model.name }}_truncated_macrosteps(const {{ csym_pr
    source of the one the drain last took. */
 bool {{ csym_prefix }}{{ model.name }}_last_truncated_macrostep_state(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_state_t *out);
+
+/* How many invocations of the main event loop this engine handed back with an
+   external event still queued, because the invocation had already taken
+   `_max_external_events_per_call` of them (ARCHITECTURE.md "External-Event
+   Budget").
+
+   `_truncated_macrosteps` counts a macrostep that does not end; this counts the
+   other way a call fails to return: every macrostep ends, and each one queues
+   the event that starts the next (`<send event="again"/>`, no target, answered
+   by a transition that sends it again). The specification bounds neither, and
+   an engine that ran either to the letter would never return, with
+   `_current_state` answering, the machine reporting itself running and no sign
+   that anything went wrong. This is that sign.
+
+   Counted when the loop still had work after the budget. A call that takes
+   exactly the budget and empties the queue counts zero: a long backlog is
+   ordinary, an endless one is not. The events left queued stay queued, so a
+   host that calls again gets another budget and the machine goes on from where
+   it was; what the host learns is that this call did not reach quiet.
+
+   The external queue is a fixed ring that drops on overflow, which is a
+   different bound and not this one: a chain that sends the next event holds one
+   at a time. */
+uint32_t {{ csym_prefix }}{{ model.name }}_truncated_event_chains(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* The event at the head of the queue when this engine last handed a call back
+   that way. Returns false, leaving `*out` untouched, while the count above is
+   zero — and for a cut of the scheduler whose due entry delivers no event of
+   this machine's. The event enum's zero value is a real event and cannot stand
+   in for "none". */
+bool {{ csym_prefix }}{{ model.name }}_last_truncated_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* The most external events one invocation of the main event loop may take;
+   `SCE_MAX_EXTERNAL_EVENTS_PER_CALL` until the host chooses another. */
+uint32_t {{ csym_prefix }}{{ model.name }}_max_external_events_per_call(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* Let a host choose the budget of one invocation. A host that hands the machine
+   a backlog it means the machine to work through in one call knows its size, and
+   this engine does not. Settable at any time.
+
+   Refused below one — returns false and changes nothing: a budget that takes no
+   event is a machine that cannot run, not a stricter one, since every call would
+   hand control back with the queue untouched and say it had been cut. */
+bool {{ csym_prefix }}{{ model.name }}_set_max_external_events_per_call({{ csym_prefix }}{{ model.name }}_t *sm,
+                            uint32_t limit);
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */
 void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
