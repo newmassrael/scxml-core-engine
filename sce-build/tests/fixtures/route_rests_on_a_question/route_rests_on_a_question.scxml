@@ -36,6 +36,11 @@
   The last three fail for a reason no answer to the route's question would mend,
   so none of them carries it: the fault is the document's.
 
+    send.late      the route names a Mesh peer nobody serves, and the send waits:
+                   the refusal is made when the wait is over, long after the send
+                   site returned, and still rests on the open question
+    send.lateplain the same route read from a plain data item: no question
+
   `listen` moves to a state that answers `error.communication`, so the same
   open route can also be shown to fail where the document handles the failure.
 -->
@@ -58,6 +63,9 @@
           sce:unresolved-reason="the specification does not say who the caller is"/>
     <data id="emptyRoute" sce:unresolved="caller-target"
           sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="openPeer" expr="'#peer'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="plainPeer" expr="'#peer'"/>
     <data id="answered" expr="0"/>
   </datamodel>
 
@@ -79,6 +87,12 @@
     </transition>
     <transition event="send.badtype" target="idle">
       <send event="notice" typeexpr="openType"/>
+    </transition>
+    <transition event="send.late" target="idle">
+      <send event="notice" delay="1s" targetexpr="openPeer"/>
+    </transition>
+    <transition event="send.lateplain" target="idle">
+      <send event="notice" delay="1s" targetexpr="plainPeer"/>
     </transition>
     <transition event="send.badaddress" target="idle">
       <send event="notice" targetexpr="invalidRoute"/>

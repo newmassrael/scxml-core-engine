@@ -13,7 +13,7 @@ from __future__ import annotations
 import heapq
 import itertools
 from dataclasses import dataclass, field
-from typing import Any, Generic, Iterator, List, Optional, TypeVar
+from typing import Any, Generic, Iterator, List, Optional, Tuple, TypeVar
 
 E = TypeVar("E")
 
@@ -78,6 +78,12 @@ class ScheduledEvent(Generic[E]):
     #: §scxml-6.2 — the `ScheduledRoute` the delayed send resolved when it
     #: was made, or ``None`` for this session's own external queue.
     route: Optional[ScheduledRoute] = field(default=None, compare=False)
+    #: §scxml-6.2.4 — the ids of the open questions the delayed send's ROUTE
+    #: rests on (see `Engine.last_unhandled_error_rests_on`). A delayed send is
+    #: delivered, or refused, when its wait is over, long after the generated
+    #: send site returned, so a refusal made then can only name them if the entry
+    #: carried them here. Empty for a send whose route rests on none.
+    rests_on: Tuple[str, ...] = field(default=(), compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -100,6 +106,7 @@ class Scheduler(Generic[E]):
         host_send: Any = None,
         host_invoke_deadline: Any = None,
         route: Optional[ScheduledRoute] = None,
+        rests_on: Tuple[str, ...] = (),
     ) -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
@@ -116,7 +123,9 @@ class Scheduler(Generic[E]):
         invocation start, to be judged at `due_ms`.
 
         `route` is where the event goes when due (W3C SCXML 6.2), ``None``
-        for this session's own external queue."""
+        for this session's own external queue. `rests_on` is the open
+        questions that route rests on, handed back to whoever reports a
+        refusal made when the entry comes due."""
         heapq.heappush(
             self._heap,
             ScheduledEvent(
@@ -128,6 +137,7 @@ class Scheduler(Generic[E]):
                 host_send=host_send,
                 host_invoke_deadline=host_invoke_deadline,
                 route=route,
+                rests_on=rests_on,
             ),
         )
 

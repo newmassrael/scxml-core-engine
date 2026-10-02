@@ -4196,7 +4196,11 @@ the last error nothing answered (`last_unhandled_error_rests_on`). A scenario
 driver reads that and calls the example BLOCKED by the decision
 (`cause: decision`) instead of `not-judged` with the design as the cause: the
 failure is the owner's question showing through, the same run fails the same way
-on any machine, and answering the question is what unblocks it.
+on any machine, and answering the question is what unblocks it. A comparison and
+a verification have no verdict word of that kind, so they say it in the clause
+they already give for an error nothing answered (`lowering.stopped_run`): the
+failure rested on an open decision, named, and the draft is not to be mended for
+it. All three use one sentence (`lowering.route_decision_clause`).
 
 Only the route's own failure carries the question. The same send can fail in its
 event name, its delay, its namelist or its payload, and those are faults of the
@@ -4210,9 +4214,13 @@ on a plain or an assumed value are likewise not laid to a question, and stay wha
 every unanswered error was before: the design's. Only a question the machine
 named is a decision; the driver does not guess one from the shape of the failure.
 
-A failure of the delivery of a delayed send that happens when its deadline passes
-is raised by the scheduler and carries no question; the route's own failures are
-the ones found when the send runs.
+A delayed send is refused, or its target found gone, when its wait is over, long
+after the generated send site returned. The questions therefore ride the
+scheduler entry (`ScheduledEvent.rests_on`), handed over when the send is armed
+(`send_to_target`, `schedule_host_send`) and raised with the refusal the drain
+makes (`error.communication` for an invocation that ended, `error.execution` for
+a host act nobody performed). A delayed send whose route rests on no question
+raises its refusal without one, as an immediate one does.
 
 ---
 

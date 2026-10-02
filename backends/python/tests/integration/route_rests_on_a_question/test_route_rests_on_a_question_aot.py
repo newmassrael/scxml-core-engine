@@ -26,6 +26,9 @@ raised by a send:
   send.badevent   sound route that rests on an open question, the EVENT NAME fails -> ()
   send.baddelay   the same, the DELAY fails                                        -> ()
   send.badnamelist the same, the NAMELIST fails                                    -> ()
+  send.late       a DELAYED send to a peer nobody serves: refused when the wait is
+                  over, long after the send site returned     -> ("caller-target",)
+  send.lateplain  the same from a plain data item                                  -> ()
 
 The last three are faults of the document that no answer to the route's question
 would mend, and so they are not attributed to it (measured 2026-10-02: an earlier
@@ -218,3 +221,61 @@ def test_nothing_is_held_once_an_unhandled_error_has_been_taken() -> None:
     engine.send_event(_Event.SEND_OPEN)
     assert engine.last_unhandled_error_rests_on() == (QUESTION,)
     assert _held(engine) == {}, "the question outlived the error that carried it"
+
+
+def test_a_delayed_send_refused_when_its_wait_is_over_gives_the_question_back() -> None:
+    """The send site returned long before. The refusal is made by the scheduler
+    when the wait is over, so the questions have to have been kept with the
+    entry: measured 2026-10-02, the first version lost them there."""
+    engine, _ = _started()
+    engine.send_event(_Event.SEND_LATE)
+    assert engine.unhandled_error_events() == 0, "nothing is refused until the wait is over"
+    engine.advance_time(1500)
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == (QUESTION,)
+    assert _held(engine) == {}
+
+
+def test_a_delayed_send_whose_route_rests_on_no_question_gives_none_back() -> None:
+    engine, _ = _started()
+    engine.send_event(_Event.SEND_LATEPLAIN)
+    engine.advance_time(1500)
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == ()
+
+
+class _Invocation:
+    """The two things the engine asks of a running invocation when it routes a
+    send to it. The generated machine of this fixture starts none, so the
+    delivery refused at the deadline is reached through the engine's own
+    routing call, with the invocation gone by the time the wait is over."""
+
+    def is_done(self) -> bool:
+        return False
+
+    def origin(self) -> str:
+        return "kid-location"
+
+
+def _send_to_an_invocation_that_is_gone_by_the_deadline(engine, rests_on: tuple) -> None:
+    engine._active_invokes["kid"] = _Invocation()
+    sent = engine.send_to_target(None, "notice", "#_kid", 1000, "sid-late", "", rests_on)
+    assert sent == "sent", "the invocation was running when the send was made"
+    del engine._active_invokes["kid"]
+    engine.advance_time(1500)
+
+
+def test_a_delayed_send_to_an_invocation_that_ended_gives_the_question_back() -> None:
+    """W3C SCXML C.1: an invocation that ends while a delayed send waits is
+    reported when the wait is over, and that report is a failure of the route."""
+    engine, _ = _started()
+    _send_to_an_invocation_that_is_gone_by_the_deadline(engine, (QUESTION,))
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == (QUESTION,)
+
+
+def test_the_same_delayed_send_with_no_question_is_the_documents_alone() -> None:
+    engine, _ = _started()
+    _send_to_an_invocation_that_is_gone_by_the_deadline(engine, ())
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == ()

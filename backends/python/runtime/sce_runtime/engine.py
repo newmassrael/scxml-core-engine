@@ -1682,7 +1682,12 @@ class Engine(Generic[S, E]):
         )
 
     def _deliver_routed(
-        self, event: Optional[E], sendid: str, data: Any, route: ScheduledRoute
+        self,
+        event: Optional[E],
+        sendid: str,
+        data: Any,
+        route: ScheduledRoute,
+        rests_on: Tuple[str, ...] = (),
     ) -> None:
         """W3C SCXML 6.2 + C.1 — deliver a delayed send whose wait is over to
         the target it named.
@@ -1691,7 +1696,9 @@ class Engine(Generic[S, E]):
         MUST place the error error.communication on the internal event queue
         of the session that attempted to send the event." For a delayed send
         the dispatch is this delivery, so an invocation that has ended in the
-        meantime is reported here, not when the send was made."""
+        meantime is reported here, not when the send was made. That refusal is
+        a failure of the send's ROUTE, so it carries `rests_on`, the open
+        questions the route rested on when the send was made."""
         if self._deliver_routed_now(event, sendid, data, route):
             return
         communication_error = self._policy.get_event_from_name("error.communication")
@@ -1699,6 +1706,7 @@ class Engine(Generic[S, E]):
             self.raise_internal(
                 communication_error,
                 EventMetadata(send_id=sendid, event_type="platform"),
+                rests_on=rests_on,
             )
 
     def _deliver_routed_now(
@@ -1743,6 +1751,7 @@ class Engine(Generic[S, E]):
         delay_ms: int,
         sendid: str,
         data: Any,
+        rests_on: Tuple[str, ...] = (),
     ) -> str:
         """W3C SCXML 6.2.4 + C.1 — send to a target value read at run time.
 
@@ -1757,7 +1766,9 @@ class Engine(Generic[S, E]):
         Answers ``"sent"``, ``"unsupported"`` (the caller raises
         error.execution) or ``"unreachable"`` (error.communication). `event`
         is this machine's spelling of the event, for its own queues; a child
-        or a parent resolves `event_name`."""
+        or a parent resolves `event_name`. `rests_on` is the open questions the
+        route rests on: kept with a delayed send, so the refusal made when its
+        wait is over can name them (the caller names them for one made now)."""
         kind, address = send_module.classify_target(target, self._session_id)
         if kind in (send_module.TARGET_UNSUPPORTED, send_module.TARGET_MESH):
             return "unsupported"
@@ -1790,12 +1801,18 @@ class Engine(Generic[S, E]):
         else:
             route = ScheduledRoute(kind="internal")
         if delay_ms > 0:
-            self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data, route=route)
+            self._scheduler.schedule(
+                self._now_ms + delay_ms, sendid, event, data, route=route, rests_on=rests_on
+            )
             return "sent"
         return "sent" if self._deliver_routed_now(event, sendid, data, route) else "unreachable"
 
     def schedule_host_send(
-        self, request: HostSendRequest, delay_ms: int, sendid: str = ""
+        self,
+        request: HostSendRequest,
+        delay_ms: int,
+        sendid: str = "",
+        rests_on: Tuple[str, ...] = (),
     ) -> None:
         """W3C SCXML 6.2.4 + 6.2.5 — arm a host-served `<send delay>`, to
         be performed when the delay elapses.
@@ -1814,12 +1831,16 @@ class Engine(Generic[S, E]):
 
         A non-positive delay is performed at once, matching
         `schedule_send`: a `delay="0s"` is not a deferral and the
-        document must not need a tick to see it."""
+        document must not need a tick to see it.
+
+        `rests_on` is the open questions the send's route rests on, for the
+        refusal this makes when nobody performs the act: it is a failure of the
+        route, made now or when the wait is over."""
         if delay_ms <= 0:
-            self._perform_deferred_host_send(request)
+            self._perform_deferred_host_send(request, rests_on)
             return
         self._scheduler.schedule(
-            self._now_ms + delay_ms, sendid, None, "", host_send=request
+            self._now_ms + delay_ms, sendid, None, "", host_send=request, rests_on=rests_on
         )
 
     def schedule_http_send(
@@ -1860,7 +1881,9 @@ class Engine(Generic[S, E]):
             sendid,
         )
 
-    def _perform_deferred_host_send(self, request: HostSendRequest) -> None:
+    def _perform_deferred_host_send(
+        self, request: HostSendRequest, rests_on: Tuple[str, ...] = ()
+    ) -> None:
         """W3C SCXML 6.2 + 6.2.4 — perform a host-served send whose delay
         has elapsed, and report it if nobody did.
 
@@ -1907,6 +1930,7 @@ class Engine(Generic[S, E]):
         self.raise_internal(
             event,
             EventMetadata(send_id=request.send_id, event_type="platform"),
+            rests_on=rests_on,
         )
 
     def cancel_send(self, sendid: str) -> None:
@@ -1951,12 +1975,14 @@ class Engine(Generic[S, E]):
                 # instead — including reporting an act nobody performed,
                 # which that site cannot do for a deferred send because it
                 # returned long before the deadline.
-                self._perform_deferred_host_send(entry.host_send)
+                self._perform_deferred_host_send(entry.host_send, entry.rests_on)
             elif entry.host_invoke_deadline is not None:
                 self._expire_host_invoke(entry.host_invoke_deadline)
             elif entry.route is not None:
                 # §scxml-6.2: to the target the send named when it was made.
-                self._deliver_routed(entry.event, entry.sendid, entry.data, entry.route)
+                self._deliver_routed(
+                    entry.event, entry.sendid, entry.data, entry.route, entry.rests_on
+                )
             else:
                 # §scxml-C-1: scheduler drain is the SCXML processor's
                 # delayed-delivery path for a `<send>` this session addressed

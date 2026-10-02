@@ -29,6 +29,7 @@
 mutation_pytest backends/python/tests integration/route_rests_on_a_question/
 mutation_regen scripts/regen_route_rests_on_a_question_python.sh
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
+mutation_runtime_targets backends/python/runtime/sce_runtime/scheduler.py
 mutation_oracles backends/python/tests/integration/route_rests_on_a_question/test_route_rests_on_a_question_aot.py
 
 # ── The question travels with the error ─────────────────────────────
@@ -63,6 +64,54 @@ mutation_case "an error raised with no question is given the last one's" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
      "                self._last_unhandled_error_rests_on = rests_on\n",
      "                self._last_unhandled_error_rests_on = rests_on or self._last_unhandled_error_rests_on\n")
+PY
+
+# ── A delayed send is refused long after its site returned ──────────
+#
+# The refusal of a delayed send is made by the scheduler when the wait is over, so the
+# questions have to ride the entry: armed with, kept by, handed to the drain, and raised
+# with. Each case below drops one of those hand-overs.
+
+mutation_case "a delayed entry forgets the questions it was armed with" <<'PY'
+edit("backends/python/runtime/sce_runtime/scheduler.py",
+     "                rests_on=rests_on,\n",
+     "")
+PY
+
+mutation_case "a delayed routed send is armed without its questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "self._now_ms + delay_ms, sendid, event, data, route=route, rests_on=rests_on",
+     "self._now_ms + delay_ms, sendid, event, data, route=route")
+PY
+
+mutation_case "a delayed host send is armed without its questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "self._now_ms + delay_ms, sendid, None, \"\", host_send=request, rests_on=rests_on",
+     "self._now_ms + delay_ms, sendid, None, \"\", host_send=request")
+PY
+
+mutation_case "the drain hands a routed send's refusal no questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "entry.event, entry.sendid, entry.data, entry.route, entry.rests_on",
+     "entry.event, entry.sendid, entry.data, entry.route")
+PY
+
+mutation_case "the drain hands a host send's refusal no questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "self._perform_deferred_host_send(entry.host_send, entry.rests_on)",
+     "self._perform_deferred_host_send(entry.host_send)")
+PY
+
+mutation_case "an invocation gone at the deadline is reported without the questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                EventMetadata(send_id=sendid, event_type=\"platform\"),\n                rests_on=rests_on,\n",
+     "                EventMetadata(send_id=sendid, event_type=\"platform\"),\n")
+PY
+
+mutation_case "a host act nobody performed is reported without the questions" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            EventMetadata(send_id=request.send_id, event_type=\"platform\"),\n            rests_on=rests_on,\n",
+     "            EventMetadata(send_id=request.send_id, event_type=\"platform\"),\n")
 PY
 
 # ── How long it is held ─────────────────────────────────────────────

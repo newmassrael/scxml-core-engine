@@ -37,8 +37,10 @@
    it named. The engine performs the act from its scheduler drain at the
    deadline, including the W3C SCXML 6.2 report for an act nobody performed.
    W3C SCXML 6.3: it lands in the delayed-send queue under `_sid`, so a
-   `<cancel>` reaches it and the host never sees the act. #}
-{{ indent }}engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)
+   `<cancel>` reaches it and the host never sees the act. The refusal made at
+   the deadline is a failure of the route when the act is the delivery of one
+   (`route_arg`), and so carries the questions the route rests on. #}
+{{ indent }}engine.schedule_host_send(_host_request, {{ delay_py }}, _sid{{ route_arg }})
 {% else %}
 {{ indent }}_host_served = engine.perform_host_send(_host_request)
 {% if 'error.execution' in model.events %}
@@ -55,7 +57,7 @@
     error.execution, one naming nothing there error.communication, and either
     ends the block (W3C SCXML 4.9). -#}
 {%- macro routed_to_target(indent, has_delay, delay_py, machine_name, model, route_arg='') -%}
-{{ indent }}_routed = engine.send_to_target(self.get_event_from_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data)
+{{ indent }}_routed = engine.send_to_target(self.get_event_from_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data{{ route_arg }})
 {{ indent }}if _routed == "unsupported":
 {% if 'error.execution' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"){{ route_arg }})

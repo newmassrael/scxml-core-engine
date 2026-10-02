@@ -212,6 +212,18 @@ edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"))\n{% endif %}\n{% endif %}")
 PY
 
+mutation_case "a delayed route is armed without its questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data{{ route_arg }})",
+     "{% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data)")
+PY
+
+mutation_case "a delayed host act is armed without the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "engine.schedule_host_send(_host_request, {{ delay_py }}, _sid{{ route_arg }})",
+     "engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)")
+PY
+
 mutation_case "a send resting on no question is handed an empty one" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "{% if route_ns.text %}",

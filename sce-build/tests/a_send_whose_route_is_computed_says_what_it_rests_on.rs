@@ -380,6 +380,20 @@ fn only_the_places_the_route_fails_carry_its_questions() {
         );
     }
 
+    // A delayed send is refused, or its target found gone, when its wait is over,
+    // long after this site returned. The questions have to be handed over with
+    // the send, or the scheduler has none to raise the refusal with.
+    for call in ["engine.send_to_target(", "engine.schedule_host_send("] {
+        let found = lines_with(&machine, call);
+        assert!(!found.is_empty(), "the machine has no {call}");
+        for line in found {
+            assert!(
+                line.contains(ASKING),
+                "{call} is not told the route's questions: {line}"
+            );
+        }
+    }
+
     // Everything else about the send: a fault of the document, whatever the
     // route's data leaves open.
     for place in ["missingEvent", "missingDelay", "missingName"] {
