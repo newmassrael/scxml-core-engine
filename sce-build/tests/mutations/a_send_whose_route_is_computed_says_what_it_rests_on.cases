@@ -16,6 +16,16 @@
 # question listed twice, an empty list written where the field should be absent, and an
 # annotation that misses the sends nested in an `<if>` or a history's default transition.
 #
+# The Python machine the generator emits hands those questions to the places the ROUTE fails
+# (the `typeexpr` / `targetexpr` evaluation, the address they produce, the delivery) and to
+# no other. Measured 2026-10-02, an earlier registration at the start of the send attached
+# them to every error the send raised, so a failing event name, delay or namelist beside an
+# open route was told to the owner as the route's open question. The template cases below
+# take a place away, or add the questions to one that is not the route, and must make
+# `only_the_places_the_route_fails_carry_its_questions` red. The invalid-address and the
+# two delivery refusals are held by the same test; the runtime half (the engine giving the
+# questions back for the error nothing answered) has its own casefile.
+#
 # Each case below takes one of those away and must make a test red: the unit tests of the
 # two modules (`--lib`), or `a_send_whose_route_is_computed_says_what_it_rests_on.rs`,
 # which reads the manifest the binary writes and validates it against the wire schema.
@@ -29,7 +39,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test a_send_whose_route_is_computed_says_what_it_rests_on
-mutation_targets sce-build/src/computed_route_analyzer.rs sce-build/src/ecmascript/reads.rs
+mutation_targets sce-build/src/computed_route_analyzer.rs sce-build/src/ecmascript/reads.rs tools/codegen/templates/python/actions/send.py.jinja2
 mutation_oracles sce-build/src/computed_route_analyzer.rs sce-build/src/ecmascript/reads.rs sce-build/tests/a_send_whose_route_is_computed_says_what_it_rests_on.rs
 
 # ── What the manifest says of a send ────────────────────────────────
@@ -138,4 +148,72 @@ mutation_case "a name written twice is listed twice" <<'PY'
 edit("sce-build/src/ecmascript/reads.rs",
      "            if !after_dot && !names.contains(name) {",
      "            if !after_dot {")
+PY
+
+# ── What the Python machine hands to the places the route fails ─────
+
+mutation_case "the event name is told the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> eventexpr could not be evaluated to an event name\").to_wire_string()",
+     "\"<send> eventexpr could not be evaluated to an event name\"{{ route_ns.arg }}).to_wire_string()")
+PY
+
+mutation_case "an event name that evaluates to nothing is told the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")",
+     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\"{{ route_ns.arg }})")
+PY
+
+mutation_case "a route expression that fails to evaluate loses its questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> targetexpr could not be evaluated\"{{ route_ns.arg }})",
+     "\"<send> targetexpr could not be evaluated\")")
+PY
+
+mutation_case "an address the processor cannot use loses the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> targetexpr produced a target this processor cannot address\"{{ route_ns.arg }})",
+     "\"<send> targetexpr produced a target this processor cannot address\")")
+PY
+
+mutation_case "a route that evaluates to nothing loses its questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "event_type=\"platform\"){{ route_ns.arg }})",
+     "event_type=\"platform\"))")
+PY
+
+mutation_case "a type expression that fails to evaluate loses its questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> typeexpr could not be evaluated\"{{ route_ns.arg }}).to_wire_string()",
+     "\"<send> typeexpr could not be evaluated\").to_wire_string()")
+PY
+
+mutation_case "a type the platform does not support loses the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> typeexpr names a processor this platform does not support\"{{ route_ns.arg }})",
+     "\"<send> typeexpr names a processor this platform does not support\")")
+PY
+
+mutation_case "a target nobody can reach loses the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"){{ route_arg }})",
+     "{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"))")
+PY
+
+mutation_case "a target the processor refuses to deliver to loses the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}if _routed == \"unsupported\":\n{% if 'error.execution' in model.events %}\n{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"){{ route_arg }})",
+     "{{ indent }}if _routed == \"unsupported\":\n{% if 'error.execution' in model.events %}\n{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"))")
+PY
+
+mutation_case "a peer nobody serves loses the route's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"){{ route_arg }})\n{% endif %}\n{% endif %}",
+     "{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type=\"platform\"))\n{% endif %}\n{% endif %}")
+PY
+
+mutation_case "a send resting on no question is handed an empty one" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if route_ns.text %}",
+     "{% if true %}")
 PY

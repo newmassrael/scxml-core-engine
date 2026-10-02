@@ -278,10 +278,9 @@ class Engine(Generic[S, E]):
         self._unhandled_error_events: int = 0
         self._last_unhandled_error: Optional[E] = None
         # The open questions the route of the `<send>` that raised
-        # `_last_unhandled_error` rested on, and the bookkeeping that
-        # attributes them. See `note_route_rests_on`.
+        # `_last_unhandled_error` rested on, and the questions held for the
+        # `error.*` events still queued. See `raise_internal`.
         self._last_unhandled_error_rests_on: Tuple[str, ...] = ()
-        self._route_in_evaluation: Optional[Tuple[str, Tuple[str, ...]]] = None
         self._queued_route_failures: Dict[str, Tuple[str, ...]] = {}
         # §scxml-3.12.2 — the drain is executing a transition an `error.*`
         # event selected, which is the state in which a newly raised error
@@ -824,34 +823,26 @@ class Engine(Generic[S, E]):
         """
         return self._last_unhandled_error
 
-    def note_route_rests_on(self, send_id: str, decisions: Tuple[str, ...]) -> None:
-        """§scxml-6.2.4 — a `<send>` whose route is chosen at run time
-        (`typeexpr`, `targetexpr`) from data the specification left open says,
-        as it starts, which questions that route rests on.
-
-        Generated code calls this once per such send, naming the send id it
-        resolved and the ids of the questions the build found marked on the
-        send or on the data its route reads (`computed_routes[].decisions` on
-        the generator's manifest). Nothing else changes: a send whose route
-        rests on no question never calls it, and the machine runs as it did.
-
-        The engine keeps the one it was last told, and an `error.*` event
-        raised with that send id while the send is evaluated is queued with the
-        questions beside it. A host that finds the error unanswered
-        (`last_unhandled_error_rests_on`) can then say the failure is a question
-        nobody has answered showing through, and not a fault of the document.
-        An error raised for an older send, after another has begun, is not
-        attributed: a wrong question named is worse than none."""
-        self._route_in_evaluation = (send_id, decisions)
-
     def last_unhandled_error_rests_on(self) -> Tuple[str, ...]:
-        """The ids of the open questions the route of the `<send>` behind
-        `last_unhandled_error` rested on, in the order the document marks them,
-        or an empty tuple when that error did not come from a send that said so
-        (or while `unhandled_error_events` is zero).
+        """§scxml-6.2.4 — the ids of the open questions the ROUTE of the `<send>`
+        behind `last_unhandled_error` rested on, in the order the document marks
+        them, or an empty tuple.
+
+        A `<send>` whose route is chosen at run time (`typeexpr`, `targetexpr`)
+        from data the specification left open raises its route failures with
+        those questions (`raise_internal(..., rests_on=...)`): the ones the build
+        found marked on the send or on the data its route reads
+        (`computed_routes[].decisions` on the generator's manifest). A host that
+        finds such an error unanswered can say the failure is a question nobody
+        has answered showing through, and not a fault of the document.
+
+        ⚠ Only a failure OF THE ROUTE carries them. The same send can fail
+        in its event name, its delay, its namelist or its payload, and those are
+        faults of the document that no answer to the route's question would
+        mend: they carry nothing, so they are not attributed to it.
 
         Empty is not "the document is at fault": it says the engine was not
-        told. The caller decides what the absence means."""
+        told of a question. The caller decides what the absence means."""
         return self._last_unhandled_error_rests_on
 
     def error_cascade_events(self) -> int:
@@ -1014,12 +1005,23 @@ class Engine(Generic[S, E]):
         )
         self._run_main_event_loop()
 
-    def raise_internal(self, event: E, metadata: Optional[EventMetadata] = None) -> None:
+    def raise_internal(
+        self,
+        event: E,
+        metadata: Optional[EventMetadata] = None,
+        rests_on: Tuple[str, ...] = (),
+    ) -> None:
         """W3C SCXML 4.4 `<raise>` — enqueue an internal event (drained
         before externals). When no metadata is supplied the event type
         defaults to `"internal"` so guards reading `_event.type` see
         the correct W3C 5.10 classification (`<raise>` events are
         internal-origin, distinct from `external` and `platform`).
+
+        `rests_on` is the open questions the failure being raised rests on: the
+        generated code of a `<send>` passes them when the failing step is the
+        send's ROUTE, read from data the specification left open. They are held
+        beside the event's send id until the event is taken off the queue, and
+        kept as `last_unhandled_error_rests_on` if nothing answers it.
 
         An `error.*` event raised while an error handler is running is refused
         once the chain reaches `MAX_ERROR_CASCADE_DEPTH` — see
@@ -1051,13 +1053,8 @@ class Engine(Generic[S, E]):
             metadata = EventMetadata(event_type="internal")
         elif metadata.event_type != "platform":
             metadata = dataclasses.replace(metadata, event_type="internal")
-        route = self._route_in_evaluation
-        if (
-            route is not None
-            and metadata.send_id == route[0]
-            and is_error_event(self._policy.get_event_name(event))
-        ):
-            self._queued_route_failures[route[0]] = route[1]
+        if rests_on and metadata.send_id:
+            self._queued_route_failures[metadata.send_id] = rests_on
         self._internal_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     # ── BasicHTTP Event I/O Processor (§scxml-C-2) ─────────────

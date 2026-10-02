@@ -15,7 +15,10 @@
    host's text params are the payload read as the wire reads it, so no
    `<param>` is evaluated twice, and its event data is the text `_event.data`
    would hold. #}
-{%- macro host_send_request(action, indent, processor_type, has_payload, has_delay, delay_py, machine_name, model) -%}
+{# `route_arg` is `, rests_on=(...)` when this act is the delivery of a route read
+   from data the specification leaves open, and empty otherwise: the failure
+   below is then the route's, and carries the questions it rests on. #}
+{%- macro host_send_request(action, indent, processor_type, has_payload, has_delay, delay_py, machine_name, model, route_arg='') -%}
 {{ indent }}_host_request = _HostSendRequest(
 {{ indent }}    processor_type={{ processor_type | py_string_literal }},
 {{ indent }}    event_name=_evt_name,
@@ -43,7 +46,7 @@
    document's side, a processor the platform does not support: the act it
    asked for was performed by nobody. #}
 {{ indent }}if _host_served is None and not engine.has_event_processor({{ processor_type | py_string_literal }}):
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"){{ route_arg }})
 {% endif %}
 {% endif %}
 {%- endmacro -%}
@@ -51,16 +54,16 @@
     through `engine.send_to_target`; a value that is not a target is
     error.execution, one naming nothing there error.communication, and either
     ends the block (W3C SCXML 4.9). -#}
-{%- macro routed_to_target(indent, has_delay, delay_py, machine_name, model) -%}
+{%- macro routed_to_target(indent, has_delay, delay_py, machine_name, model, route_arg='') -%}
 {{ indent }}_routed = engine.send_to_target(self.get_event_from_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data)
 {{ indent }}if _routed == "unsupported":
 {% if 'error.execution' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"){{ route_arg }})
 {% endif %}
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {{ indent }}if _routed == "unreachable":
 {% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"){{ route_arg }})
 {% endif %}
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {%- endmacro -%}
@@ -70,6 +73,21 @@
 {% set has_delay = action.delayexpr or action.delay_ms > 0 %}
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
+{# §scxml-6.2.4: a route chosen at run time from data the specification leaves
+   open. `route_ns.arg` is `, rests_on=(...)` naming those questions, and it is
+   passed at the places the ROUTE fails — the `typeexpr` and `targetexpr`
+   evaluation, the address they produce, and the delivery to it — and nowhere
+   else. An event name, a delay, a namelist or a payload that fails is a fault of
+   the document that no answer to the route's question would mend, so it is
+   raised without them. A send resting on no question leaves `arg` empty and the
+   generated code unchanged. #}
+{% set route_ns = namespace(arg='', text='') %}
+{% for decision in action.route_decisions %}
+{% set route_ns.text = route_ns.text ~ (decision | py_string_literal) ~ ', ' %}
+{% endfor %}
+{% if route_ns.text %}
+{% set route_ns.arg = ', rests_on=(' ~ route_ns.text ~ ')' %}
+{% endif %}
 {% set has_dynamic = action.delay_invalid or action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or action.idlocation
                      or has_payload or action.send_type_host_served or action.send_type_unsupported
                      or is_http or action.target_unsupported or action.target.startswith('#_')
@@ -111,14 +129,6 @@
    comes first, so an `idlocation` holds it even when a later argument fails
    (test332). #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if action.route_decisions %}
-{# §scxml-6.2.4: the route is chosen at run time from data the specification
-   leaves open. The engine keeps the questions beside the send id, so an
-   `error.*` this send raises can be told, by whoever finds it unanswered,
-   from a fault of the document. A send resting on no question emits nothing
-   here. #}
-{{ indent }}engine.note_route_rests_on(_sid, ({% for decision in action.route_decisions %}{{ decision | py_string_literal }}, {% endfor %}))
-{% endif %}
 {% if action.eventexpr %}
 {# An event name that evaluates to nothing names no event: the same failure as
    one that does not evaluate. #}
@@ -130,16 +140,16 @@
 {# §scxml-C-1: a target expression's value is read as text — the same reading
    C++ `resultToString` gives it. A target this processor cannot address is
    refused as a static one is (W3C SCXML 6.2, test194). #}
-{{ indent }}_target_value = self._eval_send_argument(engine, _sid, {{ action.targetexpr | to_lua_expr | py_string_literal }}, "<send> targetexpr could not be evaluated")
+{{ indent }}_target_value = self._eval_send_argument(engine, _sid, {{ action.targetexpr | to_lua_expr | py_string_literal }}, "<send> targetexpr could not be evaluated"{{ route_ns.arg }})
 {{ indent }}_target_str = _target_value.to_wire_string()
 {{ indent }}if _is_invalid_target(_target_str):
-{{ indent }}    self._send_argument_error(engine, _sid, "<send> targetexpr produced a target this processor cannot address")
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> targetexpr produced a target this processor cannot address"{{ route_ns.arg }})
 {% endif %}
 {% if action.typeexpr %}
 {# W3C SCXML 6.2: a type the platform does not support is the same error as
    one that cannot be evaluated. #}
-{{ indent }}if not _is_supported_send_type(self._eval_send_argument(engine, _sid, {{ action.typeexpr | to_lua_expr | py_string_literal }}, "<send> typeexpr could not be evaluated").to_wire_string()):
-{{ indent }}    self._send_argument_error(engine, _sid, "<send> typeexpr names a processor this platform does not support")
+{{ indent }}if not _is_supported_send_type(self._eval_send_argument(engine, _sid, {{ action.typeexpr | to_lua_expr | py_string_literal }}, "<send> typeexpr could not be evaluated"{{ route_ns.arg }}).to_wire_string()):
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> typeexpr names a processor this platform does not support"{{ route_ns.arg }})
 {% endif %}
 {% if action.delayexpr %}
 {# The expression failing is the argument error; the message is not scheduled
@@ -158,7 +168,7 @@
    "". #}
 {{ indent }}if _target_value.to_python() is None or _is_unreachable_target(_target_str):
 {% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing, so there is no target to reach", send_id=_sid, event_type="platform"))
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing, so there is no target to reach", send_id=_sid, event_type="platform"){{ route_ns.arg }})
 {% endif %}
 {{ indent }}    raise _ActionAbort
 {% endif %}
@@ -335,11 +345,11 @@
    is the host router's (SCE_MESH.md §mesh-19), never this session's. #}
 {% if dynamic_mesh %}
 {{ indent }}if _is_mesh_target(_target_str):
-{{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model) }}
+{{ host_send_request(action, indent ~ '    ', 'sce:mesh', has_payload, has_delay, delay_py, machine_name, model, route_ns.arg) }}
 {{ indent }}else:
-{{ routed_to_target(indent ~ '    ', has_delay, delay_py, machine_name, model) }}
+{{ routed_to_target(indent ~ '    ', has_delay, delay_py, machine_name, model, route_ns.arg) }}
 {% else %}
-{{ routed_to_target(indent, has_delay, delay_py, machine_name, model) }}
+{{ routed_to_target(indent, has_delay, delay_py, machine_name, model, route_ns.arg) }}
 {% endif %}
 {% else %}
 {# W3C SCXML 6.2 — this session's external queue, now or after the delay. #}

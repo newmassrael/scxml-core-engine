@@ -20,6 +20,21 @@
     send.literal   a literal target nothing answers at: no route is computed
     send.reachable the route reads an open question but resolves to a target
                    that exists, so the send fails nothing
+    send.badtype   the TYPE reads an open question and names a processor this
+                   platform does not support: the route fails at its type, so the
+                   question is attributed
+    send.badaddress   the route produces an address this processor cannot use
+    send.noroute      the route evaluates to nothing
+    send.badroute     the route expression itself fails to evaluate
+    send.badtypeexpr  the type expression itself fails to evaluate
+                   (each of the four fails the ROUTE, so each carries the question)
+    send.badevent  the route is sound and rests on an open question, but the
+                   event name reads a variable nobody declared
+    send.baddelay  the same, in the delay
+    send.badnamelist the same, in the namelist
+
+  The last three fail for a reason no answer to the route's question would mend,
+  so none of them carries it: the fault is the document's.
 
   `listen` moves to a state that answers `error.communication`, so the same
   open route can also be shown to fail where the document handles the failure.
@@ -36,6 +51,12 @@
           sce:assumed-reason="the standing rule says a notice goes to the caller"/>
     <data id="plainRoute" expr="'#_nobody'"/>
     <data id="reachableRoute" expr="'#_internal'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="openType" expr="'x-unsupported-processor'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="invalidRoute" expr="'!nowhere'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="emptyRoute" sce:unresolved="caller-target"
           sce:unresolved-reason="the specification does not say who the caller is"/>
     <data id="answered" expr="0"/>
   </datamodel>
@@ -55,6 +76,30 @@
     </transition>
     <transition event="send.reachable" target="idle">
       <send event="notice" targetexpr="reachableRoute"/>
+    </transition>
+    <transition event="send.badtype" target="idle">
+      <send event="notice" typeexpr="openType"/>
+    </transition>
+    <transition event="send.badaddress" target="idle">
+      <send event="notice" targetexpr="invalidRoute"/>
+    </transition>
+    <transition event="send.noroute" target="idle">
+      <send event="notice" targetexpr="emptyRoute"/>
+    </transition>
+    <transition event="send.badroute" target="idle">
+      <send event="notice" targetexpr="openRoute()"/>
+    </transition>
+    <transition event="send.badtypeexpr" target="idle">
+      <send event="notice" typeexpr="openType()"/>
+    </transition>
+    <transition event="send.badevent" target="idle">
+      <send eventexpr="missingEvent" targetexpr="reachableRoute"/>
+    </transition>
+    <transition event="send.baddelay" target="idle">
+      <send event="notice" delayexpr="missingDelay" targetexpr="reachableRoute"/>
+    </transition>
+    <transition event="send.badnamelist" target="idle">
+      <send event="notice" targetexpr="reachableRoute" namelist="missingName"/>
     </transition>
     <transition event="listen" target="listening"/>
   </state>

@@ -320,30 +320,40 @@
             raise _ActionAbort
         return "" if value is None else str(value)
 
-    def _send_argument_error(self, engine, send_id: str, message: str) -> None:
+    def _send_argument_error(
+        self, engine, send_id: str, message: str, rests_on: tuple = ()
+    ) -> None:
         """W3C SCXML 6.2: "If the evaluation of `<send>`'s arguments produces
         an error, the Processor MUST discard the message without attempting
         to deliver it. Furthermore, it MUST place the error
         'error.execution' on the internal event queue." The error carries
         the send id (W3C SCXML 5.10.1, test332), and — raised while the
         element was processed — it ends the block (W3C SCXML 4.9), which is
-        the `_ActionAbort` every other Python-AOT helper raises."""
+        the `_ActionAbort` every other Python-AOT helper raises.
+
+        `rests_on` is the open questions the failing step rests on, and only the
+        send's ROUTE (`typeexpr`, `targetexpr`) passes any: an event name, a
+        delay or a namelist that fails is a fault of the document whatever the
+        route's data leaves open."""
         evt = self.get_event_from_name("error.execution")
         if evt is not None:
             engine.raise_internal(
-                evt, EventMetadata(data=message, send_id=send_id, event_type="platform")
+                evt, EventMetadata(data=message, send_id=send_id, event_type="platform"),
+                rests_on=rests_on,
             )
         raise _ActionAbort
 
-    def _eval_send_argument(self, engine, send_id: str, lua_expr: str, message: str):
+    def _eval_send_argument(
+        self, engine, send_id: str, lua_expr: str, message: str, rests_on: tuple = ()
+    ):
         """One of a `<send>`'s own arguments (`eventexpr`, `targetexpr`,
         `typeexpr`, `delayexpr`), evaluated once, as the ScriptValue the
         caller reads. An expression that fails is the argument error above,
-        named by `message`."""
+        named by `message`; `rests_on` is passed on to it (see there)."""
         try:
             return engine._script_engine.evaluate_expression(self._session_id, lua_expr)
         except _ScriptError:
-            self._send_argument_error(engine, send_id, message)
+            self._send_argument_error(engine, send_id, message, rests_on)
 
     def _eval_send_namelist(self, engine, send_id: str, namelist: str) -> dict:
         """W3C SCXML 6.2 + B.2 (test553): a `<send namelist>` names locations,

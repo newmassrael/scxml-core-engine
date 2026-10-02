@@ -278,3 +278,152 @@ fn a_document_with_only_literal_routes_lists_none() {
     );
     assert!(m.get("computed_routes").is_none(), "omitted, not []: {m}");
 }
+
+/// The Python machine `generate -l python` writes for `body`.
+fn generated_python(label: &str, body: &str) -> String {
+    let dir = scratch(label);
+    let path = dir.join(format!("{label}.scxml"));
+    std::fs::write(&path, body).expect("write fixture");
+    let out = Command::new(sce_codegen_bin())
+        .args(["generate"])
+        .arg(&path)
+        .args(["-l", "python", "-o"])
+        .arg(&dir)
+        .output()
+        .expect("run sce-codegen generate");
+    assert!(
+        out.status.success(),
+        "{label} must generate: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let machine = std::fs::read_dir(&dir)
+        .expect("read the output directory")
+        .map(|entry| entry.expect("a directory entry").path())
+        .find(|p| p.to_string_lossy().ends_with("_sm.py"))
+        .expect("a generated machine");
+    let text = std::fs::read_to_string(machine).expect("read the generated machine");
+    let _ = std::fs::remove_dir_all(&dir);
+    text
+}
+
+/// The lines of `machine` that mention `needle`, every one of them.
+fn lines_with<'a>(machine: &'a str, needle: &str) -> Vec<&'a str> {
+    machine.lines().filter(|l| l.contains(needle)).collect()
+}
+
+const ASKING: &str = r#"rests_on=("caller-target", )"#;
+
+const ONE_OF_EACH_FAULT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="each_fault" initial="idle" datamodel="ecmascript">
+  <datamodel>
+    <data id="open" expr="'#_internal'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="route" target="idle">
+      <send event="a" targetexpr="open"/>
+    </transition>
+    <transition event="kind" target="idle">
+      <send event="b" typeexpr="open"/>
+    </transition>
+    <transition event="name" target="idle">
+      <send eventexpr="missingEvent" targetexpr="open"/>
+    </transition>
+    <transition event="wait" target="idle">
+      <send event="d" delayexpr="missingDelay" targetexpr="open"/>
+    </transition>
+    <transition event="list" target="idle">
+      <send event="e" targetexpr="open" namelist="missingName"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// The generated machine hands the questions a route rests on to the places the
+/// ROUTE fails, and to no other. Measured 2026-10-02: the questions were
+/// registered when a send began and attached to every error that send raised, so
+/// an event name, a delay or a namelist that failed beside an open route was
+/// told to the owner as the route's open question.
+#[test]
+fn only_the_places_the_route_fails_carry_its_questions() {
+    let machine = generated_python("each-fault", ONE_OF_EACH_FAULT);
+
+    // The route: its evaluation, the address it produces, the type, and the
+    // delivery. Every one of these names the question.
+    for place in [
+        "\"<send> targetexpr could not be evaluated\"",
+        "\"<send> targetexpr produced a target this processor cannot address\"",
+        "\"<send> typeexpr could not be evaluated\"",
+        "\"<send> typeexpr names a processor this platform does not support\"",
+        "\"<send> targetexpr evaluated to nothing, so there is no target to reach\"",
+    ] {
+        let found = lines_with(&machine, place);
+        assert!(!found.is_empty(), "the machine has no place saying {place}");
+        for line in found {
+            assert!(
+                line.contains(ASKING),
+                "{place} does not carry the question: {line}"
+            );
+        }
+    }
+    let delivery: Vec<&str> = machine
+        .lines()
+        .filter(|l| l.contains("engine.raise_internal(") && l.contains("send_id=_sid"))
+        .filter(|l| !l.contains("data="))
+        .collect();
+    assert!(!delivery.is_empty(), "the machine has no delivery failure");
+    for line in delivery {
+        assert!(
+            line.contains(ASKING),
+            "a delivery failure carries no question: {line}"
+        );
+    }
+
+    // Everything else about the send: a fault of the document, whatever the
+    // route's data leaves open.
+    for place in ["missingEvent", "missingDelay", "missingName"] {
+        let found = lines_with(&machine, place);
+        assert!(
+            !found.is_empty(),
+            "the machine has no place evaluating {place}"
+        );
+        for line in found {
+            assert!(
+                !line.contains("rests_on"),
+                "{place} must not be laid to the route's question: {line}"
+            );
+        }
+    }
+    let empty_name = lines_with(
+        &machine,
+        "eventexpr could not be evaluated to an event name",
+    );
+    assert!(!empty_name.is_empty());
+    for line in empty_name {
+        assert!(
+            !line.contains("rests_on"),
+            "the event name is not the route: {line}"
+        );
+    }
+}
+
+/// A document with no open question gets the machine it always got: not one
+/// `rests_on`, so nothing committed and generated moves.
+#[test]
+fn a_route_resting_on_no_question_changes_nothing_in_the_machine() {
+    let machine = generated_python(
+        "no-question",
+        &ONE_OF_EACH_FAULT.replace(
+            " sce:unresolved=\"caller-target\"\n          sce:unresolved-reason=\"the specification does not say who the caller is\"",
+            "",
+        ),
+    );
+    // The helpers every machine carries name the parameter (`rests_on: tuple`,
+    // `rests_on=rests_on`); what a send hands them is spelled `rests_on=(`.
+    assert!(
+        !machine.contains("rests_on=("),
+        "a route that rests on no question emits no question: {:?}",
+        lines_with(&machine, "rests_on=(")
+    );
+}

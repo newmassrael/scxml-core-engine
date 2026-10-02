@@ -4161,19 +4161,33 @@ open on the send or on any of those items (`decisions`). A value chosen
 without an answer (`sce:assumed`) is applied and is not one.
 
 The same reading is written onto the send in the model
-(`Action::route_decisions`), and a generated Python machine tells its engine
-which questions a send's route rests on as the send begins
-(`note_route_rests_on`). The engine queues them with the `error.*` event
-that send raises, and gives them back for the last error nothing answered
-(`last_unhandled_error_rests_on`). A scenario driver reads that and calls the
-example BLOCKED by the decision (`cause: decision`) instead of `not-judged`
-with the design as the cause: the failure is the owner's question showing
-through, the same run fails the same way on any machine, and answering the
-question is what unblocks it. An error another send raised, one the document
-answered, and a route that rests on a plain or an assumed value are not laid
-to a question, and stay what every unanswered error was before: the
-design's. Only a question the machine named is a decision; the driver does
-not guess one from the shape of the failure.
+(`Action::route_decisions`), and a generated Python machine raises a failure
+OF THE ROUTE with the questions it rests on (`raise_internal(..., rests_on=...)`).
+The route fails when its `typeexpr` or `targetexpr` does not evaluate, when the
+address or the type it produces is one this processor cannot use, when it
+evaluates to nothing, and when the delivery to it is refused or reaches nobody.
+The engine holds the questions with the `error.*` event and gives them back for
+the last error nothing answered (`last_unhandled_error_rests_on`). A scenario
+driver reads that and calls the example BLOCKED by the decision
+(`cause: decision`) instead of `not-judged` with the design as the cause: the
+failure is the owner's question showing through, the same run fails the same way
+on any machine, and answering the question is what unblocks it.
+
+Only the route's own failure carries the question. The same send can fail in its
+event name, its delay, its namelist or its payload, and those are faults of the
+draft that no answer to the route's question would mend: they are raised without
+it and stay the design's, so the owner is not asked to name a caller when the
+draft has to be mended. (An earlier version registered the questions when the
+send began and attached them to every error the send raised; measured
+2026-10-02, it blamed the open question for a missing event-name variable.)
+An error another send raised, one the document answered, and a route that rests
+on a plain or an assumed value are likewise not laid to a question, and stay what
+every unanswered error was before: the design's. Only a question the machine
+named is a decision; the driver does not guess one from the shape of the failure.
+
+A failure of the delivery of a delayed send that happens when its deadline passes
+is raised by the scheduler and carries no question; the route's own failures are
+the ones found when the send runs.
 
 ---
 
