@@ -1110,7 +1110,7 @@ fn to_go_type(var_type: String) -> String {
 }
 
 /// Escape characters for Go string literals.
-fn escape_go(text: String) -> String {
+pub(crate) fn escape_go(text: String) -> String {
     text.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")

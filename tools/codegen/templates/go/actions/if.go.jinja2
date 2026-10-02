@@ -8,11 +8,23 @@
    <if> ends its block — the closure the block runs in — as any element that
    raised does. Outside an action block there is no block to end. #}
 {% set if_can_fail = model.needs_script_engine and in_action_block is defined and in_action_block and (not action.is_pure_in_predicate or (action.elseif_branches | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{# `datamodel="sce-static"`: a native cond that can fail (`native_cond_fails`)
+   sets the flag itself, as the script-engine arm's `evaluateIfCond` does: the
+   cond is false, the chain goes on, and the <if> ends its block when it has
+   run. The flag is named by the <if>'s ordinal so a nested <if> cannot reuse
+   its parent's. #}
+{% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
 {% if if_can_fail %}
 	{
 	ifCondFailed := false
 {% endif %}
-{% if action.is_pure_in_predicate %}
+{% if if_native_can_fail %}
+	{
+	var ifCondFailed{{ action.if_ordinal }} bool
+{% endif %}
+{% if action.native_cond %}
+	if {{ action.native_cond }} {
+{% elif action.is_pure_in_predicate %}
 	if {{ action.cond_cpp | to_in_predicate_go }} {
 {% elif model.needs_script_engine %}
 	if {% if if_can_fail %}p.evaluateIfCond(`{{ action.cond | to_lua_guard }}`, engine, &ifCondFailed){% else %}p.evaluateGuard(`{{ action.cond | to_lua_guard }}`, engine){% endif %} {
@@ -25,7 +37,9 @@
 
 {% endfor %}
 {% for elseif in action.elseif_branches %}
-{% if elseif.is_pure_in_predicate %}
+{% if elseif.native_cond %}
+	} else if {{ elseif.native_cond }} {
+{% elif elseif.is_pure_in_predicate %}
 	} else if {{ elseif.cond_cpp | to_in_predicate_go }} {
 {% elif model.needs_script_engine %}
 	} else if {% if if_can_fail %}p.evaluateIfCond(`{{ elseif.cond | to_lua_guard }}`, engine, &ifCondFailed){% else %}p.evaluateGuard(`{{ elseif.cond | to_lua_guard }}`, engine){% endif %} {
@@ -49,5 +63,15 @@
 	if ifCondFailed {
 		return // W3C SCXML 4.9: the error ends the block
 	}
+	}
+{% endif %}
+{% if if_native_can_fail %}
+{% if in_action_block is defined and in_action_block %}
+	if ifCondFailed{{ action.if_ordinal }} {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+{% else %}
+	_ = ifCondFailed{{ action.if_ordinal }}
+{% endif %}
 	}
 {% endif %}

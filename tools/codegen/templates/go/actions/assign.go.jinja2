@@ -2,7 +2,10 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 5.3/5.4: Variable assignment #}
-{% if model.needs_script_engine %}
+{% if action.native_code %}
+{# `datamodel="sce-static"`: the whole statement was lowered to Go. #}
+{% include 'actions/_native_statement.go.jinja2' %}
+{% elif model.needs_script_engine %}
 {% set loc = action.location | default("") %}
 {# W3C SCXML B.2: System variables are read-only (1:1 with Rust/C++ AssignHelper::isValidLocation) #}
 {% if not loc or loc in ('_sessionid', '_event', '_name', '_ioprocessors') %}

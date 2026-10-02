@@ -2305,13 +2305,296 @@ pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering
     lower(model, machine, &CppTarget)
 }
 
+/// Go: a variable is a field of the machine's policy struct, set by the
+/// machine's own statements. A failed checked operation is a value (zero, with
+/// a flag raised in `sceFailure`) rather than a jump, as in C++, so a value that
+/// can fail is computed into a local first and written only when it did not.
+///
+/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`,
+/// `In()` and a `<sce:action>` whose arguments are typed expressions of the
+/// machine's variables; every construct past those is refused by name
+/// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
+/// left as an undefined name in generated code.
+pub struct GoTarget;
+
+impl GoTarget {
+    /// `parts` as the statements of one block, the empty ones left out — what
+    /// runs on a failure may be nothing, when the document declares no
+    /// `error.execution` to raise.
+    fn then(parts: &[&str]) -> String {
+        parts
+            .iter()
+            .map(|part| part.trim().trim_end_matches(';').trim())
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
+    /// The first action of `actions`, or of a block nested in one, that this
+    /// target has no lowering for yet.
+    fn unlowered_action(actions: &[Action]) -> Option<String> {
+        for action in actions {
+            match action.action_type.as_str() {
+                "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
+                // A plain send carries no value of the data model; one that
+                // does needs the typed value crossed to the event.
+                "send" if action.params.is_empty() && action.content.is_empty() => {}
+                "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
+                "sce_append" | "sce_clear" | "foreach" => {
+                    return Some("a list".to_string());
+                }
+                other => return Some(format!("<{other}>")),
+            }
+            for block in action.nested_blocks() {
+                if let Some(found) = Self::unlowered_action(block.actions) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+}
+
+impl StaticTarget for GoTarget {
+    fn name(&self) -> &'static str {
+        "Go"
+    }
+    fn callee(&self, _document_name: &str) -> Option<Callee> {
+        None
+    }
+    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // A scalar of a number, a bool or a string; an enum, a record, a list
+        // and bytes are not spelled yet.
+        if let Some(var) = scope.variables.iter().find(|v| {
+            !v.value_type.as_ref().is_some_and(|t| {
+                t.scalar()
+                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+            })
+        }) {
+            return Some(format!(
+                "<data id=\"{}\"> of an enum, record, list or bytes type",
+                var.id
+            ));
+        }
+        if !model.imported_event_schemas.is_empty() {
+            return Some("an imported event schema".to_string());
+        }
+        for state in model.states.values() {
+            let blocks = state
+                .on_entry_blocks
+                .iter()
+                .chain(&state.on_exit_blocks)
+                .map(Vec::as_slice)
+                .chain([
+                    state.initial_transition_actions.as_slice(),
+                    state.initial_history_default_actions.as_slice(),
+                ])
+                .chain(state.transitions.iter().map(|t| t.actions.as_slice()));
+            for block in blocks {
+                if let Some(found) = Self::unlowered_action(block) {
+                    return Some(found);
+                }
+            }
+            if !state.invokes.is_empty() {
+                return Some("an <invoke>".to_string());
+            }
+            if state.donedata.is_some() {
+                return Some("a <donedata>".to_string());
+            }
+        }
+        None
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Go
+    }
+    // A prefix keeps a variable's field from meeting another member of the
+    // policy, which a bare name could (`state`, `engine`).
+    fn field_name(&self, id: &str) -> String {
+        format!("v{}", filters::to_pascal_case(id.to_string()))
+    }
+    // The author's name with its first letter raised, as an exported method
+    // must be, and none for a name the language or the policy already holds.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        let spelled = filters::to_pascal_case(id.to_string());
+        (!crate::reader_names::is_reserved_word(Language::Go, &spelled)).then_some(spelled)
+    }
+    fn field_ref(&self, name: &str) -> String {
+        format!("p.{name}")
+    }
+    fn in_function(&self) -> &'static str {
+        "p.IsStateActive"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::go_type(ty).to_string()
+    }
+    fn scalar_view(&self, _ty: &SceType) -> Option<String> {
+        None
+    }
+    fn record_type(&self, _machine: &str, _alias: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn record_def(
+        &self,
+        _ty: &str,
+        _alias: &str,
+        _schema: &EventSchemaModel,
+        _enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn record_field(&self, _id: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn list_type(&self, _elem: &SceType) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn record_list_type(&self, _record: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn list_empty(&self) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value}")
+    }
+    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    // The label is an argument of `Printf`, never part of its format, as the
+    // script-engine arm's is.
+    fn log(&self, label: &str, value: &str) -> String {
+        format!(
+            "fmt.Printf(\"%s%v\\n\", \"{}\", {value})",
+            filters::escape_go(label.to_string())
+        )
+    }
+    fn append(
+        &self,
+        _target: &str,
+        _capacity: u32,
+        _value: &str,
+        _value_can_fail: bool,
+        _overflow: &str,
+        _failed: &str,
+    ) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn clear(&self, _target: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+        format!(
+            "engine.Raise(sce.NewPlatformError({machine}Event{}, \"{}\"))",
+            filters::to_event_variant("error.execution".to_string()),
+            filters::escape_go(message.to_string())
+        )
+    }
+    // The runtime's checked helpers record a failure in `sceFailure` and answer
+    // a zero, so a statement that wrote its value would write that zero. The
+    // expression is a function literal called where it stands, answering whether
+    // it failed, so the dispatcher can end its block as it does for any error.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "func() bool {{ var sceFailure scealgorithm.Failure; {statement}; \
+             if sceFailure.Failed() {{ {} }}; return false }}()",
+            Self::then(&[failed, "return true"])
+        )
+    }
+    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+        format!(
+            "func() bool {{ var sceFailure scealgorithm.Failure; sceValue := {value}; \
+             if sceFailure.Failed() {{ {} }}; {}; return false }}()",
+            Self::then(&[failed, "return true"]),
+            write("sceValue")
+        )
+    }
+    // Only a host call's arguments reach here, and its one spelling is
+    // [`Self::receiving_host_call`].
+    fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
+        unreachable!("a Go host call is received through receiving_host_call")
+    }
+    // A failed checked operation is a value, so the call could not be stopped
+    // after its arguments were evaluated: each is computed into a local first,
+    // and the host is called only when none of them failed. A block of its own,
+    // so two calls in one scope do not declare the same locals.
+    fn receiving_host_call(
+        &self,
+        _statement: &str,
+        callee: &str,
+        args: &[String],
+        failed: &str,
+    ) -> String {
+        let locals: String = args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| format!("sceArg{i} := {arg}; "))
+            .collect();
+        let names: Vec<String> = (0..args.len()).map(|i| format!("sceArg{i}")).collect();
+        format!(
+            "{{ var sceFailure scealgorithm.Failure; {locals}\
+             if sceFailure.Failed() {{ {} }} else {{ {callee}({}) }} }}",
+            Self::then(&[failed]),
+            names.join(", ")
+        )
+    }
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        format!(
+            "func() bool {{ var sceFailure scealgorithm.Failure; sceValue := {value}; \
+             if sceFailure.Failed() {{ {} }}; return sceValue }}()",
+            Self::then(&[failed, flag, "return false"])
+        )
+    }
+    // The flag is a local of the `<if>`, named by its ordinal, which the
+    // condition's function literal sets by reference.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String {
+        format!("ifCondFailed{if_ordinal} = true")
+    }
+    // The field the payload channel fills when the engine dequeues an event of
+    // this name (`build_go_event_payload`), read by the typed guards and by a
+    // `<sce:action>`'s arguments alike.
+    fn payload_accessor(&self, event: &str) -> String {
+        format!(
+            "p.pending{}Payload",
+            filters::to_event_variant(event.to_string())
+        )
+    }
+    // The tag says which event's payload the channel holds now, so a guard
+    // that reads this event's fields holds only for a delivery that carried
+    // them.
+    fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "p.pendingPayloadTag == {machine}PayloadTag{} && ({lowered})",
+            filters::to_event_variant(event.to_string())
+        )
+    }
+    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
+        unreachable!("refused by GoTarget::unsupported")
+    }
+}
+
+/// Rewrite `model` — a clone the Go backend renders — so every expression of a
+/// `sce-static` document is native Go.
+pub fn lower_go(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, &GoTarget)
+}
+
 /// The target that spells `lang`, when it lowers `sce-static` at all.
 pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
     match lang {
         Language::Kotlin => Some(&KotlinTarget),
         Language::Rust => Some(&RustTarget),
         Language::Cpp => Some(&CppTarget),
-        Language::C11 | Language::Go | Language::Python => None,
+        Language::Go => Some(&GoTarget),
+        Language::C11 | Language::Python => None,
     }
 }
 

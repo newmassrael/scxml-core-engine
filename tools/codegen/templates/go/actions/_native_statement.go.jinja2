@@ -1,0 +1,25 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    A statement a `datamodel="sce-static"` document's lowering wrote
+    (`Action::native_code`, SCE Accepted Subset §2.15): Go reading and writing
+    the policy's fields, with no script engine.
+
+    One that can fail (`native_fails`: a checked integer operation) is not a
+    statement but an expression that is `true` when it failed — the value is
+    computed first and written only when it did not fail, so a failed statement
+    leaves what it was going to write as it was. W3C SCXML 4.9: the error ends
+    the block, which `return` leaves from the closure the block runs in, as it
+    does for every other element that raised; `error.execution` was raised by
+    the expression itself.
+#}
+{% if action.native_fails %}
+	if {{ action.native_code }} {
+{% if in_action_block is defined and in_action_block %}
+		return  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+	}
+{% else %}
+	{{ action.native_code }}
+{% endif %}

@@ -1555,7 +1555,12 @@ pub(crate) fn mesh_templates_exist_for(language: Language) -> bool {
 /// Forge-language expressions to Lua or QuickJS — a document evaluated in a
 /// language it never declared, which is what the `datamodel` attribute
 /// exists to prevent.
-const STATIC_DATAMODEL_BACKENDS: &[Language] = &[Language::Kotlin, Language::Rust, Language::Cpp];
+const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
+    Language::Kotlin,
+    Language::Rust,
+    Language::Cpp,
+    Language::Go,
+];
 
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
@@ -3543,8 +3548,31 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // pre-feature baseline.
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Go);
-    let payload = crate::forge::generator::build_go_event_payload(model, &native.payload_events);
-    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.15: a `sce-static` document's every expression
+    // lowered to Go — its variables as fields of the policy — before the
+    // payload channel is built, as every backend that lowers one does.
+    let static_lowering =
+        crate::forge::static_lowering::lower_go(&mut model_lowered, &machine_name)?;
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .iter()
+        .chain(static_lowering.payload_events.iter())
+        .cloned()
+        .collect();
+    let payload = crate::forge::generator::build_go_event_payload(model, &payload_events);
+    // Under `sce-static` the static lowering wrote every guard; the typed
+    // guards lowered here would be a second writer of the same slot.
+    if model.datamodel != crate::model::Datamodel::SceStatic {
+        crate::forge::generator::apply_native_guard_writes(
+            &mut model_lowered,
+            &payload.guard_writes,
+        );
+    }
+    let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
+        .fields
+        .iter()
+        .filter(|f| f.published)
+        .collect();
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; both empty without one.
     let host_invoker_interface =
@@ -3571,6 +3599,8 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
     };
     tmpl.render(ctx).map_err(render_error)
 }

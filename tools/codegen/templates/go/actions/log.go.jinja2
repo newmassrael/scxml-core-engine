@@ -14,7 +14,10 @@
    The default is hoisted once rather than restated at each of the three
    sites below, so the three cannot drift apart. #}
 {%- set label = action.label | default('') -%}
-{% if action.expr and model.needs_script_engine %}
+{% if action.native_code %}
+{# `datamodel="sce-static"`: the whole statement was lowered to Go. #}
+{% include 'actions/_native_statement.go.jinja2' %}
+{% elif action.expr and model.needs_script_engine %}
 	{
 		logResult, logErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.expr | to_lua_expr }}`)
 		if logErr == nil {

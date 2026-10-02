@@ -28,6 +28,9 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+{% if static_fields %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 )
 
 // Ensure imports are used
@@ -36,6 +39,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+{% if static_fields %}
+	_ scealgorithm.Failure
+{% endif %}
 )
 
 // ======================================================================
@@ -292,6 +298,18 @@ type {{ machine_name }}Policy struct {
    now do too. #}
 	// W3C SCXML 5.10: Session ID
 	SessionID string
+{% if static_fields %}
+	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
+{# Under `sce-static` this struct IS the datamodel's home: there is no script
+   engine, and every expression was lowered to Go reading and writing these
+   fields (`crate::forge::static_lowering`). Only the machine's own statements
+   write them. A variable declared `sce:direction="out"` is read by the host
+   through the accessor below; every other one is the machine's own. #}
+{% for field in static_fields %}
+	// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+	{{ field.name }} {{ field.ty }}
+{% endfor %}
+{% endif %}
 {% if model.needs_script_engine %}
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
 	ScriptEngine sce.IScriptEngine
@@ -341,6 +359,9 @@ func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ mach
 func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 	return {{ machine_name }}Policy{
 {% endif %}
+{% for field in static_fields %}
+		{{ field.name }}: {{ field.init }},
+{% endfor %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 		activeStates: make([]{{ machine_name }}State, 0),
 {% endif %}
@@ -378,6 +399,16 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 func (p *{{ machine_name }}Policy) {{ var.reader.go }}() ({{ GO_READ_TYPE[var.type] }}, bool) {
 	return sce.ReadDatamodel{{ GO_READ_FN[var.type] }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
 }
+{% endfor %}
+{% for field in static_published %}
+{% if field.reader %}
+
+// {{ field.reader }} reports what the published `{{ field.id }}` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
+	return p.{{ field.name }}
+}
+{% endif %}
 {% endfor %}
 
 {% include 'utility_methods.go.jinja2' %}

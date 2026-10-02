@@ -3058,7 +3058,7 @@ lowers to `if picked.len() < N { picked.push(…); } else { <error.execution> }`
 A failing integer operation is received in a closure that is a `Result`, so
 the statement returns out of it before it writes.
 
-C++ lowers the scalar core through the same walk, and refuses the rest by name
+C++ lowers the model through the same walk, and refuses what it does not by name
 (`CppTarget::unsupported`: `generate/unsupported-feature`, "has no C++ lowering
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 `<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
@@ -3114,6 +3114,30 @@ and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
+
+Go lowers the scalar core through the same walk (`GoTarget`), and refuses the
+rest by name: scalar variables of a number, a bool or a string, a transition's
+guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, a `<send>` /
+`<cancel>` that carry no value of the data model, `In()`, and a `<sce:action>`
+whose arguments are typed expressions of the machine's variables. An enum, a
+record, a list, bytes, an event's typed payload, a call of an imported
+algorithm, a `<donedata>` and an `<invoke>` are not lowered yet. Each variable is
+a field of the generated policy, `v<PascalCase id>`, initialised in the
+constructor; a published one has an exported reader of the author's name
+(`Count()`). The machine carries no script engine, and its package imports the
+forge runtime's `algorithm` package for the checked operations. A failing
+integer operation records its failure in a `sceFailure` and answers a zero, as
+in C++, so a statement that can fail is a function literal called where it
+stands, answering whether it failed; the value is computed into a local first and
+written only when it did not fail, and `return` leaves the closure the block
+runs in (W3C SCXML 4.9). A host call's arguments that can fail are computed
+into locals the same way, and `error.execution` is raised in the call's place.
+`scripts/regen_static_datamodel_go.sh` commits one package per machine the
+generator lowers for Go — asked of it, not listed — and
+`backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
+replays the scenarios `static_counter`, `static_counter_bound`,
+`static_overflow` and `static_block_ends` against them and drives
+`static_host_call` and `static_host_call_arguments` with a recording host.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

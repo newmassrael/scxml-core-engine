@@ -1,0 +1,80 @@
+# Mutation cases for §scxml-4.9 and the guard of a `datamodel="sce-static"`
+# machine generated as Go (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_machine_ends_its_block_at_a_failure_go.cases`.
+#
+# A statement of such a machine is Go the lowering wrote, and the templates only
+# place it: a statement that can fail is a function literal that answers `true`
+# when it did, a failed checked operation is a zero with a flag raised, the
+# transition's guard is the lowered expression itself, and an error ends the
+# block it stands in. The values those decide are the ones `scenarios/*.json`
+# state, replayed by `backends/go/tests/integration/static_datamodel/
+# static_scenarios_test.go` over the machines `scripts/regen_static_datamodel_go.sh`
+# commits.
+#
+# What is easy to get wrong and reads as success: a failed value written anyway
+# is a zero where a variable keeps what it held, and a host called with the zero
+# of an argument that failed still looks like a call. `static_overflow` and
+# `static_host_call_arguments` tell those apart; `static_block_ends` tells a
+# block that goes on from one that ended.
+#
+# The templates and the spellings in `static_lowering.rs` reach the tests only
+# through the committed tree the regeneration writes, so both halves are
+# declared: the generated files are compiled into the tests, and the command is
+# what carries a mutated template or spelling into them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_history/static_history_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_host_call/static_host_call_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_host_call_arguments/static_host_call_arguments_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_overflow/static_overflow_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
+
+# ── A failed statement ends its block ──────────────────────────────
+
+mutation_case "a block goes on after a statement that failed" <<'PY'
+edit("tools/codegen/templates/go/actions/_native_statement.go.jinja2",
+     "{% if in_action_block is defined and in_action_block %}\n\t\treturn  // W3C SCXML 4.9: the error ends the block\n{% endif %}\n\t}",
+     "{% if false and in_action_block is defined and in_action_block %}\n\t\treturn  // W3C SCXML 4.9: the error ends the block\n{% endif %}\n\t}")
+PY
+
+# ── An <if> whose cond failed ends its block ───────────────────────
+
+mutation_case "a block goes on after an <if> whose cond failed" <<'PY'
+edit("tools/codegen/templates/go/actions/if.go.jinja2",
+     "\tif ifCondFailed{{ action.if_ordinal }} {\n\t\treturn // W3C SCXML 4.9: the error ends the block\n\t}",
+     "\t_ = ifCondFailed{{ action.if_ordinal }}")
+PY
+
+# ── A guard is the lowered expression ──────────────────────────────
+
+mutation_case "a transition's native guard is not asked" <<'PY'
+edit("tools/codegen/templates/go/process_transition.go.jinja2",
+     "{%- elif trans.native_guard -%}{{ trans.native_guard }}",
+     "{%- elif trans.native_guard -%}true")
+PY
+
+# ── A failed value is not written ──────────────────────────────────
+
+mutation_case "a statement writes the zero a failed operation answered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            Self::then(&[failed, \"return true\"]),\n            write(\"sceValue\")",
+     "            Self::then(&[failed]),\n            write(\"sceValue\")")
+PY
+
+# ── A failed argument does not reach the host ──────────────────────
+
+mutation_case "the host is called with the argument that failed" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "             if sceFailure.Failed() {{ {} }} else {{ {callee}({}) }} }}\",",
+     "             if false {{ {} }} else {{ {callee}({}) }} }}\",")
+PY

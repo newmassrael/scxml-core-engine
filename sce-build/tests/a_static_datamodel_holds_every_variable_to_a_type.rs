@@ -243,7 +243,7 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         "sce-static",
         r#"<data id="count" sce:type="uint32" expr="0"/>"#,
     );
-    for lang in ["c11", "go", "python"] {
+    for lang in ["c11", "python"] {
         let (ok, out) = run(&["check", "-l", lang], &document);
         assert!(
             !ok,
@@ -310,14 +310,15 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
-fn kotlin_rust_and_cpp_lower_the_model_with_no_script_engine() {
+fn kotlin_rust_cpp_and_go_lower_the_model_with_no_script_engine() {
     // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest
     // says so, and each integration suite (StaticDatamodelTest.kt,
     // backends/rust/tests/tests/static_datamodel.rs,
-    // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp) compiles and
-    // drives the machines.
-    for lang in ["kotlin", "rust", "cpp"] {
+    // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp,
+    // backends/go/tests/integration/static_datamodel) compiles and drives the
+    // machines.
+    for lang in ["kotlin", "rust", "cpp", "go"] {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -1730,6 +1731,11 @@ const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
         "tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp",
         "replay(\"{s}\"",
     ),
+    (
+        "go",
+        "backends/go/tests/integration/static_datamodel/static_scenarios_test.go",
+        "replay(t, \"{s}\"",
+    ),
 ];
 
 /// Where each backend's regen script commits a machine: the file that exists
@@ -1742,6 +1748,10 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
     (
         "kotlin",
         "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{m}/{m}Sm.kt",
+    ),
+    (
+        "go",
+        "backends/go/tests/integration/static_datamodel/{m}/{m}_sm.go",
     ),
 ];
 
@@ -1765,7 +1775,7 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
         .collect();
     scenarios.sort();
     assert!(!scenarios.is_empty(), "no scenario to judge");
-    let regen: Vec<String> = ["rust", "kotlin"]
+    let regen: Vec<String> = ["rust", "kotlin", "go"]
         .iter()
         .map(|lang| {
             std::fs::read_to_string(root.join(format!("scripts/regen_static_datamodel_{lang}.sh")))
@@ -1784,14 +1794,6 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             assert!(
                 script.contains(r#"grep -l 'datamodel="sce-static"'"#),
                 "a regen script lists its machines by hand, so {machine} is one it may not commit"
-            );
-        }
-        for (lang, committed) in COMMITTED_MACHINES {
-            let path = root.join(committed.replace("{m}", machine));
-            assert!(
-                path.exists(),
-                "{machine}: its {lang} regen script has not committed {}",
-                path.display()
             );
         }
         let stem = scenario
@@ -1824,6 +1826,19 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             !lowering.is_empty(),
             "{machine}: no backend lowers it, so no scenario runs it"
         );
+        // A backend that lowers the machine commits it where its driver builds
+        // it from; one that refuses it has nothing to commit.
+        for (lang, committed) in COMMITTED_MACHINES {
+            if !lowering.contains(lang) {
+                continue;
+            }
+            let path = root.join(committed.replace("{m}", machine));
+            assert!(
+                path.exists(),
+                "{machine}: its {lang} regen script has not committed {}",
+                path.display()
+            );
+        }
         for lang in lowering {
             let (_, driver, marker) = SCENARIO_DRIVERS
                 .iter()

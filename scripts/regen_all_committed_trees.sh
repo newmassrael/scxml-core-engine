@@ -97,6 +97,8 @@ stage "Static datamodel Kotlin tree"
 scripts/regen_static_datamodel_kotlin.sh
 stage "Static datamodel Rust tree"
 scripts/regen_static_datamodel_rust.sh
+stage "Static datamodel Go tree"
+scripts/regen_static_datamodel_go.sh
 
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
 # regen script like the EventSchema gates above.
