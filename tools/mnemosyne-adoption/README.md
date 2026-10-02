@@ -165,6 +165,19 @@ This is **not** a `sed`. Three rules keep it safe:
   Rust nested block comments) means string- and char-literal text is never
   touched, so no runtime string can change.
 
+**The form gate runs at the commit, too.** CI's form gate (`--check --from-toml`)
+sweeps every directory a workspace enrols. The commit hook
+(`scripts/gates/ledger-citations.sh --staged`) judges the staged files with
+`--only-enrolled`, which keeps the paths given that lie inside the enrolment
+(read from each workspace's `mnemosyne.toml` by the same `paths_from_toml`) and
+nothing else: a staged file outside the enrolment is not the gate's to judge, and
+one inside it is judged at the commit that introduces it. Until 2026-10-02 the
+commit stage ran the existence half only, so a free-text `W3C SCXML 3.12.1` in an
+enrolled comment passed the hook and the push gates and was caught by CI. A new
+cite in an enrolled file is therefore written as the token (`§scxml-3.12.1`) and
+its file bound to that section with the Mnemosyne `add_section_binding` primitive;
+the existence half and the binding axes then judge it as before.
+
 ### Writing *about* a citation: the code-span channel
 
 A citation wrapped in exactly one backtick — `` `W3C SCXML Appendix D.2` ``,

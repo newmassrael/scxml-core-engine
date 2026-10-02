@@ -1138,6 +1138,19 @@ def main(argv=None):
         "this mnemosyne.toml (keeps the form gate in lockstep with the "
         "validator's coverage instead of a hand-maintained dir list)",
     )
+    ap.add_argument(
+        "--only-enrolled",
+        action="store_true",
+        help="with --from-toml, judge only the PATHS GIVEN that lie inside "
+        "the enrolled directories, instead of those plus every enrolled "
+        "directory. For the pre-commit stage, which hands over the staged "
+        "set: the form gate CI runs covers exactly the enrolled directories, "
+        "so a staged file outside them is not its to judge, and one inside "
+        "them must be, at the commit that introduces it and not at the push "
+        "that carries a batch of commits (measured 2026-10-02: two free-text "
+        "cites in an enrolled file reached CI because the commit stage ran "
+        "the existence half only).",
+    )
     args = ap.parse_args(argv)
 
     # The existence gate reads a wider region than a rewrite may touch — a
@@ -1154,8 +1167,33 @@ def main(argv=None):
             "edit, and its findings are corrected by hand, not migrated"
         )
 
+    if args.only_enrolled and not args.from_toml:
+        ap.error("--only-enrolled needs --from-toml: the enrolment it narrows to")
     if args.from_toml:
-        args.paths = list(args.paths) + paths_from_toml(args.from_toml)
+        enrolled = paths_from_toml(args.from_toml)
+        if args.only_enrolled:
+            # Paths are compared as repo-relative spellings: a materialised copy
+            # of the index stands in for the tracked path it came from
+            # (`--report-root`), and the enrolment is spelt against the repo.
+            root = os.path.abspath(args.report_root) if args.report_root else REPO_ROOT
+            inside = [os.path.relpath(e, REPO_ROOT) for e in enrolled]
+
+            def enrolled_path(path):
+                rel = os.path.relpath(os.path.abspath(path), root)
+                return any(rel == e or rel.startswith(e + os.sep) for e in inside)
+
+            args.paths = [p for p in args.paths if enrolled_path(p)]
+            if not args.paths:
+                # Nothing handed over is enrolled: not "no input", which is a
+                # caller's mistake, but a set the form gate has nothing to say
+                # about, and it says so rather than staying silent.
+                print(
+                    "citation-form check: OK — none of the paths given is "
+                    "enrolled, so there is nothing for the form gate to judge."
+                )
+                return 0
+        else:
+            args.paths = list(args.paths) + enrolled
     if not args.paths:
         ap.error("no paths given (pass paths or --from-toml)")
 

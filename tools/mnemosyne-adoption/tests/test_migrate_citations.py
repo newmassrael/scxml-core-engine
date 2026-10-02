@@ -893,6 +893,112 @@ class PathsFromToml(unittest.TestCase):
             self.assertEqual(got, ["sce/include/core", "sce-build/src"])
 
 
+class OnlyEnrolled(unittest.TestCase):
+    """The commit stage hands the form gate the staged set, and the gate CI runs
+    covers exactly the enrolled directories.
+
+    `--from-toml` ADDS the enrolled directories to the paths given, which is the
+    sweep the push and CI do. A commit that stages one file cannot mean "and the
+    whole enrolment": it would judge files nobody is committing, and a staged
+    file outside the enrolment would be judged though CI never would. So
+    `--only-enrolled` keeps the paths given that lie inside the enrolment and
+    nothing else. Measured 2026-10-02: two free-text cites in an enrolled file
+    passed the commit hook (existence half only) and the push gates and failed
+    CI's form gate.
+
+    The materialised copy of the index stands in for the tracked path it came
+    from (`--report-root`), and the enrolment is spelt against the repo, so the
+    comparison is on repo-relative spellings.
+    """
+
+    ENROLLED = "sce-build/src"
+    CITE = "// W3C SCXML 6.2: the send's delay is measured from execution.\n"
+
+    def run_check(self, staged, extra=()):
+        """`staged` is {repo-relative path: text}; returns the CompletedProcess."""
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "work"
+            toml = Path(d) / "mnemosyne.toml"
+            toml.write_text(
+                "[plugins.set_equality_validator]\n"
+                f'paths = ["{self.ENROLLED}"]\n',
+                encoding="utf-8",
+            )
+            written = []
+            for rel, text in staged.items():
+                path = work / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+                written.append(str(path))
+            return subprocess.run(
+                [sys.executable, str(MIGRATE), "--check", "--only-enrolled",
+                 "--report-root", str(work), "--from-toml", str(toml), *extra,
+                 *written],
+                capture_output=True, text=True,
+            )
+
+    def test_a_free_text_cite_in_an_enrolled_file_is_refused_and_named(self):
+        r = self.run_check({f"{self.ENROLLED}/a.rs": self.CITE})
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(f"{self.ENROLLED}/a.rs:1", r.stderr)
+        self.assertIn("-> §scxml-6.2", r.stderr)
+
+    def test_the_same_cite_outside_the_enrolment_is_not_this_gates_to_judge(self):
+        r = self.run_check({"docs/a.rs": self.CITE})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("none of the paths given is enrolled", r.stdout)
+
+    def test_the_token_form_in_an_enrolled_file_passes(self):
+        r = self.run_check({f"{self.ENROLLED}/a.rs": "// §scxml-6.2: the delay.\n"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("citation-form check: OK", r.stdout)
+
+    def test_a_directory_prefix_is_not_the_enrolled_directory(self):
+        # `sce-build/src-extra` starts with the enrolled path as text and is not
+        # inside it.
+        r = self.run_check({f"{self.ENROLLED}-extra/a.rs": self.CITE})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("none of the paths given is enrolled", r.stdout)
+
+    def test_only_the_staged_file_is_judged_not_the_whole_enrolment(self):
+        # With the old union the clean staged file would have been scanned beside
+        # every enrolled directory of the REAL repo (which is clean here), so what
+        # this holds is that a violation elsewhere in the tree being committed
+        # cannot be reached: a second enrolled file with a cite that is NOT staged
+        # is simply not given.
+        r = self.run_check({f"{self.ENROLLED}/clean.rs": "// no cite here\n"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_the_flag_needs_the_enrolment_it_narrows_to(self):
+        r = subprocess.run(
+            [sys.executable, str(MIGRATE), "--check", "--only-enrolled", __file__],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--only-enrolled needs --from-toml", r.stderr)
+
+    def test_without_the_flag_the_enrolment_is_added_to_the_paths_as_before(self):
+        # The sweep the push and CI make: the paths given AND every enrolled
+        # directory. The enrolled directory here is the real repo's, resolved
+        # against it, so a path outside it is still scanned as given.
+        with tempfile.TemporaryDirectory() as d:
+            toml = Path(d) / "mnemosyne.toml"
+            toml.write_text(
+                "[plugins.set_equality_validator]\n"
+                f'paths = ["{self.ENROLLED}"]\n',
+                encoding="utf-8",
+            )
+            outside = Path(d) / "outside.rs"
+            outside.write_text(self.CITE, encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--check", "--from-toml", str(toml),
+                 str(outside)],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("outside.rs:1", r.stderr)
+
+
 class ExistenceScopeIsNotRewriteScope(unittest.TestCase):
     """Reading for a false citation is not bounded by rewrite safety.
 

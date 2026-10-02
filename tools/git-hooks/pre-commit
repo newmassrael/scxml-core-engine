@@ -154,13 +154,20 @@ fi
 # commits (2026-08-10) and a fabricated `§synth-F4` a whole round after
 # the commit that wrote it (2026-08-11).
 #
+# The FORM half runs here too, over the staged files inside each ledger's
+# enrolment: an enrolled comment that cites a section in prose (`W3C SCXML
+# 3.12.1`) is refused at the commit, as CI's spec-citations workflow would refuse
+# it. Until 2026-10-02 only existence ran, and a prose cite that names a real
+# section passes existence, so it travelled through the hook and the push gates
+# and was caught by CI.
+#
 # The gate script owns the scope, so commit time and push time cannot
 # come to disagree about which trees are covered.
-log_step "Stage 3/3 — staged citation existence (scripts/gates/ledger-citations.sh --staged)"
+log_step "Stage 3/3 — staged citation existence and form (scripts/gates/ledger-citations.sh --staged)"
 CITE_GATE="$REPO_ROOT/scripts/gates/ledger-citations.sh"
 if [[ -x "$CITE_GATE" ]]; then
     if ! "$CITE_GATE" --staged; then
-        printf '\nERROR pre-commit: Stage 3 (staged citation existence) FAILED — commit aborted.\n  Resolve each citation against the ledger, then correct the number.\n  Do NOT migrate a bad number to §-form to silence it.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
+        printf '\nERROR pre-commit: Stage 3 (staged citation existence and form) FAILED — commit aborted.\n  Resolve each citation against the ledger, then correct the number.\n  Do NOT migrate a bad number to §-form to silence it.\n  A free-text `W3C SCXML <n>` cite in an enrolled file is written as its token (§scxml-<n>)\n  and the file is bound to that section (Mnemosyne add_section_binding).\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
         exit 1
     fi
 else

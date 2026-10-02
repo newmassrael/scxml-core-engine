@@ -171,6 +171,40 @@ if [[ "${1:-}" == "--staged" ]]; then
         *) sce_gate_fail "the staged citation check could not run (exit ${status})" ;;
     esac
 
+    # ── Form half, over the staged files inside each enrolment ─────
+    #
+    # The same three form gates the full gate runs (and CI's spec-citations
+    # workflow), narrowed to what is being committed. Until 2026-10-02 this
+    # stage ran the existence half only, so a free-text `W3C SCXML 3.12.1` in an
+    # enrolled comment passed the commit hook and the push gates and was caught
+    # by CI: the existence check accepts it (the section exists) and the form
+    # gate refuses it (the validator reads the token form, so prose evades it).
+    # `--only-enrolled` is what keeps this equal to CI's scope: the gate there
+    # covers exactly the directories each workspace enrols, and a staged file
+    # outside them is not its to judge. The enrolment is read from each
+    # workspace's own mnemosyne.toml by the same function the full gate uses, so
+    # there is no second list here to drift.
+    staged_form_gate() {
+        local label="$1" workspace="$2"
+        shift 2
+        local status
+        set +e
+        python3 "$SCE_REPO_ROOT/tools/mnemosyne-adoption/migrate_citations.py" --check \
+            "$@" --only-enrolled --report-root "$work" \
+            --from-toml "$SCE_REPO_ROOT/$workspace/mnemosyne.toml" \
+            "${scoped[@]/#/$work/}" >/dev/null
+        status=$?
+        set -e
+        case "$status" in
+            0) ;;
+            1) sce_gate_fail "staged ${label} citation-form gate: a free-text section cite in an enrolled file (the report is above)" ;;
+            *) sce_gate_fail "the staged ${label} citation-form check could not run (exit ${status})" ;;
+        esac
+    }
+    staged_form_gate scxml docs/spec/scxml
+    staged_form_gate synth docs/spec/synth --namespace synth
+    staged_form_gate bytesguard docs/sce-ledger/bytesguard --namespace bytesguard
+
     # ── Binding axes, scoped to the staged files ──────────────────
     #
     # This half used to be push-only, and the reason was written down: the
