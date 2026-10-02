@@ -354,6 +354,118 @@ fn a_set_with_problems_is_not_judged() {
     );
 }
 
+/// What the retry machine presents, by the names the set accepts.
+fn retry_surface() -> Value {
+    serde_json::json!({
+        "inputs": ["RequestNeeded", "ResponseReceived"],
+        "outputs": ["SendRequest", "TimeoutError"],
+        "states": ["idle", "waiting"],
+        "data": []
+    })
+}
+
+fn interface_record(run: &Run) -> Value {
+    let mut records = run.of_kind("interface");
+    assert_eq!(records.len(), 1, "one interface record: {}", run.stdout);
+    records.remove(0)
+}
+
+#[test]
+fn a_trace_that_carries_no_surface_says_no_comparison_was_made() {
+    let run = judge(
+        &fixture("retry-client.scenarios.json"),
+        &fixture("retry-client.trace.json"),
+    );
+    let record = interface_record(&run);
+    assert_eq!(record["checked"], false);
+    assert!(
+        record["why"]
+            .as_str()
+            .is_some_and(|why| why.contains("no design surface")),
+        "silence would read as a match: {record}"
+    );
+}
+
+#[test]
+fn a_design_that_presents_the_accepted_names_matches() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut trace = retry_trace();
+    trace["surface"] = retry_surface();
+    let shown = written(&dir, "surface.trace.json", &trace.to_string());
+    let run = judge(&fixture("retry-client.scenarios.json"), &shown);
+    assert_eq!(run.code, Some(0), "stderr: {}", run.stderr);
+    let record = interface_record(&run);
+    assert_eq!(record["checked"], true);
+    assert_eq!(record["matches"], true, "{record}");
+    assert_eq!(run.summary()["pass"], 6);
+}
+
+/// The design calls an output something else: it is REPORTED, with the name each
+/// side uses, and no verdict moves, because the scenarios observed what the
+/// machine sent and it sent what they expected.
+#[test]
+fn a_design_that_renames_an_output_is_reported_and_the_command_still_exits_zero() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut trace = retry_trace();
+    trace["surface"] = retry_surface();
+    trace["surface"]["outputs"] = serde_json::json!(["SendRequest", "Timeout"]);
+    let shown = written(&dir, "renamed.trace.json", &trace.to_string());
+    let run = judge(&fixture("retry-client.scenarios.json"), &shown);
+    assert_eq!(run.code, Some(0), "stderr: {}", run.stderr);
+    let record = interface_record(&run);
+    assert_eq!(record["matches"], false);
+    assert_eq!(
+        record["unsent_outputs"],
+        serde_json::json!(["TimeoutError"])
+    );
+    assert_eq!(record["unaccepted_outputs"], serde_json::json!(["Timeout"]));
+    assert_eq!(run.summary()["pass"], 6);
+}
+
+/// The reason the comparison exists. The example says the machine is `busy`; the
+/// design has a state called `working`. That is two names for one thing, and a
+/// failure would send the owner to read behaviour that is fine.
+#[test]
+fn an_example_naming_a_state_the_design_lacks_is_not_judged_and_says_which_names_it_has() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let set = serde_json::json!({
+        "record": "sce-scenario-set", "v": 1,
+        "specification": {"doc_id": "d", "rev": "1"},
+        "origin": "ai-proposed",
+        "interface": {"inputs": [{"name": "go"}], "outputs": [], "conditions": ["busy"]},
+        "scenarios": [{"id": "S1", "quote": "q", "steps": [
+            {"send": "go", "expect": {"condition": "busy"}}]}]
+    });
+    let trace = serde_json::json!({
+        "record": "sce-observation-trace", "v": 1,
+        "engine": {"name": "test-driver"},
+        "observes": {"outbound": true, "finished": true, "configuration": true, "data": true},
+        "surface": {"inputs": ["go"], "outputs": [], "states": ["root", "working"], "data": []},
+        "runs": [{"scenario": "S1", "observations": [
+            {"outbound": [], "finished": false, "configuration": ["root", "working"],
+             "data": {}}]}]
+    });
+    let set_path = written(&dir, "set.json", &set.to_string());
+    let trace_path = written(&dir, "trace.json", &trace.to_string());
+    let run = judge(&set_path, &trace_path);
+    assert_eq!(run.code, Some(0), "stderr: {}", run.stderr);
+    assert_eq!(run.verdict("S1"), "not-judged");
+    assert!(run.of_kind("failure").is_empty(), "a name is not behaviour");
+    let verdicts = run.of_kind("verdict");
+    assert_eq!(verdicts[0]["cause"], "design", "{verdicts:?}");
+    let gaps = run.of_kind("gap");
+    assert!(
+        gaps.iter().any(|gap| gap["why"]
+            .as_str()
+            .is_some_and(|why| why.contains("`busy`") && why.contains("working"))),
+        "{gaps:?}"
+    );
+    assert_eq!(
+        interface_record(&run)["missing_conditions"],
+        serde_json::json!(["busy"])
+    );
+}
+
 #[test]
 fn a_file_that_is_not_what_it_should_be_is_refused_and_prints_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");

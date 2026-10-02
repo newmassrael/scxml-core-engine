@@ -383,6 +383,19 @@ reports what it saw and fills no hole:
   end (W3C SCXML 3.13): every other reading of such a machine says it is fine.
   Measured 2026-10-01 by an outside review, a cyclic eventless transition passed
   an example that says the machine waits in its state.
+- The interface the examples were accepted with is held to what the design
+  presents, in both directions, and the answer says where they part (`interface`).
+  The product writes the design's side on its manifest (`surface`: the events a
+  caller can deliver, the events it sends out of the session, its states and its
+  data) and the driver copies it into the trace, so neither this package nor the
+  judge re-derives what the analyzer already knows. Measured 2026-09-29, five
+  drafts of one specification invented five interfaces, and an example that names a
+  state the design calls something else used to FAIL, which reads as the design
+  misbehaving when it is two names for one thing. It is `not-judged` now (cause
+  `design`), and the reason lists the states the design has. Everything else is
+  reported and moves no verdict: an output the design never sends still fails the
+  example that expects it, because a design that leaves it out is a defect and not
+  a spelling.
 - Virtual time moves one scheduled instant at a time. The engine dates a timer
   from the end of the move that fires it, so 600 ms in one step and 200 ms three
   times were two runs of one machine (the retry machine passed the second and

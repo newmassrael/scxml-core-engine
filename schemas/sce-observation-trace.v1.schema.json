@@ -8,6 +8,46 @@
   "required": ["record", "v", "engine", "observes", "runs"],
   "additionalProperties": false,
   "definitions": {
+    "surface": {
+      "description": "What a statechart presents to the outside, by name: the product's own reading of the document, so a driver copies it and nothing re-derives it. Present on the manifest exactly when the run is one statechart document, and omitted for a document set, whose union is nobody's interface. The same shape rides in an observation trace, where the judge holds the interface a scenario set proposes to it.",
+      "type": "object",
+      "required": ["inputs", "outputs", "states", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "description": "The events a caller can deliver: what a transition takes that the machine does not also give itself on its internal queue. Event descriptors match as W3C SCXML 3.12.1 says, so a transition on `coin` takes `coin.inserted`.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "takes_any_input": {
+          "description": "A transition takes `*`, so every event is taken and none can be left unserved. Omitted when none does.",
+          "type": "boolean"
+        },
+        "outputs": {
+          "description": "The events a <send> puts outside the session, by their literal names. A send to the session itself is not one.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "computed_outputs": {
+          "description": "A <send> outside the session names its event by expression, so `outputs` may lack a name it sends and the outputs a design never sends cannot be listed. Omitted when none does.",
+          "type": "boolean"
+        },
+        "states": {
+          "description": "Every state id, the compound and final ones included.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "data": {
+          "description": "Every <data> id the document declares.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "name": {
       "description": "A name from the scenario set or the design: an event, a state, a data item.",
       "type": "string",
@@ -110,6 +150,7 @@
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "surface": { "$ref": "#/definitions/surface" },
     "scenario_set": {
       "description": "The scenario set the driver ran, by digest. When given and different from the set being judged, nothing is judged.",
       "type": "object",

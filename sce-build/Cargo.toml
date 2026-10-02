@@ -210,6 +210,13 @@ name = "scenario_judge_command"
 path = "tests/scenario_judge_command.rs"
 required-features = ["cli"]
 
+# The manifest `check` writes carries what a statechart presents to the outside
+# (`surface`): spawns sce-codegen, so it is held to the same declaration.
+[[test]]
+name = "a_statechart_says_what_it_presents"
+path = "tests/a_statechart_says_what_it_presents.rs"
+required-features = ["cli"]
+
 # `generate --plan` names the files a generation would write. Spawns
 # sce-codegen, so it is held to the same declaration as the targets above:
 # the gate `every_target_that_spawns_the_binary_declares_the_feature` lists it

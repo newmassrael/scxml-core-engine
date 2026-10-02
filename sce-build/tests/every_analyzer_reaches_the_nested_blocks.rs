@@ -38,7 +38,9 @@
 
 use sce_build::model::{Action, ElseIfBranch, SCXMLModel};
 use sce_build::parser::SCXMLParser;
-use sce_build::{analyzer, host_processor_analyzer, parent_send_analyzer, script_engine_analyzer};
+use sce_build::{
+    analyzer, design_surface, host_processor_analyzer, parent_send_analyzer, script_engine_analyzer,
+};
 
 /// Every container the model defines, by the path `nested_blocks` names
 /// it with.
@@ -142,6 +144,19 @@ const PROBES: &[Probe] = &[
         analyzer: "analyzer::analyze -> model.uses_cancel",
         trigger: r#"<cancel sendid="t1"/>"#,
         ask: |model| model.uses_cancel,
+    },
+    // The events a statechart sends out of the session are listed in its surface
+    // (`Manifest::surface`). A send inside an `<if>` or a `<foreach>` that the
+    // list missed would be an output the owner never accepted.
+    Probe {
+        analyzer: "design_surface::Surface::of -> outputs",
+        trigger: r#"<send event="out" type="x-sce-host"/>"#,
+        ask: |model| {
+            design_surface::Surface::of(model)
+                .outputs
+                .iter()
+                .any(|name| name == "out")
+        },
     },
 ];
 

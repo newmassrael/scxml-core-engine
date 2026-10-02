@@ -436,6 +436,20 @@ pub struct Manifest<'a> {
     /// when there are none, matching [`Self::host_processor_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub parent_sends: &'a [crate::parent_send_analyzer::ParentSend],
+    /// What the statechart this run read presents to the outside: the events a
+    /// caller can deliver, the events it sends out of the session, its states
+    /// and its data items ([`crate::design_surface::Surface`]). Present exactly
+    /// when the run is one statechart document, for the reason
+    /// [`Self::needs_parent`] gives: a set holds several, and a union of them is
+    /// nobody's interface.
+    ///
+    /// Published because the names are the one thing a design and the examples
+    /// written against it can silently disagree about. A driver copies it into
+    /// the observation trace, and the judge holds the interface the examples
+    /// were accepted with to it (`judge-scenarios`), so neither re-derives what
+    /// the analyzer already knows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface: Option<&'a crate::design_surface::Surface>,
     /// Every `sce:unresolved` / `sce:assumed` marker the document this run
     /// read carries — the records `sce-codegen unresolved` prints, in the
     /// same order. On a document-set run, the markers of every member, each
@@ -808,6 +822,7 @@ mod tests {
                 needs_mesh_router: None,
                 needs_parent: None,
                 parent_sends: &[],
+                surface: None,
                 unresolved: &[],
                 open: Vec::new(),
                 profile: Some(ProfileInfo {
@@ -868,6 +883,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -902,6 +918,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -942,6 +959,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1003,6 +1021,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1049,6 +1068,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1103,6 +1123,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1141,6 +1162,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1186,6 +1208,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,
@@ -1233,6 +1256,7 @@ mod tests {
             needs_mesh_router: None,
             needs_parent: None,
             parent_sends: &[],
+            surface: None,
             unresolved: &[],
             open: Vec::new(),
             profile: None,

@@ -38,6 +38,18 @@
 //! inputs. Not that the design is right, not that the examples are the owner's
 //! (`origin` says who wrote them and is repeated), and for a scenario that
 //! carries a `bound`, only up to that bound.
+//!
+//! # The names, held to the design
+//!
+//! A trace may carry the [`Surface`] of the design it was taken against: the
+//! events it takes, the events it sends out, its states and its data. The judge
+//! then holds the interface the owner accepted with the examples to it, in both
+//! directions ([`InterfaceReport`]), and says where they part. It also changes
+//! one verdict: an example that expects a state the design does not have is
+//! `not-judged`, not `fail`. A design that calls a state something else has not
+//! misbehaved, it has been named differently, and a failure would send the owner
+//! to read behaviour that is fine. A trace without a surface is judged as before
+//! and the judgement says no comparison was made.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -45,6 +57,7 @@ use std::path::Path;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
+use crate::design_surface::{InterfaceReport, Surface};
 use crate::scenario_set::{ExpectedOutbound, Problem, Scalar, ScenarioSet, Status};
 
 /// The stability status of `schemas/sce-observation-trace.v1.schema.json`,
@@ -284,6 +297,10 @@ pub struct Trace {
     pub v: u32,
     pub engine: Engine,
     pub design: Option<Design>,
+    /// What the design presents (the product's own reading of it, from the
+    /// generate manifest). Present, the judge compares it with the interface the
+    /// set proposes; absent, it makes no such comparison and says so.
+    pub surface: Option<Surface>,
     pub scenario_set: Option<SetRef>,
     pub observes: Observes,
     /// Data names the driver knows it cannot read, each with why. A name left
@@ -424,6 +441,10 @@ pub struct Judgement {
     pub verdicts: Vec<ScenarioVerdict>,
     pub failures: Vec<Failure>,
     pub gaps: Vec<Gap>,
+    /// Where the interface the set proposes and the design's surface part.
+    /// None when the trace carried no surface, which is a comparison not made
+    /// and not a match.
+    pub interface: Option<InterfaceReport>,
 }
 
 impl Judgement {
@@ -467,6 +488,7 @@ pub fn judge(set: &ScenarioSet, set_digest: &str, trace: &Trace) -> Judgement {
         verdicts: Vec::new(),
         failures: Vec::new(),
         gaps: Vec::new(),
+        interface: None,
     };
     // A verdict from a set with problems is a verdict about nothing.
     if !judgement.set_problems.is_empty() {
@@ -488,6 +510,10 @@ pub fn judge(set: &ScenarioSet, set_digest: &str, trace: &Trace) -> Judgement {
         }
     }
     judgement.judged = true;
+    judgement.interface = trace
+        .surface
+        .as_ref()
+        .map(|surface| surface.compare(&set.interface));
 
     let known: BTreeSet<&str> = set.scenarios.iter().map(|s| s.id.as_str()).collect();
     let mut runs: BTreeMap<&str, &Run> = BTreeMap::new();
@@ -632,10 +658,14 @@ fn scenario_verdict(
     if judgement.failures.len() > failures_before {
         verdict(Verdict::Fail, None, None)
     } else if judgement.gaps.len() > gaps_before {
+        // The first gap's cause, when it has one: a name the design does not
+        // have is the same on every machine, and a verdict that says nothing
+        // about it would read as a statement about this one.
+        let cause = judgement.gaps[gaps_before].cause;
         verdict(
             Verdict::NotJudged,
             Some("a check could not be judged".to_string()),
-            None,
+            cause,
         )
     } else {
         verdict(Verdict::Pass, None, None)
@@ -778,6 +808,25 @@ impl StepCheck<'_, '_> {
             present,
         ) {
             return;
+        }
+        // A state the design does not have is a name, not behaviour: no
+        // configuration it reaches could ever hold it, so a failure would say the
+        // design misbehaved when it was named differently.
+        if let Some(surface) = &trace.surface {
+            if !surface.states.iter().any(|state| state == expected) {
+                self.judgement.gaps.push(Gap {
+                    scenario: self.scenario.to_string(),
+                    step: Some(self.step),
+                    check: Some("condition"),
+                    why: format!(
+                        "the design has no state called `{expected}`, so the example's name for \
+                         it cannot be told from a state the design never enters (it has: {})",
+                        surface.states.join(", ")
+                    ),
+                    cause: Some(Cause::Design),
+                });
+                return;
+            }
         }
         let observed = seen.configuration.as_deref().unwrap_or_default();
         if !observed.iter().any(|state| state == expected) {
@@ -947,6 +996,93 @@ mod tests {
     fn only_failure(judgement: &Judgement) -> &Failure {
         assert_eq!(judgement.failures.len(), 1, "{:?}", judgement.failures);
         &judgement.failures[0]
+    }
+
+    /// What the design of [`small_set`] presents when it has these states: it
+    /// takes `go`, sends `done` and declares `count`.
+    fn surface_json(states: &[&str]) -> Value {
+        json!({"inputs": ["go"], "outputs": ["done"], "states": states, "data": ["count"]})
+    }
+
+    #[test]
+    fn a_trace_without_a_surface_makes_no_comparison() {
+        let judgement = change(|_| {});
+        assert!(judgement.interface.is_none(), "{:?}", judgement.interface);
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::Pass);
+    }
+
+    #[test]
+    fn a_design_that_presents_the_accepted_names_matches_and_the_verdicts_stand() {
+        let judgement = change(|t| t["surface"] = surface_json(&["root", "busy"]));
+        let report = judgement.interface.as_ref().expect("compared");
+        assert!(report.matches, "{report:?}");
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::Pass);
+    }
+
+    /// The reason the comparison exists. The design calls the state `working`
+    /// and the example says `busy`: before this, the example FAILED, which read
+    /// as the design misbehaving when it was two names for one thing.
+    #[test]
+    fn an_example_about_a_state_the_design_does_not_have_is_not_judged_not_failed() {
+        let judgement = change(|t| {
+            t["surface"] = surface_json(&["root", "working"]);
+            t["runs"][0]["observations"][0]["configuration"] = json!(["root", "working"]);
+        });
+        assert!(judgement.failures.is_empty(), "{:?}", judgement.failures);
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::NotJudged);
+        let verdict = judgement
+            .verdicts
+            .iter()
+            .find(|v| v.id == "S1")
+            .expect("S1");
+        assert_eq!(verdict.cause, Some(Cause::Design));
+        let gap = judgement
+            .gaps
+            .iter()
+            .find(|g| g.check == Some("condition"))
+            .expect("a gap about the condition");
+        assert!(
+            gap.why.contains("`busy`") && gap.why.contains("working"),
+            "{}",
+            gap.why
+        );
+        assert_eq!(gap.cause, Some(Cause::Design));
+        let report = judgement.interface.as_ref().expect("compared");
+        assert_eq!(report.missing_conditions, ["busy"]);
+    }
+
+    /// The other side of it: a state the design has, and the machine is not in
+    /// it. That is behaviour, and it fails.
+    #[test]
+    fn a_state_the_design_has_is_judged_on_what_was_observed() {
+        let judgement = change(|t| {
+            t["surface"] = surface_json(&["root", "busy"]);
+            t["runs"][0]["observations"][0]["configuration"] = json!(["root"]);
+        });
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::Fail);
+        assert_eq!(only_failure(&judgement).check, "condition");
+    }
+
+    #[test]
+    fn names_the_design_presents_that_nobody_accepted_are_reported_and_change_no_verdict() {
+        let judgement = change(|t| {
+            t["surface"] = json!({"inputs": ["go", "reset"], "outputs": ["done", "log"],
+                                  "states": ["root", "busy"], "data": ["count"]});
+        });
+        let report = judgement.interface.as_ref().expect("compared");
+        assert_eq!(report.unaccepted_inputs, ["reset"]);
+        assert_eq!(report.unaccepted_outputs, ["log"]);
+        assert!(!report.matches);
+        assert_eq!(verdict_of(&judgement, "S1"), Verdict::Pass);
+    }
+
+    #[test]
+    fn a_trace_with_a_surface_validates_against_the_wire_schema() {
+        let mut shown = base_trace();
+        shown["surface"] = surface_json(&["root", "busy"]);
+        assert_eq!(violations(&shown), Vec::<String>::new());
+        shown["surface"]["inputs"] = json!("go");
+        assert!(!violations(&shown).is_empty());
     }
 
     #[test]

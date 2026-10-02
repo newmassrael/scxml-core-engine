@@ -153,6 +153,19 @@ class TestTheMachineThatKeepsItsPromises(Played):
         self.assertEqual("pass", verdicts["T4-response-completes"], verdicts)
         self.assertEqual(1, self.summary(answer)["fail"], self.summary(answer))
 
+    def test_the_trace_carries_the_surface_the_product_read_off_the_design(self):
+        """The names the design presents ride on the trace as the product wrote
+        them in its manifest, so the judge can hold the interface the examples
+        were accepted with to them. A driver that derived them itself would be a
+        second answer to what the analyzer already says."""
+        trace = drive(self.set_with(), self.design(machine()), self.codegen)
+        surface = trace["surface"]
+        self.assertEqual({"inputs", "outputs", "states", "data"}, set(surface) - {
+            "takes_any_input", "computed_outputs"}, surface)
+        self.assertIn("SendRequest", surface["outputs"], surface)
+        self.assertIn("TimeoutError", surface["outputs"], surface)
+        self.assertIn("RequestNeeded", surface["inputs"], surface)
+
     def test_the_trace_names_the_set_it_was_taken_against(self):
         """The judge refuses a trace taken against another set, so the digest
         is how a driver says which one it ran; a wrong digest judges nothing."""
@@ -586,6 +599,33 @@ class TestStatesAndData(Played):
         self.assertTrue(reasons and all("no reader" in why and "no reason" in why
                                         for why in reasons), reasons)
 
+    @staticmethod
+    def interface_of(answer: dict) -> dict:
+        return next(r for r in answer["judgement"] if r["kind"] == "interface")
+
+    def test_a_design_that_presents_the_accepted_names_matches_them(self):
+        interface = self.interface_of(self.play("balance", counter("balance")))
+        self.assertIs(True, interface["checked"], interface)
+        self.assertIs(True, interface["matches"], interface)
+
+    def test_a_state_the_design_calls_something_else_is_not_judged_and_not_failed(self):
+        """The set says `counting` and this design calls the state `adding`. Played
+        and judged on what the machine did, the example FAILED, which reads as the
+        design misbehaving when it is two names for one thing. It is `not-judged`
+        now, with the design's own names in the reason and the pair reported."""
+        renamed = (counter("balance").replace('id="counting"', 'id="adding"')
+                   .replace('target="counting"', 'target="adding"'))
+        answer = self.play("balance", renamed)
+        self.assertEqual({"C1": "not-judged"}, self.verdicts(answer), answer["judgement"])
+        verdict = next(r for r in answer["judgement"] if r["kind"] == "verdict")
+        self.assertEqual("design", verdict.get("cause"), verdict)
+        self.assertEqual([], [r for r in answer["judgement"] if r["kind"] == "failure"])
+        interface = self.interface_of(answer)
+        self.assertEqual(["counting"], interface["missing_conditions"], interface)
+        self.assertIs(False, interface["matches"], interface)
+        self.assertTrue(any("`counting`" in why and "adding" in why
+                            for why in self.gap_reasons(answer)), self.gap_reasons(answer))
+
     def test_an_item_the_design_never_declares_says_so(self):
         answer = self.play("balance", counter("total"))
         self.assertEqual({"C1": "not-judged"}, self.verdicts(answer), answer["judgement"])
@@ -635,6 +675,20 @@ class TestTheToolAnOwnersClientCalls(unittest.TestCase):
         self.assertEqual(6, reply["counts"]["pass"], reply["counts"])
         self.assertIn("does not say the design is right", reply["means"])
         self.assertIs(False, reply["set"]["quotes_checked"])
+
+    def test_the_owner_is_told_where_the_examples_names_and_the_designs_part(self):
+        """The interface the examples were accepted with is held to what the
+        design presents, and the answer says where they part: here the design
+        sends a timeout under another name, so the examples' output is never sent
+        and the design's is one nobody accepted. Said once, as the product found
+        it."""
+        renamed = machine().replace("TimeoutError", "Timeout")
+        reply = said(self.ask(self.sets(), renamed))
+        interface = reply["interface"]
+        self.assertIs(True, interface["checked"], interface)
+        self.assertIs(False, interface["matches"], interface)
+        self.assertEqual(["TimeoutError"], interface["unsent_outputs"], interface)
+        self.assertEqual(["Timeout"], interface["unaccepted_outputs"], interface)
 
     def test_a_failed_example_comes_with_what_was_expected_and_what_was_seen(self):
         reply = said(self.ask(self.sets(), machine(attempts=4)))

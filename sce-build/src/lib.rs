@@ -64,6 +64,11 @@ pub mod comment_text;
 #[cfg(test)]
 mod commit_stamp;
 pub mod conformance;
+/// What a statechart presents to the outside (events it takes, events it sends
+/// out, states, data) and whether that is the interface its owner accepted. The
+/// generate manifest carries it, a driver copies it into the observation trace,
+/// and the scenario judge compares the two.
+pub mod design_surface;
 /// The print diagram's figure model: how a statechart splits into figures
 /// by hierarchy and where each transition is described. Renderers draw
 /// from it; the completeness and described-once properties are tested on it.

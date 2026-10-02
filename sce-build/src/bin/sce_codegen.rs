@@ -970,6 +970,9 @@ struct GenerateReport {
     /// kind, or a document set, whose answer is not a union — see
     /// `Manifest::needs_parent`).
     parent_sends: Option<Vec<sce_build::parent_send_analyzer::ParentSend>>,
+    /// What the ONE statechart this run read presents to the outside — see
+    /// `Manifest::surface`; `None` when the run is not one statechart document.
+    surface: Option<sce_build::design_surface::Surface>,
     /// Every marker of the document this run read, statechart or forge kind;
     /// on a document-set run, of every member, each record naming the file it
     /// was written in — see `Manifest::unresolved`.
@@ -1139,6 +1142,7 @@ fn build_manifest<'a>(
             )
         },
         profile: report.profile.clone(),
+        surface: report.surface.as_ref(),
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
@@ -4743,6 +4747,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_script_engine = Some(model.needs_script_engine);
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
             report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
+            report.surface = Some(sce_build::design_surface::Surface::of(&model));
             report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
             report.talks_to_a_mesh_peer =
@@ -5831,6 +5836,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         report.needs_script_engine = Some(model.needs_script_engine);
         report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
         report.parent_sends = Some(sce_build::parent_send_analyzer::records(&model));
+        report.surface = Some(sce_build::design_surface::Surface::of(&model));
         // Projected from the list the analyzer stored on the model in the
         // same statement that set the flag — not recomputed here, which
         // would re-derive it from a model later passes have since touched.
@@ -9764,6 +9770,25 @@ fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
         summary["isolation"] = serde_json::json!(isolation.0);
     }
     let mut lines = vec![summary];
+    // Where the interface the set proposes and the design's own surface part. A
+    // trace that carried no surface made no comparison, and says so: silence
+    // would read as a match.
+    if judgement.judged {
+        lines.push(match &judgement.interface {
+            Some(report) => {
+                let mut record = serde_json::json!(report);
+                record["kind"] = serde_json::json!("interface");
+                record["checked"] = serde_json::json!(true);
+                record
+            }
+            None => serde_json::json!({
+                "kind": "interface",
+                "checked": false,
+                "why": "the trace carries no design surface, so the interface the set proposes \
+                        was not held to the design",
+            }),
+        });
+    }
     for verdict in &judgement.verdicts {
         let mut record = serde_json::json!({
             "kind": "verdict",

@@ -3678,6 +3678,46 @@ right, it does not say the examples are the owner's, and a scenario with a
 that is not a scenario set, or not an observation trace, is refused as
 `cli/closure-input-unusable` and prints nothing.
 
+#### The names, held to the design
+
+A scenario set proposes the names its examples are written against (its
+`interface`), and the owner accepts them with the examples. A design is drafted
+separately, from the same prose, and nothing held the two to each other: measured
+2026-09-29, five drafts of one specification invented five interfaces, and an
+example that names a state the design calls something else FAILED, which reads as
+the design misbehaving when it is two names for one thing.
+
+So the design's half is published. `sce-codegen check` and `generate` carry
+`surface` on their manifest for a single statechart (omitted for a document set,
+whose union is nobody's interface): the events a caller can deliver (the §2.16
+set), the events a `<send>` puts outside the session by their literal names, its
+states and its data. Each is the analyzer's own fact, not a second reading of the
+document; `computed_outputs` says a send names its event by expression, so the
+outputs a design never sends cannot be listed, and `takes_any_input` says a
+transition takes `*`. A driver copies the surface into the trace (`surface`, the
+same shape), and the judge compares it with the set's `interface` in both
+directions, as one `interface` record after the summary:
+
+- `unserved_inputs` / `unaccepted_inputs`: an input the examples send that no event
+  the design takes answers, and an event the design takes that no input names.
+  Inputs match as event descriptors do (W3C SCXML 3.12.1: a transition on `coin`
+  takes `coin.inserted`, and not the other way round).
+- `unsent_outputs` / `unaccepted_outputs`: outputs the examples name that the
+  design never sends, and events it sends that the interface does not name. A
+  design with a computed send has no `unsent_outputs`, since it may send any.
+- `missing_conditions` / `missing_data`: states and data items the interface names
+  that the design does not have.
+- `matches`: nothing differs and nothing is unknown. `checked: false` (with `why`)
+  is a trace that carried no surface: no comparison was made, and silence would
+  read as a match.
+
+One verdict moves. An example that expects a `condition` the design has no state
+for is `not-judged` (cause `design`), not `fail`: a state called something else is
+a name, not behaviour, and the gap lists the states the design has. Everything else
+is reported and changes no verdict: an output that is never sent still fails the
+example that expects it, because a design that leaves it out is a defect and not a
+spelling.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

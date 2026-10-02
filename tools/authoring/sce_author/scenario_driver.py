@@ -223,6 +223,13 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
     }
     if unreadable:
         trace["unreadable"] = unreadable
+    # The names the design presents, as the product read them off it and put them
+    # in its manifest. The judge holds the interface the set proposes to them; a
+    # driver that left them out would make no comparison, and the judgement says
+    # so. Copied, not derived: which events a caller can deliver is the analyzer's
+    # answer to give.
+    if not built.refusal and built.build.surface is not None:
+        trace["surface"] = built.build.surface
     return trace
 
 
@@ -309,6 +316,12 @@ def answer(read: list, played: dict | None, withheld: str | None = None) -> dict
     reply["counts"] = {name: judgement.get(name) for name in
                        ("scenarios", "pass", "fail", "not-judged", "blocked",
                         "awaiting-decision")}
+    # Where the interface the examples were written against and the names the
+    # design presents part, as the judge found it. `checked: false` is passed on
+    # as it came: a comparison that was not made is not a match.
+    interface = next((r for r in records if r.get("kind") == "interface"), None)
+    if interface is not None:
+        reply["interface"] = {k: v for k, v in interface.items() if k != "kind"}
     reply["scenarios"] = [{k: r[k] for k in ("id", "verdict", "reason", "cause",
                                              "requirements", "bound") if k in r}
                           for r in records if r.get("kind") == "verdict"]

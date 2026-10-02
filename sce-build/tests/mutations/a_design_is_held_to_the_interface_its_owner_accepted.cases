@@ -1,0 +1,125 @@
+# Mutation cases for "a design is held to the interface its owner accepted".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_design_is_held_to_the_interface_its_owner_accepted.cases`.
+#
+# A scenario set proposes the names its examples are written against, and the
+# owner accepts them with the examples; a design is drafted separately from the
+# same prose. The manifest publishes what the design presents (`surface`), a
+# driver copies it into the observation trace, and the judge holds the interface to
+# it in both directions. Three things are easy to get wrong and read as success: a
+# name compared too loosely or too strictly (a descriptor `coin` takes
+# `coin.inserted`, and not the other way round), a design that presents more or less
+# than the interface and says nothing, and a state called something else read as the
+# design misbehaving instead of as a name.
+#
+# Each case below takes one of those away and must make a test red: the unit tests
+# of `design_surface.rs` and `scenario_judge.rs`, `scenario_judge_command.rs`, which
+# runs the command, or `a_statechart_says_what_it_presents.rs`, which reads the
+# manifest the real binary writes.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the
+# tree does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other
+# casefiles of this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test scenario_judge_command --test a_statechart_says_what_it_presents
+mutation_targets sce-build/src/design_surface.rs sce-build/src/scenario_judge.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/src/design_surface.rs sce-build/src/scenario_judge.rs sce-build/tests/scenario_judge_command.rs sce-build/tests/a_statechart_says_what_it_presents.rs
+
+# ── What the design presents ────────────────────────────────────────
+
+mutation_case "a send to the session itself is listed as an output" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "            if action.action_type != \"send\" || sends_to_itself(action) {",
+     "            if action.action_type != \"send\" || sends_to_itself(action) && false {")
+PY
+
+mutation_case "a transition on the wildcard is not read as taking every event" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "                    .any(|token| EventDescriptor::parse(token).prefix().is_none())",
+     "                    .any(|token| EventDescriptor::parse(token).prefix().is_none() && false)")
+PY
+
+# ── An input is served and accepted as a descriptor, in the right direction ──
+
+mutation_case "an input is served only by the identical name" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "                .any(|taken| EventDescriptor::parse(taken).matches(event))",
+     "                .any(|taken| taken.as_str() == event)")
+PY
+
+mutation_case "an event the design takes is accepted only by the identical name" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "                    .any(|input| EventDescriptor::parse(taken).matches(&input.name))",
+     "                    .any(|input| taken.as_str() == input.name)")
+PY
+
+mutation_case "a design that takes every event still leaves an input unserved" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "        self.takes_any_input\n            || self\n",
+     "        false\n            || self\n")
+PY
+
+# ── The other names ─────────────────────────────────────────────────
+
+mutation_case "an output the interface never names is not reported" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "            .filter(|sent| !named_outputs.contains(sent.as_str()))",
+     "            .filter(|sent| !named_outputs.contains(sent.as_str()) && false)")
+PY
+
+mutation_case "a computed send does not withhold the list of outputs never sent" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "        let unsent_outputs: BTreeSet<String> = if self.computed_outputs {",
+     "        let unsent_outputs: BTreeSet<String> = if self.computed_outputs && false {")
+PY
+
+mutation_case "a state the interface names and the design lacks is not reported" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "            .filter(|state| !self.states.contains(state))",
+     "            .filter(|state| !self.states.contains(state) && false)")
+PY
+
+mutation_case "a match is claimed while a send names its event by expression" <<'PY'
+edit("sce-build/src/design_surface.rs",
+     "        report.matches = report.differences() == 0 && !report.computed_outputs;",
+     "        report.matches = report.differences() == 0;")
+PY
+
+# ── A name is not behaviour ─────────────────────────────────────────
+
+mutation_case "an example about a state the design lacks is failed, not left unjudged" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "            if !surface.states.iter().any(|state| state == expected) {",
+     "            if !surface.states.iter().any(|state| state == expected) && false {")
+PY
+
+mutation_case "the verdict of a name that is not behaviour loses its cause" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        let cause = judgement.gaps[gaps_before].cause;",
+     "        let cause = judgement.gaps[gaps_before].cause.filter(|_| false);")
+PY
+
+# ── The comparison is made and said ─────────────────────────────────
+
+mutation_case "the interface is never compared with the surface" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "        .map(|surface| surface.compare(&set.interface));",
+     "        .map(|surface| surface.compare(&set.interface))\n        .filter(|_| false);")
+PY
+
+mutation_case "a trace with no surface is reported as a comparison that was made" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                \"checked\": false,",
+     "                \"checked\": true,")
+PY
+
+mutation_case "the manifest never carries the surface" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        surface: report.surface.as_ref(),",
+     "        surface: report.surface.as_ref().filter(|_| false),")
+PY

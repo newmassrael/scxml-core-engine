@@ -367,6 +367,19 @@ class Build:
         """
         return self.manifest.get("holder") or None
 
+    @property
+    def surface(self) -> dict | None:
+        """What the statechart presents to the outside, by the names the product
+        read off it: the events a caller can deliver, the events it sends out of
+        the session, its states and its data (`design_surface::Surface`).
+
+        ⚠ Read from the manifest and copied on as it is, never rebuilt from the
+        document here. Which events a caller can deliver is the analyzer's answer
+        (W3C SCXML 3.12.1 matching, what the machine gives itself on its internal
+        queue), and a second answer written in this package would be free to
+        disagree. None when the run was not one statechart."""
+        return self.manifest.get("surface") or None
+
 
 def generate(document: pathlib.Path, codegen: pathlib.Path,
              into: pathlib.Path, backend: str = "python",
