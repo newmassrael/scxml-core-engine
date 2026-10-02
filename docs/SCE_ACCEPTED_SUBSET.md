@@ -2734,11 +2734,13 @@ for a final inside a state, and what the invoking parent reads as
 by name, so the order the pairs were written in is not part of the answer. A pair
 that cannot be computed is left out and the event is still raised, with `{}` when
 no pair survived. `sce-build/tests/fixtures/static_datamodel/static_donedata.scxml`
-holds Rust and Kotlin to it. Measured 2026-10-03, this one too had been judged and
-accepted and never lowered: the Rust machine called a script engine it had not been
-given and did not compile, and the Kotlin machine raised its done event with no
-data at all, silently. C++ still refuses a `<donedata>` by name. A `<content expr>`
-has no typed form and is refused at parse, as it was.
+holds Rust, Kotlin and C++ to it. Measured 2026-10-03, this one too had been judged
+and accepted and never lowered: the Rust machine called a script engine it had not
+been given and did not compile, and the Kotlin machine raised its done event with no
+data at all, silently. C++ computes each value into a `ScriptValue` and hands the
+pairs that survive to `DoneDataHelper::collectParams`, which writes the object with
+the one writer `evaluateParams` uses for the pairs an engine evaluated. A
+`<content expr>` has no typed form and is refused at parse, as it was.
 
 Rust writes a string into a variable owned — `"busy".to_string()`, and a read
 of another variable cloned — because a string inside an expression is borrowed
@@ -3061,8 +3063,9 @@ yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 data model, `In()`, a `<sce:action>` whose arguments are typed expressions
 of the machine's variables, an event's typed payload, an enum variable, a
 record variable, and a list of numbers, bools or records with `<sce:append>`,
-`<sce:clear>` and `<foreach>`, and a call of an imported algorithm. A bytes
-variable, an `<invoke>` and a `<donedata>` are not lowered yet. A call is the
+`<sce:clear>` and `<foreach>`, a call of an imported algorithm, and the
+`<param>`s of a `<final>`'s `<donedata>`. A bytes variable and an `<invoke>` are
+not lowered yet. A call is the
 algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
 `Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
 is received as any failed operation is; the machine's header includes the

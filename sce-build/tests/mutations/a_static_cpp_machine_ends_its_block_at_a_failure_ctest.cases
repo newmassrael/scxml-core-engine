@@ -25,7 +25,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
-mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2
+mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
 
 # ── A failed statement ends its block ──────────────────────────────
@@ -50,4 +50,23 @@ mutation_case "a transition's native guard is not asked" <<'PY'
 edit("tools/codegen/templates/process_transition.jinja2",
      "{%- elif trans.native_guard -%}{{ trans.native_guard }}",
      "{%- elif trans.native_guard -%}true")
+PY
+
+# ── A <final>'s donedata is what survived ──────────────────────────
+#
+# A param whose value does not fit is left out and the others cross
+# (§scxml-5.7.1); `static_donedata` holds a uint8 that overflows beside three
+# that do not, so a pair carried with the 0 a failed operation yields, and the
+# done event with no data at all, are two different reds.
+
+mutation_case "a donedata param that failed is carried with its zero" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                        if (sce_failure_.failed()) SCE_UNLIKELY {",
+     "                        if (false) SCE_UNLIKELY {")
+PY
+
+mutation_case "the donedata pairs are not handed to the done event" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                    ::SCE::DoneDataHelper::collectParams(doneValues, eventData, &typedData);",
+     "                    (void)doneValues;")
 PY

@@ -28,6 +28,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
@@ -99,6 +100,12 @@ public:
         return machine_.isInFinalState();
     }
 
+    /// The data the top-level final's `<donedata>` left for the invoking parent,
+    /// as the JSON text the done event carries.
+    std::string donedata() const {
+        return machine_.donedataAtFinal();
+    }
+
     json variable(const std::string &name) const {
         const auto found = variables_.find(name);
         EXPECT_NE(found, variables_.end()) << "the driver publishes no variable '" << name << "'";
@@ -125,6 +132,12 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
         const auto &expect = step["expect"];
         if (expect.value("ended", false)) {
             EXPECT_TRUE(driver.ended());
+            // Compared as a value, so the order the pairs were written in is
+            // not part of the answer.
+            if (expect.contains("donedata")) {
+                EXPECT_EQ(json::parse(driver.donedata()), expect["donedata"])
+                    << "the data the final's done event carries";
+            }
             continue;
         }
         if (expect.contains("state")) {
@@ -271,6 +284,16 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordIsBuiltWholeAndUpdatedAFieldAt
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_record_fields", driver);
+}
+
+// A top-level final's `<donedata>` params are computed from the machine's own
+// fields when it is entered, and the pair whose value does not fit is left out.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventItsParams) {
+    using Machine = G::static_donedata::static_donedata;
+    Driver<Machine> driver({
+        {"count", [](const Machine &m) { return json(m.count()); }},
+    });
+    replay("static_donedata", driver);
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

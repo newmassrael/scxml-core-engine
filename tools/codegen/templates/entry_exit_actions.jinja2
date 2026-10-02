@@ -472,6 +472,44 @@
                     std::string eventData;
                     std::optional<ScriptValue> typedData;
 {% if state.donedata.params %}
+{# `datamodel="sce-static"`: each param's value is native code
+   (`DoneDataParam::native_value`), read from the machine's own fields, so no
+   script engine is asked for any of them. #}
+{% set done_native = state.donedata.params | selectattr("native_value") | list | length > 0 %}
+{% if done_native %}
+                    // W3C SCXML 5.5 (SCE Accepted Subset 2.15): the <param>s of a
+                    // sce-static machine are computed here, from its own fields.
+                    // §scxml-5.7.1: a value that cannot be computed (a checked
+                    // operation that overflows) raises error.execution and its pair
+                    // is left out; the done event is raised with the pairs that
+                    // survive.
+                    std::vector<std::pair<std::string, ScriptValue>> doneValues;
+{% for param in state.donedata.params %}
+{% if param.native_value %}
+                    {
+{% if param.native_fails %}
+                        SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                        ScriptValue doneValue = {{ param.native_value }};
+{% if param.native_fails %}
+                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                            SCE_LOG_WARN("Donedata param '{{ param.name | escape_cpp }}' overflowed or failed");
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
+                        } else {
+                            doneValues.emplace_back("{{ param.name | escape_cpp }}", std::move(doneValue));
+                        }
+{% else %}
+                        doneValues.emplace_back("{{ param.name | escape_cpp }}", std::move(doneValue));
+{% endif %}
+                    }
+{% else %}
+                    // §scxml-5.7: an empty location names no location —
+                    // error.execution, and this pair is ignored.
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <param name='{{ param.name | escape_cpp }}'> has an empty location"));
+{% endif %}
+{% endfor %}
+                    ::SCE::DoneDataHelper::collectParams(doneValues, eventData, &typedData);
+{% else %}
                     // W3C SCXML 5.5: Evaluate <param> elements
                     this->ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
@@ -508,6 +546,7 @@
                         },
                         &typedData
                     );
+{% endif %}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.

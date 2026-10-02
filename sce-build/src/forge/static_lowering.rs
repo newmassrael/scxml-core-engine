@@ -1989,9 +1989,6 @@ impl StaticTarget for CppTarget {
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
             }
-            if state.donedata.is_some() {
-                return Some("a <donedata>".to_string());
-            }
         }
         None
     }
@@ -2272,8 +2269,20 @@ impl StaticTarget for CppTarget {
             filters::to_event_variant(event.to_string())
         )
     }
-    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    // The runtime's `ScriptValue`, which `DoneDataHelper::collectParams` writes
+    // as the pair's JSON value, built as the alternative it names: a narrow
+    // integer widens to `int64_t` and a real to `double`, both exactly.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool => format!("ScriptValue(std::in_place_type<bool>, {value})"),
+            InferredType::Str => {
+                format!("ScriptValue(std::in_place_type<std::string>, {value})")
+            }
+            InferredType::Int { .. } => {
+                format!("ScriptValue(std::in_place_type<int64_t>, static_cast<int64_t>({value}))")
+            }
+            _ => format!("ScriptValue(std::in_place_type<double>, static_cast<double>({value}))"),
+        }
     }
 }
 

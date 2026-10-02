@@ -6846,6 +6846,21 @@
         {
           "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DoneDataHelper.h",
+          "symbol": "collectParams",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/DoneDataHelper.h",
+          "symbol": "add",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DoneDataHelper.h",
+          "symbol": "finish",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7173,6 +7188,11 @@
         },
         {
           "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DoneDataHelper.h",
+          "symbol": "collectParams",
           "kind": "references"
         }
       ],

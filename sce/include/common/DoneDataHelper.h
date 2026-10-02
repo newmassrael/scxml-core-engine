@@ -41,6 +41,49 @@ namespace SCE {
  * the processor must place the error error.execution in the internal event queue."
  */
 class DoneDataHelper {
+    /// The object a done event's data is: the pairs that survived, in order, as
+    /// the canonical JSON text of the wire and as the engine-agnostic typed
+    /// value. One writer for the pairs an engine evaluated and the ones a
+    /// generated machine computed itself, so the two cannot differ in a byte.
+    class ParamObject {
+    public:
+        explicit ParamObject(bool typed) {
+            json_ << "{";
+            if (typed) {
+                typed_ = std::make_shared<ScriptObject>();
+            }
+        }
+
+        void add(const std::string &name, const ScriptValue &value) {
+            if (!first_) {
+                json_ << ",";
+            }
+            first_ = false;
+            // §scxml-5.5 + B.2: Use canonical JSON serializer so nested
+            // ScriptObject/ScriptArray param values round-trip through the
+            // wire / local JSON-fallback paths identically to typedData.
+            json_ << JsonText::quoted(name) << ":" << EventDataHelper::scriptValueToJsonString(value);
+            if (typed_) {
+                typed_->properties[name] = value;
+            }
+        }
+
+        /// `{}` when no pair survived, and the typed value stored alongside.
+        void finish(std::string &outEventData, std::optional<ScriptValue> *outTypedData) {
+            json_ << "}";
+            outEventData = json_.str();
+            // §scxml-5.5: Store typed data for done.state event
+            if (outTypedData && typed_) {
+                *outTypedData = typed_;
+            }
+        }
+
+    private:
+        std::ostringstream json_;
+        std::shared_ptr<ScriptObject> typed_;
+        bool first_ = true;
+    };
+
 public:
     /**
      * @brief Evaluate donedata content expression to _event.data value
@@ -188,17 +231,10 @@ public:
             return;
         }
 
-        // §scxml-5.5: <param> elements create an object with name:value pairs
-        std::ostringstream jsonBuilder;
-        jsonBuilder << "{";
+        // §scxml-5.5: <param> elements create an object with name:value pairs,
+        // and a typed ScriptObject beside it for the engine-agnostic pipeline
+        ParamObject object(outTypedData != nullptr);
 
-        // §scxml-5.5: Build ScriptObject for engine-agnostic typed data pipeline
-        std::shared_ptr<ScriptObject> typedObj;
-        if (outTypedData) {
-            typedObj = std::make_shared<ScriptObject>();
-        }
-
-        bool first = true;
         for (const auto &param : params) {
             const std::string &paramName = param.first;
             const ScriptSource &paramExpr = param.second;
@@ -219,21 +255,7 @@ public:
 
             if (result.isSuccess()) {
                 // §scxml-5.7: Successfully evaluated param
-                if (!first) {
-                    jsonBuilder << ",";
-                }
-                first = false;
-
-                const auto &value = result.getInternalValue();
-                // §scxml-5.5 + B.2: Use canonical JSON serializer so nested
-                // ScriptObject/ScriptArray param values round-trip through the
-                // wire / local JSON-fallback paths identically to typedData.
-                jsonBuilder << JsonText::quoted(paramName) << ":" << EventDataHelper::scriptValueToJsonString(value);
-
-                // Preserve typed value for engine-agnostic pipeline
-                if (typedObj) {
-                    typedObj->properties[paramName] = value;
-                }
+                object.add(paramName, result.getInternalValue());
             } else {
                 // §scxml-5.7: Invalid location or expression (runtime error)
                 // Must raise error.execution and ignore this param, but continue with others
@@ -244,13 +266,29 @@ public:
             }
         }
 
-        jsonBuilder << "}";
-        outEventData = jsonBuilder.str();
+        object.finish(outEventData, outTypedData);
+    }
 
-        // §scxml-5.5: Store typed data for done.state event
-        if (outTypedData && typedObj) {
-            *outTypedData = typedObj;
+    /**
+     * @brief Build the donedata object from values a generated machine computed
+     *
+     * §scxml-5.5: the same object `evaluateParams` makes, for a machine whose
+     * `<param>`s were lowered to C++ at build time and so need no engine
+     * (`datamodel="sce-static"`, SCE Accepted Subset §2.15). The machine passes
+     * only the pairs that could be computed: §scxml-5.7.1 leaves out one that
+     * could not, and raises error.execution itself.
+     *
+     * @param values (param name, value) pairs, in document order
+     * @param outEventData Output JSON string; `{}` when no pair survived
+     * @param outTypedData Optional typed pipeline value, as `evaluateParams` stores
+     */
+    static void collectParams(const std::vector<std::pair<std::string, ScriptValue>> &values, std::string &outEventData,
+                              std::optional<ScriptValue> *outTypedData = nullptr) {
+        ParamObject object(outTypedData != nullptr);
+        for (const auto &[name, value] : values) {
+            object.add(name, value);
         }
+        object.finish(outEventData, outTypedData);
     }
 };
 
