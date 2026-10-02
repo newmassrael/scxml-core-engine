@@ -46,11 +46,17 @@ command -v npm >/dev/null 2>&1 \
 ( cd app/ui && npm run build ) \
     || sce_gate_fail "app/ui: the production build"
 
-( cd app && cargo fmt --all --check ) \
+# The workspace is named with `--manifest-path`, not entered with `cd`. Both run
+# the same cargo; only the first is visible to a reader of the command line, and
+# `cli_feature_gating` is one: it reads these lines to judge whether a command
+# sweeps `sce-build` (whose gated test targets need `--features cli`), and
+# `--workspace` here means `app/`'s members, never the root's. A manifest under
+# a directory the root `Cargo.toml` excludes says so on the line itself.
+cargo fmt --manifest-path app/Cargo.toml --all --check \
     || sce_gate_fail "app: cargo fmt --check"
 
-( cd app && cargo clippy --workspace --all-targets --locked -- -D warnings ) \
+cargo clippy --manifest-path app/Cargo.toml --workspace --all-targets --locked -- -D warnings \
     || sce_gate_fail "app: cargo clippy (the Tauri shell and the browser shell)"
 
-( cd app && cargo test -p sce-web-shell --locked ) \
+cargo test --manifest-path app/Cargo.toml -p sce-web-shell --locked \
     || sce_gate_fail "app: the browser shell's tests"

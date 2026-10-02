@@ -32,6 +32,9 @@ mutation_targets sce-build/tests/cli_feature_gating.rs
 # two gate scripts are commands that must enable the feature.
 mutation_runtime_targets sce-build/Cargo.toml scripts/gates/drift-suites.sh
 mutation_runtime_targets scripts/gates/clippy.sh
+# ...and the lane that builds another workspace, with the root manifest whose
+# `exclude` says it is one.
+mutation_runtime_targets scripts/gates/app.sh Cargo.toml
 
 # The defect itself, put back one target at a time. `rust_derive_ssot` is the
 # one whose clean-target run was measured above.
@@ -154,6 +157,36 @@ mutation_case "asking for all targets stops counting as reaching them" <<'PY'
 edit("sce-build/tests/cli_feature_gating.rs",
      '    cmd.contains("cargo test") || asks_for_tests',
      '    cmd.contains("cargo test")')
+PY
+
+# A gate for the application (`scripts/gates/app.sh`) lints a workspace of its
+# own, and `--workspace` on it means that workspace's members. The reader used
+# to take every such line for a sweep of sce-build and refused the lane for a
+# flag it could never use (found by a peer on the first push of that lane).
+# Blinding the recognition puts the original red back: the application's
+# clippy line is then an offender, and so is the unit case beside it.
+mutation_case "the reader stops telling another workspace's sweep from its own" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     '    manifest_paths(cmd).iter().any(|manifest| {\n'
+     '        others\n'
+     '            .iter()\n'
+     '            .any(|dir| manifest.starts_with(&format!("{}/", dir.trim_end_matches(\'/\'))))\n'
+     '    })',
+     '    manifest_paths(cmd).iter().any(|manifest| {\n'
+     '        others\n'
+     '            .iter()\n'
+     '            .any(|dir| manifest.starts_with(&format!("{}/no-such-dir/", dir.trim_end_matches(\'/\'))))\n'
+     '    })')
+PY
+
+# The other direction, which no real command can reach: nothing in the tree
+# names the root manifest with `--manifest-path`, so only the unit case holds
+# the exemption to a manifest that is really in an excluded directory. Taking
+# a whole-segment match for a prefix match would exempt `app-tools/` as well.
+mutation_case "any path that starts like an excluded directory is taken for it" <<'PY'
+edit("sce-build/tests/cli_feature_gating.rs",
+     '.any(|dir| manifest.starts_with(&format!("{}/", dir.trim_end_matches(\'/\'))))',
+     '.any(|dir| manifest.starts_with(dir.trim_end_matches(\'/\')))')
 PY
 
 # Two mutations deliberately NOT written, for two different reasons:

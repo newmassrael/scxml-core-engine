@@ -96,6 +96,46 @@ const COMMAND_TREES: &[&str] = &["scripts", ".github/workflows"];
 /// Command-carrying files that are not inside those trees.
 const COMMAND_FILES: &[&str] = &["tools/git-hooks/pre-push"];
 
+/// Directories the root manifest excludes from its workspace.
+///
+/// A manifest under one of them belongs to a workspace of its own, and
+/// `--workspace` on a command that names it means that workspace's members,
+/// not this package. The set is read from the root manifest rather than listed
+/// here: a workspace is excluded by writing a line in that file, which is the
+/// arrival a list in this one would be the last to hear of.
+fn excluded_workspaces() -> BTreeSet<String> {
+    let path = repo_root().join("Cargo.toml");
+    let manifest =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+
+    let mut out = BTreeSet::new();
+    let mut in_workspace = false;
+    let mut in_exclude = false;
+    for line in manifest.lines() {
+        // No path in this list contains a `#`, so a trailing comment is cut at it.
+        let code = line.split('#').next().unwrap_or("").trim();
+        if code.starts_with('[') {
+            in_workspace = code == "[workspace]";
+            in_exclude = false;
+            continue;
+        }
+        if !in_workspace {
+            continue;
+        }
+        if code.starts_with("exclude") && code.contains('=') {
+            in_exclude = true;
+        }
+        if in_exclude {
+            // Quoted strings sit at the odd positions of a split on `"`.
+            out.extend(code.split('"').skip(1).step_by(2).map(str::to_string));
+            if code.contains(']') {
+                in_exclude = false;
+            }
+        }
+    }
+    out
+}
+
 /// Integration-test sources of this package, as `(target name, text)`.
 ///
 /// The target name of an auto-discovered test is its file stem, and the
@@ -376,6 +416,44 @@ fn named_targets(cmd: &str) -> BTreeSet<String> {
     out
 }
 
+/// Manifests a command names with `--manifest-path`.
+fn manifest_paths(cmd: &str) -> Vec<String> {
+    let tokens: Vec<&str> = cmd.split_whitespace().collect();
+    let mut out = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let value = if let Some(rest) = token.strip_prefix("--manifest-path=") {
+            Some(rest)
+        } else if *token == "--manifest-path" {
+            tokens.get(i + 1).copied()
+        } else {
+            None
+        };
+        if let Some(value) = value {
+            out.push(
+                value
+                    .trim_matches(|c| c == '"' || c == '\'')
+                    .trim_start_matches("./")
+                    .to_string(),
+            );
+        }
+    }
+    out
+}
+
+/// Whether a command names a manifest inside a directory in `others`.
+///
+/// Such a command builds another workspace, so `--workspace` and `--all-targets`
+/// on it say nothing about this package's targets. The directory is matched
+/// as a whole path segment: `app/Cargo.toml` is inside `app`, and
+/// `application/Cargo.toml` is not.
+fn names_another_workspace(cmd: &str, others: &BTreeSet<String>) -> bool {
+    manifest_paths(cmd).iter().any(|manifest| {
+        others
+            .iter()
+            .any(|dir| manifest.starts_with(&format!("{}/", dir.trim_end_matches('/'))))
+    })
+}
+
 /// Whether a command builds this package's integration tests without
 /// naming which ones.
 ///
@@ -390,6 +468,13 @@ fn named_targets(cmd: &str) -> BTreeSet<String> {
 /// A command restricted to non-test targets is out for the same reason:
 /// `--lib` compiles no integration test at all.
 ///
+/// A command that names, with `--manifest-path`, a workspace the root
+/// manifest excludes is out as well: `cargo clippy --manifest-path
+/// app/Cargo.toml --workspace --all-targets` lints the application's members
+/// and reaches none of this package's targets. Entering that directory with
+/// `cd` would hide it from this reader, which sees one command line at a time,
+/// so a gate that builds another workspace names it on the line.
+///
 /// The subcommands differ in what they build by default, and reading them
 /// alike would be wrong in both directions. `cargo test` builds every test
 /// target unless told otherwise; `clippy`, `check` and `build` build the
@@ -397,8 +482,11 @@ fn named_targets(cmd: &str) -> BTreeSet<String> {
 /// `--all-targets` or `--tests`. So `cargo build --bin sce-codegen -p
 /// sce-build` is not in the population, and `cargo clippy --workspace
 /// --all-targets` is.
-fn sweeps_the_package(cmd: &str) -> bool {
+fn sweeps_the_package(cmd: &str, other_workspaces: &BTreeSet<String>) -> bool {
     if !named_targets(cmd).is_empty() {
+        return false;
+    }
+    if names_another_workspace(cmd, other_workspaces) {
         return false;
     }
     let reaches_package = cmd.contains("--workspace")
@@ -479,6 +567,48 @@ fn no_target_declares_the_feature_it_does_not_need() {
 }
 
 #[test]
+fn a_command_that_names_another_workspace_is_not_a_sweep_of_this_package() {
+    let others = excluded_workspaces();
+    assert!(
+        !others.is_empty(),
+        "the root manifest excludes no workspace, so the arm that tells another \
+         workspace's `--workspace` from this one's examined nothing — the read \
+         of `exclude` is broken, or every excluded workspace was brought in"
+    );
+    let dir = others.iter().next().expect("checked non-empty above");
+
+    // Another workspace's `--workspace` is not this package's.
+    for command in [
+        format!("cargo clippy --manifest-path {dir}/Cargo.toml --workspace --all-targets"),
+        format!("cargo clippy --manifest-path=./{dir}/Cargo.toml --workspace --all-targets"),
+        format!("cargo test --manifest-path '{dir}/Cargo.toml' --workspace"),
+    ] {
+        assert!(
+            !sweeps_the_package(&command, &others),
+            "`{command}` builds the workspace under `{dir}`, which the root manifest \
+             excludes, and was read as a sweep of sce-build"
+        );
+    }
+
+    // ...and the root's, or this package's own, still is. Without these the
+    // exemption could be as wide as `--manifest-path` itself and nothing
+    // here would notice.
+    for command in [
+        "cargo clippy --manifest-path Cargo.toml --workspace --all-targets".to_string(),
+        "cargo clippy --manifest-path ./Cargo.toml --workspace --all-targets".to_string(),
+        "cargo test --manifest-path sce-build/Cargo.toml -p sce-build".to_string(),
+        // A directory that merely starts with the excluded one's name is not it.
+        format!("cargo clippy --manifest-path {dir}-tools/Cargo.toml --workspace --all-targets"),
+    ] {
+        assert!(
+            sweeps_the_package(&command, &others),
+            "`{command}` reaches this package's targets and was read as a command \
+             for another workspace"
+        );
+    }
+}
+
+#[test]
 fn every_command_that_reaches_a_gated_target_enables_the_feature() {
     let declared = declared_targets();
     assert!(
@@ -486,6 +616,7 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
         "the manifest declares no gated target — the parse is broken, not the tree"
     );
 
+    let others = excluded_workspaces();
     let mut offenders: Vec<String> = Vec::new();
     let mut examined = 0usize;
     let mut sweeping = 0usize;
@@ -496,7 +627,7 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
                 .intersection(&declared)
                 .cloned()
                 .collect();
-            let sweeps = sweeps_the_package(&cmd);
+            let sweeps = sweeps_the_package(&cmd, &others);
             if !named.is_empty() || sweeps {
                 examined += 1;
             } else {
@@ -569,7 +700,11 @@ fn every_command_that_reaches_a_gated_target_enables_the_feature() {
         "{} command(s) reach a target requiring `{FEATURE}` without enabling \
          it. cargo drops an unmet-features target without building it and \
          without reporting a skip, so the command runs a smaller suite than \
-         its name claims and reports success for what it never ran:\n{}",
+         its name claims and reports success for what it never ran.\n\
+         (A command that builds a different workspace, one the root manifest \
+         excludes, is not this: name it with `--manifest-path <dir>/Cargo.toml` \
+         instead of entering the directory, and it is read as the other \
+         workspace's.)\n{}",
         offenders.len(),
         offenders.join("\n")
     );
