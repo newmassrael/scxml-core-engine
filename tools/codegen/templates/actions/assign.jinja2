@@ -23,6 +23,10 @@
     - 2025-10-28: Refactored to use shared AssignmentExecutionHelper
     - 2025-10-30: Conditional block scope based on context (foreach vs standalone)
 #}
+{% if action.native_code %}
+// W3C SCXML 5.3: <assign location="{{ action.location | escape_cpp }}">, a sce-static statement lowered to C++
+{% include 'actions/_native_statement.jinja2' %}
+{% else %}
 {% if not in_foreach %}{{ '{' }}{% endif %}
 // W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
 {% if not in_foreach %}bool success = false;
@@ -85,3 +89,4 @@ if (!success) {
 }
 {% endif %}
 {% if not in_foreach %}{{ '}' }}{% endif %}
+{% endif %}

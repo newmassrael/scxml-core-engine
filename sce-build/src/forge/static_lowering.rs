@@ -59,6 +59,10 @@ pub struct StaticField {
     /// backend type. A backend without overloading on type reads each value
     /// with the function this names.
     pub saved_type: String,
+    /// The name a host reads this field through when the field's own name is
+    /// not it ([`StaticTarget::reader_name`]) — `None` for a name the backend
+    /// cannot give a reader.
+    pub reader: Option<String>,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -249,6 +253,14 @@ pub trait StaticTarget {
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
     fn field_name(&self, id: &str) -> String;
+    /// The name a host reads variable `id` through, when that is not
+    /// [`Self::field_name`]: the field's own name for a target whose member is
+    /// the host's reader, and the author's spelling for one whose member
+    /// carries a prefix. `None` for a name this target cannot spell a reader
+    /// with.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        Some(self.field_name(id))
+    }
     /// How a statement or a guard reaches the field named `name`.
     fn field_ref(&self, name: &str) -> String;
     /// How the machine's active-state test is called (`In(...)`).
@@ -377,6 +389,18 @@ pub trait StaticTarget {
     /// the dispatcher knows from where it renders the action, so it acts on
     /// the `true`.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String;
+    /// `write(value)`, a statement that stores or shows `value`, as
+    /// [`Self::receiving_statement`] receives it, for a `value` that can fail.
+    ///
+    /// The default is the statement with the value written in place, which is
+    /// right where a failure leaves the statement before it writes — an early
+    /// return, a throw. A target whose failed value is still a value (zero,
+    /// with a flag raised) computes it first and writes only when it did not
+    /// fail, so a statement that failed leaves what it was going to write
+    /// as it was (§scxml-4.9).
+    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+        self.receiving_statement(&write(value), failed)
+    }
     /// `statement`, a call whose arguments can fail, run where its failure is
     /// received: a failure stops it before it happens, and `failed` runs
     /// instead. A statement, not an expression: the call sits inside the text
@@ -1220,6 +1244,7 @@ pub fn lower(
                     view: None,
                     bound: None,
                     saved_kind: "record",
+                    reader: None,
                 });
                 continue;
             }
@@ -1264,6 +1289,7 @@ pub fn lower(
                     bound: var.capacity,
                     saved_kind,
                     saved_type,
+                    reader: None,
                 });
                 continue;
             }
@@ -1302,6 +1328,7 @@ pub fn lower(
                     view: None,
                     bound: None,
                     saved_kind: "enum",
+                    reader: None,
                 });
                 continue;
             }
@@ -1321,8 +1348,14 @@ pub fn lower(
                     .flatten(),
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
+                reader: None,
             });
         }
+    }
+    // The name a host reads each published field through, asked once the
+    // fields are declared: a target whose member is not the reader says so.
+    for field in &mut fields {
+        field.reader = target.reader_name(&field.id);
     }
 
     let mut payload_events = BTreeSet::new();
@@ -1861,12 +1894,244 @@ impl Rewrites<'_> {
     }
 }
 
+/// C++: a variable is a member of the machine's policy struct, set by the
+/// machine's own statements, and a value that can fail is computed into a local
+/// first, because a failed checked operation is a value (zero, with a flag
+/// raised) rather than a jump.
+///
+/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`
+/// and `In()`; every construct past those is refused by name
+/// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
+/// left as an undefined name in generated code.
+pub struct CppTarget;
+
+impl CppTarget {
+    /// The first action of `actions`, or of a block nested in one, that this
+    /// target has no lowering for yet.
+    fn unlowered_action(actions: &[Action]) -> Option<String> {
+        for action in actions {
+            match action.action_type.as_str() {
+                "assign" | "log" | "if" | "raise" | "cancel" => {}
+                // A plain send carries no value of the data model; one that
+                // does needs the typed value crossed to the event.
+                "send" if action.params.is_empty() && action.content.is_empty() => {}
+                "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
+                other => return Some(format!("<{other}>")),
+            }
+            for block in action.nested_blocks() {
+                if let Some(found) = Self::unlowered_action(block.actions) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+}
+
+impl StaticTarget for CppTarget {
+    fn name(&self) -> &'static str {
+        "C++"
+    }
+    fn callee(&self, _document_name: &str) -> Option<Callee> {
+        None
+    }
+    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        if let Some(var) = scope.variables.iter().find(|v| {
+            !matches!(
+                v.value_type.as_ref().and_then(|t| t.scalar()),
+                Some(ty) if !matches!(ty, SceType::Enum(_) | SceType::Bytes)
+            )
+        }) {
+            return Some(format!(
+                "<data id=\"{}\"> of a list, record, enum or bytes type",
+                var.id
+            ));
+        }
+        if !model.imported_event_schemas.is_empty() {
+            return Some("a typed event payload".to_string());
+        }
+        for state in model.states.values() {
+            let blocks = state
+                .on_entry_blocks
+                .iter()
+                .chain(&state.on_exit_blocks)
+                .map(Vec::as_slice)
+                .chain([
+                    state.initial_transition_actions.as_slice(),
+                    state.initial_history_default_actions.as_slice(),
+                ])
+                .chain(state.transitions.iter().map(|t| t.actions.as_slice()));
+            for block in blocks {
+                if let Some(found) = Self::unlowered_action(block) {
+                    return Some(found);
+                }
+            }
+            if !state.invokes.is_empty() {
+                return Some("an <invoke>".to_string());
+            }
+            if state.donedata.is_some() {
+                return Some("a <donedata>".to_string());
+            }
+        }
+        None
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Cpp
+    }
+    // A prefix keeps a variable's member from meeting another member of the
+    // policy, which a bare name could (`state`, `engine`).
+    fn field_name(&self, id: &str) -> String {
+        format!("v_{}", filters::to_snake_case(id.to_string()))
+    }
+    // C++ keeps the author's spelling for a reader, as every typed reader of
+    // the language does (`crate::reader_names`), and gives none to a name the
+    // language reserves.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        let spelled = id.replace(['.', '-'], "_");
+        (!crate::reader_names::is_reserved_word(Language::Cpp, &spelled)).then_some(spelled)
+    }
+    fn field_ref(&self, name: &str) -> String {
+        name.to_string()
+    }
+    fn in_function(&self) -> &'static str {
+        "isStateActive"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::cpp_type(ty).to_string()
+    }
+    // A string is lent to the host, not copied out of the machine.
+    fn scalar_view(&self, ty: &SceType) -> Option<String> {
+        match ty {
+            SceType::String => Some("const std::string&".to_string()),
+            _ => None,
+        }
+    }
+    fn record_type(&self, _machine: &str, _alias: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn record_def(
+        &self,
+        _ty: &str,
+        _alias: &str,
+        _schema: &EventSchemaModel,
+        _enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn record_field(&self, _id: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn list_type(&self, _elem: &SceType) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn record_list_type(&self, _record: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn list_empty(&self) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value};")
+    }
+    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn log(&self, label: &str, value: &str) -> String {
+        if label.is_empty() {
+            format!("SCE_LOG_INFO(\"{{}}\", {value});")
+        } else {
+            format!(
+                "SCE_LOG_INFO(\"{{}}: {{}}\", \"{}\", {value});",
+                filters::escape_cpp(label.to_string())
+            )
+        }
+    }
+    fn append(
+        &self,
+        _target: &str,
+        _capacity: u32,
+        _value: &str,
+        _value_can_fail: bool,
+        _overflow: &str,
+        _failed: &str,
+    ) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn clear(&self, _target: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn raise_execution_error(&self, _machine: &str, message: &str) -> String {
+        format!(
+            "engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, \"{}\"));",
+            filters::escape_cpp(message.to_string())
+        )
+    }
+    // The runtime's checked helpers record a failure in `sce_failure_` and
+    // answer a zero, so a statement that wrote its value would write that zero.
+    // The expression is a lambda called where it stands, answering whether it
+    // failed, so the dispatcher can end its block as it does for any error.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "([&]() -> bool {{ SCE::Forge::AlgorithmFailure sce_failure_; {statement} \
+             if (sce_failure_.failed()) {{ {failed} return true; }} return false; }})()"
+        )
+    }
+    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+        format!(
+            "([&]() -> bool {{ SCE::Forge::AlgorithmFailure sce_failure_; auto sce_value = {value}; \
+             if (sce_failure_.failed()) {{ {failed} return true; }} {} return false; }})()",
+            write("sce_value")
+        )
+    }
+    fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        format!(
+            "([&]() -> bool {{ SCE::Forge::AlgorithmFailure sce_failure_; bool sce_value = {value}; \
+             if (sce_failure_.failed()) {{ {failed} {flag} return false; }} return sce_value; }})()"
+        )
+    }
+    // The flag is a local of the `<if>`, named by its ordinal, which the
+    // condition's lambda sets by reference.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String {
+        format!("ifCondFailed{if_ordinal} = true;")
+    }
+    // Asked of every transition, and a typed payload is refused, so no event
+    // carries one to read and the name is never spelled.
+    fn payload_accessor(&self, _event: &str) -> String {
+        String::new()
+    }
+    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
+        unreachable!("refused by CppTarget::unsupported")
+    }
+}
+
+/// Rewrite `model` — a clone the C++ backend renders — so every expression of
+/// a `sce-static` document is native C++.
+pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, &CppTarget)
+}
+
 /// The target that spells `lang`, when it lowers `sce-static` at all.
 pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
     match lang {
         Language::Kotlin => Some(&KotlinTarget),
         Language::Rust => Some(&RustTarget),
-        Language::Cpp | Language::C11 | Language::Go | Language::Python => None,
+        Language::Cpp => Some(&CppTarget),
+        Language::C11 | Language::Go | Language::Python => None,
     }
 }
 
@@ -2032,14 +2297,13 @@ fn lower_action(
     // on by ending the block (§scxml-4.9) — with whether it can.
     let statement =
         |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| -> (String, bool) {
-            let written = write(&value.text);
             if value.can_fail {
                 (
-                    target.receiving_statement(&written, &failed(construct)),
+                    target.receiving_write(write, &value.text, &failed(construct)),
                     true,
                 )
             } else {
-                (written, false)
+                (write(&value.text), false)
             }
         };
     let reads = crate::forge::expr::references_event_data_lexically;

@@ -10,7 +10,10 @@
    POSITION was. `generator::register_template` escapes each of these for the
    literal it sits in (`literal_text`), which is the other half. #}
 // W3C SCXML 4.7: <log>
-{% if action.expr %}
+{% if action.native_code %}
+{# A sce-static document's <log>, lowered to C++ at build time. #}
+{% include 'actions/_native_statement.jinja2' %}
+{% elif action.expr %}
 {% if model.needs_script_engine %}
 {
     this->ensureScriptEngine();

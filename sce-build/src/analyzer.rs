@@ -75,7 +75,9 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
         // §scxml-G-7: a native `<sce:action>` calls through the policy's own
         // `actions_` member, so the C++ entry/exit block lambdas have to
         // capture `this` to reach it.
-        || crate::forge::native_action::document_has_native_actions(model);
+        || crate::forge::native_action::document_has_native_actions(model)
+        // §scxml-5.2: so do a `sce-static` variable's members.
+        || model.datamodel == crate::model::Datamodel::SceStatic;
 
     // `executeEntryActions` must be non-static whenever its switch body
     // emits a reference to `this` or requires engine-bound state that the
@@ -98,7 +100,12 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
         || model.has_parent_communication
         || model.needs_event_scheduler.unwrap_or(false)
         || model.has_parallel_states
-        || !model.context_objects.is_empty();
+        || !model.context_objects.is_empty()
+        // §scxml-5.2: a `sce-static` variable is a member of the policy that
+        // the block's lowered statements read and write, and the `In()`
+        // predicate reads the active configuration the policy holds.
+        || model.datamodel == crate::model::Datamodel::SceStatic
+        || model.uses_in_predicate;
 
     // Rust-specific analysis
     resolve_internal_transitions(model);

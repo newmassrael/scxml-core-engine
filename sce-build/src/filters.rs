@@ -1460,7 +1460,7 @@ pub fn to_cpp_event_variant(name: Cow<'_, str>) -> String {
 }
 
 /// Escape C++ string literals (identical escaping rules to Rust).
-fn escape_cpp(text: String) -> String {
+pub(crate) fn escape_cpp(text: String) -> String {
     escape_rust(text)
 }
 

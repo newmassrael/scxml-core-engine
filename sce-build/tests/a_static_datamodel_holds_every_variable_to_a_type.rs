@@ -243,7 +243,7 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         "sce-static",
         r#"<data id="count" sce:type="uint32" expr="0"/>"#,
     );
-    for lang in ["cpp", "c11", "go", "python"] {
+    for lang in ["c11", "go", "python"] {
         let (ok, out) = run(&["check", "-l", lang], &document);
         assert!(
             !ok,
@@ -259,13 +259,44 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 }
 
 #[test]
-fn kotlin_and_rust_lower_the_model_with_no_script_engine() {
+fn cpp_names_each_construct_it_does_not_lower_yet() {
+    // C++ lowers scalar variables, guards, `<assign>`, `<if>`, `<log>` and
+    // `In()`. What is past that is refused by name where the document is read,
+    // not left as an undefined name in the generated code.
+    let cases = [
+        (
+            "a list variable",
+            doc(
+                "sce-static",
+                r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>"#,
+            ),
+            "of a list, record, enum or bytes type",
+        ),
+        ("an <invoke>", invoking(""), "an <invoke>"),
+    ];
+    for (what, document, names) in cases {
+        let (ok, out) = run(&["check", "-l", "cpp"], &document);
+        assert!(!ok, "{what}: C++ has no lowering for it yet:\n{out}");
+        assert!(
+            out.contains("generate/unsupported-feature") && out.contains("no C++ lowering yet"),
+            "{what}: expected the unsupported-feature refusal naming C++:\n{out}"
+        );
+        assert!(
+            out.contains(names),
+            "{what}: it names the construct:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn kotlin_rust_and_cpp_lower_the_model_with_no_script_engine() {
     // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest
     // says so, and each integration suite (StaticDatamodelTest.kt,
-    // backends/rust/tests/tests/static_datamodel.rs) compiles and drives the
-    // committed machines.
-    for lang in ["kotlin", "rust"] {
+    // backends/rust/tests/tests/static_datamodel.rs,
+    // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp) compiles and
+    // drives the machines.
+    for lang in ["kotlin", "rust", "cpp"] {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -1569,6 +1600,11 @@ const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
         "kotlin",
         "backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt",
         "scenario(\"{s}\")",
+    ),
+    (
+        "cpp",
+        "tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp",
+        "replay(\"{s}\"",
     ),
 ];
 

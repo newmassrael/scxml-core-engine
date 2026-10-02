@@ -34,6 +34,11 @@
 {% endif %}
 {% endfor %}
 #include "static/StaticExecutionEngine.h"
+{% if static_fields %}
+{# SCE Accepted Subset §2.15: a `sce-static` document's integer operations are
+   the checked ones every forge algorithm is held to (SCE_FORGE.md §3.4.1). #}
+#include <sce/forge/algorithm.h>
+{% endif %}
 {# §scxml-3.2: `constexprStrEq` backs the compile-time round trip between
    `getStateName` and `getStateFromName` in utility_methods.jinja2, and
    `validateConfiguration` is what `enterAt` refuses with. Unconditional
@@ -349,7 +354,30 @@ struct {{ model.name }}Policy {
        DataModelReadHelper (see the accessors below) instead of shadowing it.
        Kotlin's template already drew this line; the other backends now do
        too. #}
-    {% if model.readable_variables %}
+    {% if static_fields %}
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
+    {# Under `sce-static` this struct IS the datamodel's home: there is no
+       script engine, and every expression was lowered to C++ reading and
+       writing these members (`crate::forge::static_lowering`). Only the
+       machine's own statements write them. A variable declared
+       `sce:direction="out"` is read by the host through the accessor below;
+       every other one is the machine's own. #}
+{% for field in static_fields %}
+    /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+    {{ field.ty }} {{ field.name }} = {{ field.init }};
+{% endfor %}
+{% for field in static_published %}
+{% if field.reader %}
+
+    /// W3C SCXML 5.2: what the published `{{ field.id }}` datamodel variable holds now.
+    /// Only the machine writes it.
+    {% if field.view %}{{ field.view }}{% else %}{{ field.ty }}{% endif %} {{ field.reader }}() const {
+        return {{ field.name }};
+    }
+{% endif %}
+{% endfor %}
+    {% endif %}
+    {% if model.readable_variables and not static_fields %}
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
     {# Looked up rather than spelled as a ternary chain: a chain's last arm is
        a fallback, so a host type added to the classifier and not to these maps
@@ -880,7 +908,17 @@ public:
         this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
 {% endif %}
     }
-{% if model.readable_variables %}
+{% if static_fields %}
+{% for field in static_published %}
+{% if field.reader %}
+
+    /// W3C SCXML 5.2: what the published `{{ field.id }}` datamodel variable holds now.
+    {% if field.view %}{{ field.view }}{% else %}{{ field.ty }}{% endif %} {{ field.reader }}() const {
+        return this->policy_.{{ field.reader }}();
+    }
+{% endif %}
+{% endfor %}
+{% elif model.readable_variables %}
 
     {# §scxml-5.3: the read accessors are DEFINED on the policy, beside the
        session handle they need, and forwarded here because `policy_` is

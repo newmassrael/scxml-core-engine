@@ -21,12 +21,26 @@
     partition; `condFailed` remembers it, and once the chain has run the
     <if> ends its block as any element that raised does.
 #}
-{% set if_can_fail = model.needs_script_engine and ((not action.is_cpp_condition and not action.is_pure_in_predicate) or (action.elseif_branches | rejectattr("is_cpp_condition") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
+{% set if_can_fail = model.needs_script_engine and ((not action.is_cpp_condition and not action.is_pure_in_predicate and not action.native_cond) or (action.elseif_branches | rejectattr("is_cpp_condition") | rejectattr("is_pure_in_predicate") | rejectattr("native_cond") | list | length > 0)) %}
+{#
+    A native cond that can fail (`native_cond_fails`, a sce-static document's)
+    sets the flag itself, as the script-engine arm's `evaluateIfCond` does:
+    the cond is false, the chain goes on, and the <if> ends its block when it
+    has run. The flag is named by the <if>'s ordinal so a nested <if> cannot
+    reuse its parent's.
+#}
+{% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
 {
 {% if if_can_fail %}
 bool condFailed = false;
 {% endif %}
-{% if action.is_cpp_condition %}
+{% if if_native_can_fail %}
+bool ifCondFailed{{ action.if_ordinal }} = false;
+{% endif %}
+{% if action.native_cond %}
+// SCE Accepted Subset 2.15: a sce-static cond, lowered to C++ at build time
+if ({{ action.native_cond }}) SCE_LIKELY {
+{% elif action.is_cpp_condition %}
 // W3C SCXML 4.2: native guard (cpp: prefix) - direct C++ evaluation
 if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
 {% elif action.is_pure_in_predicate %}
@@ -47,7 +61,7 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine, condFailed){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
+} else if ({% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine, condFailed){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}
@@ -65,6 +79,11 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
 }
 {% if if_can_fail and block_exit is defined and block_exit %}
 if (condFailed) {
+    {{ block_exit }}
+}
+{% endif %}
+{% if if_native_can_fail and block_exit is defined and block_exit %}
+if (ifCondFailed{{ action.if_ordinal }}) {
     {{ block_exit }}
 }
 {% endif %}

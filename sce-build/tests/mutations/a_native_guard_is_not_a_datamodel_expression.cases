@@ -132,16 +132,19 @@ PY
 # where code LIVES dies on the refactor that moves it, which is why the
 # ones below name the arm's effect instead.
 
+# As in Kotlin's `<if>`, the `cpp:` arm follows the lowered-slot arm
+# (`native_cond`, a `sce-static` condition) in one `if`/`elif` chain, so it is
+# the `elif` that is quoted.
 mutation_case "the <if> template loses its native arm" <<'PY'
 edit("tools/codegen/templates/actions/if.jinja2",
-     "{% if action.is_cpp_condition %}",
-     "{% if false %}")
+     "{% elif action.is_cpp_condition %}",
+     "{% elif false %}")
 PY
 
 mutation_case "the <elseif> arm falls back to the constant fold" <<'PY'
 edit("tools/codegen/templates/actions/if.jinja2",
-     "{% if elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}",
-     "{% if false %}{{ elseif.cond_cpp_transformed }}")
+     "{% elif elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}",
+     "{% elif false %}{{ elseif.cond_cpp_transformed }}")
 PY
 
 # The `kt:` arm follows the lowered-slot arm (`native_cond`, a `sce-static`
