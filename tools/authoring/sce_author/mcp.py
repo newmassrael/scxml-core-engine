@@ -181,6 +181,10 @@ SERVER_INSTRUCTIONS = (
     "translate, summarize, rename labels, or add a source fact as if it were "
     "a rendered line -- and print that sha256 under the fence, outside it. "
     "Edit the document after that and the page is stale: validate again. "
+    "An accepted statechart has been checked, not run: the answer's "
+    "`behaviour` says `not played`, and a design is not finished until "
+    "examples written from the specification have been played into it with "
+    "scxml_scenarios. "
     "render_scxml_pseudocode renders a page without a verdict, for a "
     "document whose page is wanted in another shape or lexicon; its answer "
     "is the page and then a note that names the same things. "
@@ -474,6 +478,9 @@ TOOLS = [
             "very bytes that were checked -- and `pages` names its sha256: "
             "show that page verbatim in a fenced block and print the sha256 "
             "under it (`show` says the rest). A refused document has no page. "
+            "An accepted statechart's answer also carries `behaviour`: "
+            "`not played` says nothing has run the design, and `show` says "
+            "what to do about it (scxml_scenarios). "
             "The page is written in the product's own words, English unless "
             "you name a `lexicon`: when the owner reads another language the "
             "product has a lexicon for (`ko`), pass it, and the words the "
@@ -521,6 +528,9 @@ TOOLS = [
             "the JSON as its own block, in the order the documents were given, "
             "and `pages` names each one's sha256: show each verbatim in a "
             "fenced block and print its sha256 under it (`show` says the rest). "
+            "An accepted set carries `behaviour`: `not played` says nothing has "
+            "run the design, and `show` says what to do about it "
+            "(scxml_scenarios). "
             "When the owner keeps a requirement list for the specification (a "
             "`manifest`, made once by scxml_requirement_set), pass it here "
             "too: a statechart that closes its interface is checked with the "
@@ -1528,6 +1538,7 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
                       "`accepted` is the product's verdict on the document, not "
                       "the owner's.")
     answer["show"] += _requirements_say(answer)
+    answer["show"] += _behaviour_say(answer)
     return {"content": [{"type": "text",
                          "text": json.dumps(answer, indent=2, ensure_ascii=False) + "\n"},
                         *({"type": "text", "text": block} for block in blocks)]}
@@ -1580,6 +1591,57 @@ def _requirements_say(answer: dict) -> str:
     if measured.get("verdict") == "measured":
         return " " + _MEASURED
     return " " + _UNREADABLE
+
+
+_UNPLAYED = ("This answer is a check of the document, not a run of it: nothing "
+             "has played the design, so do not tell the owner it behaves as the "
+             "specification says. What the specification forbids or bounds (\"at "
+             "most twice\", \"nothing is sent after the response\") shows in a "
+             "run and in no reading of the document. Before you call the design "
+             "finished, write examples from the specification, each quoting one "
+             "of its sentences word for word, with the inputs, the time that "
+             "passes and what must be observed after each step, and play them "
+             "into this design with scxml_scenarios now (the statechart first, "
+             "then the documents it imports): examples you wrote are "
+             "`ai-proposed`, which the tool records, so they do not wait for "
+             "the owner. Then show the owner the examples beside what happened "
+             "and ask whether they are the examples they mean. Tell the owner "
+             "each fail, and each not-judged with its reason. A pass says only "
+             "that this engine behaved as THESE examples say.")
+
+
+def _behaviour_say(answer: dict) -> str:
+    """What the client is told about behaviour when the product accepted a
+    statechart, and the field that makes the same fact readable by a program.
+
+    ⚠ Why this rides on the check. Measured 2026-10-02 (Sonnet, headless, only
+    this server's tools, "make pseudocode from this specification", three runs):
+    none of them called scxml_scenarios. The tool is described in its own
+    entry and its name is in no instruction, and a client that is asked for
+    pseudocode does kinds, then the check, then shows the page. The same three
+    runs with "and check that the design behaves as the specification says"
+    all called it. The call is made when the owner asks for it or when the
+    answer the client already reads says it is missing; the second is the one
+    that does not depend on the owner knowing to ask.
+
+    ⚠ Only a statechart is run. A document the product accepted as another
+    kind has nothing to play, and a set is not one document, so its manifest
+    names no kind of its own: a set is told, since the examples go to the
+    statechart it holds.
+
+    ⚠ The field is set HERE, with the sentence, so the fact and its wording
+    cannot disagree. It says `not played` and nothing more: the verdicts of a
+    run are scxml_scenarios' to give, and a check that claimed one would be
+    the claim this sentence exists to withhold.
+    """
+    if answer.get("verdict") != "accepted":
+        return ""
+    kind = (answer.get("manifest") or {}).get("document_kind")
+    if kind is not None and kind.get("name") != "statechart":
+        return ""
+    answer["behaviour"] = {"verdict": "not played",
+                           "reason": "no scenario set was played into this design"}
+    return " " + _UNPLAYED
 
 
 def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,

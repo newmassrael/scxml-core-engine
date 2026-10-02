@@ -280,6 +280,18 @@ observed, including what must NOT be sent. An example the specification leaves
 open is `awaiting-decision`, and one that waits on a fact nobody has decided is
 `blocked`; neither is run.
 
+⚠ The tool is reached through the check the client already makes. Measured
+2026-10-02 (Sonnet, only this server's tools, three runs of "make pseudocode
+from this specification"): none called `scxml_scenarios`, and the same three
+runs asked also to check that the design behaves as the specification says all
+did. A step the instructions ask for in a second call is skipped when the owner
+did not name it, so an accepted statechart's `validate_scxml` (and
+`validate_scxml_set`) answer carries `behaviour: {"verdict": "not played"}` and
+a sentence in `show` that says the design was checked and not run, and what to
+do before calling it finished. The field and the sentence are written together
+in `_behaviour_say`, and a document accepted as another kind, which has nothing
+to play, carries neither.
+
 The product does two things and the authoring package one. `sce-codegen
 scenarios` says whether a set is usable, and nothing is run from one that is not.
 `sce-codegen judge-scenarios` turns a set and an observation trace into
