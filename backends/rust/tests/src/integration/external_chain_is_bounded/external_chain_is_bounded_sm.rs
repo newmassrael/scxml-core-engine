@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 54b5201cda32dffa439c93b846703f89a8872c1f05d1ef612922705c1bcfd4e7
+// source-hash: a3ca38872087c2314f9630b7be1b12a428c8ffa1560d49369c9f599f3caa573c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-// SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+#![doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+// SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -895,8 +895,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-    // SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+    // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -905,7 +905,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
     ) {
         match state {
             ExternalChainIsBoundedState::Bounded => {
-                // SCE-MAP: external_chain_is_bounded.scxml:136 :: bounded :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:141 :: bounded :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -936,7 +936,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 }
             }
             ExternalChainIsBoundedState::Resuming => {
-                // SCE-MAP: external_chain_is_bounded.scxml:156 :: resuming :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:161 :: resuming :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -967,7 +967,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 }
             }
             ExternalChainIsBoundedState::Spin => {
-                // SCE-MAP: external_chain_is_bounded.scxml:121 :: spin :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:126 :: spin :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -998,7 +998,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 }
             }
             ExternalChainIsBoundedState::Timing => {
-                // SCE-MAP: external_chain_is_bounded.scxml:209 :: timing :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:214 :: timing :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1180,7 +1180,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 }
             }
             ExternalChainIsBoundedState::Zeroing => {
-                // SCE-MAP: external_chain_is_bounded.scxml:176 :: zeroing :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:181 :: zeroing :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1211,7 +1211,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 }
             }
             ExternalChainIsBoundedState::ZeroingExpr => {
-                // SCE-MAP: external_chain_is_bounded.scxml:192 :: zeroing_expr :: _state_body
+                // SCE-MAP: external_chain_is_bounded.scxml:197 :: zeroing_expr :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1292,8 +1292,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-    // SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+    // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1308,8 +1308,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-    // SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+    // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1353,8 +1353,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-    // SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+    // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1634,8 +1634,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine"]
-    // SCE-MAP: external_chain_is_bounded.scxml:78 :: _machine
+    #[doc = "SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine"]
+    // SCE-MAP: external_chain_is_bounded.scxml:83 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1646,7 +1646,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Bounded => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:138 :: bounded :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:143 :: bounded :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1705,7 +1705,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:142 :: bounded :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:147 :: bounded :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1739,7 +1739,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:145 :: bounded :: _transition_2
+                        // SCE-MAP: external_chain_is_bounded.scxml:150 :: bounded :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1778,7 +1778,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:105 :: idle :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:110 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1817,7 +1817,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Resuming => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:158 :: resuming :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:163 :: resuming :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1876,7 +1876,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:162 :: resuming :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:167 :: resuming :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1910,7 +1910,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:165 :: resuming :: _transition_2
+                        // SCE-MAP: external_chain_is_bounded.scxml:170 :: resuming :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1949,7 +1949,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Spin => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:123 :: spin :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:128 :: spin :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2008,7 +2008,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:127 :: spin :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:132 :: spin :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2047,7 +2047,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Timing => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:220 :: timing :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:225 :: timing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2081,7 +2081,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:223 :: timing :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:228 :: timing :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2120,7 +2120,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::Zeroing => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:178 :: zeroing :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:183 :: zeroing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2179,7 +2179,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:182 :: zeroing :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:187 :: zeroing :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2218,7 +2218,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
             ExternalChainIsBoundedState::ZeroingExpr => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:194 :: zeroing_expr :: _transition_0
+                        // SCE-MAP: external_chain_is_bounded.scxml:199 :: zeroing_expr :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -2321,7 +2321,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: external_chain_is_bounded.scxml:198 :: zeroing_expr :: _transition_1
+                        // SCE-MAP: external_chain_is_bounded.scxml:203 :: zeroing_expr :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
