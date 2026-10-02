@@ -25,11 +25,14 @@
 //     arguments, and `static_host_call_arguments` (beside this file): an
 //     argument that overflows stops the call and raises `error.execution`.
 
+#include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_enum_sm.h"
+#include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
 
@@ -196,6 +199,46 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumVariableHoldsAVariantOfItsEnum)
         {"changes", [](const Probe &m) { return json(m.changes()); }},
     });
     replay("static_enum", driver);
+}
+
+// A list is a bounded `std::vector`: appended to while it has room, and a full
+// list is an error rather than a longer list; `len` measures it and a clear
+// empties it.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AListIsFilledToItsBoundAndEmptied) {
+    using Machine = G::static_list::static_list;
+    Driver<Machine> driver({
+        {"picked", [](const Machine &m) { return json(m.picked()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+        {"count", [](const Machine &m) { return json(m.count()); }},
+    });
+    replay("static_list", driver);
+}
+
+// A `<foreach>` walks the list as it was when the loop began, binds its item
+// and index, and an error in its body ends the block that holds it.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AForeachWalksAListVariable) {
+    using Machine = G::static_foreach::static_foreach;
+    Driver<Machine> driver({
+        {"picked", [](const Machine &m) { return json(m.picked()); }},
+        {"total", [](const Machine &m) { return json(m.total()); }},
+        {"weighted", [](const Machine &m) { return json(m.weighted()); }},
+        {"small", [](const Machine &m) { return json(m.small()); }},
+        {"crossings", [](const Machine &m) { return json(m.crossings()); }},
+        {"visited", [](const Machine &m) { return json(m.visited()); }},
+        {"finished", [](const Machine &m) { return json(m.finished()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_foreach", driver);
+}
+
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnAppendThatFailsEndsItsBlock) {
+    using Machine = G::static_block_ends_list::static_block_ends_list;
+    Driver<Machine> driver({
+        {"picked", [](const Machine &m) { return json(m.picked()); }},
+        {"afterAppend", [](const Machine &m) { return json(m.afterAppend()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_block_ends_list", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

@@ -1930,6 +1930,8 @@ impl CppTarget {
                 // variables; one that reads an event payload is refused with
                 // the payload itself.
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
+                // A list is filled, emptied and walked by native statements.
+                "sce_append" | "sce_clear" | "foreach" => {}
                 // A plain send carries no value of the data model; one that
                 // does needs the typed value crossed to the event.
                 "send" if action.params.is_empty() && action.content.is_empty() => {}
@@ -1955,13 +1957,18 @@ impl StaticTarget for CppTarget {
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         if let Some(var) = scope.variables.iter().find(|v| {
-            !matches!(
-                v.value_type.as_ref().and_then(|t| t.scalar()),
-                Some(ty) if !matches!(ty, SceType::Bytes)
-            )
+            !v.value_type.as_ref().is_some_and(|t| match t.scalar() {
+                Some(ty) => !matches!(ty, SceType::Bytes),
+                // A list of numbers, bools and strings; a list of enums, of
+                // bytes or of records is not spelled yet.
+                None => t
+                    .list_elem()
+                    .and_then(|e| e.scalar())
+                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_))),
+            })
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a list, record or bytes type",
+                "<data id=\"{}\"> of a record or bytes type, or a list of enums, bytes or records",
                 var.id
             ));
         }
@@ -2083,11 +2090,16 @@ impl StaticTarget for CppTarget {
             crate::forge::generator::cpp_type(&model.underlying_type)
         )
     }
-    fn list_type(&self, _elem: &SceType) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("std::vector<{}>", crate::forge::generator::cpp_type(elem))
     }
-    fn list_view(&self, _elem: &SceType) -> Option<String> {
-        unreachable!("refused by CppTarget::unsupported")
+    // The machine's own vector is lent, so a host cannot grow it past the
+    // bound the machine keeps.
+    fn list_view(&self, elem: &SceType) -> Option<String> {
+        Some(format!(
+            "const std::vector<{}>&",
+            crate::forge::generator::cpp_type(elem)
+        ))
     }
     fn record_list_type(&self, _record: &str) -> String {
         unreachable!("refused by CppTarget::unsupported")
@@ -2096,7 +2108,7 @@ impl StaticTarget for CppTarget {
         unreachable!("refused by CppTarget::unsupported")
     }
     fn list_empty(&self) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+        "{}".to_string()
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -2116,19 +2128,52 @@ impl StaticTarget for CppTarget {
             )
         }
     }
+    // An expression that is `true` when the append failed: the list is full, or
+    // the value could not be computed. The room is checked first, so a full
+    // list computes nothing, and the value is computed into a local before it
+    // is pushed, so a failed one leaves the list as it was.
     fn append(
         &self,
-        _target: &str,
-        _capacity: u32,
-        _value: &str,
+        target: &str,
+        capacity: u32,
+        value: &str,
         _value_can_fail: bool,
-        _overflow: &str,
-        _failed: &str,
+        overflow: &str,
+        failed: &str,
     ) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+        format!(
+            "([&]() -> bool {{ [[maybe_unused]] SCE::Forge::AlgorithmFailure sce_failure_; \
+             if ({target}.size() >= {capacity}) {{ {overflow} return true; }} \
+             auto sce_value = {value}; \
+             if (sce_failure_.failed()) {{ {failed} return true; }} \
+             {target}.push_back(sce_value); return false; }})()"
+        )
     }
-    fn clear(&self, _target: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn clear(&self, target: &str) -> String {
+        format!("{target}.clear();")
+    }
+    // The loop walks the list as it was when it began (§scxml-4.6: a shallow
+    // copy), so a body that appends to the list does not move it. The copy is
+    // made by `sceCopy` / `sceIndexed`, declared beside the machine's types, and
+    // lives as long as the loop. The position is a `uint32`, as `len` is.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        Some(match index {
+            None => (
+                format!("for ([[maybe_unused]] const auto &{item} : sceCopy({list}))"),
+                String::new(),
+            ),
+            Some(index) => (
+                format!(
+                    "for ([[maybe_unused]] const auto &[{index}, {item}] : sceIndexed({list}))"
+                ),
+                String::new(),
+            ),
+        })
     }
     fn raise_execution_error(&self, _machine: &str, message: &str) -> String {
         format!(

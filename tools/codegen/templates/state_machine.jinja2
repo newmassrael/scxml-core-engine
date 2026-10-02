@@ -38,6 +38,8 @@
 {# SCE Accepted Subset §2.15: a `sce-static` document's integer operations are
    the checked ones every forge algorithm is held to (SCE_FORGE.md §3.4.1). #}
 #include <sce/forge/algorithm.h>
+#include <utility>
+#include <vector>
 {% endif %}
 {# §scxml-3.2: `constexprStrEq` backs the compile-time round trip between
    `getStateName` and `getStateFromName` in utility_methods.jinja2, and
@@ -290,6 +292,22 @@ enum class History : uint8_t {
    value as the enum document does, and every other value passes through. #}
 template <typename T> const T &sceLogName(const T &value) {
     return value;
+}
+
+{# A `<foreach>` walks the list as it was when the loop began (W3C SCXML 4.6: a
+   shallow copy), so a body that appends to the list does not move it. #}
+template <typename C> C sceCopy(const C &list) {
+    return list;
+}
+
+/// The same copy with each element's position, a `uint32` as `len` is.
+template <typename T> ::std::vector<::std::pair<::std::uint32_t, T>> sceIndexed(const ::std::vector<T> &list) {
+    ::std::vector<::std::pair<::std::uint32_t, T>> walked;
+    walked.reserve(list.size());
+    for (::std::uint32_t position = 0; position < list.size(); ++position) {
+        walked.emplace_back(position, list[position]);
+    }
+    return walked;
 }
 
 {% if static_type_defs %}

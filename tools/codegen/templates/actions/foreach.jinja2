@@ -34,6 +34,24 @@
    `send.jinja2` reads it. The body gets its own — `return false;`, which ends
    the iteration lambda — and a nested <foreach> reads that one as its block's,
    so a failure deep inside ends every enclosing loop and then the block. #}
+{# A sce-static document's <foreach> over a list variable (SCE Accepted Subset
+   §2.15): a native `for` over a copy of the typed elements, lowered ahead of
+   the template by `forge::static_lowering`. A body element that raised its own
+   error leaves the enclosing block from inside the loop, which ends the block
+   that holds the <foreach> as W3C SCXML 4.9 asks. #}
+{% if action.native_loop %}
+// W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}">, a native loop over a sce-static list
+{{ action.native_loop }} {
+{% if action.native_loop_prologue %}
+    {{ action.native_loop_prologue }}
+{% endif %}
+{% for body_action in action.actions %}
+    {% with action=body_action %}
+    {% include 'actions/' + body_action.type + '.jinja2' %}
+    {% endwith %}
+{% endfor %}
+}
+{% else %}
 {% set foreach_exit = block_exit if block_exit is defined and block_exit else '' %}
 // W3C SCXML 4.6: Foreach validation and execution
 {
@@ -119,4 +137,5 @@
 {% endif %}
     }
 }
+{% endif %}
 {% endif %}

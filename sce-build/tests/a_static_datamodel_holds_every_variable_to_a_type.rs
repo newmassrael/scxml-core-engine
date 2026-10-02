@@ -260,23 +260,38 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 
 #[test]
 fn cpp_names_each_construct_it_does_not_lower_yet() {
-    // C++ lowers scalar and enum variables, guards, `<assign>`, `<if>`, `<log>`,
-    // `In()`, host actions and an event's typed payload. What is past that is
-    // refused by name where the document is read, not left as an undefined name
-    // in the generated code.
+    // C++ lowers scalar, enum and list-of-scalar variables, guards, `<assign>`,
+    // `<if>`, `<foreach>`, `<log>`, `In()`, host actions and an event's typed
+    // payload. What is past that is refused by name where the document is read,
+    // not left as an undefined name in the generated code.
+    let fixtures =
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/static_record_list.scxml");
+    let record_list = std::fs::read_to_string(&fixtures).expect("a fixture");
+    let siblings: Vec<(String, String)> = std::fs::read_dir(fixtures.parent().unwrap())
+        .expect("the fixture directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "scxml"))
+        .map(|path| {
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read_to_string(&path).expect("a fixture"),
+            )
+        })
+        .collect();
+    let siblings: Vec<(&str, &str)> = siblings
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
     let cases = [
         (
-            "a list variable",
-            doc(
-                "sce-static",
-                r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>"#,
-            ),
-            "of a list, record or bytes type",
+            "a list of records",
+            record_list,
+            "of a record or bytes type, or a list of enums, bytes or records",
         ),
         ("an <invoke>", invoking(""), "an <invoke>"),
     ];
     for (what, document, names) in cases {
-        let (ok, out) = run(&["check", "-l", "cpp"], &document);
+        let (ok, out) = run_beside(&["check", "-l", "cpp"], &document, &siblings);
         assert!(!ok, "{what}: C++ has no lowering for it yet:\n{out}");
         assert!(
             out.contains("generate/unsupported-feature") && out.contains("no C++ lowering yet"),

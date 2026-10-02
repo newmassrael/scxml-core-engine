@@ -3044,9 +3044,15 @@ C++ lowers the scalar core through the same walk, and refuses the rest by name
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 `<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
 data model, `In()`, a `<sce:action>` whose arguments are typed expressions
-of the machine's variables, an event's typed payload, and an enum variable. A
-list, a record or a bytes variable, an `<invoke>`, a `<donedata>`, `<foreach>`
-and an imported algorithm are not lowered yet. An enum is a scoped enumeration
+of the machine's variables, an event's typed payload, an enum variable, and a
+list of numbers, bools or strings with `<sce:append>`, `<sce:clear>` and
+`<foreach>`. A record or bytes variable, a list of records, enums or bytes, an
+`<invoke>`, a `<donedata>` and an imported algorithm are not lowered yet. A
+list is a bounded `std::vector<T>` the machine alone grows (a host reads it as
+`const std::vector<T>&`); an append checks the room first and computes its value
+into a local, so a full list or a failed value leaves it as it was and ends the
+block, and a `<foreach>` walks a copy made when the loop began (`sceCopy`,
+`sceIndexed`). An enum is a scoped enumeration
 (`<Machine><Alias>Enum`, over the enum document's own carrier, each variant
 holding the value the document gives it) declared in the machine's unit, with
 `sceLogName(value)` answering the name the document gives a value — what a
@@ -3072,7 +3078,8 @@ the host is called only when none of them failed; otherwise `error.execution`
 is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_payload` and `static_enum` against the generated machines (an
+`static_block_ends`, `static_payload`, `static_enum`, `static_list`, `static_foreach`
+and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
