@@ -23,8 +23,8 @@ raised by a send:
   send.badtypeexpr  a failure of the TYPE           -> ("which-processor",)
   send.typefails    both open, the TYPE fails       -> ("which-processor",)
   send.targetfails  both open, the TARGET fails     -> ("caller-target",)
-  send.badtypevar   target open, the TYPE names an undeclared variable   -> ()
-  send.badtargetvar type open, the TARGET names an undeclared variable   -> ()
+  send.badtypevar   target open, the TYPE expression fails at run time   -> ()
+  send.badtargetvar type open, the TARGET expression fails at run time   -> ()
   send.assumed    route read from ``sce:assumed``   -> ()  applied, not a question
   send.plain      route read from a plain data item -> ()
   send.literal    no computed route                 -> ()
@@ -169,10 +169,10 @@ def test_with_both_open_the_one_that_failed_is_the_one_named() -> None:
     assert engine.last_unhandled_error_rests_on() == (QUESTION,)
 
 
-def test_a_variable_nobody_declared_in_one_is_not_laid_to_the_others_question() -> None:
-    """The target is open and the type names a variable nobody declared, and the
-    other way round: the fault is the draft's, and no answer to the question that
-    IS open would mend it."""
+def test_a_fault_in_one_is_not_laid_to_the_others_question() -> None:
+    """The target is open and the type expression fails at run time (it reads a
+    field of event data no event here carries), and the other way round: the fault
+    is the draft's, and no answer to the question that IS open would mend it."""
     for name in ("SEND_BADTYPEVAR", "SEND_BADTARGETVAR"):
         engine, _ = _started()
         engine.send_event(getattr(_Event, name))
@@ -184,7 +184,8 @@ def test_a_variable_nobody_declared_in_one_is_not_laid_to_the_others_question() 
 
 def test_an_event_name_that_fails_is_not_laid_to_the_route_s_question() -> None:
     """The route is sound and rests on an open question; the event name reads a
-    variable nobody declared. No answer to the route's question would mend that,
+    field of event data no event here carries. No answer to the route's question
+    would mend that,
     so the error carries none: the fault is the document's."""
     engine, _ = _started()
     engine.send_event(_Event.SEND_BADEVENT)

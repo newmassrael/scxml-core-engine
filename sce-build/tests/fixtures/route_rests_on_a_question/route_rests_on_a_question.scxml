@@ -29,21 +29,27 @@
     send.badtypeexpr  the type expression itself fails to evaluate
                    (each of the four fails the ROUTE, so each carries the question)
     send.badevent  the route is sound and rests on an open question, but the
-                   event name reads a variable nobody declared
+                   event name reads a field of event data no event here carries
     send.baddelay  the same, in the delay
-    send.badnamelist the same, in the namelist
+    send.badnamelist the same, in the namelist (it names a variable nobody declared)
 
   The last three fail for a reason no answer to the route's question would mend,
   so none of them carries it: the fault is the document's.
+
+  ⚠ The faults are written as reads of `_event.data`, which the product accepts and
+  the engine refuses when it runs (W3C SCXML 5.9.2: an event that carries no data
+  has none to read a field of). A variable nobody declared would be refused by
+  `check` before anything ran, and this document is part of the authored corpus,
+  which `cli_expression_refusal` holds free of refused expressions.
 
   The type and the target are two questions, and each failure carries only its own:
 
     send.typefails    both are open; the TYPE is unsupported -> the type's question
     send.targetfails  both are open; the TARGET is unreachable -> the target's
-    send.badtypevar   the target is open, the TYPE names a variable nobody
-                      declared -> no question (the target's answer would not mend it)
-    send.badtargetvar the type is open, the TARGET names a variable nobody
-                      declared -> no question
+    send.badtypevar   the target is open, the TYPE expression fails at run time
+                      -> no question (the target's answer would not mend it)
+    send.badtargetvar the type is open, the TARGET expression fails at run time
+                      -> no question
 
     send.late      the route names a Mesh peer nobody serves, and the send waits:
                    the refusal is made when the wait is over, long after the send
@@ -107,10 +113,10 @@
       <send event="notice" typeexpr="supportedType" targetexpr="openRoute"/>
     </transition>
     <transition event="send.badtypevar" target="idle">
-      <send event="notice" typeexpr="missingType" targetexpr="reachableRoute"/>
+      <send event="notice" typeexpr="_event.data.kind" targetexpr="reachableRoute"/>
     </transition>
     <transition event="send.badtargetvar" target="idle">
-      <send event="notice" typeexpr="supportedType" targetexpr="missingTarget"/>
+      <send event="notice" typeexpr="supportedType" targetexpr="_event.data.where"/>
     </transition>
     <transition event="send.late" target="idle">
       <send event="notice" delay="1s" targetexpr="openPeer"/>
@@ -131,10 +137,10 @@
       <send event="notice" typeexpr="openType()"/>
     </transition>
     <transition event="send.badevent" target="idle">
-      <send eventexpr="missingEvent" targetexpr="reachableRoute"/>
+      <send eventexpr="_event.data.name" targetexpr="reachableRoute"/>
     </transition>
     <transition event="send.baddelay" target="idle">
-      <send event="notice" delayexpr="missingDelay" targetexpr="reachableRoute"/>
+      <send event="notice" delayexpr="_event.data.delay" targetexpr="reachableRoute"/>
     </transition>
     <transition event="send.badnamelist" target="idle">
       <send event="notice" targetexpr="reachableRoute" namelist="missingName"/>
