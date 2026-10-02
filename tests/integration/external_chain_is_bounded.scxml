@@ -37,9 +37,14 @@
                 that never advances          being processed. An engine reads a
                                              STATIC zero delay as undelayed (the
                                              Rust template does) or hands it to
-                                             its scheduler (not measured on all
-                                             of them), so what this holds is
-                                             only that the call returns
+                                             its scheduler (the Go template
+                                             does: it reads a delay as none
+                                             only when the attribute is empty,
+                                             so on Go this holds the same-
+                                             instant bound too). The others are
+                                             not measured, so what this holds
+                                             on every engine is only that the
+                                             call returns
        zero_expr the same, through          `delayexpr="'0ms'"`: an expression
                  an expression              has no static value to read as
                                              undelayed, so an engine that

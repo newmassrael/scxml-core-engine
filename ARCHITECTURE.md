@@ -816,12 +816,20 @@ SCXML, the way `MAX_MACROSTEP_MICROSTEPS` is, and so it has to be visible.
    delivery due at the instant being processed (a `delay` of zero that goes
    through the scheduler rather than straight to the queue) can be re-armed by
    its own handler while the same `tick` or `advance_time` is still popping, and
-   a budget on the drain alone never trips, since each pass takes one event. An
-   engine whose scheduler can do that bounds the pops made at one clock reading
-   by the same `B`, reset when the reading advances, and counts the cut the same
-   way. An engine that delivers a zero delay straight to the queue (Python) is
-   already bounded by item 1, and one whose positive delays are dated after the
-   instant being processed cannot re-arm into it.
+   a budget on the drain alone never trips, since each pass takes one event. What
+   can refill itself is only an entry due AT the clock reading the tick runs
+   under: a handler arms relative to that reading, so what it arms is due at the
+   reading or after it, and an entry due after it is not popped in this tick (a
+   heartbeat across a long jump arms its next beat after the reading). An engine
+   whose scheduler can do that bounds the pops of entries due at the reading by
+   the same `B`, reset when the reading advances, and counts the cut the same
+   way. It counts entries and not pops at a reading because an engine may hold
+   ONE reading for the whole tick (Rust, Go): a jump over eight earlier instants
+   pops eight entries at it, each due before it, and there are only as many of
+   those as were armed when the tick began, so they are never the runaway and
+   must not be cut by a small `B`. An engine that delivers a zero delay straight
+   to the queue (Python) is already bounded by item 1, and one whose positive
+   delays are dated after the instant being processed cannot re-arm into it.
 6. **The default's basis.** 10,000 is above the longest invocation measured
    (6 external events, over every design the authoring suite plays) by three
    orders of magnitude, and is a margin and not a proof: the W3C corpus was
@@ -867,7 +875,10 @@ is). The two zero outcomes are not the same test: an engine may read a STATIC
 zero delay as undelayed (the Rust template does), which sends it straight to the
 queue where item 1 bounds it, while an expression has no value to read at
 generation time, so an engine whose scheduler delivers a delay that evaluates to
-zero reaches its same-instant bound (item 5) only through `zero_expr`. The
+zero reaches its same-instant bound (item 5) only through `zero_expr`. Another
+engine hands even a static zero to its scheduler (the Go template reads a delay
+as none only when the attribute is empty), and there both outcomes reach item 5.
+The
 document is an ecmascript one for that reason; `sce-static` refuses `delayexpr`.
 It sits beside its drivers rather than under
 `integration_resources/`, a stem there being a seven-channel contract, until each
