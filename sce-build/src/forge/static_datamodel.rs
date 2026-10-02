@@ -54,6 +54,9 @@ pub fn check(
     let judge = Judge {
         scope: &scope,
         enums,
+        schemas: &model.imported_records,
+        loop_records: Default::default(),
+        loop_names: Default::default(),
         enum_vars: enum_variables(&scope),
         diag_label,
         read: Default::default(),
@@ -210,6 +213,15 @@ fn enum_variables(scope: &StaticScope) -> std::collections::BTreeMap<String, Str
 struct Judge<'a> {
     scope: &'a StaticScope,
     enums: &'a [StaticEnum],
+    /// The schemas the document imports, by alias — the fields of a record a
+    /// loop walks are read from them.
+    schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The record items of the `<foreach>`es the walk is inside, each with the
+    /// alias of the schema it holds — a record an append may take by name.
+    loop_records: std::cell::RefCell<Vec<(String, String)>>,
+    /// Every item and index of the `<foreach>`es the walk is inside: values
+    /// the loop binds and the body reads, and does not write.
+    loop_names: std::cell::RefCell<Vec<String>>,
     /// Each enum-typed variable's id and the alias of the enum it holds.
     enum_vars: std::collections::BTreeMap<String, String>,
     diag_label: &'a str,
@@ -613,6 +625,26 @@ impl<'a> Judge<'a> {
                 // (SCE_FORGE.md §4.12): assigning one whole is refused, as it
                 // is to an algorithm's record local.
                 let location = action.location.trim();
+                // A loop's item and index are bound by the loop: its item is
+                // an element of the list as it was, and writing a field of a
+                // record item would change a copy no one reads.
+                let root = location.split('.').next().unwrap_or(location).trim();
+                if self.loop_names.borrow().iter().any(|name| name == root) {
+                    return Err(Located::in_file(
+                        ExpressionSite::new(&action.location, action.spellings.get("location"))
+                            .place(
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an assignment to `{location}`, which a <foreach> \
+                                         binds (its item and index are read, not written)"
+                                    ),
+                                    observed: Some(location.to_string()),
+                                }
+                                .at(None),
+                            ),
+                        self.diag_label,
+                    ));
+                }
                 if self.scope.variables.iter().any(|v| {
                     v.id == location
                         && v.value_type
@@ -707,20 +739,28 @@ impl<'a> Judge<'a> {
                 let Some(list) = self.list_var(&action.location) else {
                     return Err(self.not_a_list(action, state));
                 };
-                let elem = list
+                match list
                     .value_type
                     .as_ref()
                     .and_then(crate::forge::model::AlgorithmValueType::list_elem)
-                    // A machine list is of scalars: the parser refuses a list
-                    // of records on a variable (`enforce_static_datamodel`).
-                    .and_then(crate::forge::model::ListElemType::scalar)
-                    .map_or(InferredType::Unknown, InferredType::from_sce_type);
-                self.expr(
-                    ctx,
-                    &action.expr,
-                    action.spellings.get("expr"),
-                    Expected::Slot(elem),
-                )?;
+                {
+                    // A record is appended whole, by the name of a record of
+                    // the list's schema: nothing computes one in an expression.
+                    Some(crate::forge::model::ListElemType::Record { alias }) => {
+                        self.record_of(&action.expr, action.spellings.get("expr"), alias, state)?;
+                    }
+                    elem => {
+                        let elem = elem
+                            .and_then(crate::forge::model::ListElemType::scalar)
+                            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                        self.expr(
+                            ctx,
+                            &action.expr,
+                            action.spellings.get("expr"),
+                            Expected::Slot(elem),
+                        )?;
+                    }
+                }
             }
             "sce_clear" => {
                 if self.list_var(&action.location).is_none() {
@@ -792,14 +832,17 @@ impl<'a> Judge<'a> {
                 array,
             ));
         };
-        // A machine list is of scalars: the parser refuses a list of records
-        // on a variable (`enforce_static_datamodel`).
-        let elem = list
+        let Some(elem) = list
             .value_type
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::list_elem)
-            .and_then(crate::forge::model::ListElemType::scalar)
-            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+        else {
+            return Err(place(
+                "array",
+                "a <foreach> of this data model walks a list variable".to_string(),
+                array,
+            ));
+        };
         let item = action.item.trim();
         let index = action.index.trim();
         if item.is_empty() {
@@ -838,15 +881,79 @@ impl<'a> Judge<'a> {
                 return Err(place(attr, format!("a <foreach> {attr} is {why}"), name));
             }
         }
-        let mut inner: TypeCtx<'_> = ctx.clone();
-        inner.insert_var(item, elem);
-        if !index.is_empty() {
-            inner.insert_var(
-                index,
-                InferredType::from_sce_type(&crate::forge::model::SceType::Uint32),
-            );
+        let loop_variables = crate::forge::type_ctx::LoopVariables::new(
+            item,
+            (!index.is_empty()).then_some(index),
+            elem,
+            self.schemas,
+        );
+        let inner = loop_variables.bind(ctx);
+        // A record item is a record an append in the body may take by name.
+        let record_item = match elem {
+            crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
+            crate::forge::model::ListElemType::Scalar(_) => None,
+        };
+        if let Some(alias) = &record_item {
+            self.loop_records
+                .borrow_mut()
+                .push((item.to_string(), alias.clone()));
         }
-        self.actions(&inner, &action.actions, state)
+        let bound = 1 + usize::from(!index.is_empty());
+        {
+            let mut names = self.loop_names.borrow_mut();
+            names.push(item.to_string());
+            if !index.is_empty() {
+                names.push(index.to_string());
+            }
+        }
+        let judged = self.actions(&inner, &action.actions, state);
+        let kept = self.loop_names.borrow().len() - bound;
+        self.loop_names.borrow_mut().truncate(kept);
+        if record_item.is_some() {
+            self.loop_records.borrow_mut().pop();
+        }
+        judged
+    }
+
+    /// `expr`, which an `<sce:append>` to a list of `record:<alias>` takes, is
+    /// the name of a record of that schema — a record variable declared
+    /// `record:<alias>`, or the record item of a `<foreach>` over a list of it:
+    /// a record is built by its `<sce:set>`s and updated a field at a time, so
+    /// nothing in an expression makes one.
+    fn record_of(
+        &self,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        alias: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let written = expr.trim();
+        let names_one = self.scope.variables.iter().any(|v| {
+            v.id == written
+                && v.value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+                    == Some(alias)
+        }) || self
+            .loop_records
+            .borrow()
+            .iter()
+            .any(|(item, held)| item == written && held == alias);
+        if names_one {
+            return Ok(());
+        }
+        Err(self.rule_at(
+            format!("<sce:append expr=\"{written}\">"),
+            &format!(
+                "a list of record:{alias} takes a record of that schema, written as its name: \
+                 a record variable declared record:{alias}, or the item of a <foreach> over a \
+                 list of it"
+            ),
+            spelling.map(|s| s.row()),
+            spelling.map(|s| s.col()),
+            state,
+            written,
+        ))
     }
 
     fn invoke(

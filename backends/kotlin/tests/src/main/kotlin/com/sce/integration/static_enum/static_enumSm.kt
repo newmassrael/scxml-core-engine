@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f5e0b70b0a1d16d32d7cde8ac02eebab0c5a8961575091a650bdf8b84a251d4d
+// source-hash: 3d08f035e56e53f641624ca93616d5d4ec53efc9a2a72e840357646efbf26747
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_enum.scxml

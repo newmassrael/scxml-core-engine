@@ -490,14 +490,14 @@ fn run_record(args: &[&str], doc: &str) -> (bool, String) {
     run_beside(args, doc, &[("schema_day.scxml", SCHEMA_DAY)])
 }
 
-/// A list of records is an algorithm's type (SCE_FORGE.md §4.12). The type
-/// reader a machine variable shares with the algorithm kind admits it, so
-/// the machine refuses it itself, on the variable's line — it lowers
-/// neither the whole-record append nor the snapshot of one.
+/// A list of records (SCE_FORGE.md §4.12) is a machine variable too: it starts
+/// empty, takes a bound, and its elements are declared as a record
+/// variable's are. What it is filled and walked with is
+/// `a_list_holds_records.rs`'s.
 #[test]
-fn a_list_of_records_variable_is_refused() {
+fn a_list_of_records_variable_is_accepted() {
     let (ok, out) = run_record(
-        &["check"],
+        &["check", "-l", "kotlin"],
         r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
@@ -509,8 +509,7 @@ fn a_list_of_records_variable_is_refused() {
 </scxml>
 "##,
     );
-    assert!(!ok, "a machine variable is not a list of records:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+    assert!(ok, "a machine variable is a list of records:\n{out}");
 }
 
 #[test]

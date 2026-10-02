@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_foreach_walks_a_list_variabl
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_foreach_walks_a_list_variable.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs
 
 # A loop variable hides a variable, an enum, an algorithm or an outer loop's
 # variable: `item="total"` reads the loop's element where the author meant the
@@ -59,15 +59,15 @@ PY
 # The item is not typed as the list's element: any use of it is accepted,
 # and the lowering is asked to type what the judge never did.
 mutation_case "the item is untyped" <<'PY'
-edit("sce-build/src/forge/static_datamodel.rs",
-     "        inner.insert_var(item, elem);\n",
-     "        inner.insert_var(item, InferredType::Unknown);\n")
+edit("sce-build/src/forge/type_ctx.rs",
+     "            Some(ty) => inner.insert_var(self.item.as_str(), ty),\n",
+     "            Some(_) => inner.insert_var(self.item.as_str(), InferredType::Unknown),\n")
 PY
 
 # The body is judged in the scope without the loop's variables: the item the
 # body reads is a name nothing declares.
 mutation_case "the body is judged without the loop's variables" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "        self.actions(&inner, &action.actions, state)\n",
-     "        self.actions(ctx, &action.actions, state)\n")
+     "        let judged = self.actions(&inner, &action.actions, state);\n",
+     "        let judged = self.actions(ctx, &action.actions, state);\n")
 PY

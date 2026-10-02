@@ -284,6 +284,11 @@ pub trait StaticTarget {
     /// The type a host reads a published list of `elem` through, when it is
     /// not the list's own type (see [`StaticField::view`]).
     fn list_view(&self, elem: &SceType) -> Option<String>;
+    /// The type of a list of the record type `record` ([`Self::record_type`]).
+    fn record_list_type(&self, record: &str) -> String;
+    /// The type a host reads a published list of `record` through, when it is
+    /// not the list's own type (see [`StaticField::view`]).
+    fn record_list_view(&self, record: &str) -> Option<String>;
     /// An empty list.
     fn list_empty(&self) -> String;
     /// `target = value`.
@@ -543,6 +548,12 @@ impl StaticTarget for KotlinTarget {
     fn list_view(&self, _elem: &SceType) -> Option<String> {
         None
     }
+    fn record_list_type(&self, record: &str) -> String {
+        format!("List<{record}>")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        None
+    }
     fn list_empty(&self) -> String {
         "emptyList()".to_string()
     }
@@ -791,6 +802,14 @@ impl StaticTarget for RustTarget {
     // grow the list past the bound the machine keeps.
     fn list_view(&self, elem: &SceType) -> Option<String> {
         Some(format!("[{}]", crate::forge::generator::rust_type(elem)))
+    }
+    // Plain data by the record rule, so the owned list of them is cloned
+    // whole and lent as a slice, as a list of numbers is.
+    fn record_list_type(&self, record: &str) -> String {
+        format!("Vec<{record}>")
+    }
+    fn record_list_view(&self, record: &str) -> Option<String> {
+        Some(format!("[{record}]"))
     }
     fn list_empty(&self) -> String {
         "Vec::new()".to_string()
@@ -1071,17 +1090,17 @@ pub fn lower(
         })
         .collect();
     // The list variables, each with its element and bound — what an
-    // `<sce:append>` is rewritten against. A machine list is of scalars: the
-    // parser refuses a list of records on a variable.
+    // `<sce:append>` and a `<foreach>` are rewritten against.
     let list_vars: ListVars = variables
         .iter()
         .filter_map(|v| {
-            let elem = v.value_type.as_ref()?.list_elem()?.scalar()?.clone();
+            let elem = v.value_type.as_ref()?.list_elem()?.clone();
             Some((v.id.clone(), (elem, v.capacity?)))
         })
         .collect();
     let rewrites = Rewrites {
         records: record_vars,
+        schemas: records.clone(),
         lists: list_vars,
         machine,
         raises_error: model.events.contains("error.execution"),
@@ -1130,33 +1149,15 @@ pub fn lower(
                         var.id
                     ))
                 })?;
-                if let Some(field) = schema
-                    .fields
-                    .iter()
-                    .find(|f| matches!(f.sce_type, SceType::Enum(_)))
-                {
-                    return Err(GenerateError::unsupported(format!(
-                        "record:{alias} has the enum-typed field `{}`, which has no {lang} \
-                         lowering in a statechart yet",
-                        field.id
-                    )));
-                }
-                let ty = target.record_type(machine, alias);
-                if declared_types.insert(ty.clone()) {
-                    type_defs.push(target.record_def(&ty, alias, schema));
-                    saved_records.push(StaticRecord {
-                        ty: ty.clone(),
-                        fields: schema
-                            .fields
-                            .iter()
-                            .map(|f| StaticRecordField {
-                                id: f.id.clone(),
-                                name: target.record_field(&f.id),
-                                saved_type: f.sce_type.as_attr(),
-                            })
-                            .collect(),
-                    });
-                }
+                let ty = declare_record(
+                    target,
+                    machine,
+                    alias,
+                    schema,
+                    &mut declared_types,
+                    &mut type_defs,
+                    &mut saved_records,
+                )?;
                 let mut values = Vec::with_capacity(schema.fields.len());
                 for field in &schema.fields {
                     let init = var
@@ -1196,26 +1197,55 @@ pub fn lower(
                 });
                 continue;
             }
-            // A list starts empty.
-            if let Some(elem) = var
-                .value_type
-                .as_ref()
-                .and_then(|t| t.list_elem())
-                .and_then(crate::forge::model::ListElemType::scalar)
-            {
+            // A list starts empty. Its elements are numbers and bools, or
+            // records, which are declared as a record variable's are.
+            if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
+                use crate::forge::model::ListElemType;
+                let (ty, view, saved_kind, saved_type) = match elem {
+                    ListElemType::Scalar(elem) => (
+                        target.list_type(elem),
+                        target.list_view(elem),
+                        "list",
+                        elem.as_attr(),
+                    ),
+                    ListElemType::Record { alias } => {
+                        let schema = records.get(alias).ok_or_else(|| {
+                            GenerateError::unsupported(format!(
+                                "<data id=\"{}\">: list<record:{alias}> names no event-schema \
+                                 this build read",
+                                var.id
+                            ))
+                        })?;
+                        let record_ty = declare_record(
+                            target,
+                            machine,
+                            alias,
+                            schema,
+                            &mut declared_types,
+                            &mut type_defs,
+                            &mut saved_records,
+                        )?;
+                        (
+                            target.record_list_type(&record_ty),
+                            target.record_list_view(&record_ty),
+                            "record_list",
+                            record_ty,
+                        )
+                    }
+                };
                 if let Some(element) = target.data_element(&var.id, &target.list_empty()) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
-                    ty: target.list_type(elem),
+                    ty,
                     init: target.list_empty(),
                     published,
-                    view: target.list_view(elem),
+                    view,
                     bound: var.capacity,
-                    saved_kind: "list",
-                    saved_type: elem.as_attr(),
+                    saved_kind,
+                    saved_type,
                 });
                 continue;
             }
@@ -1411,6 +1441,52 @@ pub fn lower(
     })
 }
 
+/// The type a `record:<alias>` value is held in — of a record variable or of a
+/// list's elements — declared in the machine's own file the first time any
+/// variable names it, with what a saved state writes of it.
+///
+/// A schema with an enum-typed field is refused: its type is the enum
+/// document's, which the machine's unit does not import.
+fn declare_record(
+    target: &dyn StaticTarget,
+    machine: &str,
+    alias: &str,
+    schema: &EventSchemaModel,
+    declared_types: &mut BTreeSet<String>,
+    type_defs: &mut Vec<String>,
+    saved_records: &mut Vec<StaticRecord>,
+) -> Result<String, GenerateError> {
+    if let Some(field) = schema
+        .fields
+        .iter()
+        .find(|f| matches!(f.sce_type, SceType::Enum(_)))
+    {
+        return Err(GenerateError::unsupported(format!(
+            "record:{alias} has the enum-typed field `{}`, which has no {} lowering in a \
+             statechart yet",
+            field.id,
+            target.name()
+        )));
+    }
+    let ty = target.record_type(machine, alias);
+    if declared_types.insert(ty.clone()) {
+        type_defs.push(target.record_def(&ty, alias, schema));
+        saved_records.push(StaticRecord {
+            ty: ty.clone(),
+            fields: schema
+                .fields
+                .iter()
+                .map(|f| StaticRecordField {
+                    id: f.id.clone(),
+                    name: target.record_field(&f.id),
+                    saved_type: f.sce_type.as_attr(),
+                })
+                .collect(),
+        });
+    }
+    Ok(ty)
+}
+
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
 /// §2.15, "Saving and restoring"): a SHA-256 over every state with its kind
 /// and parent, in document order, and every variable with its type and bound,
@@ -1515,12 +1591,13 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             .capacity
             .map_or_else(|| "-".to_string(), |c| c.to_string());
         let _ = writeln!(text, "variable {} {ty} {bound}", var.id);
-        if let Some(schema) = var
-            .value_type
-            .as_ref()
-            .and_then(|t| t.record_alias())
-            .and_then(|alias| model.imported_records.get(alias))
-        {
+        // A record's fields, whether it is the variable or the element of the
+        // list the variable is: what a saved state names of it.
+        let record_alias = var.value_type.as_ref().and_then(|t| {
+            t.record_alias()
+                .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
+        });
+        if let Some(schema) = record_alias.and_then(|alias| model.imported_records.get(alias)) {
             for field in &schema.fields {
                 let _ = writeln!(
                     text,
@@ -1650,7 +1727,7 @@ type RecordVars = std::collections::BTreeMap<String, EventSchemaModel>;
 
 /// A `sce-static` document's list variables, each with its element type and
 /// its declared capacity.
-type ListVars = std::collections::BTreeMap<String, (SceType, u32)>;
+type ListVars = std::collections::BTreeMap<String, (crate::forge::model::ListElemType, u32)>;
 
 /// What rewriting an action needs beyond its expressions: the record and
 /// list variables a write to one is rewritten against, the machine name the
@@ -1659,6 +1736,9 @@ type ListVars = std::collections::BTreeMap<String, (SceType, u32)>;
 /// could match one — and the backend spelling it all.
 struct Rewrites<'m> {
     records: RecordVars,
+    /// Every schema the document imports, by alias — what the fields of a
+    /// record a loop walks are read from.
+    schemas: std::collections::BTreeMap<String, EventSchemaModel>,
     lists: ListVars,
     machine: &'m str,
     raises_error: bool,
@@ -1964,7 +2044,22 @@ fn lower_action(
                     "<sce:append target=\"{list}\"> names no list variable"
                 ))
             })?;
-            let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
+            // A record is appended whole, as the record the expression names —
+            // a record variable or a loop's record item — stands now: a plain
+            // value the list then holds a copy of.
+            let value = match elem {
+                crate::forge::model::ListElemType::Scalar(elem) => {
+                    lower(&action.expr, InferredType::from_sce_type(elem))?
+                }
+                crate::forge::model::ListElemType::Record { .. } => {
+                    reads_payload = false;
+                    let written = action.expr.trim();
+                    Receiving {
+                        text: renames.get(written).copied().unwrap_or(written).to_string(),
+                        can_fail: false,
+                    }
+                }
+            };
             let name = renames.get(list).copied().unwrap_or(list);
             let overflow = if rewrites.raises_error {
                 target.raise_execution_error(
@@ -2022,11 +2117,9 @@ fn lower_action(
                      field of the machine"
                 )));
             }
-            let mut inner: crate::forge::types::TypeCtx<'_> = ctx.clone();
-            inner.insert_var(item, InferredType::from_sce_type(elem));
-            if let Some(index) = index {
-                inner.insert_var(index, InferredType::from_sce_type(&SceType::Uint32));
-            }
+            let loop_variables =
+                crate::forge::type_ctx::LoopVariables::new(item, index, elem, &rewrites.schemas);
+            let inner = loop_variables.bind(ctx);
             let name = renames.get(list).copied().unwrap_or(list);
             if let Some((head, prologue)) = target.foreach_loop(name, item, index) {
                 action.native_loop = head;

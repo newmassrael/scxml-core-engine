@@ -1,0 +1,50 @@
+# Mutation cases for "a list holds records"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_list_holds_records.cases
+#
+# A list takes a record whole, by name, and a loop binds a record item whose
+# fields are the schema's and which the body reads and does not write. The
+# rules that matter are the ones that keep an expression that computes no
+# record, a name that is none, and a write to what a loop binds from reaching
+# generated code that does not compile. Each case takes one away and has to
+# turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test a_list_holds_records
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/a_list_holds_records.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs
+
+# Any expression is appended as a record: `draft.year`, a number, a name that
+# means nothing.
+mutation_case "an append takes any expression as a record" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if names_one {\n            return Ok(());\n",
+     "        if names_one || true {\n            return Ok(());\n")
+PY
+
+# A write to what a loop binds is accepted: Kotlin's item is a `val`, and a
+# write to a field of a record item changes a copy no one reads.
+mutation_case "a loop's item or index is written" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                if self.loop_names.borrow().iter().any(|name| name == root) {\n",
+     "                if self.loop_names.borrow().iter().any(|name| name == root && false) {\n")
+PY
+
+# A record item's fields are not the schema's: a read of one finds no member.
+mutation_case "a record item has no fields" <<'PY'
+edit("sce-build/src/forge/type_ctx.rs",
+     "                            format!(\"{item}.{}\", field.id),\n",
+     "                            format!(\"{item}_{}\", field.id),\n")
+PY
+
+# A loop's record item stays a name after its loop: an append outside it
+# takes a record nothing holds.
+mutation_case "a record item outlives its loop" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            self.loop_records.borrow_mut().pop();\n",
+     "")
+PY

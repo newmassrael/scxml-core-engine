@@ -28,6 +28,7 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
+import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -254,6 +255,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_fields"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRecordListAppendsARecordWholeAndWalksItByField() {
+        val sm = StaticRecordListStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_list"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

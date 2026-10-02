@@ -2842,6 +2842,22 @@ assignment are both `expression/unsupported-construct`. A list is walked with
 A `target` that names no list is `scxml/static-datamodel-rule`, naming the
 lists there are, and so is either statement under any other data model.
 
+**A list of records.** `sce:type="list&lt;record:Day&gt;"` holds records of an
+imported event-schema, declared as a record variable is (a type of the
+machine's own, `<Machine><Alias>Record`) and bounded and cleared as a list of
+numbers is. A record is built by its `<sce:set>`s and updated a field at a
+time, so nothing in an expression makes one: `<sce:append target="days"
+expr="draft"/>` takes a record **by its name** — a record variable declared
+`record:Day`, or the item of a `<foreach>` over a list of `Day` — and the list
+holds a copy of it as it stands then. Anything else written there is
+`scxml/static-datamodel-rule` on the `expr`, which says which names it takes.
+A schema with an enum-typed field is refused as a record variable's is. The host
+reads a published list through the snapshot (an immutable `List<…Record>` in
+Kotlin, a slice in Rust); a saved state writes it as an array of the record's
+objects, and the saved shape names the record's fields.
+`scenarios/static_record_list.json` holds this on every engine that runs the
+model.
+
 **Iterating a list.** `<foreach array="picked" item="v" index="i">`
 (W3C SCXML 4.6) walks a list variable: `array` names one the machine
 declares, `item` is each element typed as the list's element, and `index`,
@@ -2853,7 +2869,12 @@ variable, an enum, an imported algorithm, an enclosing loop's variable — a loo
 in a loop takes names of its own), a code identifier (§2.14) that no backend
 reserves as a keyword and that does not begin `sce_`, which the generated code
 keeps for its own; anything else is `scxml/static-datamodel-rule` on the
-attribute. An `array` that names no list is the same.
+attribute. An `array` that names no list is the same. Over a list of records the
+item is a closed record of that schema: its fields are read typed as `d.dayOfMonth`
+(any other member is `expression/unknown-member`), and it is appended whole to a
+list of the same schema. What a loop binds is read and not written: an
+`<assign>` to the item, to a field of a record item or to the index is
+`expression/unsupported-construct`.
 
 The walk is of the list as it was when the loop began (a shallow copy, as 4.6
 says), so a body that appends to the list it walks adds to the machine's list

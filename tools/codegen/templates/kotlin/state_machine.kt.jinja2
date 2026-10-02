@@ -159,6 +159,8 @@ class {{ machine_name }}StateMachine(
 {{ name }}.toSaved()
 {%- elif kind == "list" -%}
 SavedValues.list({{ name }}) { SavedValues.of(it) }
+{%- elif kind == "record_list" -%}
+SavedValues.list({{ name }}) { it.toSaved() }
 {%- else -%}
 SavedValues.of({{ name }})
 {%- endif -%}
@@ -168,6 +170,8 @@ SavedValues.of({{ name }})
 {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif kind == "list" -%}
 SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
+{%- elif kind == "record_list" -%}
+SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> {{ type }}.fromSaved(e, w) }
 {%- elif type == "bytes" -%}
 SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "Int.MAX_VALUE" }})
 {%- else -%}

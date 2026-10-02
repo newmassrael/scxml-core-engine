@@ -471,6 +471,75 @@ fn static_record_paths<'v>(
     paths
 }
 
+/// What a `<foreach>` over a list variable binds in its body (§scxml-4.6):
+/// `item`, each element — typed as the list's element, or, for a list of
+/// records, a closed record whose fields are the schema's — and `index`, its
+/// position, a `uint32` as `len` is. One definition for the pass that judges
+/// the body and the pass that lowers it, so neither sees a scope the other
+/// does not.
+pub struct LoopVariables {
+    item: String,
+    /// The item's type for a scalar element; `None` for a record.
+    item_ty: Option<InferredType>,
+    index: Option<String>,
+    /// The typed `<item>.<field>` paths of a record item.
+    paths: Vec<(String, InferredType)>,
+}
+
+impl LoopVariables {
+    /// The variables a loop over a list of `elem` binds. A record's fields are
+    /// read from `schemas`, the document's imports by alias.
+    pub fn new(
+        item: &str,
+        index: Option<&str>,
+        elem: &ListElemType,
+        schemas: &std::collections::BTreeMap<String, EventSchemaModel>,
+    ) -> Self {
+        let (item_ty, paths) = match elem {
+            ListElemType::Scalar(ty) => (Some(InferredType::from_sce_type(ty)), Vec::new()),
+            ListElemType::Record { alias } => (
+                None,
+                schemas
+                    .get(alias)
+                    .into_iter()
+                    .flat_map(|schema| &schema.fields)
+                    .map(|field| {
+                        (
+                            format!("{item}.{}", field.id),
+                            InferredType::from_sce_type(&field.sce_type),
+                        )
+                    })
+                    .collect(),
+            ),
+        };
+        Self {
+            item: item.to_string(),
+            item_ty,
+            index: index.map(str::to_string),
+            paths,
+        }
+    }
+
+    /// `ctx` with the loop's variables added: the scope of its body.
+    pub fn bind<'s, 'c: 's>(&'s self, ctx: &TypeCtx<'c>) -> TypeCtx<'s> {
+        let mut inner: TypeCtx<'s> = ctx.clone();
+        match self.item_ty {
+            Some(ty) => inner.insert_var(self.item.as_str(), ty),
+            None => inner.insert_record(self.item.as_str(), RecordShape::Closed),
+        }
+        for (path, ty) in &self.paths {
+            inner.insert_var(path.as_str(), *ty);
+        }
+        if let Some(index) = &self.index {
+            inner.insert_var(
+                index.as_str(),
+                InferredType::from_sce_type(&SceType::Uint32),
+            );
+        }
+        inner
+    }
+}
+
 /// A `sce-static` statechart's typed scope (docs/SCE_ACCEPTED_SUBSET.md
 /// §2.15), gathered once for every pass that judges or lowers one of its
 /// expressions — validation, the host-action signature check, the Kotlin

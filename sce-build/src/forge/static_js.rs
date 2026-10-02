@@ -308,6 +308,12 @@ impl StaticTarget for JsTarget {
     fn list_view(&self, _elem: &SceType) -> Option<String> {
         None
     }
+    fn record_list_type(&self, record: &str) -> String {
+        format!("list<{record}>")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        None
+    }
     fn list_empty(&self) -> String {
         "[]".to_string()
     }

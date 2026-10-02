@@ -4170,6 +4170,10 @@
         {
           "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/type_ctx.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -44,6 +44,9 @@ use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
     StaticRecordFieldsPersist, StaticRecordFieldsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_list_sm::{
+    StaticRecordListPersist, StaticRecordListPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
@@ -219,6 +222,17 @@ fn static_record_fields_updates_a_record_a_field_at_a_time() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_fields.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_list_appends_a_record_whole_and_walks_it_by_field() {
+    replay(
+        Engine::new(StaticRecordListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_list.json"
         ),
     );
 }

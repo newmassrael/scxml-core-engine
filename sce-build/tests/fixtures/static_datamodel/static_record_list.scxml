@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a list of
+  records. `days` holds up to three `Day`s, each appended whole from the record
+  variable `draft` the event's payload has just filled; a <foreach> walks them
+  with a record item whose fields it reads typed (`d.dayOfMonth`), and
+  appends each item to another list. The list is bound on every backend: an
+  append to a full one appends nothing and raises error.execution.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticScenarioTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="collecting" datamodel="sce-static" name="static_record_list">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="draft" sce:type="record:Day">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
+    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="copies" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="collecting">
+    <!-- The payload fills the draft a field at a time; the draft is then
+         appended whole, and the list holds a copy of it as it stands now. -->
+    <transition event="day.picked" type="internal">
+      <assign location="draft.year" expr="_event.data.year"/>
+      <assign location="draft.month" expr="_event.data.month"/>
+      <assign location="draft.dayOfMonth" expr="_event.data.dayOfMonth"/>
+      <sce:append target="days" expr="draft"/>
+    </transition>
+    <!-- A record item: its fields are read typed, widened to the total. -->
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="days" item="d">
+        <assign location="total" expr="total + d.dayOfMonth"/>
+      </foreach>
+    </transition>
+    <!-- A record item is appended whole to another list. -->
+    <transition event="copy" type="internal">
+      <sce:clear target="copies"/>
+      <foreach array="days" item="d" index="i">
+        <sce:append target="copies" expr="d"/>
+      </foreach>
+    </transition>
+    <transition event="clear" type="internal">
+      <sce:clear target="days"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>
