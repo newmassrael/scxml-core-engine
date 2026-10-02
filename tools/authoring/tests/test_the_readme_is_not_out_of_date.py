@@ -227,7 +227,11 @@ class TheReadmeIsNotOutOfDate(unittest.TestCase):
         with contextlib.redirect_stdout(help_text), \
                 contextlib.suppress(SystemExit):
             main(["--help"])
-        commands = set(re.findall(r"\{([a-z,]+)\}", help_text.getvalue()))
+        # ⚠ The hyphen is part of a command name (`check-pack`). Without it the
+        # group `{brief,...,check-pack,...}` matches nothing at all, and this
+        # case reports "stopped listing subcommands" about a command line that
+        # lists them perfectly.
+        commands = set(re.findall(r"\{([a-z,-]+)\}", help_text.getvalue()))
         named = set()
         for group in commands:
             named |= set(group.split(","))
@@ -263,7 +267,7 @@ class TheReadmeIsNotOutOfDate(unittest.TestCase):
                 main(argv)
             return out.getvalue()
 
-        groups = set(re.findall(r"\{([a-z,]+)\}", printed(["--help"])))
+        groups = set(re.findall(r"\{([a-z,-]+)\}", printed(["--help"])))
         commands = sorted({c for group in groups for c in group.split(",")})
         self.assertTrue(commands, "the command line stopped listing subcommands")
 

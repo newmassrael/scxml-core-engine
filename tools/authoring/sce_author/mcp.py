@@ -15,6 +15,7 @@ So the shape a caller gets is:
     questions  what the specification does not answer, which is the half a
                writer cannot discover by reading harder
     review     whether the PACK those two rest on is worth resting on
+    check-pack everything wrong with the pack, listed whole and not one at a time
     check      whether what was written can reach the platform at all
     verify     whether it BEHAVES, by running it
     scxml_kinds     what each document kind is for, before one is chosen
@@ -70,7 +71,7 @@ from .decisions import load_record as load_decision_record
 from .errors import AuthoringError, describe_path
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
-from .pack import load_pack
+from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
 from . import house_rule, requirement_set
 from .scenario_driver import answer as scenario_answer
@@ -364,6 +365,32 @@ TOOLS = [
             "type": "object",
             "required": ["pack", "prose"],
             "properties": {"pack": _PACK_ARG, "prose": _PROSE_ARG},
+        },
+    },
+    {
+        "name": "check-pack",
+        "description": (
+            "List EVERYTHING wrong with a pack in one pass. Every other tool "
+            "here refuses at the first problem, so a pack with three mistakes "
+            "costs three calls to learn about; a pack is prepared by the "
+            "people who build it and handed to a specification owner already "
+            "verified, and they need all of them at once. Reports each place "
+            "a file departs from its schema, a key written twice, a phrase "
+            "that is not an expression, a name no input declares, a regular "
+            "expression that does not compile, a rule that reads an address "
+            "or protocol the pack does not declare, and an examples file that "
+            "contradicts itself. Each problem is the sentence the loader would "
+            "have refused with. `not_checked` says what could not be held to "
+            "what, because something it depends on did not load: a model that "
+            "did not load whole is not used to accuse the rules that read it. "
+            "`clean` is true only when nothing is wrong and nothing was "
+            "skipped. It says the pack is consistent with itself, not that it "
+            "describes the platform correctly."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["pack"],
+            "properties": {"pack": _PACK_ARG},
         },
     },
     {
@@ -2340,6 +2367,18 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
                 "counts": {k: sum(1 for q in found if q.kind == k)
                            for k in sorted({q.kind for q in found})},
                 "questions": [q.as_dict() for q in found],
+            }
+            return _text(json.dumps(payload, ensure_ascii=False, indent=1))
+
+        if name == "check-pack":
+            report = check_pack(_pack_arg(args))
+            # The same shape `questions` and `review` use: an object with a
+            # version, since a model reads it and a program parses it.
+            payload = {
+                "version": 1,
+                "clean": report.clean,
+                "problems": [str(problem) for problem in report.problems],
+                "not_checked": report.skipped,
             }
             return _text(json.dumps(payload, ensure_ascii=False, indent=1))
 

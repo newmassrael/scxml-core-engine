@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import pathlib
 import shutil
 import tempfile
@@ -22,6 +23,7 @@ import unittest
 
 import yaml
 
+from sce_author import mcp
 from sce_author.__main__ import main
 from sce_author.errors import PackError
 from sce_author.pack import check_pack, load_pack
@@ -184,6 +186,47 @@ class TheCommand(Pack):
         status, printed = self.run_command(self.root)
         self.assertEqual(1, status, printed)
         self.assertIn("not checked: ", printed)
+
+
+class TheToolOverMcp(Pack):
+    """The same answer where a caller reaches the core over the protocol, which is
+    the surface that once had no way to ask whether the pack was any good."""
+
+    def call(self, root: pathlib.Path) -> dict:
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": "check-pack", "arguments": {"pack": str(root)}}}
+        out = io.StringIO()
+        mcp.serve(io.StringIO(json.dumps(request) + "\n"), out)
+        result = json.loads(out.getvalue())["result"]
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        return json.loads(result["content"][0]["text"])
+
+    def test_a_sound_pack_is_clean(self):
+        answer = self.call(self.root)
+        self.assertEqual({"version": 1, "clean": True, "problems": [], "not_checked": []},
+                         answer)
+
+    def test_every_problem_comes_back_in_one_answer(self):
+        self.spoil_conventions()
+        answer = self.call(self.root)
+        self.assertFalse(answer["clean"])
+        self.assertEqual(5, len(answer["problems"]), answer)
+        self.assertEqual([str(p) for p in check_pack(self.root).problems], answer["problems"])
+
+    def test_what_was_not_checked_is_in_the_answer(self):
+        extra = self.root / "interface-model.d"
+        extra.mkdir()
+        (extra / "more.yaml").write_text("entries: [", encoding="utf-8")
+        answer = self.call(self.root)
+        self.assertFalse(answer["clean"])
+        self.assertEqual(1, len(answer["not_checked"]), answer)
+
+    def test_a_missing_pack_argument_is_an_argument_error(self):
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": "check-pack", "arguments": {}}}
+        out = io.StringIO()
+        mcp.serve(io.StringIO(json.dumps(request) + "\n"), out)
+        self.assertTrue(json.loads(out.getvalue())["result"].get("isError"))
 
 
 if __name__ == "__main__":

@@ -124,13 +124,13 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertIn("Call decisions on the draft", replies[0]["result"]["instructions"])
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
-            {"brief", "questions", "review", "check", "coverage", "verify",
+            {"brief", "questions", "review", "check-pack", "check", "coverage", "verify",
              "gaps", "pseudo", "scaffold", "compare", "decisions", "scxml_kinds",
              "validate_scxml",
              "validate_scxml_set",
              "render_scxml_pseudocode",
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
-             "scxml_requirements", "scxml_scenarios",
+             "scxml_requirements", "scxml_scenarios", "scxml_house_rule",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
              "scxml_accepted_for"},
             names)
@@ -172,11 +172,14 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `scxml_scenarios` is the same case: the examples are the client's to
         # write and the verdicts the product's, so the only step this core
         # owns is playing them into a design, and that is not a pack command.
+        # `scxml_house_rule` is the same again: the owner's words made into a
+        # profile's text, a step that takes no pack and has no command-line
+        # face (a profile is a file the owner keeps; this tool only returns it).
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
-                    "scxml_scenarios",
+                    "scxml_scenarios", "scxml_house_rule",
                     "scxml_acceptance_report",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
