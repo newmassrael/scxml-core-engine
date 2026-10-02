@@ -34,7 +34,7 @@ import yaml
 
 from . import delivery, landing
 from .errors import READ_ERRORS, PackError, describe_path
-from .pack import RULE_COMMENTARY, SCHEMA_DIR, Pack, _validate, rule_text
+from .pack import RULE_COMMENTARY, SCHEMA_DIR, Pack, _validate, rule_symbols, rule_text
 from .structured import RepeatedKey, read_json, read_yaml
 
 
@@ -1150,18 +1150,17 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
         if entry is None:
             out.append(Finding(f"input {name}", f"{address!r} is not in the interface model"))
             continue
-        space = (entry.field("") or entry.fields[0]).values
-        # ⚠ `becomes` joins the pair rather than getting a check of its own.
+        space = entry.read_space()
+        # ⚠ `becomes` joins the others rather than getting a check of its own.
         # It names a symbol the address must take, so it is wrong in exactly
-        # the way the other two are, and a second site would be one more place
-        # to forget when a value space grows.
-        for key in ("equals", "not_equals", "becomes"):
-            sym = rule.get(key)
-            if sym is not None and space is not None and sym not in space:
-                out.append(Finding(f"input {name}", f"{address} does not admit {sym!r}; it admits " + ", ".join(sorted(space))))
-        for sym in rule.get("equals_any") or ():
+        # the way they are, and a second site would be one more place to forget
+        # when a value space grows. The pack holds its own rules to the same
+        # list (`pack.rule_symbols`), so a rule the binding check would refuse
+        # is refused where the pack is read.
+        for key, sym in rule_symbols(rule):
             if space is not None and sym not in space:
-                out.append(Finding(f"input {name}", f"{address} does not admit {sym!r}"))
+                admits = "; it admits " + ", ".join(sorted(space)) if key != "equals_any" else ""
+                out.append(Finding(f"input {name}", f"{address} does not admit {sym!r}{admits}"))
 
     for name, rule in sorted(declared_outputs.items()):
         if rule.get("internal") or rule.get("unresolved"):

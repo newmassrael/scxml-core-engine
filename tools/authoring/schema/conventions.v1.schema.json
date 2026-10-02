@@ -50,7 +50,7 @@
                   "rule": {
                     "type": "object",
                     "minProperties": 1,
-                    "description": "The binding input rule that reads this input on this platform, as a binding writes it (`address`/`equals`, `protocol`/`parameters`, ...). `check` holds a binding to it: a rule that reads the precondition differently is refused, and a rule that reads it this way satisfies the precondition under any name."
+                    "description": "The binding input rule that reads this input on this platform, as a binding writes it (`address`/`equals`, `protocol`/`parameters`, ...). `check` holds a binding to it: a rule that reads the precondition differently is refused, and a rule that reads it this way satisfies the precondition under any name. The loader holds the rule to what a binding's input rule may say (the binding schema's `input`: known keys, the right kinds of value) and to the model (the address and protocol it names are declared, and a symbol it compares against is one that address admits), so a rule the pack accepts is not one `check` refuses later."
                   }
                 }
               }

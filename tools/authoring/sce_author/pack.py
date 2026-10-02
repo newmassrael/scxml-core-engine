@@ -9,6 +9,7 @@ success.
 
 from __future__ import annotations
 
+import functools
 import json
 import pathlib
 import re
@@ -154,6 +155,27 @@ class Entry:
             if f.name == name:
                 return f
         return None
+
+    def read_space(self) -> dict[str, int] | None:
+        """The value space an input rule reading this address compares against:
+        the unnamed field's, else the first. None where the model declares none.
+
+        ⚠ The one place that answers it. The binding check and the pack's rules
+        both ask which symbols an address admits, and two answers would let a
+        pack accept a rule the binding check refuses."""
+        return (self.field("") or self.fields[0]).values
+
+
+#: The keys of an input rule that name a symbol the address has to take.
+RULE_SYMBOL_KEYS = ("equals", "not_equals", "becomes")
+
+
+def rule_symbols(rule: dict) -> list[tuple[str, str]]:
+    """Every `(key, symbol)` an input rule compares an address against, in the
+    order written: the single-symbol keys, then each member of `equals_any`."""
+    named = [(key, rule[key]) for key in RULE_SYMBOL_KEYS if rule.get(key) is not None]
+    named += [("equals_any", symbol) for symbol in rule.get("equals_any") or ()]
+    return named
 
 
 @dataclass
@@ -577,8 +599,22 @@ def load_conventions(paths: list[pathlib.Path],
             if compiled is not None:
                 phrase_pattern = compiled
         for n in pre.get("normalise") or []:
-            if _compiled(path, "preconditions.normalise from", n["from"], problems) is not None:
-                normalise.append((n["from"], n["to"]))
+            from_pattern = _compiled(path, "preconditions.normalise from", n["from"], problems)
+            if from_pattern is None:
+                continue
+            # ⚠ A replacement that names a group the pattern lacks (or is not a
+            # replacement at all) fails when the first phrase it matches is
+            # rewritten, in the middle of reading a specification, as an
+            # `IndexError` out of `re`. Python parses the template before it looks
+            # for a match, so an empty subject is enough to find that out here.
+            try:
+                from_pattern.sub(n["to"], "")
+            except (re.error, IndexError) as exc:
+                problems.refuse(PackError(
+                    f"{path}: preconditions.normalise to {n['to']!r} is not a replacement "
+                    f"for {n['from']!r} ({exc})"), exc)
+                continue
+            normalise.append((n["from"], n["to"]))
         gate_off += doc.get("gate_off") or []
         gate_off_note = doc.get("gate_off_note") or gate_off_note
         neutral += doc.get("neutral_symbols") or []
@@ -910,15 +946,27 @@ def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
     """Refuse a precondition rule that reads what the pack does not declare.
 
     A rule is a binding input as the platform writes it, and `check` holds a
-    document's binding to the same two facts when it meets one: a protocol is
-    one the pack declares, and an address is one the model declares. A rule
-    that fails them is not a rule `check` could hold a binding to -- the
-    precondition would be compared with a reading that reads nothing here --
-    and it loaded without a word. (An `event`, `previous_of` or `state_of`
-    rule names things of the binding, which a pack cannot see.)
+    document's binding to the same facts when it meets one: the rule says what
+    the binding vocabulary can say (known keys, the right kinds of value), a
+    protocol is one the pack declares, an address is one the model declares, and
+    a symbol it compares against is one that address admits. A rule that fails
+    them is not a rule `check` could hold a binding to -- the precondition would
+    be compared with a reading that reads nothing here -- and it loaded without
+    a word. (An `event`, `previous_of` or `state_of` rule names things of the
+    binding, which a pack cannot see.)
     """
     for name, rule in sorted(conventions.precondition_rules.items()):
         where = f"{root}: preconditions.inputs {name!r} rule"
+        # ⚠ The shape first, from the binding schema: the one place that says what
+        # an input rule may contain. A key it does not know (`equalss`) read as no
+        # condition at all until a binding copied it, and a `parameters` that was
+        # a list reached the code below as an `AttributeError`. A rule of the wrong
+        # shape is not held to anything further.
+        shape = _input_rule_departures(rule)
+        for departure in shape:
+            problems.refuse(PackError(f"{where}: {departure}"))
+        if shape:
+            continue
         protocol = rule.get("protocol")
         if protocol:
             declared = conventions.protocols.get(protocol)
@@ -944,6 +992,42 @@ def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
             problems.refuse(PackError(
                 f"{where} reads address {address!r}, which the "
                 f"interface model does not declare"))
+            continue
+        space = model.by_address[address].read_space() if address else None
+        for key, symbol in rule_symbols(rule):
+            if space is not None and symbol not in space:
+                problems.refuse(PackError(
+                    f"{where} compares {address!r} with {key} {symbol!r}, which that "
+                    f"address does not admit; it admits {', '.join(sorted(space))}"))
+
+
+@functools.lru_cache(maxsize=1)
+def _input_rule_validator():
+    """A validator for ONE input rule, built from the binding schema's own
+    definition of it.
+
+    `previous_of` and `state_of` need `caller_keeps` in a binding, and that key
+    is commentary the BINDING supplies (`RULE_COMMENTARY` is what a rule leaves
+    out when it is compared), so a pack stating the rule is not asked for it."""
+    if jsonschema is None:
+        return None
+    binding = json.loads((SCHEMA_DIR / "binding.v1.schema.json").read_text(encoding="utf-8"))
+    rule = {key: value for key, value in binding["$defs"]["input"].items()
+            if key != "dependentRequired"}
+    return jsonschema.Draft202012Validator(
+        {"$schema": binding["$schema"], "$defs": binding["$defs"], **rule})
+
+
+def _input_rule_departures(rule: dict) -> list[str]:
+    """Where `rule` departs from what a binding's input rule may say, one
+    sentence each, or nothing. Silent where `jsonschema` is missing: `_validate`
+    has already refused to load any pack without it."""
+    validator = _input_rule_validator()
+    if validator is None:
+        return []
+    return [(" -> ".join(str(p) for p in error.path) + ": " if error.path else "")
+            + error.message
+            for error in sorted(validator.iter_errors(rule), key=lambda e: list(e.path))]
 
 
 def gate_off_value(conventions: Conventions, values: dict[str, int] | None) -> str | None:

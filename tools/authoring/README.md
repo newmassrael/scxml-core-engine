@@ -893,8 +893,14 @@ interface-integration workflow.
 **check-pack** lists everything wrong with a pack in one pass: a key written
 twice, a file that does not fit its schema (every place it departs, not the
 first), a phrase that is not an expression, a name no input declares, a regular
-expression that does not compile, a rule that reads an address or protocol the
-pack does not declare, and an examples file that contradicts itself. Every other
+expression that does not compile, a replacement in `normalise` that names a group
+its pattern lacks, a rule that reads an address or protocol the pack does not
+declare, a rule that says what a binding's input rule cannot (an unknown key, a
+`parameters` that is not an object) or compares an address with a symbol its value
+space does not admit, and an examples file that contradicts itself. A rule is held
+to the same facts the binding check holds a binding to (the binding schema's
+definition of an input rule, and the interface model's value space, asked through
+the same helpers), so a rule the pack accepts is not one `check` refuses later. Every other
 command refuses at the first problem, so a pack with three mistakes took three
 runs to learn about; a pack is prepared by the people who build it and handed to
 a specification owner already verified, and they need all of them at once. It
