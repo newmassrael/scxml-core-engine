@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "description": "Contract scenarios for sce:kind=\"queue\" (SCE Protocol-Synthesis RFC section 5.P, verification layer 1). Each scenario is a single-threaded sequence of operations on one queue and the result each must give; every language arm runs every scenario whose storage row it implements and refuses, by name, a row it does not. Steps: {\"op\":\"push\",\"value\":N,\"expect\":\"ok\"|\"full\"} (a refused push hands back the same value), {\"op\":\"pop\",\"expect\":N|\"empty\"}, {\"op\":\"capacity\",\"expect\":N}, and {\"op\":\"destroy\",\"expect\":[N,...]} (the queue is destroyed and exactly the listed elements are destroyed with it, in any order; nothing may follow it).",
+  "scenarios": [
+    {
+      "id": "bounded_spsc_capacity_is_exact",
+      "summary": "A queue of capacity 3 takes three elements and refuses the fourth, then takes it once one has left",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "one",
+      "capacity": 3,
+      "steps": [
+        { "op": "capacity", "expect": 3 },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "full" },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "push", "value": 5, "expect": "full" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": 4 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_spsc_capacity_one",
+      "summary": "A queue of capacity 1 alternates between full and empty",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "one",
+      "capacity": 1,
+      "steps": [
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 10, "expect": "ok" },
+        { "op": "push", "value": 11, "expect": "full" },
+        { "op": "pop", "expect": 10 },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 11, "expect": "ok" },
+        { "op": "pop", "expect": 11 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_spsc_order_holds_across_many_laps",
+      "summary": "Order holds while the ring's indices wrap many times",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "one",
+      "capacity": 2,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "pop", "expect": 2 },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "pop", "expect": 3 },
+        { "op": "push", "value": 5, "expect": "ok" },
+        { "op": "push", "value": 6, "expect": "full" },
+        { "op": "pop", "expect": 4 },
+        { "op": "push", "value": 6, "expect": "ok" },
+        { "op": "pop", "expect": 5 },
+        { "op": "pop", "expect": 6 },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 7, "expect": "ok" },
+        { "op": "push", "value": 8, "expect": "ok" },
+        { "op": "pop", "expect": 7 },
+        { "op": "pop", "expect": 8 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_spsc_destroy_destroys_what_it_holds",
+      "summary": "Destroying a queue destroys exactly the elements still in it",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "one",
+      "capacity": 4,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "destroy", "expect": [2, 3] }
+      ]
+    },
+    {
+      "id": "bounded_spsc_destroy_of_an_empty_queue",
+      "summary": "Destroying an empty queue destroys nothing",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "one",
+      "capacity": 2,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "destroy", "expect": [] }
+      ]
+    }
+  ]
+}

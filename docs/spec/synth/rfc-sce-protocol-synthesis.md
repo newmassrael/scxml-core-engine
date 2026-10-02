@@ -3454,9 +3454,9 @@ memory the caller owns.
   with a key).
 
 **Capacity is exact.** `<sce:bounded capacity="N">` holds exactly N
-elements. The ring behind it is an implementation detail: its size
-is rounded up to a power of two, and SCQ keeps two index rings of
-twice that size, as the algorithm requires (Nikolaev 2019). The
+elements. A Lamport ring is exactly N slots; an SCQ ring is rounded
+up to a power of two and keeps two index rings of twice that size,
+as the algorithm requires (Nikolaev 2019). The
 storage cost that results is emitted as a generated constant
 (`STORAGE_BYTES`) so that a no-alloc target can budget it.
 
@@ -3479,7 +3479,7 @@ least the declared progress.
 
 | Storage | Producers | Consumers | Algorithm | Push | Pop |
 |---|---|---|---|---|---|
-| `bounded` | one | one | Lamport ring, free-running counters | wait-free | wait-free |
+| `bounded` | one | one | Lamport ring, indices over two laps | wait-free | wait-free |
 | `bounded` | any other | | SCQ data queue: an allocated-index ring and a free-index ring over a data array | lock-free | lock-free |
 | `segmented` | one | one | Linked Lamport rings | wait-free, bounded by the allocator | wait-free |
 | `segmented` | any other | | LSCQ: a list of SCQ rings | lock-free, bounded by the allocator | lock-free |
@@ -3585,10 +3585,10 @@ that selects an SCQ row, and judges it as follows:
   64-bit architectures when the queue is constructed, and fails
   construction outside it. Python selects no SCQ row.
 
-The Lamport rows use free-running counters compared by unsigned
-difference and have no ABA exposure. Their one requirement, a
-capacity below `2^(w-1)`, is a static assertion in the generated
-code.
+The Lamport rows run each index over `0..2N`, so it never wraps and
+equal or `N`-apart indices tell empty from full without a spare
+slot; they have no ABA exposure. Their one requirement, that `2N`
+fit in the word, is a compile-time assertion in the generated code.
 
 **Backends.**
 

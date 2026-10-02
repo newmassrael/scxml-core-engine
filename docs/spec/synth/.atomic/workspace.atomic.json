@@ -5024,7 +5024,53 @@
       "title": "New kind: `queue`",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/forge-runtime/src/queue/mod.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/spsc.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/sync.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-conformance/src/queue_history.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/Cargo.toml",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_queue_spsc.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/tests/forge_queue.rs",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-rust.sh",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/an_spsc_queue_orders_every_slot_hand_over.cases",
+          "kind": "references"
+        }
+      ]
     },
     "synth-6": {
       "title": "Cross-cutting concerns",

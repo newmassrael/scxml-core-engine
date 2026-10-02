@@ -6,7 +6,9 @@
 //! Implements the runtime library policy from SCE_FORGE.md Section 2.1:
 //! statically linkable, no global state, no I/O. The crate is `#![no_std]`
 //! so embedded targets without a heap can depend on it directly for the
-//! algorithm modules (filter, interpolation, lookup, observer, timer).
+//! algorithm modules (filter, interpolation, lookup, observer, timer) and
+//! the inter-context queues (`queue`, SCE Protocol-Synthesis RFC
+//! §synth-5-P).
 //!
 //! The `alloc` feature (enabled by default) pulls in the `procedure` module,
 //! which provides the shared types and event-driven execution loop used by
@@ -25,6 +27,7 @@ pub mod filter;
 pub mod interpolation;
 pub mod lookup;
 pub mod observer;
+pub mod queue;
 pub mod storage;
 pub mod timer;
 

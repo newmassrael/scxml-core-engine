@@ -1,0 +1,70 @@
+# Mutation cases for "an SPSC queue orders every slot hand-over".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_spsc_queue_orders_every_slot_hand_over.cases`.
+#
+# The one-producer, one-consumer queue of SCE Protocol-Synthesis RFC
+# §synth-5-P hands each slot from one side to the other through a Release
+# store of an index and an Acquire load of it, and tells a full ring from an
+# empty one by running its indices over two laps. The oracle is the loom
+# models in `backends/rust/forge-runtime/tests/loom_queue_spsc.rs`, which
+# explore every interleaving and every outcome the memory model allows, so a
+# weakened ordering is not something they might sample but something they
+# must reach. The six cases below each take one of those properties away:
+# four weaken one ordering to Relaxed, one folds the two laps into one, and
+# one drops the queue without dropping what it holds.
+#
+# The models build only under `--cfg loom`. The selector passes it as a
+# cargo `--config` rather than through RUSTFLAGS, so the casefile carries the
+# whole command, and gives the build a target directory of its own so that
+# the cfg does not invalidate the ordinary build's.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_spsc
+mutation_targets backends/rust/forge-runtime/src/queue/spsc.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_queue_spsc.rs
+
+# ── The four hand-overs ────────────────────────────────────────────
+
+mutation_case "the producer publishes a slot without releasing its write" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''queue.tail.0.store(self.tail, Ordering::Release);''',
+     r'''queue.tail.0.store(self.tail, Ordering::Relaxed);''')
+PY
+
+mutation_case "the consumer returns a slot without releasing its read" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''queue.head.0.store(self.head, Ordering::Release);''',
+     r'''queue.head.0.store(self.head, Ordering::Relaxed);''')
+PY
+
+mutation_case "a full producer rereads the consumer's index without acquiring it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''self.cached_head = queue.head.0.load(Ordering::Acquire);''',
+     r'''self.cached_head = queue.head.0.load(Ordering::Relaxed);''')
+PY
+
+mutation_case "an empty consumer rereads the producer's index without acquiring it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''self.cached_tail = queue.tail.0.load(Ordering::Acquire);''',
+     r'''self.cached_tail = queue.tail.0.load(Ordering::Relaxed);''')
+PY
+
+# ── Exact capacity and the drop ────────────────────────────────────
+
+# One lap cannot tell a full ring from an empty one: the indices are equal in
+# both, so the producer reads a full ring as empty and writes over a slot the
+# consumer has not read.
+mutation_case "the indices run over one lap instead of two" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''        if index + 1 == Self::LAPS {''',
+     r'''        if index + 1 == N {''')
+PY
+
+mutation_case "a dropped queue leaves what it holds undropped" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/spsc.rs",
+     r'''        while head != tail {''',
+     r'''        while head != tail && false {''')
+PY

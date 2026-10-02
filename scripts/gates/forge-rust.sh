@@ -23,3 +23,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 cargo test --release -p sce-forge-conformance --features alloc \
     || sce_gate_fail "Rust forge conformance"
+
+# The queue runtime's loom models (SCE Protocol-Synthesis RFC §synth-5-P,
+# verification layer 3). They build only under `--cfg loom` and the target is
+# `test = false`, so no other lane reaches them; this is the one that does.
+# The cfg goes in as a cargo `--config`, not RUSTFLAGS, so this line and the
+# casefile `an_spsc_queue_orders_every_slot_hand_over.cases` spell one command,
+# and `target/loom` keeps the cfg from invalidating the release build above.
+cargo test --release -p sce-forge-runtime --target-dir target/loom \
+    --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_spsc \
+    || sce_gate_fail "Rust forge queue loom models"
