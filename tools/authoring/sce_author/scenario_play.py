@@ -70,7 +70,7 @@ import xml.etree.ElementTree as ET
 
 from .errors import VerifyError
 from .lowering import (SendRecorder, Unplayable, advance, endless_macrostep,
-                       host_names as _host_names, load)
+                       host_names as _host_names, load, unanswered_error)
 
 
 class _HttpSeen:
@@ -249,15 +249,10 @@ class _Machine:
         if endless is not None:
             raise _Refusal(f"by step {index} the engine stopped {endless}, so where the "
                            f"machine stands is not the design's behaviour")
-        failures = engine.unhandled_error_events() + engine.error_cascade_events()
-        if failures:
-            last = engine.last_unhandled_error()
-            if last is None:
-                last = engine.last_error_cascade_event()
-            name = policy.get_event_name(last) if last is not None else "error"
-            raise _Refusal(f"by step {index} the engine raised `{name}` and no state answered "
-                           f"it, so what the machine did from there is not the design's "
-                           f"behaviour.{self.opened}")
+        unanswered = unanswered_error(engine, policy)
+        if unanswered is not None:
+            raise _Refusal(f"by step {index} the engine {unanswered}, so what the machine did "
+                           f"from there is not the design's behaviour.{self.opened}")
 
     def _observe(self, engine, policy, sink: SendRecorder, index: int) -> dict:
         outbound = []

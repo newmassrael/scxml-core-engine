@@ -84,10 +84,21 @@ DRIVEN_BACKENDS = frozenset({"python"})
 SCE_NS = "{http://sce.dev/ext}"
 
 
-class ClockLost(VerifyError):
-    """From here on the machine's configuration is not known, because a
-    deadline fell inside the time a record knows only as a window. Unlike a
-    VerifyError it is not about one case: every case after it is withheld."""
+class RunLost(VerifyError):
+    """From here on the machine's configuration is not the design's, or is not
+    known. Unlike a VerifyError it is not about one case: every case after it is
+    withheld, because the cases share one run."""
+
+
+class ClockLost(RunLost):
+    """A deadline fell inside the time a record knows only as a window, so the
+    machine's configuration from there on is not known."""
+
+
+class RunStopped(RunLost):
+    """The engine stopped a macrostep that would not end, or raised an error no
+    state answered (`lowering.stopped_run`), so what the machine does from there
+    is not what its document says, however ordinary it looks."""
 
 
 #: How long the product's generator may take on one document. It is a program
@@ -2230,12 +2241,30 @@ class StatechartRun:
         for processor in build.declared:
             self.engine.register_event_processor(processor, self.recorder)
         self.engine.initialize()
+        # A machine that is cut short or fails on its way into the initial
+        # configuration is not the design's, and no case read off it can be.
+        self.check(" while the machine was starting")
         # Whatever the machine did on its way into the initial configuration
         # belongs to no case, because no record drove it.
         self.recorder.take()
         # How far real time may be ahead of the engine's clock, from the
         # windows records gave instead of numbers (`observe`).
         self.slack_ms = 0.0
+
+    def check(self, when: str = "") -> None:
+        """Say so, if the run has stopped being the design's behaviour.
+
+        ⚠ Asked after the machine starts and after every step taken (an event
+        sent, time moved), through the one rule every consumer of a run shares
+        (`lowering.stopped_run`). Measured 2026-10-02 against `da8e53c9ea` by an
+        outside review: a design whose macrostep the engine cut passed the case a
+        design that settles passes, because the reading after it said nothing
+        was wrong. Raised as `RunStopped`, which withholds this case and every
+        later one, since they share the run."""
+        stopped = self.module.procedure("check", engine=self.engine)
+        if stopped is not None:
+            raise RunStopped(f"the engine {stopped}{when}, so from here on the machine is "
+                             f"not the design's behaviour")
 
     def event(self, name: str):
         found = self.engine.policy.get_event_from_name(name)
@@ -2260,6 +2289,7 @@ class StatechartRun:
         if becomes is not None and not _same(case.given.get(address), becomes, field_):
             return False
         self.engine.send_event(self.event(rule["event"]))
+        self.check()
         return True
 
     def acting_on(self, event_name: str, declared) -> str | None:
@@ -2349,6 +2379,7 @@ class StatechartRun:
         if stopped is not None:
             raise VerifyError(f"the record {stopped}, so what the machine holds after it "
                               f"cannot be read")
+        self.check()
 
     def observe(self, case) -> None:
         """Move virtual time to the moment this case was observed.
@@ -2783,9 +2814,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 # case is judged on: the case's own round starts clean.
                 continue
             produced, stood_in = read.produced, read.stood_in
-        except ClockLost as exc:
+        except RunLost as exc:
             # Not this case's failure to be driven: the run itself stopped
-            # being knowable, as it does for an open event (`lost`).
+            # being the design's, or knowable, as it does for an open event
+            # (`lost`): a deadline inside a window, a macrostep the engine cut,
+            # an error nothing answered.
             lost = f"at {case.name or '(unnamed)'!r}: {exc}"
             if judged:
                 withhold(result, case)

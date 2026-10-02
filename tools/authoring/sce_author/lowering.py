@@ -116,6 +116,42 @@ def endless_macrostep(engine, policy) -> str | None:
     return f"a macrostep{where} that did not reach a stable configuration (W3C SCXML 3.13)"
 
 
+def unanswered_error(engine, policy) -> str | None:
+    """What the engine raised that no state answered, as a clause after "the engine".
+
+    W3C SCXML 3.12.2: a failed `<send>` or expression raises `error.*` on the
+    internal queue, and a machine that has no transition for it carries on. An
+    entry block that meets an unresolvable `<send>` ends there (W3C SCXML 4.9), so
+    a timer armed after it is never armed, and the machine then does something its
+    document does not say. Every other reading of the run (it runs, it names a
+    state, the call returned) says it is fine, which is how a machine that raised
+    was classed with one that did not. None when nothing went unanswered."""
+    failures = engine.unhandled_error_events() + engine.error_cascade_events()
+    if not failures:
+        return None
+    last = engine.last_unhandled_error()
+    if last is None:
+        last = engine.last_error_cascade_event()
+    name = policy.get_event_name(last) if last is not None else "error"
+    return f"raised `{name}` and no state answered it"
+
+
+def stopped_run(engine, policy) -> str | None:
+    """Why the engine's run is not the design's behaviour, as a clause after "the
+    engine": it stopped a macrostep that would not end, or it raised an error
+    nothing answered. None when neither happened.
+
+    ⚠ The one place that says so, for every consumer that reads a verdict off a
+    run: a scenario, a comparison and a verification. Each of them used to carry
+    some of these rules and none carried all, and the review that found one gap
+    found the next in the path beside it. A consumer that plays a design asks
+    here, after it starts the machine and after every step it takes."""
+    endless = endless_macrostep(engine, policy)
+    if endless is not None:
+        return f"stopped {endless}"
+    return unanswered_error(engine, policy)
+
+
 def host_names(module, part: str) -> dict:
     """The names the generated module gives one part of the document's
     surface, keyed by the id the document wrote.

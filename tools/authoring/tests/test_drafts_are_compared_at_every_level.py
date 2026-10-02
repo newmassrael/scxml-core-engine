@@ -61,7 +61,21 @@ RENAMED = HEAD.replace('initial="shut"', 'initial="closed"') + """
 # The other reading of the prose: a request while open does not restart it.
 IGNORES = RESTARTS.replace('    <transition event="request" target="open"/>\n', "")
 
-# Moves only on a field of the event's data, which no drive carries.
+# A guard no event can satisfy (nothing ever assigns `n`): the drives deliver
+# `coin` and nothing moves, and nothing goes wrong either. What a comparison that
+# moved nothing looks like. (A literal `cond="false"` is refused by the product as
+# `scxml/always-false-guard`, which is a different thing: a draft left out.)
+NEVER_MOVES = HEAD + """
+  <datamodel><data id="n" expr="0"/></datamodel>
+  <state id="shut"><transition event="coin" cond="n &gt; 0" target="open"/></state>
+  <state id="open"/>
+</scxml>
+"""
+
+# Moves only on a field of the event's data, which no drive carries. Reading the
+# field of data that is not there is an error (W3C SCXML 5.9.2, raising
+# `error.execution`), and no state answers it: the engine says so, and that is
+# what the comparison reports.
 NEEDS_DATA = HEAD + """
   <datamodel><data id="n" expr="0"/></datamodel>
   <state id="shut">
@@ -95,6 +109,18 @@ NEVER_SETTLES = _start_at_a(HEAD) + """
 NEVER_SETTLES_AFTER_GO = _start_at_a(HEAD) + """
   <state id="a"><transition event="go" target="b"/></state>
   <state id="b"><transition target="b"/></state>
+</scxml>
+"""
+
+# The same machine as the settled one, except that entering `a` sends to a target
+# nobody is at: W3C SCXML 6.2.4 raises `error.communication`, and no state answers
+# it. What the machine does after that is not what the document says (the entry
+# block ends there, W3C SCXML 4.9), and every observation of it is the same as
+# the clean draft's, which is exactly how it came to be classed with it.
+RAISES_UNANSWERED = _start_at_a(HEAD) + """
+  <state id="a"><onentry><send event="ping" target="#_nobody"/></onentry>
+    <transition event="go" target="b"/></state>
+  <state id="b"/>
 </scxml>
 """
 
@@ -178,12 +204,26 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertEqual(witness["second_then"][0], ("closing",))
 
     def test_drives_that_move_nothing_judge_nothing(self):
-        report = compare(self.drafts(a=NEEDS_DATA, b=NEEDS_DATA.replace("coin", "token")))
+        report = compare(self.drafts(a=NEVER_MOVES, b=NEVER_MOVES.replace("coin", "token")))
         behaviour = report["behaviour"]
         self.assertEqual(behaviour["verdict"], "not judged")
         self.assertEqual(behaviour["distinct_observations"], {"a.scxml": 1, "b.scxml": 1})
         self.assertNotIn("classes", behaviour)
         self.assertIn("moved nothing", behaviour["why"])
+
+    def test_drafts_that_fail_the_same_way_are_not_reported_alike(self):
+        """Measured 2026-09-29: five drafts were reported as behaving alike because
+        each had failed with the same error. Here both read data no drive carries,
+        and the engine raised an error nothing answered. They are not alike and not
+        different: they were not driven, and each is named with the engine's words
+        instead of being classed on what a failed run looked like."""
+        report = compare(self.drafts(a=NEEDS_DATA, b=NEEDS_DATA.replace("coin", "token")))
+        behaviour = report["behaviour"]
+        self.assertEqual(behaviour["verdict"], "not judged")
+        self.assertEqual(sorted(behaviour["undriven"]), ["a.scxml", "b.scxml"])
+        for why in behaviour["undriven"].values():
+            self.assertIn("no state answered", why)
+        self.assertNotIn("classes", behaviour)
 
     def test_a_draft_the_product_refuses_is_named_and_left_out(self):
         broken = RESTARTS.replace('target="opening"', 'target="nowhere"')
@@ -231,6 +271,27 @@ class DraftsAreComparedAtEveryLevel(unittest.TestCase):
         self.assertEqual("judged", behaviour["verdict"])
         self.assertEqual([["one.scxml", "two.scxml"]], behaviour["classes"])
         self.assertEqual(["loop.scxml"], list(behaviour["undriven"]))
+
+    def test_a_draft_that_raises_an_error_nothing_answers_is_not_a_behaviour(self):
+        """Measured 2026-10-02 against `da8e53c9ea` by an outside review: the
+        scenario driver refused this draft (the engine raised an error no state
+        answered, so what the machine did from there is not the design's
+        behaviour) and `compare` classed it with a draft that raises nothing."""
+        behaviour = compare(self.drafts(raises=RAISES_UNANSWERED, clean=SETTLES),
+                            drives=40, steps=12)["behaviour"]
+        self.assertEqual("not judged", behaviour["verdict"])
+        self.assertEqual(["raises.scxml"], list(behaviour["undriven"]))
+        self.assertIn("no state answered", behaviour["undriven"]["raises.scxml"])
+        self.assertIn("error.", behaviour["undriven"]["raises.scxml"])
+        self.assertNotIn("classes", behaviour)
+
+    def test_a_draft_that_raises_an_error_nothing_answers_does_not_hide_the_others(self):
+        renamed = SETTLES.replace('"go"', '"proceed"')
+        behaviour = compare(self.drafts(raises=RAISES_UNANSWERED, one=SETTLES, two=renamed),
+                            drives=40, steps=12)["behaviour"]
+        self.assertEqual("judged", behaviour["verdict"])
+        self.assertEqual([["one.scxml", "two.scxml"]], behaviour["classes"])
+        self.assertEqual(["raises.scxml"], list(behaviour["undriven"]))
 
     def test_time_is_walked_from_deadline_to_deadline_not_jumped(self):
         """The engine dates a timer from the end of the move that fires it, so a

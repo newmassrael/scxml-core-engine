@@ -154,6 +154,31 @@ class CoreIsDomainFree(unittest.TestCase):
                     offences.append(f"{path.name}:{node.lineno}: imports {name}")
         self.assertEqual([], offences, "\n".join(offences))
 
+    def test_what_makes_a_run_the_designs_is_decided_in_one_module(self):
+        """⚠ A verdict is only as true as the run it is read off, and three
+        consumers read one: a scenario, a comparison and a verification. Each used
+        to ask the engine its own questions (how to move time, whether a macrostep
+        was cut, whether an error went unanswered), and each answered some. Review
+        after review on 2026-10-02 found the rule one consumer carried and the
+        next one lacked. So the questions are asked in `lowering` and nowhere
+        else: a consumer that asks the engine again is a rule written twice, free
+        to disagree with the first."""
+        asked_in_lowering = {
+            "advance_time", "truncated_macrosteps", "last_truncated_macrostep_state",
+            "unhandled_error_events", "error_cascade_events", "last_unhandled_error",
+            "last_error_cascade_event",
+        }
+        offences = []
+        for path in sources():
+            if path.name == "lowering.py":
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr in asked_in_lowering:
+                    offences.append(f"{path.name}:{node.lineno}: asks the engine "
+                                    f"`{node.attr}` itself; `lowering` is where that is decided")
+        self.assertEqual([], offences, "\n".join(offences))
+
     def test_the_program_verify_runs_can_be_named_by_the_caller(self):
         """And a generator that is not there is a refusal, not a crash.
 

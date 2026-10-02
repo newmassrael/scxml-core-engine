@@ -18,7 +18,7 @@ with `RemoteModule.procedure(name, **arguments)`.
 
 from __future__ import annotations
 
-from .lowering import MAX_TIME_STOPS, SendRecorder, Unplayable, advance, endless_macrostep
+from .lowering import MAX_TIME_STOPS, SendRecorder, Unplayable, advance, stopped_run
 
 
 def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
@@ -35,9 +35,11 @@ def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
     `("unplayable", why)` and no observation of it. That is not something the
     draft did and not something to compare: where such a machine stands is where
     the engine gave up, and two drafts that both gave up there are not alike.
-    The two ways are the ones a scenario is refused for, through the same
-    functions: a macrostep that never reached a stable configuration (W3C SCXML
-    3.13), and time that would stop at more than `max_time_stops` instants.
+    The ways are the ones a scenario is refused for, through the same functions
+    (`lowering.stopped_run`): a macrostep that never reached a stable
+    configuration (W3C SCXML 3.13), an error raised that no state answered (W3C
+    SCXML 3.12.2), and time that would stop at more than `max_time_stops`
+    instants.
 
     Time moves as `lowering.advance` moves it, deadline to deadline. This is
     `compare`'s drive, moved here whole. It used to run in the server."""
@@ -55,11 +57,11 @@ def trace(module, declared, steps, max_time_stops=MAX_TIME_STOPS) -> list:
         out.append((leaves, sent, bool(engine.reached_final)))
 
     def settled() -> bool:
-        endless = endless_macrostep(engine, policy)
-        if endless is not None:
-            out.append(("unplayable", f"the engine stopped {endless}, so what the draft "
+        stopped = stopped_run(engine, policy)
+        if stopped is not None:
+            out.append(("unplayable", f"the engine {stopped}, so what the draft "
                                       f"does under these drives is not its behaviour"))
-        return endless is None
+        return stopped is None
 
     if not settled():
         return out
@@ -101,4 +103,12 @@ def advance_engine(module, engine, ms, max_time_stops=MAX_TIME_STOPS) -> str | N
     return None
 
 
-PROCEDURES = {"trace": trace, "advance": advance_engine}
+def check_engine(module, engine) -> str | None:
+    """Whether the run an engine this process holds has stopped being the
+    design's behaviour (`lowering.stopped_run`): None while it has not, and
+    otherwise the clause saying what the engine did, as data. One exchange for
+    what is several questions of the engine, asked after every step."""
+    return stopped_run(engine, engine.policy)
+
+
+PROCEDURES = {"trace": trace, "advance": advance_engine, "check": check_engine}
