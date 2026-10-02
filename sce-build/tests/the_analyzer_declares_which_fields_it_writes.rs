@@ -211,6 +211,11 @@ fn the_fields_the_analyzer_writes_are_the_ones_it_declares() {
 /// means the analyzer started writing somewhere, which is a decision,
 /// not a list update.
 const ANALYZER_WRITTEN: &[&str] = &[
+    // An AUTHORED list that moves because a `<send>` inside it receives
+    // `type_decisions` / `target_decisions` below: the key moves with its
+    // content, and the authored actions are not rewritten. A rendering takes
+    // the list as the author wrote it.
+    "actions",
     "datamodel",
     // Template dispatch, this and `has_delayed_host_send` below, and neither
     // reaches the page: whether a delayed `<send>` waits for a host to serve
@@ -287,8 +292,16 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "prefix_matching_events",
     "readable_variables",
     "states",
+    // The open questions a `<send>`'s target and type rest on, summed from
+    // the `sce:unresolved` markers on the send and on the data its
+    // expressions name (`computed_route_analyzer::annotate`). A rendering
+    // shows the markers themselves, which are authored and are the open
+    // questions; these two are the analyzer's per-expression summary of them
+    // for the Python send template, not a second thing to approve.
+    "target_decisions",
     "transitions",
     "type",
+    "type_decisions",
     "uses_cancel",
     "variables",
 ];
