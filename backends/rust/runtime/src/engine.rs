@@ -2798,9 +2798,28 @@ impl<P: StatePolicy> Engine<P> {
     /// The answer feeds a host loop directly: `std::thread::sleep`, a tokio
     /// `sleep`, or an embassy `Timer::after` on the no_std profile, where the
     /// alternative is a poll that never lets the core idle.
+    ///
+    /// §scxml-6.4: the session's OWN scheduler is not the whole answer. This
+    /// machine's tick advances every running child, so a child's deadline is a
+    /// deadline of this machine's clock, and the answer is the nearest of the
+    /// two. Counting only the parent's own made a host that walked time by it
+    /// step over a timer its child had armed — or, for a parent that arms
+    /// nothing itself, be told there was nothing to wait for at all.
     pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
-        let next = self.scheduler.next_ready_at()?;
-        Some(next.saturating_sub(self.sched_now()))
+        let own = self
+            .scheduler
+            .next_ready_at()
+            .map(|next| next.saturating_sub(self.sched_now()));
+        let child = if concepts::has_child_tick::<P>() {
+            self.policy.next_child_deadline_ms()
+        } else {
+            None
+        };
+        match (own, child) {
+            (Some(own), Some(child)) => Some(own.min(child)),
+            (own, None) => own,
+            (None, child) => child,
+        }
     }
 
     // ════════════════════════════════════════

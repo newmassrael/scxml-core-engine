@@ -83,6 +83,14 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_parallel_region_root_external_domain_python.sh" >/dev/null \
     || sce_gate_fail "Python transition-domain witness generation"
 
+# The child-deadline document, for the same reason: it sits beside its drivers
+# rather than under `integration_resources/` (a stem there is a seven-channel
+# contract, and C11 and the C++ Interpreter expose no next-deadline query), so
+# `generate-integration` never sees it, and its gitignored `_sm.py` would be a
+# module nothing produced.
+"$SCE_REPO_ROOT/scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh" >/dev/null \
+    || sce_gate_fail "Python child-deadline generation"
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 

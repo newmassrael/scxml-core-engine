@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "fb0965df577",
+  "embed_version": "f5ce23aa6a3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 292,
+  "symbol_count": 293,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1136,6 +1136,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasInvokeSupportTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasNextChildDeadlineTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",

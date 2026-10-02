@@ -29,6 +29,13 @@
 //! region root's external transition to the enclosing `<parallel>`. Promoting
 //! the stem would register coverage this repository does not have; it moves
 //! under `integration_resources/` when those engines are repaired.
+//!
+//! `a_child_timer_is_a_deadline_of_its_parent` is the third, outside for a
+//! reason of its own: it asks a host's question — when does this machine next
+//! need a tick? — and C11 and the C++ Interpreter have no such query, so there
+//! is no driver for them to carry and no harness to wait for. It lives at
+//! `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`, beside
+//! its C++ AOT driver.
 
 pub mod a_bad_donedata_pair_is_ignored;
 pub mod a_bad_invoke_argument_is_reported_once;
@@ -36,6 +43,7 @@ pub mod a_bad_send_argument_discards_its_message;
 pub mod a_bad_send_param_ends_its_block;
 pub mod a_child_may_send_many_events_in_one_tick;
 pub mod a_child_reply_arrives_without_a_tick;
+pub mod a_child_timer_is_a_deadline_of_its_parent;
 pub mod a_delay_is_a_css2_time;
 pub mod a_delayed_http_send_is_posted_when_due;
 pub mod a_delayed_send_reaches_what_its_target_names;

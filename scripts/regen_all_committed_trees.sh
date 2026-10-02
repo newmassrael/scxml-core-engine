@@ -186,6 +186,21 @@ scripts/regen_parallel_region_root_external_domain_kotlin.sh
 stage "Transition-domain witness Python tree"
 scripts/regen_parallel_region_root_external_domain_python.sh
 
+# The child-deadline document sits outside `integration_resources/` for the same
+# arity reason, with a different cause: it asks a host's question — when does
+# this machine next need a tick? — and C11 and the C++ Interpreter expose no such
+# query, so a stem there would commit to channels with nothing to assert. The
+# `generate-integration` fan-out never sees it, and a tree this script does not
+# know about is the stale-artifact shape the entries above were added to prevent.
+stage "Child-deadline document Rust tree"
+scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh
+stage "Child-deadline document Go tree"
+scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh
+stage "Child-deadline document Kotlin tree"
+scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
+stage "Child-deadline document Python tree"
+scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
+
 # The Mesh trees are generated from the standard library's stdlib/mesh by
 # their own scripts, and this script did not know about them — so a change
 # to what a source-hash covers left all three stale with nothing here to

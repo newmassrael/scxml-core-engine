@@ -645,6 +645,20 @@ pub trait StatePolicy: Sized + 'static {
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
     fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
 
+    /// §scxml-6.4: the nearest deadline of any running child, in milliseconds
+    /// from now, or `None` when no child has one.
+    ///
+    /// Generated only when `HAS_CHILD_TICK` is `true`. A child is ticked by its
+    /// parent ([`tick_children`](Self::tick_children)), so a moment a child
+    /// needs is a moment of this machine's clock too, and
+    /// [`Engine::time_until_next_scheduled_ms`](crate::Engine::time_until_next_scheduled_ms)
+    /// counts it: a host that walks time by that answer must not step over a
+    /// timer the child armed. A child that has ended answers nothing, and a
+    /// child's own children count through the child's own answer.
+    fn next_child_deadline_ms(&self) -> Option<u64> {
+        None
+    }
+
     /// §scxml-6.4: move every running child's host-owned clock to `clock`,
     /// the parent's, as the parent opens a turn — see
     /// [`Engine::follow_clock`](crate::Engine::follow_clock).

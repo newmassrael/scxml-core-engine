@@ -329,6 +329,22 @@ func (p *InvokePrecedesDequeueMidrunPolicy) TickChildren(engine *sce.Engine[Invo
 	}
 }
 
+// NextChildDeadline reports the nearest deadline among the running children
+// (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
+// step over a timer a child armed. The ticking above is what makes it this
+// machine's. A child that has ended (pendingDoneInvoke) is skipped: the policy
+// keeps it until its state exits, and what it armed is no longer owed.
+func (p *InvokePrecedesDequeueMidrunPolicy) NextChildDeadline() (time.Duration, bool) {
+	var soonest time.Duration
+	found := false
+	if !p.pendingDoneInvokeInvWatch && p.childInvWatch != nil {
+		if due, ok := p.childInvWatch.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	return soonest, found
+}
+
 // ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.1).
 //
 // W3C 6.4 requires an exact copy, so the source event's metadata is forwarded
@@ -428,6 +444,7 @@ func (w *childEngineWrapperInvWatch) RaiseExternalByNameWithMeta(name string, me
 func (w *childEngineWrapperInvWatch) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvWatch) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvWatch) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvWatch) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

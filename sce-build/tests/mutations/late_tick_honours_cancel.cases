@@ -86,8 +86,8 @@ PY
 
 mutation_case "the deadline is measured from the wrong end of the interval" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        Some(next.saturating_sub(self.sched_now()))""",
-     """        Some(self.sched_now().saturating_sub(next))""")
+     """            .map(|next| next.saturating_sub(self.sched_now()));""",
+     """            .map(|next| self.sched_now().saturating_sub(next));""")
 PY
 
 # ── The polling loop uses the answer ───────────────────────────────

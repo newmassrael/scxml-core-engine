@@ -3,6 +3,8 @@
 
 package sce
 
+import "time"
+
 // PendingInvoke represents a §scxml-6.4 pending invoke structure for the
 // defer/cancel/execute pattern.
 //
@@ -166,6 +168,11 @@ type ChildEngine interface {
 	// top-level <final> onentry, for the parent's RaiseDoneInvoke to lift
 	// onto done.invoke.<id>._event.data (§scxml-5.5 + 6.3.1).
 	DonedataAtFinal() string
+
+	// TimeUntilNextScheduled is the child's own next deadline: the parent
+	// ticks its children, so it is a deadline of the parent's clock too, and
+	// the parent's TimeUntilNextScheduled counts it (§scxml-6.4).
+	TimeUntilNextScheduled() (time.Duration, bool)
 }
 
 // DeliverToChild delivers a `<send>` addressed to an invoked session and lets

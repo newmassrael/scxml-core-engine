@@ -1,0 +1,36 @@
+# Mutation cases for "a child session's `<send delay>` is a deadline of the
+# machine that invoked it" (W3C SCXML 6.4), Go runtime.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/go_a_child_timer_is_a_deadline_of_its_parent.cases`.
+#
+# The oracle is the Go driver of `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`.
+# Measured 2026-10-02, before the repair, `Engine.TimeUntilNextScheduled`
+# answered "nothing owed" for a parent that armed nothing while its child had a
+# timer pending, so a host walking time by the answer never took a step. Each
+# case below puts one way of losing the child's deadline back.
+#
+# Not here, and why: a case that stops skipping an ended child
+# (`pendingDoneInvoke…`) would not be observable on this fixture — an ended
+# child's scheduler is empty, so counting it changes nothing.
+
+mutation_go backends/go/tests ./integration/a_child_timer_is_a_deadline_of_its_parent/
+mutation_runtime_targets backends/go/runtime/engine.go
+mutation_runtime_targets backends/go/tests/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.go
+mutation_oracles backends/go/tests/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_test.go
+
+# ── The engine answers only its own scheduler ──────────────────────
+
+mutation_case "the engine does not ask its policy for a child's deadline" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "if children, ok := any(e.policy).(ChildDeadline); ok {",
+     "if children, ok := any(e.policy).(ChildDeadline); ok && false {")
+PY
+
+# ── The generated policy reports no child deadline ─────────────────
+
+mutation_case "the generated policy counts no running child's timers" <<'PY'
+edit("backends/go/tests/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.go",
+     "if due, ok := p.childKid.TimeUntilNextScheduled(); ok && (!found || due < soonest) {",
+     "if due, ok := p.childKid.TimeUntilNextScheduled(); ok && false && (!found || due < soonest) {")
+PY

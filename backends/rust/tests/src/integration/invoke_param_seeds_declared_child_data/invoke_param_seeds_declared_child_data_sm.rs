@@ -1519,6 +1519,54 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
             }
         }
     }
+
+    // W3C SCXML 6.4: the nearest deadline among the running children, so a host
+    // that walks time by `time_until_next_scheduled_ms` does not step over a
+    // timer a child armed. The ticking above is what makes it this machine's.
+    fn do_next_child_deadline_ms(&self) -> Option<u64> {
+        let mut soonest: Option<u64> = None;
+        if !self.pending_done_invoke_inv_shadow {
+            if let Some(ref child) = self.child_inv_shadow {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+
+        if !self.pending_done_invoke_inv_sole {
+            if let Some(ref child) = self.child_inv_sole {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+
+        if !self.pending_done_invoke_inv_unmatched {
+            if let Some(ref child) = self.child_inv_unmatched {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+
+        if !self.pending_done_invoke_inv_namelist {
+            if let Some(ref child) = self.child_inv_namelist {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+
+        if !self.pending_done_invoke_inv_infinite {
+            if let Some(ref child) = self.child_inv_infinite {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+
+        soonest
+    }
 }
 
 // ======================================================================
@@ -2609,6 +2657,12 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
+    }
+
+    // W3C SCXML 6.4: a running child's timers are deadlines of this machine's
+    // clock, since this machine is what ticks it.
+    fn next_child_deadline_ms(&self) -> Option<u64> {
+        self.do_next_child_deadline_ms()
     }
 
     // W3C SCXML 6.4: an invoked session reads its parent's time — on a

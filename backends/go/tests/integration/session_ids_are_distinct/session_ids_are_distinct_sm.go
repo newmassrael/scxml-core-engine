@@ -641,6 +641,27 @@ func (p *SessionIdsAreDistinctPolicy) TickChildren(engine *sce.Engine[SessionIds
 	}
 }
 
+// NextChildDeadline reports the nearest deadline among the running children
+// (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
+// step over a timer a child armed. The ticking above is what makes it this
+// machine's. A child that has ended (pendingDoneInvoke) is skipped: the policy
+// keeps it until its state exits, and what it armed is no longer owed.
+func (p *SessionIdsAreDistinctPolicy) NextChildDeadline() (time.Duration, bool) {
+	var soonest time.Duration
+	found := false
+	if !p.pendingDoneInvokeInvA && p.childInvA != nil {
+		if due, ok := p.childInvA.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	if !p.pendingDoneInvokeInvB && p.childInvB != nil {
+		if due, ok := p.childInvB.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	return soonest, found
+}
+
 
 // DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
 // wait is over, by name — a child need not declare every event its parent
@@ -739,6 +760,7 @@ func (w *childEngineWrapperInvA) RaiseExternalByNameWithMeta(name string, metada
 func (w *childEngineWrapperInvA) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvA) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvA) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvA) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvB struct {
 	engine *sce.Engine[SessionIdsAreDistinctSceSynthInvokeInvBState, SessionIdsAreDistinctSceSynthInvokeInvBEvent]
 	policy *SessionIdsAreDistinctSceSynthInvokeInvBPolicy
@@ -753,6 +775,7 @@ func (w *childEngineWrapperInvB) RaiseExternalByNameWithMeta(name string, metada
 func (w *childEngineWrapperInvB) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvB) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvB) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvB) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

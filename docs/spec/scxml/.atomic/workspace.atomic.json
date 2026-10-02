@@ -11116,6 +11116,31 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "start_host_invoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ChildDeadline",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "TimeUntilNextScheduled",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "time_until_next_scheduled_ms",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "next_child_deadline_ms",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "timeUntilNextScheduled",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

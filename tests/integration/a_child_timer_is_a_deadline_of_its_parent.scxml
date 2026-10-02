@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2 + 6.4: a child session's `<send delay>` is a deadline of the
+  machine that invoked it, because the parent is what ticks its children.
+
+  A host that drives a scheduler-owning machine does not poll. It asks the
+  engine when it next needs a tick — `time_until_next_scheduled_ms` in Rust,
+  `TimeUntilNextScheduled` in Go, `timeUntilNextScheduledMs` in Kotlin,
+  `timeUntilNextScheduled` in the C++ AOT engine — sleeps that long, and ticks.
+  The parent's tick advances every running child by the same step, so a moment
+  a child needs is a moment the host must not step over. An answer that counts
+  only the parent's own scheduler is a promise the engine cannot keep: a host
+  that walked time by it reached a parent with nothing of its own armed, was
+  told there was nothing to wait for, and left a child's timer unfired.
+
+  This parent arms nothing: it only waits for `done.invoke.kid`. The child arms
+  two timers of 200 ms one after the other (the second is armed by the first
+  firing), so it ends 400 ms after it started. Walking the engine by its own
+  answer must therefore reach `finished` in two moves of 200 ms.
+
+    start   the answer is 200, the child's first deadline, not "nothing owed"
+    200 ms  the child leaves `first`; the answer is 200 again, for the second
+    400 ms  the child reaches `spoke`, and the parent leaves for `finished`
+    after   nothing is owed, so the answer is "nothing" again
+
+  Deliberately single-axis: the parent has no `<send>` and no data model
+  reads, so the only deadline in the run is the child's. The two timers are
+  chained rather than armed together because a host that jumps over the first
+  one fires both from the end of the jump, and the second is then dated from
+  the wrong instant — which is the same defect seen from the other side.
+
+  The document sits beside its drivers rather than under
+  `integration_resources/`: a stem there is a seven-channel contract, and C11
+  and the C++ Interpreter expose no next-deadline query to ask. See
+  `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_child_timer_is_a_deadline_of_its_parent" datamodel="ecmascript"
+       initial="waiting">
+
+  <state id="waiting">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="first">
+          <state id="first">
+            <onentry>
+              <send event="one" delay="200ms"/>
+            </onentry>
+            <transition event="one" target="second"/>
+          </state>
+          <state id="second">
+            <onentry>
+              <send event="two" delay="200ms"/>
+            </onentry>
+            <transition event="two" target="spoke"/>
+          </state>
+          <final id="spoke"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.kid" target="finished"/>
+  </state>
+
+  <final id="finished"/>
+</scxml>

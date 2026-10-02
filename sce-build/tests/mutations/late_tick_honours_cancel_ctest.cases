@@ -52,14 +52,8 @@ PY
 
 mutation_case "the cpp engine reports no deadline while entries are queued" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        auto next = scheduler_.nextFireTime();
-        if (!next.has_value()) {
-            return std::nullopt;
-        }""",
-     """        auto next = scheduler_.nextFireTime();
-        if (true) {
-            return std::nullopt;
-        }""")
+     """        if (auto next = scheduler_.nextFireTime(); next.has_value()) {""",
+     """        if (auto next = scheduler_.nextFireTime(); next.has_value() && false) {""")
 PY
 
 mutation_case "the cpp poll loop sleeps its interval instead of the nearer deadline" <<'PY'

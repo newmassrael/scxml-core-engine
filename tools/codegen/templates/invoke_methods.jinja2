@@ -779,6 +779,50 @@
         {% endfor %}
     }
 
+    // W3C SCXML 6.4: the nearest deadline among the running children, so a host
+    // that walks time by `timeUntilNextScheduled()` does not step over a timer a
+    // child armed. The ticking above is what makes it this machine's. Emitted
+    // beside `tickChildren`, so the concept that finds one finds both; a child
+    // in its final state has ended, and what it armed is no longer owed.
+    std::optional<std::chrono::milliseconds> nextChildDeadline() const {
+        std::optional<std::chrono::milliseconds> soonest;
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.invokes | scxml %}
+        {% for invoke_info in state.invokes | scxml %}
+        if (child_{{ invoke_info.field_suffix }}_ && !child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
+            if (auto due = child_{{ invoke_info.field_suffix }}_->timeUntilNextScheduled();
+                due.has_value() && (!soonest || *due < *soonest)) {
+                soonest = due;
+            }
+        }
+        {% endfor %}
+        {% endif %}
+        {% if state.invokes | hybrid %}
+        {% for invoke_info in state.invokes | hybrid %}
+        {% if invoke_info.candidates %}
+        {% for candidate in invoke_info.candidates %}
+        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_ &&
+            !child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->isInFinalState()) {
+            if (auto due = child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->timeUntilNextScheduled();
+                due.has_value() && (!soonest || *due < *soonest)) {
+                soonest = due;
+            }
+        }
+        {% endfor %}
+        {% else %}
+        if (child_{{ invoke_info.field_suffix }}_ && !child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
+            if (auto due = child_{{ invoke_info.field_suffix }}_->timeUntilNextScheduled();
+                due.has_value() && (!soonest || *due < *soonest)) {
+                soonest = due;
+            }
+        }
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+        return soonest;
+    }
+
 {% if model.invokes | scxml %}
     // W3C SCXML C.1: deliver an event addressed to a child's published
     // location.

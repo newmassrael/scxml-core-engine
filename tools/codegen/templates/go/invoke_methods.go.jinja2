@@ -524,6 +524,31 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 {% endfor %}
 }
 
+// NextChildDeadline reports the nearest deadline among the running children
+// (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
+// step over a timer a child armed. The ticking above is what makes it this
+// machine's. A child that has ended (pendingDoneInvoke) is skipped: the policy
+// keeps it until its state exits, and what it armed is no longer owed.
+func (p *{{ machine_name }}Policy) NextChildDeadline() (time.Duration, bool) {
+	var soonest time.Duration
+	found := false
+{% for invoke_info in model.invokes | scxml %}
+	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		if due, ok := p.child{{ invoke_info.invoke_id | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		if due, ok := p.child{{ invoke_info.invoke_id | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+{% endfor %}
+	return soonest, found
+}
+
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}
 {% if autoforward_invokes %}
 // ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.1).
@@ -687,6 +712,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseEx
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
@@ -711,6 +737,7 @@ func (w *{{ wrapper }}) RaiseExternalByNameWithMeta(name string, metadata sce.Ev
 func (w *{{ wrapper }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *{{ wrapper }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *{{ wrapper }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 {% endfor %}
 {% endfor %}
 

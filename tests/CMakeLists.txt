@@ -1202,6 +1202,7 @@ add_executable(integration_tests
     integration/InvokeCandidateSelectsTheChildAotTest.cpp
     integration/AHybridInvokeCarriesItsArgumentsTest.cpp
     integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp
+    integration/AChildTimerIsADeadlineOfItsParentAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
@@ -1688,6 +1689,18 @@ sce_generate_static_integration_test(targetless_transition_completes_macrostep $
 # transitions have run, so the cancel executes against a queue the event has
 # already left.
 sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4: a child session's `<send delay>` is a deadline of the machine
+# that invoked it, because the parent is what ticks its children — so the answer
+# to "when do I next need a tick?" has to count the child's timers. The fixture
+# sits beside its AOT driver rather than under `integration_resources/` for the
+# reason `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh` states:
+# C11 and the C++ Interpreter expose no such query, so a stem there would
+# commit to channels with nothing to assert. It has an inline `<invoke>`, so it
+# is generated through this function (which declares the child's files) rather
+# than `sce_add_state_machine`.
+sce_generate_static_integration_test(a_child_timer_is_a_deadline_of_its_parent ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/a_child_timer_is_a_deadline_of_its_parent.scxml)
 
 # W3C SCXML 3.12.1: `wild`, `wild.` and `wild.*` are "functionally equivalent",
 # and a bare `.*` is an empty token prefix that matches every event. Each case

@@ -919,6 +919,18 @@ type InvocationRunning interface {
 	IsInvocationRunning(invokeID string) bool
 }
 
+// ChildDeadline is implemented by a generated policy that invokes: the nearest
+// deadline of any child it is running, as a duration from now, and whether
+// there is one (§scxml-6.4).
+//
+// The parent's Tick ticks every running child, so a moment a child needs is a
+// moment of this machine's clock too, and TimeUntilNextScheduled counts it. A
+// child that has ended answers nothing, and a child's own children count
+// through the child's own answer.
+type ChildDeadline interface {
+	NextChildDeadline() (time.Duration, bool)
+}
+
 // TargetSendOutcome is what became of a <send> handed to SendToTarget.
 type TargetSendOutcome int
 
@@ -1102,16 +1114,29 @@ func (e *Engine[S, E]) HasReadyEvents() bool {
 //
 // The answer feeds a host loop directly — a time.After in a select, a
 // context deadline, a ticker reset.
+//
+// §scxml-6.4: the session's OWN scheduler is not the whole answer. This
+// machine's Tick advances every running child, so a child's deadline is a
+// deadline of this machine's clock, and the answer is the nearest of the two.
+// Counting only the parent's own made a host that walked time by it step over
+// a timer its child had armed — or, for a parent that arms nothing itself, be
+// told there was nothing to wait for at all.
 func (e *Engine[S, E]) TimeUntilNextScheduled() (time.Duration, bool) {
-	nextMs, ok := e.scheduler.NextReadyAtMs()
-	if !ok {
-		return 0, false
+	var soonest time.Duration
+	found := false
+	if nextMs, ok := e.scheduler.NextReadyAtMs(); ok {
+		remaining := nextMs - e.schedNowMs()
+		if remaining < 0 {
+			remaining = 0
+		}
+		soonest, found = time.Duration(remaining)*time.Millisecond, true
 	}
-	remaining := nextMs - e.schedNowMs()
-	if remaining < 0 {
-		return 0, true
+	if children, ok := any(e.policy).(ChildDeadline); ok {
+		if due, ok := children.NextChildDeadline(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
 	}
-	return time.Duration(remaining) * time.Millisecond, true
+	return soonest, found
 }
 
 // ================================================================

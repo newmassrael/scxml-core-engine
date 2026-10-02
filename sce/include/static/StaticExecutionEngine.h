@@ -1390,17 +1390,27 @@ public:
      *
      * The answer feeds a host loop directly — a `condition_variable::wait_for`,
      * an event-loop timeout, a frame budget.
+     *
+     * §scxml-6.4: the session's OWN scheduler is not the whole answer. This
+     * machine's `tick()` advances every running child, so a child's deadline is
+     * a deadline of this machine's clock, and the answer is the nearest of the
+     * two. Counting only the parent's own made a host that walked time by it
+     * step over a timer its child had armed — or, for a parent that arms
+     * nothing itself, be told there was nothing to wait for at all.
      */
     std::optional<std::chrono::milliseconds> timeUntilNextScheduled() const {
-        auto next = scheduler_.nextFireTime();
-        if (!next.has_value()) {
-            return std::nullopt;
+        std::optional<std::chrono::milliseconds> soonest;
+        if (auto next = scheduler_.nextFireTime(); next.has_value()) {
+            uint64_t now = schedNowMs();
+            soonest = (*next <= now) ? std::chrono::milliseconds::zero()
+                                     : std::chrono::milliseconds(static_cast<int64_t>(*next - now));
         }
-        uint64_t now = schedNowMs();
-        if (*next <= now) {
-            return std::chrono::milliseconds::zero();
+        if constexpr (SCE::Core::HasNextChildDeadline<StatePolicy>) {
+            if (auto child = policy_.nextChildDeadline(); child.has_value() && (!soonest || *child < *soonest)) {
+                soonest = child;
+            }
         }
-        return std::chrono::milliseconds(static_cast<int64_t>(*next - now));
+        return soonest;
     }
 
     // ════════════════════════════════════════

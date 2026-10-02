@@ -1,0 +1,42 @@
+# Mutation cases for "a child session's `<send delay>` is a deadline of the
+# machine that invoked it" (W3C SCXML 6.4), C++ AOT engine.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_a_child_timer_is_a_deadline_of_its_parent_ctest.cases`.
+#
+# The oracle is the C++ AOT driver of
+# `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`, which
+# lives in the `IntegrationTests` binary. Measured 2026-10-02, before the
+# repair, `StaticExecutionEngine::timeUntilNextScheduled` answered `nullopt` for a
+# parent that armed nothing while its child had a timer pending, so a host
+# walking time by the answer never took a step. Each case below puts one way of
+# losing the child's deadline back.
+#
+# The second target is the TEMPLATE rather than a generated file: this backend
+# commits no generated tree, so the template is what the built binary carries.
+#
+# Not here, and why: a case that stops skipping a child in its final state
+# would not be observable on this fixture — an ended child's scheduler is
+# empty, so counting it changes nothing.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/invoke_methods.jinja2
+mutation_oracles tests/integration/AChildTimerIsADeadlineOfItsParentAotTest.cpp
+
+# ── The engine answers only its own scheduler ──────────────────────
+
+mutation_case "the cpp engine does not ask its policy for a child's deadline" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if constexpr (SCE::Core::HasNextChildDeadline<StatePolicy>) {""",
+     """        if constexpr (false && SCE::Core::HasNextChildDeadline<StatePolicy>) {""")
+PY
+
+# ── The generated policy reports no child deadline ─────────────────
+
+mutation_case "the generated cpp policy counts no running child's timers" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """        {% for invoke_info in state.invokes | scxml %}
+        if (child_{{ invoke_info.field_suffix }}_ && !child_{{ invoke_info.field_suffix }}_->isInFinalState()) {""",
+     """        {% for invoke_info in state.invokes | scxml %}
+        if (child_{{ invoke_info.field_suffix }}_ && !child_{{ invoke_info.field_suffix }}_->isInFinalState() && false) {""")
+PY

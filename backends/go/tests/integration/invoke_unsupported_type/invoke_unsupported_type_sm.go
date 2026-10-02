@@ -220,6 +220,17 @@ func (p *InvokeUnsupportedTypePolicy) ExecutePendingInvokes(engine *sce.Engine[I
 func (p *InvokeUnsupportedTypePolicy) TickChildren(engine *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent]) {
 }
 
+// NextChildDeadline reports the nearest deadline among the running children
+// (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
+// step over a timer a child armed. The ticking above is what makes it this
+// machine's. A child that has ended (pendingDoneInvoke) is skipped: the policy
+// keeps it until its state exits, and what it armed is no longer owed.
+func (p *InvokeUnsupportedTypePolicy) NextChildDeadline() (time.Duration, bool) {
+	var soonest time.Duration
+	found := false
+	return soonest, found
+}
+
 
 // DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
 // wait is over, by name — a child need not declare every event its parent

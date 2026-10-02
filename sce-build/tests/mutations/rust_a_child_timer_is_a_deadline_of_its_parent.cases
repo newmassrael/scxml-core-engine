@@ -1,0 +1,42 @@
+# Mutation cases for "a child session's `<send delay>` is a deadline of the
+# machine that invoked it" (W3C SCXML 6.4), Rust runtime.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/rust_a_child_timer_is_a_deadline_of_its_parent.cases`.
+#
+# The oracle is the Rust driver of `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`.
+# Measured 2026-10-02, before the repair, `Engine::time_until_next_scheduled_ms`
+# answered `None` for a parent that armed nothing while its child had a timer
+# pending, so a host walking time by the answer never took a step: the driver's
+# two cases read `None` instead of `Some(200)` and a walk of `[]` instead of
+# `[200, 200]`. Each case below puts one way of losing the child's deadline back.
+#
+# Not here, and why: a case that stops skipping an ended child
+# (`pending_done_invoke`) would not be observable on this fixture. An ended
+# child's scheduler is empty, so counting it changes nothing, and the case
+# could only survive. The guard is there for a child that ended with a timer
+# still armed, which no committed document builds.
+
+mutation_tests -p sce-rust-tests --test a_child_timer_is_a_deadline_of_its_parent
+mutation_targets backends/rust/runtime/src/engine.rs backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs
+mutation_oracles backends/rust/tests/tests/a_child_timer_is_a_deadline_of_its_parent.rs
+
+# ── The engine answers only its own scheduler ──────────────────────
+
+mutation_case "the engine does not ask its policy for a child's deadline" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.policy.next_child_deadline_ms()""",
+     """            None""")
+PY
+
+# ── The generated policy reports no child deadline ─────────────────
+#
+# The filter keeps the call, and the value it would have carried, compiled and
+# used — an edit that dropped them would fail the build under deny-warnings,
+# which reads INCONCLUSIVE rather than as a verdict.
+
+mutation_case "the generated policy counts no running child's timers" <<'PY'
+edit("backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs",
+     """if let Some(due) = child.time_until_next_scheduled_ms() {""",
+     """if let Some(due) = child.time_until_next_scheduled_ms().filter(|_| false) {""")
+PY

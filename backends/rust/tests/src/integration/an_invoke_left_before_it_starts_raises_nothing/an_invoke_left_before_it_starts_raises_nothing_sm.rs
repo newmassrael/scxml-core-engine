@@ -474,6 +474,14 @@ impl AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {}
+
+    // W3C SCXML 6.4: the nearest deadline among the running children, so a host
+    // that walks time by `time_until_next_scheduled_ms` does not step over a
+    // timer a child armed. The ticking above is what makes it this machine's.
+    fn do_next_child_deadline_ms(&self) -> Option<u64> {
+        let mut soonest: Option<u64> = None;
+        soonest
+    }
 }
 
 // ======================================================================

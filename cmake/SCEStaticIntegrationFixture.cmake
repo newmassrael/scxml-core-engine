@@ -148,6 +148,13 @@ endfunction()
 #               `${CMAKE_SOURCE_DIR}/integration_resources/${STEM}/${STEM}.scxml`.
 #   OUTPUT_DIR  Destination dir for generated `_sm.{h,inl}` files
 #               (typically `${STATIC_INTEGRATION_OUTPUT_DIR}`).
+#   SCXML_FILE  (optional) The document, when it is NOT under
+#               `integration_resources/`. Such a document sits beside its drivers
+#               because a stem under `integration_resources/` is a seven-channel
+#               contract and the document asks something fewer channels can be
+#               asked (see `tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml`).
+#               Its file name must be `${STEM}.scxml`, and the directory holding
+#               it is the `--input-root` the way the stem's own directory is.
 #
 # What the fixture produces besides its own `_sm.{h,inl}` — a machine per inline
 # `<invoke>` (`<stem>__sce_synth_invoke__<id>`, SCE Mesh §9.6.6 rule 1) and one
@@ -174,12 +181,17 @@ endfunction()
 #   so a stale fixture surfaces as a stale tree per-context (mirroring
 #   the committed-tree backends' separate §6.2.6 drift contexts).
 function(sce_generate_static_integration_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "" "" ${ARGN})
+    cmake_parse_arguments(_INT "" "SCXML_FILE" "" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
 
-    set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
-    set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
+    if(_INT_SCXML_FILE)
+        set(FIXTURE "${_INT_SCXML_FILE}")
+        get_filename_component(FIXTURE_ROOT "${FIXTURE}" DIRECTORY)
+    else()
+        set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
+        set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
+    endif()
 
     if(NOT EXISTS "${FIXTURE}")
         message(WARNING

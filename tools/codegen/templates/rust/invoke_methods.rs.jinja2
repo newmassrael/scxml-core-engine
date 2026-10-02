@@ -34,6 +34,18 @@
             }
         }
 {% endmacro %}
+{# W3C SCXML 6.4: a running child's nearest timer. A child that has ended
+   (`pending_done_invoke`) is skipped — the policy keeps it until its state
+   exits, and what it armed is no longer owed. #}
+{% macro child_deadline(invoke_info, slot) %}
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            if let Some(ref child) = self.{{ slot }} {
+                if let Some(due) = child.time_until_next_scheduled_ms() {
+                    soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
+                }
+            }
+        }
+{% endmacro %}
 {#
     §scxml-6.4: "if the evaluation of its arguments produces an error, the
     SCXML Processor MUST terminate the processing of the element without
@@ -701,6 +713,26 @@
 {{ hybrid_child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
 {% endif %}
 {% endfor %}
+    }
+
+    // W3C SCXML 6.4: the nearest deadline among the running children, so a host
+    // that walks time by `time_until_next_scheduled_ms` does not step over a
+    // timer a child armed. The ticking above is what makes it this machine's.
+    fn do_next_child_deadline_ms(&self) -> Option<u64> {
+        let mut soonest: Option<u64> = None;
+{% for invoke_info in model.invokes | scxml %}
+{{ child_deadline(invoke_info, "child_" ~ invoke_info.field_suffix) }}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+{{ child_deadline(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{% endfor %}
+{% else %}
+{{ child_deadline(invoke_info, "child_" ~ invoke_info.field_suffix) }}
+{% endif %}
+{% endfor %}
+        soonest
     }
 
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}

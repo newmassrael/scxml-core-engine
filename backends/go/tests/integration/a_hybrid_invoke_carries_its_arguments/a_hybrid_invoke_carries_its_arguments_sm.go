@@ -1303,6 +1303,32 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 	}
 }
 
+// NextChildDeadline reports the nearest deadline among the running children
+// (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
+// step over a timer a child armed. The ticking above is what makes it this
+// machine's. A child that has ended (pendingDoneInvoke) is skipped: the policy
+// keeps it until its state exits, and what it armed is no longer owed.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) NextChildDeadline() (time.Duration, bool) {
+	var soonest time.Duration
+	found := false
+	if !p.pendingDoneInvokeInvoke0 && p.childInvoke0 != nil {
+		if due, ok := p.childInvoke0.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	if !p.pendingDoneInvokeInvoke1 && p.childInvoke1 != nil {
+		if due, ok := p.childInvoke1.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	if !p.pendingDoneInvokeInvoke2 && p.childInvoke2 != nil {
+		if due, ok := p.childInvoke2.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+			soonest, found = due, true
+		}
+	}
+	return soonest, found
+}
+
 
 // DeliverToInvocation delivers a delayed `<send target="#_<invokeid>">` whose
 // wait is over, by name — a child need not declare every event its parent
@@ -1371,6 +1397,7 @@ func (w *childEngineWrapperInvoke0Keeper) RaiseExternalByNameWithMeta(name strin
 func (w *childEngineWrapperInvoke0Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke0Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke0Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke0Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvoke0Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1385,6 +1412,7 @@ func (w *childEngineWrapperInvoke0Bare) RaiseExternalByNameWithMeta(name string,
 func (w *childEngineWrapperInvoke0Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke0Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke0Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke0Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvoke1Keeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1399,6 +1427,7 @@ func (w *childEngineWrapperInvoke1Keeper) RaiseExternalByNameWithMeta(name strin
 func (w *childEngineWrapperInvoke1Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke1Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke1Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke1Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvoke1Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1413,6 +1442,7 @@ func (w *childEngineWrapperInvoke1Bare) RaiseExternalByNameWithMeta(name string,
 func (w *childEngineWrapperInvoke1Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke1Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke1Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke1Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvoke2Keeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1427,6 +1457,7 @@ func (w *childEngineWrapperInvoke2Keeper) RaiseExternalByNameWithMeta(name strin
 func (w *childEngineWrapperInvoke2Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke2Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke2Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke2Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 type childEngineWrapperInvoke2Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1441,6 +1472,7 @@ func (w *childEngineWrapperInvoke2Bare) RaiseExternalByNameWithMeta(name string,
 func (w *childEngineWrapperInvoke2Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvoke2Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvoke2Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvoke2Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

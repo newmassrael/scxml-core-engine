@@ -54,6 +54,17 @@ template <typename P, typename E>
 struct HasChildTickTrait<P, E, std::void_t<decltype(std::declval<P>().tickChildren(std::declval<E &>()))>>
     : std::true_type {};
 
+// §scxml-6.4: a policy that names the nearest deadline of the children it runs.
+// Emitted beside `tickChildren`, so a policy that ticks children answers this
+// too; the engine asks it only through this trait, never by probing the member
+// directly (a member that sits under another guard of the template would read
+// as absent and the branch would silently go the other way).
+template <typename P, typename = void> struct HasNextChildDeadlineTrait : std::false_type {};
+
+template <typename P>
+struct HasNextChildDeadlineTrait<P, std::void_t<decltype(std::declval<const P &>().nextChildDeadline())>>
+    : std::true_type {};
+
 template <typename P, typename E, typename = void> struct HasAutoforwardTrait : std::false_type {};
 
 template <typename P, typename E>
@@ -287,6 +298,10 @@ concept HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
 template <typename P, typename Engine>
 concept HasChildTick = HasChildTickTrait<P, Engine>::value;
 
+/// Policy names the nearest deadline of its running children (§scxml-6.4)
+template <typename P>
+concept HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
+
 /// Policy supports autoforward to children (§scxml-6.4)
 template <typename P, typename Engine>
 concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
@@ -337,6 +352,8 @@ template <typename P, typename Engine> inline constexpr bool HasDataModelInit = 
 template <typename P, typename Engine> inline constexpr bool HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
 
 template <typename P, typename Engine> inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
+
+template <typename P> inline constexpr bool HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
 
 template <typename P, typename Engine> inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 
