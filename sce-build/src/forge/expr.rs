@@ -4306,9 +4306,11 @@ fn reject_undeclared_member(
 /// is a declared variant.
 ///
 /// A target with no `Language` ([`ExprTarget::language`]) has no declaration
-/// for the variant to be spelled against, so a reference is refused there
-/// rather than left as the author's `Alias.variant`, which names nothing in
-/// the script engine.
+/// for the variant to be spelled against, and its data model holds no types:
+/// the Interpreter's enum value is the variant's declared name, a string, which
+/// is also the form a saved state holds it in, so a reference is that string
+/// rather than the author's `Alias.variant`, which names nothing in the script
+/// engine.
 fn lower_enum_variant_refs(
     expr: &mut TypedExpr,
     ctx: &TypeCtx<'_>,
@@ -4317,23 +4319,18 @@ fn lower_enum_variant_refs(
     if let ExprKind::Member { object, property } = &expr.kind {
         if let ExprKind::Ident(alias) = &object.kind {
             if let Some(scope) = ctx.lookup_enum(alias) {
-                let Some(language) = target.language() else {
-                    return Err(ExprError::UnsupportedConstruct {
-                        construct: format!(
-                            "a reference to the enum variant `{alias}.{property}` in an \
-                             ecmascript lowering"
-                        ),
-                        observed: Some(format!("{alias}.{property}")),
-                    }
-                    .at(expr.span.clone()));
+                expr.kind = match target.language() {
+                    Some(language) => ExprKind::Raw(crate::forge::enum_naming::variant_ref(
+                        language,
+                        scope.qualified_type,
+                        scope.source_name,
+                        property,
+                    )),
+                    None => ExprKind::StringLit {
+                        value: property.clone(),
+                        quote: '\'',
+                    },
                 };
-                let reference = crate::forge::enum_naming::variant_ref(
-                    language,
-                    scope.qualified_type,
-                    scope.source_name,
-                    property,
-                );
-                expr.kind = ExprKind::Raw(reference);
                 return Ok(());
             }
         }
@@ -9833,9 +9830,10 @@ mod tests {
     }
 
     /// An enum variant reference has no ECMAScript declaration to be spelled
-    /// against, so it is refused and not left as the author's `Alias.variant`.
+    /// against: the Interpreter holds the variant's declared name, a string,
+    /// and not the author's `Alias.variant`, which names nothing there.
     #[test]
-    fn js_refuses_an_enum_variant_reference() {
+    fn js_lowers_an_enum_variant_reference_to_its_declared_name() {
         let variants = ["Idle".to_string(), "Run".to_string()];
         let mut ctx = TypeCtx::new();
         ctx.insert_enum(
@@ -9846,16 +9844,15 @@ mod tests {
                 source_name: "Mode",
             },
         );
-        let refusal = transpile_typed(
+        let lowered = transpile_typed(
             "Mode.Idle",
             ExprTarget::Js,
             &ctx,
             &empty_renames(),
             InferredType::Unknown,
         )
-        .unwrap_err()
-        .to_string();
-        assert!(refusal.contains("Mode.Idle"), "{refusal}");
+        .expect("an enum variant lowers for the Interpreter");
+        assert_eq!(lowered, "'Idle'");
     }
 
     /// A field of the event's data reaches the Interpreter as untyped JSON, so

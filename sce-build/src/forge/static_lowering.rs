@@ -268,10 +268,16 @@ pub trait StaticTarget {
         None
     }
     /// The declaration of [`Self::enum_type`]: the closed set of `model`'s
-    /// variants, each spelled as [`crate::forge::enum_naming::variant_ident`]
-    /// does and carrying the name the enum document declares for it.
+    /// variants, each spelled as [`Self::enum_variant`] does and carrying the
+    /// name the enum document declares for it.
     fn enum_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> String {
         String::new()
+    }
+    /// The identifier a variant of the enum document `enum_name` has on
+    /// [`Self::enum_type`] — the declared name itself for a target whose data
+    /// model holds no types, where the variant is that name.
+    fn enum_variant(&self, _enum_name: &str, variant: &str) -> String {
+        variant.to_string()
     }
     /// The type of a list of `elem`.
     fn list_type(&self, elem: &SceType) -> String;
@@ -479,6 +485,9 @@ impl StaticTarget for KotlinTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::Kotlin, enum_name, variant)
+    }
     // Its saved form lives on the type, as a record's does: the declared name
     // the enum document gives the variant, which is not the constant's own
     // spelling.
@@ -489,11 +498,7 @@ impl StaticTarget for KotlinTarget {
             .map(|v| {
                 format!(
                     "{}(\"{}\")",
-                    crate::forge::enum_naming::variant_ident(
-                        Language::Kotlin,
-                        &model.name,
-                        &v.name
-                    ),
+                    self.enum_variant(&model.name, &v.name),
                     filters::escape_kotlin(v.name.clone())
                 )
             })
@@ -724,6 +729,9 @@ impl StaticTarget for RustTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::Rust, enum_name, variant)
+    }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
     // repr-tagged enum takes. Its saved form is written beside the machine's
     // own ([`StaticLowering::enums`]), where the saved-state runtime exists.
@@ -731,12 +739,7 @@ impl StaticTarget for RustTarget {
         let variants: String = model
             .variants
             .iter()
-            .map(|v| {
-                format!(
-                    "    {},\n",
-                    crate::forge::enum_naming::variant_ident(Language::Rust, &model.name, &v.name)
-                )
-            })
+            .map(|v| format!("    {},\n", self.enum_variant(&model.name, &v.name)))
             .collect();
         format!(
             "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n{}\npub enum {ty} {{\n{variants}}}",
@@ -1169,11 +1172,9 @@ pub fn lower(
             // name, which the type reads back (see [`StaticEnumType`]).
             if let SceType::Enum(reference) = ty {
                 let alias = &reference.alias;
-                let (Some(enum_ty), Some(enum_model), Some(language)) = (
-                    target.enum_type(machine, alias),
-                    imported_enums.get(alias),
-                    target.expr_target().language(),
-                ) else {
+                let (Some(enum_ty), Some(enum_model)) =
+                    (target.enum_type(machine, alias), imported_enums.get(alias))
+                else {
                     return Err(GenerateError::unsupported(format!(
                         "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang} \
                          lowering yet",
@@ -1191,11 +1192,7 @@ pub fn lower(
                             .iter()
                             .map(|v| StaticEnumVariant {
                                 declared: v.name.clone(),
-                                ident: crate::forge::enum_naming::variant_ident(
-                                    language,
-                                    &enum_model.name,
-                                    &v.name,
-                                ),
+                                ident: target.enum_variant(&enum_model.name, &v.name),
                             })
                             .collect(),
                     });

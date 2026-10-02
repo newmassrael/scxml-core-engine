@@ -2805,8 +2805,10 @@ that holds a name the enum does not declare is refused when read. The saved
 shape names each variable's variants, sorted, so an enum document that renamed
 or added a variant refuses a state saved before it, and one that reordered or
 renumbered them does not. `scenarios/static_enum.json` and `saved/static_enum.json`
-hold this on every engine that lowers the model; the Interpreter's ecmascript
-lowering has no enum yet and refuses a document that declares one, naming it.
+hold this on every engine that lowers the model. The Interpreter's ecmascript
+lowering holds an enum value as the variant's declared name, a string
+(`ViewMode.month` lowers to `'month'`), so it compares, stores and logs as
+the generated backends do and replays the same scenario.
 
 **List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
 sequence of `T`, a fixed-width number or `bool` — the element an algorithm's

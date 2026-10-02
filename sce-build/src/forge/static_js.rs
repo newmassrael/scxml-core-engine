@@ -295,6 +295,13 @@ impl StaticTarget for JsTarget {
             .collect();
         format!("({{{}}})", members.join(", "))
     }
+    // The data model holds no types, so an enum value is the variant's
+    // declared name: a string, which is also what a saved state holds, and
+    // which `Alias.variant` lowers to ([`crate::forge::expr`]). Nothing is
+    // declared.
+    fn enum_type(&self, _machine: &str, alias: &str) -> Option<String> {
+        Some(format!("enum:{alias}"))
+    }
     fn list_type(&self, elem: &SceType) -> String {
         format!("list<{}>", elem.as_attr())
     }
