@@ -276,6 +276,28 @@ public:
     static constexpr uint32_t MAX_MACROSTEP_MICROSTEPS = 1000;
 
     /**
+     * @brief How many external events one invocation of the main event loop may
+     *        take off the queue before this engine hands control back — see
+     *        `truncatedEventChains()` and ARCHITECTURE.md "External-Event Budget",
+     *        the contract every engine here holds
+     *
+     * A machine that answers an event by sending itself the next one, with no
+     * target, never lets the external queue empty. Every macrostep of it ends,
+     * so `MAX_MACROSTEP_MICROSTEPS` never applies, and the loop takes the next
+     * event whenever the queue is not empty: the host call that drove it did not
+     * return. §scxml-3.13 lets a macrostep fail to end and says nothing of a
+     * chain of macrosteps, so, as with the microstep ceiling, the number is this
+     * engine's to choose and the decline has to be visible.
+     *
+     * The default is the one the contract states: three orders of magnitude
+     * above the longest invocation measured over the authoring suite (6 external
+     * events). It is a margin and not a proof, and a host that hands a machine a
+     * backlog it means to work through in one call can choose another
+     * (`setMaxExternalEventsPerCall`).
+     */
+    static constexpr uint32_t DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10000;
+
+    /**
      * @brief Event with metadata for §scxml-5.10 compliance
      *
      * Wraps Event enum with metadata (origin, sendid, data, type) to support
@@ -636,7 +658,10 @@ private:
         const Event event = eventWithMeta.event;
         applyExternalEventPreamble(eventWithMeta);
 
-        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
+        // The host's own event is the first of this invocation's budget: it is
+        // handled here, directly, and the loop that follows starts with one spent
+        // (ARCHITECTURE.md "External-Event Budget", rule 1).
+        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(1); });
         // §scxml-3.1.2: this entry point takes an event straight from the host,
         // so it is the same fact `processNextExternalEvent` records — unlike
         // the Rust and Go engines, whose `process_event` enqueues and lets the
@@ -782,6 +807,15 @@ private:
     bool hasTruncatedMacrostep_ = false;
     bool macrostepTruncated_ = false;
     uint32_t macrostepMicrostepsTaken_ = 0;
+    // The budget of one invocation of the main event loop, the invocations this
+    // engine handed back with an external event still queued, and the event at
+    // the head of the queue when that last happened — see
+    // `truncatedEventChains()`. `hasTruncatedEvent_` is separate because the zero
+    // value of the generated `Event` enum is a real event.
+    uint32_t maxExternalEventsPerCall_ = DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL;
+    uint32_t truncatedEventChains_ = 0;
+    Event lastTruncatedEvent_{};
+    bool hasTruncatedEvent_ = false;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     // §scxml-6.2.5: handlers for the Event I/O Processor types this host
@@ -1816,6 +1850,74 @@ public:
     }
 
     /**
+     * @brief How many invocations of the main event loop this engine handed
+     *        back with an external event still queued, because the invocation
+     *        had already taken `maxExternalEventsPerCall()` of them
+     *        (ARCHITECTURE.md "External-Event Budget")
+     *
+     * `truncatedMacrosteps()` counts a macrostep that does not end; this counts
+     * the other way a call fails to return: every macrostep ends, and each one
+     * queues the event that starts the next (`<send event="again"/>`, no target,
+     * answered by a transition that sends it again). The specification bounds
+     * neither, and an engine that ran either to the letter would never return,
+     * with `getCurrentState()` answering, `isRunning()` true and no sign that
+     * anything went wrong. This is that sign.
+     *
+     * Counted when the loop still had work after the budget. A call that takes
+     * exactly the budget and empties the queue counts zero: a long backlog is
+     * ordinary, an endless one is not. The events left queued stay queued, so a
+     * host that calls again gets another budget and the machine goes on from
+     * where it was; what the host learns is that this call did not reach quiet.
+     *
+     * A cut of the same-instant bound on the scheduler counts here too (see
+     * `tick()`).
+     */
+    uint32_t truncatedEventChains() const {
+        return truncatedEventChains_;
+    }
+
+    /**
+     * @brief The event at the head of the queue when this engine last handed a
+     *        call back that way
+     *
+     * `std::nullopt` while `truncatedEventChains()` is zero — and for a cut of
+     * the scheduler whose due entry delivers no event of this machine's. The
+     * generated `Event` enum's zero value is a real event and cannot stand in for
+     * "none". In a chain that sends itself an event it is that event: the count
+     * says a call did not reach quiet and this says what it was still taking.
+     */
+    std::optional<Event> lastTruncatedEvent() const {
+        if (!hasTruncatedEvent_) {
+            return std::nullopt;
+        }
+        return lastTruncatedEvent_;
+    }
+
+    /// @brief The most external events one invocation of the main event loop may take
+    uint32_t maxExternalEventsPerCall() const {
+        return maxExternalEventsPerCall_;
+    }
+
+    /**
+     * @brief Let a host choose the budget of one invocation
+     *
+     * A host that hands the machine a backlog it means the machine to work
+     * through in one call knows its size, and this engine does not. Settable at
+     * any time.
+     *
+     * Refused below one — returns false and changes nothing: a budget that takes
+     * no event is a machine that cannot run, not a stricter one, since every call
+     * would hand control back with the queue untouched and say it had been cut.
+     */
+    bool setMaxExternalEventsPerCall(uint32_t limit) {
+        if (limit < 1) {
+            return false;
+        }
+        maxExternalEventsPerCall_ = limit;
+        return true;
+    }
+
+    /**
      * @brief Run state machine until completion or timeout (§scxml-6.2)
      *
      * Convenience API for running state machines with delayed send operations.
@@ -1953,7 +2055,14 @@ protected:
      * priority over the external one — the inner loop drains it to exhaustion
      * before the outer loop looks at an external event at all.
      */
-    void runMainEventLoop() {
+    void runMainEventLoop(uint32_t alreadyTaken = 0) {
+        // External events this invocation has taken off the queue, against
+        // `maxExternalEventsPerCall_`. A local, because the budget is one
+        // invocation's: a cut leaves the queue as it is and the next invocation
+        // gets a budget of its own (ARCHITECTURE.md "External-Event Budget"). The
+        // host's own event is the first of its invocation, so a door that handles
+        // it directly (`processEvent`) says so and starts with one spent.
+        uint32_t taken = alreadyTaken;
         while (true) {
             // §scxml-D-mainEventLoop: complete the macrostep on eventless
             // transitions and internal events alone.
@@ -2010,9 +2119,37 @@ protected:
                 continue;
             }
 
+            if (!externalQueue_.hasEvents()) {
+                break;
+            }
+            // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
+            // bounds none of this: a machine that sends itself an external event
+            // on every one never empties the queue. Past the budget the queue is
+            // left exactly as it is and the call hands back, counted.
+            if (taken >= maxExternalEventsPerCall_) {
+                recordTruncatedEventChain(externalQueue_.front().event);
+                break;
+            }
+            ++taken;
             if (!processNextExternalEvent()) {
                 break;
             }
+        }
+    }
+
+    /**
+     * @brief Say that a call was handed back with work still waiting: the count,
+     *        and what it was still taking
+     *
+     * The bound itself is enforced by the caller; this is only the report.
+     * `head` is null for a due scheduler entry that delivers no event of this
+     * machine's.
+     */
+    void recordTruncatedEventChain(std::optional<Event> head) {
+        ++truncatedEventChains_;
+        hasTruncatedEvent_ = head.has_value();
+        if (head) {
+            lastTruncatedEvent_ = *head;
         }
     }
 
@@ -2955,7 +3092,45 @@ public:
             std::shared_ptr<const ::SCE::HostSendRequest> hostSend;
             std::shared_ptr<const ::SCE::HostInvokeDeadline> deadline;
             std::shared_ptr<const ::SCE::ScheduledRoute> route;
-            while (scheduler_.popReadyAct(schedNowMs(), event, eventData, sendId, origin, hostSend, deadline, route)) {
+            // A scheduler that can deliver an entry due at the instant it is
+            // popping is a drain that refills itself: an entry a handler re-arms
+            // at that same reading (a `delay` of zero, which reaches this
+            // scheduler here, or a `delayexpr` that evaluates to zero) is due now,
+            // so this loop pops it in the same call, and each pass takes ONE
+            // event, so the budget on the external drain never trips. The pops of
+            // entries due AT the reading are bounded by the same budget, reset
+            // when the reading advances (ARCHITECTURE.md "External-Event
+            // Budget", rule 5).
+            //
+            // Entries due AT the reading, not every entry popped at it: the
+            // reading is latched for the whole tick, so a host that jumps the
+            // clock a long way pops every entry that came due on the way at ONE
+            // reading, and those are due at earlier instants. A handler arms
+            // relative to the latched reading, so what it arms is due at the
+            // reading itself or after it, and only the first kind can be popped
+            // by this tick. A clock the host moved is bounded by how far it moved
+            // and is not cut. The counter is this call's own, so a host that ticks
+            // again at the same reading gets a budget of its own, as it does for
+            // the external drain.
+            uint64_t reading = UINT64_MAX;
+            uint32_t poppedDueAtReading = 0;
+            while (true) {
+                const uint64_t now = schedNowMs();
+                if (const auto head = scheduler_.peekReady(now); head && head->fireTime == now) {
+                    if (reading != now) {
+                        reading = now;
+                        poppedDueAtReading = 0;
+                    }
+                    if (poppedDueAtReading >= maxExternalEventsPerCall_) {
+                        recordTruncatedEventChain(head->ownEvent ? std::optional<Event>(*head->ownEvent)
+                                                                 : std::nullopt);
+                        break;
+                    }
+                    ++poppedDueAtReading;
+                }
+                if (!scheduler_.popReadyAct(now, event, eventData, sendId, origin, hostSend, deadline, route)) {
+                    break;
+                }
                 if (hostSend) {
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     performDeferredHostSend(*hostSend);

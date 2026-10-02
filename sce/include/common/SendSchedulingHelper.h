@@ -483,6 +483,38 @@ public:
     }
 
     /**
+     * @brief The entry `popReadyAct` would take next, left where it is
+     *
+     * `fireTime` is the instant it came due. `ownEvent` points at the event it
+     * delivers to this machine's own queues, and is null for an entry that
+     * delivers none — a host-served send, a host-run invocation's deadline, or a
+     * send routed to a child or a parent, whose event is a name the other machine
+     * resolves. The pointer is valid until the queue next changes.
+     *
+     * The same-instant bound reads it before popping: an entry due AT the
+     * reading is the only kind a handler can arm during the tick that pops it,
+     * and a cut reports the event it was still popping (ARCHITECTURE.md
+     * "External-Event Budget"). `std::nullopt` when nothing is ready.
+     */
+    struct ReadyHead {
+        TimePoint fireTime;
+        const EventType *ownEvent;
+    };
+
+    std::optional<ReadyHead> peekReady(TimePoint now) const {
+        if (queue_.empty()) {
+            return std::nullopt;
+        }
+        const ScheduledEntry &entry = *queue_.begin()->second;
+        if (entry.fireTime > now) {
+            return std::nullopt;
+        }
+        const bool ownsEvent = !entry.hostSend && !entry.hostInvokeDeadline &&
+                               (!entry.route || entry.route->kind == ScheduledRoute::Kind::InternalQueue);
+        return ReadyHead{entry.fireTime, ownsEvent ? &entry.event : nullptr};
+    }
+
+    /**
      * @brief When the earliest still-queued entry comes due
      *
      * `std::nullopt` when nothing is scheduled. The queue is ordered by
@@ -695,6 +727,16 @@ public:
 
     bool hasPendingEvents() const {
         return core_.hasPendingEvents();
+    }
+
+    /**
+     * @brief The entry `popReadyAct` would take next, left where it is — see
+     *        `SchedulerQueueCore::peekReady`
+     */
+    using ReadyHead = typename SchedulerQueueCore<EventType, std::string>::ReadyHead;
+
+    std::optional<ReadyHead> peekReady(uint64_t nowMs) const {
+        return core_.peekReady(nowMs);
     }
 
     /**

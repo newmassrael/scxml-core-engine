@@ -2823,6 +2823,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // takes to run (see [beginTurn]).
         val opened = beginTurn()
         try {
+            // The same-instant bound is this call's own: a host that ticks again
+            // at the same reading gets a budget of its own, as it does for the
+            // external drain (see [promoteNextDueSend]).
+            poppedDueAtReadingMs = -1L
+            poppedDueAtReading = 0
             // §scxml-6.2: dispatch the due sends one macrostep apart rather than
             // queueing them together. `<cancel>` drops a send that has not been
             // delivered yet, and a host that ticked late holds several past their

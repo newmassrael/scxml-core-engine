@@ -1203,6 +1203,7 @@ add_executable(integration_tests
     integration/AHybridInvokeCarriesItsArgumentsTest.cpp
     integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp
     integration/AChildTimerIsADeadlineOfItsParentAotTest.cpp
+    integration/ExternalChainIsBoundedAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
@@ -1701,6 +1702,15 @@ sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATI
 # than `sce_add_state_machine`.
 sce_generate_static_integration_test(a_child_timer_is_a_deadline_of_its_parent ${STATIC_INTEGRATION_OUTPUT_DIR}
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/a_child_timer_is_a_deadline_of_its_parent.scxml)
+
+# A machine that answers an event by sending itself the next one never lets the
+# external queue empty, and every macrostep of it ends, so the microstep ceiling
+# never applies: the host call that drained it did not return. The fixture holds
+# every engine to one budget on external events (ARCHITECTURE.md "External-Event
+# Budget"). It sits beside its drivers rather than under `integration_resources/`
+# for the reason `scripts/regen_external_chain_is_bounded.sh` states.
+sce_generate_static_integration_test(external_chain_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/external_chain_is_bounded.scxml)
 
 # W3C SCXML 3.12.1: `wild`, `wild.` and `wild.*` are "functionally equivalent",
 # and a bare `.*` is an empty token prefix that matches every event. Each case

@@ -2021,6 +2021,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

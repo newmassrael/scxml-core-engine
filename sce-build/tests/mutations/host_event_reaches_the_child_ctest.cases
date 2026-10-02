@@ -55,10 +55,13 @@ edit("sce/include/static/StaticExecutionEngine.h",
      """        const Event event = eventWithMeta.event;
         applyExternalEventPreamble(eventWithMeta);
 
-        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });""",
+        // The host's own event""",
      """        const Event event = eventWithMeta.event;
 
-        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
+        // The host's own event""")
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(1); });""",
+     """        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(1); });
         applyExternalEventPreamble(eventWithMeta);  // MUTANT: after selection, not before""")
 PY
 

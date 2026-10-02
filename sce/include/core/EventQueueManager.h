@@ -106,6 +106,28 @@ public:
     }
 
     /**
+     * @brief The event at the front of the queue, left where it is
+     *
+     * A cut of the external-event budget reports the event it declined to take
+     * (ARCHITECTURE.md "External-Event Budget") and has to read it without
+     * taking it. Returned by value so no reference outlives the lock.
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
+     * @return Copy of the next event
+     * @throws std::runtime_error if queue is empty
+     */
+    EventType front() const {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
+        if (queue_.empty()) {
+            throw std::runtime_error("EventQueueManager: Cannot read the front of an empty queue");
+        }
+        return queue_.front();
+    }
+
+    /**
      * @brief Clear all queued events
      *
      * Thread-safe when SCE_THREAD_SAFE is enabled.
