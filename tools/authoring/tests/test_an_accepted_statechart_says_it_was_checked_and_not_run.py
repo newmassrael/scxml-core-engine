@@ -104,8 +104,64 @@ class AnAcceptedStatechartSaysItWasCheckedAndNotRun(unittest.TestCase):
         answer = answered("validate_scxml", {"document_text": STATECHART,
                                              "document_name": "client.scxml"})
         self.assertIn("SCE has not measured it", answer["show"])
-        self.assertLess(answer["show"].index("SCE has not measured it"),
-                        answer["show"].index("not a run of it"))
+        self.assertIn("not a run of it", answer["show"])
+
+    def test_the_step_before_the_reply_comes_first_in_what_to_show(self):
+        """Measured 2026-10-02 (Sonnet, headless, four specifications, a neutral
+        request, twelve runs each): with the play instruction LAST in this text no
+        run called scxml_scenarios (0/12); first, as the step before replying, seven
+        did (7/12); first, with the scenario set's interface filled in, ten (10/12).
+        A client reads `show` as what to show, in order, and an instruction at its
+        end reads as one more thing to offer the owner."""
+        answer = answered("validate_scxml", {"document_text": STATECHART,
+                                             "document_name": "client.scxml"})
+        shown = answer["show"]
+        self.assertTrue(shown.startswith("BEFORE you write your reply to the owner:"), shown)
+        self.assertLess(shown.index("scxml_scenarios"), shown.index("Show each page verbatim"))
+        self.assertLess(shown.index("not a run of it"), shown.index("SCE has not measured it"))
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the verdict is the product's; build sce-codegen first")
+class TheScenarioSetIsHandedOverWithItsInterfaceFilledIn(unittest.TestCase):
+    def test_the_designs_own_inputs_and_outputs_are_the_interface_of_the_skeleton(self):
+        answer = answered("validate_scxml", {"document_text": STATECHART,
+                                             "document_name": "client.scxml"})
+        surface = answer["manifest"]["surface"]
+        skeleton = answer["scenarios_skeleton"]
+        self.assertEqual("sce-scenario-set", skeleton["record"])
+        self.assertEqual("ai-proposed", skeleton["origin"])
+        self.assertEqual(surface["inputs"], [i["name"] for i in skeleton["interface"]["inputs"]])
+        self.assertEqual(surface["outputs"],
+                         [o["name"] for o in skeleton["interface"]["outputs"]])
+        self.assertIn("`scenarios_skeleton` is the scenario set to fill in", answer["show"])
+        # What the client writes is marked as the client's, not filled in.
+        [scenario] = skeleton["scenarios"]
+        self.assertTrue(scenario["quote"].startswith("<"), scenario)
+
+    def test_no_skeleton_where_nothing_is_to_be_played(self):
+        for name, document in (("refused", ORPHAN), ("event-schema", EVENT_SCHEMA)):
+            with self.subTest(name):
+                answer = answered("validate_scxml", {"document_text": document,
+                                                     "document_name": "client.scxml"})
+                self.assertNotIn("scenarios_skeleton", answer)
+
+    def test_the_skeleton_is_a_set_the_scenario_tool_reads(self):
+        """Filled in with one real scenario it is a usable set: the names it offers are
+        the names the design presents, so no mismatch with the interface can come of it."""
+        answer = answered("validate_scxml", {"document_text": STATECHART,
+                                             "document_name": "client.scxml"})
+        skeleton = json.loads(json.dumps(answer["scenarios_skeleton"]))
+        skeleton["specification"]["doc_id"] = "client"
+        skeleton["scenarios"] = [{"id": "S1", "quote": "Going makes it busy.",
+                                  "steps": [{"send": "go", "expect": {"finished": False}}]}]
+        reply = answered("scxml_scenarios", {
+            "scenarios_text": json.dumps(skeleton),
+            "documents_text": [{"name": "client.scxml", "text": STATECHART}]})
+        interface = reply["interface"]
+        self.assertEqual([], interface["unserved_inputs"], reply)
+        self.assertEqual([], interface["unaccepted_inputs"], reply)
+        self.assertTrue(interface["matches"], reply)
 
 
 class TheToolTheAnswerNamesIsOneTheServerHas(unittest.TestCase):

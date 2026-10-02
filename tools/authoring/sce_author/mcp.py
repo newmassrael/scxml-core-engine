@@ -29,6 +29,7 @@ So the shape a caller gets is:
     scxml_acceptance_report the page the owner reads before accepting
     scxml_accept            record the OWNER's acceptance, on their word only
     scxml_acceptance_check  whether that acceptance still holds
+    scxml_acceptance_impact which of several acceptances a changed shared file touches
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -78,7 +79,7 @@ from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
 from .verify import validate_scxml as run_scxml_validation
-from .verify import (accept_design, acceptance_holds, acceptance_page,
+from .verify import (accept_design, acceptance_holds, acceptance_impact, acceptance_page,
                      design_requirement_records, diagram_figures, kind_catalog,
                      requirement_records, unresolved_markers, validate_scxml_set)
 from .verify import page_provenance, pseudo_page, verify as run_verify
@@ -160,7 +161,11 @@ SERVER_INSTRUCTIONS = (
     "nothing until they say yes. A rule that says `relayed` was reported "
     "to have been confirmed by the owner, and the product could not see it; "
     "say so when you apply it. Pass the profile to decisions too, so a "
-    "citation of a rule is not refused as an uncited guess. "
+    "citation of a rule is not refused as an uncited guess. When the owner "
+    "changes a rule of a profile several specifications share, "
+    "scxml_acceptance_impact names the acceptances that applied it (give it "
+    "their records): tell the owner those first, since their behaviour rests "
+    "on words that changed, and re-accept nothing without their say. "
     "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
@@ -626,22 +631,40 @@ TOOLS = [
                               "description": "Paths to the drafts (local servers only)."},
                 "documents_text": {
                     "type": "array",
-                    "description": "The drafts themselves, each under its own name.",
+                    "description": (
+                        "The drafts themselves, each under its own name. A draft "
+                        "that starts child sessions (`<invoke src>`) carries "
+                        "them as its own `companions`, each under the name the "
+                        "draft's `src` gives it: every draft is built in a "
+                        "directory of its own, so two drafts may each have a "
+                        "different `child.scxml`."),
                     "items": {
                         "type": "object",
                         "required": ["name", "text"],
-                        "properties": {"name": {"type": "string"},
-                                       "text": {"type": "string"}},
+                        "properties": {
+                            "name": {"type": "string"},
+                            "text": {"type": "string"},
+                            "companions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["name", "text"],
+                                    "properties": {"name": {"type": "string"},
+                                                   "text": {"type": "string"}},
+                                },
+                            },
+                        },
                     },
                 },
                 "companions_text": {
                     "type": "array",
                     "description": (
-                        "Documents a draft starts as child sessions (its "
-                        "`<invoke src>`), each under the name the draft's `src` "
-                        "gives it. They are built beside the drafts and are not "
-                        "themselves compared. With `documents` (paths) put them "
-                        "in the same directory as the draft instead. A draft whose "
+                        "Child sessions EVERY draft starts, the same document for "
+                        "all of them, each under the name the drafts' `src` gives "
+                        "it; built beside each draft and not themselves compared. "
+                        "Children that differ between drafts go in each draft's own "
+                        "`companions` instead. With `documents` (paths) put the "
+                        "children in the same directory as the draft. A draft whose "
                         "child is not found cannot start it, and `undriven` says so."),
                     "items": {
                         "type": "object",
@@ -951,8 +974,13 @@ TOOLS = [
             "rules. The first call SAVES NOTHING: it returns `tell_the_owner`, "
             "the rule beside their own words, for you to show them. Only when the "
             "owner says yes to the rules as worded, call it again with the same "
-            "`rules` and `owner_confirmed: true`, and it returns `profile_text`, "
-            "which you save (this tool writes no file). Never set "
+            "`rules` and `owner_confirmed: true`, and it returns `profile_text`. "
+            "On a local server give `out` (a path) with it and the profile is "
+            "WRITTEN there, whole or not at all: the answer is `saved`, with the "
+            "path and sha256, and a file already at `out` is replaced only when "
+            "you gave it as `profile` and it still holds those bytes (otherwise "
+            "nothing is written and it says why). Without `out` the tool writes "
+            "no file and `profile_text` is yours to save. Never set "
             "`owner_confirmed` on your own say-so. The profile records each such "
             "rule as `relayed` -- you reported that the owner said yes; the "
             "product was not in the conversation -- and every acceptance that "
@@ -980,6 +1008,10 @@ TOOLS = [
                 "owner_confirmed": {"type": "boolean", "description":
                                     "True only after the owner said yes to these rules as "
                                     "worded in `tell_the_owner`."},
+                "out": {"type": "string", "description":
+                        "Where to write the confirmed profile (local servers only). Needs "
+                        "`owner_confirmed: true`. A file already there must be the one "
+                        "given as `profile`, unchanged since it was read."},
             },
         },
     },
@@ -1092,6 +1124,41 @@ TOOLS = [
                                        "text": {"type": "string"}},
                     },
                 },
+            },
+        },
+    },
+    {
+        "name": "scxml_acceptance_impact",
+        "description": (
+            "Say which of several acceptances a change touches. Use it after a "
+            "file the owner shares across specifications changed -- a profile "
+            "whose house rule was edited, removed or added -- to find every "
+            "specification that applied the rule, instead of checking one record "
+            "at a time. Give `records` (paths of the acceptance records "
+            "scxml_accept wrote) and `root` (the directory their paths are read "
+            "against; records of designs in other trees are asked in another "
+            "call). Local servers only: it reads the owner's own tree. Returns "
+            "JSON: `summary` (records, holding, lapsed, unusable), `records` "
+            "(each with `holds` and its `lapses` as data: a house rule that "
+            "moved has `kind: rule`, `id`, `places`, `recorded` and `current`, "
+            "and `current` is null when the rule is gone), and `by_rule`: for "
+            "each rule that moved, the records that APPLIED it. Tell the owner "
+            "`by_rule` first: those are the specifications whose behaviour "
+            "rests on words that changed. A record that lapses only as "
+            "`source` was accepted under the profile and did not apply the "
+            "rule that moved; its acceptance still lapsed, since the file it "
+            "was accepted under is not the same bytes. A record in `unusable` "
+            "was not checked: say so, do not count it as holding. Nothing is "
+            "re-accepted by this tool."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["records", "root"],
+            "properties": {
+                "records": {"type": "array", "items": {"type": "string"},
+                            "description": "Paths to acceptance records (local servers only)."},
+                "root": {"type": "string",
+                         "description": "The directory the records' paths are relative to."},
             },
         },
     },
@@ -1498,13 +1565,18 @@ class _Staging:
         self.designs_withheld = designs_withheld
         self._tmp = tempfile.TemporaryDirectory(prefix="sce-author-")
         self.dir = pathlib.Path(self._tmp.name)
-        self._names: set[str] = set()
+        self._names: set[tuple[str, str]] = set()  # (subdirectory, file name)
 
     def close(self) -> None:
         self._tmp.cleanup()
 
-    def write(self, name, text, key: str) -> pathlib.Path:
-        """Stage `text` as `name`; the path the product is given for it."""
+    def write(self, name, text, key: str, directory: str = "") -> pathlib.Path:
+        """Stage `text` as `name`; the path the product is given for it.
+
+        `directory` is a subdirectory of the staging directory this server names
+        itself (never a caller's word), for files that must sit beside one
+        another and apart from the rest: a draft and the child sessions it starts,
+        where two drafts may each have a child of the same name."""
         if not isinstance(text, str):
             raise ToolArgumentError(f"'{key}_text' has to be the file's text, as a string")
         if (not isinstance(name, str) or not _FILE_NAME.fullmatch(name)
@@ -1512,12 +1584,14 @@ class _Staging:
             raise ToolArgumentError(
                 f"'{key}_name' has to be a plain file name such as door.scxml, "
                 f"not {name!r}")
-        if name in self._names:
+        if (directory, name) in self._names:
             raise ToolArgumentError(f"two files are named {name!r}")
-        self._names.add(name)
-        (self.dir / name).write_text(text, encoding="utf-8")
+        self._names.add((directory, name))
+        target = self.dir / directory
+        target.mkdir(parents=True, exist_ok=True)
+        (target / name).write_text(text, encoding="utf-8")
         # Relative: the run starts in this directory.
-        return pathlib.Path(name)
+        return pathlib.Path(directory) / name
 
     def file(self, args: dict, key: str, what: str, default_name: str,
              required: bool = True) -> pathlib.Path | None:
@@ -1659,13 +1733,27 @@ def _with_pages(answer: dict, documents: list[pathlib.Path], staging: _Staging,
             blocks.append(page)
         pages.append(entry)
     answer["pages"] = pages
-    answer["show"] = ("Show each page verbatim in its own fenced block, and under "
-                      "it print that document's sha256. Then tell the owner each "
-                      "line of `open`, and that no owner acceptance is recorded: "
-                      "`accepted` is the product's verdict on the document, not "
-                      "the owner's.")
+    base = ("Show each page verbatim in its own fenced block, and under "
+            "it print that document's sha256. Then tell the owner each "
+            "line of `open`, and that no owner acceptance is recorded: "
+            "`accepted` is the product's verdict on the document, not "
+            "the owner's.")
+    play = _behaviour_say(answer)
+    _scenarios_skeleton(answer, bool(play))
+    # ⚠ The step before the reply comes FIRST, and it is the one thing here that
+    # is not about what to show. Measured 2026-10-02 (Sonnet, headless, four
+    # specifications, a neutral request, twelve runs each): with the instruction
+    # last in this text no run called scxml_scenarios (0/12); first, as the step
+    # before replying, seven did (7/12); first, with the scenario set's interface
+    # already filled in from the design's own surface, ten did (10/12). A client
+    # reads this text as what to show, in order, and the play step at its end read
+    # as one more thing to offer the owner.
+    answer["show"] = ("BEFORE you write your reply to the owner:" + play + " Only after "
+                      "that, reply. " + base) if play else base
+    if "scenarios_skeleton" in answer:
+        answer["show"] += (" `scenarios_skeleton` is the scenario set to fill in: its interface "
+                           "is this design's own, and you write the scenarios.")
     answer["show"] += _requirements_say(answer)
-    answer["show"] += _behaviour_say(answer)
     answer["show"] += _house_rules_say(answer)
     return {"content": [{"type": "text",
                          "text": json.dumps(answer, indent=2, ensure_ascii=False) + "\n"},
@@ -1770,6 +1858,33 @@ def _behaviour_say(answer: dict) -> str:
     answer["behaviour"] = {"verdict": "not played",
                            "reason": "no scenario set was played into this design"}
     return " " + _UNPLAYED
+
+
+def _scenarios_skeleton(answer: dict, playable: bool) -> None:
+    """The scenario set `scxml_scenarios` takes, with the one part the product
+    already knows filled in: the design's own inputs and outputs.
+
+    The client writes the scenarios; it should not also have to transcribe the
+    interface, and a name it misspells there is a mismatch the interface check
+    then reports. Offered only for a statechart the product accepted and that
+    presents a surface (a set of documents presents none), and only when the
+    answer also tells the client to play it."""
+    surface = (answer.get("manifest") or {}).get("surface")
+    if not playable or not surface:
+        return
+    answer["scenarios_skeleton"] = {
+        "record": "sce-scenario-set", "v": 1,
+        "specification": {"doc_id": "<a short name for the specification>", "rev": "1"},
+        "origin": "ai-proposed",
+        "interface": {"inputs": [{"name": name} for name in surface.get("inputs", [])],
+                      "outputs": [{"name": name} for name in surface.get("outputs", [])]},
+        "scenarios": [{
+            "id": "S1",
+            "quote": "<one sentence of the specification, word for word>",
+            "steps": [{"send": "<one of interface.inputs>",
+                       "expect": {"outbound": [{"event": "<one of interface.outputs>"}],
+                                  "finished": False}}]}],
+    }
 
 
 _RULES_UNCITED = (
@@ -1918,23 +2033,56 @@ def _validate_set_tool(args: dict, staging: _Staging) -> dict:
     return _with_pages(answer, documents, staging, digests, lexicon)
 
 
+def _files_of(entries, what: str) -> list[tuple[object, object]]:
+    """The `(name, text)` of each entry of a list of staged files, or a sentence
+    saying what the list has to be."""
+    if not isinstance(entries, list) or not entries:
+        raise ToolArgumentError(f"{what} has to be a non-empty list of files")
+    files = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ToolArgumentError(f"each entry of {what} has a name and a text")
+        files.append((entry.get("name"), entry.get("text")))
+    return files
+
+
 def _compare_tool(args: dict, staging: _Staging) -> dict:
-    documents = staging.many(args, "documents", "the drafts to compare")
-    # Documents a draft starts as child sessions, staged beside the drafts so the
-    # `src` a draft names finds them where the product looks. They are not drafts
-    # and are not compared; a draft that names none of them ignores them.
-    companions = args.get("companions_text")
-    if companions is not None:
-        if not isinstance(companions, list) or not companions:
-            raise ToolArgumentError("'companions_text' has to be a non-empty list of files")
-        for entry in companions:
-            if not isinstance(entry, dict):
-                raise ToolArgumentError("each 'companions_text' entry has a name and a text")
-            staging.write(entry.get("name"), entry.get("text"), "companions")
-    # Staged drafts come back named relative to the staging directory; the
-    # comparison runs the product on each, so it is handed where they are.
-    located = [path if path.is_absolute() else staging.dir / path for path in documents]
-    report = compare_drafts(located, withheld=staging.designs_withheld)
+    if args.get("documents_text") is None:
+        # The drafts are the owner's own files, and a child a draft starts sits
+        # beside it in the owner's own tree, where the product looks for it.
+        if args.get("companions_text") is not None:
+            raise ToolArgumentError(
+                "'companions_text' goes with 'documents_text'; with 'documents' (paths) "
+                "put each child session next to the draft that starts it")
+        documents = staging.many(args, "documents", "the drafts to compare")
+        located = [path if path.is_absolute() else staging.dir / path for path in documents]
+        labels = None
+    else:
+        if args.get("documents") is not None:
+            raise ToolArgumentError("give exactly one of 'documents' and 'documents_text': "
+                                    "the drafts to compare")
+        drafts = _files_of(args["documents_text"], "'documents_text'")
+        shared = (_files_of(args["companions_text"], "'companions_text'")
+                  if args.get("companions_text") is not None else [])
+        located, labels = [], []
+        for index, entry in enumerate(args["documents_text"]):
+            # ⚠ Each draft in a directory of its own, with the child sessions it
+            # starts. The drafts being compared were written in separate
+            # conversations, so every one of them calls its child `child.scxml` and
+            # means a different document; one directory for all of them could hold
+            # only one. The product resolves a draft's `src` against the draft's own
+            # directory, and this puts each child exactly there.
+            where = f"draft{index + 1}"
+            name, text = drafts[index]
+            if name in labels:
+                raise ToolArgumentError(f"two drafts are named {name!r}")
+            located.append(staging.dir / staging.write(name, text, "documents", where))
+            labels.append(name)
+            own = (_files_of(entry["companions"], f"the 'companions' of {name!r}")
+                   if entry.get("companions") is not None else [])
+            for companion_name, companion_text in [*shared, *own]:
+                staging.write(companion_name, companion_text, "companions", where)
+    report = compare_drafts(located, labels=labels, withheld=staging.designs_withheld)
     report["summary"] = compare_summary(report)
     return _text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
@@ -2075,15 +2223,28 @@ def _staged_text(staging: _Staging, path: pathlib.Path | None, what: str) -> str
 
 
 def _house_rule_tool(args: dict, staging: _Staging) -> dict:
-    profile = _staged_text(staging, staging.file(
-        args, "profile", "the owner's authoring profile", "profile.json", required=False),
-        "the profile")
+    profile_file = staging.file(
+        args, "profile", "the owner's authoring profile", "profile.json", required=False)
+    profile = _staged_text(staging, profile_file, "the profile")
     owner_words = _staged_text(staging, staging.file(
         args, "owner_words", "the owner's own words", "owner-words.txt", required=False),
         "the owner's words")
     confirmed = args.get("owner_confirmed", False)
     if not isinstance(confirmed, bool):
         raise ToolArgumentError("'owner_confirmed' has to be true or false")
+    # Where the confirmed profile is WRITTEN, on a local server: the digest of the
+    # bytes the rules were added to is taken here, from the file as it is on disk
+    # (a text read would fold a CRLF into an LF and miscompare), before anything
+    # else can change it.
+    out = staging.local_path(args, "out", "where the profile is written")
+    if out is not None and not confirmed:
+        raise ToolArgumentError(
+            "'out' writes the profile, which is only done for rules the owner has said yes to: "
+            "show them `tell_the_owner` first, then ask again with 'owner_confirmed': true")
+    base_sha256 = None
+    if profile_file is not None:
+        located = profile_file if profile_file.is_absolute() else staging.dir / profile_file
+        base_sha256 = hashlib.sha256(located.read_bytes()).hexdigest()
     try:
         built = house_rule.build(profile, args.get("rules"), owner_words=owner_words,
                                  confirmed=confirmed)
@@ -2102,7 +2263,13 @@ def _house_rule_tool(args: dict, staging: _Staging) -> dict:
         if refusal:
             raise ToolArgumentError("the profile this would make is not one the product "
                                     f"reads, so nothing is offered: {refusal}")
-    return _text(json.dumps(house_rule.answer(built), indent=2, ensure_ascii=False) + "\n")
+    saved = None
+    if out is not None:
+        try:
+            saved = house_rule.save(out, built.profile_text, base_sha256)
+        except house_rule.HouseRuleError as error:
+            raise ToolArgumentError(str(error)) from error
+    return _text(json.dumps(house_rule.answer(built, saved), indent=2, ensure_ascii=False) + "\n")
 
 
 def _requirements_tool(args: dict, staging: _Staging) -> dict:
@@ -2285,6 +2452,23 @@ def _acceptance_check_tool(args: dict, staging: _Staging) -> dict:
                                      scenarios=scenarios, cwd=cwd))
 
 
+def _acceptance_impact_tool(args: dict, staging: _Staging) -> dict:
+    if staging.remote:
+        # Not the usual "send it as text": the question is about the owner's own
+        # tree of many records, and a remote caller has no such tree here.
+        raise ToolArgumentError(
+            "scxml_acceptance_impact reads the owner's own acceptance records, so it is "
+            "offered on a local server only; with a remote one, check each record with "
+            "scxml_acceptance_check")
+    records = args.get("records")
+    if (not isinstance(records, list) or not records
+            or not all(isinstance(path, str) and path for path in records)):
+        raise ToolArgumentError("'records' has to be a non-empty list of paths")
+    root = _path_arg(args, "root", "the directory the records' paths are relative to")
+    return _answer(*acceptance_impact([pathlib.Path(path).resolve() for path in records],
+                                      root.resolve(), cwd=staging.dir))
+
+
 def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     """The accepted design for this specification, when there is one.
 
@@ -2348,6 +2532,7 @@ _PACK_FREE = {
     "scxml_accept": _accept_tool,
     "scxml_acceptance_check": _acceptance_check_tool,
     "scxml_accepted_for": _accepted_for_tool,
+    "scxml_acceptance_impact": _acceptance_impact_tool,
 }
 
 

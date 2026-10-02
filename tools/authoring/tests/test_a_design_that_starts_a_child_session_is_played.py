@@ -259,6 +259,79 @@ class AComparisonStartsTheChildrenOfItsDrafts(unittest.TestCase):
                 mcp.serve(io.StringIO(json.dumps(request) + "\n"), output)
                 self.assertTrue(json.loads(output.getvalue())["result"].get("isError"))
 
+    def compare(self, **arguments) -> dict:
+        import io
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": "compare", "arguments": arguments}}
+        output = io.StringIO()
+        mcp.serve(io.StringIO(json.dumps(request) + "\n"), output)
+        return json.loads(output.getvalue())["result"]
+
+    def test_two_drafts_may_each_start_a_different_child_of_the_same_name(self):
+        """The drafts being compared were written in separate conversations, so each
+        calls its child `child.scxml` and means another document: one tells its parent
+        at 500 ms, the other at 900 ms. A directory for all of them held one child, and
+        a second of the same name was refused; each draft now has a directory of its own."""
+        slower = CHILD_ONE_TIMER.replace("500ms", "900ms")
+        result = self.compare(documents_text=[
+            {"name": "fast.scxml", "text": PARENT.replace('name="parent"', 'name="fast"'),
+             "companions": [{"name": "child.scxml", "text": CHILD_ONE_TIMER}]},
+            {"name": "slow.scxml", "text": PARENT.replace('name="parent"', 'name="slow"'),
+             "companions": [{"name": "child.scxml", "text": slower}]}])
+        self.assertFalse(result.get("isError"), result)
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual(["fast.scxml", "slow.scxml"], report["documents"])
+        self.assertEqual({}, report["behaviour"]["undriven"], report["behaviour"])
+        self.assertEqual("judged", report["behaviour"]["verdict"], report["behaviour"])
+
+    def test_each_draft_is_driven_against_its_own_child_and_not_a_neighbours(self):
+        """The same two drafts, driven directly: after 600 ms the one whose child
+        speaks at 500 ms has finished and the one whose child speaks at 900 ms has
+        not. Were the children mixed up, both would have done the same."""
+        from sce_author.compare import _Driven
+
+        slower = CHILD_ONE_TIMER.replace("500ms", "900ms")
+        for name, child, finished in (("fast", CHILD_ONE_TIMER, True), ("slow", slower, False)):
+            directory = self.work / name
+            directory.mkdir()
+            (directory / "draft.scxml").write_text(PARENT, encoding="utf-8")
+            (directory / "child.scxml").write_text(child, encoding="utf-8")
+            driven = _Driven(directory / "draft.scxml", _default_codegen(),
+                             self.work / f"built-{name}")
+            seen = driven.trace([("time", 600)])
+            self.assertEqual(finished, seen[-1][2], (name, seen))
+
+    def test_a_shared_child_and_a_draft_s_own_may_both_be_given(self):
+        result = self.compare(
+            documents_text=[
+                {"name": "a.scxml", "text": PARENT.replace('name="parent"', 'name="a"')},
+                {"name": "b.scxml", "text": PARENT.replace('name="parent"', 'name="b"'),
+                 "companions": [{"name": "extra.scxml", "text": CHILD_ONE_TIMER}]}],
+            companions_text=[{"name": "child.scxml", "text": CHILD_ONE_TIMER}])
+        self.assertFalse(result.get("isError"), result)
+
+    def test_a_companion_named_like_another_file_of_its_draft_is_refused(self):
+        result = self.compare(documents_text=[
+            {"name": "a.scxml", "text": PARENT,
+             "companions": [{"name": "child.scxml", "text": CHILD_ONE_TIMER},
+                            {"name": "child.scxml", "text": CHILD_ONE_TIMER}]},
+            {"name": "b.scxml", "text": SETTLED}])
+        self.assertTrue(result.get("isError"), result)
+        self.assertIn("two files are named 'child.scxml'", result["content"][0]["text"])
+
+    def test_two_drafts_of_one_name_and_companions_beside_paths_are_refused(self):
+        twin = self.compare(documents_text=[{"name": "a.scxml", "text": PARENT},
+                                            {"name": "a.scxml", "text": SETTLED}])
+        self.assertTrue(twin.get("isError"), twin)
+        self.assertIn("two drafts are named 'a.scxml'", twin["content"][0]["text"])
+        (self.work / "a.scxml").write_text(PARENT, encoding="utf-8")
+        (self.work / "b.scxml").write_text(SETTLED, encoding="utf-8")
+        beside = self.compare(documents=[str(self.work / "a.scxml"), str(self.work / "b.scxml")],
+                              companions_text=[{"name": "child.scxml", "text": CHILD_ONE_TIMER}])
+        self.assertTrue(beside.get("isError"), beside)
+        self.assertIn("next to the draft", beside["content"][0]["text"])
+
 
 @needs_the_generator
 class ADesignThatCannotStartIsAnAnswer(unittest.TestCase):

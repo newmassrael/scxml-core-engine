@@ -191,8 +191,12 @@ compared with its child: the documents its static `src` names are found beside
 the draft, the ones those start in turn too, and built with it, and a `src` that
 climbs out of the draft's directory or names no file is left alone (the draft then
 cannot start it, and `undriven` says so in the engine's words). Over MCP the child
-documents are handed as `companions_text`, staged beside the drafts; they are not
-drafts and are not compared.
+documents ride with the draft that starts them (`documents_text[].companions`), and
+every draft is built in a directory of its own: the drafts being compared were
+written in separate conversations, so each calls its child `child.scxml` and means
+a different document, and one directory for all of them could hold only one.
+`companions_text` is for a child every draft starts and is the same document for
+all; neither kind is a draft, and neither is compared.
 
 Behaviour is compared by driving each draft's Python lowering with the
 same seeded random drives, each draft in its own event names. Two drafts
@@ -853,8 +857,14 @@ the owner's text as `owner_words` when it holds it, which every quote is then he
 to word for word). The first call saves nothing: it returns `tell_the_owner`, the
 rule beside the owner's own words. Only when the owner says yes to the rules as
 worded does the assistant call it again with `owner_confirmed: true`, and the tool
-returns the profile text (it writes no file) with each new rule as
-`{id, rule, quote, confirmation: "relayed"}`. `relayed` is a client's report that
+returns the profile text with each new rule as
+`{id, rule, quote, confirmation: "relayed"}`. On a local server `out` writes it:
+the profile is written whole or not at all, the answer is `saved` with the path and
+the sha256, a file already at `out` is replaced only when it was given as `profile`
+and still holds exactly those bytes (an edit made since is never overwritten), and
+asking again after success adds nothing, since the rule is then already held. The
+profile's revision is its sha256, which every acceptance record that applied one of
+its rules already pins. `relayed` is a client's report that
 the owner said yes: the product was not in the conversation and says only that.
 Ids are the lowest `H<n>` not in use unless one token is given; a rule that
 repeats one the profile holds, a quote that is not in the owner's words, or an id
@@ -863,6 +873,19 @@ before it is offered. Every acceptance that applied a rule repeats the owner's
 words and the word `relayed` in `applied_rules` and says, rule by rule, on what
 authority it stands (`applied_rules_standing`). A rule written into the profile by
 hand carries neither, and the answer says so of it.
+
+**scxml_acceptance_impact** answers the question a shared profile raises: someone
+edited a rule, which specifications applied it? Given the acceptance records
+(`records`) and the directory their paths are read against (`root`), it rechecks each
+for the variant it was taken for and answers `summary`, `records` (each with `holds`
+and its `lapses` as the product's data beside the sentence) and `by_rule`: for every
+rule that moved, the records that APPLIED it, with the places, the words it had and
+the words it has (`current` is null when the rule is gone). A record accepted under
+the profile that did not apply the rule still lapses (`source`: the file is other
+bytes), is not indexed under any rule, and one accepted under no profile holds. A
+record that cannot be read is `unusable`, counted apart, and the scan goes on.
+Local servers only (it reads the owner's own tree); nothing is re-accepted. The
+product's `sce-codegen acceptance-impact` is the same report as lines of JSON.
 
 The requirement and acceptance tools answer for a document of any kind. A
 statechart's report shows, for each requirement, the transitions it depends

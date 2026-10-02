@@ -29,7 +29,10 @@ text, the way `scxml_requirement_set` hands back its manifest.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import pathlib
 import re
 from dataclasses import dataclass, field
 
@@ -196,7 +199,59 @@ def standing(applied_rules) -> list[str]:
     return lines
 
 
-def answer(built: Built) -> dict:
+def save(out: pathlib.Path, text: str, base_sha256: str | None) -> dict:
+    """Write the profile to `out`, whole or not at all, and say where it is.
+
+    `base_sha256` is the digest of the bytes the rules were added to (the profile
+    the caller gave), or None when none was given. A file already at `out` is
+    overwritten only when it still holds exactly those bytes: anything else is
+    somebody's edit since the profile was read, and writing over it would lose it
+    without a word. A path that holds no file yet is written new.
+
+    The write goes to a temporary file in the same directory and is renamed over
+    `out`, so a failure leaves the old file or no file, never half of one, and a
+    second identical request is refused upstream (a rule the profile already holds
+    is not added twice) before it can write a second revision.
+
+    The profile's revision is its digest: an acceptance record pins the profile by
+    it, so a rule changed here is found by every record that applied it
+    (`acceptance-impact`) and no counter is kept beside it that could disagree."""
+    previous = None
+    if out.exists():
+        if not out.is_file():
+            raise HouseRuleError(f"{out}: is not a file, so a profile cannot be written there")
+        previous = hashlib.sha256(out.read_bytes()).hexdigest()
+        if base_sha256 is None:
+            raise HouseRuleError(
+                f"{out}: already exists. Give it as `profile` so the rules join what it "
+                f"holds, or name another `out`; nothing was written")
+        if previous != base_sha256:
+            raise HouseRuleError(
+                f"{out}: holds sha256 {previous[:12]}, and the profile you gave is "
+                f"{base_sha256[:12]}. It changed since you read it, and writing over it "
+                f"would lose that change; read it again and ask again. Nothing was written")
+    if not out.parent.is_dir():
+        raise HouseRuleError(f"{out.parent}: is not a directory, so the profile cannot be "
+                             f"written there")
+    data = text.encode("utf-8")
+    temporary = out.with_name(f".{out.name}.{os.getpid()}.tmp")
+    try:
+        with open(temporary, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, out)
+    except OSError as error:
+        raise HouseRuleError(f"{out}: could not be written ({error}); the profile that was "
+                             f"there, if any, is as it was") from error
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return {"path": str(out), "sha256": hashlib.sha256(data).hexdigest(),
+            "previous_sha256": previous}
+
+
+def answer(built: Built, saved: dict | None = None) -> dict:
     """What the client says to the owner, and what it does next."""
     shown = [{"id": p.id, "rule": p.rule, "your_words": p.quote} for p in built.rules]
     reply: dict = {
@@ -216,10 +271,18 @@ def answer(built: Built) -> dict:
                          "if they say yes to these rules as worded, call this tool again with "
                          "the same `rules` and `owner_confirmed: true`; never set it on your "
                          "own say-so")
+    elif saved is not None:
+        reply["status"] = "saved"
+        reply["saved"] = {**saved, "rules": [p.id for p in built.rules]}
+        reply["next"] = (f"the profile is at `{saved['path']}` (sha256 {saved['sha256'][:12]}): "
+                         "pass that path as `profile` to the tools that take one. The rules "
+                         "say `relayed`: you reported that the owner said yes, and every "
+                         "answer that applies a rule repeats that. Tell the owner where it is")
     else:
         reply["profile_text"] = built.profile_text
-        reply["next"] = ("save `profile_text` as the owner's profile (this tool writes no "
-                         "file) and pass it as `profile` to the tools that take one. The "
-                         "rules say `relayed`: you reported that the owner said yes, and "
-                         "every answer that applies a rule repeats that")
+        reply["next"] = ("save `profile_text` as the owner's profile (this tool wrote no "
+                         "file; on a local server `out` writes it) and pass it as `profile` "
+                         "to the tools that take one. The rules say `relayed`: you reported "
+                         "that the owner said yes, and every answer that applies a rule "
+                         "repeats that")
     return reply

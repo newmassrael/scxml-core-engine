@@ -132,7 +132,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
              "scxml_requirements", "scxml_scenarios", "scxml_house_rule",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
-             "scxml_accepted_for"},
+             "scxml_acceptance_impact", "scxml_accepted_for"},
             names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):
@@ -175,12 +175,15 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `scxml_house_rule` is the same again: the owner's words made into a
         # profile's text, a step that takes no pack and has no command-line
         # face (a profile is a file the owner keeps; this tool only returns it).
+        # `scxml_acceptance_impact` is an adapter over the product's own
+        # `acceptance-impact`, like the other acceptance tools: the question is
+        # about the owner's records, and no pack is in it.
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
                     "scxml_scenarios", "scxml_house_rule",
-                    "scxml_acceptance_report",
+                    "scxml_acceptance_report", "scxml_acceptance_impact",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 

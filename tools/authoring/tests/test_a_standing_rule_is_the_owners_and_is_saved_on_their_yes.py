@@ -202,5 +202,106 @@ class TheToolTest(unittest.TestCase):
                          [r["id"] for r in json.loads(more["profile_text"])["house_rules"]])
 
 
+@needs_the_generator
+class TheProfileIsWrittenOnALocalServerTest(unittest.TestCase):
+    """`out` turns a confirmed profile into a file: whole or not at all, and never
+    over somebody's later edit."""
+
+    def setUp(self):
+        import pathlib
+        import tempfile
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.dir = pathlib.Path(temporary.name)
+        self.out = self.dir / "owner-profile.json"
+
+    def ask(self, rules=None, **arguments) -> dict:
+        return call("scxml_house_rule", rules=rules or [IGNORE], owner_words_text=WORDS,
+                    owner_confirmed=True, out=str(self.out), **arguments)
+
+    def saved(self, **arguments) -> dict:
+        result = self.ask(**arguments)
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        return json.loads(result["content"][0]["text"])
+
+    def refused(self, said: str, rules=None, **arguments) -> str:
+        result = self.ask(rules, **arguments)
+        self.assertTrue(result.get("isError"), result["content"][0]["text"])
+        text = result["content"][0]["text"]
+        self.assertIn(said, text)
+        return text
+
+    def test_a_new_profile_is_written_and_the_answer_says_where_and_what(self):
+        import hashlib
+
+        reply = self.saved()
+        self.assertEqual("saved", reply["status"])
+        self.assertNotIn("profile_text", reply)
+        written = self.out.read_bytes()
+        self.assertEqual({"path": str(self.out), "sha256": hashlib.sha256(written).hexdigest(),
+                          "previous_sha256": None, "rules": ["H1"]}, reply["saved"])
+        self.assertEqual("relayed", json.loads(written)["house_rules"][0]["confirmation"])
+        self.assertEqual([], [p.name for p in self.dir.iterdir() if p.name.startswith(".")],
+                         "no temporary file is left behind")
+
+    def test_a_rule_joins_the_file_that_is_there_when_it_is_given_as_the_profile(self):
+        import hashlib
+
+        self.saved()
+        before = self.out.read_bytes()
+        result = call("scxml_house_rule", rules=[OPEN], owner_words_text=WORDS,
+                      owner_confirmed=True, out=str(self.out), profile=str(self.out))
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        reply = json.loads(result["content"][0]["text"])
+        self.assertEqual(hashlib.sha256(before).hexdigest(), reply["saved"]["previous_sha256"])
+        self.assertEqual(["H1", "H2"],
+                         [r["id"] for r in json.loads(self.out.read_bytes())["house_rules"]])
+
+    def test_a_file_that_is_there_is_not_replaced_unless_it_was_given(self):
+        self.saved()
+        before = self.out.read_bytes()
+        self.refused("already exists")
+        self.assertEqual(before, self.out.read_bytes())
+
+    def test_an_edit_made_since_the_profile_was_read_is_not_overwritten(self):
+        self.saved()
+        read = self.dir / "read.json"
+        read.write_bytes(self.out.read_bytes())
+        edited = self.out.read_bytes().replace(b"ignored", b"dropped")
+        self.out.write_bytes(edited)
+        # A NEW rule, so the refusal is about the file and not about a repeat.
+        self.refused("changed since you read it", rules=[OPEN], profile=str(read))
+        self.assertEqual(edited, self.out.read_bytes())
+
+    def test_a_request_repeated_after_success_adds_no_second_revision(self):
+        self.saved()
+        before = self.out.read_bytes()
+        self.refused("already says", profile=str(self.out))
+        self.assertEqual(before, self.out.read_bytes())
+
+    def test_a_file_with_windows_line_ends_is_compared_by_its_bytes(self):
+        self.saved()
+        crlf = self.out.read_bytes().replace(b"\n", b"\r\n")
+        self.out.write_bytes(crlf)
+        result = call("scxml_house_rule", rules=[OPEN], owner_words_text=WORDS,
+                      owner_confirmed=True, out=str(self.out), profile=str(self.out))
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+
+    def test_out_goes_with_the_owners_yes_and_a_missing_directory_is_a_sentence(self):
+        result = call("scxml_house_rule", rules=[IGNORE], out=str(self.out))
+        self.assertTrue(result.get("isError"))
+        self.assertIn("owner_confirmed", result["content"][0]["text"])
+        self.out = self.dir / "nowhere" / "profile.json"
+        self.refused("is not a directory")
+
+    def test_a_remote_caller_cannot_name_a_path(self):
+        result = mcp.call_tool("scxml_house_rule",
+                               {"rules": [IGNORE], "owner_confirmed": True,
+                                "out": str(self.out)}, remote=True)
+        self.assertTrue(result.get("isError"))
+        self.assertFalse(self.out.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1157,6 +1157,51 @@ def acceptance_holds(record: pathlib.Path, variant: str, root: pathlib.Path,
     return report, refusal
 
 
+def acceptance_impact(records: list[pathlib.Path], root: pathlib.Path,
+                      codegen: pathlib.Path | None = None, *,
+                      cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """Which of several acceptance records still hold, and what moved in the ones
+    that do not (`sce-codegen acceptance-impact`), as one JSON object.
+
+    `records` and `by_rule` are the product's lines gathered, not a second
+    reading of them: each lapse is the product's own data (`kind`, and for a
+    house rule its `id`, `places` and both wordings) beside its sentence, and
+    `by_rule` is built from those fields, never from the sentences. A record the
+    product could not read is `unusable` in the list and counted in the summary,
+    and the scan goes on past it.
+
+    ⚠ The profile is the usual shared file. A record accepted under it lapses
+    (`source`) when its bytes move, whichever rule changed; only a design that
+    APPLIED the rule that changed also carries a `rule` lapse, which is what
+    `by_rule` indexes. A reader asked "who did this edit touch" wants `by_rule`
+    first and the plain `lapsed` list second."""
+    args = ["acceptance-impact", *(str(record) for record in records), "--root", str(root)]
+    report, refusal = _product_answer(args, codegen, answer="lines", read=_json_lines,
+                                      cwd=cwd)
+    if refusal:
+        return "", refusal
+    lines = json.loads(report)["lines"]
+    summary = next((line for line in lines if line.get("kind") == "acceptance-impact-summary"),
+                   None)
+    entries = [line for line in lines if line.get("kind") == "acceptance-impact"]
+    by_rule: dict[str, list] = {}
+    for entry in entries:
+        for lapse in entry.get("lapses") or ():
+            if lapse.get("kind") == "rule":
+                by_rule.setdefault(lapse["id"], []).append({
+                    "record": entry["record"], "variant": entry.get("variant"),
+                    "places": lapse["places"], "recorded": lapse["recorded"],
+                    "current": lapse["current"]})
+    answer = {
+        "version": 1,
+        "summary": {key: summary[key] for key in ("records", "holding", "lapsed", "unusable")}
+        if summary else None,
+        "records": entries,
+        "by_rule": by_rule,
+    }
+    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n", ""
+
+
 def _json_line(stdout: str):
     """The one JSON line a subcommand writes on success -- `check`'s
     manifest, `kinds`' catalog -- or the raw text when it is not one, never
