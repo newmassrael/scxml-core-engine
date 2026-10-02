@@ -35,6 +35,9 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "static_record_enum_sm.h"
+#include "static_record_fields_sm.h"
+#include "static_record_list_sm.h"
 
 #include <filesystem>
 #include <fstream>
@@ -131,6 +134,20 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
             }
         }
     }
+}
+
+/// A `record:Day` value as a scenario states it: its fields by the schema's ids.
+template <typename Day> json dayJson(const Day &day) {
+    return json{{"year", day.year}, {"month", day.month}, {"dayOfMonth", day.dayOfMonth}};
+}
+
+/// A list of such values, in order.
+template <typename Days> json daysJson(const Days &days) {
+    json listed = json::array();
+    for (const auto &day : days) {
+        listed.push_back(dayJson(day));
+    }
+    return listed;
 }
 
 }  // namespace
@@ -239,6 +256,58 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnAppendThatFailsEndsItsBlock) {
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_block_ends_list", driver);
+}
+
+// A record variable is built whole from its `<sce:set>`s, read field by field,
+// and updated a field at a time — from the machine's own value and from a typed
+// event payload. A field assignment that does not fit is skipped, and the one
+// after it in the same block is not processed.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordIsBuiltWholeAndUpdatedAFieldAtATime) {
+    using Machine = G::static_record_fields::static_record_fields;
+    Driver<Machine> driver({
+        {"shown", [](const Machine &m) { return dayJson(m.shown()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_record_fields", driver);
+}
+
+// A list of records is filled by name from a record variable or a loop's item,
+// walked by a `<foreach>`, and a record is taken whole.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AListHoldsRecordsAndAForeachWalksThem) {
+    using Machine = G::static_record_list::static_record_list;
+    Driver<Machine> driver({
+        {"days", [](const Machine &m) { return daysJson(m.days()); }},
+        {"copies", [](const Machine &m) { return daysJson(m.copies()); }},
+        {"draft", [](const Machine &m) { return dayJson(m.draft()); }},
+        {"last", [](const Machine &m) { return dayJson(m.last()); }},
+        {"total", [](const Machine &m) { return json(m.total()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_record_list", driver);
+}
+
+// A record may hold an enum: its field is read back by the name the enum
+// document declares.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAnEnumField) {
+    namespace E = G::static_record_enum;
+    using Machine = E::static_record_enum;
+    auto viewJson = [](const auto &view) {
+        return json{{"layout", std::string(E::sceLogName(view.layout))}, {"zoom", view.zoom}};
+    };
+    Driver<Machine> driver({
+        {"shown", [&](const Machine &m) { return viewJson(m.shown()); }},
+        {"seen",
+         [&](const Machine &m) {
+             json listed = json::array();
+             for (const auto &view : m.seen()) {
+                 listed.push_back(viewJson(view));
+             }
+             return listed;
+         }},
+        {"weeks", [](const Machine &m) { return json(m.weeks()); }},
+        {"flips", [](const Machine &m) { return json(m.flips()); }},
+    });
+    replay("static_record_enum", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

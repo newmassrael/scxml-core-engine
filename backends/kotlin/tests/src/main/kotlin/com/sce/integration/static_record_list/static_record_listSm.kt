@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 996d71161e18297c6a68d9bc8a59c4719dff782ee5312742408d966ac488ac93
+// source-hash: c38f990c302d4f6ee0ea264291e92c4ce0734d351563f1d467580f7415b2f97a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record_list.scxml:13 :: _machine
+// SCE-MAP: static_record_list.scxml:16 :: _machine
 
 package com.sce.integration.static_record_list
 
@@ -62,8 +62,9 @@ class StaticRecordListStateMachine(
 ) : StateMachineEngine<StaticRecordListState, StaticRecordListEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `draft` datamodel variable, the machine's own. */
-    private var draft: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+    /** W3C SCXML 5.2: the `draft` datamodel variable, published (`sce:direction="out"`). */
+    var draft: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+        private set
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
     var last: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
         private set
@@ -98,6 +99,7 @@ class StaticRecordListStateMachine(
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
+        val draft: StaticRecordListDayRecord,
         val last: StaticRecordListDayRecord,
         val days: List<StaticRecordListDayRecord>,
         val copies: List<StaticRecordListDayRecord>,
@@ -119,6 +121,7 @@ class StaticRecordListStateMachine(
     )
 
     private fun currentData(): Data = Data(
+        draft = draft,
         last = last,
         days = days,
         copies = copies,
@@ -418,33 +421,33 @@ class StaticRecordListStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record_list.scxml:13 :: _machine
+    // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun onEntry(state: StaticRecordListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:32 :: collecting :: _state_body
+                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record_list.scxml:13 :: _machine
+    // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun onExit(state: StaticRecordListState) {
         when (state) {
             is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:32 :: collecting :: _state_body
+                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_record_list.scxml:13 :: _machine
+    // SCE-MAP: static_record_list.scxml:16 :: _machine
     override fun executeTransitionContent(source: StaticRecordListState, transitionIndex: Int) {
         when (source) {
         is StaticRecordListState.Collecting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _transition_0
+                // SCE-MAP: static_record_list.scxml:38 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
                 }
@@ -460,7 +463,7 @@ class StaticRecordListStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: static_record_list.scxml:42 :: collecting :: _transition_1
+                // SCE-MAP: static_record_list.scxml:45 :: collecting :: _transition_1
 
             total = 0.toUInt()
 
@@ -473,7 +476,7 @@ class StaticRecordListStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: static_record_list.scxml:49 :: collecting :: _transition_2
+                // SCE-MAP: static_record_list.scxml:52 :: collecting :: _transition_2
 
             copies = emptyList()
 
@@ -487,7 +490,7 @@ class StaticRecordListStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: static_record_list.scxml:57 :: collecting :: _transition_3
+                // SCE-MAP: static_record_list.scxml:60 :: collecting :: _transition_3
 
 
             for (d in days) {
@@ -496,17 +499,17 @@ class StaticRecordListStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: static_record_list.scxml:63 :: collecting :: _transition_4
+                // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_4
 
             draft = last
             }
             5 -> {
-                // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_5
+                // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_5
 
             days = emptyList()
             }
             6 -> {
-                // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_6
+                // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

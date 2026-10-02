@@ -7,6 +7,9 @@
   appends each item to another list. The list is bound on every backend: an
   append to a full one appends nothing and raises error.execution.
 
+  Every variable is an output, so a driver that reads only what a machine
+  publishes can assert on the draft too.
+
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
   the generated machine, and StaticScenarioTest.kt drives it.
 -->
@@ -14,7 +17,7 @@
        version="1.0" initial="collecting" datamodel="sce-static" name="static_record_list">
   <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
   <datamodel>
-    <data id="draft" sce:type="record:Day">
+    <data id="draft" sce:type="record:Day" sce:direction="out">
       <sce:set name="year" expr="2026"/>
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>

@@ -1956,21 +1956,14 @@ impl StaticTarget for CppTarget {
         None
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // Every type a datamodel holds is spelled but bytes: a list admits only
+        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
         if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type.as_ref().is_some_and(|t| match t.scalar() {
-                Some(ty) => !matches!(ty, SceType::Bytes),
-                // A list of numbers, bools and strings; a list of enums, of
-                // bytes or of records is not spelled yet.
-                None => t
-                    .list_elem()
-                    .and_then(|e| e.scalar())
-                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_))),
-            })
+            !v.value_type
+                .as_ref()
+                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
         }) {
-            return Some(format!(
-                "<data id=\"{}\"> of a record or bytes type, or a list of enums, bytes or records",
-                var.id
-            ));
+            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
         }
         for state in model.states.values() {
             let blocks = state
@@ -2028,23 +2021,42 @@ impl StaticTarget for CppTarget {
             _ => None,
         }
     }
-    fn record_type(&self, _machine: &str, _alias: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
     }
+    // Plain data by the record rule: a struct of the schema's fields in the
+    // schema's order, which a value is built from by designated initializers.
     fn record_def(
         &self,
-        _ty: &str,
-        _alias: &str,
-        _schema: &EventSchemaModel,
-        _enum_types: &std::collections::BTreeMap<String, String>,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let field_ty = match &field.sce_type {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::cpp_type(other).to_string(),
+                };
+                format!("    {field_ty} {};\n", self.record_field(&field.id))
+            })
+            .collect();
+        format!("/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\nstruct {ty} {{\n{fields}}};")
     }
-    fn record_field(&self, _id: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    // The schema's id spelled as this file's payload structs spell their
+    // fields: one file, one spelling of a schema field.
+    fn record_field(&self, id: &str) -> String {
+        crate::forge::generator::event_schema_field_ident(id, Language::Cpp)
     }
-    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!(".{f} = {v}")).collect();
+        format!("{ty}{{{}}}", args.join(", "))
     }
     fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
         Some(format!(
@@ -2101,11 +2113,11 @@ impl StaticTarget for CppTarget {
             crate::forge::generator::cpp_type(elem)
         ))
     }
-    fn record_list_type(&self, _record: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn record_list_type(&self, record: &str) -> String {
+        format!("std::vector<{record}>")
     }
-    fn record_list_view(&self, _record: &str) -> Option<String> {
-        unreachable!("refused by CppTarget::unsupported")
+    fn record_list_view(&self, record: &str) -> Option<String> {
+        Some(format!("const std::vector<{record}>&"))
     }
     fn list_empty(&self) -> String {
         "{}".to_string()
@@ -2113,8 +2125,8 @@ impl StaticTarget for CppTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target}.{field} = {value};")
     }
     // Through `sceLogName`, which an enum declares beside its type and every
     // other value passes through unchanged.

@@ -3044,15 +3044,19 @@ C++ lowers the scalar core through the same walk, and refuses the rest by name
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 `<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
 data model, `In()`, a `<sce:action>` whose arguments are typed expressions
-of the machine's variables, an event's typed payload, an enum variable, and a
-list of numbers, bools or strings with `<sce:append>`, `<sce:clear>` and
-`<foreach>`. A record or bytes variable, a list of records, enums or bytes, an
-`<invoke>`, a `<donedata>` and an imported algorithm are not lowered yet. A
-list is a bounded `std::vector<T>` the machine alone grows (a host reads it as
+of the machine's variables, an event's typed payload, an enum variable, a
+record variable, and a list of numbers, bools or records with `<sce:append>`,
+`<sce:clear>` and `<foreach>`. A bytes variable, an `<invoke>`, a `<donedata>`
+and an imported algorithm are not lowered yet. A list is a bounded
+`std::vector<T>` the machine alone grows (a host reads it as
 `const std::vector<T>&`); an append checks the room first and computes its value
 into a local, so a full list or a failed value leaves it as it was and ends the
 block, and a `<foreach>` walks a copy made when the loop began (`sceCopy`,
-`sceIndexed`). An enum is a scoped enumeration
+`sceIndexed`). A record is a plain struct, `<Machine><Alias>Record`, whose
+fields are the schema's in the schema's order; a value is built whole by
+designated initializers, a field is assigned in place after the same
+check-then-write rule as any other target, and a record item of a `<foreach>` is
+read field by field. An enum is a scoped enumeration
 (`<Machine><Alias>Enum`, over the enum document's own carrier, each variant
 holding the value the document gives it) declared in the machine's unit, with
 `sceLogName(value)` answering the name the document gives a value — what a
