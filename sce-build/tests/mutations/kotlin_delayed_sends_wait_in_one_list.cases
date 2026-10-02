@@ -1,0 +1,70 @@
+# Mutation cases for "a plain delayed send waits in the one list the loop reads",
+# Kotlin runtime, coroutine mode.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_delayed_sends_wait_in_one_list.cases`.
+#
+# A plain delayed `<send>` used to be a coroutine of its own that slept and then
+# handed its event to the channel, so the order sends of one delay arrived in was
+# the order the pool woke those coroutines in, and the map of those jobs was
+# written by the loop and by every woken coroutine at once. It is now an entry of
+# `scheduledSends`, the list every other waiting act is already in (a host-served
+# send, a parent send, an invoke's deadline), kept in time order with a sequence
+# number and read by the loop's own coroutine; the loop hands a due plain send's
+# event to its caller, one at a time. `ASendsOfOneDelayArriveInTheOrderTheyWereSentTest`
+# is the oracle.
+#
+# What is easy to get wrong and reads as success: a send that is queued and never
+# taken (the loop waits on its channel and the event sits in the other queue), a
+# `<cancel>` that does not reach a plain send now that it is not a coroutine, a
+# send under a reused id that does not replace the one still waiting, and sends
+# that come due together being queued all at once, so that the macrostep of the
+# earlier one can no longer cancel the later.
+#
+# ⚠ Every edit has to compile warning-free: this runtime builds with
+# `allWarningsAsErrors`, and a case that fails to compile is INCONCLUSIVE, not a
+# verdict. Each edit below keeps every variable it touches in use.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.ASendsOfOneDelayArriveInTheOrderTheyWereSentTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/ASendsOfOneDelayArriveInTheOrderTheyWereSentTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+
+# ── The loop takes what it promoted ─────────────────────────────────
+#
+# A due plain send puts its event on the external queue. A loop that never looks
+# there leaves it waiting for good: every send arrives never.
+
+mutation_case "the loop never takes the event of a due plain send" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            externalEventQueue.removeFirstOrNull()?.let { return it }\n",
+     "            if (externalEventQueue.size < 0) externalEventQueue.removeFirstOrNull()?.let { return it }\n")
+PY
+
+# ── A cancel reaches a plain send ───────────────────────────────────
+
+mutation_case "a cancel leaves the plain sends alone" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        scheduledSends.removeAll { it.hostInvokeDeadline == null && it.sendId == sendId }\n",
+     "        scheduledSends.removeAll { it.hostInvokeDeadline == null && it.sendId == sendId && it.event == null }\n")
+PY
+
+# ── A reused id replaces the send still waiting ─────────────────────
+
+mutation_case "a send under an id still waiting does not replace it" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        route: ScheduledRoute?,\n    ) {\n        cancelSend(sendId)\n",
+     "        route: ScheduledRoute?,\n    ) {\n")
+PY
+
+# ── One at a time, with a macrostep between ─────────────────────────
+#
+# Sends that come due together are taken one at a time because the macrostep an
+# earlier one starts may `<cancel>` a later one that has not been taken yet. A loop
+# that promotes them all before it takes the first has queued the later one
+# already, and the cancel finds nothing to cancel.
+
+mutation_case "sends that come due together are all queued before the first is taken" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "                    if (externalEventQueue.isNotEmpty()) break\n",
+     "                    if (externalEventQueue.size < 0) break\n")
+PY

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 
 // Process-wide counter for scriptSessionId allocation. Using hashCode() here
 // would collide across instances (32-bit identity hash has no uniqueness
@@ -2183,10 +2184,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
             }
 
-            // §scxml-6.2: Cancel pending delayed sends on session termination
-            // Per spec, terminated sessions must not deliver delayed events (test187)
-            delayedSendJobs.values.forEach { it.cancel() }
-            delayedSendJobs.clear()
+            // §scxml-6.2: a terminated session must not deliver the delayed
+            // events it still had waiting (test187). What performs them is the
+            // loop that has just ended, so none is delivered; [stop] discards them.
         }
     }
 
@@ -2863,10 +2863,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * one move left: pick a polling interval — which cannot straddle two fire
      * times it was never told about.
      *
-     * Always `null` outside sync mode: there [scheduleSend] launches a coroutine
-     * that fires on its own, so the host is owed no wake-up at all. The two
-     * modes disagree about who owns the clock, and this answers for whichever
-     * one this engine is in.
+     * Always `null` outside sync mode: there the loop waits for the earliest
+     * waiting send and performs it itself ([awaitNextExternalEvent]), so the
+     * host is owed no wake-up at all. The two modes disagree about who owns the
+     * clock, and this answers for whichever one this engine is in.
      */
     fun timeUntilNextScheduledMs(): Long? {
         if (!syncMode) return null
@@ -3450,7 +3450,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
         }
         if (delayed) {
-            scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, route)
+            queueScheduledSend(sendId, delayMs, null, EventMetadata.EMPTY, route)
             return TargetSendOutcome.SENT
         }
         val delivered = when (route) {
@@ -3481,8 +3481,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
         childSessionId.isNotEmpty() &&
             activeInvokes.values.any { it.child.scriptSessionId == childSessionId && !it.child.isInFinalState }
 
-    /** Queue a routed entry in [scheduledSends], replacing any send of the same id. */
-    private fun scheduleRouted(sendId: String, delayMs: Long, event: E?, metadata: EventMetadata, route: ScheduledRoute) {
+    /**
+     * Queue a waiting send in [scheduledSends], replacing any send of the same
+     * id. [route] is `null` for an event of this machine's own external queue.
+     */
+    private fun queueScheduledSend(
+        sendId: String,
+        delayMs: Long,
+        event: E?,
+        metadata: EventMetadata,
+        route: ScheduledRoute?,
+    ) {
         cancelSend(sendId)
         scheduledSends.add(ScheduledSendEntry(
             fireTimeMs = engineElapsedMs() + delayMs,
@@ -3688,8 +3697,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
         exitInterpreter()
         engineScope = null
         eventChannel.close()
-        delayedSendJobs.values.forEach { it.cancel() }
-        delayedSendJobs.clear()
         // §scxml-6.4: Cancel all active invokes
         for ((_, entry) in activeInvokes) {
             // Cut off before the stop, as in [cancelInvoke].
@@ -3801,9 +3808,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     // --- Delayed Send Support ---
 
-    /** Active delayed send jobs, keyed by sendid for cancellation. */
-    private val delayedSendJobs = mutableMapOf<String, Job>()
-
     /**
      * §scxml-6.2: Schedule a delayed event send.
      *
@@ -3817,28 +3821,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * §scxml-6.2: Schedule a delayed event send with metadata.
+     *
+     * Recorded in [scheduledSends] in both modes, the C++ PullScheduler pattern:
+     * one time-ordered list with a sequence number, so sends of one delay arrive
+     * in the order they were sent, and one thread — the one this machine's
+     * macrosteps run on — reads and writes it. In coroutine mode that thread
+     * performs what has come due ([awaitNextExternalEvent]), as it does for every
+     * other waiting act. Each send used to be a coroutine of its own that slept
+     * and then handed its event to the channel: the order sends of one delay
+     * arrived in was the order the pool woke those coroutines in, and the map
+     * of jobs was written by the loop and by every woken coroutine at once.
      */
     protected fun scheduleSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        if (syncMode) {
-            // C++ PullScheduler pattern: record in time-ordered queue
-            cancelSend(sendId)
-            scheduledSends.add(ScheduledSendEntry(
-                fireTimeMs = engineElapsedMs() + delayMs,
-                sequenceNum = schedulerSequence++,
-                sendId = sendId,
-                event = event,
-                metadata = metadata
-            ))
-            scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
-        } else {
-            val scope = engineScope ?: return
-            delayedSendJobs[sendId]?.cancel()
-            delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
-                kotlinx.coroutines.delay(delayMs)
-                send(event, metadata)
-                delayedSendJobs.remove(sendId)
-            }
-        }
+        queueScheduledSend(sendId, delayMs, event, metadata, null)
     }
 
     /**
@@ -3847,15 +3842,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param sendId Identifier of the send to cancel
      */
     protected fun cancelSend(sendId: String) {
-        // A delayed host-served send — a delayed BasicHTTP one included — is in
-        // [scheduledSends] in both modes, so a `<cancel>` has to look there in
-        // both (§scxml-6.3). A host-run invocation's deadline also carries an
-        // empty id, and a `<cancel sendidexpr>` that evaluates to "" must not
-        // reach it.
+        // Every delayed send — a plain one, a host-served one (a delayed BasicHTTP
+        // one included), a routed one — is in [scheduledSends], in both modes, so
+        // a `<cancel>` looks there and nowhere else (§scxml-6.3). A host-run
+        // invocation's deadline also carries an empty id, and a `<cancel
+        // sendidexpr>` that evaluates to "" must not reach it.
         scheduledSends.removeAll { it.hostInvokeDeadline == null && it.sendId == sendId }
-        if (!syncMode) {
-            delayedSendJobs.remove(sendId)?.cancel()
-        }
     }
 
     /**
@@ -3882,7 +3874,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             deliverToParent(route, sendId)
             return
         }
-        scheduleRouted(sendId, delayMs, null, EventMetadata.EMPTY, route)
+        queueScheduledSend(sendId, delayMs, null, EventMetadata.EMPTY, route)
     }
 
     /** Hand a due parent send over, or report that there is no parent to take it. */
@@ -3904,7 +3896,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * delay would — the delay does not turn it into an external event.
      */
     protected fun scheduleInternalSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        scheduleRouted(sendId, delayMs, event, metadata, ScheduledRoute.InternalQueue)
+        queueScheduledSend(sendId, delayMs, event, metadata, ScheduledRoute.InternalQueue)
     }
 
     /**
@@ -3921,7 +3913,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         eventData: String,
         unreachable: E
     ) {
-        scheduleRouted(
+        queueScheduledSend(
             sendId, delayMs, null, EventMetadata.EMPTY,
             ScheduledRoute.Invocation(invokeId, eventName, eventData, unreachable)
         )
@@ -4477,9 +4469,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * send was never performed and the deadline never expired, with nothing
      * to say so. Performing them on this coroutine keeps them on the one
      * thread every other macrostep of this mode runs on.
+     *
+     * A plain delayed send is such an entry too ([scheduleSend]), and what it
+     * delivers is an event of the external queue: when one comes due it is
+     * handed to the caller, one at a time, because the macrostep an earlier send
+     * starts may `<cancel>` a later one that has not been taken yet.
      */
     private suspend fun awaitNextExternalEvent(): QueuedEvent<E>? {
         while (!isInFinalState) {
+            // A due send promoted below, taken in the turn it was promoted for.
+            externalEventQueue.removeFirstOrNull()?.let { return it }
+            // A loop that never suspends cannot be cancelled by [stop], and one
+            // whose sends re-arm themselves at the same instant never suspends.
+            yield()
             val due = scheduledSends.firstOrNull()?.fireTimeMs
             val received = if (due == null) {
                 eventChannel.receiveCatching()
@@ -4493,6 +4495,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val opened = beginTurn()
             try {
                 while (!isInFinalState && promoteNextDueSend()) {
+                    // A plain send queued its event: it is the caller's to take.
+                    if (externalEventQueue.isNotEmpty()) break
                     macrostepTruncated = false
                     macrostepMicrostepsTaken = 0
                     finishMacrostep()
