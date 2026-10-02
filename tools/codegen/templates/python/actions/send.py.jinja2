@@ -111,6 +111,14 @@
    comes first, so an `idlocation` holds it even when a later argument fails
    (test332). #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% if action.route_decisions %}
+{# §scxml-6.2.4: the route is chosen at run time from data the specification
+   leaves open. The engine keeps the questions beside the send id, so an
+   `error.*` this send raises can be told, by whoever finds it unanswered,
+   from a fault of the document. A send resting on no question emits nothing
+   here. #}
+{{ indent }}engine.note_route_rests_on(_sid, ({% for decision in action.route_decisions %}{{ decision | py_string_literal }}, {% endfor %}))
+{% endif %}
 {% if action.eventexpr %}
 {# An event name that evaluates to nothing names no event: the same failure as
    one that does not evaluate. #}

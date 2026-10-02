@@ -161,6 +161,24 @@ def unanswered_error(engine, policy) -> str | None:
     return f"raised `{name}` and no state answered it"
 
 
+def decisions_behind_unanswered_error(engine) -> tuple:
+    """The open decisions the `<send>` behind an unanswered error rested on:
+    the ids the generated machine told the engine when it began a send whose
+    route (`typeexpr`, `targetexpr`) is chosen at run time from data the
+    specification leaves open (W3C SCXML 6.2.4).
+
+    An unanswered error from such a send is the owner's question showing
+    through, not a fault the design could have avoided: the draft wrote a route
+    because a send needs one, and nobody has said where it goes. Empty when
+    nothing went unanswered and when the error did not come from such a send.
+    Empty says the machine named no question, not that none exists: the caller
+    treats the error as it treats every unanswered error, and does not guess a
+    decision from the shape of the failure."""
+    if engine.last_unhandled_error() is None:
+        return ()
+    return tuple(engine.last_unhandled_error_rests_on())
+
+
 def stopped_run(engine, policy) -> str | None:
     """Why the engine's run is not the design's behaviour, as a clause after "the
     engine": it stopped a macrostep that would not end, it handed a call back

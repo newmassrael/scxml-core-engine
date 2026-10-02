@@ -100,6 +100,14 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_external_chain_is_bounded_python.sh" >/dev/null \
     || sce_gate_fail "Python external-event budget generation"
 
+# The route-rests-on-a-question document, for the reason the host-processor one
+# gives: only this runtime holds the contract (the host that plays a design to
+# its owner is the Python authoring driver), so it is not a stem under
+# `integration_resources/`, `generate-integration` never sees it, and its
+# gitignored `_sm.py` would be a module nothing produced.
+"$SCE_REPO_ROOT/scripts/regen_route_rests_on_a_question_python.sh" >/dev/null \
+    || sce_gate_fail "Python route-rests-on-a-question generation"
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 

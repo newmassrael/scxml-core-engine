@@ -1,0 +1,76 @@
+# Mutation cases for "the Python engine gives back the question an unanswered send's route rested on".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_a_route_rests_on_a_question.cases`.
+#
+# A draft routes a notice from a data item (`targetexpr="callerTarget"`) because a send
+# needs a target, while the specification never says who the caller is, and marks the
+# item as an open question. Played, the send raises `error.communication` and nothing
+# answers it; a host that plays the design to its owner needs to say that the failure is
+# the owner's question showing through, not a fault of the document. The generated machine
+# tells the engine which questions the route rests on as the send begins
+# (`note_route_rests_on`); the engine queues them with the `error.*` event that send raises
+# and gives them back for the last one nothing answered (`last_unhandled_error_rests_on`).
+#
+# Things easy to get wrong and read as success: the question lost on the way, the question
+# given to an error another send raised (a wrong question named is worse than none), the
+# question given back for an error the document answered, and an entry kept after the error
+# that carried it has been taken, which no public question can see and a machine that fails
+# for long enough would pay for.
+#
+# Python compiles nothing, so its sources are its artifacts and every edit here is a
+# `mutation_runtime_targets`. The machine this suite imports is GENERATED and gitignored,
+# which is why the regeneration below is declared.
+
+mutation_pytest backends/python/tests integration/route_rests_on_a_question/
+mutation_regen scripts/regen_route_rests_on_a_question_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
+mutation_oracles backends/python/tests/integration/route_rests_on_a_question/test_route_rests_on_a_question_aot.py
+
+# ── The question travels with the error ─────────────────────────────
+
+mutation_case "the engine is told no question when a send begins" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        self._route_in_evaluation = (send_id, decisions)",
+     "        self._route_in_evaluation = (send_id, ())")
+PY
+
+mutation_case "the error is queued without the question" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            self._queued_route_failures[route[0]] = route[1]",
+     "            self._queued_route_failures[route[0]] = ()")
+PY
+
+mutation_case "the question is never recorded against the unanswered error" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                self._last_unhandled_error_rests_on = rests_on\n",
+     "")
+PY
+
+mutation_case "the accessor gives back nothing" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        return self._last_unhandled_error_rests_on",
+     "        return ()")
+PY
+
+# ── Whose question it is ────────────────────────────────────────────
+
+mutation_case "an error another send raised is given the question of the one told last" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            and metadata.send_id == route[0]\n",
+     "")
+PY
+
+mutation_case "a non-error event the send delivered leaves a question held" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            and is_error_event(self._policy.get_event_name(event))\n",
+     "")
+PY
+
+# ── How long it is held ─────────────────────────────────────────────
+
+mutation_case "a question outlives the error that carried it" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                self._queued_route_failures.pop(evt.metadata.send_id, ())",
+     "                self._queued_route_failures.get(evt.metadata.send_id, ())")
+PY

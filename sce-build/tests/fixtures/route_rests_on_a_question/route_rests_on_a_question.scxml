@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  W3C SCXML 6.2.4: a `<send>` may choose where it goes at run time, from the
+  datamodel (`targetexpr`). A draft does that when the specification never says
+  who the caller is: the route is a data item, and the data item carries the open
+  question (`sce:unresolved`).
+
+  Every send here routes to a target nothing answers at, so each raises
+  `error.communication` (W3C SCXML C.1) and the block ends (W3C SCXML 4.9). What
+  the fixture holds apart is WHICH send raised the error the machine did not
+  answer, because that is what a host that plays the design needs to know:
+
+    send.open      the route reads `openRoute`, an open question: the error is
+                   the question showing through
+    send.assumed   the route reads a value chosen without an answer
+                   (`sce:assumed`): applied, and not a question
+    send.plain     the route reads a plain data item
+    send.literal   a literal target nothing answers at: no route is computed
+    send.reachable the route reads an open question but resolves to a target
+                   that exists, so the send fails nothing
+
+  `listen` moves to a state that answers `error.communication`, so the same
+  open route can also be shown to fail where the document handles the failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="ecmascript">
+  <datamodel>
+    <data id="openRoute" expr="'#_nobody'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="assumedRoute" expr="'#_nobody'" sce:assumed="caller-by-default"
+          sce:assumed-reason="the standing rule says a notice goes to the caller"/>
+    <data id="plainRoute" expr="'#_nobody'"/>
+    <data id="reachableRoute" expr="'#_internal'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+    <data id="answered" expr="0"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="send.open" target="idle">
+      <send event="notice" targetexpr="openRoute"/>
+    </transition>
+    <transition event="send.assumed" target="idle">
+      <send event="notice" targetexpr="assumedRoute"/>
+    </transition>
+    <transition event="send.plain" target="idle">
+      <send event="notice" targetexpr="plainRoute"/>
+    </transition>
+    <transition event="send.literal" target="idle">
+      <send event="lost" target="#_nobody"/>
+    </transition>
+    <transition event="send.reachable" target="idle">
+      <send event="notice" targetexpr="reachableRoute"/>
+    </transition>
+    <transition event="listen" target="listening"/>
+  </state>
+
+  <state id="listening">
+    <transition event="send.open" target="listening">
+      <send event="notice" targetexpr="openRoute"/>
+    </transition>
+    <transition event="error.communication" target="listening">
+      <assign location="answered" expr="answered + 1"/>
+    </transition>
+  </state>
+</scxml>

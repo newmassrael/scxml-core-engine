@@ -4120,6 +4120,35 @@ question it is: with an open question on the send (the manifest's
 none recorded it is refused as the design's, with the two ways out named,
 a route through `#_parent` or the question recorded on the send.
 
+#### A route chosen from data the specification leaves open
+
+A `<send>` that writes a `typeexpr` or a `targetexpr` chooses where it
+goes when it runs, so the build cannot name the value, and the open
+question is usually not on the send: a draft writes
+`targetexpr="callerTarget"` because a send needs a target, and marks the
+`<data id="callerTarget">` it reads `sce:unresolved`, because the
+specification never says who the caller is. The manifest lists every such
+send (`computed_routes`, SCE_ERROR_CONTRACT.md §10): the data items the
+route expressions name (`reads`, found by the ECMAScript lexer, so a name
+after a `.` is a property and not an item) and the ids of the questions
+open on the send or on any of those items (`decisions`). A value chosen
+without an answer (`sce:assumed`) is applied and is not one.
+
+The same reading is written onto the send in the model
+(`Action::route_decisions`), and a generated Python machine tells its engine
+which questions a send's route rests on as the send begins
+(`note_route_rests_on`). The engine queues them with the `error.*` event
+that send raises, and gives them back for the last error nothing answered
+(`last_unhandled_error_rests_on`). A scenario driver reads that and calls the
+example BLOCKED by the decision (`cause: decision`) instead of `not-judged`
+with the design as the cause: the failure is the owner's question showing
+through, the same run fails the same way on any machine, and answering the
+question is what unblocks it. An error another send raised, one the document
+answered, and a route that rests on a plain or an assumed value are not laid
+to a question, and stay what every unanswered error was before: the
+design's. Only a question the machine named is a decision; the driver does
+not guess one from the shape of the failure.
+
 ---
 
 ### Statechart event-set exhaustiveness (NL→IR Mapping Roadmap Item 3 Phase B)

@@ -277,6 +277,12 @@ class Engine(Generic[S, E]):
         # `unhandled_error_events`.
         self._unhandled_error_events: int = 0
         self._last_unhandled_error: Optional[E] = None
+        # The open questions the route of the `<send>` that raised
+        # `_last_unhandled_error` rested on, and the bookkeeping that
+        # attributes them. See `note_route_rests_on`.
+        self._last_unhandled_error_rests_on: Tuple[str, ...] = ()
+        self._route_in_evaluation: Optional[Tuple[str, Tuple[str, ...]]] = None
+        self._queued_route_failures: Dict[str, Tuple[str, ...]] = {}
         # §scxml-3.12.2 — the drain is executing a transition an `error.*`
         # event selected, which is the state in which a newly raised error
         # is a link in a chain rather than a first failure. See
@@ -818,6 +824,36 @@ class Engine(Generic[S, E]):
         """
         return self._last_unhandled_error
 
+    def note_route_rests_on(self, send_id: str, decisions: Tuple[str, ...]) -> None:
+        """§scxml-6.2.4 — a `<send>` whose route is chosen at run time
+        (`typeexpr`, `targetexpr`) from data the specification left open says,
+        as it starts, which questions that route rests on.
+
+        Generated code calls this once per such send, naming the send id it
+        resolved and the ids of the questions the build found marked on the
+        send or on the data its route reads (`computed_routes[].decisions` on
+        the generator's manifest). Nothing else changes: a send whose route
+        rests on no question never calls it, and the machine runs as it did.
+
+        The engine keeps the one it was last told, and an `error.*` event
+        raised with that send id while the send is evaluated is queued with the
+        questions beside it. A host that finds the error unanswered
+        (`last_unhandled_error_rests_on`) can then say the failure is a question
+        nobody has answered showing through, and not a fault of the document.
+        An error raised for an older send, after another has begun, is not
+        attributed: a wrong question named is worse than none."""
+        self._route_in_evaluation = (send_id, decisions)
+
+    def last_unhandled_error_rests_on(self) -> Tuple[str, ...]:
+        """The ids of the open questions the route of the `<send>` behind
+        `last_unhandled_error` rested on, in the order the document marks them,
+        or an empty tuple when that error did not come from a send that said so
+        (or while `unhandled_error_events` is zero).
+
+        Empty is not "the document is at fault": it says the engine was not
+        told. The caller decides what the absence means."""
+        return self._last_unhandled_error_rests_on
+
     def error_cascade_events(self) -> int:
         """How many `error.*` events this engine refused to queue because the
         error handler that raised them had been failing for
@@ -1015,6 +1051,13 @@ class Engine(Generic[S, E]):
             metadata = EventMetadata(event_type="internal")
         elif metadata.event_type != "platform":
             metadata = dataclasses.replace(metadata, event_type="internal")
+        route = self._route_in_evaluation
+        if (
+            route is not None
+            and metadata.send_id == route[0]
+            and is_error_event(self._policy.get_event_name(event))
+        ):
+            self._queued_route_failures[route[0]] = route[1]
         self._internal_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     # ── BasicHTTP Event I/O Processor (§scxml-C-2) ─────────────
@@ -2140,6 +2183,14 @@ class Engine(Generic[S, E]):
             # anything else can run so a chain cannot be attributed to the
             # wrong event.
             is_error = is_error_event(self._policy.get_event_name(evt.event))
+            # What a send said its route rested on leaves with the error it
+            # raised, answered or not: it is read below only for the error no
+            # transition matched, and kept no longer than the event is queued.
+            rests_on = (
+                self._queued_route_failures.pop(evt.metadata.send_id, ())
+                if is_error and self._queued_route_failures
+                else ()
+            )
             # The chain is not ended by the drain doing something else. An
             # earlier draft reset the depth on every non-error event, which
             # reads as the careful choice and is the opposite: a handler that
@@ -2160,6 +2211,7 @@ class Engine(Generic[S, E]):
             if not selected and is_error:
                 self._unhandled_error_events += 1
                 self._last_unhandled_error = evt.event
+                self._last_unhandled_error_rests_on = rests_on
 
     def _process_next_external_event(self) -> None:
         """Take exactly one event off the external queue, run the preliminary

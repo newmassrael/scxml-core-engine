@@ -57,10 +57,14 @@ REQUEST = '<send event="SendRequest" type="x-sce-host"{target}/>'
 TIMEOUT = '<send event="TimeoutError" type="x-sce-host"{target}/>'
 
 
-def machine(attempts: int = 3, target: str = "", opened: bool = False) -> str:
+def machine(attempts: int = 3, target: str = "", opened: bool = False,
+            assumed: bool = False) -> str:
     """The retry client: three requests then a timeout, or `attempts` of them.
     `opened` leaves the route of both outputs as an open decision, which is
-    what a draft does when the specification never says who the caller is."""
+    what a draft does when the specification never says who the caller is.
+    `assumed` keeps that route computed from the same data and records its
+    value as chosen without an answer (`sce:assumed`), which is applied and is
+    not a question: the sends fail the same way and the failure is the design's."""
     if opened:
         request = ('<send event="SendRequest" typeexpr="callerProcessor" '
                    'targetexpr="callerTarget"/>')
@@ -74,6 +78,9 @@ def machine(attempts: int = 3, target: str = "", opened: bool = False) -> str:
                      'sce:unresolved-reason="who the caller is was not said."/>'
                      '<data id="callerTarget" sce:unresolved="caller-routing" '
                      'sce:unresolved-reason="where the caller is was not said"/>')
+        if assumed:
+            decisions = (decisions.replace("sce:unresolved-reason", "sce:assumed-reason")
+                         .replace("sce:unresolved", "sce:assumed"))
     else:
         spelled = f' target="{target}"' if target else ""
         request = REQUEST.format(target=spelled)
@@ -183,24 +190,44 @@ class TestWhatTheDriverRefusesToInvent(Played):
         """W3C SCXML 4.9: a send whose route is open raises
         `error.communication` and ends the entry block, so the timer after it
         is never armed. Judging that run would fail the machine on timing it
-        was never allowed to keep. The driver refuses, naming the open
-        decision, and the product reports `not-judged`."""
+        was never allowed to keep. The route is chosen from data the
+        specification leaves open, so the question is the owner's: the driver
+        refuses, naming the open decision, and the product reports `blocked`
+        by it and not a fault of the design."""
         answer = run(self.set_with(), self.design(machine(opened=True)), self.codegen)
         verdicts = self.verdicts(answer)
-        self.assertEqual({"not-judged"}, set(verdicts.values()), verdicts)
+        self.assertEqual({"blocked"}, set(verdicts.values()), verdicts)
         self.assertEqual(0, self.summary(answer)["fail"], self.summary(answer))
         reasons = [r["reason"] for r in answer["judgement"]
                    if r["kind"] == "verdict" and r["reason"]]
         self.assertTrue(all("error.communication" in reason for reason in reasons), reasons)
-        self.assertTrue(all("caller-routing" in reason for reason in reasons), reasons)
+        self.assertTrue(all("open decision `caller-routing`" in reason for reason in reasons),
+                        reasons)
         # Said once, and without the full stop the sentence supplies itself.
         for reason in reasons:
             self.assertEqual(1, reason.count("who the caller is was not said"), reason)
             self.assertNotIn("..", reason)
             self.assertIn("2 open decision(s)", reason)
-        # An open route is the design's, whichever machine plays it.
+        # An open decision blocks the example whichever machine plays it.
+        causes = {r.get("cause") for r in answer["judgement"] if r["kind"] in ("verdict", "gap")}
+        self.assertEqual({"decision"}, causes, answer["judgement"])
+        self.assertEqual([], [r for r in answer["judgement"] if r["kind"] == "gap"])
+
+    def test_a_route_chosen_without_an_answer_is_the_designs_when_it_fails(self):
+        """`sce:assumed` is a value chosen without an answer and applied: the
+        sends fail the same way, but no question is open on the route, so the
+        refusal stays the design's and no decision is named as its cause."""
+        answer = run(self.set_with(), self.design(machine(opened=True, assumed=True)),
+                     self.codegen)
+        verdicts = self.verdicts(answer)
+        self.assertEqual({"not-judged"}, set(verdicts.values()), verdicts)
+        self.assertEqual(0, self.summary(answer)["fail"], self.summary(answer))
         causes = {r.get("cause") for r in answer["judgement"] if r["kind"] in ("verdict", "gap")}
         self.assertEqual({"design"}, causes, answer["judgement"])
+        reasons = [r["reason"] for r in answer["judgement"]
+                   if r["kind"] == "verdict" and r["reason"]]
+        self.assertTrue(all("error.communication" in reason for reason in reasons), reasons)
+        self.assertFalse(any("does not invent one" in reason for reason in reasons), reasons)
 
     def test_an_output_sent_through_another_route_is_refused_with_both_named(self):
         """The interface is what the owner accepted. A machine that leaves by
@@ -724,8 +751,18 @@ class TestTheToolAnOwnersClientCalls(unittest.TestCase):
         """The product records a whole-scenario gap beside the verdict that
         carries the same sentence; the owner reads each sentence once. A gap
         about a step or a check is another matter and stays."""
-        reply = said(self.ask(self.sets(), machine(opened=True)))
+        reply = said(self.ask(self.sets(), machine(opened=True, assumed=True)))
         self.assertEqual(6, reply["counts"]["not-judged"], reply["counts"])
+        self.assertEqual(0, reply["counts"]["fail"], reply["counts"])
+        self.assertNotIn("gaps", reply)
+
+    def test_a_design_blocked_by_an_open_decision_is_a_verdict_and_not_a_gap(self):
+        """The same design with its route left open: the sends fail the same
+        way, but the question is the owner's, so each example is BLOCKED by it,
+        counted as such, and no gap is recorded beside the verdict."""
+        reply = said(self.ask(self.sets(), machine(opened=True)))
+        self.assertEqual(6, reply["counts"]["blocked"], reply["counts"])
+        self.assertEqual(0, reply["counts"]["not-judged"], reply["counts"])
         self.assertEqual(0, reply["counts"]["fail"], reply["counts"])
         self.assertNotIn("gaps", reply)
 
