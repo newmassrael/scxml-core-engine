@@ -16,10 +16,15 @@ with the ``error.*`` event and gives them back for the last one nothing answered
 (``last_unhandled_error_rests_on``). Outcomes the fixture holds apart, each
 raised by a send:
 
-  send.open       route read from an open question  -> ("caller-target",)
-  send.badtype    TYPE read from an open question   -> ("caller-target",)
-  send.badaddress / noroute / badroute / badtypeexpr, each a failure of the route
+  send.open       target read from an open question -> ("caller-target",)
+  send.badtype    TYPE read from an open question   -> ("which-processor",)
+  send.badaddress / noroute / badroute, each a failure of the TARGET
                                                     -> ("caller-target",)
+  send.badtypeexpr  a failure of the TYPE           -> ("which-processor",)
+  send.typefails    both open, the TYPE fails       -> ("which-processor",)
+  send.targetfails  both open, the TARGET fails     -> ("caller-target",)
+  send.badtypevar   target open, the TYPE names an undeclared variable   -> ()
+  send.badtargetvar type open, the TARGET names an undeclared variable   -> ()
   send.assumed    route read from ``sce:assumed``   -> ()  applied, not a question
   send.plain      route read from a plain data item -> ()
   send.literal    no computed route                 -> ()
@@ -59,6 +64,9 @@ _Event = _sm.RouteRestsOnAQuestionEvent
 #: The id the fixture marks `openRoute` with, spelled here and not read back: a
 #: test that asked the machine for its own question would agree with any id.
 QUESTION = "caller-target"
+#: The id the fixture marks the type data (`openType`, `supportedType`) with. A
+#: second question, so a test can tell the type's from the target's.
+TYPE_QUESTION = "which-processor"
 
 
 def _started():
@@ -119,27 +127,59 @@ def test_a_plain_route_gives_nothing_back() -> None:
     assert engine.last_unhandled_error_rests_on() == ()
 
 
-def test_a_type_read_from_an_open_question_gives_the_question_back() -> None:
+def test_a_type_read_from_an_open_question_gives_the_types_question_back() -> None:
     """The route is its type as much as its target: a `typeexpr` that names a
     processor this platform does not support fails the ROUTE, and it rests on the
     question the type was read from."""
     engine, _ = _started()
     engine.send_event(_Event.SEND_BADTYPE)
     assert engine.unhandled_error_events() == 1
-    assert engine.last_unhandled_error_rests_on() == (QUESTION,)
+    assert engine.last_unhandled_error_rests_on() == (TYPE_QUESTION,)
 
 
-def test_every_way_the_route_itself_fails_gives_the_question_back() -> None:
-    """The route fails when its address is one this processor cannot use, when it
-    evaluates to nothing, when its expression fails to evaluate, and when its type
-    expression does. Each is a failure of the route, so each rests on the question."""
-    for name in ("SEND_BADADDRESS", "SEND_NOROUTE", "SEND_BADROUTE", "SEND_BADTYPEEXPR"):
+def test_every_way_the_target_itself_fails_gives_the_targets_question_back() -> None:
+    """The target fails when its address is one this processor cannot use, when it
+    evaluates to nothing, and when its expression fails to evaluate."""
+    for name in ("SEND_BADADDRESS", "SEND_NOROUTE", "SEND_BADROUTE"):
         engine, _ = _started()
         engine.send_event(getattr(_Event, name))
         assert engine.unhandled_error_events() == 1, (
             f"{name} raised no error nothing answered, so there is nothing to attribute"
         )
         assert engine.last_unhandled_error_rests_on() == (QUESTION,), name
+
+
+def test_a_type_expression_that_fails_gives_the_types_question_back() -> None:
+    engine, _ = _started()
+    engine.send_event(_Event.SEND_BADTYPEEXPR)
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == (TYPE_QUESTION,)
+
+
+def test_with_both_open_the_one_that_failed_is_the_one_named() -> None:
+    """Measured 2026-10-02: one merged list named both questions whichever failed.
+    The type and the target fail independently; an answer about the one that did
+    not fail would not mend the one that did."""
+    engine, _ = _started()
+    engine.send_event(_Event.SEND_TYPEFAILS)
+    assert engine.unhandled_error_events() == 1
+    assert engine.last_unhandled_error_rests_on() == (TYPE_QUESTION,)
+    engine.send_event(_Event.SEND_TARGETFAILS)
+    assert engine.unhandled_error_events() == 2
+    assert engine.last_unhandled_error_rests_on() == (QUESTION,)
+
+
+def test_a_variable_nobody_declared_in_one_is_not_laid_to_the_others_question() -> None:
+    """The target is open and the type names a variable nobody declared, and the
+    other way round: the fault is the draft's, and no answer to the question that
+    IS open would mend it."""
+    for name in ("SEND_BADTYPEVAR", "SEND_BADTARGETVAR"):
+        engine, _ = _started()
+        engine.send_event(getattr(_Event, name))
+        assert engine.unhandled_error_events() == 1, (
+            f"{name} raised no error nothing answered, so there is nothing to attribute"
+        )
+        assert engine.last_unhandled_error_rests_on() == (), name
 
 
 def test_an_event_name_that_fails_is_not_laid_to_the_route_s_question() -> None:

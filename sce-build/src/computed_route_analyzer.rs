@@ -86,45 +86,85 @@ fn open_questions_by_data(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
 
 /// What one computed route reads and which questions it rests on.
 struct Reading {
-    /// The declared data items the route expressions name, in the order first
-    /// written.
+    /// The declared data items the route expressions name (the type's first,
+    /// then the target's), in the order first written.
     reads: Vec<String>,
     /// The ids of the open questions on the send or on any item in `reads`,
-    /// each once, the send's own first.
+    /// each once, the send's own first: what the manifest publishes.
     decisions: Vec<String>,
+    /// The same, for the `typeexpr` alone: empty when there is none.
+    type_decisions: Vec<String>,
+    /// The same, for the `targetexpr` alone: empty when there is none.
+    target_decisions: Vec<String>,
+}
+
+/// The declared data items `expression` names, in the order first written.
+fn items_named(expression: &str, data: &BTreeMap<String, Vec<String>>) -> Vec<String> {
+    identifiers_read(expression)
+        .into_iter()
+        .filter(|name| data.contains_key(name.as_str()))
+        .collect()
+}
+
+/// The ids of the open questions on the send itself (`own`) and on each of
+/// `reads`, each once, the send's own first.
+fn questions_of(
+    own: &[String],
+    reads: &[String],
+    data: &BTreeMap<String, Vec<String>>,
+) -> Vec<String> {
+    let read = reads
+        .iter()
+        .flat_map(|name| data[name.as_str()].iter().cloned());
+    let mut decisions: Vec<String> = Vec::new();
+    for id in own.iter().cloned().chain(read) {
+        if !decisions.contains(&id) {
+            decisions.push(id);
+        }
+    }
+    decisions
 }
 
 /// What one `<send>`'s route reads and rests on, or `None` for a send whose
 /// `type` and `target` are both literal. The one reading both the manifest's
 /// list and the annotation the generated machine carries are made from, so the
 /// two cannot name different questions.
+///
+/// ⚠ The type and the target are read apart as well as together. They fail
+/// independently, and the generated machine hands each failure only the
+/// questions its own expression rests on: a type that names a variable nobody
+/// declared is not mended by an answer about the target.
 fn route_of(send: &Action, data: &BTreeMap<String, Vec<String>>) -> Option<Reading> {
     if send.typeexpr.is_empty() && send.targetexpr.is_empty() {
         return None;
     }
-    let mut reads: Vec<String> = Vec::new();
-    for expression in [&send.typeexpr, &send.targetexpr] {
-        for name in identifiers_read(expression) {
-            if data.contains_key(name.as_str()) && !reads.contains(&name) {
-                reads.push(name);
-            }
-        }
-    }
-    let mut decisions: Vec<String> = Vec::new();
-    let own = send
+    let own: Vec<String> = send
         .unresolved
         .iter()
         .filter(|marker| marker.kind == MarkerKind::Unresolved)
-        .map(|marker| marker.id.clone());
-    let read = reads
-        .iter()
-        .flat_map(|name| data[name.as_str()].iter().cloned());
-    for id in own.chain(read) {
-        if !decisions.contains(&id) {
-            decisions.push(id);
+        .map(|marker| marker.id.clone())
+        .collect();
+    let type_reads = items_named(&send.typeexpr, data);
+    let target_reads = items_named(&send.targetexpr, data);
+    let mut reads = type_reads.clone();
+    for name in &target_reads {
+        if !reads.contains(name) {
+            reads.push(name.clone());
         }
     }
-    Some(Reading { reads, decisions })
+    let apart = |expression: &str, reads: &[String]| {
+        if expression.is_empty() {
+            Vec::new()
+        } else {
+            questions_of(&own, reads, data)
+        }
+    };
+    Some(Reading {
+        decisions: questions_of(&own, &reads, data),
+        type_decisions: apart(&send.typeexpr, &type_reads),
+        target_decisions: apart(&send.targetexpr, &target_reads),
+        reads,
+    })
 }
 
 /// Every computed-route `<send>` of `model`, ordered by where it is written.
@@ -135,7 +175,9 @@ pub fn analyze(model: &SCXMLModel) -> Vec<ComputedRoute> {
         .sends()
         .into_iter()
         .filter_map(|(state_id, send)| {
-            let Reading { reads, decisions } = route_of(send, &data)?;
+            let Reading {
+                reads, decisions, ..
+            } = route_of(send, &data)?;
             Some(ComputedRoute {
                 event: (!send.event.is_empty()).then(|| send.event.clone()),
                 state: state_id.to_string(),
@@ -173,8 +215,9 @@ pub fn records(model: &SCXMLModel) -> Vec<ComputedRoute> {
     routes
 }
 
-/// Write onto each computed-route `<send>` the questions its route rests on
-/// ([`Action::route_decisions`]), the reading [`analyze`] publishes. Run with
+/// Write onto each computed-route `<send>` the questions its type and its target
+/// rest on ([`Action::type_decisions`], [`Action::target_decisions`]), the
+/// reading [`analyze`] publishes. Run with
 /// the rest of the model analysis, before any backend renders, so a backend
 /// that lets its host tell such a failure from a fault of the document reads
 /// the same ids the manifest names.
@@ -185,9 +228,12 @@ pub fn annotate(model: &mut SCXMLModel) {
     fn walk(actions: &mut [Action], data: &BTreeMap<String, Vec<String>>) {
         for action in actions {
             if action.action_type == "send" {
-                action.route_decisions = route_of(action, data)
-                    .map(|reading| reading.decisions)
+                let reading = route_of(action, data);
+                action.type_decisions = reading
+                    .as_ref()
+                    .map(|r| r.type_decisions.clone())
                     .unwrap_or_default();
+                action.target_decisions = reading.map(|r| r.target_decisions).unwrap_or_default();
             }
             for block in action.nested_blocks_mut() {
                 walk(block, data);
@@ -278,7 +324,7 @@ mod tests {
         let mut carried: Vec<(String, Vec<String>)> = m
             .sends()
             .into_iter()
-            .map(|(_, send)| (send.event.clone(), send.route_decisions.clone()))
+            .map(|(_, send)| (send.event.clone(), send.target_decisions.clone()))
             .collect();
         carried.sort();
         carried.dedup();
@@ -294,6 +340,90 @@ mod tests {
                 ("top".to_string(), asks),
             ]
         );
+    }
+
+    /// The type and the target fail independently, so each carries only the
+    /// questions its own expression rests on, and the send's own question rides
+    /// with both. Measured 2026-10-02: one merged list laid a type that names a
+    /// variable nobody declared to the open question about the target.
+    #[test]
+    fn the_type_and_the_target_each_carry_their_own_questions() {
+        let m = parse_with_questions(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext" version="1.0" initial="a" datamodel="ecmascript">
+  <datamodel>
+    <data id="kind" expr="''" sce:unresolved="which-processor" sce:unresolved-reason="r"/>
+    <data id="where" expr="''" sce:unresolved="caller-target" sce:unresolved-reason="r"/>
+    <data id="both" expr="''" sce:unresolved="shared" sce:unresolved-reason="r"/>
+    <data id="plain" expr="''"/>
+  </datamodel>
+  <state id="a">
+    <onentry>
+      <send event="split" typeexpr="kind" targetexpr="where"/>
+      <send event="owned" typeexpr="plain" targetexpr="plain"
+            sce:unresolved="the-send" sce:unresolved-reason="r"/>
+      <send event="common" typeexpr="both" targetexpr="both + plain"/>
+      <send event="target_only" targetexpr="where"/>
+      <send event="type_only" typeexpr="kind"/>
+    </onentry>
+  </state>
+</scxml>"##,
+        );
+        let mut seen: Vec<(String, Vec<String>, Vec<String>)> = m
+            .sends()
+            .into_iter()
+            .map(|(_, s)| {
+                (
+                    s.event.clone(),
+                    s.type_decisions.clone(),
+                    s.target_decisions.clone(),
+                )
+            })
+            .collect();
+        seen.sort();
+        let ids = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            seen,
+            [
+                ("common".to_string(), ids(&["shared"]), ids(&["shared"])),
+                ("owned".to_string(), ids(&["the-send"]), ids(&["the-send"])),
+                (
+                    "split".to_string(),
+                    ids(&["which-processor"]),
+                    ids(&["caller-target"])
+                ),
+                ("target_only".to_string(), vec![], ids(&["caller-target"])),
+                ("type_only".to_string(), ids(&["which-processor"]), vec![]),
+            ]
+        );
+    }
+
+    /// The manifest keeps the union, the send's own first and the type's before
+    /// the target's, so a consumer that has not learned the split reads what it
+    /// always read.
+    #[test]
+    fn the_manifest_list_is_the_union_of_the_two() {
+        let m = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext" version="1.0" initial="a" datamodel="ecmascript">
+  <datamodel>
+    <data id="kind" expr="''" sce:unresolved="which-processor" sce:unresolved-reason="r"/>
+    <data id="where" expr="''" sce:unresolved="caller-target" sce:unresolved-reason="r"/>
+  </datamodel>
+  <state id="a">
+    <onentry>
+      <send event="e" typeexpr="kind" targetexpr="where"
+            sce:unresolved="the-send" sce:unresolved-reason="r"/>
+    </onentry>
+  </state>
+</scxml>"##,
+        );
+        let routes = analyze(&m);
+        assert_eq!(
+            routes[0].decisions,
+            ["the-send", "which-processor", "caller-target"]
+        );
+        assert_eq!(routes[0].reads, ["kind", "where"]);
     }
 
     /// An inline child's route is the child's own: it chooses where the CHILD

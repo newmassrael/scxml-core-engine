@@ -9,7 +9,8 @@
 # and the verdict called it the design's. The manifest now lists every send that writes a
 # `typeexpr` or a `targetexpr` (`computed_routes`), with the data items its route names
 # (`reads`) and the questions open on the send or on any of them (`decisions`), and the same
-# reading is written onto the send (`route_decisions`) for the machine the generator emits.
+# reading is written onto the send, the type's and the target's apart (`type_decisions`,
+# `target_decisions`), for the machine the generator emits.
 # Things easy to get wrong and read as success: a value chosen without an answer
 # (`sce:assumed`) listed as a question, a question never read off the data item or the
 # send, a name after a `.` read as though it were a variable, a `typeexpr` ignored, a
@@ -52,20 +53,20 @@ PY
 
 mutation_case "a value chosen without an answer on the send is listed as a question" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "        .filter(|marker| marker.kind == MarkerKind::Unresolved)\n        .map(|marker| marker.id.clone());",
-     "        .map(|marker| marker.id.clone());")
+     "        .filter(|marker| marker.kind == MarkerKind::Unresolved)\n        .map(|marker| marker.id.clone())\n        .collect();",
+     "        .map(|marker| marker.id.clone())\n        .collect();")
 PY
 
 mutation_case "the questions on the send itself are never read" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "    for id in own.chain(read) {",
-     "    for id in own.take(0).chain(read) {")
+     "    for id in own.iter().cloned().chain(read) {",
+     "    for id in own.iter().cloned().take(0).chain(read) {")
 PY
 
 mutation_case "the questions on the data items are never read" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "    for id in own.chain(read) {",
-     "    for id in own.chain(read.take(0)) {")
+     "    for id in own.iter().cloned().chain(read) {",
+     "    for id in own.iter().cloned().chain(read.take(0)) {")
 PY
 
 mutation_case "a question two items share is listed twice" <<'PY'
@@ -76,14 +77,14 @@ PY
 
 mutation_case "a name that is not a declared data item is listed as a read" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "            if data.contains_key(name.as_str()) && !reads.contains(&name) {",
-     "            if !reads.contains(&name) {")
+     "        .filter(|name| data.contains_key(name.as_str()))",
+     "        .filter(|name| data.contains_key(name.as_str()) || true)")
 PY
 
 mutation_case "the type expression is not read" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "    for expression in [&send.typeexpr, &send.targetexpr] {",
-     "    for expression in [&send.targetexpr] {")
+     "    let type_reads = items_named(&send.typeexpr, data);",
+     "    let type_reads = items_named(\"\", data);")
 PY
 
 mutation_case "a send with a literal route is listed" <<'PY'
@@ -112,10 +113,10 @@ PY
 
 # ── What the generated machine is told ──────────────────────────────
 
-mutation_case "the annotation carries the data items and not the questions" <<'PY'
+mutation_case "the annotation carries the data items and not the target's questions" <<'PY'
 edit("sce-build/src/computed_route_analyzer.rs",
-     "                    .map(|reading| reading.decisions)",
-     "                    .map(|reading| reading.reads)")
+     "reading.map(|r| r.target_decisions).unwrap_or_default();",
+     "reading.map(|r| { let _ = r.target_decisions; r.reads }).unwrap_or_default();")
 PY
 
 mutation_case "a send nested in an if is not annotated" <<'PY'
@@ -166,31 +167,31 @@ PY
 
 mutation_case "a route expression that fails to evaluate loses its questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "\"<send> targetexpr could not be evaluated\"{{ route_ns.arg }})",
+     "\"<send> targetexpr could not be evaluated\"{{ route_ns.target_arg }})",
      "\"<send> targetexpr could not be evaluated\")")
 PY
 
 mutation_case "an address the processor cannot use loses the route's questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "\"<send> targetexpr produced a target this processor cannot address\"{{ route_ns.arg }})",
+     "\"<send> targetexpr produced a target this processor cannot address\"{{ route_ns.target_arg }})",
      "\"<send> targetexpr produced a target this processor cannot address\")")
 PY
 
 mutation_case "a route that evaluates to nothing loses its questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "event_type=\"platform\"){{ route_ns.arg }})",
+     "event_type=\"platform\"){{ route_ns.target_arg }})",
      "event_type=\"platform\"))")
 PY
 
 mutation_case "a type expression that fails to evaluate loses its questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "\"<send> typeexpr could not be evaluated\"{{ route_ns.arg }}).to_wire_string()",
+     "\"<send> typeexpr could not be evaluated\"{{ route_ns.type_arg }}).to_wire_string()",
      "\"<send> typeexpr could not be evaluated\").to_wire_string()")
 PY
 
 mutation_case "a type the platform does not support loses the route's questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "\"<send> typeexpr names a processor this platform does not support\"{{ route_ns.arg }})",
+     "\"<send> typeexpr names a processor this platform does not support\"{{ route_ns.type_arg }})",
      "\"<send> typeexpr names a processor this platform does not support\")")
 PY
 
@@ -224,8 +225,70 @@ edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "engine.schedule_host_send(_host_request, {{ delay_py }}, _sid)")
 PY
 
-mutation_case "a send resting on no question is handed an empty one" <<'PY'
+mutation_case "a send resting on no type question is handed an empty one" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{% if route_ns.text %}",
-     "{% if true %}")
+     "{% if route_ns.text %}\n{% set route_ns.type_arg =",
+     "{% if true %}\n{% set route_ns.type_arg =")
+PY
+
+mutation_case "a send resting on no target question is handed an empty one" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if route_ns.text %}\n{% set route_ns.target_arg =",
+     "{% if true %}\n{% set route_ns.target_arg =")
+PY
+
+# ── The type and the target are two questions ───────────────────────
+
+mutation_case "a type that fails is handed the target's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> typeexpr could not be evaluated\"{{ route_ns.type_arg }}).to_wire_string()",
+     "\"<send> typeexpr could not be evaluated\"{{ route_ns.target_arg }}).to_wire_string()")
+PY
+
+mutation_case "a type the platform does not support is handed the target's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> typeexpr names a processor this platform does not support\"{{ route_ns.type_arg }})",
+     "\"<send> typeexpr names a processor this platform does not support\"{{ route_ns.target_arg }})")
+PY
+
+mutation_case "a target that fails to evaluate is handed the type's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"<send> targetexpr could not be evaluated\"{{ route_ns.target_arg }})",
+     "\"<send> targetexpr could not be evaluated\"{{ route_ns.type_arg }})")
+PY
+
+mutation_case "the delivery to the target is handed the type's questions" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ routed_to_target(indent, has_delay, delay_py, machine_name, model, route_ns.target_arg) }}",
+     "{{ routed_to_target(indent, has_delay, delay_py, machine_name, model, route_ns.type_arg) }}")
+PY
+
+mutation_case "the annotation hands the type the target's reading as well" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "                    .map(|r| r.type_decisions.clone())",
+     "                    .map(|r| [r.type_decisions.clone(), r.target_decisions.clone()].concat())")
+PY
+
+mutation_case "the type's questions are read from every name the route reads" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        type_decisions: apart(&send.typeexpr, &type_reads),",
+     "        type_decisions: apart(&send.typeexpr, &reads),")
+PY
+
+mutation_case "the target's questions are read from every name the route reads" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        target_decisions: apart(&send.targetexpr, &target_reads),",
+     "        target_decisions: apart(&send.targetexpr, &reads),")
+PY
+
+mutation_case "a send with no type expression is given a type question" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        if expression.is_empty() {\n            Vec::new()",
+     "        if false {\n            Vec::new()")
+PY
+
+mutation_case "the manifest list leaves out the target's questions" <<'PY'
+edit("sce-build/src/computed_route_analyzer.rs",
+     "        decisions: questions_of(&own, &reads, data),",
+     "        decisions: questions_of(&own, &type_reads, data),")
 PY

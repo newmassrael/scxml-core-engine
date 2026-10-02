@@ -332,17 +332,30 @@ pub struct Action {
     pub send_type_host_served: bool,
 
     /// The ids of the open questions (`sce:unresolved`) this `<send>`'s
-    /// computed route rests on: those marked on the send itself and on the
-    /// data its `typeexpr` / `targetexpr` name (§scxml-6.2.4). Empty for a
-    /// send with a literal route and for one whose route rests on no question.
+    /// `typeexpr` rests on: those marked on the send itself and on the data the
+    /// `typeexpr` names (§scxml-6.2.4). Empty for a send with no `typeexpr` and
+    /// for one whose `typeexpr` rests on no question.
     ///
-    /// Set once, by [`crate::computed_route_analyzer::annotate`], from the
-    /// same reading the manifest's `computed_routes` publishes, so the
-    /// generated machine and the manifest cannot name different questions. A
-    /// backend that lets a host tell a failure of such a send from a fault of
-    /// the document reads it; the others ignore it.
+    /// ⚠ Kept apart from [`Self::target_decisions`], not merged into one list:
+    /// the type and the target fail independently, and a failure of the type
+    /// that no answer about the target would mend is not the target's question
+    /// (measured 2026-10-02: a send whose target was open and whose type named a
+    /// variable nobody declared was reported as waiting on the caller).
+    ///
+    /// Set once, by [`crate::computed_route_analyzer::annotate`], from the same
+    /// reading the manifest's `computed_routes` publishes, so the generated
+    /// machine and the manifest cannot name different questions. A backend that
+    /// lets a host tell a failure of such a send from a fault of the document
+    /// reads it; the others ignore it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub route_decisions: Vec<String>,
+    pub type_decisions: Vec<String>,
+
+    /// The ids of the open questions this `<send>`'s `targetexpr` rests on, as
+    /// [`Self::type_decisions`] is for the `typeexpr`: those marked on the send
+    /// itself and on the data the `targetexpr` names. The delivery to the
+    /// address it produces rests on them too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub target_decisions: Vec<String>,
 
     pub label: String,
     // if/elseif/else

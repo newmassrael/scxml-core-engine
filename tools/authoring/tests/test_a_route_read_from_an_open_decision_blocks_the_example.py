@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import tempfile
 import unittest
 
@@ -59,7 +60,17 @@ WHERE_PLAIN = '<data id="callerTarget" expr="\'#_nobody\'"/>'
 WHERE_OPEN_AND_REACHABLE = (
     '<data id="callerTarget" expr="\'#_internal\'" sce:unresolved="caller-target" '
     'sce:unresolved-reason="the specification does not say who the caller is"/>')
-UNRELATED_OPEN =('<data id="retention" expr="0" sce:unresolved="retention-period" '
+#: The type is open too. Its value works in `SUPPORTED_...` (the SCXML processor) and
+#: names no processor this platform has in `UNSUPPORTED_...`.
+SUPPORTED_TYPE_OPEN = (
+    '<data id="callerType" expr="\'http://www.w3.org/TR/scxml/#SCXMLEventProcessor\'" '
+    'sce:unresolved="which-processor" '
+    'sce:unresolved-reason="the specification does not say how the caller is reached"/>')
+UNSUPPORTED_TYPE_OPEN = (
+    '<data id="callerType" expr="\'x-unsupported-processor\'" '
+    'sce:unresolved="which-processor" '
+    'sce:unresolved-reason="the specification does not say how the caller is reached"/>')
+UNRELATED_OPEN = ('<data id="retention" expr="0" sce:unresolved="retention-period" '
                   'sce:unresolved-reason="the specification does not say how long"/>')
 
 #: The words a refusal uses only when it lays the failure to a question. The
@@ -247,6 +258,61 @@ class TestARouteRestingOnAnOpenDecision(unittest.TestCase):
         self.assertEqual("blocked", verdict["verdict"], answer["judgement"])
         self.assertEqual("decision", verdict.get("cause"), verdict)
         self.assertIn("open decision `caller-type`", verdict["reason"])
+
+    # -- the type and the target are two questions, and fail apart ----------
+
+    def decisions_named(self, verdict: dict) -> list:
+        """The decision ids a refusal lays the failure to, in the order it says
+        them, and none when it lays it to no decision."""
+        said = re.search(r"open decision ((?:`[^`]+`(?:, )?)+)", verdict["reason"])
+        if not said or LAID_TO_A_QUESTION not in verdict["reason"]:
+            return []
+        return re.findall(r"`([^`]+)`", said.group(1))
+
+    def test_a_type_that_fails_beside_an_open_target_is_the_drafts(self):
+        """The review's own case. The target is open and its value works; the type
+        names a variable nobody declared. Answering who the caller is would not
+        mend the type, so the run is not blocked on that question."""
+        verdict = self.verdict(self.answer(
+            WHERE_OPEN_AND_REACHABLE,
+            '<send event="notice" typeexpr="missingType" targetexpr="callerTarget"/>'))
+        self.assertEqual("design", verdict.get("cause"), verdict)
+        self.assertNotEqual("blocked", verdict["verdict"], verdict)
+        self.assertEqual([], self.decisions_named(verdict), verdict["reason"])
+
+    def test_a_target_that_fails_beside_an_open_type_is_the_drafts(self):
+        verdict = self.verdict(self.answer(
+            SUPPORTED_TYPE_OPEN,
+            '<send event="notice" typeexpr="callerType" targetexpr="missingTarget"/>'))
+        self.assertEqual("design", verdict.get("cause"), verdict)
+        self.assertNotEqual("blocked", verdict["verdict"], verdict)
+        self.assertEqual([], self.decisions_named(verdict), verdict["reason"])
+
+    def test_with_both_open_the_failing_one_is_the_one_named(self):
+        """Measured 2026-10-02: both ids were named whichever of the two failed."""
+        both_type_fails = self.verdict(self.answer(
+            UNSUPPORTED_TYPE_OPEN + WHERE_OPEN_AND_REACHABLE,
+            '<send event="notice" typeexpr="callerType" targetexpr="callerTarget"/>'))
+        self.assertEqual("blocked", both_type_fails["verdict"], both_type_fails)
+        self.assertEqual(["which-processor"], self.decisions_named(both_type_fails),
+                         both_type_fails["reason"])
+        both_target_fails = self.verdict(self.answer(
+            SUPPORTED_TYPE_OPEN + WHERE_OPEN,
+            '<send event="notice" typeexpr="callerType" targetexpr="callerTarget"/>'))
+        self.assertEqual("blocked", both_target_fails["verdict"], both_target_fails)
+        self.assertEqual(["caller-target"], self.decisions_named(both_target_fails),
+                         both_target_fails["reason"])
+
+    def test_a_question_on_the_send_itself_rides_with_either_failure(self):
+        """A question marked on the `<send>` is about the send as a whole, so it is
+        named with whichever of its type and target failed."""
+        asking = ('<send event="notice" typeexpr="callerType" targetexpr="callerTarget" '
+                  'sce:unresolved="send-shape" '
+                  'sce:unresolved-reason="the specification does not say a notice is sent"/>')
+        verdict = self.verdict(self.answer(
+            UNSUPPORTED_TYPE_OPEN + WHERE_OPEN_AND_REACHABLE, asking))
+        self.assertEqual(["send-shape", "which-processor"], self.decisions_named(verdict),
+                         verdict["reason"])
 
     def test_a_later_send_is_not_given_the_questions_of_an_earlier_one(self):
         """An open question on a route that works fails nothing. The next send

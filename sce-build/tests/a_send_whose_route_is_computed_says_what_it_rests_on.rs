@@ -422,6 +422,67 @@ fn only_the_places_the_route_fails_carry_its_questions() {
     }
 }
 
+const TYPE_ASKING: &str = r#"rests_on=("which-processor", )"#;
+const TARGET_ASKING: &str = r#"rests_on=("caller-target", )"#;
+
+const TYPE_AND_TARGET_APART: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="apart" initial="idle" datamodel="ecmascript">
+  <datamodel>
+    <data id="kind" expr="'x-unsupported'" sce:unresolved="which-processor"
+          sce:unresolved-reason="the specification does not say how the caller is reached"/>
+    <data id="where" expr="'#_internal'" sce:unresolved="caller-target"
+          sce:unresolved-reason="the specification does not say who the caller is"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="idle">
+      <send event="a" typeexpr="kind" targetexpr="where"/>
+    </transition>
+    <transition event="later" target="idle">
+      <send event="b" typeexpr="kind" targetexpr="where" delayexpr="'1s'"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// The type and the target fail independently, so each failure is handed only the
+/// questions its own expression rests on. Measured 2026-10-02: one merged list was
+/// handed to both, so a type that named a variable nobody declared was told to the
+/// owner as waiting on who the caller is.
+#[test]
+fn the_type_and_the_target_are_each_handed_their_own_questions() {
+    let machine = generated_python("apart", TYPE_AND_TARGET_APART);
+
+    for place in [
+        "\"<send> typeexpr could not be evaluated\"",
+        "\"<send> typeexpr names a processor this platform does not support\"",
+    ] {
+        let found = lines_with(&machine, place);
+        assert!(!found.is_empty(), "the machine has no place saying {place}");
+        for line in found {
+            assert!(
+                line.contains(TYPE_ASKING) && !line.contains("caller-target"),
+                "{place} is not handed the type's question alone: {line}"
+            );
+        }
+    }
+    for place in [
+        "\"<send> targetexpr could not be evaluated\"",
+        "\"<send> targetexpr produced a target this processor cannot address\"",
+        "\"<send> targetexpr evaluated to nothing, so there is no target to reach\"",
+        "engine.send_to_target(",
+    ] {
+        let found = lines_with(&machine, place);
+        assert!(!found.is_empty(), "the machine has no place saying {place}");
+        for line in found {
+            assert!(
+                line.contains(TARGET_ASKING) && !line.contains("which-processor"),
+                "{place} is not handed the target's question alone: {line}"
+            );
+        }
+    }
+}
+
 /// A document with no open question gets the machine it always got: not one
 /// `rests_on`, so nothing committed and generated moves.
 #[test]

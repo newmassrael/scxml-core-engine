@@ -4199,12 +4199,19 @@ after a `.` is a property and not an item) and the ids of the questions
 open on the send or on any of those items (`decisions`). A value chosen
 without an answer (`sce:assumed`) is applied and is not one.
 
-The same reading is written onto the send in the model
-(`Action::route_decisions`), and a generated Python machine raises a failure
-OF THE ROUTE with the questions it rests on (`raise_internal(..., rests_on=...)`).
-The route fails when its `typeexpr` or `targetexpr` does not evaluate, when the
-address or the type it produces is one this processor cannot use, when it
-evaluates to nothing, and when the delivery to it is refused or reaches nobody.
+The same reading is written onto the send in the model, the type's and the
+target's apart (`Action::type_decisions`, `Action::target_decisions`; the
+manifest's `decisions` is their union), and a generated Python machine raises a
+failure OF THE ROUTE with the questions it rests on
+(`raise_internal(..., rests_on=...)`). The type and the target fail
+independently, so each failure carries only the questions ITS expression rests on
+(and the send's own): the `typeexpr` not evaluating, or naming a processor this
+platform does not support, carries the type's; the `targetexpr` not evaluating,
+producing an address this processor cannot use, evaluating to nothing, or the
+delivery to it being refused or reaching nobody, carries the target's. A type
+that names a variable nobody declared, beside an open target, is the draft's: an
+answer about the target would not mend it (measured 2026-10-02, a merged list
+laid it to the caller).
 The engine holds the questions with the `error.*` event and gives them back for
 the last error nothing answered (`last_unhandled_error_rests_on`). A scenario
 driver reads that and calls the example BLOCKED by the decision
