@@ -3718,6 +3718,48 @@ is reported and changes no verdict: an output that is never sent still fails the
 example that expects it, because a design that leaves it out is a defect and not a
 spelling.
 
+#### A played example closes the requirement it names
+
+`needs-scenario` (what a `shall_not` requirement reads as, §2.18) says what would
+carry a requirement met by something NOT happening: a scenario asserting it does not
+occur, and passing. A
+scenario names the requirements it is about (`requirements`), and the judge carries
+those ids on each verdict. `sce-codegen requirements <document>... --manifest <list>
+--scenarios <set> --trace <trace>` holds the list against the examples: the set is
+judged HERE, from the trace, and not read from a verdict file, so a requirement is
+never closed by a verdict somebody typed. The flags come as a pair and need the list.
+
+Per requirement, over every scenario that names it:
+
+- one scenario `fail` -> `scenario-failed`, for any requirement the document is meant
+  to carry (`implemented`, `unresolved`, `missing` or `needs-scenario`), whatever the
+  annotation said: a node carrying the id is a claim, a failed scenario an observation
+  against it, and `node_paths` still names the nodes that claim it;
+- otherwise, for a `needs-scenario` requirement, every scenario that names it `pass`
+  -> `scenario-passed`;
+- anything else leaves the row where it was: a scenario that is `not-judged`,
+  `blocked` or `awaiting-decision` closes nothing.
+
+Each row an example names carries `scenarios`: `scenario`, `verdict` (the judge's own
+word), `bound` for a bounded pass and `reason` for a verdict that is neither a pass
+nor a fail. A `scenario-evidence` record comes right after `extraction`, before the
+first row: the set's `doc_id`, `rev`, `set_sha256` and `origin`, the `engine` the
+driver ran on, `used` (and `why_not_used` when it was not), and `problems` for a
+scenario that names a requirement the list does not hold. Without the flags there is
+no such record and no row has `scenarios`.
+
+⚠ `scenario-passed` is not `implemented`. `implemented` says a node carries the id and
+nothing was run. `scenario-passed` says every example that names the requirement
+passed on the engine the record names, over those inputs, and a bounded example only
+up to its bound. It does not say the examples are the whole of what the requirement
+means, that they are the owner's (`origin`: `ai-proposed` is the author's until the
+owner confirms), or that another engine agrees.
+
+⚠ Evidence about another specification is no evidence: a set whose `specification`
+is not the list's `doc_id` and `rev`, and a set the judge did not judge (a problem in
+the set, or a trace taken against another set), move nothing, and `used: false` says
+why.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

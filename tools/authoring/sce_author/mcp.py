@@ -673,7 +673,20 @@ TOOLS = [
             "owner each fail, each reason and each gap. A `pass` says only that the "
             "design behaved as these examples say on that engine; it does "
             "not say the design is right, and the examples are yours until "
-            "the owner confirms them."
+            "the owner confirms them. When the owner keeps a requirement "
+            "list, pass it (`manifest`) and name the requirement each "
+            "scenario is about in its `requirements`: the answer then "
+            "carries `requirements`, the product's outcome for each id with "
+            "the examples held against it. A `shall_not` that no node can "
+            "show, whose every scenario passed, is `scenario-passed`; one "
+            "with a failed scenario is `scenario-failed`. `scenario-passed` "
+            "is not `implemented`: it says the machine behaved as these "
+            "examples say on the engine the `scenario-evidence` record names "
+            "(and a bounded example only up to its bound), and that record "
+            "carries the set's `origin`, so tell the owner whose examples "
+            "they are. An example that was not judged, is blocked or awaits "
+            "a decision closes nothing and is shown on the requirement it "
+            "names."
         ),
         "inputSchema": {
             "type": "object",
@@ -681,6 +694,7 @@ TOOLS = [
                 **_file_input("scenarios", "the scenario set (JSON)"),
                 **_file_input("specification",
                               "the specification the quotes are taken from"),
+                **_MANIFEST_INPUT,
                 "documents": {"type": "array", "items": {"type": "string"},
                               "description": "Paths to the design: the statechart first, "
                                              "then the documents it imports "
@@ -1644,10 +1658,29 @@ def _behaviour_say(answer: dict) -> str:
     return " " + _UNPLAYED
 
 
+_SCENARIO_EVIDENCE_SAYS = (
+    "`scenario-passed` is not `implemented`. `implemented` says a node carries the "
+    "requirement's id and nothing was run; `scenario-passed` says every example that "
+    "names the requirement passed on the engine `scenario_evidence` names, over those "
+    "inputs, and a bounded example only up to its bound. Tell the owner whose examples "
+    "they are (`scenario_evidence.origin`: `ai-proposed` is yours until they confirm "
+    "them) and that another engine may differ. `scenario-failed` is an observation: "
+    "tell the owner the scenario and what was seen. A requirement still `needs-scenario` "
+    "beside its `scenarios` is open because an example was not judged, is blocked or "
+    "awaits a decision: say which. When `scenario_evidence.used` is false no requirement "
+    "was moved, and `why_not_used` says why.")
+
+
 def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,
-                          staging: _Staging) -> dict:
+                          staging: _Staging, examples: tuple | None = None) -> dict:
     """What the owner's requirement list makes of a design, from the
     product's own records and none of this module's reading.
+
+    `examples` is a scenario set and the trace a driver wrote for it. Given,
+    the product holds the list against them (`requirements --scenarios
+    --trace`), judging the set itself from the trace: the verdicts that close
+    or fail a requirement are the product's and not a file anyone typed. The
+    records come back with the `scenario-evidence` record before the first row.
 
     ⚠ `documents` is ONE design. A statechart that closes its interface is
     checked with the event schemas it imports, so the check the client makes is
@@ -1675,7 +1708,10 @@ def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,
     cut, and a client left to number its own `sce:req` made the ids up in twelve
     drafts of fifteen.
     """
-    report, refusal = design_requirement_records(documents, manifest, cwd=staging.dir)
+    report, refusal = design_requirement_records(
+        documents, manifest, cwd=staging.dir,
+        scenarios=examples[0] if examples else None,
+        trace=examples[1] if examples else None)
     if refusal or not report:
         return {"verdict": "refused", "refusal": refusal.splitlines()[0] if refusal else ""}
     records = json.loads(report)["records"]
@@ -1684,7 +1720,7 @@ def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,
         if record.get("kind") == "requirement":
             by_outcome.setdefault(record["outcome"], []).append(record["id"])
     extraction = next((r for r in records if r.get("kind") == "extraction"), {})
-    return {
+    measured = {
         "verdict": "measured",
         "denominator": extraction.get("denominator"),
         "counts": {outcome: len(ids) for outcome, ids in sorted(by_outcome.items())},
@@ -1692,6 +1728,11 @@ def _requirement_outcomes(documents: list[pathlib.Path], manifest: pathlib.Path,
                 if outcome != "implemented"},
         "records": records,
     }
+    evidence = next((r for r in records if r.get("kind") == "scenario-evidence"), None)
+    if evidence is not None:
+        measured["scenario_evidence"] = {k: v for k, v in evidence.items() if k != "kind"}
+        measured["says"] = _SCENARIO_EVIDENCE_SAYS
+    return measured
 
 
 def _validate_tool(args: dict, staging: _Staging) -> dict:
@@ -1741,6 +1782,8 @@ def _scenarios_tool(args: dict, staging: _Staging) -> dict:
     scenario_set = staging.file(args, "scenarios", "the scenario set", "scenarios.json")
     specification = staging.file(args, "specification", "the specification", "specification.md",
                                  required=False)
+    manifest = staging.file(args, "manifest", "the owner's requirement list",
+                            "requirements.manifest.json", required=False)
     documents = staging.many(args, "documents",
                              "the design: the statechart first, then the documents it imports")
 
@@ -1757,8 +1800,16 @@ def _scenarios_tool(args: dict, staging: _Staging) -> dict:
     rest = tuple(located(path) for path in documents[1:])
     played = (run_scenarios(chosen, located(documents[0]), others=rest)
               if usable and withheld is None else None)
-    return _text(json.dumps(scenario_answer(read, played, withheld=withheld), indent=2,
-                            ensure_ascii=False) + "\n")
+    reply = scenario_answer(read, played, withheld=withheld)
+    if manifest is not None and played is not None:
+        # The product holds the owner's list against the examples and judges
+        # them itself from the trace the driver wrote: what closes or fails a
+        # requirement is that judgement, and no verdict this module typed.
+        trace_file = staging.write(
+            "observation-trace.json", json.dumps(played["trace"], ensure_ascii=False), "trace")
+        reply["requirements"] = _requirement_outcomes(
+            documents, manifest, staging, examples=(chosen, trace_file))
+    return _text(json.dumps(reply, indent=2, ensure_ascii=False) + "\n")
 
 
 def _decisions_tool(args: dict, staging: _Staging) -> dict:

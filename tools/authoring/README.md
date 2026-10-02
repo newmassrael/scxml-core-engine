@@ -292,6 +292,19 @@ do before calling it finished. The field and the sentence are written together
 in `_behaviour_say`, and a document accepted as another kind, which has nothing
 to play, carries neither.
 
+Given the owner's requirement list (`manifest`), `scxml_scenarios` also says what
+the examples make of each requirement. A scenario names the requirements it is
+about (`requirements`); a `shall_not` that no node can show, whose every scenario
+passed, is `scenario-passed`, and a requirement with a failed scenario is
+`scenario-failed`. The tool types none of it: it writes the driver's trace beside
+the design and the product holds the list against the set
+(`sce-codegen requirements --scenarios --trace`, which judges the set itself from
+the trace), so the answer's `requirements` is the product's records passed through,
+with a `scenario-evidence` record naming the set's digest and `origin` and the
+engine. ⚠ `scenario-passed` is not `implemented`: it says these examples passed on
+that engine, and `says` in the answer tells the client so, and that the examples are
+the author's (`ai-proposed`) until the owner confirms them.
+
 The product does two things and the authoring package one. `sce-codegen
 scenarios` says whether a set is usable, and nothing is run from one that is not.
 `sce-codegen judge-scenarios` turns a set and an observation trace into

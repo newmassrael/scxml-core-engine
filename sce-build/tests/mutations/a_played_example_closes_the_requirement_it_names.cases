@@ -1,0 +1,96 @@
+# Mutation cases for "a played example closes the requirement it names".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_played_example_closes_the_requirement_it_names.cases`.
+#
+# A requirement met by something NOT happening has no node to point at, so the
+# annotation can only call it `needs-scenario`. `scenario_closure::close` holds a
+# requirement list against examples that were played: a `shall_not` whose every
+# scenario passed is `scenario-passed`, a requirement with a failed scenario is
+# `scenario-failed`, and anything else stays where it was. Four things are easy to get
+# wrong and read as success: a pass that closes more than it should (one scenario of
+# two, or a `shall` that a node never carried), a failure that is let through, evidence
+# about another specification or a set that was not judged moving a requirement, and the
+# command leaving the examples out of what it prints.
+#
+# Each case below takes one of those away and must make a test red: the unit tests of
+# `scenario_closure.rs`, or `a_played_example_closes_the_requirement_it_names.rs`, which
+# runs the command.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test a_played_example_closes_the_requirement_it_names
+mutation_targets sce-build/src/scenario_closure.rs sce-build/src/requirement_manifest.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/src/scenario_closure.rs sce-build/tests/a_played_example_closes_the_requirement_it_names.rs
+
+# ── What closes a requirement ───────────────────────────────────────
+
+mutation_case "one passing scenario is enough to close a requirement" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "            && verdicts.iter().all(|v| v.verdict == Verdict::Pass)",
+     "            && verdicts.iter().any(|v| v.verdict == Verdict::Pass)")
+PY
+
+mutation_case "a pass closes a requirement the annotation could decide" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "        } else if row.outcome == Outcome::NeedsScenario\n            && verdicts.iter().all(|v| v.verdict == Verdict::Pass)",
+     "        } else if verdicts.iter().all(|v| v.verdict == Verdict::Pass)")
+PY
+
+mutation_case "a failed scenario moves nothing" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "        if verdicts.iter().any(|v| v.verdict == Verdict::Fail) {",
+     "        if verdicts.iter().any(|v| v.verdict == Verdict::Fail) && false {")
+PY
+
+mutation_case "a requirement the annotation called missing is not failed by an example" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "            Outcome::Implemented | Outcome::Unresolved | Outcome::Missing | Outcome::NeedsScenario",
+     "            Outcome::Implemented | Outcome::Unresolved | Outcome::NeedsScenario")
+PY
+
+# ── Evidence that is no evidence ────────────────────────────────────
+
+mutation_case "examples the judge did not judge still move requirements" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "    if !judgement.judged {",
+     "    if !judgement.judged && false {")
+PY
+
+mutation_case "examples about another revision of the specification still move requirements" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "    if set.specification.doc_id != manifest.doc_id || set.specification.rev != manifest.rev {",
+     "    if set.specification.doc_id != manifest.doc_id {")
+PY
+
+mutation_case "examples about another specification still move requirements" <<'PY'
+edit("sce-build/src/scenario_closure.rs",
+     "    if set.specification.doc_id != manifest.doc_id || set.specification.rev != manifest.rev {",
+     "    if set.specification.rev != manifest.rev {")
+PY
+
+# ── What the command prints and does with the flags ─────────────────
+
+mutation_case "the evidence record is left out of the stream when the examples were used" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "    if let Some(evidence) = &classification.scenario_evidence {",
+     "    if let Some(evidence) = &classification.scenario_evidence.clone().filter(|e| !e.used) {")
+PY
+
+mutation_case "one document is not held against the examples" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.",
+     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.")
+PY
+
+mutation_case "several documents read as one design are not held against the examples" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.",
+     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.")
+PY

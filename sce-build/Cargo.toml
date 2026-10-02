@@ -202,6 +202,14 @@ name = "scenario_set_command"
 path = "tests/scenario_set_command.rs"
 required-features = ["cli"]
 
+# `requirements --scenarios --trace` holds a requirement list against examples
+# that were played. Spawns sce-codegen, and a stale binary refuses the flags as a
+# usage error, so the target is held to the same declaration.
+[[test]]
+name = "a_played_example_closes_the_requirement_it_names"
+path = "tests/a_played_example_closes_the_requirement_it_names.rs"
+required-features = ["cli"]
+
 # `sce-codegen judge-scenarios` judges an observation trace against a scenario
 # set. Spawns sce-codegen for the same reason, with the same hazard: a stale
 # binary refuses the subcommand as a usage error.

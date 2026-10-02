@@ -1037,9 +1037,16 @@ def requirement_records(document: pathlib.Path,
 def design_requirement_records(documents: list[pathlib.Path],
                                manifest: pathlib.Path,
                                codegen: pathlib.Path | None = None, *,
-                               cwd: pathlib.Path | None = None) -> tuple[str, str]:
+                               cwd: pathlib.Path | None = None,
+                               scenarios: pathlib.Path | None = None,
+                               trace: pathlib.Path | None = None) -> tuple[str, str]:
     """Each requirement's outcome for the documents of ONE design, measured
     together (`sce-codegen requirements A B C --manifest`).
+
+    `scenarios` and `trace` (both, or neither) hold the list against examples
+    that were played: the PRODUCT judges the set from the trace and moves the
+    requirements the examples speak to (`--scenarios --trace`), so what closes
+    or fails a requirement is its judgement, passed through.
 
     ⚠ A design is often a set: a statechart that closes its interface is
     checked with the event schemas it imports, and a schema claims nothing, so
@@ -1051,6 +1058,10 @@ def design_requirement_records(documents: list[pathlib.Path],
     """
     args = ["requirements", *(str(document) for document in documents),
             "--manifest", str(manifest)]
+    if (scenarios is None) != (trace is None):
+        raise ValueError("examples are a scenario set and its trace together, or neither")
+    if scenarios is not None:
+        args += ["--scenarios", str(scenarios), "--trace", str(trace)]
     return _product_answer(args, codegen, answer="records", read=_diagnostic_records,
                            cwd=cwd)
 

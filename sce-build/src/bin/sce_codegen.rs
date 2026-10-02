@@ -2552,6 +2552,22 @@ enum Commands {
         // them.
         #[arg(long)]
         manifest: Option<String>,
+        /// Scenario set (`sce-scenario-set` v1) to hold the requirements
+        /// against, with the `--trace` a driver wrote for it.
+        ///
+        /// The set is judged here, from the trace, and not read from a
+        /// verdict file: a verdict somebody typed would close a requirement
+        /// on a claim, and a verdict computed from what a driver observed
+        /// does not. Rows the examples speak to move (`scenario-passed`,
+        /// `scenario-failed`), each carries its scenarios' verdicts, and a
+        /// `scenario-evidence` record before the first row says which
+        /// examples and which engine.
+        #[arg(long, value_name = "PATH", requires_all = ["manifest", "trace"])]
+        scenarios: Option<String>,
+        /// Observation trace (`sce-observation-trace` v1) a driver wrote
+        /// for the `--scenarios` set.
+        #[arg(long, value_name = "PATH", requires = "scenarios")]
+        trace: Option<String>,
     },
     /// Read a scenario set and say whether it is usable.
     ///
@@ -3238,9 +3254,17 @@ fn main() {
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
-        Commands::Requirements { scxml, manifest } => {
-            cmd_requirements(&scxml, manifest.as_deref(), error_format)
-        }
+        Commands::Requirements {
+            scxml,
+            manifest,
+            scenarios,
+            trace,
+        } => cmd_requirements(
+            &scxml,
+            manifest.as_deref(),
+            scenarios.as_deref().zip(trace.as_deref()),
+            error_format,
+        ),
         Commands::Scenarios {
             file,
             specification,
@@ -9557,9 +9581,53 @@ fn load_requirement_sidecar(
         })
 }
 
-fn cmd_requirements(scxml: &[String], manifest: Option<&str>, error_format: ErrorFormat) {
+/// Judge the examples in `set_file` from the trace in `trace_file` and hold
+/// the classification against them (`scenario_closure::close`).
+///
+/// Judged here, from the trace, and not read from a verdict file: a verdict
+/// somebody typed would close a requirement on a claim. A set or a trace that
+/// does not load ends the run through the door a requirement list uses.
+fn hold_scenarios(
+    classification: &mut sce_build::requirement_manifest::Classification,
+    manifest: &sce_build::requirement_manifest::RequirementManifest,
+    (set_file, trace_file): (&str, &str),
+) {
+    let (set, digest) = sce_build::scenario_set::ScenarioSet::load_with_digest(Path::new(set_file))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: set_file.to_string(),
+                what: "scenario set",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        });
+    let trace = sce_build::scenario_judge::Trace::load(Path::new(trace_file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: trace_file.to_string(),
+            what: "observation trace",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let judgement = sce_build::scenario_judge::judge(&set, &digest, &trace);
+    sce_build::scenario_closure::close(
+        classification,
+        manifest,
+        &set,
+        &digest,
+        &trace.engine,
+        &judgement,
+    );
+}
+
+fn cmd_requirements(
+    scxml: &[String],
+    manifest: Option<&str>,
+    scenarios: Option<(&str, &str)>,
+    error_format: ErrorFormat,
+) {
     if scxml.len() > 1 {
-        cmd_requirements_of_design(scxml, manifest, error_format);
+        cmd_requirements_of_design(scxml, manifest, scenarios, error_format);
         return;
     }
     let scxml = scxml[0].as_str();
@@ -9581,12 +9649,15 @@ fn cmd_requirements(scxml: &[String], manifest: Option<&str>, error_format: Erro
     // different question than the one asked, print a clean-looking
     // result, and never mention that the denominator was dropped.
     let loaded = load_requirement_manifest(manifest_path);
-    let classification = match &design {
+    let mut classification = match &design {
         Design::Statechart(model) => sce_build::requirement_manifest::classify(model, &loaded),
         Design::Forge(parsed) => {
             sce_build::requirement_manifest::classify_document(&parsed.document, &loaded).0
         }
     };
+    if let Some(examples) = scenarios {
+        hold_scenarios(&mut classification, &loaded, examples);
+    }
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }
 
@@ -9604,6 +9675,7 @@ fn cmd_requirements(scxml: &[String], manifest: Option<&str>, error_format: Erro
 fn cmd_requirements_of_design(
     documents: &[String],
     manifest: Option<&str>,
+    scenarios: Option<(&str, &str)>,
     error_format: ErrorFormat,
 ) {
     let Some(manifest_path) = manifest else {
@@ -9628,7 +9700,10 @@ fn cmd_requirements_of_design(
             (path.clone(), claims)
         })
         .collect();
-    let classification = sce_build::requirement_manifest::classify_documents(&members, &loaded);
+    let mut classification = sce_build::requirement_manifest::classify_documents(&members, &loaded);
+    if let Some(examples) = scenarios {
+        hold_scenarios(&mut classification, &loaded, examples);
+    }
     out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));
 }
 

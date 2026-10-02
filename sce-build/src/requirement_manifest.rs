@@ -1203,10 +1203,13 @@ pub enum Outcome {
     ///
     /// Not a severity between `implemented` and `missing` — a
     /// different axis. It says the only column that could carry this
-    /// requirement is the third one (a scenario asserting the thing
-    /// does not occur, and passing), and that column does not exist
-    /// yet. When it does, a `shall_not` with a passing scenario
-    /// becomes `implemented` and this bucket empties from the top.
+    /// requirement is the third one: a scenario asserting the thing
+    /// does not occur, and passing. Given the examples an owner
+    /// accepted and what a driver observed running them
+    /// ([`crate::scenario_closure::close`]), a `shall_not` whose every
+    /// scenario passed leaves this bucket for [`Outcome::ScenarioPassed`]
+    /// and one with a failing scenario for [`Outcome::ScenarioFailed`];
+    /// without them it stays here.
     NeedsScenario,
     /// The manifest says another document carries this, and named it.
     ///
@@ -1242,6 +1245,26 @@ pub enum Outcome {
     /// than a bucket that hides it: the row carries both claims, the
     /// disposition and the citing nodes, so the reader can tell which.
     Contradicted,
+    /// Every scenario that names this requirement passed.
+    ///
+    /// ⚠ A different claim from `implemented`, and kept apart on purpose.
+    /// `implemented` says a node carries the id: the author's claim about
+    /// where the requirement is met, with nothing run. This says examples
+    /// were played into a design and the machine behaved as they say, on
+    /// the engine the evidence record names, and nothing larger: the
+    /// examples are the ones the set holds (see its `origin`), a bounded
+    /// scenario passed only up to its bound (each entry says), and another
+    /// engine may differ. Folding the two into one word would let a
+    /// reader who learned `implemented` as "annotated" read a run into it.
+    ScenarioPassed,
+    /// A scenario that names this requirement was observed to fail.
+    ///
+    /// The sharper of the two things the run can say: a check that was
+    /// observed and did not hold. It replaces the annotation's own bucket
+    /// whatever that was, since a node carrying the id is a claim and a
+    /// failed scenario is an observation against it; `node_paths` still
+    /// names the nodes that claim the requirement.
+    ScenarioFailed,
 }
 
 impl Outcome {
@@ -1256,6 +1279,8 @@ impl Outcome {
             Outcome::OutOfScope => "out-of-scope",
             Outcome::SystemLevel => "system-level",
             Outcome::Contradicted => "contradicted",
+            Outcome::ScenarioPassed => "scenario-passed",
+            Outcome::ScenarioFailed => "scenario-failed",
         }
     }
 }
@@ -1297,6 +1322,69 @@ pub struct RequirementOutcome {
     /// the nodes in the very report this classification walked. Empty
     /// for `missing` by definition.
     pub node_paths: Vec<String>,
+    /// Every scenario that names this requirement, and how it was judged.
+    /// Empty unless examples were given ([`crate::scenario_closure::close`]),
+    /// and then omitted from the artefact: a row with no scenario says
+    /// nothing about scenarios, and that is not a claim that none exists.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scenarios: Vec<ScenarioEvidence>,
+}
+
+/// One scenario's verdict, carried on a requirement it names.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScenarioEvidence {
+    pub scenario: String,
+    /// `pass`, `fail`, `not-judged`, `blocked` or `awaiting-decision`,
+    /// the judge's own word.
+    pub verdict: &'static str,
+    /// Cycles a pass holds up to, when the sentence claims something no run
+    /// can show: a bounded pass closes a requirement only up to its bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound: Option<u32>,
+    /// Why, for a verdict that is neither a pass nor a fail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// What a classification's scenario evidence is about, said once for the
+/// whole classification and printed before any row.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScenarioEvidenceSummary {
+    /// The specification the examples are about, as the set names it.
+    pub doc_id: String,
+    pub rev: String,
+    /// The digest of the set the verdicts are about, so the evidence names
+    /// the exact examples and a later edit to them is visible.
+    pub set_sha256: String,
+    /// `origin` of the set: whose examples these are.
+    pub origin: &'static str,
+    /// The engine the driver ran them on. A verdict is about an engine.
+    pub engine: EvidenceEngine,
+    /// Whether any row was moved by the examples. False when they were not
+    /// used, and `why_not_used` says why: the evidence of a set that was
+    /// not judged, or is about another specification, is no evidence.
+    pub used: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub why_not_used: Option<String>,
+    /// Scenarios that name a requirement the list does not hold.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<ScenarioEvidenceProblem>,
+}
+
+/// The engine a driver says it ran the examples on, as the trace names it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EvidenceEngine {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// A scenario naming a requirement the list does not hold: the link is to
+/// nothing, so it cannot carry anything.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScenarioEvidenceProblem {
+    pub scenario: String,
+    pub requirement: String,
 }
 
 /// The comparison of a document against a manifest, one
@@ -1321,6 +1409,9 @@ pub struct Classification {
     /// different revision. A stale denominator is worth more than a
     /// clean comparison against it.
     pub revision_note: Option<String>,
+    /// What examples, if any, were held against these requirements. None
+    /// when none were given, which is not "none passed".
+    pub scenario_evidence: Option<ScenarioEvidenceSummary>,
 }
 
 impl Classification {
@@ -1374,6 +1465,9 @@ pub fn emit_classification_ndjson<W: std::io::Write + ?Sized>(
         RevisionMismatch {
             detail: &'a str,
         },
+        /// Which examples were held against the requirements, on which
+        /// engine, and whether they moved anything.
+        ScenarioEvidence(&'a ScenarioEvidenceSummary),
     }
 
     // First, before any count. A reader who stops after one line has the
@@ -1388,6 +1482,17 @@ pub fn emit_classification_ndjson<W: std::io::Write + ?Sized>(
         })
         .expect("Extraction serialises; every field is a unit enum")
     )?;
+    // Second, and before the first row: a `scenario-passed` that reaches a
+    // reader without the engine and the examples it is about is the pass
+    // read as larger than it is.
+    if let Some(evidence) = &classification.scenario_evidence {
+        writeln!(
+            writer,
+            "{}",
+            serde_json::to_string(&Line::ScenarioEvidence(evidence))
+                .expect("scenario evidence serialises; all fields are owned primitives")
+        )?;
+    }
 
     for outcome in &classification.outcomes {
         writeln!(
@@ -1691,6 +1796,7 @@ pub fn classify_citations(
             section: entry.section.clone(),
             at: entry.at.clone(),
             node_paths,
+            scenarios: Vec::new(),
         });
     }
 
@@ -1706,6 +1812,7 @@ pub fn classify_citations(
                 section: None,
                 at: None,
                 node_paths: paths.clone(),
+                scenarios: Vec::new(),
             });
         }
     }
@@ -1755,5 +1862,6 @@ pub fn classify_citations(
         outcomes,
         section_counts,
         revision_note,
+        scenario_evidence: None,
     }
 }

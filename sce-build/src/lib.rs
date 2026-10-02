@@ -227,6 +227,10 @@ pub mod resolve;
 /// reaches into the other's namespace for shared derive policy.
 pub mod rust_derive_policy;
 pub mod sce_attr;
+/// What a played example says about the requirement it names: a `shall_not`
+/// whose every scenario passed leaves `needs-scenario` for `scenario-passed`,
+/// and a failed scenario moves the requirement to `scenario-failed`.
+pub mod scenario_closure;
 /// What an engine driver observed running a scenario set, and the judgement
 /// of it against what the scenarios expect: pass, fail, not judged.
 pub mod scenario_judge;
