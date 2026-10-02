@@ -634,6 +634,22 @@ TOOLS = [
                                        "text": {"type": "string"}},
                     },
                 },
+                "companions_text": {
+                    "type": "array",
+                    "description": (
+                        "Documents a draft starts as child sessions (its "
+                        "`<invoke src>`), each under the name the draft's `src` "
+                        "gives it. They are built beside the drafts and are not "
+                        "themselves compared. With `documents` (paths) put them "
+                        "in the same directory as the draft instead. A draft whose "
+                        "child is not found cannot start it, and `undriven` says so."),
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"},
+                                       "text": {"type": "string"}},
+                    },
+                },
             },
         },
     },
@@ -1904,6 +1920,17 @@ def _validate_set_tool(args: dict, staging: _Staging) -> dict:
 
 def _compare_tool(args: dict, staging: _Staging) -> dict:
     documents = staging.many(args, "documents", "the drafts to compare")
+    # Documents a draft starts as child sessions, staged beside the drafts so the
+    # `src` a draft names finds them where the product looks. They are not drafts
+    # and are not compared; a draft that names none of them ignores them.
+    companions = args.get("companions_text")
+    if companions is not None:
+        if not isinstance(companions, list) or not companions:
+            raise ToolArgumentError("'companions_text' has to be a non-empty list of files")
+        for entry in companions:
+            if not isinstance(entry, dict):
+                raise ToolArgumentError("each 'companions_text' entry has a name and a text")
+            staging.write(entry.get("name"), entry.get("text"), "companions")
     # Staged drafts come back named relative to the staging directory; the
     # comparison runs the product on each, so it is handed where they are.
     located = [path if path.is_absolute() else staging.dir / path for path in documents]

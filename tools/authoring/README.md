@@ -186,6 +186,14 @@ the pseudocode page, the open questions each draft marks, the vocabulary,
 and — for statecharts — what the drafts do when driven alike. Each level
 comes back as the classes of drafts that agree.
 
+A draft that starts a child session (`<invoke src="child.scxml">`) is
+compared with its child: the documents its static `src` names are found beside
+the draft, the ones those start in turn too, and built with it, and a `src` that
+climbs out of the draft's directory or names no file is left alone (the draft then
+cannot start it, and `undriven` says so in the engine's words). Over MCP the child
+documents are handed as `companions_text`, staged beside the drafts; they are not
+drafts and are not compared.
+
 Behaviour is compared by driving each draft's Python lowering with the
 same seeded random drives, each draft in its own event names. Two drafts
 whose inputs are named differently are tried under every renaming of one

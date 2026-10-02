@@ -160,10 +160,109 @@ class ADesignThatStartsAChild(unittest.TestCase):
         self.assertEqual(1, reply["counts"]["pass"], reply["counts"])
 
 
+SETTLED = (f'<scxml {_NS} initial="run" name="other">'
+           '<state id="run"><transition event="x" target="end"/></state>'
+           '<final id="end"/></scxml>')
+
+
+class TheChildrenOfADraft(unittest.TestCase):
+    """Which documents a draft starts as child sessions, found without the product."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = pathlib.Path(self._tmp.name)
+
+    def children(self, document: pathlib.Path) -> list:
+        from sce_author.compare import _children_of
+
+        return [path.name for path in _children_of(document)]
+
+    def test_a_static_invoke_src_beside_the_draft_is_found_and_its_own_children_too(self):
+        (self.work / "parent.scxml").write_text(PARENT, encoding="utf-8")
+        (self.work / "child.scxml").write_text(
+            CHILD_ONE_TIMER.replace(
+                '<state id="a">',
+                '<state id="a"><invoke type="http://www.w3.org/TR/scxml/" '
+                'src="grandchild.scxml"/>'), encoding="utf-8")
+        (self.work / "grandchild.scxml").write_text(CHILD_ONE_TIMER, encoding="utf-8")
+        self.assertEqual(["child.scxml", "grandchild.scxml"],
+                         self.children(self.work / "parent.scxml"))
+
+    def test_a_name_with_no_file_behind_it_is_left_out_not_made_up(self):
+        (self.work / "parent.scxml").write_text(PARENT, encoding="utf-8")
+        self.assertEqual([], self.children(self.work / "parent.scxml"))
+
+    def test_a_src_that_climbs_out_of_the_drafts_directory_is_not_read(self):
+        inside = self.work / "drafts"
+        inside.mkdir()
+        (self.work / "child.scxml").write_text(CHILD_ONE_TIMER, encoding="utf-8")
+        (inside / "parent.scxml").write_text(
+            PARENT.replace('src="child.scxml"', 'src="../child.scxml"'), encoding="utf-8")
+        self.assertEqual([], self.children(inside / "parent.scxml"))
+
+    def test_a_document_that_does_not_parse_has_no_children(self):
+        (self.work / "broken.scxml").write_text("<scxml", encoding="utf-8")
+        self.assertEqual([], self.children(self.work / "broken.scxml"))
+
+
+@needs_the_generator
+class AComparisonStartsTheChildrenOfItsDrafts(unittest.TestCase):
+    """A comparison used to be given one document per draft, so the child a draft
+    starts was never built and the draft could not start. It was an honest answer
+    and a poor one: the drafts of a design with a child could not be compared at
+    all. The child is now built beside the draft that names it."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = pathlib.Path(self._tmp.name)
+
+    def test_a_draft_with_its_child_beside_it_is_driven(self):
+        from sce_author.compare import compare
+
+        (self.work / "parent.scxml").write_text(PARENT, encoding="utf-8")
+        (self.work / "child.scxml").write_text(CHILD_ONE_TIMER, encoding="utf-8")
+        (self.work / "other.scxml").write_text(SETTLED, encoding="utf-8")
+        behaviour = compare([self.work / "parent.scxml", self.work / "other.scxml"],
+                            _default_codegen(), drives=10, steps=6)["behaviour"]
+        self.assertEqual({}, behaviour["undriven"], behaviour)
+        self.assertGreater(behaviour["distinct_observations"]["parent.scxml"], 1, behaviour)
+
+    def test_the_tool_takes_the_children_as_text_and_builds_them_beside_the_drafts(self):
+        import io
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "compare", "arguments": {
+                "documents_text": [{"name": "parent.scxml", "text": PARENT},
+                                   {"name": "other.scxml", "text": SETTLED}],
+                "companions_text": [{"name": "child.scxml", "text": CHILD_ONE_TIMER}]}}}
+        output = io.StringIO()
+        mcp.serve(io.StringIO(json.dumps(request) + "\n"), output)
+        result = json.loads(output.getvalue())["result"]
+        self.assertFalse(result.get("isError"), result)
+        report = json.loads(result["content"][0]["text"])
+        self.assertEqual(["parent.scxml", "other.scxml"], report["documents"])
+        self.assertEqual({}, report["behaviour"]["undriven"], report["behaviour"])
+
+    def test_the_companions_are_not_drafts_and_a_bad_list_is_an_argument_error(self):
+        import io
+
+        for companions in ([], "child.scxml", [3]):
+            with self.subTest(companions=companions):
+                request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+                    "name": "compare", "arguments": {
+                        "documents_text": [{"name": "parent.scxml", "text": PARENT},
+                                           {"name": "other.scxml", "text": SETTLED}],
+                        "companions_text": companions}}}
+                output = io.StringIO()
+                mcp.serve(io.StringIO(json.dumps(request) + "\n"), output)
+                self.assertTrue(json.loads(output.getvalue())["result"].get("isError"))
+
+
 @needs_the_generator
 class ADesignThatCannotStartIsAnAnswer(unittest.TestCase):
-    """The same design handed to a tool that is given one document per draft, so
-    the child is never built and the parent cannot start it. That is the design's
+    """A draft whose child is not there cannot start it. That is the design's
     answer, said in the engine's words, not a traceback out of the tool."""
 
     def setUp(self):
@@ -174,12 +273,9 @@ class ADesignThatCannotStartIsAnAnswer(unittest.TestCase):
     def test_a_comparison_names_the_draft_it_could_not_start(self):
         from sce_author.compare import compare
 
-        settled = (f'<scxml {_NS} initial="run" name="other">'
-                   '<state id="run"><transition event="x" target="end"/></state>'
-                   '<final id="end"/></scxml>')
         (self.work / "parent.scxml").write_text(PARENT, encoding="utf-8")
-        (self.work / "child.scxml").write_text(CHILD_ONE_TIMER, encoding="utf-8")
-        (self.work / "other.scxml").write_text(settled, encoding="utf-8")
+        # No child.scxml beside it: nothing for the comparison to build.
+        (self.work / "other.scxml").write_text(SETTLED, encoding="utf-8")
         behaviour = compare([self.work / "parent.scxml", self.work / "other.scxml"],
                             _default_codegen(), drives=10, steps=6)["behaviour"]
         self.assertEqual("not judged", behaviour["verdict"], behaviour)

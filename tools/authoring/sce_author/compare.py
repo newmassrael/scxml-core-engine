@@ -70,8 +70,8 @@ from . import process, sandbox
 # a scenario walks time by the same rule. The name stays here so a test can play
 # under a smaller one.
 from .lowering import MAX_TIME_STOPS
-from .verify import (VerifyError, _default_codegen, _scratch, generate, pseudo_page,
-                     review_rows, unresolved_markers, validate_scxml)
+from .verify import (VerifyError, _default_codegen, _scratch, generate, generate_companions,
+                     pseudo_page, review_rows, unresolved_markers, validate_scxml)
 
 SCE_NAMESPACE = "http://sce.dev/ext"
 SCXML_NAMESPACE = "http://www.w3.org/2005/07/scxml"
@@ -196,6 +196,39 @@ class DraftNotPlayable(CompareError):
     bigger machine."""
 
 
+def _children_of(document: pathlib.Path) -> list:
+    """The documents a draft starts as child sessions, found beside it: each
+    static `<invoke src>`, and the ones those start in turn, in the order met.
+
+    ⚠ Only a file inside the draft's own directory. A draft is text somebody else
+    wrote, and a `src` that climbs out of its directory would have this tool read
+    and generate whatever it points at; the product resolves `src` against the
+    document's directory, and so does this, no further. A `srcexpr` is decided at
+    run time and names nothing here. A name with no file behind it is left out,
+    not made up."""
+    root = document.resolve().parent
+    found: list = []
+    pending = [document.resolve()]
+    seen = set(pending)
+    while pending:
+        current = pending.pop(0)
+        try:
+            tree = ET.parse(current)
+        except (ET.ParseError, OSError):
+            continue
+        for node in tree.getroot().iter():
+            if node.tag.rsplit("}", 1)[-1] != "invoke" or not node.get("src"):
+                continue
+            child = (current.parent / node.get("src")).resolve()
+            if (child in seen or not child.is_file()
+                    or root != child.parent and root not in child.parents):
+                continue
+            seen.add(child)
+            found.append(child)
+            pending.append(child)
+    return found
+
+
 class _Driven:
     """One draft, generated to Python and run from scratch per drive.
 
@@ -210,6 +243,13 @@ class _Driven:
         self.build = generate(document, codegen, into)
         if self.build.refusal:
             raise VerifyError(self.build.refusal)
+        # A child session the draft starts is imported by name when it starts, so
+        # it is built beside the draft: the documents its static `<invoke src>`
+        # names, found where the product looks for them. One that is not there is
+        # not invented; the draft then cannot start it and says so.
+        refusal = generate_companions(_children_of(document), codegen, into)
+        if refusal:
+            raise VerifyError(refusal)
         self.module = sandbox.load_module(into, document)
 
     def trace(self, steps) -> list:
