@@ -2554,6 +2554,25 @@ enum Commands {
         #[arg(long, value_name = "PATH")]
         scenarios: Option<String>,
     },
+    /// Say which of several acceptances still hold, and what moved in the ones
+    /// that do not.
+    ///
+    /// The question a shared profile raises: someone edits a rule, and every
+    /// specification that applied it has to be found. Each record is checked as
+    /// `acceptance-check` checks one, against its own variant, and the answer is
+    /// one JSON line per record (`holds`, and each lapse as data beside its
+    /// sentence, a rule's id and the places that cite it included), then a
+    /// summary line. It is a report: it exits 0 whenever it ran, and a record it
+    /// could not read is a line of its own (`unusable`), not the end of the run.
+    AcceptanceImpact {
+        /// Acceptance records written by `accept`.
+        #[arg(required = true, num_args = 1..)]
+        records: Vec<String>,
+        /// Root the records' paths are read against. One for all of them:
+        /// records of designs in separate trees are asked in separate runs.
+        #[arg(long)]
+        root: String,
+    },
     Requirements {
         /// SCXML file path. Several documents are read as ONE design, and
         /// then `--manifest` is required.
@@ -3380,6 +3399,7 @@ fn main() {
                 scenarios.as_deref(),
             ),
         ),
+        Commands::AcceptanceImpact { records, root } => cmd_acceptance_impact(&records, &root),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml, profile } => {
             cmd_unresolved(&scxml, profile.as_deref(), error_format)
@@ -3485,6 +3505,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::AcceptanceReport { .. }
         | Commands::Accept { .. }
         | Commands::AcceptanceCheck { .. }
+        | Commands::AcceptanceImpact { .. }
         | Commands::RequirementClosure { .. }
         | Commands::Unresolved { .. }
         | Commands::Coverage { .. }
@@ -9566,6 +9587,90 @@ fn cmd_acceptance_check(
             lapses: lapses.iter().map(ToString::to_string).collect(),
         });
     }
+}
+
+/// Subcommand: acceptance-impact.
+///
+/// Every record is asked the question `acceptance-check` asks of one, for the
+/// variant the record itself was taken for (the question here is what MOVED, not
+/// whether somebody asked about another variant), and the answer is a line each:
+///
+/// ```text
+/// {"v":1,"kind":"acceptance-impact","record":P,"variant":V,"holds":true|false,
+///  "lapses":[{"kind":"rule","id":"H2","places":3,"recorded":"…","current":"…",
+///             "message":"house rule H2, which …"}, …]}
+/// {"v":1,"kind":"acceptance-impact","record":P,"unusable":{"kind":K,"detail":D}}
+/// {"v":1,"kind":"acceptance-impact-summary","records":N,"holding":a,"lapsed":b,
+///  "unusable":c}
+/// ```
+///
+/// ⚠ A report, so the exit status is 0 whenever it ran: a record that cannot be
+/// read is `unusable` on its own line and the rest are still asked, since a scan
+/// that stops at the first bad record answers for nothing after it.
+fn cmd_acceptance_impact(records: &[String], root: &str) {
+    use sce_build::acceptance_record::AcceptanceRecord;
+
+    let (mut holding, mut lapsed, mut unusable) = (0usize, 0usize, 0usize);
+    let mut lines: Vec<serde_json::Value> = Vec::new();
+    for record in records {
+        let refused = |kind: &str, detail: String| {
+            serde_json::json!({
+                "v": 1, "kind": "acceptance-impact", "record": record,
+                "unusable": {"kind": kind, "detail": detail},
+            })
+        };
+        let text = match fs::read_to_string(record) {
+            Ok(text) => text,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused("read", format!("{record}: {e}")));
+                continue;
+            }
+        };
+        let loaded = match AcceptanceRecord::from_json(&text) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused(e.kind(), e.to_string()));
+                continue;
+            }
+        };
+        let found = match loaded.recheck(Path::new(root), &loaded.variant) {
+            Ok(found) => found,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused(e.kind(), e.to_string()));
+                continue;
+            }
+        };
+        if found.is_empty() {
+            holding += 1;
+        } else {
+            lapsed += 1;
+        }
+        let lapses: Vec<serde_json::Value> = found
+            .iter()
+            .map(|lapse| {
+                let mut one = serde_json::to_value(lapse).expect("a lapse serialises");
+                one["message"] = serde_json::Value::String(lapse.to_string());
+                one
+            })
+            .collect();
+        lines.push(serde_json::json!({
+            "v": 1, "kind": "acceptance-impact", "record": record,
+            "variant": loaded.variant, "holds": found.is_empty(), "lapses": lapses,
+        }));
+    }
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-impact-summary", "records": records.len(),
+        "holding": holding, "lapsed": lapsed, "unusable": unusable,
+    }));
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
 }
 
 /// Judge every claim pointing out of a document — Requirement-closure

@@ -315,7 +315,13 @@ struct RecordWire {
 }
 
 /// One way what was accepted is no longer what is there.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serialised for `acceptance-impact`, which reports many records at once and
+/// owes a reader the lapse as data (`kind`, and the fields below under their own
+/// names) beside the sentence, so no consumer has to read a rule's id or a moved
+/// file out of prose. `acceptance-check` keeps saying it as its sentences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Lapse {
     /// The record was taken for a different variant than the one asked
     /// about.

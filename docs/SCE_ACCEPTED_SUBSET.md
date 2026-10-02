@@ -3563,7 +3563,32 @@ an empty `quote` is refused. Each applied rule in the acceptance record repeats 
 says on what authority the design applied it. They are recorded as the rule stood
 at acceptance and are not compared afterwards: the lapse of a rule is about what it
 says. The authoring server's `scxml_house_rule` makes such rules from the owner's
-words and saves nothing until the client reports the owner's yes.
+words and saves nothing until the client reports the owner's yes. On a local server
+it can then write the profile (`out`): whole or not at all (a temporary file renamed
+over the target), and over a file already there only when that file still holds the
+bytes the rules were added to, so an edit made since is never overwritten. The
+profile's revision is its digest, which the acceptance record already pins; no
+counter is kept beside it.
+
+#### Which acceptances a change touches
+
+A profile is shared by every specification an owner keeps, and editing a rule raises
+a question `acceptance-check` answers one record at a time. `sce-codegen
+acceptance-impact RECORD... --root DIR` asks it of many: each record is rechecked
+for the variant it was taken for, and the answer is one JSON line per record
+(`record`, `variant`, `holds`, and `lapses`), then a summary line (`records`,
+`holding`, `lapsed`, `unusable`). A lapse is data beside its sentence: `kind`
+(`variant`, `manifest`, `missing`, `moved`, `added`, `unparseable`, `source`, `rule`,
+`not-authored-from`), the fields of that kind under their own names, and `message`,
+the sentence `acceptance-check` would have printed. For a house rule that is `id`,
+`places`, `recorded` and `current` (null when the rule is gone), so a consumer finds
+the designs that applied a changed rule without reading an id out of prose. A design
+accepted under the profile that did not apply the changed rule still lapses as
+`source`, since the file it was accepted under is other bytes; one accepted under no
+profile holds. It is a report: exit 0 whenever it ran, and a record that cannot be
+read is a line of its own (`unusable`, with `kind` and `detail`) that does not end
+the scan. The authoring server offers it, on a local server only, as
+`scxml_acceptance_impact`, which also gathers the rule lapses by rule id.
 
 The scenario set (§2.18) is pinned the same way under the role `examples`:
 `accept --scenarios` and `acceptance-check --scenarios`, at most one, compared by

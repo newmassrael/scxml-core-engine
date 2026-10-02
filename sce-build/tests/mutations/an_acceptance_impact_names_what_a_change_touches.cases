@@ -1,0 +1,75 @@
+# Mutation cases for "an acceptance impact names what a change touches".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_acceptance_impact_names_what_a_change_touches.cases`.
+#
+# `acceptance-impact` rechecks many acceptance records at once after a shared profile
+# changed, and answers each lapse as data beside its sentence, so the designs that
+# APPLIED a changed rule are found without reading an id out of prose. Five things
+# are easy to get wrong and read as success: the question asked of each record is
+# another variant than its own (every record then lapses, or none does), the lapse
+# loses its `kind` or its sentence on the way out, a record that cannot be read ends
+# the scan so everything after it is unanswered, and the summary counts the wrong
+# way round.
+#
+# Each case below takes one of those away and must make a test red:
+# `an_acceptance_impact_names_what_a_change_touches.rs`, which runs the binary over
+# four designs under one profile, edits a rule, and reads the lines back.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_acceptance_impact_names_what_a_change_touches
+mutation_targets sce-build/src/bin/sce_codegen.rs sce-build/src/acceptance_record.rs
+# The oracle is the test that runs the binary. The two source files above are what
+# is MUTATED, not what judges, and `sce_codegen.rs` carries other suites' fixture
+# guard in its text, which would make this round look as if it needed the W3C
+# fixture server when it does not.
+mutation_oracles sce-build/tests/an_acceptance_impact_names_what_a_change_touches.rs
+
+# ── The question asked of each record ───────────────────────────────
+
+mutation_case "each record is asked about another variant than its own" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        let found = match loaded.recheck(Path::new(root), &loaded.variant) {",
+     "        let found = match loaded.recheck(Path::new(root), \"another\") {")
+PY
+
+# ── What a lapse is on the way out ──────────────────────────────────
+
+mutation_case "a lapse loses its kind" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "#[serde(tag = \"kind\", rename_all = \"kebab-case\")]\npub enum Lapse {",
+     "#[serde(rename_all = \"kebab-case\")]\npub enum Lapse {")
+PY
+
+mutation_case "a lapse's sentence does not ride beside its data" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                one[\"message\"] = serde_json::Value::String(lapse.to_string());",
+     "                one[\"message\"] = serde_json::Value::Null;")
+PY
+
+# ── A scan that goes on, and a summary that counts ──────────────────
+
+mutation_case "a record that cannot be read ends the scan" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                lines.push(refused(\"read\", format!(\"{record}: {e}\")));\n                continue;",
+     "                lines.push(refused(\"read\", format!(\"{record}: {e}\")));\n                break;")
+PY
+
+mutation_case "the summary counts holding and lapsed the wrong way round" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        \"holding\": holding, \"lapsed\": lapsed, \"unusable\": unusable,",
+     "        \"holding\": lapsed, \"lapsed\": holding, \"unusable\": unusable,")
+PY
+
+mutation_case "a record that still holds is counted as lapsed" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        if found.is_empty() {\n            holding += 1;",
+     "        if !found.is_empty() {\n            holding += 1;")
+PY
