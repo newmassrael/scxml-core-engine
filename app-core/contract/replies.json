@@ -1,0 +1,127 @@
+{
+  "about": "Every reply of the command layer, produced by tests/contract.rs and read by the screen's tests.",
+  "answers": {
+    "create_work": {
+      "created_at": "2026-10-03T09:00:00Z",
+      "id": "<work-id>",
+      "title": "Door lock"
+    },
+    "describe": {
+      "command_set_version": 1,
+      "commands": [
+        "describe",
+        "list_works",
+        "create_work",
+        "read_work",
+        "read_source",
+        "save_source",
+        "history"
+      ],
+      "root": "<root>"
+    },
+    "history": {
+      "entries": [
+        {
+          "parent": null,
+          "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
+          "saved_at": "2026-10-03T09:00:00Z"
+        },
+        {
+          "parent": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
+          "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+          "saved_at": "2026-10-03T09:00:00Z"
+        }
+      ]
+    },
+    "list_works": {
+      "unreadable": [],
+      "works": [
+        {
+          "created_at": "2026-10-03T09:00:00Z",
+          "id": "<work-id>",
+          "title": "Door lock"
+        }
+      ]
+    },
+    "list_works_empty": {
+      "unreadable": [],
+      "works": []
+    },
+    "read_source": {
+      "source": {
+        "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+        "text": "The lock opens when the code matches. Three misses lock it."
+      }
+    },
+    "read_source_none": {
+      "source": null
+    },
+    "read_source_revision": {
+      "source": {
+        "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
+        "text": "The lock opens when the code matches."
+      }
+    },
+    "read_work": {
+      "head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "work": {
+        "created_at": "2026-10-03T09:00:00Z",
+        "id": "<work-id>",
+        "title": "Door lock"
+      }
+    },
+    "read_work_no_text": {
+      "head": null,
+      "work": {
+        "created_at": "2026-10-03T09:00:00Z",
+        "id": "<work-id>",
+        "title": "Door lock"
+      }
+    },
+    "save_source_first": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+    },
+    "save_source_next": {
+      "outcome": "saved",
+      "parent": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
+      "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+    },
+    "save_source_unchanged": {
+      "outcome": "unchanged",
+      "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+    }
+  },
+  "command_set_version": 1,
+  "refusals": {
+    "bad-request": {
+      "kind": "bad-request",
+      "message": "unknown field `extra`, there are no fields"
+    },
+    "conflict": {
+      "detail": {
+        "base": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
+        "current": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "kind": "conflict",
+      "message": "the text was saved from 06e8bce08f5a, and the work is now at 7dc2f2d866df: nothing was written. Read the current text, decide what the two become, and save again from it"
+    },
+    "invalid-id": {
+      "kind": "invalid-id",
+      "message": "`../x` is not a work id (lowercase letters, digits and hyphens)"
+    },
+    "invalid-title": {
+      "kind": "invalid-title",
+      "message": "the title cannot be used: it is empty"
+    },
+    "not-found": {
+      "kind": "not-found",
+      "message": "work `absent` does not exist"
+    },
+    "unknown-command": {
+      "kind": "unknown-command",
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history"
+    }
+  }
+}
