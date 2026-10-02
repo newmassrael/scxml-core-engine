@@ -14,7 +14,7 @@ use std::fs;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use sce_app_core::clock::rfc3339_utc;
+use sce_app_core::clock::utc_timestamp;
 use sce_app_core::{FixedClock, Revision, Saved, StoreError, WorkId, WorkStore, MAX_SOURCE_BYTES};
 
 fn store(label: &str) -> WorkStore<FixedClock> {
@@ -61,7 +61,7 @@ fn only_sixty_four_lowercase_hex_characters_are_a_revision() {
 }
 
 #[test]
-fn the_clock_writes_rfc3339_utc_across_the_calendar() {
+fn the_clock_writes_utc_timestamps_across_the_calendar() {
     for (seconds, text) in [
         (0, "1970-01-01T00:00:00Z"),
         (951_782_400, "2000-02-29T00:00:00Z"),
@@ -70,7 +70,7 @@ fn the_clock_writes_rfc3339_utc_across_the_calendar() {
         (4_102_444_800, "2100-01-01T00:00:00Z"),
         (4_107_542_399, "2100-02-28T23:59:59Z"),
     ] {
-        assert_eq!(rfc3339_utc(seconds), text, "{seconds}");
+        assert_eq!(utc_timestamp(seconds), text, "{seconds}");
     }
 }
 
@@ -93,8 +93,15 @@ fn a_work_is_created_listed_and_read_back() {
 #[test]
 fn a_title_in_another_script_keeps_its_title_and_gets_a_plain_folder() {
     let store = store("script");
-    let work = store.create_work("자동문 제어기").unwrap();
-    assert_eq!(work.title, "자동문 제어기");
+    // Hangul syllables, written as escapes so the source stays ASCII; what is
+    // measured is that the title survives and the folder name does not follow it.
+    let title = "\u{C790}\u{B3D9}\u{BB38} \u{C81C}\u{C5B4}\u{AE30}";
+    assert!(
+        title.chars().any(|c| c.len_utf8() == 3),
+        "the fixture must hold a multi-byte scalar, or this test passes on ASCII"
+    );
+    let work = store.create_work(title).unwrap();
+    assert_eq!(work.title, title);
     assert!(
         work.id.as_str().starts_with("work-"),
         "the folder name is {}",

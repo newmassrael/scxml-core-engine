@@ -246,6 +246,22 @@ const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.6;
 /// flipping the flag in the workflow is not, and that is what this file exists
 /// to catch.
 const LANES: &[(&str, f64, u32, u32, u32)] = &[
+    // ⚠ STAND-IN, borrowed 2026-10-03 when the lane landed: it has no run of
+    // its own that has finished (the first sat queued on the hosted pool), so
+    // the median below is `clippy-check.yml`'s (7.7) and not an observation.
+    // The nearest lane: a cached debug build of a Rust workspace, then clippy
+    // with warnings denied, then a test run.
+    //
+    // The residue, stated rather than hidden: this lane compiles Tauri's
+    // dependency tree and runs `npm ci` and the screen's tests besides. Warm
+    // that took 66s on the 32-core build machine and the first compile of the
+    // Tauri shell alone 295s, so a COLD hosted run may run several times the
+    // borrowed figure. It would have to pass 17.6 to change the
+    // classification, and the lane already declares `false` like every other,
+    // so the cost of being wrong is a row filed under the wrong population,
+    // not a missing guard. Replace it after 25 runs of its own, and delete
+    // this paragraph when the number is its own.
+    ("app.yml", 7.7, 0, 0, 0),
     // ⚠ STAND-IN, re-borrowed 2026-09-24 when the lane gained a second job
     // that builds `sce-codegen` (its 86 run-driven cases had been skipping).
     // A run now ends with its slower job, so the nearest lane is no longer

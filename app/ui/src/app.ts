@@ -581,7 +581,7 @@ function readKept(storage: Environment["storage"], key: string): string | null {
   }
 }
 
-function formatTime(rfc3339: string, locale: Locale): string {
-  const date = new Date(rfc3339);
-  return Number.isNaN(date.getTime()) ? rfc3339 : date.toLocaleString(locale);
+function formatTime(timestamp: string, locale: Locale): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleString(locale);
 }

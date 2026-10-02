@@ -109,8 +109,15 @@ fn a_work_is_created_saved_and_read_through_the_command() {
 #[test]
 fn a_text_with_a_newline_and_a_script_other_than_latin_survives_the_pipe() {
     let root = common::scratch("cli-text");
-    let id = create(&root, "문 제어");
-    let text = "첫 줄\r\n두 번째 줄\n\"인용\" \\ 끝";
+    // Hangul syllables, three UTF-8 bytes to one scalar each, written as escapes
+    // so the source stays ASCII; what is measured is the width, not the script.
+    let id = create(&root, "\u{BB38} \u{C81C}\u{C5B4}");
+    let text =
+        "\u{CCAB} \u{C904}\r\n\u{B450} \u{BC88}\u{C9F8} \u{C904}\n\"\u{C778}\u{C6A9}\" \\ \u{B05D}";
+    assert!(
+        text.chars().any(|c| c.len_utf8() == 3),
+        "the fixture must hold a multi-byte scalar, or this test passes on ASCII"
+    );
     ok(&run(
         &root,
         "save_source",

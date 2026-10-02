@@ -25,7 +25,7 @@ impl Clock for SystemClock {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        rfc3339_utc(seconds)
+        utc_timestamp(seconds)
     }
 }
 
@@ -39,12 +39,13 @@ impl Clock for FixedClock {
     }
 }
 
-/// `seconds` since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`.
+/// `seconds` since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ` (the profile of
+/// RFC 3339 that every JSON reader and `Date` parse accepts).
 ///
 /// The civil-date step is Howard Hinnant's days-to-date algorithm, which is
 /// exact for the proleptic Gregorian calendar and needs no date library for the
 /// one conversion this crate makes.
-pub fn rfc3339_utc(seconds: u64) -> String {
+pub fn utc_timestamp(seconds: u64) -> String {
     let days = (seconds / 86_400) as i64;
     let in_day = seconds % 86_400;
     let (hour, minute, second) = (in_day / 3_600, (in_day % 3_600) / 60, in_day % 60);
