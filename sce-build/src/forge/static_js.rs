@@ -629,7 +629,7 @@ fn lower_parsed(
     let target = JsTarget::new(called);
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
-    let lowering = lower(&mut lowered, &machine, &[], &target).map_err(refuse)?;
+    let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
     let library_call = format!("{RUNTIME_GLOBAL}.");

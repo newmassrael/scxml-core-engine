@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ede34169fc1f632a670b7784480c7507defb86431667cb2be0b8280991dff333
+// source-hash: 78cff4123e8006198902c094ef3d33990d8b7e13a954f8edafc770a31099d4cc
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_fields.scxml
@@ -42,7 +42,7 @@ sealed interface StaticRecordFieldsEvent : Event {
 data class StaticRecordFieldsDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
 
 
-// ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
+// ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
 /** SCE Accepted Subset §2.15: a `record:Day` datamodel value. */
 data class StaticRecordFieldsDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte) {
     /** This value as a saved state writes it. */

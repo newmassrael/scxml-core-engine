@@ -1,0 +1,28 @@
+{
+  "machine": "static_enum",
+  "about": "Enum variables: the layout starts at a variant; a guard compares it with `===` to a variant and `!==` to another variable of the enum; an assignment stores a variant, another variable or a conditional of two variants. A saved or observed value is the variant's declared name, `agenda_list`, not the constant a backend spells for it. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "each variable starts at the variant its expr names",
+      "expect": { "state": "browsing", "variables": { "layout": "month", "previous": "month", "changes": 0 } } },
+
+    { "note": "a month zooms to a day, remembering the month",
+      "event": "zoom", "expect": { "variables": { "layout": "day", "previous": "month", "changes": 1 } } },
+    { "note": "back: the layout differs from the one it came from",
+      "event": "back", "expect": { "variables": { "layout": "month", "previous": "month", "changes": 2 } } },
+    { "note": "back again: the two are equal, so the guard `layout !== previous` is false",
+      "event": "back", "expect": { "variables": { "layout": "month", "previous": "month", "changes": 2 } } },
+
+    { "note": "a conditional of two variants: a month swaps to a week",
+      "event": "swap", "expect": { "variables": { "layout": "week", "previous": "month", "changes": 3 } } },
+    { "event": "zoom", "expect": { "variables": { "layout": "day", "previous": "week", "changes": 4 } } },
+    { "event": "back", "expect": { "variables": { "layout": "week", "previous": "week", "changes": 5 } } },
+    { "note": "a week swaps to a month",
+      "event": "swap", "expect": { "variables": { "layout": "month", "previous": "week", "changes": 6 } } },
+
+    { "note": "a variant spelled with an underscore is saved as the document wrote it",
+      "event": "agenda", "expect": { "variables": { "layout": "agenda_list", "previous": "month", "changes": 7 } } },
+    { "note": "no zoom transition takes an agenda: nothing changes",
+      "event": "zoom", "expect": { "variables": { "layout": "agenda_list", "previous": "month", "changes": 7 } } },
+    { "event": "back", "expect": { "variables": { "layout": "month", "previous": "month", "changes": 8 } } }
+  ]
+}

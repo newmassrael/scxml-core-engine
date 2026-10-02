@@ -54,6 +54,7 @@ pub fn check(
     let judge = Judge {
         scope: &scope,
         enums,
+        enum_vars: enum_variables(&scope),
         diag_label,
         read: Default::default(),
     };
@@ -69,6 +70,10 @@ pub fn check(
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
         {
             judge.record(&plain, var, alias, &model.imported_records)?;
+            continue;
+        }
+        if let Some(alias) = judge.enum_vars.get(&var.id) {
+            judge.enum_variable(&plain, var, alias, &model.imported_enums)?;
             continue;
         }
         if var.expr.trim().is_empty() {
@@ -182,9 +187,31 @@ fn variable_type(var: &Variable) -> InferredType {
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
+/// The enum each variable declared `enum:<alias>` holds, by the variable's id
+/// — what [`crate::forge::static_enum`] asks to tell an enum value from a
+/// number that happens to share its inferred type.
+fn enum_variables(scope: &StaticScope) -> std::collections::BTreeMap<String, String> {
+    scope
+        .variables
+        .iter()
+        .filter_map(|var| {
+            let Some(crate::forge::model::SceType::Enum(reference)) = var
+                .value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::scalar)
+            else {
+                return None;
+            };
+            Some((var.id.clone(), reference.alias.clone()))
+        })
+        .collect()
+}
+
 struct Judge<'a> {
     scope: &'a StaticScope,
     enums: &'a [StaticEnum],
+    /// Each enum-typed variable's id and the alias of the enum it holds.
+    enum_vars: std::collections::BTreeMap<String, String>,
     diag_label: &'a str,
     /// Every name an expression of the document reads or calls, so an
     /// imported algorithm nothing calls is found.
@@ -223,7 +250,96 @@ impl<'a> Judge<'a> {
         if let Some(list) = self.scope.list_read_as_value(expr) {
             return Err(place(list_read_refusal(&list)));
         }
-        judge_into(expr, ctx, expected).map_err(place)
+        let ty = judge_into(expr, ctx, expected).map_err(place)?;
+        // An enum value is typed `Unknown`, so the slot cannot refuse it a
+        // number's place: say here where it may stand and where it may not.
+        if let Some(alias) = self.value_enum(ctx, expr).map_err(place)? {
+            if let Expected::Slot(slot) = expected {
+                if !matches!(slot, InferredType::Unknown) {
+                    return Err(place(
+                        crate::forge::error::ExprError::UnsupportedConstruct {
+                            construct: format!("a value of the enum `{alias}` where a number or a bool is expected"),
+                            observed: Some(expr.trim().to_string()),
+                        }
+                        .at(None),
+                    ));
+                }
+            }
+        }
+        Ok(ty)
+    }
+
+    /// The enum `expr` is a value of ([`crate::forge::static_enum`]), refused
+    /// when it uses one for what an enum value is not for.
+    fn value_enum(
+        &self,
+        ctx: &TypeCtx<'_>,
+        expr: &str,
+    ) -> Result<Option<String>, crate::forge::expr::Refusal> {
+        crate::forge::static_enum::value_enum(expr, ctx, &|name| self.enum_vars.get(name).cloned())
+    }
+
+    /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant
+    /// of that enum, another variable of it, or a conditional of the two.
+    fn expr_of_enum(
+        &self,
+        ctx: &TypeCtx<'_>,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        alias: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let place = |refusal: crate::forge::expr::Refusal| {
+            Located::in_file(
+                ExpressionSite::new(expr, spelling).place(refusal),
+                self.diag_label,
+            )
+        };
+        self.expr(ctx, expr, spelling, Expected::Hint(InferredType::Unknown))?;
+        match self.value_enum(ctx, expr).map_err(place)? {
+            Some(held) if held == alias => Ok(()),
+            _ => Err(place(
+                crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a value that is not of the enum `{alias}` for a variable declared \
+                         enum:{alias} (write `{alias}.<variant>`, or another variable of that enum)"
+                    ),
+                    observed: Some(expr.trim().to_string()),
+                }
+                .at(None),
+            )),
+        }
+    }
+
+    /// A variable declared `enum:<alias>`: the enum is a closed set the
+    /// document imports, and the variable starts at one of its variants.
+    fn enum_variable(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+        alias: &str,
+        enums: &std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    ) -> Result<(), Located<ForgeError>> {
+        // An alias the parser admitted names an import; without sibling files
+        // it has no enum here, and nothing to judge against.
+        if let Some(model) = enums.get(alias) {
+            // A machine holds a declared variant and nothing else; the open
+            // set's value that no variant names has no type to be held in.
+            if !model.strict_variants {
+                let spelling = var.value_type_spelling.as_ref();
+                return Err(self.rule_at(
+                    format!("<data id=\"{}\" sce:type=\"enum:{alias}\">", var.id),
+                    "a variable holds a closed enum: the enum declares \
+                     sce:strict-variants=\"false\", which admits values no variant names",
+                    spelling.map(|s| s.row()),
+                    spelling.map(|s| s.col()),
+                    "",
+                    alias,
+                ));
+            }
+        }
+        // A `<data>` with no `expr` is refused before this pass is asked, so
+        // the value is written.
+        self.expr_of_enum(ctx, &var.expr, var.expr_spelling.as_ref(), alias)
     }
 
     /// Note every name `expr` reads or calls ([`Judge::read`]).
@@ -447,8 +563,8 @@ impl<'a> Judge<'a> {
                 "a <param> crosses to the host as text and as a JSON value, which every \
                  backend spells alike for a bool, a string, an integer of at most 32 bits \
                  and a real; a 64-bit integer (which a backend that reads numbers through \
-                 a double would carry with its low bits wrong), bytes, a list and a record \
-                 have no such spelling yet",
+                 a double would carry with its low bits wrong), bytes, a list, a record and \
+                 an enum have no such spelling yet",
                 line,
                 col,
                 state,
@@ -542,12 +658,18 @@ impl<'a> Judge<'a> {
                     action.spellings.get("location"),
                     Expected::Hint(InferredType::Unknown),
                 )?;
-                self.expr(
-                    ctx,
-                    &action.expr,
-                    action.spellings.get("expr"),
-                    Expected::Slot(slot),
-                )?;
+                // An enum variable's slot is its enum, which no inferred type
+                // names: the value must be one of that enum's.
+                if let Some(alias) = self.enum_vars.get(location) {
+                    self.expr_of_enum(ctx, &action.expr, action.spellings.get("expr"), alias)?;
+                } else {
+                    self.expr(
+                        ctx,
+                        &action.expr,
+                        action.spellings.get("expr"),
+                        Expected::Slot(slot),
+                    )?;
+                }
             }
             "if" if !action.is_cpp_condition && !action.is_kt_condition => {
                 self.expr(

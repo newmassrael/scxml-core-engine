@@ -2544,6 +2544,11 @@ impl SCXMLParser {
             Default::default()
         };
 
+        // The enums the document imports, kept on the model: an `enum:<alias>`
+        // variable is declared from one, and a backend that lowers the document
+        // declares its type from the same model.
+        model.imported_enums = imported_enums.clone();
+
         // SCE Accepted Subset §2.15 — under `datamodel="sce-static"` every
         // expression is judged against the typed scope here, after the
         // imported schemas are resolved (a transition's payload is part of

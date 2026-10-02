@@ -2632,6 +2632,12 @@ pub struct SCXMLModel {
     /// and, like it, empty without sibling files and not serialized.
     #[serde(skip)]
     pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The enums a `sce-static` document imports, keyed by import alias — what
+    /// an `enum:<alias>` variable names and an `<alias>.<variant>` expression
+    /// refers to (SCE Accepted Subset §2.15). Resolved where the document is
+    /// parsed; empty without sibling files and not serialized.
+    #[serde(skip)]
+    pub imported_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// The algorithms a `sce-static` document imports, each with the
     /// signature its import resolved to — what an expression calls as
     /// `Alias(args)` (SCE Accepted Subset §2.15). Resolved from sibling files

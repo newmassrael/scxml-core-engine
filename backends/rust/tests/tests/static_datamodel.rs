@@ -21,6 +21,9 @@ use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterData, StaticCounterObserve, StaticCounterPersist, StaticCounterPolicy,
     StaticCounterState,
 };
+use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
+    StaticEnumObserve, StaticEnumPersist, StaticEnumPolicy, StaticEnumViewModeEnum,
+};
 use sce_rust_tests::integration::static_datamodel::static_history_sm::{
     StaticHistoryObserve, StaticHistoryPersist, StaticHistoryPolicy, StaticHistoryState,
 };
@@ -615,6 +618,88 @@ fn a_state_another_backend_saved_is_restored() {
         3,
         "the restored machine runs on from the saved values"
     );
+}
+
+// ── static_enum: a variable that holds a variant of an imported enum ──────
+
+const SHARED_ENUM: &str =
+    include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_enum.json");
+
+fn layouts() -> Engine<StaticEnumPolicy> {
+    let mut engine = Engine::new(StaticEnumPolicy::new());
+    engine.initialize();
+    engine
+}
+
+fn send(engine: &mut Engine<StaticEnumPolicy>, event: &str) {
+    engine.raise_external_by_name(event, "");
+    engine.step();
+}
+
+#[test]
+fn an_enum_variable_starts_at_its_variant_and_the_snapshot_carries_it() {
+    let engine = layouts();
+    assert_eq!(engine.policy().layout(), StaticEnumViewModeEnum::Month);
+    assert_eq!(
+        engine.snapshot().data.layout,
+        StaticEnumViewModeEnum::Month,
+        "a host reads the variable as the machine's own enum type"
+    );
+}
+
+#[test]
+fn an_enum_variable_is_saved_as_the_name_the_document_declares() {
+    // The same run the Kotlin suite makes: `agenda_list`, with its
+    // underscore, is the document's name for the variant — not the constant
+    // this backend spells (`AgendaList`) nor Kotlin's (`AGENDA_LIST`).
+    let mut engine = layouts();
+    send(&mut engine, "swap");
+    send(&mut engine, "agenda");
+    assert_eq!(engine.policy().layout(), StaticEnumViewModeEnum::AgendaList);
+    assert_eq!(engine.save().expect("saves").to_json(), SHARED_ENUM.trim());
+}
+
+#[test]
+fn a_state_another_backend_saved_holds_an_enum_that_is_restored() {
+    let mut restored = Engine::<StaticEnumPolicy>::restore(
+        StaticEnumPolicy::new(),
+        &SavedState::from_json(SHARED_ENUM).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(
+        restored.policy().layout(),
+        StaticEnumViewModeEnum::AgendaList
+    );
+    // `previous` is the machine's own and was restored too: back goes to it.
+    send(&mut restored, "back");
+    assert_eq!(restored.policy().layout(), StaticEnumViewModeEnum::Week);
+}
+
+#[test]
+fn a_saved_enum_value_that_is_not_a_declared_variant_is_refused() {
+    for (written, wanted) in [
+        // Not a variant of the enum at all.
+        (r#""layout":"yearly""#, "is not a variant of ViewMode"),
+        // The constant a backend spells for it is not the name the document
+        // declares, so it is not what a saved state holds.
+        (r#""layout":"AgendaList""#, "is not a variant of ViewMode"),
+        (r#""layout":"AGENDA_LIST""#, "is not a variant of ViewMode"),
+        // A number is not a name.
+        (r#""layout":3"#, "is not a text"),
+    ] {
+        let json = SHARED_ENUM
+            .trim()
+            .replace(r#""layout":"agenda_list""#, written);
+        let refusal = refused(Engine::<StaticEnumPolicy>::restore(
+            StaticEnumPolicy::new(),
+            &SavedState::from_json(&json).expect("reads"),
+        ));
+        assert!(refusal.reason().contains(wanted), "{written}: {refusal}");
+        assert!(
+            refusal.reason().contains("layout"),
+            "names the variable: {refusal}"
+        );
+    }
 }
 
 #[test]

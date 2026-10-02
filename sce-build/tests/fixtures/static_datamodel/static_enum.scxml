@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): enum variables —
+  the layout a calendar screen shows its days in, and the layout it came from.
+  A variable starts at a variant, is compared with `===` and `!==` to a variant
+  or to another variable of the same enum, takes a conditional of two
+  variants, and is read by the host through the snapshot.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="browsing" datamodel="sce-static" name="static_enum">
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="previous" sce:type="enum:ViewMode" expr="ViewMode.month"/>
+    <data id="changes" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="browsing">
+    <!-- A month zooms to a day, remembering where it came from. -->
+    <transition event="zoom" cond="layout === ViewMode.month" type="internal">
+      <assign location="previous" expr="layout"/>
+      <assign location="layout" expr="ViewMode.day"/>
+      <assign location="changes" expr="changes + 1"/>
+    </transition>
+    <transition event="zoom" cond="layout === ViewMode.week" type="internal">
+      <assign location="previous" expr="layout"/>
+      <assign location="layout" expr="ViewMode.day"/>
+      <assign location="changes" expr="changes + 1"/>
+    </transition>
+    <!-- Back goes to where the screen came from, when it is not there. -->
+    <transition event="back" cond="layout !== previous" type="internal">
+      <assign location="layout" expr="previous"/>
+      <assign location="changes" expr="changes + 1"/>
+    </transition>
+    <!-- A conditional of two variants is a value of the enum. -->
+    <transition event="swap" type="internal">
+      <assign location="previous" expr="layout"/>
+      <assign location="layout" expr="layout === ViewMode.week ? ViewMode.month : ViewMode.week"/>
+      <assign location="changes" expr="changes + 1"/>
+    </transition>
+    <transition event="agenda" type="internal">
+      <assign location="previous" expr="layout"/>
+      <assign location="layout" expr="ViewMode.agenda_list"/>
+      <assign location="changes" expr="changes + 1"/>
+      <log label="layout" expr="layout"/>
+    </transition>
+  </state>
+</scxml>

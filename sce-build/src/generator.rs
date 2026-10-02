@@ -2436,10 +2436,10 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             // refuses is refused at render, and reserves only the rest here.
             let mut payload_events = native.payload_events.clone();
             if let Ok(lowering) =
-                crate::forge::static_lowering::lower_kotlin(&mut lowered, &machine_name, &[])
+                crate::forge::static_lowering::lower_kotlin(&mut lowered, &machine_name)
             {
                 payload_events.extend(lowering.payload_events);
-                out.push_str(&lowering.record_defs.join("\n"));
+                out.push_str(&lowering.type_defs.join("\n"));
             }
             let payload =
                 crate::forge::generator::build_kotlin_event_payload(&model, &payload_events);
@@ -2513,7 +2513,7 @@ fn render_rust(
     // payload channel is built, since the events whose payload a lowered
     // expression reads are ones that channel must carry.
     let static_lowering =
-        crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name, &[])?;
+        crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name)?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .iter()
@@ -2619,9 +2619,10 @@ fn render_rust(
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
-        static_record_defs => static_lowering.record_defs.join("\n\n"),
+        static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
+        static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
         static_saved_shape => &static_lowering.saved_shape,
     };
     tmpl.render(ctx).map_err(render_error)
@@ -3097,10 +3098,10 @@ fn render_kotlin(
     // SCE Accepted Subset §2.15: a `sce-static` machine's expressions are
     // lowered to native Kotlin on this clone, into the slots the templates
     // already render natively; its variables come back as field
-    // declarations. The statechart carries no enum imports into its unit, so
-    // the scope names none.
+    // declarations. An enum a variable is declared as is declared in the
+    // unit; the statechart imports no enum document's own.
     let static_lowering =
-        crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &native_machine_name, &[])?;
+        crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &native_machine_name)?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .union(&static_lowering.payload_events)
@@ -3177,7 +3178,7 @@ fn render_kotlin(
                 .filter(|f| f.published)
                 .collect::<Vec<_>>()
         ),
-        static_record_defs => static_lowering.record_defs.join("\n"),
+        static_type_defs => static_lowering.type_defs.join("\n"),
         static_imports => &static_lowering.imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
         static_saved_shape => &static_lowering.saved_shape,

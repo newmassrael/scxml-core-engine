@@ -31,10 +31,10 @@ PY
 # `uint32`.
 mutation_case "an assignment is not judged against its variable" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     """                    action.spellings.get("expr"),
-                    Expected::Slot(slot),""",
-     """                    action.spellings.get("expr"),
-                    Expected::Hint(slot),""")
+     """                        action.spellings.get("expr"),
+                        Expected::Slot(slot),""",
+     """                        action.spellings.get("expr"),
+                        Expected::Hint(slot),""")
 PY
 
 # The scope opens: a name nothing declares is admitted, which is the one

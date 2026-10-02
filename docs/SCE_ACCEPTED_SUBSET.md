@@ -2684,7 +2684,7 @@ holds exactly) and a real (`float32` widened to `f64` / `Double`, exactly). A
 64-bit integer is refused because a backend that reads a JSON number through a
 `double` carries one past 2^53 with its low bits wrong and no error, while
 another carries it exactly: two backends giving one document two values. Bytes,
-a list and a record have no spelling yet. A value read from the triggering
+a list, a record and an enum have no spelling yet. A value read from the triggering
 event's payload is refused too: reading it needs the payload channel's guard
 around the whole element, which a `<param>` does not yet get.
 
@@ -2761,6 +2761,52 @@ as `expression/unsupported-construct`. A missing field is refused on the
 `sce:type` that names the record, an unknown or repeated one on its `name`,
 both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
 because `<sce:field>` is the codec's byte-layout field.
+
+**Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
+the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
+starts at one of the variants, written as the expression `<alias>.<variant>`
+(a `<data>` with no `expr` is refused like any other):
+
+```xml
+<sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+<datamodel>
+  <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+</datamodel>
+```
+
+An enum value is one of three things: `<alias>.<variant>`, a variable
+declared `enum:<alias>`, or a conditional whose two branches are values of one
+enum. What it may be used for is deliberately small: stored (`<assign>`) in a
+variable of its own enum, logged, and compared with `===` or `!==` to a value
+of that same enum. Anything else is `expression/unsupported-construct` on the
+expression: ordering, arithmetic, a call argument, a comparison with a number
+or with another enum, a value of one enum stored in a variable of another or
+in a number. An enum value carried as a `<param>` to a host has no text and
+JSON spelling every backend shares yet, and is refused as
+`scxml/static-datamodel-rule` like a list or a record. The expression typer
+declines to type an enum value (its integer belongs to the enum document), so
+this is the one place that holds it to where it may stand
+(`forge/static_enum.rs`).
+
+The enum must be a closed set: one that declares `sce:strict-variants="false"`
+admits values no variant names, which a machine has no type to hold, and is
+refused on the `sce:type` that names it as `scxml/static-datamodel-rule`. The
+type is declared in the machine's own unit, as a record's is — a statechart
+does not import the enum document's generated type — so the variable is the
+machine's own `<Machine><Alias>Enum`, whose variants are spelled as the enum
+document's own generation spells them (`enum_naming::variant_ident`: Rust
+`AgendaList`, Kotlin `AGENDA_LIST`). It carries no integer: a host that needs
+the enum document's value reads it by name. A record whose schema has an
+enum-typed field is still refused.
+
+A saved state holds the variant by its declared name, `"agenda_list"`, which is
+the same on every backend and is not the constant a backend spells for it; one
+that holds a name the enum does not declare is refused when read. The saved
+shape names each variable's variants, sorted, so an enum document that renamed
+or added a variant refuses a state saved before it, and one that reordered or
+renumbered them does not. `scenarios/static_enum.json` and `saved/static_enum.json`
+hold this on every engine that lowers the model; the Interpreter's ecmascript
+lowering has no enum yet and refuses a document that declares one, naming it.
 
 **List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
 sequence of `T`, a fixed-width number or `bool` — the element an algorithm's
@@ -2844,8 +2890,9 @@ time. A record variable is a field of an immutable data class,
 `if (picked.size < N) { picked = picked + (…) } else { <error.execution> }`
 and a clear to `picked = emptyList()`, so a snapshot shares the list it
 publishes without copying it. The generated machine carries no script
-engine. An enum-typed variable is refused for Kotlin until a statechart
-imports its enum into the generated unit.
+engine. An enum variable is an `enum class <Machine><Alias>Enum` of the
+machine's own unit, one constant per variant, with its saved form on the type
+(`toSaved` / `fromSaved`, as a record's is).
 
 Rust lowers it through the same walk (`StaticTarget`, one per backend: what
 differs is a spelling, never a meaning). Each variable is a field of the

@@ -55,6 +55,7 @@ pub mod retention;
 pub mod review_table;
 pub mod sourcemap;
 pub mod static_datamodel;
+pub(crate) mod static_enum;
 pub mod static_imports;
 pub mod static_js;
 pub(crate) mod static_js_algorithm;

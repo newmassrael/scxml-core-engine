@@ -175,9 +175,9 @@ impl {{ machine_name }}Event {
 {{ event_payload_defs }}
 {{ event_payload_entries }}
 {% endif %}
-{% if static_record_defs %}
-// ── SCE Accepted Subset §2.15: the record types the sce-static variables hold ──
-{{ static_record_defs }}
+{% if static_type_defs %}
+// ── SCE Accepted Subset §2.15: the enum and record types the sce-static variables hold ──
+{{ static_type_defs }}
 
 {% endif %}
 {% if static_datamodel %}
@@ -241,6 +241,40 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {% if static_saved_shape and not no_std %}
 {% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+{% for enum in static_enums %}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for {{ enum.ty }} {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+{% for variant in enum.variants %}
+                Self::{{ variant.ident }} => "{{ variant.declared | escape_rust }}",
+{% endfor %}
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+{% for variant in enum.variants %}
+                "{{ variant.declared | escape_rust }}" => Ok(Self::{{ variant.ident }}),
+{% endfor %}
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of {{ enum.alias }}"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+{% endfor %}
 {% for record in static_records %}
 
 impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {

@@ -37,9 +37,9 @@ import com.sce.runtime.*
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 {{ event_payload_defs }}
 {% endif %}
-{% if static_record_defs %}
-// ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
-{{ static_record_defs }}
+{% if static_type_defs %}
+// ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
+{{ static_type_defs }}
 {% endif %}
 // --- State Machine (W3C SCXML) ---
 
@@ -155,7 +155,7 @@ class {{ machine_name }}StateMachine(
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 {% macro saved_write(kind, type, name) -%}
-{%- if kind == "record" -%}
+{%- if kind == "record" or kind == "enum" -%}
 {{ name }}.toSaved()
 {%- elif kind == "list" -%}
 SavedValues.list({{ name }}) { SavedValues.of(it) }
@@ -164,7 +164,7 @@ SavedValues.of({{ name }})
 {%- endif -%}
 {%- endmacro %}
 {% macro saved_read(kind, type, value, what, bound) -%}
-{%- if kind == "record" -%}
+{%- if kind == "record" or kind == "enum" -%}
 {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif kind == "list" -%}
 SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
@@ -174,8 +174,8 @@ SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "I
 SavedValues.{{ type }}({{ value }}, {{ what }})
 {%- endif -%}
 {%- endmacro %}
-{# A record's saved form is its own type's (`toSaved` / `fromSaved`, emitted
-   with the type by the static lowering). A per-type function here, named by
+{# A record's or an enum's saved form is its own type's (`toSaved` /
+   `fromSaved`, emitted with the type by the static lowering). A per-type function here, named by
    prefixing the record's type, would reserve every variable name that prefix
    could match (`crate::reader_names` reads a template name as a pattern), and
    did: `readBackProbe` lost its reader in every backend (2026-09-27). #}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ede34169fc1f632a670b7784480c7507defb86431667cb2be0b8280991dff333
+// source-hash: 78cff4123e8006198902c094ef3d33990d8b7e13a954f8edafc770a31099d4cc
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -164,7 +164,7 @@ impl StaticRecordInject for ::sce_rust_runtime::Engine<StaticRecordPolicy> {
     }
 }
 
-// ── SCE Accepted Subset §2.15: the record types the sce-static variables hold ──
+// ── SCE Accepted Subset §2.15: the enum and record types the sce-static variables hold ──
 /// SCE Accepted Subset §2.15: a `record:Day` datamodel value.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(non_snake_case)]

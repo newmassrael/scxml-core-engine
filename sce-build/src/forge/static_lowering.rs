@@ -26,7 +26,7 @@ use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
 };
-use crate::forge::model::{EventSchemaModel, SceType};
+use crate::forge::model::{EnumModel, EventSchemaModel, SceType};
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::InferredType;
 use crate::generator::Language;
@@ -71,17 +71,21 @@ pub struct StaticLowering {
     /// [`crate::forge::generator::build_kotlin_event_payload`] and its Rust
     /// twin).
     pub payload_events: BTreeSet<String>,
-    /// One type declaration per event-schema a `record:<alias>` variable
-    /// names, declared in the machine's own file the way its event payload
-    /// types are.
-    pub record_defs: Vec<String>,
+    /// One type declaration per enum an `enum:<alias>` variable names and per
+    /// event-schema a `record:<alias>` variable names, declared in the
+    /// machine's own file the way its event payload types are.
+    pub type_defs: Vec<String>,
     /// The import line of each algorithm the document calls — the line a
     /// forge kind importing the same algorithm writes, so the machine reaches
     /// the function where the algorithm's own generation put it.
     pub imports: Vec<String>,
-    /// The record types of [`Self::record_defs`], field by field — what a
+    /// The record types of [`Self::type_defs`], field by field — what a
     /// saved state writes a record value as.
     pub records: Vec<StaticRecord>,
+    /// The enum types of [`Self::type_defs`], variant by variant — what a
+    /// saved state writes an enum value as, for a backend that writes it
+    /// outside the type ([`StaticEnumType`]).
+    pub enums: Vec<StaticEnumType>,
     /// The shape a saved state of this machine is bound to ([`saved_shape`]),
     /// or `None` for a machine whose state a saved state cannot yet hold.
     pub saved_shape: Option<String>,
@@ -163,6 +167,26 @@ pub struct StaticRecordField {
     pub saved_type: String,
 }
 
+/// An enum type a `sce-static` machine declares, as a saved state writes it:
+/// the variant's declared name, the same on every backend.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticEnumType {
+    /// The backend type ([`StaticTarget::enum_type`]).
+    pub ty: String,
+    /// The enum's alias, which a refusal of a saved value names.
+    pub alias: String,
+    pub variants: Vec<StaticEnumVariant>,
+}
+
+/// One variant of a [`StaticEnumType`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticEnumVariant {
+    /// The name the enum document declares — the saved form.
+    pub declared: String,
+    /// The backend identifier ([`crate::forge::enum_naming::variant_ident`]).
+    pub ident: String,
+}
+
 /// An imported algorithm as a target reaches it: the name a call is written
 /// with, and the line that makes the name visible where the machine is.
 #[derive(Debug, Clone)]
@@ -236,6 +260,19 @@ pub trait StaticTarget {
     fn record_field(&self, id: &str) -> String;
     /// A record value built whole from `(field identifier, value)` pairs.
     fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String;
+    /// The type a variable declared `enum:<alias>` is held in, declared in
+    /// `machine`'s own file — or `None` for a target with no enum type of its
+    /// own, which refuses the variable and every reference to a variant rather
+    /// than leaving a name undefined.
+    fn enum_type(&self, _machine: &str, _alias: &str) -> Option<String> {
+        None
+    }
+    /// The declaration of [`Self::enum_type`]: the closed set of `model`'s
+    /// variants, each spelled as [`crate::forge::enum_naming::variant_ident`]
+    /// does and carrying the name the enum document declares for it.
+    fn enum_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> String {
+        String::new()
+    }
     /// The type of a list of `elem`.
     fn list_type(&self, elem: &SceType) -> String;
     /// The type a host reads a published list of `elem` through, when it is
@@ -435,6 +472,49 @@ impl StaticTarget for KotlinTarget {
     fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
         let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f} = {v}")).collect();
         format!("{ty}({})", args.join(", "))
+    }
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
+    }
+    // Its saved form lives on the type, as a record's does: the declared name
+    // the enum document gives the variant, which is not the constant's own
+    // spelling.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let variants: Vec<String> = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "{}(\"{}\")",
+                    crate::forge::enum_naming::variant_ident(
+                        Language::Kotlin,
+                        &model.name,
+                        &v.name
+                    ),
+                    filters::escape_kotlin(v.name.clone())
+                )
+            })
+            .collect();
+        format!(
+            "/** SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
+             enum class {ty}(val declaredName: String) {{\n\
+             \x20   {variants};\n\n\
+             \x20   /** This value as a saved state writes it. */\n\
+             \x20   fun toSaved(): Any = declaredName\n\n\
+             \x20   companion object {{\n\
+             \x20       /** The value a saved state holds, refused unless it is one. */\n\
+             \x20       fun fromSaved(value: Any?, what: String): {ty} {{\n\
+             \x20           val declared = SavedValues.string(value, what)\n\
+             \x20           return entries.firstOrNull {{ it.declaredName == declared }}\n\
+             \x20               ?: throw StateRefusal(\"'$what' ($declared) is not a variant of {alias}\")\n\
+             \x20       }}\n\
+             \x20   }}\n\
+             }}",
+            variants = variants.join(",\n    ")
+        )
     }
     fn list_type(&self, elem: &SceType) -> String {
         format!("List<{}>", crate::forge::generator::kotlin_type(elem))
@@ -638,6 +718,31 @@ impl StaticTarget for RustTarget {
         let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f}: {v}")).collect();
         format!("{ty} {{ {} }}", args.join(", "))
     }
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
+    }
+    // A closed set of unit variants, so `Copy` and `Eq` by the policy every
+    // repr-tagged enum takes. Its saved form is written beside the machine's
+    // own ([`StaticLowering::enums`]), where the saved-state runtime exists.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    {},\n",
+                    crate::forge::enum_naming::variant_ident(Language::Rust, &model.name, &v.name)
+                )
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n{}\npub enum {ty} {{\n{variants}}}",
+            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr()
+        )
+    }
     fn list_type(&self, elem: &SceType) -> String {
         format!("Vec<{}>", crate::forge::generator::rust_type(elem))
     }
@@ -827,32 +932,27 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
 pub fn lower_kotlin(
     model: &mut SCXMLModel,
     machine: &str,
-    enums: &[StaticEnum],
 ) -> Result<StaticLowering, GenerateError> {
-    lower(model, machine, enums, &KotlinTarget)
+    lower(model, machine, &KotlinTarget)
 }
 
 /// Rewrite `model` — a clone the Rust backend renders — so every expression
 /// of a `sce-static` document is native Rust.
-pub fn lower_rust(
-    model: &mut SCXMLModel,
-    machine: &str,
-    enums: &[StaticEnum],
-) -> Result<StaticLowering, GenerateError> {
-    lower(model, machine, enums, &RustTarget)
+pub fn lower_rust(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, &RustTarget)
 }
 
 /// Rewrite `model` — a clone one backend renders — so every expression of a
 /// `sce-static` document is that backend's own code. A document under any
 /// other data model is left as it is.
 ///
-/// An enum-typed variable, or a record whose schema has an enum field, is
-/// refused: its type is the enum document's, which a statechart does not yet
-/// import into its generated unit.
+/// An enum a variable is declared as is declared in the machine's own unit, as
+/// a record's type is, and a reference to one of its variants spells that
+/// type's. A record whose schema has an enum field is refused: the schema is
+/// the enum document's, which the machine's unit does not import.
 pub fn lower(
     model: &mut SCXMLModel,
     machine: &str,
-    enums: &[StaticEnum],
     target: &dyn StaticTarget,
 ) -> Result<StaticLowering, GenerateError> {
     let Some(scope) = StaticScope::of(model) else {
@@ -862,6 +962,15 @@ pub fn lower(
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
+    // The enums the document imports, each as the type the target declares it
+    // as. A target with none spells the alias, which a reference to a variant
+    // then refuses by name ([`crate::forge::expr`]).
+    let imported_enums = model.imported_enums.clone();
+    let enums = StaticEnum::from_imports(&imported_enums, |alias, _| {
+        target
+            .enum_type(machine, alias)
+            .unwrap_or_else(|| alias.to_string())
+    });
     // A call the target cannot spell would be an undefined name where the
     // machine runs; it is refused here, where the document is read.
     if let Some(unreached) = scope
@@ -928,14 +1037,15 @@ pub fn lower(
     // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
-    let mut record_defs = Vec::new();
+    let mut type_defs = Vec::new();
     let mut saved_records = Vec::new();
+    let mut saved_enums = Vec::new();
     let mut declared_types = BTreeSet::new();
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
     {
-        let ctx = scope.ctx(&no_payload, enums);
+        let ctx = scope.ctx(&no_payload, &enums);
         let init_names: Vec<(String, String)> = variables
             .iter()
             .map(|v| (v.id.clone(), target.field_name(&v.id)))
@@ -968,7 +1078,7 @@ pub fn lower(
                 }
                 let ty = target.record_type(machine, alias);
                 if declared_types.insert(ty.clone()) {
-                    record_defs.push(target.record_def(&ty, alias, schema));
+                    type_defs.push(target.record_def(&ty, alias, schema));
                     saved_records.push(StaticRecord {
                         ty: ty.clone(),
                         fields: schema
@@ -1054,13 +1164,57 @@ pub fn lower(
                     var.id
                 )));
             };
-            if matches!(ty, SceType::Enum(_)) {
-                return Err(GenerateError::unsupported(format!(
-                    "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang} \
-                     lowering in a statechart yet",
-                    var.id,
-                    ty.as_attr()
-                )));
+            // An enum is held in a type of the machine's own, declared once
+            // however many variables name it. Saved as the variant's declared
+            // name, which the type reads back (see [`StaticEnumType`]).
+            if let SceType::Enum(reference) = ty {
+                let alias = &reference.alias;
+                let (Some(enum_ty), Some(enum_model), Some(language)) = (
+                    target.enum_type(machine, alias),
+                    imported_enums.get(alias),
+                    target.expr_target().language(),
+                ) else {
+                    return Err(GenerateError::unsupported(format!(
+                        "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang} \
+                         lowering yet",
+                        var.id,
+                        ty.as_attr()
+                    )));
+                };
+                if declared_types.insert(enum_ty.clone()) {
+                    type_defs.push(target.enum_def(&enum_ty, alias, enum_model));
+                    saved_enums.push(StaticEnumType {
+                        ty: enum_ty.clone(),
+                        alias: alias.clone(),
+                        variants: enum_model
+                            .variants
+                            .iter()
+                            .map(|v| StaticEnumVariant {
+                                declared: v.name.clone(),
+                                ident: crate::forge::enum_naming::variant_ident(
+                                    language,
+                                    &enum_model.name,
+                                    &v.name,
+                                ),
+                            })
+                            .collect(),
+                    });
+                }
+                let init = initial_value(&var.expr, target, &ctx, &renames, InferredType::Unknown)
+                    .map_err(|r| refused("the initial value", &var.expr, r))?;
+                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                fields.push(StaticField {
+                    id: var.id.clone(),
+                    name,
+                    init,
+                    saved_type: enum_ty.clone(),
+                    ty: enum_ty,
+                    published,
+                    view: None,
+                    bound: None,
+                    saved_kind: "enum",
+                });
+                continue;
             }
             let slot = InferredType::from_sce_type(ty);
             let init = initial_value(&var.expr, target, &ctx, &renames, slot)
@@ -1084,7 +1238,7 @@ pub fn lower(
 
     let mut payload_events = BTreeSet::new();
     for state in model.states.values_mut() {
-        let plain_ctx = scope.ctx(&no_payload, enums);
+        let plain_ctx = scope.ctx(&no_payload, &enums);
         let plain_renames = renames(&names, None, target);
         for block in state
             .on_entry_blocks
@@ -1117,7 +1271,7 @@ pub fn lower(
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
             let paths = scope.paths(schema);
-            let ctx = scope.ctx(&paths, enums);
+            let ctx = scope.ctx(&paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
             let renames = renames(&names, schema.map(|_| accessor.as_str()), target);
             // A pure `In()` predicate is lowered like any other condition, so
@@ -1182,15 +1336,16 @@ pub fn lower(
         }
     }
     for script in &mut model.global_scripts {
-        let ctx = scope.ctx(&no_payload, enums);
+        let ctx = scope.ctx(&no_payload, &enums);
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
     Ok(StaticLowering {
         fields,
         payload_events,
-        record_defs,
+        type_defs,
         imports,
         records: saved_records,
+        enums: saved_enums,
         saved_shape,
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
@@ -1200,7 +1355,8 @@ pub fn lower(
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
 /// §2.15, "Saving and restoring"): a SHA-256 over every state with its kind
 /// and parent, in document order, and every variable with its type and bound,
-/// a record's fields included — what a saved state names, and nothing else.
+/// a record's fields and an enum's variants included — what a saved state
+/// names, and nothing else.
 ///
 /// Not the document's source hash: that one changes with a comment, and a
 /// saved state is data a user keeps across an app update. A guard or an
@@ -1314,6 +1470,23 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
                     field.id,
                     field.sce_type.as_attr()
                 );
+            }
+        }
+        // An enum's variants are its type: one renamed or removed leaves a
+        // saved value no variant of it, so the shape refuses before a value
+        // is read. By name, so reordering them leaves a saved state
+        // restorable — it holds the declared name, not a position.
+        if let Some(SceType::Enum(reference)) = var.value_type.as_ref().and_then(|t| t.scalar()) {
+            if let Some(enum_model) = model.imported_enums.get(&reference.alias) {
+                let mut names: Vec<&str> = enum_model
+                    .variants
+                    .iter()
+                    .map(|v| v.name.as_str())
+                    .collect();
+                names.sort_unstable();
+                for name in names {
+                    let _ = writeln!(text, "variant {}.{name}", var.id);
+                }
             }
         }
     }
@@ -1914,9 +2087,7 @@ mod tests {
         // (`a_machine_waiting_on_another_session_has_no_save_api` runs the
         // generator itself).
         crate::analyzer::analyze(&mut model, "m.scxml");
-        lower_rust(&mut model, "M", &[])
-            .expect("lowers")
-            .saved_shape
+        lower_rust(&mut model, "M").expect("lowers").saved_shape
     }
 
     #[test]
@@ -2083,9 +2254,7 @@ mod tests {
         crate::host_processor_analyzer::declare_host_surfaces(&mut model, &[], &types)
             .expect("declares");
         crate::analyzer::analyze(&mut model, "m.scxml");
-        lower_rust(&mut model, "M", &[])
-            .expect("lowers")
-            .saved_shape
+        lower_rust(&mut model, "M").expect("lowers").saved_shape
     }
 
     #[test]
@@ -2225,8 +2394,8 @@ mod tests {
             .expect("parses");
         crate::analyzer::analyze(&mut model, "m.scxml");
         let lowering = match lang {
-            Language::Rust => lower_rust(&mut model, "M", &[]),
-            Language::Kotlin => lower_kotlin(&mut model, "M", &[]),
+            Language::Rust => lower_rust(&mut model, "M"),
+            Language::Kotlin => lower_kotlin(&mut model, "M"),
             other => panic!("{other:?} does not lower sce-static"),
         }
         .expect("lowers");
@@ -2295,8 +2464,8 @@ mod tests {
             .expect("parses");
         crate::analyzer::analyze(&mut model, "m.scxml");
         match lang {
-            Language::Rust => lower_rust(&mut model, "M", &[]),
-            Language::Kotlin => lower_kotlin(&mut model, "M", &[]),
+            Language::Rust => lower_rust(&mut model, "M"),
+            Language::Kotlin => lower_kotlin(&mut model, "M"),
             other => panic!("{other:?} does not lower sce-static"),
         }
         .expect("lowers");

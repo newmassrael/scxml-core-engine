@@ -17,6 +17,9 @@ package com.sce.integration
 import com.sce.integration.static_counter.StaticCounterEvent
 import com.sce.integration.static_counter.StaticCounterState
 import com.sce.integration.static_counter.StaticCounterStateMachine
+import com.sce.integration.static_enum.StaticEnumEvent
+import com.sce.integration.static_enum.StaticEnumStateMachine
+import com.sce.integration.static_enum.StaticEnumViewModeEnum
 import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallState
@@ -629,6 +632,89 @@ class StaticDatamodelTest {
         } finally {
             record.cleanup()
             list.cleanup()
+        }
+    }
+
+    // ── static_enum: a variable that holds a variant of an imported enum ──
+
+    private fun layouts(): StaticEnumStateMachine {
+        val sm = StaticEnumStateMachine()
+        sm.initialize()
+        return sm
+    }
+
+    private fun send(sm: StaticEnumStateMachine, event: StaticEnumEvent) {
+        sm.send(event)
+        sm.tick()
+    }
+
+    @Test
+    fun anEnumVariableStartsAtItsVariantAndTheSnapshotCarriesIt() {
+        val sm = layouts()
+        try {
+            assertEquals(StaticEnumViewModeEnum.MONTH, sm.layout)
+            assertEquals(
+                StaticEnumViewModeEnum.MONTH,
+                sm.snapshot.value.data.layout,
+                "a host reads the variable as the machine's own enum type",
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun anEnumVariableIsSavedAsTheNameTheDocumentDeclares() {
+        // The same run the Rust suite makes: `agenda_list`, with its
+        // underscore, is the document's name for the variant, not the constant
+        // this backend spells (`AGENDA_LIST`) nor Rust's (`AgendaList`).
+        val sm = layouts()
+        try {
+            send(sm, StaticEnumEvent.Swap)
+            send(sm, StaticEnumEvent.Agenda)
+            assertEquals(StaticEnumViewModeEnum.AGENDA_LIST, sm.layout)
+            assertEquals(sharedFixture("static_enum"), sm.save().toJson())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateAnotherBackendSavedHoldsAnEnumThatIsRestored() {
+        val sm = StaticEnumStateMachine()
+        try {
+            sm.restore(SavedState.fromJson(sharedFixture("static_enum")))
+            assertEquals(StaticEnumViewModeEnum.AGENDA_LIST, sm.layout)
+            // `previous` is the machine's own and was restored too: back goes to it.
+            send(sm, StaticEnumEvent.Back)
+            assertEquals(StaticEnumViewModeEnum.WEEK, sm.layout)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aSavedEnumValueThatIsNotADeclaredVariantIsRefusedAndTheMachineIsLeftAsItWas() {
+        for ((written, wanted) in listOf(
+            // Not a variant of the enum at all.
+            "\"layout\":\"yearly\"" to "is not a variant of ViewMode",
+            // The constant a backend spells for it is not the name the
+            // document declares, so it is not what a saved state holds.
+            "\"layout\":\"AgendaList\"" to "is not a variant of ViewMode",
+            "\"layout\":\"AGENDA_LIST\"" to "is not a variant of ViewMode",
+            // A number is not a name.
+            "\"layout\":3" to "is not a text",
+        )) {
+            val text = sharedFixture("static_enum").replace("\"layout\":\"agenda_list\"", written)
+            val sm = StaticEnumStateMachine()
+            try {
+                val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+                assertTrue(refusal.message!!.contains(wanted), "$written: ${refusal.message}")
+                assertTrue(refusal.message!!.contains("layout"), "names the variable: ${refusal.message}")
+                assertEquals(StaticEnumViewModeEnum.MONTH, sm.layout, "nothing was written")
+            } finally {
+                sm.cleanup()
+            }
         }
     }
 

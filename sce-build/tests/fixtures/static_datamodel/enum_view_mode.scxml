@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How a calendar screen lays its days out: the enum `static_enum.scxml`'s
+  `enum:ViewMode` variables are held in (SCE Accepted Subset §2.15). The
+  variant `agenda_list` is spelled with an underscore on purpose: each backend
+  spells a constant its own way (`AgendaList`, `AGENDA_LIST`), and a saved state
+  holds the name written here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="view_mode"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="month" value="0"/>
+      <sce:variant name="week" value="1"/>
+      <sce:variant name="day" value="2"/>
+      <sce:variant name="agenda_list" value="3"/>
+    </data>
+  </datamodel>
+</scxml>

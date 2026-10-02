@@ -1,0 +1,83 @@
+# Mutation cases for "an enum variable holds a variant of its enum"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/an_enum_variable_holds_a_variant_of_its_enum.cases
+#
+# The expression typer gives an enum value no type, so the one thing between
+# `mode === 3`, `mode + 1`, `count = mode` and a generated file that does not
+# compile — or, in a backend that holds the enum as its integer, compiles and
+# means something else — is `forge/static_enum.rs` and the three places the
+# judge asks it. Each case takes one of those rules, or the saved shape's
+# knowledge of the variants, away and has to turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test an_enum_variable_holds_a_variant_of_its_enum
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/an_enum_variable_holds_a_variant_of_its_enum.rs
+mutation_runtime_targets sce-build/src/forge/static_enum.rs sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs
+
+# An enum value is allowed where a number or a bool is expected: it is typed
+# `Unknown`, so only the judge's own check says it may not stand there.
+mutation_case "an enum value is admitted in a number's place" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                if !matches!(slot, InferredType::Unknown) {\n",
+     "                if matches!(slot, InferredType::Unknown) {\n")
+PY
+
+# A comparison stops asking that both sides are of one enum: a `Mode` is
+# compared with a `Unit`, which is two unrelated types in the generated code.
+mutation_case "two enums are compared with each other" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "                (Some(a), Some(b)) if a == b => Ok(None),\n",
+     "                (Some(_), Some(_)) => Ok(None),\n")
+PY
+
+# An enum value stops being refused as an operand or an argument: it is added
+# to, ordered against and negated.
+mutation_case "an enum value is an operand" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "        if class_of(child, ctx, var_alias)?.is_some() {\n",
+     "        if class_of(child, ctx, var_alias)?.is_some() && child.children().len() > 99 {\n")
+PY
+
+# A conditional of an enum value and something else is read as an enum
+# value: `c ? Mode.fast : 1` is stored in a `Mode`.
+mutation_case "a conditional of a variant and a number is an enum value" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "                (Some(a), Some(b)) if a == b => Ok(Some(a)),\n",
+     "                (Some(a), _) => Ok(Some(a)),\n")
+PY
+
+# A variable takes a value of another enum than the one it is declared as.
+mutation_case "a variable holds a value of another enum" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            Some(held) if held == alias => Ok(()),\n",
+     "            Some(_) => Ok(()),\n")
+PY
+
+# An open set is held in a variable: its values that no variant names have no
+# type in the machine to be held in.
+mutation_case "an open enum is held in a variable" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            if !model.strict_variants {\n",
+     "            if model.strict_variants && !model.strict_variants {\n")
+PY
+
+# The shape stops listing the variants in name order: a saved state that
+# holds a name is refused because the enum document was reordered.
+mutation_case "the order variants are declared in is part of the shape" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                names.sort_unstable();\n",
+     "")
+PY
+
+# The shape stops listing the variants at all: a variant renamed leaves a
+# saved value no variant of the enum, and nothing refused the state before
+# its values were read.
+mutation_case "the variants are not part of the shape" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    let _ = writeln!(text, \"variant {}.{name}\", var.id);\n",
+     "                    let _ = (&mut text, name);\n")
+PY
