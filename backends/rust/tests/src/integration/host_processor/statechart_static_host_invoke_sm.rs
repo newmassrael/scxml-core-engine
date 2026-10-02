@@ -317,6 +317,16 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
     }
 }
 
+/// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+/// machine's variables before it starts. A variable left `None` keeps the
+/// value its `<data>` gave it.
+#[derive(Default)]
+pub struct StatechartStaticHostInvokeInvokeParams {
+    pub job: Option<u32>,
+    pub label: Option<String>,
+    pub seen: Option<u32>,
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -371,6 +381,20 @@ impl StatechartStaticHostInvokePolicy {
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
+        }
+    }
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    pub fn accept_params(&mut self, params: StatechartStaticHostInvokeInvokeParams) {
+        if let Some(value) = params.job {
+            self.job = value;
+        }
+        if let Some(value) = params.label {
+            self.label = value;
+        }
+        if let Some(value) = params.seen {
+            self.seen = value;
         }
     }
 

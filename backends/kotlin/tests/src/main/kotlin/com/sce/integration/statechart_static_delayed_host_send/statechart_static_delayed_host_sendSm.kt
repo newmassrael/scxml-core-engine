@@ -42,6 +42,22 @@ class StatechartStaticDelayedHostSendStateMachine(
     private var label: String = "report"
 
     /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var job: UInt? = null
+        var label: String? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.job?.let { job = it }
+        params.label?.let { label = it }
+    }
+
+    /**
      * What a host observes: the full active configuration — every active
      * state, each region of a `<parallel>` included — taken together at a macrostep boundary. `truncated` is
      * `true` when that macrostep was stopped at the microstep ceiling, so the

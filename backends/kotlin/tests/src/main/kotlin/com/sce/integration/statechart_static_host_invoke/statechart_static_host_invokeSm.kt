@@ -54,6 +54,24 @@ class StatechartStaticHostInvokeStateMachine(
     var seen: UInt = 0.toUInt()
         private set
 
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var job: UInt? = null
+        var label: String? = null
+        var seen: UInt? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.job?.let { job = it }
+        params.label?.let { label = it }
+        params.seen?.let { seen = it }
+    }
+
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val seen: UInt,

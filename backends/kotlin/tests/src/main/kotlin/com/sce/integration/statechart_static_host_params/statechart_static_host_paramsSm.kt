@@ -55,6 +55,30 @@ class StatechartStaticHostParamsStateMachine(
     var errors: UInt = 0.toUInt()
         private set
 
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var count: UInt? = null
+        var ready: Boolean? = null
+        var label: String? = null
+        var delta: Short? = null
+        var ratio: Double? = null
+        var errors: UInt? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.count?.let { count = it }
+        params.ready?.let { ready = it }
+        params.label?.let { label = it }
+        params.delta?.let { delta = it }
+        params.ratio?.let { ratio = it }
+        params.errors?.let { errors = it }
+    }
+
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val errors: UInt,
