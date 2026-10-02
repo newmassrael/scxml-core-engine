@@ -23,6 +23,7 @@
 # ─── Provided CMake functions ──────────────────────────────────────────────
 #   sce_add_state_machine()            — Generate SM header from one SCXML
 #   sce_add_state_machines_from_dir()  — Generate from every SCXML in a dir
+#   sce_add_algorithm()                — Generate the header of a forge algorithm
 #   sce_create_state_machine_library() — Standalone reusable SM library
 #
 # ─── Finding SCE ───────────────────────────────────────────────────────────
@@ -197,6 +198,9 @@ else()
     endfunction()
     function(sce_add_state_machines_from_dir)
         _sce_codegen_missing_stub("sce_add_state_machines_from_dir")
+    endfunction()
+    function(sce_add_algorithm)
+        _sce_codegen_missing_stub("sce_add_algorithm")
     endfunction()
     function(sce_create_state_machine_library)
         _sce_codegen_missing_stub("sce_create_state_machine_library")

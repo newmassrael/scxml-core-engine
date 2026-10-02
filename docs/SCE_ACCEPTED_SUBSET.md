@@ -3046,8 +3046,13 @@ yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 data model, `In()`, a `<sce:action>` whose arguments are typed expressions
 of the machine's variables, an event's typed payload, an enum variable, a
 record variable, and a list of numbers, bools or records with `<sce:append>`,
-`<sce:clear>` and `<foreach>`. A bytes variable, an `<invoke>`, a `<donedata>`
-and an imported algorithm are not lowered yet. A list is a bounded
+`<sce:clear>` and `<foreach>`, and a call of an imported algorithm. A bytes
+variable, an `<invoke>` and a `<donedata>` are not lowered yet. A call is the
+algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
+`Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
+is received as any failed operation is; the machine's header includes the
+algorithm's header, which is generated on its own (`sce_add_algorithm()` in
+CMake) and not by the machine. A list is a bounded
 `std::vector<T>` the machine alone grows (a host reads it as
 `const std::vector<T>&`); an append checks the room first and computes its value
 into a local, so a full list or a failed value leaves it as it was and ends the

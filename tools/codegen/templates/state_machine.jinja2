@@ -40,6 +40,9 @@
 #include <sce/forge/algorithm.h>
 #include <utility>
 #include <vector>
+{% for line in static_imports %}
+{{ line }}
+{% endfor %}
 {% endif %}
 {# §scxml-3.2: `constexprStrEq` backs the compile-time round trip between
    `getStateName` and `getStateFromName` in utility_methods.jinja2, and

@@ -398,10 +398,27 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends static_host_call static_payload static_enum static_list static_foreach static_block_ends_list static_record_fields static_record_list static_record_enum)
+foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends static_host_call static_payload static_enum static_list static_foreach static_block_ends_list static_record_fields static_record_list static_record_enum static_record sync_client)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
+    )
+endforeach()
+
+# The algorithms those machines call. A machine includes the header its own
+# generation names and does not generate it, so each is generated beside the
+# machines: static_record's days_in_month, and the standard sync rules
+# sync_client is composed of, by their library names.
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml
+    HEADER days_in_month.h
+)
+foreach(_STD_SYNC_RULE sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE sce:std/sync/${_STD_SYNC_RULE}.scxml
+        HEADER ${_STD_SYNC_RULE}.h
     )
 endforeach()
 

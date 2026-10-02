@@ -261,12 +261,11 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 #[test]
 fn cpp_names_each_construct_it_does_not_lower_yet() {
     // C++ lowers scalar, enum, record and list variables, guards, `<assign>`,
-    // `<if>`, `<foreach>`, `<log>`, `In()`, host actions and an event's typed
-    // payload. What is past that is refused by name where the document is read,
-    // not left as an undefined name in the generated code.
+    // `<if>`, `<foreach>`, `<log>`, `In()`, host actions, an event's typed
+    // payload and a call of an imported algorithm. What is past that is refused
+    // by name where the document is read, not left as an undefined name in the
+    // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
-    let read = |name: &str| std::fs::read_to_string(fixtures.join(name)).expect("a fixture");
-    let algorithm_call = read("static_record.scxml");
     let bytes_variable = doc(
         "sce-static",
         r#"<data id="frame" sce:type="bytes" expr="''"/>"#,
@@ -288,11 +287,6 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
         .collect();
     let cases = [
         ("a bytes variable", bytes_variable, "of a bytes type"),
-        (
-            "an imported algorithm",
-            algorithm_call,
-            "an imported algorithm",
-        ),
         ("an <invoke>", invoking(""), "an <invoke>"),
     ];
     for (what, document, names) in cases {

@@ -283,6 +283,87 @@ function(sce_add_state_machine)
 endfunction()
 
 #[=============================================================================[
+sce_add_algorithm(TARGET target SCXML_FILE file.scxml HEADER name.h [OUTPUT_DIR dir])
+
+Generates the C++ header of a forge algorithm and adds it to target.
+
+A statechart that calls an imported algorithm (datamodel="sce-static")
+includes the header its own generation names, and does not generate it: the
+algorithm is a document of its own kind, generated once however many machines
+call it. This puts that header where the machine's is.
+
+Arguments:
+  TARGET      - CMake target the header is added to (required)
+  SCXML_FILE  - Path to the algorithm's SCXML file, or a library name such as
+                sce:std/sync/sync_failure.scxml (required)
+  HEADER      - The file name the generator gives the header: the algorithm's
+                `name` in snake_case with `.h`, which the including machine
+                spells in its `#include` (required)
+  OUTPUT_DIR  - Output directory (optional, defaults to the one
+                sce_add_state_machine uses, so a machine finds its algorithms)
+
+Example:
+  sce_add_state_machine(TARGET my_app SCXML_FILE thermostat.scxml)
+  sce_add_algorithm(TARGET my_app SCXML_FILE clamp.scxml HEADER clamp.h)
+#]=============================================================================]
+function(sce_add_algorithm)
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;HEADER;OUTPUT_DIR" "" ${ARGN})
+
+    foreach(_sce_required TARGET SCXML_FILE HEADER)
+        if(NOT SCE_${_sce_required})
+            message(FATAL_ERROR "sce_add_algorithm: ${_sce_required} is required")
+        endif()
+    endforeach()
+    if(NOT TARGET ${SCE_TARGET})
+        message(FATAL_ERROR "sce_add_algorithm: TARGET '${SCE_TARGET}' does not exist")
+    endif()
+    if(NOT SCE_OUTPUT_DIR)
+        set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    endif()
+
+    # A library name is resolved by the generator, not the file system.
+    if(SCE_SCXML_FILE MATCHES "^sce:")
+        set(_SCE_ALGORITHM_SOURCE "${SCE_SCXML_FILE}")
+        set(_SCE_ALGORITHM_DEPENDS "")
+    else()
+        get_filename_component(_SCE_ALGORITHM_SOURCE "${SCE_SCXML_FILE}" ABSOLUTE)
+        if(NOT EXISTS "${_SCE_ALGORITHM_SOURCE}")
+            message(FATAL_ERROR "sce_add_algorithm: SCXML file not found: ${_SCE_ALGORITHM_SOURCE}")
+        endif()
+        set(_SCE_ALGORITHM_DEPENDS "${_SCE_ALGORITHM_SOURCE}")
+    endif()
+
+    file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
+    set(_SCE_ALGORITHM_OUTPUT "${SCE_OUTPUT_DIR}/${SCE_HEADER}")
+    set(_SCE_ALGORITHM_DEPFILE "${_SCE_ALGORITHM_OUTPUT}.d")
+
+    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
+        "${_SCE_ALGORITHM_SOURCE}" -o "${SCE_OUTPUT_DIR}"
+        -l cpp
+        --write-deps "${_SCE_ALGORITHM_DEPFILE}")
+    sce_codegen_format_args(_SCE_FORMAT_ARGS)
+    list(APPEND _SCE_CODEGEN_CMD ${_SCE_FORMAT_ARGS})
+    if(SCE_TEMPLATE_DIR)
+        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
+    endif()
+
+    add_custom_command(
+        OUTPUT "${_SCE_ALGORITHM_OUTPUT}"
+        COMMAND ${_SCE_CODEGEN_CMD}
+        DEPENDS ${_SCE_ALGORITHM_DEPENDS} "${SCE_CODEGEN}"
+        DEPFILE "${_SCE_ALGORITHM_DEPFILE}"
+        COMMENT "SCE: Generating algorithm ${SCE_HEADER} from ${SCE_SCXML_FILE}"
+        VERBATIM
+    )
+
+    target_sources(${SCE_TARGET} PRIVATE "${_SCE_ALGORITHM_OUTPUT}")
+    target_include_directories(${SCE_TARGET} PRIVATE "${SCE_OUTPUT_DIR}")
+    set_source_files_properties("${_SCE_ALGORITHM_OUTPUT}" PROPERTIES GENERATED TRUE)
+
+    message(STATUS "SCE: Added algorithm '${SCE_HEADER}' to target '${SCE_TARGET}'")
+endfunction()
+
+#[=============================================================================[
 sce_add_state_machines_from_dir(TARGET target SCXML_DIR dir [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix])
 
 Finds all *.scxml files in directory and generates state machines.

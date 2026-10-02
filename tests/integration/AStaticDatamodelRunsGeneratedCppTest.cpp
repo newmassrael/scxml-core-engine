@@ -38,6 +38,8 @@
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
+#include "static_record_sm.h"
+#include "sync_client_sm.h"
 
 #include <filesystem>
 #include <fstream>
@@ -269,6 +271,36 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordIsBuiltWholeAndUpdatedAFieldAt
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_record_fields", driver);
+}
+
+// A guard calls an imported algorithm with the record's own fields, and the
+// bound it answers is computed on every step, not folded to a constant.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AGuardCallsAnImportedAlgorithmWithARecordsFields) {
+    using Machine = G::static_record::static_record;
+    Driver<Machine> driver({
+        {"shown", [](const Machine &m) { return dayJson(m.shown()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_record", driver);
+}
+
+// A sync run composed of the standard sync rules: each rule an imported
+// algorithm that can fail, called in a guard and in an assignment with the
+// event's typed payload as its arguments.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASyncRunIsComposedOfTheStandardAlgorithms) {
+    using Machine = G::sync_client::sync_client;
+    Driver<Machine> driver({
+        {"byToken", [](const Machine &m) { return json(m.byToken()); }},
+        {"fullListing", [](const Machine &m) { return json(m.fullListing()); }},
+        {"outcome", [](const Machine &m) { return json(m.outcome()); }},
+        {"retryAt", [](const Machine &m) { return json(m.retryAt()); }},
+        {"deleted", [](const Machine &m) { return json(m.deleted()); }},
+        {"uploaded", [](const Machine &m) { return json(m.uploaded()); }},
+        {"discarded", [](const Machine &m) { return json(m.discarded()); }},
+        {"pages", [](const Machine &m) { return json(m.pages()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("sync_client", driver);
 }
 
 // A list of records is filled by name from a record variable or a loop's item,

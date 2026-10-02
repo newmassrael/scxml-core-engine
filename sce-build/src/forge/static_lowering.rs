@@ -1952,8 +1952,8 @@ impl StaticTarget for CppTarget {
     fn name(&self) -> &'static str {
         "C++"
     }
-    fn callee(&self, _document_name: &str) -> Option<Callee> {
-        None
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(Language::Cpp, document_name))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // Every type a datamodel holds is spelled but bytes: a list admits only

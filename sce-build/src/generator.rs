@@ -2799,6 +2799,7 @@ fn render_cpp(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        static_imports => &static_lowering.imports,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,

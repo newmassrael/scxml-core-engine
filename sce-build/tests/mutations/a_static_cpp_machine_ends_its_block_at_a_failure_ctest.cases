@@ -1,0 +1,53 @@
+# Mutation cases for §scxml-4.9 and the guard of a `datamodel="sce-static"`
+# machine generated as C++ (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_machine_ends_its_block_at_a_failure_ctest.cases`.
+#
+# A statement of such a machine is C++ the lowering wrote, and the templates
+# only place it: a statement that can fail is an expression that is `true` when
+# it did, the transition's guard is the lowered expression itself, and an
+# error ends the block it stands in. The values those three decide are the
+# ones `scenarios/*.json` state, replayed by
+# `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` over machines
+# generated from the fixtures beside them.
+#
+# What is easy to get wrong and reads as success: a block that goes on after a
+# failed statement still ends with the right counters whenever the statements
+# after it write what they would have written anyway, so only `static_block_ends`
+# (a write after the failure that must not happen) tells the two apart.
+#
+# The lowering's own spellings are Rust (`sce-build/src/forge/static_lowering.rs`)
+# and are held by the Rust suites over the same scenarios; this file holds the
+# templates, which `cmake --build` reads at generation time.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
+
+# ── A failed statement ends its block ──────────────────────────────
+
+mutation_case "a block goes on after a statement that failed" <<'PY'
+edit("tools/codegen/templates/actions/_native_statement.jinja2",
+     "{% if block_exit is defined and block_exit %}\n    {{ block_exit }}\n{% endif %}\n}",
+     "{% if false and block_exit is defined and block_exit %}\n    {{ block_exit }}\n{% endif %}\n}")
+PY
+
+# ── An <if> whose cond failed ends its block ───────────────────────
+
+mutation_case "a block goes on after an <if> whose cond failed" <<'PY'
+edit("tools/codegen/templates/actions/if.jinja2",
+     "{% if if_native_can_fail and block_exit is defined and block_exit %}",
+     "{% if false and block_exit is defined and block_exit %}")
+PY
+
+# ── A guard is the lowered expression ──────────────────────────────
+
+mutation_case "a transition's native guard is not asked" <<'PY'
+edit("tools/codegen/templates/process_transition.jinja2",
+     "{%- elif trans.native_guard -%}{{ trans.native_guard }}",
+     "{%- elif trans.native_guard -%}true")
+PY
