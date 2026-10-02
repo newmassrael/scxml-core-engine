@@ -92,6 +92,13 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // `location` is the wire convention. The markers templates read come
     // from the model, not from this record.
     "unresolved_check.rs",
+    // `ScenarioEvidence` and its row — what `sce-codegen requirements
+    // --scenarios` writes into its report, serialised straight to JSON and
+    // never fed into a minijinja template, so omitting an absent `bound` or
+    // `reason` is the wire convention. This test matches a field by NAME
+    // across the crate, and `bound` is also the name of a field the Rust and
+    // Kotlin templates probe on their own models, which this record is not.
+    "requirement_manifest.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {
