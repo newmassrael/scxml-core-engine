@@ -2766,14 +2766,16 @@ handed a parent's `<param>` to a child).
 
 Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
-`accept_params`, each variable `null` / `None` when nothing is handed it and
+`accept_params`, C++ a nested `InvokeParams` (a `std::optional` per variable) and
+`acceptParams`, each variable `null` / `None` / empty when nothing is handed it and
 keeping the value its `<data>` gave it. The invoking machine builds one from its
 fields and gives it to the child before the child starts. A value that cannot be
 computed — a checked integer operation that overflows — is the evaluation that
 failed (W3C SCXML 5.7.1): `error.execution` is raised when the document declares
 it, that one value is left out, and the child still starts. The witness is
 `sce-build/tests/fixtures/static_datamodel/static_invoke_params.scxml`, driven on
-Rust and Kotlin: its child ends only when it holds both a `<param>`'s value, read
+Rust, Kotlin and C++ (the restore half is not, for C++ has no saved state): its
+child ends only when it holds both a `<param>`'s value, read
 after the entry action that changes it, and a `namelist`'s, and a child handed
 nothing keeps its declared values and never ends.
 
@@ -3064,8 +3066,10 @@ data model, `In()`, a `<sce:action>` whose arguments are typed expressions
 of the machine's variables, an event's typed payload, an enum variable, a
 record variable, and a list of numbers, bools or records with `<sce:append>`,
 `<sce:clear>` and `<foreach>`, a call of an imported algorithm, and the
-`<param>`s of a `<final>`'s `<donedata>`. A bytes variable and an `<invoke>` are
-not lowered yet. A call is the
+`<param>`s of a `<final>`'s `<donedata>`, and an `<invoke type="scxml">` — the
+child is one more generated machine the parent starts with its own invoke code,
+after handing it the values through `acceptParams`. A bytes variable and an
+`<invoke>` the host runs, a hybrid one and a mesh one are not lowered yet. A call is the
 algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
 `Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
 is received as any failed operation is; the machine's header includes the

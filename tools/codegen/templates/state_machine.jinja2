@@ -411,6 +411,40 @@ struct {{ model.name }}Policy {
     }
 {% endif %}
 {% endfor %}
+{# A parent's `<param>` and `namelist` hand values to a child's top-level
+   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
+   are not seeded; the static judge refuses a value handed to one. #}
+{% set ns_seed = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% set ns_seed.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_seed.any %}
+
+    /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables before it starts. A variable left empty keeps the
+    /// value its `<data>` gave it.
+    struct InvokeParams {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        std::optional<{{ field.ty }}> {{ field.name }};
+{% endif %}
+{% endfor %}
+    };
+
+    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
+    /// the ones its `<data>` gave. Called before it initializes.
+    void acceptParams(const InvokeParams &params) {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        if (params.{{ field.name }}) {
+            {{ field.name }} = *params.{{ field.name }};
+        }
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
     {% endif %}
     {% if model.readable_variables and not static_fields %}
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
@@ -953,6 +987,15 @@ public:
     }
 {% endif %}
 {% endfor %}
+{% if ns_seed.any %}
+
+    /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+    /// machine's variables, and the call that hands them over before it starts.
+    using InvokeParams = typename PolicyType::InvokeParams;
+    void acceptParams(const InvokeParams &params) {
+        this->policy_.acceptParams(params);
+    }
+{% endif %}
 {% elif model.readable_variables %}
 
     {# §scxml-5.3: the read accessors are DEFINED on the policy, beside the

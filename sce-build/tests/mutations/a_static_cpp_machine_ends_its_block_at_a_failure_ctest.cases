@@ -25,7 +25,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
-mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/invoke_methods.jinja2
 mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
 
 # ── A failed statement ends its block ──────────────────────────────
@@ -69,4 +69,17 @@ mutation_case "the donedata pairs are not handed to the done event" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
      "                    ::SCE::DoneDataHelper::collectParams(doneValues, eventData, &typedData);",
      "                    (void)doneValues;")
+PY
+
+# ── A child is handed what its invoke names ────────────────────────
+#
+# `static_invoke_params`: `worker` ends only when it holds the 7 its `<param>`
+# reads and the true its `namelist` names, so a parent that computes the seed and
+# never gives it to the child leaves the parent in `working` with nothing
+# counted.
+
+mutation_case "a child is not handed the values its invoke names" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "                            {{ slot }}->acceptParams(seed);",
+     "                            (void)seed;")
 PY

@@ -33,6 +33,7 @@
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_invoke_params_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
@@ -294,6 +295,52 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventItsPar
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata", driver);
+}
+
+// An `<invoke type="scxml">` hands its child the values its `<param>`s and
+// `namelist` name (§scxml-6.4.1), each to the child's variable of the same
+// name. `worker` ends the moment it holds `start = 7` (a `<param>` reading
+// `base`, which is 4 when `working` is entered and 7 once its entry action ran:
+// the value is read when the invoke executes, at the end of the macrostep) and
+// `enabled = true` (the `namelist`); handed less, it would wait and the parent
+// would stay in `working`. `control`, the same child handed nothing, keeps what
+// its `<data>` gave it and never ends.
+class AStaticChildIsHandedItsParams : public ::testing::Test {
+protected:
+    using Machine = G::static_invoke_params::static_invoke_params;
+
+    /// Let the child run and report to its parent.
+    void settle() {
+        for (int i = 0; i < 5; ++i) {
+            machine.tick();
+        }
+    }
+
+    std::string state() const {
+        return Machine::PolicyType::getStateName(machine.getCurrentState());
+    }
+
+    void SetUp() override {
+        machine.initialize();
+        settle();
+    }
+
+    Machine machine;
+};
+
+TEST_F(AStaticChildIsHandedItsParams, AChildEndsOnceItHoldsTheValuesItsInvokeNames) {
+    // `worker` ended, so it held both values: the parent left `working` and
+    // counted it.
+    EXPECT_EQ(state(), "plain");
+    EXPECT_EQ(machine.completed(), 1u);
+}
+
+TEST_F(AStaticChildIsHandedItsParams, AChildHandedNothingKeepsTheValuesItsDataGaveIt) {
+    settle();
+    // `control` still waits for 7 and true, so `done.invoke.control` never
+    // counted.
+    EXPECT_EQ(state(), "plain");
+    EXPECT_EQ(machine.completed(), 1u);
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

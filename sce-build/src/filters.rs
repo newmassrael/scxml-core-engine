@@ -1428,6 +1428,10 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     // its payload struct by (`build_cpp_event_payload`), which is not the
     // event enum's.
     env.add_filter("to_event_variant", to_event_variant);
+    // The spelling a `sce-static` variable's member is derived from
+    // (`CppTarget::field_name`), for the parent that names it in a child's
+    // `InvokeParams`.
+    env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
     env.add_filter("split", filter_split);

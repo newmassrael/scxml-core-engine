@@ -262,13 +262,19 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 fn cpp_names_each_construct_it_does_not_lower_yet() {
     // C++ lowers scalar, enum, record and list variables, guards, `<assign>`,
     // `<if>`, `<foreach>`, `<log>`, `In()`, host actions, an event's typed
-    // payload and a call of an imported algorithm. What is past that is refused
-    // by name where the document is read, not left as an undefined name in the
-    // generated code.
+    // payload, a call of an imported algorithm, a final's `<donedata>` and an
+    // `<invoke type="scxml">`. What is past that is refused by name where the
+    // document is read, not left as an undefined name in the generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
     let bytes_variable = doc(
         "sce-static",
         r#"<data id="frame" sce:type="bytes" expr="''"/>"#,
+    );
+    let host_invoke = machine(
+        r#"<state id="s">
+    <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
+    <transition event="done.invoke.h" target="done"/>
+  </state>"#,
     );
     let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)
         .expect("the fixture directory")
@@ -287,7 +293,7 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
         .collect();
     let cases = [
         ("a bytes variable", bytes_variable, "of a bytes type"),
-        ("an <invoke>", invoking(""), "an <invoke>"),
+        ("a host-run <invoke>", host_invoke, "a host-run <invoke>"),
     ];
     for (what, document, names) in cases {
         let (ok, out) = run_beside(&["check", "-l", "cpp"], &document, &siblings);

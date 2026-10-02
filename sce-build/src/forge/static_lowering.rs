@@ -1986,8 +1986,21 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            if !state.invokes.is_empty() {
-                return Some("an <invoke>".to_string());
+            // A scxml child is started by the machine's own invoke code; one
+            // the host runs, a hybrid one and a mesh one are not lowered yet.
+            if let Some(other) = state
+                .invokes
+                .iter()
+                .find(|i| !matches!(i, crate::model::Invoke::Scxml(_)))
+            {
+                return Some(
+                    match other {
+                        crate::model::Invoke::Hybrid(_) => "a hybrid <invoke>",
+                        crate::model::Invoke::MeshRpc(_) => "a mesh <invoke>",
+                        _ => "a host-run <invoke>",
+                    }
+                    .to_string(),
+                );
             }
         }
         None

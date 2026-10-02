@@ -97,7 +97,43 @@
                         {% endif %}
                         {% endif %}
 
-                        {% if invoke_info.params %}
+                        {% set native_seeded = invoke_info.params | selectattr("native_seed") | list | length > 0 %}
+                        {% if native_seeded %}
+                        // §scxml-6.4.1 + §scxml-6.4.3 (SCE Accepted Subset §2.15): the
+                        // child is a sce-static machine, so each `<param>` and each
+                        // `namelist` name was lowered at build time to a value of the
+                        // type of the child variable it lands in, read from this
+                        // machine's fields now — when the invoke executes, not when
+                        // its state was entered. §scxml-5.7.1: one that cannot be
+                        // computed raises error.execution and is left out; the child
+                        // still starts, one value short.
+                        {
+                            typename std::remove_reference_t<decltype(*{{ slot }})>::InvokeParams seed;
+                            {% for param in invoke_info.params %}
+                            {% if param.native_seed %}
+                            {
+                                {% if param.native_fails %}
+                                SCE::Forge::AlgorithmFailure sce_failure_;
+                                {% endif %}
+                                typename decltype(seed.v_{{ param.name | to_snake_case }})::value_type seedValue = {{ param.native_seed }};
+                                {% if param.native_fails %}
+                                if (sce_failure_.failed()) SCE_UNLIKELY {
+                                    SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");
+                                    {% if 'error.execution' in model.events %}
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                                    {% endif %}
+                                } else {
+                                    seed.v_{{ param.name | to_snake_case }} = seedValue;
+                                }
+                                {% else %}
+                                seed.v_{{ param.name | to_snake_case }} = seedValue;
+                                {% endif %}
+                            }
+                            {% endif %}
+                            {% endfor %}
+                            {{ slot }}->acceptParams(seed);
+                        }
+                        {% elif invoke_info.params %}
                         // §scxml-6.4.3: pass param VALUES to the child
                         // datamodel before initialization. The expression is
                         // evaluated HERE, in the invoking session, because the
