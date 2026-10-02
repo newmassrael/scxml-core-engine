@@ -207,6 +207,8 @@ scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
 # contract. Each engine's tree is added here with its driver.
 stage "External-event budget document Rust tree"
 scripts/regen_external_chain_is_bounded.sh
+stage "External-event budget document Go tree"
+scripts/regen_external_chain_is_bounded_go.sh
 stage "External-event budget document Python tree"
 scripts/regen_external_chain_is_bounded_python.sh
 

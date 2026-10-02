@@ -2011,6 +2011,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "MAX_EXTERNAL_EVENTS_PER_CALL",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "defaultMaxExternalEventsPerCall",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

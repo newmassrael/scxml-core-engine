@@ -223,6 +223,36 @@ func (s *PullScheduler[E]) HasReadyEventsAt(nowMs int64) bool {
 	return false
 }
 
+// NextReadyAt reports the ready entry PopReadyActAt would take next, left where
+// it is: the instant it came due, and the event it delivers to this machine's own
+// queues when it is one. ok is false when nothing is ready; hasEvent is false for
+// an entry that delivers no event of this machine's — a host-served send, a
+// host-run invocation's deadline, or a send routed to a child or a parent, whose
+// event is a name the other machine resolves.
+//
+// The same-instant bound reads it before popping: an entry due AT the reading is
+// the only kind a handler can arm during the tick that pops it, and a cut reports
+// the event it was still popping (ARCHITECTURE.md "External-Event Budget").
+// Matches Rust PullScheduler::next_ready_at_with_event.
+func (s *PullScheduler[E]) NextReadyAt(nowMs int64) (dueMs int64, event E, hasEvent bool, ok bool) {
+	best := -1
+	for i, e := range s.entries {
+		if e.readyAtMs > nowMs {
+			continue
+		}
+		if best < 0 || e.readyAtMs < s.entries[best].readyAtMs {
+			best = i
+		}
+	}
+	if best < 0 {
+		return 0, event, false, false
+	}
+	entry := s.entries[best]
+	own := entry.hostSend == nil && entry.deadline == nil &&
+		(entry.route == nil || entry.route.Kind == RouteInternalQueue)
+	return entry.readyAtMs, entry.event, own, true
+}
+
 // PopReadyEventAt pops the ready event that came due first and its data, judged
 // against nowMs. Returns (event, data, true) if an event is ready, or
 // (zero, "", false) if nothing is.

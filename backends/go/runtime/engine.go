@@ -6,6 +6,7 @@ package sce
 import (
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"time"
 )
@@ -192,6 +193,22 @@ type Engine[S comparable, E comparable] struct {
 	// because the zero value of S is a real state.
 	lastTruncatedMacrostepState S
 	hasTruncatedMacrostep       bool
+
+	// maxExternalEventsPerCall is the budget of one invocation of the main event
+	// loop, set by SetMaxExternalEventsPerCall; zero is "not chosen", which is
+	// the default — the setter refuses zero, so the two cannot be confused.
+	maxExternalEventsPerCall uint32
+
+	// truncatedEventChains counts invocations of the main event loop this engine
+	// handed back with an external event still queued — see
+	// TruncatedEventChains.
+	truncatedEventChains uint32
+
+	// lastTruncatedEvent is the event at the head of the queue the last time a
+	// call was handed back that way; hasTruncatedEvent says whether there is one,
+	// because the zero value of E is a real event.
+	lastTruncatedEvent E
+	hasTruncatedEvent  bool
 
 	// macrostepTruncated says the macrostep now in progress has already been
 	// stopped at the ceiling. Every host call runs Appendix D's main event
@@ -465,6 +482,25 @@ func (e *Engine[S, E]) Tick() {
 		return
 	}
 
+	// The same-instant bound on the scheduler pops below. A scheduler that can
+	// deliver an entry due at the instant it is popping is a drain that refills
+	// itself: an entry a handler re-arms at that same reading (a `delay` of zero,
+	// which reaches this scheduler here, or a `delayexpr` that evaluates to zero)
+	// is due now, so this loop pops it in the same call, and each pass takes ONE
+	// event, so the budget on the external drain never trips. The pops of entries
+	// due AT the reading are bounded by the same budget (ARCHITECTURE.md
+	// "External-Event Budget", rule 5).
+	//
+	// Entries due AT the reading, not every entry popped at it: the reading is
+	// latched for the whole tick, so a host that jumps the clock a long way pops
+	// every entry that came due on the way at ONE reading, and those are due at
+	// earlier instants. A handler arms relative to the latched reading, so what
+	// it arms is due at the reading itself or after it, and only the first kind
+	// can be popped by this tick. A clock the host moved is bounded by how far it
+	// moved and is not cut; a heartbeat across a long jump arms its next beat
+	// after the reading and is not popped here at all.
+	var poppedDueAtReading uint32
+
 	// §scxml-6.2: dispatch the ready scheduled events, earliest deadline first
 	// and one macrostep apart.
 	//
@@ -481,6 +517,13 @@ func (e *Engine[S, E]) Tick() {
 	// entries the host had not yet reached, in a loop the host cannot get
 	// between (see beginTurn).
 	for {
+		if dueMs, head, hasHead, ready := e.scheduler.NextReadyAt(e.turnNowMs); ready && dueMs == e.turnNowMs {
+			if poppedDueAtReading >= e.MaxExternalEventsPerCall() {
+				e.recordTruncatedEventChain(head, hasHead)
+				break
+			}
+			poppedDueAtReading++
+		}
 		act, ok := e.scheduler.PopReadyActAt(e.turnNowMs)
 		if !ok {
 			break
@@ -719,6 +762,26 @@ func (e *Engine[S, E]) Policy() StatePolicy[S, E] {
 // engine ran 37,000 links a second on a two-line document, so an unattended
 // supervisor did not hang — it burned a core until it was killed.
 const maxErrorCascadeDepth uint32 = 100
+
+// defaultMaxExternalEventsPerCall is how many external events one invocation of
+// the main event loop may take off the queue before this engine hands control
+// back — see TruncatedEventChains and ARCHITECTURE.md "External-Event Budget",
+// the contract every engine here holds.
+//
+// A machine that answers an event by sending itself the next one, with no
+// target, never lets the external queue empty. Every macrostep of it ends, so
+// maxMacrostepMicrosteps never applies, and the loop takes the next event
+// whenever the queue is not empty: the host call that drove it did not return.
+// §scxml-3.13 lets a macrostep fail to end and says nothing of a chain of
+// macrosteps, so, as with the microstep ceiling, the number is this engine's to
+// choose and the decline has to be visible.
+//
+// The default is the one the contract states: three orders of magnitude above
+// the longest invocation measured over the authoring suite (6 external events).
+// It is a margin and not a proof, and a host that hands a machine a backlog it
+// means to work through in one call can choose another
+// (SetMaxExternalEventsPerCall).
+const defaultMaxExternalEventsPerCall uint32 = 10000
 
 // Raise enqueues an internal event with full metadata (high priority)
 // (§scxml-C-1).
@@ -1522,6 +1585,76 @@ func (e *Engine[S, E]) LastTruncatedMacrostepState() (S, bool) {
 	return e.lastTruncatedMacrostepState, e.hasTruncatedMacrostep
 }
 
+// TruncatedEventChains reports how many invocations of the main event loop this
+// engine handed back with an external event still queued, because the
+// invocation had already taken MaxExternalEventsPerCall of them
+// (ARCHITECTURE.md "External-Event Budget").
+//
+// TruncatedMacrosteps counts a macrostep that does not end; this counts the
+// other way a call fails to return: every macrostep ends, and each one queues
+// the event that starts the next (<send event="again"/>, no target, answered by
+// a transition that sends it again). The specification bounds neither, and an
+// engine that ran either to the letter would never return, with CurrentState
+// answering, IsRunning true and no sign that anything went wrong. This is that
+// sign.
+//
+// Counted when the loop still had work after the budget. A call that takes
+// exactly the budget and empties the queue counts zero: a long backlog is
+// ordinary, an endless one is not. The events left queued stay queued, so a host
+// that calls again gets another budget and the machine goes on from where it
+// was; what the host learns is that this call did not reach quiet.
+//
+// A cut of the same-instant bound on the scheduler counts here too (see Tick).
+func (e *Engine[S, E]) TruncatedEventChains() uint32 {
+	return e.truncatedEventChains
+}
+
+// LastTruncatedEvent reports the event at the head of the queue when this
+// engine last handed a call back that way. The bool is false while
+// TruncatedEventChains is zero — and for a cut of the scheduler whose due entry
+// delivers no event of this machine's — because the zero value of E is a real
+// event and cannot stand in for "none". In a chain that sends itself an event it
+// is that event: the count says a call did not reach quiet and this says what it
+// was still taking.
+func (e *Engine[S, E]) LastTruncatedEvent() (E, bool) {
+	return e.lastTruncatedEvent, e.hasTruncatedEvent
+}
+
+// MaxExternalEventsPerCall reports the most external events one invocation of
+// the main event loop may take.
+func (e *Engine[S, E]) MaxExternalEventsPerCall() uint32 {
+	if e.maxExternalEventsPerCall == 0 {
+		return defaultMaxExternalEventsPerCall
+	}
+	return e.maxExternalEventsPerCall
+}
+
+// SetMaxExternalEventsPerCall lets a host choose the budget of one invocation. A
+// host that hands the machine a backlog it means the machine to work through in
+// one call knows its size, and this engine does not. Settable at any time.
+//
+// A budget below one is refused and changes nothing: a budget that takes no
+// event is a machine that cannot run, not a stricter one — every call would
+// hand control back with the queue untouched and say it had been cut. So is one
+// the counter cannot hold.
+func (e *Engine[S, E]) SetMaxExternalEventsPerCall(limit int) error {
+	if limit < 1 || uint64(limit) > uint64(math.MaxUint32) {
+		return fmt.Errorf("sce: the budget of one call is a whole number of events, at least one and at most %d; got %d",
+			uint64(math.MaxUint32), limit)
+	}
+	e.maxExternalEventsPerCall = uint32(limit)
+	return nil
+}
+
+// recordTruncatedEventChain says that a call was handed back with work still
+// waiting: the count, and what it was still taking. The bound itself is enforced
+// by the caller; this is only the report.
+func (e *Engine[S, E]) recordTruncatedEventChain(head E, hasHead bool) {
+	e.truncatedEventChains++
+	e.lastTruncatedEvent = head
+	e.hasTruncatedEvent = hasHead
+}
+
 // ================================================================
 // Callbacks
 // ================================================================
@@ -1662,6 +1795,11 @@ func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) b
 //
 // Matches Rust Engine::run_main_event_loop.
 func (e *Engine[S, E]) runMainEventLoop() {
+	// External events this invocation has taken off the queue, against
+	// MaxExternalEventsPerCall. A local, because the budget is one invocation's:
+	// a cut leaves the queue as it is and the next invocation gets a budget of
+	// its own (ARCHITECTURE.md "External-Event Budget").
+	var taken uint32
 	for {
 		// W3C SCXML Appendix D: complete the macrostep on eventless
 		// transitions and internal events alone.
@@ -1703,6 +1841,19 @@ func (e *Engine[S, E]) runMainEventLoop() {
 			continue
 		}
 
+		head, queued := e.externalQueue.Front()
+		if !queued {
+			break
+		}
+		// Every macrostep this loop runs ends, so maxMacrostepMicrosteps bounds
+		// none of this: a machine that sends itself an external event on every
+		// one never empties the queue. Past the budget the queue is left exactly
+		// as it is and the call hands back, counted.
+		if taken >= e.MaxExternalEventsPerCall() {
+			e.recordTruncatedEventChain(head.Event, true)
+			break
+		}
+		taken++
 		if !e.processNextExternalEvent() {
 			break
 		}

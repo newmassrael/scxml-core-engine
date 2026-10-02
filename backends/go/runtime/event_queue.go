@@ -43,6 +43,20 @@ func (q *EventQueueManager[T]) Pop() (T, bool) {
 	return event, true
 }
 
+// Front returns the event at the head of the queue, left where it is, and true;
+// or the zero value and false if the queue is empty.
+//
+// A cut of the external-event budget reports the event it declined to take
+// (ARCHITECTURE.md "External-Event Budget"), and has to read it without taking
+// it. Matches Rust EventQueueLike::queued().next().
+func (q *EventQueueManager[T]) Front() (T, bool) {
+	if len(q.queue) == 0 {
+		var zero T
+		return zero, false
+	}
+	return q.queue[0], true
+}
+
 // HasEvents returns whether the queue contains any events.
 //
 // Matches Rust has_events(&self) -> bool.
