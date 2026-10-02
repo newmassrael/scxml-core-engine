@@ -36,6 +36,7 @@ import pathlib
 import re
 from dataclasses import dataclass, field
 
+from . import filelock
 from .errors import AuthoringError
 from .structured import RepeatedKey, read_json
 
@@ -215,7 +216,26 @@ def save(out: pathlib.Path, text: str, base_sha256: str | None) -> dict:
 
     The profile's revision is its digest: an acceptance record pins the profile by
     it, so a rule changed here is found by every record that applied it
-    (`acceptance-impact`) and no counter is kept beside it that could disagree."""
+    (`acceptance-impact`) and no counter is kept beside it that could disagree.
+
+    ⚠ The check of the digest and the rename are made under one lock on the
+    directory (`filelock.exclusive`). Without it, two saves from the same base
+    both pass the check before either renames, both are told `saved`, and the file
+    keeps the later one's rules only. The second save, once it has the lock,
+    checks the file the first one wrote and is refused like any other save from a
+    profile that has changed."""
+    if not out.parent.is_dir():
+        raise HouseRuleError(f"{out.parent}: is not a directory, so the profile cannot be "
+                             f"written there")
+    try:
+        with filelock.exclusive(out.parent):
+            return _write_unless_changed(out, text, base_sha256)
+    except filelock.LockUnavailable as error:
+        raise HouseRuleError(f"{out}: {error}; nothing was written") from error
+
+
+def _write_unless_changed(out: pathlib.Path, text: str, base_sha256: str | None) -> dict:
+    """The check and the write of `save`, which holds the lock around them."""
     previous = None
     if out.exists():
         if not out.is_file():
@@ -230,9 +250,6 @@ def save(out: pathlib.Path, text: str, base_sha256: str | None) -> dict:
                 f"{out}: holds sha256 {previous[:12]}, and the profile you gave is "
                 f"{base_sha256[:12]}. It changed since you read it, and writing over it "
                 f"would lose that change; read it again and ask again. Nothing was written")
-    if not out.parent.is_dir():
-        raise HouseRuleError(f"{out.parent}: is not a directory, so the profile cannot be "
-                             f"written there")
     data = text.encode("utf-8")
     temporary = out.with_name(f".{out.name}.{os.getpid()}.tmp")
     try:

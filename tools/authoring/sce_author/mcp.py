@@ -980,7 +980,10 @@ TOOLS = [
             "WRITTEN there, whole or not at all: the answer is `saved`, with the "
             "path and sha256, and a file already at `out` is replaced only when "
             "you gave it as `profile` and it still holds those bytes (otherwise "
-            "nothing is written and it says why). Without `out` the tool writes "
+            "nothing is written and it says why). Two saves into one folder wait "
+            "for each other, and the later is refused when the earlier changed "
+            "the file: read it again and ask again; do not retry the same bytes. "
+            "Without `out` the tool writes "
             "no file and `profile_text` is yours to save. Never set "
             "`owner_confirmed` on your own say-so. The profile records each such "
             "rule as `relayed` -- you reported that the owner said yes; the "
@@ -2223,29 +2226,44 @@ def _staged_text(staging: _Staging, path: pathlib.Path | None, what: str) -> str
         raise ToolArgumentError(f"{what} cannot be read as text: {error}") from error
 
 
+def _staged_bytes(staging: _Staging, path: pathlib.Path | None, what: str) -> bytes | None:
+    """The bytes of a file the caller handed over, or None when none was."""
+    if path is None:
+        return None
+    located = path if path.is_absolute() else staging.dir / path
+    try:
+        return located.read_bytes()
+    except OSError as error:
+        raise ToolArgumentError(f"{what} cannot be read as text: {error}") from error
+
+
 def _house_rule_tool(args: dict, staging: _Staging) -> dict:
     profile_file = staging.file(
         args, "profile", "the owner's authoring profile", "profile.json", required=False)
-    profile = _staged_text(staging, profile_file, "the profile")
+    # ⚠ ONE read of the profile: the rules are added to these bytes and the save is
+    # held to their digest, so both have to come from the same read. Read twice, a
+    # change between the reads puts the digest of the new file beside rules added to
+    # the old one, the save passes its check, and the change is overwritten.
+    profile_bytes = _staged_bytes(staging, profile_file, "the profile")
+    try:
+        profile = None if profile_bytes is None else profile_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ToolArgumentError(f"the profile cannot be read as text: {error}") from error
     owner_words = _staged_text(staging, staging.file(
         args, "owner_words", "the owner's own words", "owner-words.txt", required=False),
         "the owner's words")
     confirmed = args.get("owner_confirmed", False)
     if not isinstance(confirmed, bool):
         raise ToolArgumentError("'owner_confirmed' has to be true or false")
-    # Where the confirmed profile is WRITTEN, on a local server: the digest of the
-    # bytes the rules were added to is taken here, from the file as it is on disk
-    # (a text read would fold a CRLF into an LF and miscompare), before anything
-    # else can change it.
+    # Where the confirmed profile is WRITTEN, on a local server: the digest is of
+    # the bytes read above, as they are on disk (a text read would fold a CRLF into
+    # an LF and miscompare).
     out = staging.local_path(args, "out", "where the profile is written")
     if out is not None and not confirmed:
         raise ToolArgumentError(
             "'out' writes the profile, which is only done for rules the owner has said yes to: "
             "show them `tell_the_owner` first, then ask again with 'owner_confirmed': true")
-    base_sha256 = None
-    if profile_file is not None:
-        located = profile_file if profile_file.is_absolute() else staging.dir / profile_file
-        base_sha256 = hashlib.sha256(located.read_bytes()).hexdigest()
+    base_sha256 = None if profile_bytes is None else hashlib.sha256(profile_bytes).hexdigest()
     try:
         built = house_rule.build(profile, args.get("rules"), owner_words=owner_words,
                                  confirmed=confirmed)
