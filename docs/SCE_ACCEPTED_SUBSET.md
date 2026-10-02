@@ -2640,7 +2640,7 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` of an `<invoke type="scxml">` | A child session of this model has native fields of its own, which only its own code sets, and no generated code hands a parent's `<param>` to one: the value would be typed, accepted and never arrive (measured 2026-10-01 on Rust and Kotlin; under `ecmascript` the same document seeds the child's datamodel). Refused at the `<param>` as `scxml/static-datamodel-rule` until a value can land in a field; the child is given a value in an event it takes |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. Under `ecmascript` the same document runs it |
 | a `<param>` of a `<send>` or of a host-run `<invoke>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
@@ -2837,11 +2837,35 @@ hold this on every engine that runs the model. An expression
 measures a list with the `len(…)` builtin — `len(picked) === 3` in a guard,
 `len(picked)` assigned to a count — and reads it no other way: a list read as
 a value (in an expression or a host action's argument) and a whole-list
-assignment are both `expression/unsupported-construct`. Iterating one with
-`<foreach>` is not admitted yet; the element-wise read is the host's, through
-the snapshot.
+assignment are both `expression/unsupported-construct`. A list is walked with
+`<foreach>`, below, and read by the host through the snapshot.
 A `target` that names no list is `scxml/static-datamodel-rule`, naming the
 lists there are, and so is either statement under any other data model.
+
+**Iterating a list.** `<foreach array="picked" item="v" index="i">`
+(W3C SCXML 4.6) walks a list variable: `array` names one the machine
+declares, `item` is each element typed as the list's element, and `index`,
+which may be left out, is its position from 0, a `uint32` as `len` is. Both are
+the body's own: they mean nothing after the `</foreach>`, and a body's
+expressions read them typed, so `total + v * (i + 1)` is a checked integer
+operation like any other. Each is a name nothing in scope already means (a
+variable, an enum, an imported algorithm, an enclosing loop's variable — a loop
+in a loop takes names of its own), a code identifier (§2.14) that no backend
+reserves as a keyword and that does not begin `sce_`, which the generated code
+keeps for its own; anything else is `scxml/static-datamodel-rule` on the
+attribute. An `array` that names no list is the same.
+
+The walk is of the list as it was when the loop began (a shallow copy, as 4.6
+says), so a body that appends to the list it walks adds to the machine's list
+and not to the walk. A body element that fails — a checked operation that
+overflows, an append to a full list — ends the loop and the block that holds
+it (4.9), the same rule the elements outside a loop keep; the elements after
+the `</foreach>` do not run. The loop needs no script engine: Kotlin lowers it
+to a `for` over the typed `List`, Rust to a `for` over a copy of the `Vec`, and
+the Interpreter's ecmascript keeps the document's own `<foreach>` over the
+array the list is, with its body lowered as every other expression is.
+`scenarios/static_foreach.json` holds this on every engine that runs the
+model.
 
 **Algorithm calls.** A `sce-static` document calls an algorithm it imports
 (`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge

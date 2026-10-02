@@ -13,6 +13,23 @@
      the block too.
 #}
 {% set foreach_ends_block = in_action_block is defined and in_action_block %}
+{# A sce-static document's <foreach> over a list variable (SCE Accepted Subset
+   §2.15): a native `for` over a copy of the typed elements, lowered ahead of
+   the template by `forge::static_lowering`. A body element that raised its own
+   error leaves the enclosing `'action_block` from inside the loop, which ends
+   the block that holds the <foreach> as §scxml-4.9 asks. #}
+{% if action.native_loop %}
+{{ action.native_loop }} {
+{% if action.native_loop_prologue %}
+    {{ action.native_loop_prologue }}
+{% endif %}
+{% for body_action in action.actions %}
+    {% with action=body_action %}
+    {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
+    {% endwith %}
+{% endfor %}
+}
+{% else %}
 {
     // W3C SCXML 5.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">
     self.ensure_script_engine();
@@ -111,3 +128,4 @@
     }
 {% endif %}
 }
+{% endif %}

@@ -483,6 +483,22 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_cond_fails: bool,
+    /// Codegen-internal: the head of the loop a `<foreach>` of a `sce-static`
+    /// document lowered to in the rendering backend's own code — the `for`
+    /// that walks a list variable's elements as typed values, with no script
+    /// engine. When set, the backend's `<foreach>` template emits it, then
+    /// [`Self::native_loop_prologue`], then the body, in place of its engine
+    /// spelling. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_loop: String,
+    /// Codegen-internal: the statements that open each iteration of
+    /// [`Self::native_loop`] — binding the typed index, keeping an unread loop
+    /// variable from being a warning.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_loop_prologue: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

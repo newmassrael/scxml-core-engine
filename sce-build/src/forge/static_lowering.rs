@@ -330,6 +330,21 @@ pub trait StaticTarget {
     ) -> String;
     /// Empty the list at `target`.
     fn clear(&self, target: &str) -> String;
+    /// The loop a `<foreach>` over the list at `list` lowers to, as the head
+    /// that opens it and the statements that open each iteration: `item`
+    /// bound to each element, `index` — a `uint32`, when the document names one
+    /// — to its position. The loop walks the list as it was when the loop
+    /// began (§scxml-4.6: a shallow copy), so a body that appends to the list
+    /// does not move it. `None` for a target that leaves a `<foreach>` as the
+    /// document wrote it, as the Interpreter's ecmascript does.
+    fn foreach_loop(
+        &self,
+        _list: &str,
+        _item: &str,
+        _index: Option<&str>,
+    ) -> Option<(String, String)> {
+        None
+    }
     /// Raise `error.execution` with `message` (§scxml-3.12.2).
     fn raise_execution_error(&self, machine: &str, message: &str) -> String;
     /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), as an
@@ -575,6 +590,29 @@ impl StaticTarget for KotlinTarget {
     }
     fn clear(&self, target: &str) -> String {
         format!("{target} = emptyList()")
+    }
+    // A `for` and not `forEach { }`, so a body that ends its block (an error)
+    // leaves it with the `return` every other statement of the block uses. The
+    // list is immutable and a body replaces the field rather than growing the
+    // list, so the loop walks the list it began with. The position is a
+    // `UInt`, as `len` is; the loop's own `Int` carries a name of the
+    // generated code's.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        Some(match index {
+            None => (format!("for ({item} in {list})"), String::new()),
+            Some(index) => {
+                let position = format!("sce_position_of_{index}");
+                (
+                    format!("for (({position}, {item}) in {list}.withIndex())"),
+                    format!("@Suppress(\"UNUSED_VARIABLE\") val {index} = {position}.toUInt()"),
+                )
+            }
+        })
     }
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
         format!(
@@ -822,6 +860,30 @@ impl StaticTarget for RustTarget {
     }
     fn clear(&self, target: &str) -> String {
         format!("{target}.clear();")
+    }
+    // The loop owns a copy of the list: a body may append to the list it
+    // walks, which a borrow of it would not allow. The elements are
+    // fixed-width numbers and bools, so the copy is cheap and each element is
+    // taken by value. A loop variable the body does not read is not a warning.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        Some(match index {
+            None => (
+                format!("for {item} in {list}.clone()"),
+                format!("let _ = &{item};"),
+            ),
+            Some(index) => {
+                let position = format!("sce_position_of_{index}");
+                (
+                    format!("for ({position}, {item}) in {list}.clone().into_iter().enumerate()"),
+                    format!("let {index} = {position} as u32; let _ = (&{item}, &{index});"),
+                )
+            }
+        })
     }
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
         format!(
@@ -1934,6 +1996,43 @@ fn lower_action(
             let name = renames.get(list).copied().unwrap_or(list);
             action.native_code = target.clear(name);
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
+        }
+        // A `<foreach>` walks a list variable; its loop variables are the
+        // body's own, so the body is lowered in a scope that has them and
+        // nothing else is nested below it (§scxml-4.6).
+        "foreach" => {
+            let list = action.array.trim();
+            let (elem, _) = rewrites.lists.get(list).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "<foreach array=\"{list}\"> names no list variable"
+                ))
+            })?;
+            let item = action.item.trim();
+            let index = Some(action.index.trim()).filter(|name| !name.is_empty());
+            // A loop variable the generated machine already has a field of
+            // that name would hide it in a backend that reaches fields by
+            // their bare names.
+            if let Some(clash) = [Some(item), index]
+                .into_iter()
+                .flatten()
+                .find(|name| renames.values().any(|field| field == name))
+            {
+                return Err(GenerateError::unsupported(format!(
+                    "<foreach> names a loop variable `{clash}` that is the name {lang} gives a \
+                     field of the machine"
+                )));
+            }
+            let mut inner: crate::forge::types::TypeCtx<'_> = ctx.clone();
+            inner.insert_var(item, InferredType::from_sce_type(elem));
+            if let Some(index) = index {
+                inner.insert_var(index, InferredType::from_sce_type(&SceType::Uint32));
+            }
+            let name = renames.get(list).copied().unwrap_or(list);
+            if let Some((head, prologue)) = target.foreach_loop(name, item, index) {
+                action.native_loop = head;
+                action.native_loop_prologue = prologue;
+            }
+            return lower_actions(&mut action.actions, &inner, renames, rewrites);
         }
         // What a `<send>` carries is read from the machine's fields now, when
         // it runs (§scxml-6.2.3 evaluates its arguments once, at the send).

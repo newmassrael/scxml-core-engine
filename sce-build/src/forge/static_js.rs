@@ -417,7 +417,10 @@ fn unsupported_action(action: &Action) -> Option<String> {
         "assign" if action.expr.trim().is_empty() => {
             Some("an <assign> that holds its value as content".to_string())
         }
-        "assign" | "if" | "log" | "raise" | "cancel" => None,
+        // ECMAScript's own `<foreach>` walks the array a list variable is, and
+        // declares the item and the index; only its body's expressions are
+        // lowered, typed by what the loop variables are.
+        "assign" | "if" | "log" | "raise" | "cancel" | "foreach" => None,
         "send" if !action.params.is_empty() || !action.contentexpr.is_empty() => {
             Some("a <send> that carries <param> or <content expr>".to_string())
         }

@@ -29,6 +29,9 @@ use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
 use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
     StaticEnumPersist, StaticEnumPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
+    StaticForeachPersist, StaticForeachPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
 };
@@ -216,6 +219,17 @@ fn static_record_fields_updates_a_record_a_field_at_a_time() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_fields.json"
+        ),
+    );
+}
+
+#[test]
+fn static_foreach_walks_a_list_and_a_failing_body_ends_the_block() {
+    replay(
+        Engine::new(StaticForeachPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_foreach.json"
         ),
     );
 }

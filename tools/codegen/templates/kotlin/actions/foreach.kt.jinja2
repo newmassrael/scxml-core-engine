@@ -15,7 +15,22 @@
    `return@run` out of a multi-block `run {}`, or `return`. #}
 {% import 'block_exit.kt.jinja2' as block_exit %}
 {% set foreach_in_body = _in_foreach_body is defined and _in_foreach_body %}
-{% if model.needs_script_engine %}
+{# A sce-static document's <foreach> over a list variable (SCE Accepted Subset
+   §2.15): a native `for` over the typed elements, lowered ahead of the
+   template by `forge::static_lowering`. It is not a lambda, so a body element
+   that raised its own error ends the block with the `return` every statement
+   of the block uses, and nothing is thrown or caught. #}
+{% if action.native_loop %}
+            {{ action.native_loop }} {
+{% if action.native_loop_prologue %}
+                {{ action.native_loop_prologue }}
+{% endif %}
+{% for body_action in action.actions %}
+{% set action = body_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+            }
+{% elif model.needs_script_engine %}
 {% if not action.array or not action.item %}
             // W3C SCXML 4.6: Missing required foreach attribute (array/item)
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach> is missing its 'array' or 'item' attribute")

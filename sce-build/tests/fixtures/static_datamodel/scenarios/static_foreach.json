@@ -1,0 +1,31 @@
+{
+  "machine": "static_foreach",
+  "about": "<foreach> over a list variable: the item is each element and the index its position; a body that fails ends the loop and the block that holds it; the walk is of the list as it began. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "an empty list is walked by no iteration, and the block goes on",
+      "expect": { "state": "working", "variables": { "picked": [], "total": 0, "finished": 0, "errors": 0 } } },
+    { "event": "sum", "expect": { "variables": { "total": 0, "finished": 1 } } },
+
+    { "event": "a", "expect": { "variables": { "picked": [100] } } },
+    { "event": "b", "expect": { "variables": { "picked": [100, 200] } } },
+    { "note": "100 + 200, widened to the uint32 total",
+      "event": "sum", "expect": { "variables": { "total": 300, "finished": 2 } } },
+    { "note": "100 * 1 + 200 * 2: the index is the position, from 0, plus one",
+      "event": "weigh", "expect": { "variables": { "weighted": 500, "finished": 3 } } },
+
+    { "note": "100 + 200 does not fit a uint8: the assignment that overflows is skipped, error.execution is raised, the loop stops and `finished` is not reached",
+      "event": "squeeze", "expect": { "variables": { "small": 100, "finished": 3, "errors": 1 } } },
+
+    { "event": "c", "expect": { "variables": { "picked": [100, 200, 5] } } },
+    { "note": "three by three",
+      "event": "cross", "expect": { "variables": { "crossings": 9 } } },
+    { "note": "a body that reads neither variable runs once per element",
+      "event": "count", "expect": { "variables": { "visited": 3 } } },
+
+    { "note": "the walk is of the three elements the loop began with: one copy of the first lands, the second finds the list full (capacity 4), and the block ends",
+      "event": "double", "expect": { "variables": { "picked": [100, 200, 5, 100], "finished": 3, "errors": 2 } } },
+
+    { "event": "clear", "expect": { "variables": { "picked": [] } } },
+    { "event": "double", "expect": { "variables": { "picked": [], "finished": 4, "errors": 2 } } }
+  ]
+}

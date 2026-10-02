@@ -1147,6 +1147,15 @@ impl<'a> TypeCtx<'a> {
             .unwrap_or(InferredType::Unknown)
     }
 
+    /// Whether `name` already means something here — a variable, a record, a
+    /// function or an imported enum — so a name a statement is about to bring
+    /// into scope (a loop's variable) would hide it.
+    pub fn declares(&self, name: &str) -> bool {
+        self.vars.contains_key(name)
+            || self.funcs.contains_key(name)
+            || self.enums.contains_key(name)
+    }
+
     /// Look up a function signature. Returns `None` if absent.
     pub fn lookup_func(&self, name: &str) -> Option<&FuncSig> {
         self.funcs.get(name)

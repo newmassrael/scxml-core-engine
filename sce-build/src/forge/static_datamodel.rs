@@ -735,14 +735,9 @@ impl<'a> Judge<'a> {
                     self.record_reads(&arg.expr);
                 }
             }
-            "foreach" => {
-                return Err(self.untyped(
-                    format!("array=\"{}\"", action.array),
-                    action.spellings.get("array"),
-                    state,
-                    &action.array,
-                ));
-            }
+            // The body is judged in the scope the loop's variables are added
+            // to, so nothing below it is asked of this one.
+            "foreach" => return self.foreach(ctx, action, state),
             _ => {}
         }
         // Everything nested inside, through the model's one definition of
@@ -760,6 +755,98 @@ impl<'a> Judge<'a> {
             self.actions(ctx, block.actions, state)?;
         }
         Ok(())
+    }
+
+    /// A `<foreach>` over a list variable (§scxml-4.6): `item` is each element,
+    /// typed as the list's element, and `index` — when written — its position,
+    /// a `uint32` as `len` is. Both are local to the body, so each is a name
+    /// nothing in scope already means, a name the generated code can declare in
+    /// every backend (it is spelled as written), and not the other's.
+    fn foreach(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let array = action.array.trim();
+        let place = |attr: &str, rule: String, value: &str| {
+            let spelling = action
+                .spellings
+                .get(attr)
+                .or_else(|| action.spellings.get("array"));
+            self.rule_at(
+                format!("<foreach {attr}=\"{value}\">"),
+                &rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                value,
+            )
+        };
+        let Some(list) = self.list_var(array) else {
+            return Err(place(
+                "array",
+                "a <foreach> of this data model walks a list variable: array names one of the \
+                 lists the machine declares"
+                    .to_string(),
+                array,
+            ));
+        };
+        // A machine list is of scalars: the parser refuses a list of records
+        // on a variable (`enforce_static_datamodel`).
+        let elem = list
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+            .and_then(crate::forge::model::ListElemType::scalar)
+            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+        let item = action.item.trim();
+        let index = action.index.trim();
+        if item.is_empty() {
+            return Err(place(
+                "item",
+                "a <foreach> names the variable that holds each element".to_string(),
+                item,
+            ));
+        }
+        for (attr, name) in [("item", item), ("index", index)] {
+            if name.is_empty() {
+                continue;
+            }
+            let why = if !crate::scxml_identifier::is_code_identifier(name) {
+                Some("a name the generated code can spell: a letter or `_`, then letters, digits or `_`")
+            } else if name.starts_with("sce_") {
+                Some(
+                    "a name that does not begin `sce_`, which the generated code keeps for its own",
+                )
+            } else if crate::generator::Language::ALL
+                .iter()
+                .any(|l| crate::reader_names::is_reserved_word(*l, name))
+            {
+                Some("a name no backend reserves as a keyword")
+            } else if ctx.declares(name) {
+                Some(
+                    "a name nothing in scope already means: a variable, an enum, an imported \
+                     algorithm or an enclosing loop's variable, which this one would hide",
+                )
+            } else if attr == "index" && name == item {
+                Some("a name other than the item's")
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                return Err(place(attr, format!("a <foreach> {attr} is {why}"), name));
+            }
+        }
+        let mut inner: TypeCtx<'_> = ctx.clone();
+        inner.insert_var(item, elem);
+        if !index.is_empty() {
+            inner.insert_var(
+                index,
+                InferredType::from_sce_type(&crate::forge::model::SceType::Uint32),
+            );
+        }
+        self.actions(&inner, &action.actions, state)
     }
 
     fn invoke(

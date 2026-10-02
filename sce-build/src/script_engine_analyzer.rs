@@ -165,14 +165,16 @@ impl ScriptEngineCauseKind {
             | C::AssignAction { .. }
             | C::LogExpr { .. }
             | C::HostInvokeExpr { .. }
-            | C::DonedataParam { .. } => true,
+            | C::DonedataParam { .. }
+            // A `<foreach>` the model admits walks a list variable, and is
+            // lowered to a native loop over its typed elements.
+            | C::ForeachAction { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
             | C::SendNamelist { .. }
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
             | C::CancelExpr { .. }
-            | C::ForeachAction { .. }
             | C::HybridInvoke { .. }
             | C::StaticInvokeNamelist { .. }
             | C::MeshRpcSrcExpr { .. }

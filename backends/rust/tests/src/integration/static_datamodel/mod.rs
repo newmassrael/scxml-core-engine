@@ -5,6 +5,7 @@ pub mod static_block_ends_list_sm;
 pub mod static_block_ends_sm;
 pub mod static_counter_sm;
 pub mod static_enum_sm;
+pub mod static_foreach_sm;
 pub mod static_history_sm;
 pub mod static_host_call_sm;
 pub mod static_invoke__sce_synth_invoke__worker_sm;

@@ -4162,6 +4162,14 @@
           "file": "sce/include/parsing/ActionParser.h",
           "symbol": "appendExecutableContent",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

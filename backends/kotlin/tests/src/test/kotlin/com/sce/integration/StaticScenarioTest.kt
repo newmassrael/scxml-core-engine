@@ -22,6 +22,7 @@ import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
+import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -253,6 +254,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_fields"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticForeachWalksAListAndAFailingBodyEndsTheBlock() {
+        val sm = StaticForeachStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_foreach"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

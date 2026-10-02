@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): <foreach> over a
+  list variable (W3C SCXML 4.6). The item is each element typed as the list's
+  element and the index its position, a uint32; both are the body's own. A
+  body element that fails — a sum that overflows, an append to a full list —
+  ends the loop and the block that holds it (4.9). The loop walks the list as
+  it was when it began, so a body that appends does not lengthen the walk.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_foreach">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="weighted" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="small" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="crossings" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="visited" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="finished" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <transition event="a" type="internal"><sce:append target="picked" expr="100"/></transition>
+    <transition event="b" type="internal"><sce:append target="picked" expr="200"/></transition>
+    <transition event="c" type="internal"><sce:append target="picked" expr="5"/></transition>
+    <transition event="clear" type="internal"><sce:clear target="picked"/></transition>
+    <!-- The item alone: a sum, widened to the total's width. -->
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="picked" item="v">
+        <assign location="total" expr="total + v"/>
+      </foreach>
+      <assign location="finished" expr="finished + 1"/>
+    </transition>
+    <!-- The item and the index: each element weighted by its position. -->
+    <transition event="weigh" type="internal">
+      <assign location="weighted" expr="0"/>
+      <foreach array="picked" item="v" index="i">
+        <assign location="weighted" expr="weighted + v * (i + 1)"/>
+      </foreach>
+      <assign location="finished" expr="finished + 1"/>
+    </transition>
+    <!-- A sum that no longer fits its variable: the assignment that overflows
+         is skipped and raises error.execution, the loop stops, and the block
+         ends, so `finished` does not move. -->
+    <transition event="squeeze" type="internal">
+      <assign location="small" expr="0"/>
+      <foreach array="picked" item="v">
+        <assign location="small" expr="small + v"/>
+      </foreach>
+      <assign location="finished" expr="finished + 1"/>
+    </transition>
+    <!-- The walk is of the list as it began: appending each element to the
+         list it walks adds one copy of each, then the list is full. -->
+    <transition event="double" type="internal">
+      <foreach array="picked" item="v">
+        <sce:append target="picked" expr="v"/>
+      </foreach>
+      <assign location="finished" expr="finished + 1"/>
+    </transition>
+    <!-- A loop in a loop, each with names of its own. -->
+    <transition event="cross" type="internal">
+      <assign location="crossings" expr="0"/>
+      <foreach array="picked" item="v" index="i">
+        <foreach array="picked" item="w">
+          <assign location="crossings" expr="crossings + 1"/>
+        </foreach>
+      </foreach>
+    </transition>
+    <!-- Neither loop variable is read: no warning in the generated code. -->
+    <transition event="count" type="internal">
+      <assign location="visited" expr="0"/>
+      <foreach array="picked" item="v" index="i">
+        <assign location="visited" expr="visited + 1"/>
+      </foreach>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>
