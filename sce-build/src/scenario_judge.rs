@@ -335,10 +335,11 @@ impl Trace {
     /// are looked at before the typed read, so a file of another kind is told
     /// it is of another kind.
     pub fn from_json(raw: &str, label: &str) -> Result<Self, TraceError> {
-        let tree: Value = serde_json::from_str(raw).map_err(|source| TraceError::Parse {
-            path: label.to_string(),
-            source,
-        })?;
+        let tree: Value =
+            crate::strict_json::from_str(raw).map_err(|source| TraceError::Parse {
+                path: label.to_string(),
+                source,
+            })?;
         match tree.get("record").and_then(Value::as_str) {
             Some(TRACE_RECORD_KIND) => {}
             Some(other) => {

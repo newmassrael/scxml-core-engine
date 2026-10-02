@@ -1123,7 +1123,7 @@ impl RequirementManifest {
         // produced this hole — `text` was guarded by name while
         // `title`, sitting in the struct beside it, was not.
         let tree: serde_json::Value =
-            serde_json::from_str(raw).map_err(|source| ManifestError::Parse {
+            crate::strict_json::from_str(raw).map_err(|source| ManifestError::Parse {
                 path: label.to_string(),
                 source,
             })?;

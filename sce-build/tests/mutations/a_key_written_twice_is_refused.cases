@@ -1,0 +1,93 @@
+# Mutation cases for "an author's JSON that writes a key twice is refused".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_key_written_twice_is_refused.cases`.
+#
+# `serde_json` keeps the LAST value of a repeated key and says nothing, so a scenario
+# set that wrote `origin` as `ai-proposed` and then as `owner-written` was judged as the
+# owner's own examples with no problem reported. `strict_json::from_str` is
+# `serde_json::from_str` with that one refusal added, and six readers of an owner's file
+# call it. Two things are easy to get wrong and read as success: the refusal checks the
+# top level and nothing under it (an array item, a nested object), and a reader goes
+# back to `serde_json::from_str` so that its own tests stay green while the one thing
+# this file holds is gone.
+#
+# Each case below takes one of those away and must make a test red: the unit tests of
+# `strict_json.rs`, `a_key_written_twice_is_refused.rs`, which gives every reader a
+# repeat and a control without one, or `a_sidecar_is_refused_unless_it_is_its_manifests_own.rs`.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib --test a_key_written_twice_is_refused --test a_sidecar_is_refused_unless_it_is_its_manifests_own
+mutation_targets sce-build/src/strict_json.rs sce-build/src/scenario_set.rs sce-build/src/scenario_judge.rs sce-build/src/authoring_profile.rs sce-build/src/acceptance_record.rs sce-build/src/requirement_manifest.rs sce-build/src/requirement_sidecar.rs
+mutation_oracles sce-build/src/strict_json.rs sce-build/tests/a_key_written_twice_is_refused.rs sce-build/tests/a_sidecar_is_refused_unless_it_is_its_manifests_own.rs
+
+# ── The refusal itself ──────────────────────────────────────────────
+
+mutation_case "from_str parses without looking for a repeat" <<'PY'
+edit("sce-build/src/strict_json.rs",
+     "    check(text)?;\n    serde_json::from_str(text)",
+     "    serde_json::from_str(text)")
+PY
+
+mutation_case "a key already seen is let through" <<'PY'
+edit("sce-build/src/strict_json.rs",
+     "            if seen.contains(&key) {",
+     "            if seen.contains(&key) && false {")
+PY
+
+mutation_case "an object under a key is not looked into" <<'PY'
+edit("sce-build/src/strict_json.rs",
+     "            map.next_value_seed(Unrepeated)?;",
+     "            map.next_value::<serde::de::IgnoredAny>()?;")
+PY
+
+mutation_case "an array's items are not looked into" <<'PY'
+edit("sce-build/src/strict_json.rs",
+     "        while seq.next_element_seed(Unrepeated)?.is_some() {}",
+     "        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}")
+PY
+
+# ── Each reader of an owner's file goes through it ──────────────────
+
+mutation_case "the scenario set is read without the refusal" <<'PY'
+edit("sce-build/src/scenario_set.rs",
+     "            crate::strict_json::from_str(raw).map_err(|source| ScenarioSetError::Parse {",
+     "            serde_json::from_str(raw).map_err(|source| ScenarioSetError::Parse {")
+PY
+
+mutation_case "the observation trace is read without the refusal" <<'PY'
+edit("sce-build/src/scenario_judge.rs",
+     "            crate::strict_json::from_str(raw).map_err(|source| TraceError::Parse {",
+     "            serde_json::from_str(raw).map_err(|source| TraceError::Parse {")
+PY
+
+mutation_case "the authoring profile is read without the refusal" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     "        let document: serde_json::Value = crate::strict_json::from_str(text).map_err(shape)?;",
+     "        let document: serde_json::Value = serde_json::from_str(text).map_err(shape)?;")
+PY
+
+mutation_case "the acceptance record is read without the refusal" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            crate::strict_json::from_str(text).map_err(|e| RecordError::Format {",
+     "            serde_json::from_str(text).map_err(|e| RecordError::Format {")
+PY
+
+mutation_case "the requirement manifest is read without the refusal" <<'PY'
+edit("sce-build/src/requirement_manifest.rs",
+     "            crate::strict_json::from_str(raw).map_err(|source| ManifestError::Parse {",
+     "            serde_json::from_str(raw).map_err(|source| ManifestError::Parse {")
+PY
+
+mutation_case "the requirement sidecar is read without the refusal" <<'PY'
+edit("sce-build/src/requirement_sidecar.rs",
+     "            crate::strict_json::from_str(raw).map_err(|source| SidecarError::Parse {",
+     "            serde_json::from_str(raw).map_err(|source| SidecarError::Parse {")
+PY

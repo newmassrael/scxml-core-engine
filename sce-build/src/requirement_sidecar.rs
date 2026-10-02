@@ -193,7 +193,7 @@ impl RequirementSidecar {
         manifest: &RequirementManifest,
     ) -> Result<Self, SidecarError> {
         let sidecar: RequirementSidecar =
-            serde_json::from_str(raw).map_err(|source| SidecarError::Parse {
+            crate::strict_json::from_str(raw).map_err(|source| SidecarError::Parse {
                 path: label.to_string(),
                 source,
             })?;

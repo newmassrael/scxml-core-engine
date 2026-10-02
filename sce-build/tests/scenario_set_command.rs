@@ -269,6 +269,39 @@ fn a_file_that_is_not_a_scenario_set_is_refused_and_prints_nothing() {
     }
 }
 
+/// A key written twice kept the LAST value and said nothing: a set that wrote
+/// `origin` as `ai-proposed` and then as `owner-written` was read as the
+/// owner's own examples, with `problems: 0`. Reproduced against this command
+/// before the reader refused it.
+#[test]
+fn a_set_that_writes_a_key_twice_is_refused_naming_the_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (name, text) in [
+        (
+            "origin-twice.json",
+            SMALL.replacen("\"origin\"", "\"origin\": \"ai-proposed\", \"origin\"", 1),
+        ),
+        (
+            "nested-twice.json",
+            SMALL.replacen("\"quote\"", "\"quote\": \"first\", \"quote\"", 1),
+        ),
+    ] {
+        let path = written(&dir, name, &text);
+        let run = scenarios(&[&path]);
+        assert_eq!(run.code, Some(20), "{name} must be refused: {}", run.stderr);
+        assert!(run.stdout.is_empty(), "{name}: {}", run.stdout);
+        let record: Value = serde_json::from_str(run.stderr.lines().next().expect("a record"))
+            .unwrap_or_else(|e| panic!("{name}: stderr is not a record ({e}): {}", run.stderr));
+        assert_eq!(
+            record["code"], "cli/closure-input-unusable",
+            "{name}: {record}"
+        );
+        let message = record["message"].as_str().expect("a message");
+        assert!(message.contains(name), "{name}: {record}");
+        assert!(message.contains("is written twice"), "{name}: {record}");
+    }
+}
+
 #[test]
 fn a_specification_that_cannot_be_read_ends_the_run() {
     let dir = tempfile::tempdir().expect("tempdir");

@@ -693,9 +693,10 @@ impl AcceptanceRecord {
 
     /// Read a record, refusing anything this module would not have written.
     pub fn from_json(text: &str) -> Result<Self, RecordError> {
-        let wire: RecordWire = serde_json::from_str(text).map_err(|e| RecordError::Format {
-            detail: e.to_string(),
-        })?;
+        let wire: RecordWire =
+            crate::strict_json::from_str(text).map_err(|e| RecordError::Format {
+                detail: e.to_string(),
+            })?;
         if wire.record != RECORD_KIND {
             return Err(RecordError::Format {
                 detail: format!("`record` is `{}`, not `{RECORD_KIND}`", wire.record),

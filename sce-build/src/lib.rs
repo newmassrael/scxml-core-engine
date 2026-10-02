@@ -280,6 +280,9 @@ pub mod scxml_semantic;
 /// so the pseudocode review surface can show `0x1a` where the model
 /// holds `26`. See [`source_literal`].
 pub mod source_literal;
+/// An author's JSON read the way they meant it: an object that writes a key
+/// twice is refused, not resolved to the last. See [`strict_json::from_str`].
+pub mod strict_json;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
 /// parameterised composition adjacent to XInclude. AOT-only;
 /// runs immediately after XInclude expansion

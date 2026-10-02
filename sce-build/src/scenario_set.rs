@@ -432,8 +432,10 @@ impl ScenarioSet {
     /// file of another kind is told it is of another kind, and not that it
     /// has a field this build does not know.
     pub fn from_json(raw: &str, label: &str) -> Result<Self, ScenarioSetError> {
+        // ⚠ A key written twice would keep the last: `origin` read twice made
+        // an AI-proposed set the owner's own, with no problem reported.
         let tree: serde_json::Value =
-            serde_json::from_str(raw).map_err(|source| ScenarioSetError::Parse {
+            crate::strict_json::from_str(raw).map_err(|source| ScenarioSetError::Parse {
                 path: label.to_string(),
                 source,
             })?;

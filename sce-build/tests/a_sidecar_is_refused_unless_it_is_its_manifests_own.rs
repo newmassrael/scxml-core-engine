@@ -107,6 +107,29 @@ fn a_sidecar_about_another_document_or_revision_is_refused() {
     );
 }
 
+/// Two sentences for one requirement id kept the LAST and said nothing, so the
+/// reviewer read the wrong sentence beside the page with nothing to say there
+/// had been another. A repeat is refused, and the key it names is the id.
+#[test]
+fn a_sidecar_that_writes_one_requirement_twice_is_refused_naming_it() {
+    let manifest = manifest();
+    let raw = r#"{ "doc_id": "example-relay-spec", "rev": "D3",
+        "text": { "REQ-042": "The first reading.", "REQ-042": "The second reading." } }"#;
+
+    match RequirementSidecar::from_json(raw, "sidecar under test", &manifest) {
+        Err(SidecarError::Parse { source, .. }) => {
+            let said = source.to_string();
+            assert!(said.contains("\"REQ-042\""), "{said}");
+            assert!(said.contains("is written twice"), "{said}");
+        }
+        Err(other) => panic!("refused, but for the wrong reason: {other}"),
+        Ok(loaded) => panic!(
+            "a sidecar that wrote REQ-042 twice was accepted, reading {:?}",
+            loaded.sentence("REQ-042")
+        ),
+    }
+}
+
 #[test]
 fn an_incomplete_sidecar_is_usable_and_says_where_it_is_silent() {
     let manifest = manifest();

@@ -451,7 +451,9 @@ impl AuthoringProfile {
             };
             unusable(kind, format!("not an authoring profile: {error}"))
         };
-        let document: serde_json::Value = serde_json::from_str(text).map_err(shape)?;
+        // ⚠ The profile is what a design is held to, so a setting written
+        // twice is refused rather than resolved to the later one.
+        let document: serde_json::Value = crate::strict_json::from_str(text).map_err(shape)?;
         let serde_json::Value::Object(mut fields) = document else {
             return Err(unusable(
                 ProfileFault::InvalidShape,
