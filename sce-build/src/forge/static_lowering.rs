@@ -1967,6 +1967,17 @@ fn lower_action(
     // `native_cond` — the slots every backend's action dispatcher reads before
     // its own spellings, so the IR the author wrote is left as it was.
     match action.action_type.as_str() {
+        // A whole record is taken from a record of its schema by name — a
+        // record variable or a loop's record item — and is a plain value, so
+        // the variable holds a copy of it as it stands now.
+        "assign" if rewrites.records.contains_key(action.location.trim()) => {
+            let location = action.location.trim();
+            let written = action.expr.trim();
+            let value = renames.get(written).copied().unwrap_or(written);
+            let name = renames.get(location).copied().unwrap_or(location);
+            rewrites.note(&action.expr, action.spellings.get("expr"), value);
+            action.native_code = target.assign(name, value);
+        }
         "assign" => {
             reads_payload = reads(&action.expr);
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)

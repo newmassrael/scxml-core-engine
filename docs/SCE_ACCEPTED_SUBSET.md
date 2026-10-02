@@ -2756,8 +2756,12 @@ exactly once and none the schema does not declare, and it takes no `expr`:
 A field is read as `shown.<field>`, typed as the schema types it; the
 variable is closed over its fields, so any other member is
 `expression/unknown-member`. It is updated a field at a time,
-`<assign location="shown.<field>">`; assigning the whole record is refused
-as `expression/unsupported-construct`. A missing field is refused on the
+`<assign location="shown.<field>">`, or taken whole from another record of the
+same schema by its name, `<assign location="shown" expr="chosen"/>` — a record
+variable, or the record item of a `<foreach>` over a list of it. Nothing in an
+expression makes a record, so any other value assigned to the whole record is
+`scxml/static-datamodel-rule` on the `expr`, which says which names it takes.
+A missing field is refused on the
 `sce:type` that names the record, an unknown or repeated one on its `name`,
 both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
 because `<sce:field>` is the codec's byte-layout field.

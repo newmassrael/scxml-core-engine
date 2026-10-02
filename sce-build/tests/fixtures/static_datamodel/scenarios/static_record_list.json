@@ -1,9 +1,9 @@
 {
   "machine": "static_record_list",
-  "about": "A list of records: each append takes a copy of the record variable as it stands; a <foreach> reads the fields of its record item typed and appends the item whole to another list; a full list takes no more and raises error.execution. A saved list is an array of the record's objects. Expected values are derived from the document, not observed from a backend.",
+  "about": "A list of records: each append takes a copy of the record variable as it stands; a <foreach> reads the fields of its record item typed and appends the item whole to another list; a whole record is assigned from a record by name; a full list takes no more and raises error.execution. A saved list is an array of the record's objects. Expected values are derived from the document, not observed from a backend.",
   "steps": [
     { "note": "an empty list of records",
-      "expect": { "state": "collecting", "variables": { "days": [], "copies": [], "total": 0, "errors": 0 } } },
+      "expect": { "state": "collecting", "variables": { "days": [], "copies": [], "total": 0, "errors": 0, "last": { "year": 2000, "month": 1, "dayOfMonth": 1 } } } },
     { "event": "sum", "expect": { "variables": { "total": 0 } } },
 
     { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 24 },
@@ -38,6 +38,11 @@
         { "year": 2026, "month": 9, "dayOfMonth": 24 },
         { "year": 2026, "month": 10, "dayOfMonth": 2 },
         { "year": 2027, "month": 1, "dayOfMonth": 31 } ] } } },
+
+    { "note": "a whole record assigned from the loop's record item: the last one it saw",
+      "event": "latest", "expect": { "variables": { "last": { "year": 2027, "month": 1, "dayOfMonth": 31 } } } },
+    { "note": "a whole record assigned from a record variable: the draft takes `last` whole",
+      "event": "reuse", "expect": { "variables": { "draft": { "year": 2027, "month": 1, "dayOfMonth": 31 } } } },
 
     { "event": "clear", "expect": { "variables": { "days": [] } } },
     { "note": "a loop over an empty list does not run",

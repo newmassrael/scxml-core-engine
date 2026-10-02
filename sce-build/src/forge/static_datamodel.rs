@@ -645,27 +645,24 @@ impl<'a> Judge<'a> {
                         self.diag_label,
                     ));
                 }
-                if self.scope.variables.iter().any(|v| {
-                    v.id == location
-                        && v.value_type
-                            .as_ref()
-                            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
-                            .is_some()
-                }) {
-                    return Err(Located::in_file(
-                        ExpressionSite::new(&action.location, action.spellings.get("location"))
-                            .place(
-                                crate::forge::error::ExprError::UnsupportedConstruct {
-                                    construct: format!(
-                                        "an assignment to the whole record `{location}` \
-                                         (a record is updated a field at a time)"
-                                    ),
-                                    observed: Some(location.to_string()),
-                                }
-                                .at(None),
-                            ),
-                        self.diag_label,
-                    ));
+                // Nothing in an expression makes a record, so a whole record is
+                // assigned from one that exists, by its name: a record
+                // variable of its schema, or a loop's record item.
+                if let Some(alias) = self
+                    .scope
+                    .variables
+                    .iter()
+                    .find(|v| v.id == location)
+                    .and_then(|v| v.value_type.as_ref())
+                    .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+                {
+                    return self.record_of(
+                        "assign",
+                        &action.expr,
+                        action.spellings.get("expr"),
+                        alias,
+                        state,
+                    );
                 }
                 if self.list_var(location).is_some() {
                     return Err(Located::in_file(
@@ -747,7 +744,13 @@ impl<'a> Judge<'a> {
                     // A record is appended whole, by the name of a record of
                     // the list's schema: nothing computes one in an expression.
                     Some(crate::forge::model::ListElemType::Record { alias }) => {
-                        self.record_of(&action.expr, action.spellings.get("expr"), alias, state)?;
+                        self.record_of(
+                            "sce:append",
+                            &action.expr,
+                            action.spellings.get("expr"),
+                            alias,
+                            state,
+                        )?;
                     }
                     elem => {
                         let elem = elem
@@ -915,13 +918,15 @@ impl<'a> Judge<'a> {
         judged
     }
 
-    /// `expr`, which an `<sce:append>` to a list of `record:<alias>` takes, is
-    /// the name of a record of that schema — a record variable declared
-    /// `record:<alias>`, or the record item of a `<foreach>` over a list of it:
-    /// a record is built by its `<sce:set>`s and updated a field at a time, so
-    /// nothing in an expression makes one.
+    /// `expr`, which an `<sce:append>` to a list of `record:<alias>` or an
+    /// `<assign>` to a record variable of it takes (`element`), is the name of
+    /// a record of that schema — a record variable declared `record:<alias>`,
+    /// or the record item of a `<foreach>` over a list of it: a record is built
+    /// by its `<sce:set>`s and updated a field at a time, so nothing in an
+    /// expression makes one.
     fn record_of(
         &self,
+        element: &str,
         expr: &str,
         spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
         alias: &str,
@@ -943,11 +948,10 @@ impl<'a> Judge<'a> {
             return Ok(());
         }
         Err(self.rule_at(
-            format!("<sce:append expr=\"{written}\">"),
+            format!("<{element} expr=\"{written}\">"),
             &format!(
-                "a list of record:{alias} takes a record of that schema, written as its name: \
-                 a record variable declared record:{alias}, or the item of a <foreach> over a \
-                 list of it"
+                "a whole record of the schema {alias} is taken by name: a record variable \
+                 declared record:{alias}, or the item of a <foreach> over a list of it"
             ),
             spelling.map(|s| s.row()),
             spelling.map(|s| s.col()),

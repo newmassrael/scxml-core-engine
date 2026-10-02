@@ -52,6 +52,11 @@ fn machine(body: &str) -> String {
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>
     </data>
+    <data id="other" sce:type="record:Day">
+      <sce:set name="year" expr="2000"/>
+      <sce:set name="month" expr="2"/>
+      <sce:set name="dayOfMonth" expr="2"/>
+    </data>
     <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
     <data id="copies" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
     <data id="total" sce:type="uint32" expr="0"/>
@@ -122,13 +127,42 @@ fn a_list_takes_a_record_written_as_its_name() {
     for expr in ["draft.year", "total", "nothing", "draft.year + 1"] {
         refused(
             &format!(r#"<sce:append target="days" expr="{expr}"/>"#),
-            "takes a record of that schema",
+            "is taken by name",
         );
     }
     // A loop's record item is a name only inside its loop.
     refused(
         r#"<foreach array="days" item="d"/><sce:append target="copies" expr="d"/>"#,
-        "takes a record of that schema",
+        "is taken by name",
+    );
+}
+
+#[test]
+fn a_record_variable_is_assigned_whole_from_a_record_by_name() {
+    let body = r#"
+      <assign location="other" expr="draft"/>
+      <foreach array="days" item="d">
+        <assign location="draft" expr="d"/>
+      </foreach>"#;
+    for args in [
+        &["check"][..],
+        &["check", "-l", "rust"],
+        &["check", "-l", "kotlin"],
+    ] {
+        let (ok, out) = run(args, &machine(body));
+        assert!(ok, "{args:?}: a whole record from a record:\n{out}");
+    }
+    // A field is a number and an expression makes no record; the item of a
+    // loop is a name only inside it.
+    for expr in ["draft.year", "total", "1", "nothing"] {
+        refused(
+            &format!(r#"<assign location="other" expr="{expr}"/>"#),
+            "is taken by name",
+        );
+    }
+    refused(
+        r#"<foreach array="days" item="d"/><assign location="other" expr="d"/>"#,
+        "is taken by name",
     );
 }
 

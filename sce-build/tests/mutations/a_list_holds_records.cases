@@ -16,14 +16,23 @@ mutation_tests -p sce-build --features cli --test a_list_holds_records
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_list_holds_records.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs
 
-# Any expression is appended as a record: `draft.year`, a number, a name that
-# means nothing.
-mutation_case "an append takes any expression as a record" <<'PY'
+# Any expression is appended as a record, or assigned to a whole record:
+# `draft.year`, a number, a name that means nothing. One check serves both.
+mutation_case "an append or an assignment takes any expression as a record" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        if names_one {\n            return Ok(());\n",
      "        if names_one || true {\n            return Ok(());\n")
+PY
+
+# A whole record is assigned like a number: the right-hand side is lowered as
+# an expression, which has no record to lower, and the test of the whole
+# record reads a name nothing declares.
+mutation_case "a whole record is lowered as an expression" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        \"assign\" if rewrites.records.contains_key(action.location.trim()) => {\n",
+     "        \"assign\" if false && rewrites.records.contains_key(action.location.trim()) => {\n")
 PY
 
 # A write to what a loop binds is accepted: Kotlin's item is a `val`, and a

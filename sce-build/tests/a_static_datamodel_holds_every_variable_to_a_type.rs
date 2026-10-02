@@ -622,7 +622,10 @@ fn a_field_nothing_declares_is_refused_where_it_is_read() {
 }
 
 #[test]
-fn an_assignment_to_a_whole_record_is_refused() {
+fn a_whole_record_is_assigned_only_from_a_record_by_name() {
+    // The event's payload is a class of its own, not a record of the machine:
+    // a record is taken whole from another record, by name, and
+    // `a_list_holds_records.rs` holds that.
     let (ok, out) = run_record(
         &["check"],
         &record(
@@ -630,8 +633,8 @@ fn an_assignment_to_a_whole_record_is_refused() {
             r#"<state id="s"><transition event="day.picked" type="internal"><assign location="shown" expr="_event.data"/></transition></state>"#,
         ),
     );
-    assert!(!ok, "a record is updated a field at a time:\n{out}");
-    assert_refused_at(&out, "expression/unsupported-construct", 12);
+    assert!(!ok, "a record is taken whole from a record:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
 }
 
 // ── A child session is given no <param> ─────────────────────────────────

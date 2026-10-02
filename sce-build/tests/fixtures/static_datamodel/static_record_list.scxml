@@ -19,6 +19,11 @@
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>
     </data>
+    <data id="last" sce:type="record:Day" sce:direction="out">
+      <sce:set name="year" expr="2000"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
     <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
     <data id="copies" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
     <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
@@ -46,6 +51,17 @@
       <foreach array="days" item="d" index="i">
         <sce:append target="copies" expr="d"/>
       </foreach>
+    </transition>
+    <!-- A whole record is assigned from a record by name: the last the loop
+         saw is the one `last` holds. -->
+    <transition event="latest" type="internal">
+      <foreach array="days" item="d">
+        <assign location="last" expr="d"/>
+      </foreach>
+    </transition>
+    <!-- And from a record variable: the draft takes `last` whole. -->
+    <transition event="reuse" type="internal">
+      <assign location="draft" expr="last"/>
     </transition>
     <transition event="clear" type="internal">
       <sce:clear target="days"/>

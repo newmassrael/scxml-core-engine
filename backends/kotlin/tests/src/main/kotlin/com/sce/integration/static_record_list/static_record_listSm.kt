@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3d08f035e56e53f641624ca93616d5d4ec53efc9a2a72e840357646efbf26747
+// source-hash: 0fe4406bbc37415597aec16bb66149e82c886990e39e4ecd6a737aa74e321888
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list.scxml
@@ -28,6 +28,8 @@ sealed interface StaticRecordListEvent : Event {
     sealed interface Error : StaticRecordListEvent {
         data object Execution : Error
     }
+    data object Latest : StaticRecordListEvent
+    data object Reuse : StaticRecordListEvent
     data object Sum : StaticRecordListEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
@@ -62,6 +64,9 @@ class StaticRecordListStateMachine(
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `draft` datamodel variable, the machine's own. */
     private var draft: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+    /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
+    var last: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+        private set
     /** W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`). */
     var days: List<StaticRecordListDayRecord> = emptyList()
         private set
@@ -77,6 +82,7 @@ class StaticRecordListStateMachine(
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
+        val last: StaticRecordListDayRecord,
         val days: List<StaticRecordListDayRecord>,
         val copies: List<StaticRecordListDayRecord>,
         val total: UInt,
@@ -97,6 +103,7 @@ class StaticRecordListStateMachine(
     )
 
     private fun currentData(): Data = Data(
+        last = last,
         days = days,
         copies = copies,
         total = total,
@@ -127,7 +134,7 @@ class StaticRecordListStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "a47a521340a9a9a00ab650f9e89534248aca6a142da4933ac8464950c7421b11"
+    val savedShape: String = "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -144,6 +151,7 @@ class StaticRecordListStateMachine(
         savedShape,
         linkedMapOf(
             "draft" to draft.toSaved(),
+            "last" to last.toSaved(),
             "days" to SavedValues.list(days) { it.toSaved() },
             "copies" to SavedValues.list(copies) { it.toSaved() },
             "total" to SavedValues.of(total),
@@ -174,15 +182,17 @@ class StaticRecordListStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = StaticRecordListDayRecord.fromSaved(saved.variable("draft"), "draft")
-        val saved2 = SavedValues.list(saved.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
-        val saved3 = SavedValues.list(saved.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
-        val saved4 = SavedValues.uint32(saved.variable("total"), "total")
-        val saved5 = SavedValues.uint32(saved.variable("errors"), "errors")
+        val saved2 = StaticRecordListDayRecord.fromSaved(saved.variable("last"), "last")
+        val saved3 = SavedValues.list(saved.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
+        val saved4 = SavedValues.list(saved.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
+        val saved5 = SavedValues.uint32(saved.variable("total"), "total")
+        val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
         draft = saved1
-        days = saved2
-        copies = saved3
-        total = saved4
-        errors = saved5
+        last = saved2
+        days = saved3
+        copies = saved4
+        total = saved5
+        errors = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -306,6 +316,24 @@ class StaticRecordListStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: collecting's transition 5, as the microstep reads it.
+        val transitionCollectingAt5 = EnabledTransition<StaticRecordListState, HistoryId>(
+            StaticRecordListState.Collecting,
+            emptyList(),
+            5,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: collecting's transition 6, as the microstep reads it.
+        val transitionCollectingAt6 = EnabledTransition<StaticRecordListState, HistoryId>(
+            StaticRecordListState.Collecting,
+            emptyList(),
+            6,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -330,6 +358,8 @@ class StaticRecordListStateMachine(
         "copy" -> StaticRecordListEvent.Copy
         "day.picked" -> StaticRecordListEvent.Day.Picked
         "error.execution" -> StaticRecordListEvent.Error.Execution
+        "latest" -> StaticRecordListEvent.Latest
+        "reuse" -> StaticRecordListEvent.Reuse
         "sum" -> StaticRecordListEvent.Sum
         else -> null
     }
@@ -340,6 +370,8 @@ class StaticRecordListStateMachine(
         is StaticRecordListEvent.Copy -> "copy"
         is StaticRecordListEvent.Day.Picked -> "day.picked"
         is StaticRecordListEvent.Error.Execution -> "error.execution"
+        is StaticRecordListEvent.Latest -> "latest"
+        is StaticRecordListEvent.Reuse -> "reuse"
         is StaticRecordListEvent.Sum -> "sum"
     }
 
@@ -360,8 +392,10 @@ class StaticRecordListStateMachine(
             event is StaticRecordListEvent.Day.Picked -> transitionCollectingAt0
             event is StaticRecordListEvent.Sum -> transitionCollectingAt1
             event is StaticRecordListEvent.Copy -> transitionCollectingAt2
-            event is StaticRecordListEvent.Clear -> transitionCollectingAt3
-            event is StaticRecordListEvent.Error.Execution -> transitionCollectingAt4
+            event is StaticRecordListEvent.Latest -> transitionCollectingAt3
+            event is StaticRecordListEvent.Reuse -> transitionCollectingAt4
+            event is StaticRecordListEvent.Clear -> transitionCollectingAt5
+            event is StaticRecordListEvent.Error.Execution -> transitionCollectingAt6
             else -> null
         }
     }
@@ -372,7 +406,7 @@ class StaticRecordListStateMachine(
     override fun onEntry(state: StaticRecordListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:27 :: collecting :: _state_body
+                // SCE-MAP: static_record_list.scxml:32 :: collecting :: _state_body
             }
         }
     }
@@ -382,7 +416,7 @@ class StaticRecordListStateMachine(
     override fun onExit(state: StaticRecordListState) {
         when (state) {
             is StaticRecordListState.Collecting -> {
-                // SCE-MAP: static_record_list.scxml:27 :: collecting :: _state_body
+                // SCE-MAP: static_record_list.scxml:32 :: collecting :: _state_body
             }
         }
     }
@@ -394,7 +428,7 @@ class StaticRecordListStateMachine(
         when (source) {
         is StaticRecordListState.Collecting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record_list.scxml:30 :: collecting :: _transition_0
+                // SCE-MAP: static_record_list.scxml:35 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
                 }
@@ -410,7 +444,7 @@ class StaticRecordListStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: static_record_list.scxml:37 :: collecting :: _transition_1
+                // SCE-MAP: static_record_list.scxml:42 :: collecting :: _transition_1
 
             total = 0.toUInt()
 
@@ -423,7 +457,7 @@ class StaticRecordListStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: static_record_list.scxml:44 :: collecting :: _transition_2
+                // SCE-MAP: static_record_list.scxml:49 :: collecting :: _transition_2
 
             copies = emptyList()
 
@@ -437,12 +471,26 @@ class StaticRecordListStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: static_record_list.scxml:50 :: collecting :: _transition_3
+                // SCE-MAP: static_record_list.scxml:57 :: collecting :: _transition_3
+
+
+            for (d in days) {
+
+            last = d
+            }
+            }
+            4 -> {
+                // SCE-MAP: static_record_list.scxml:63 :: collecting :: _transition_4
+
+            draft = last
+            }
+            5 -> {
+                // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_5
 
             days = emptyList()
             }
-            4 -> {
-                // SCE-MAP: static_record_list.scxml:53 :: collecting :: _transition_4
+            6 -> {
+                // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_6
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

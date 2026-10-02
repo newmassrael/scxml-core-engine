@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3d08f035e56e53f641624ca93616d5d4ec53efc9a2a72e840357646efbf26747
+// source-hash: 0fe4406bbc37415597aec16bb66149e82c886990e39e4ecd6a737aa74e321888
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -99,6 +99,8 @@ pub enum StaticRecordListEvent {
     Copy,
     DayPicked,
     ErrorExecution,
+    Latest,
+    Reuse,
     Sum,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -124,6 +126,8 @@ impl StaticRecordListEvent {
         StaticRecordListEvent::Clear,
         StaticRecordListEvent::Copy,
         StaticRecordListEvent::DayPicked,
+        StaticRecordListEvent::Latest,
+        StaticRecordListEvent::Reuse,
         StaticRecordListEvent::Sum,
     ];
 }
@@ -186,6 +190,7 @@ pub struct StaticRecordListDayRecord {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticRecordListData {
+    pub last: StaticRecordListDayRecord,
     pub days: Vec<StaticRecordListDayRecord>,
     pub copies: Vec<StaticRecordListDayRecord>,
     pub total: u32,
@@ -219,6 +224,7 @@ impl StaticRecordListObserve for Engine<StaticRecordListPolicy> {
         StaticRecordListSnapshot {
             configuration: self.get_active_states(),
             data: StaticRecordListData {
+                last: policy.last,
                 days: policy.days.clone(),
                 copies: policy.copies.clone(),
                 total: policy.total,
@@ -336,7 +342,7 @@ pub trait StaticRecordListPersist: Sized {
 impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
     type Policy = StaticRecordListPolicy;
 
-    const SHAPE: &'static str = "a47a521340a9a9a00ab650f9e89534248aca6a142da4933ac8464950c7421b11";
+    const SHAPE: &'static str = "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -357,6 +363,10 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
                 (
                     "draft".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.draft),
+                ),
+                (
+                    "last".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.last),
                 ),
                 (
                     "days".to_string(),
@@ -398,6 +408,10 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
             saved.variable("draft")?,
             "draft",
         )?;
+        policy.last = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("last")?,
+            "last",
+        )?;
         policy.days = ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
         policy.copies =
             ::sce_rust_runtime::saved_state::bounded(saved.variable("copies")?, "copies", 3)?;
@@ -424,6 +438,8 @@ pub struct StaticRecordListPolicy {
     pending_payload: StaticRecordListPayload,
     /// W3C SCXML 5.2: the `draft` datamodel variable.
     draft: StaticRecordListDayRecord,
+    /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
+    last: StaticRecordListDayRecord,
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
     days: Vec<StaticRecordListDayRecord>,
     /// W3C SCXML 5.2: the `copies` datamodel variable, published (`sce:direction="out"`).
@@ -461,6 +477,11 @@ impl StaticRecordListPolicy {
             month: 1,
             dayOfMonth: 1,
         };
+        let last: StaticRecordListDayRecord = StaticRecordListDayRecord {
+            year: 2000,
+            month: 1,
+            dayOfMonth: 1,
+        };
         let days: Vec<StaticRecordListDayRecord> = Vec::new();
         let copies: Vec<StaticRecordListDayRecord> = Vec::new();
         let total: u32 = 0;
@@ -468,6 +489,7 @@ impl StaticRecordListPolicy {
         Self {
             pending_payload: StaticRecordListPayload::default(),
             draft,
+            last,
             days,
             copies,
             total,
@@ -477,6 +499,12 @@ impl StaticRecordListPolicy {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// W3C SCXML 5.2: what the published `last` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn last(&self) -> StaticRecordListDayRecord {
+        self.last
     }
 
     /// W3C SCXML 5.2: what the published `days` datamodel variable
@@ -641,6 +669,8 @@ impl StatePolicy for StaticRecordListPolicy {
             StaticRecordListEvent::Copy => "copy",
             StaticRecordListEvent::DayPicked => "day.picked",
             StaticRecordListEvent::ErrorExecution => "error.execution",
+            StaticRecordListEvent::Latest => "latest",
+            StaticRecordListEvent::Reuse => "reuse",
             StaticRecordListEvent::Sum => "sum",
             StaticRecordListEvent::Null => "",
         }
@@ -652,6 +682,8 @@ impl StatePolicy for StaticRecordListPolicy {
             "copy" => Some(StaticRecordListEvent::Copy),
             "day.picked" => Some(StaticRecordListEvent::DayPicked),
             "error.execution" => Some(StaticRecordListEvent::ErrorExecution),
+            "latest" => Some(StaticRecordListEvent::Latest),
+            "reuse" => Some(StaticRecordListEvent::Reuse),
             "sum" => Some(StaticRecordListEvent::Sum),
             _ => None,
         }
@@ -808,7 +840,7 @@ impl StatePolicy for StaticRecordListPolicy {
                         });
                     }
                 }
-                if event == StaticRecordListEvent::Clear {
+                if event == StaticRecordListEvent::Latest {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -819,12 +851,34 @@ impl StatePolicy for StaticRecordListPolicy {
                         });
                     }
                 }
-                if event == StaticRecordListEvent::ErrorExecution {
+                if event == StaticRecordListEvent::Reuse {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 4,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordListEvent::Clear {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordListEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -850,7 +904,7 @@ impl StatePolicy for StaticRecordListPolicy {
             StaticRecordListState::Collecting => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_record_list.scxml:30 :: collecting :: _transition_0
+                        // SCE-MAP: static_record_list.scxml:35 :: collecting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             StaticRecordListPayload::DayPicked(ev) => ev.clone(),
@@ -881,7 +935,7 @@ impl StatePolicy for StaticRecordListPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_record_list.scxml:37 :: collecting :: _transition_1
+                        // SCE-MAP: static_record_list.scxml:42 :: collecting :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -909,7 +963,7 @@ impl StatePolicy for StaticRecordListPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_record_list.scxml:44 :: collecting :: _transition_2
+                        // SCE-MAP: static_record_list.scxml:49 :: collecting :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -936,17 +990,39 @@ impl StatePolicy for StaticRecordListPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_record_list.scxml:50 :: collecting :: _transition_3
+                        // SCE-MAP: static_record_list.scxml:57 :: collecting :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            for d in self.days.clone() {
+                                let _ = &d;
+
+                                // W3C SCXML 5.3: <assign location="last">
+                                self.last = d;
+                            }
+                        }
+                    }
+                    4 => {
+                        // SCE-MAP: static_record_list.scxml:63 :: collecting :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="draft">
+                            self.draft = self.last;
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="days">
                             self.days.clear();
                         }
                     }
-                    4 => {
-                        // SCE-MAP: static_record_list.scxml:53 :: collecting :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    6 => {
+                        // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="errors">
