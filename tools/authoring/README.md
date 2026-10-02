@@ -355,7 +355,11 @@ unplayable (an error no state answered, an open route, a macrostep the engine
 cut short, a chain of external events the engine handed back, a design that would
 not start) and another machine would refuse it too. `environment` means the machine that ran it stopped it (time, memory,
 output, a crash) and another machine may play it to the end, so a second run may
-differ; the answer says so. Every reply states the `isolation` the run really had
+differ; the answer says so. `decision` means the design leaves open a question the
+example needs answered, and the example is `blocked` by it, named, rather than
+failed: a design that sends to its parent while the specification never says who
+the caller is is played only when the interface routes an output through
+`#_parent`, and the driver never makes a parent up. Every reply states the `isolation` the run really had
 (`process+rlimit` on Linux, and a plain `process` where the kernel does not
 enforce the limits) and the `limits` it was bounded by. What this does NOT give
 is a namespace, a cgroup or a seccomp filter: those are further layers that a

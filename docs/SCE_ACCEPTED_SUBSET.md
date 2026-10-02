@@ -3668,9 +3668,13 @@ A refusal says whether another machine would refuse the same run. `refused`
 may carry a `cause`: `design` when what the design did made the example
 unplayable (an error no state answered, an open route, a macrostep the engine
 cut short, a design that would not start), `environment` when the machine that
-ran it did (time, memory, a crash, a kill). The verdict and gap records repeat
-it, so a client can tell a design that never settles from a run that was only
-slow. A refusal that names no cause is reported with none, and is not read as
+ran it did (time, memory, a crash, a kill), `decision` when the design leaves
+open a question the example needs answered. The last is judged `blocked`, not
+failed and not a gap, with the decision named: it is neither the design's
+defect nor a fact about the machine, and it ends when the owner answers. The
+verdict and gap records repeat the cause, so a client can tell a design that
+never settles from a run that was only slow. A refusal that names no cause is
+reported with none, and is not read as
 `design`. The trace may also name the `limits` the driver ran under (events,
 instructions, seconds, bytes) and the `isolation` it was kept in; the summary
 repeats both unread, so a verdict states the bound it was made under.
@@ -4000,6 +4004,20 @@ are not judged, and are said to be: a set in which any member names a
 child by expression (`srcexpr`), since whom it invokes is decided at
 runtime; and a set compiled against a deploy topology, whose machines
 may be invoked by peers the set does not contain.
+
+A scenario driver is not a parent either, and does not pretend to be one.
+It gives the machine a parent only when the interface the examples were
+accepted with routes an output through `#_parent` (`via`), which is the
+owner's word that there is a caller; the parent records what it is sent and
+answers nothing, and the route the driver reports is the engine's own (the
+SCXML Event I/O Processor), not the type the interface names. Without that
+route the run stops at the first send that reaches for a parent, found by
+the send and not by the `error.communication` it would raise (a machine that
+finishes in the same macrostep never handles it). The reason says whose
+question it is: with an open question on the send (the manifest's
+`parent_sends[].decisions`) the example is BLOCKED by that decision; with
+none recorded it is refused as the design's, with the two ways out named,
+a route through `#_parent` or the question recorded on the send.
 
 ---
 

@@ -54,6 +54,11 @@ class SendRecorder:
         return taken
 
 
+#: The target a `<send>` names to reach the session that invoked this one. The
+#: engine delivers it itself, through the SCXML Event I/O Processor, so a route
+#: to it is never one a host serves (W3C SCXML C.1).
+PARENT_TARGET = "#_parent"
+
 #: How many scheduled instants one move of virtual time may stop at before the
 #: move is given up. A timer that re-arms at zero delay never ends, and a
 #: heartbeat every millisecond over an hour is not worth playing.

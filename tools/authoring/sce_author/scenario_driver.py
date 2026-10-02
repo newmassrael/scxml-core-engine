@@ -27,7 +27,10 @@ environment`: another machine may play the same example to its end, and a
 verdict that read it as a defect of the design would be a statement about load.
 Whatever the design itself did that made an example unplayable (an error no
 state answered, an open route, a macrostep the engine cut short, a design that
-would not start) is refused by the child with `cause: design`. The trace also
+would not start) is refused by the child with `cause: design`; a run that
+stopped because the design sends to a caller nobody has named, while the
+specification leaves that question open, is refused by it with `cause:
+decision`. The trace also
 repeats the limits and the isolation the run really had, so a verdict states
 what it was made under; see `process.isolation_level` for what that means on
 this host.
@@ -49,7 +52,7 @@ from . import process
 # How many instants of virtual time one `advance_ms` step may be cut into. It is
 # `lowering`'s because a comparison walks time by the same rule under the same
 # ceiling; the name stays here so a caller can still play under another.
-from .lowering import MAX_TIME_STOPS
+from .lowering import MAX_TIME_STOPS, PARENT_TARGET
 from .verify import (VerifyError, _default_codegen, _scratch, generate, generate_companions,
                      scenario_judgement, scenario_set_reading)
 
@@ -141,6 +144,10 @@ class _Built:
             "data": data,
             "scenario": scenario,
             "opened": _open_decisions(self.build.manifest),
+            # The sends to `#_parent` the product found, with the open questions
+            # marked on each: what makes a run the owner's to unblock rather than
+            # the design's or the machine's.
+            "parent_sends": self.build.manifest.get("parent_sends") or [],
             "manifest_unreadable": self.build.manifest.get("unreadable_variables") or [],
             "max_time_stops": MAX_TIME_STOPS,
         }
@@ -193,7 +200,11 @@ def drive(scenario_set: pathlib.Path, document: pathlib.Path,
                                   f"({type(exc).__name__}: {exc})") from exc
     routes = {output["name"]: (output["via"]["type"], output["via"]["target"])
               for output in outputs if output.get("via")}
-    serves = tuple(dict.fromkeys(route[0] for route in routes.values()))
+    # A route through the parent is not one a host serves: the engine delivers
+    # it itself, so declaring its type to the build would name a processor
+    # nothing registers.
+    serves = tuple(dict.fromkeys(route[0] for route in routes.values()
+                                 if route[1] != PARENT_TARGET))
     data = list(interface.get("data") or [])
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     with _scratch() as scratch:

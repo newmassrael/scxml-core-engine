@@ -45,8 +45,19 @@ tempted to fill a hole are closed on purpose.
 
     A send the driver has no sink for is refused, not dropped. It observes
     sends to host-served processors, and BasicHTTP sends it detects and
-    refuses; a send to a parent session or a mesh peer either raises an
-    unanswered error or reaches nobody, and both end the run the same way.
+    refuses; a send to a mesh peer either raises an unanswered error or
+    reaches nobody, and both end the run the same way.
+
+    A send to `#_parent` is observed only when the interface the examples were
+    accepted with routes an output through it. Without that the run has no
+    parent, as a machine nothing invoked has none (W3C SCXML C.1); the driver
+    never invents a caller. The run stops at the first send that reaches for
+    one, found by the send itself and not by the `error.communication` it would
+    raise (a machine that finishes in the same macrostep never handles that
+    error, and its example then failed on an output nobody could send). When the
+    specification leaves open who the caller is, the run is BLOCKED by that
+    decision (`cause: decision`, naming it), which is neither a defect of the
+    design nor a fact about the machine.
 
     An output declared with a route (`via`) counts only when the design sent
     it through exactly that route, and a design that sent it through another
@@ -69,9 +80,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 from .errors import VerifyError
-from .lowering import (SendRecorder, Unplayable, advance, endless_event_chain,
-                       endless_macrostep, host_names as _host_names, load,
-                       unanswered_error)
+from .lowering import (PARENT_TARGET, SendRecorder, Unplayable, advance,
+                       endless_event_chain, endless_macrostep, host_names as _host_names,
+                       load, unanswered_error)
 
 
 class _HttpSeen:
@@ -91,9 +102,11 @@ class _Refusal(Exception):
     Its text is what the owner reads.
 
     `cause` says whether another machine would refuse the same run: `design`
-    when what the design did made the example unplayable. This process refuses
-    only for that reason; a refusal for the machine's sake (time, memory, a
-    crash) is the supervisor's to make, because by then this process is gone."""
+    when what the design did made the example unplayable, `decision` when the
+    design leaves open a question the example needs answered. This process
+    refuses only for those reasons; a refusal for the machine's sake (time,
+    memory, a crash) is the supervisor's to make, because by then this process
+    is gone."""
 
     def __init__(self, why: str, cause: str = "design") -> None:
         super().__init__(why)
@@ -135,11 +148,81 @@ def _resolve_event(policy, name: str):
     return None, None
 
 
+class _ObservingParent:
+    """The parent session a design that sends to `#_parent` needs, which a driver
+    does not have: it records what the machine sends there, in the order it sent
+    it and among the host-served sends, and answers nothing.
+
+    ⚠ It exists only when the interface the examples were accepted with says an
+    output leaves through `#_parent` (its `via`). A design that sends to its
+    parent because a send needs a target, while the owner has not said who the
+    caller is, would otherwise be played against a parent nobody chose, and the
+    examples would pass or fail on the driver's invention. The engine gets one
+    only on the owner's say-so, and a run without one is a run that says why.
+
+    The engine delivers what a design sends to its parent by `append`ing
+    `(event name, data)` to the queue it was given, which is all this has."""
+
+    def __init__(self, sink: SendRecorder) -> None:
+        self._sink = sink
+
+    def append(self, entry) -> None:
+        name, data = entry
+        self._sink.sends.append(_ParentSend(name, data if isinstance(data, str) else ""))
+
+
+class _ParentWatch:
+    """Stands where a parent would be when the owner has named none, to learn
+    whether the machine reaches for one. It records the event names it is handed
+    and nothing else, and the run ends at the first of them.
+
+    Without it a machine that sends to a parent that is not there raises
+    `error.communication` (W3C SCXML C.1), and what that does to the run depends
+    on what the machine does next: an error no state answers is counted and the
+    run is refused, but a machine that finishes in the same macrostep never
+    handles it, and the example then fails on an output that was never sent. The
+    failure would read as the design's when the design was waiting for a caller.
+    The send itself is the thing to detect, not the error it would raise.
+
+    ⚠ The machine is run with this in place of no parent only up to the first
+    send that reaches it, where the run stops, so nothing after it (which a real
+    parent could have changed) is ever read as the design's behaviour."""
+
+    def __init__(self) -> None:
+        self.received: list[str] = []
+
+    def append(self, entry) -> None:
+        self.received.append(entry[0])
+
+
+class _ParentSend:
+    """What a send to the parent looks like to the code that reads host-served
+    sends: the event, its serialised payload, and the route it took.
+
+    The route is the engine's, not the interface's: the engine delivers to
+    `#_parent` through the SCXML Event I/O Processor and no other (W3C SCXML
+    C.1), so that is the type reported. An interface that names another type for
+    its parent route is then refused with both routes named, where echoing the
+    interface's own type back would make the check agree with itself."""
+
+    def __init__(self, event_name: str, event_data: str) -> None:
+        from sce_runtime.io_processors import SCXML_EVENT_PROCESSOR_URI
+
+        self.event_name = event_name
+        self.event_data = event_data
+        self.processor_type = SCXML_EVENT_PROCESSOR_URI
+        self.target = PARENT_TARGET
+
+
 class _Machine:
     """One design, loaded, and one scenario to play into it."""
 
     def __init__(self, request: dict) -> None:
         self.routes = {name: tuple(route) for name, route in request["routes"].items()}
+        self.parent_sends = request.get("parent_sends") or []
+        # Whether the interface sends an output through the parent, which is the
+        # owner's word that there is a caller to give the machine.
+        self.routes_to_parent = any(via[1] == PARENT_TARGET for via in self.routes.values())
         self.data = request["data"]
         self.declared = request["declared"]
         self.opened = request["opened"]
@@ -184,12 +267,55 @@ class _Machine:
             return {"scenario": scenario["id"],
                     "refused": {"why": str(exc), "cause": exc.cause}}
 
+    def _no_caller(self, watch: _ParentWatch, index: int) -> _Refusal:
+        """The refusal of a run whose machine reached for a parent nobody named.
+
+        A machine nothing invoked has no parent (W3C SCXML C.1), and the driver
+        does not invent one: a parent chosen by the driver would pass or fail the
+        example on words nobody wrote. So the run stops where the machine reaches
+        for it, and says whose question that is. With a question open on the send
+        it is the owner's, and the example is BLOCKED by it (`decision`). With
+        none recorded it is the design's, which sent to a caller it never asked
+        about, and the words say how to record one."""
+        reached = list(dict.fromkeys(watch.received))
+        named = ", ".join(f"`{event}`" for event in reached)
+        # A computed event name (`eventexpr`) is a site the manifest lists
+        # without one, so it belongs to whichever event was sent.
+        decisions = list(dict.fromkeys(
+            decision for site in self.parent_sends
+            if site.get("event") is None or site["event"] in reached
+            for decision in site.get("decisions", [])))
+        if decisions:
+            asked = ", ".join(f"`{decision}`" for decision in decisions)
+            return _Refusal(
+                f"by step {index} the design sent {named} to its parent, and the "
+                f"specification leaves open who that is (open decision {asked}). The machine "
+                f"was given no parent, and the driver does not invent one, so the example is "
+                f"blocked by that decision: once the owner names the caller, give the output "
+                f"a route through `#_parent` and the example can be played",
+                cause="decision")
+        return _Refusal(
+            f"by step {index} the design sent {named} to its parent, and neither the "
+            f"interface nor the specification's decisions say who that is. The machine "
+            f"was given no parent, and the driver does not invent one. Either the "
+            f"interface routes the output through `#_parent` (its `via`), or the design "
+            f"records the open question on the send (`sce:unresolved`) so the example is "
+            f"blocked by it and not failed")
+
     def _play(self, steps: list) -> list:
         from sce_runtime.event import EventMetadata
 
         sink, http = SendRecorder(), _HttpSeen()
+        watch = None
         try:
             engine = self.module.create_engine()
+            # Before `initialize()`: a send in the initial state's `<onentry>` is
+            # the first thing that reaches a parent.
+            if self.routes_to_parent:
+                engine.policy._parent_queue = _ObservingParent(sink)
+            elif self.parent_sends:
+                watch = _ParentWatch()
+                engine.policy._parent_queue = watch
             for processor in self.declared:
                 engine.register_event_processor(processor, sink)
             engine.set_http_send_callback(http)
@@ -202,6 +328,8 @@ class _Machine:
             raise _Refusal(f"the engine could not start the design: "
                            f"{type(exc).__name__}: {exc}") from exc
         policy = engine.policy
+        if watch is not None and watch.received:
+            raise self._no_caller(watch, 0)
         observations = []
         for index, step in enumerate(steps):
             try:
@@ -225,6 +353,8 @@ class _Machine:
                 raise
             except Exception as exc:  # noqa: BLE001 - the engine failing is the report
                 raise _Refusal(f"the engine raised {type(exc).__name__} at step {index}: {exc}")
+            if watch is not None and watch.received:
+                raise self._no_caller(watch, index)
             self._check_unobserved(engine, policy, http, index)
             observations.append(self._observe(engine, policy, sink, index))
         return observations
