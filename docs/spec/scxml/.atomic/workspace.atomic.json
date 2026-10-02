@@ -6842,6 +6842,10 @@
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "evaluateDoneData",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7115,6 +7119,10 @@
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

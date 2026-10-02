@@ -26,6 +26,9 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_donedata_sm::{
+    StaticDonedataPersist, StaticDonedataPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
     StaticEnumPersist, StaticEnumPolicy,
 };
@@ -95,6 +98,17 @@ fn replay<P: StatePolicy>(
                 engine.is_in_final_state(),
                 "step {n} ({note}): the machine ended in a top-level <final>"
             );
+            // The data its <donedata> left for the invoking parent, as the
+            // JSON the done event carries; compared as a value, so the order
+            // the pairs were written in is not part of the answer.
+            if let Some(want) = expect.get("donedata") {
+                let got: Value = serde_json::from_str(engine.donedata_at_final())
+                    .expect("the data of a done event is JSON");
+                assert_eq!(
+                    &got, want,
+                    "step {n} ({note}): the data the final's done event carries"
+                );
+            }
             continue;
         }
         let saved: Value =
@@ -148,6 +162,19 @@ fn static_counter_counts_to_the_flag_and_lets_go() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_counter.json"
+        ),
+    );
+}
+
+// A top-level final's <donedata> params are read from the machine's fields
+// when it is entered, and the pair whose value does not fit is left out.
+#[test]
+fn static_donedata_hands_the_done_event_its_params() {
+    replay(
+        Engine::new(StaticDonedataPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata.json"
         ),
     );
 }

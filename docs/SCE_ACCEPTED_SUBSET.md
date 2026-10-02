@@ -2666,7 +2666,7 @@ line of the element or attribute that breaks it:
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>` or of a host-run `<invoke>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -2686,10 +2686,12 @@ own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
 
-**Params.** A `<param>` of a `<send>`, and of an `<invoke>` the host runs
-(§2.12), is a typed expression read from the machine's fields at the moment the
-element runs — W3C SCXML 6.2.3 evaluates a `<send>`'s arguments once, at the
-send, and a start of an invoke is the same instant — and lowered to native
+**Params.** A `<param>` of a `<send>`, of an `<invoke>` the host runs
+(§2.12) and of a `<final>`'s `<donedata>` is a typed expression read from the
+machine's fields at the moment the element runs — W3C SCXML 6.2.3 evaluates a
+`<send>`'s arguments once, at the send, a start of an invoke is the same
+instant, and a `<final>`'s donedata is evaluated as the state is entered (5.5)
+— and lowered to native
 code, so it needs no script engine and reads the value the field holds now,
 which a copy kept anywhere else would not. A `location` names a variable and is
 read as `expr="<variable>"`. The value crosses twice, as the text a form or a
@@ -2724,6 +2726,19 @@ that overflows is told from one dropped in silence. Measured 2026-10-01, a
 machine sent an empty payload, the Rust machine called a script engine it had
 not been given and did not compile, and a host invoke read a copy of the
 variable inside an engine that `<assign>` never wrote.
+
+A `<donedata>` `<param>` is the same value on the same wire: the pairs that
+survive are the JSON object a `<final>`'s done event carries — `done.state.<parent>`
+for a final inside a state, and what the invoking parent reads as
+`done.invoke.<id>` (stashed by `donedataAtFinal`) for a top-level one — written
+by name, so the order the pairs were written in is not part of the answer. A pair
+that cannot be computed is left out and the event is still raised, with `{}` when
+no pair survived. `sce-build/tests/fixtures/static_datamodel/static_donedata.scxml`
+holds Rust and Kotlin to it. Measured 2026-10-03, this one too had been judged and
+accepted and never lowered: the Rust machine called a script engine it had not been
+given and did not compile, and the Kotlin machine raised its done event with no
+data at all, silently. C++ still refuses a `<donedata>` by name. A `<content expr>`
+has no typed form and is refused at parse, as it was.
 
 Rust writes a string into a variable owned — `"busy".to_string()`, and a read
 of another variable cloned — because a string inside an expression is borrowed

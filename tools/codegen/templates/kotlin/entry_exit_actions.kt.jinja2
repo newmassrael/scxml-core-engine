@@ -372,6 +372,10 @@
 {% endif %}
 {% endfor %}
 {% endif %}
+{# `datamodel="sce-static"`: each param's value is native code
+   (`DoneDataParam::native_value`), read from the machine's own fields, so no
+   script engine is asked for any of them. #}
+{% set done_native = state.donedata and (state.donedata.params | selectattr("native_value") | list | length > 0) %}
 {% if state.is_final and state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
                 // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
                 // Delegates to the SSoT helper shared with C++/Rust/Go backends.
@@ -386,12 +390,14 @@
                     stashDonedataAtFinal(doneEventData)
 {% endif %}
                 }
-{% elif state.is_final and state.donedata and model.needs_script_engine %}
+{% elif state.is_final and state.donedata and (model.needs_script_engine or done_native) %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
+{% if not done_native %}
                     ensureScriptEngine()
                     val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
                     var doneEventData = ""
 {% if state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
@@ -424,7 +430,21 @@
    attribute goes through the pair filter where it is emitted, never bound
    to a name first: this backend refuses author text that reaches the
    engine by any other route. #}
-{% if param.expr is not none and param.expr %}
+{% if param.native_value %}
+{# A checked operation that overflows is the evaluation that failed: reported,
+   and the pair left out (§scxml-5.7.1). #}
+{% if param.native_fails %}
+                    try {
+                        doneParams["{{ param.name | escape_kotlin }}"] = {{ param.native_value }}
+                    } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
+{% endif %}
+                    }
+{% else %}
+                    doneParams["{{ param.name | escape_kotlin }}"] = {{ param.native_value }}
+{% endif %}
+{% elif param.expr is not none and param.expr %}
                     try {
                         doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.expr | to_script_source_expr }})
                     } catch (_: Exception) {

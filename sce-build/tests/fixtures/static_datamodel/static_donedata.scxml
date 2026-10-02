@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the <donedata> of
+  a top-level <final>. Each <param> is read from the machine's own fields when
+  the final is entered and travels as the done event's data, JSON by name: an
+  integer, a bool, and a string read through a `location`. A param whose value
+  does not fit its type (`small + small` overflows a uint8) is not carried:
+  error.execution is raised and that pair is left out, the others still
+  cross (§scxml-5.7.1).
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticScenarioTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_donedata">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="small" sce:type="uint8" expr="250"/>
+    <data id="label" sce:type="string" expr="'tally'"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="tick" type="internal">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <param name="total" expr="count * 2"/>
+      <param name="many" expr="count &gt; 2"/>
+      <param name="name" location="label"/>
+      <param name="overflow" expr="small + small"/>
+    </donedata>
+  </final>
+</scxml>

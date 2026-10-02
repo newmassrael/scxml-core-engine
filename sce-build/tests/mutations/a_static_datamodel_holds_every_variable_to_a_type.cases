@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -71,4 +71,21 @@ mutation_case "the gate reports every document as accepted" <<'PY'
 edit("sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs",
      "    (\n        out.status.success(),",
      "    (\n        true,")
+PY
+
+# A `<donedata>` param stops being lowered: it is judged and accepted, and the
+# generated machine asks an engine for it — which Rust did not compile against
+# and Kotlin never emitted at all.
+mutation_case "a donedata param is judged but not lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;\n",
+     "            let _ = (&mut done.params, lower_done_params);\n")
+PY
+
+# A `<donedata>` param's `location` is not read as the expression it is: a name
+# nothing declares reaches the generated machine.
+mutation_case "a donedata param's location is not judged" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            (_, Some(location)) => (location.as_str(), param.location_spelling.as_ref()),\n",
+     "            (_, Some(_)) => (\"\", None),\n")
 PY

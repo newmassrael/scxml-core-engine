@@ -1411,6 +1411,11 @@ pub fn lower(
                 _ => {}
             }
         }
+        // What a `<final>` hands the event it raises is read from the
+        // machine's fields when the state is entered (§scxml-5.5).
+        if let Some(done) = &mut state.donedata {
+            lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
+        }
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
             let paths = scope.paths(schema);
@@ -2660,34 +2665,24 @@ fn lower_action(
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
 }
 
-/// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`
-/// (SCE Accepted Subset §2.15), in place: the expression, read from the
-/// machine's fields, as the typed value the backend's wire helpers take
-/// ([`StaticTarget::wire_value`]) — `Param::native_value`, and whether it can
-/// fail.
+/// Lower the value of a `<param>` that crosses as data (SCE Accepted Subset
+/// §2.15): the expression, read from the machine's fields, as the typed value
+/// the backend's wire helpers take ([`StaticTarget::wire_value`]), and whether
+/// it can fail. `None` for one with nothing to lower: a static literal, which
+/// is folded at build time and left as it is, and a param with no expression.
 ///
-/// A static literal is folded at build time and left as it is. Validation
-/// already judged the expression against the same scope and held its type to
-/// [`InferredType::wire_param_slot`], so a refusal here is a lowering this
-/// backend lacks, not a mistake in the document.
-fn lower_wire_param(
-    param: &mut crate::model::Param,
+/// Validation already judged the expression against the same scope and held
+/// its type to [`InferredType::wire_param_slot`], so a refusal here is a
+/// lowering this backend lacks, not a mistake in the document.
+fn lower_wire_value(
+    param: &crate::forge::static_datamodel::WireParam<'_>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<(), GenerateError> {
-    if param.is_static_literal {
-        return Ok(());
-    }
-    // A `location` names a variable, and reading one is reading it as an
-    // expression.
-    let (written, spelling) = if param.expr.trim().is_empty() {
-        (param.location.clone(), param.location_spelling.clone())
-    } else {
-        (param.expr.clone(), param.expr_spelling.clone())
-    };
-    if written.trim().is_empty() {
-        return Ok(());
+) -> Result<Option<(String, bool)>, GenerateError> {
+    let written = param.written;
+    if param.is_static_literal || written.trim().is_empty() {
+        return Ok(None);
     }
     let target = rewrites.target;
     let lang = target.name();
@@ -2698,7 +2693,7 @@ fn lower_wire_param(
         ))
     };
     let ty = crate::forge::expr::judge_into(
-        &written,
+        written,
         ctx,
         crate::forge::expr::Expected::Hint(InferredType::Unknown),
     )
@@ -2708,11 +2703,44 @@ fn lower_wire_param(
         .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;
     // The value is read once and is its own: an owned string, for the typed
     // value that carries it.
-    let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
+    let value = transpile_into_owned(written, target.expr_target(), ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
-    rewrites.note(&written, spelling.as_ref(), &value.text);
-    param.native_value = target.wire_value(slot, &value.text);
-    param.native_fails = value.can_fail;
+    rewrites.note(written, param.spelling, &value.text);
+    Ok(Some((target.wire_value(slot, &value.text), value.can_fail)))
+}
+
+/// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in
+/// place: `Param::native_value`, and whether it can fail.
+fn lower_wire_param(
+    param: &mut crate::model::Param,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let view = crate::forge::static_datamodel::WireParam::of_param(param);
+    if let Some((value, fails)) = lower_wire_value(&view, ctx, renames, rewrites)? {
+        param.native_value = value;
+        param.native_fails = fails;
+    }
+    Ok(())
+}
+
+/// Lower the value of each `<param>` of a `<final>`'s `<donedata>`, in place:
+/// `DoneDataParam::native_value`, and whether it can fail. The value is read
+/// when the `<final>` is entered, where no event's payload is in scope.
+fn lower_done_params(
+    params: &mut [crate::model::DoneDataParam],
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    for param in params {
+        let view = crate::forge::static_datamodel::WireParam::of_done_param(param);
+        if let Some((value, fails)) = lower_wire_value(&view, ctx, renames, rewrites)? {
+            param.native_value = value;
+            param.native_fails = fails;
+        }
+    }
     Ok(())
 }
 

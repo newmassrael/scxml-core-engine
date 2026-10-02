@@ -21,6 +21,7 @@ package com.sce.integration
 import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
+import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
@@ -80,6 +81,7 @@ class StaticScenarioTest {
         tick: () -> Unit,
         save: () -> SavedState,
         ended: () -> Boolean,
+        donedata: () -> String = { "" },
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
@@ -100,6 +102,16 @@ class StaticScenarioTest {
                     "step $n ($note): an ended machine has no state or variables to read",
                 )
                 assertTrue(ended(), "step $n ($note): the machine ended in a top-level <final>")
+                // The data its <donedata> left for the invoking parent, as the
+                // JSON the done event carries; compared as a value, so the order
+                // the pairs were written in is not part of the answer.
+                expect["donedata"]?.let { want ->
+                    assertEquals(
+                        want,
+                        Json.parseToJsonElement(donedata()),
+                        "step $n ($note): the data the final's done event carries",
+                    )
+                }
                 return@forEachIndexed
             }
             val saved = Json.parseToJsonElement(save().toJson()).jsonObject
@@ -141,6 +153,26 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A top-level final's <donedata> params are read from the machine's fields
+    // when it is entered, and the pair whose value does not fit is left out.
+    @Test
+    fun staticDonedataHandsTheDoneEventItsParams() {
+        val sm = StaticDonedataStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_donedata"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                donedata = { sm.donedataAtFinal() },
             )
         } finally {
             sm.cleanup()

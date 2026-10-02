@@ -3391,6 +3391,7 @@ fn parse_donedata_param(
         source_location: None,
         expr_spelling: None,
         location_spelling: None,
+        ..Default::default()
     };
     if let Some(head) = s.strip_suffix(':') {
         p.name = undo(head, line)?;

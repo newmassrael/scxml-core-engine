@@ -1235,6 +1235,23 @@ pub struct DoneDataParam {
     pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     #[serde(skip)]
     pub location_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// Codegen-internal: under `datamodel="sce-static"`, this `<param>`'s value
+    /// as an expression in the backend's own language, read from the machine's
+    /// fields when the `<final>` is entered, of the type the backend's wire
+    /// helpers take for it — what [`Param::native_value`] is for a `<send>`.
+    /// Empty for a param of a document under another data model, which a
+    /// script engine evaluates, and for one whose `expr` or `location` is
+    /// empty. Set by [`crate::forge::static_lowering`], outside the IR
+    /// contract, for the reason [`Param::native_value`] gives.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_value: String,
+    /// Codegen-internal: whether [`Self::native_value`] can fail — a checked
+    /// integer operation. A failure leaves the pair out and raises
+    /// `error.execution` (§scxml-5.7.1), as [`Param::native_fails`] says.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_fails: bool,
 }
 
 /// Named Context object declaration

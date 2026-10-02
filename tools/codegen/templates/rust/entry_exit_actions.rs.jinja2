@@ -164,17 +164,51 @@
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
 {% if state.donedata.params %}
+{# `datamodel="sce-static"`: each param's value is native code
+   (`DoneDataParam::native_value`), read from the machine's own fields, so no
+   script engine is asked for any of them. #}
+{% set done_native = state.donedata.params | selectattr("native_value") | list | length > 0 %}
                 {
+{% if not done_native %}
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+{% endif %}
                     let mut json_parts: Vec<String> = Vec::new();
 {% for param in state.donedata.params %}
 {# §scxml-5.7: the parser admits exactly one of the two attributes, so the
    one that is PRESENT is the value — tested for presence, not truth. #}
 {% set param_expr = param.expr if param.expr is not none else param.location %}
-{% if not param_expr %}
+{% if param.native_value %}
+{# The value is the runtime's `ScriptValue`, which `script_value_to_json`
+   writes as the pair's JSON value. A checked operation that overflows is the
+   evaluation that failed: reported, and the pair left out (§scxml-5.7.1). #}
+{% if param.native_fails %}
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok({{ param.native_value }})
+                    })() {
+                        Ok(val) => {
+                            let mut part = String::from("\"{{ param.name | escape_json_string | escape_rust }}\":");
+                            part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
+                            json_parts.push(part);
+                        }
+                        Err(_) => {
+                            ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}' overflowed or failed");
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
+{% endif %}
+                        }
+                    }
+{% else %}
+                    {
+                        let val = {{ param.native_value }};
+                        let mut part = String::from("\"{{ param.name | escape_json_string | escape_rust }}\":");
+                        part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
+                        json_parts.push(part);
+                    }
+{% endif %}
+{% elif not param_expr %}
                     // §scxml-5.7: an empty location names no location —
                     // error.execution, and this pair is ignored.
                     ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location");

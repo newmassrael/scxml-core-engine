@@ -1,0 +1,16 @@
+{
+  "machine": "static_donedata",
+  "about": "A top-level final hands its done event the pairs of its <donedata>, each read from the machine's fields when the state is entered: `total` is count * 2, `many` is count > 2, and `name` is the string variable named by a location. `overflow` is small + small over a uint8 that holds 250, which does not fit: that pair is left out and the others cross. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the counter starts at its declared value",
+      "expect": { "state": "counting", "variables": { "count": 0 } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1 } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 2 } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 3 } } },
+
+    { "note": "the final is entered: total = 6, many = true (3 > 2), name = 'tally', and no `overflow` pair",
+      "event": "finish",
+      "expect": { "ended": true, "donedata": { "total": 6, "many": true, "name": "tally" } } }
+  ]
+}

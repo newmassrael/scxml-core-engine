@@ -4730,6 +4730,7 @@ impl SCXMLParser {
                 source_location: source_location_of(&child, source_name),
                 expr_spelling: AttributeSpelling::of(&child, None, "expr"),
                 location_spelling: AttributeSpelling::of(&child, None, "location"),
+                ..Default::default()
             });
         }
 

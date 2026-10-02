@@ -22,8 +22,62 @@ use crate::forge::expr::{judge_into, Expected};
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::{InferredType, TypeCtx};
-use crate::model::{Action, Datamodel, Invoke, SCXMLModel, Variable};
+use crate::model::{Action, Datamodel, DoneDataParam, Invoke, Param, SCXMLModel, Variable};
 use crate::scxml_semantic::ScxmlSemanticError;
+
+/// A `<param>` whose value crosses as data — a `<send>`'s, a host-run
+/// `<invoke>`'s, a `<donedata>`'s — as the judge and the lowering both read
+/// it, so the three elements are held to one rule and lowered by one routine.
+///
+/// A `location` names a variable, and reading one is reading it as an
+/// expression: `written` is whichever of the two the param has.
+pub(crate) struct WireParam<'a> {
+    pub name: &'a str,
+    /// A string literal is folded at build time and crosses as written.
+    pub is_static_literal: bool,
+    /// The expression, or the location read as one; empty when the param has
+    /// neither, which is a run-time error of its own.
+    pub written: &'a str,
+    pub spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
+    pub source_location: Option<&'a crate::forge::error::SourceLocation>,
+}
+
+impl<'a> WireParam<'a> {
+    pub(crate) fn of_param(param: &'a Param) -> Self {
+        let (written, spelling) = if param.expr.trim().is_empty() {
+            (param.location.as_str(), param.location_spelling.as_ref())
+        } else {
+            (param.expr.as_str(), param.expr_spelling.as_ref())
+        };
+        Self {
+            name: &param.name,
+            is_static_literal: param.is_static_literal,
+            written,
+            spelling,
+            source_location: param.source_location.as_ref(),
+        }
+    }
+
+    /// §scxml-5.7 admits exactly one of `expr` and `location` on a donedata
+    /// `<param>`; an `expr` that is empty is no expression, and falls to the
+    /// `location` the same way [`Self::of_param`] does.
+    pub(crate) fn of_done_param(param: &'a DoneDataParam) -> Self {
+        let (written, spelling) = match (&param.expr, &param.location) {
+            (Some(expr), _) if !expr.trim().is_empty() => {
+                (expr.as_str(), param.expr_spelling.as_ref())
+            }
+            (_, Some(location)) => (location.as_str(), param.location_spelling.as_ref()),
+            _ => ("", None),
+        };
+        Self {
+            name: &param.name,
+            is_static_literal: false,
+            written,
+            spelling,
+            source_location: param.source_location.as_ref(),
+        }
+    }
+}
 
 /// The attributes of executable content that carry an expression this model
 /// does not type, with the element each belongs to. Refused where written.
@@ -134,14 +188,12 @@ pub fn check(
         }
         if let Some(done) = &state.donedata {
             for param in &done.params {
-                if let Some(expr) = &param.expr {
-                    judge.expr(
-                        &plain,
-                        expr,
-                        param.expr_spelling.as_ref(),
-                        Expected::Hint(InferredType::Unknown),
-                    )?;
-                }
+                judge.wire_param(
+                    &plain,
+                    &WireParam::of_done_param(param),
+                    "<donedata>",
+                    &state.id,
+                )?;
             }
             if let crate::model::DoneDataContent::Expression(expr) = &done.content {
                 return Err(judge.untyped(
@@ -619,8 +671,9 @@ impl<'a> Judge<'a> {
         )
     }
 
-    /// A `<param>` of a `<send>` or of an `<invoke>` the host runs, judged as
-    /// the value that crosses to the host (SCE Accepted Subset §2.15).
+    /// A `<param>` of a `<send>`, of an `<invoke>` the host runs or of a
+    /// `<donedata>`, judged as the value that crosses as data (SCE Accepted
+    /// Subset §2.15): to the host, or on the event a `<final>` raises.
     ///
     /// Its expression is read from the machine's fields when the element runs,
     /// and lowered to native code that makes the value both the text the
@@ -637,19 +690,14 @@ impl<'a> Judge<'a> {
     fn wire_param(
         &self,
         ctx: &TypeCtx<'_>,
-        param: &crate::model::Param,
+        param: &WireParam<'_>,
         element: &str,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        // A string literal is folded at build time and crosses as written.
         if param.is_static_literal {
             return Ok(());
         }
-        let (written, spelling) = if param.expr.trim().is_empty() {
-            (param.location.as_str(), param.location_spelling.as_ref())
-        } else {
-            (param.expr.as_str(), param.expr_spelling.as_ref())
-        };
+        let (written, spelling) = (param.written, param.spelling);
         if written.trim().is_empty() {
             return Ok(());
         }
@@ -659,7 +707,7 @@ impl<'a> Judge<'a> {
             spelling,
             Expected::Hint(InferredType::Unknown),
         )?;
-        let at = param.source_location.as_ref();
+        let at = param.source_location;
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
         let construct = format!("<param name=\"{}\"> of {element}", param.name);
         if crate::forge::expr::references_event_data_lexically(written) {
@@ -677,7 +725,7 @@ impl<'a> Judge<'a> {
         if ty.wire_param_slot().is_none() {
             return Err(self.rule_at(
                 construct,
-                "a <param> crosses to the host as text and as a JSON value, which every \
+                "a <param> crosses as text and as a JSON value, which every \
                  backend spells alike for a bool, a string, an integer of at most 32 bits \
                  and a real; a 64-bit integer (which a backend that reads numbers through \
                  a double would carry with its low bits wrong), bytes, a list, a record and \
@@ -823,7 +871,7 @@ impl<'a> Judge<'a> {
             }
             "send" => {
                 for param in &action.params {
-                    self.wire_param(ctx, param, "<send>", state)?;
+                    self.wire_param(ctx, &WireParam::of_param(param), "<send>", state)?;
                 }
                 if !action.contentexpr.is_empty() {
                     return Err(self.untyped(
@@ -1263,7 +1311,7 @@ impl<'a> Judge<'a> {
                 }
             }
             for param in &base.params {
-                self.wire_param(ctx, param, &element, state)?;
+                self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;
             }
             return Ok(());
         }

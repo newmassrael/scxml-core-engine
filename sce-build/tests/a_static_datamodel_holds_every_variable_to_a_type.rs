@@ -1074,6 +1074,109 @@ fn a_param_reading_the_events_payload_is_refused_on_its_line() {
     assert!(out.contains("payload"), "it says why:\n{out}");
 }
 
+// ── A `<donedata>` param is the same value on the same wire ─────────────
+
+/// A `sce-static` machine whose `<final>` (line 9) carries a `<donedata>`
+/// (line 10) with `params` on line 11.
+fn finishing(params: &str) -> String {
+    machine(r#"<state id="s"><transition event="go" target="done"/></state>"#).replace(
+        r#"<final id="done"/>"#,
+        &format!(
+            "<final id=\"done\">\n    <donedata>\n      {params}\n    </donedata>\n  </final>"
+        ),
+    )
+}
+
+#[test]
+fn every_value_a_donedata_param_can_carry_is_accepted() {
+    for expr in ["count", "ready", "count + 1", "7", "1.5", "'text'"] {
+        let params = format!(r#"<param name="k" expr="{expr}"/>"#);
+        let (ok, out) = run(&["check"], &finishing(&params));
+        assert!(
+            ok,
+            "`{expr}` is a bool, a string, a narrow integer or a real:\n{out}"
+        );
+    }
+    // A location names a variable and is read as one.
+    let (ok, out) = run(
+        &["check"],
+        &finishing(r#"<param name="k" location="count"/>"#),
+    );
+    assert!(ok, "a location names a variable:\n{out}");
+}
+
+#[test]
+fn a_donedata_param_whose_value_has_no_wire_spelling_is_refused_on_its_line() {
+    // The rule is the one a `<send>`'s param is held to, stated once.
+    let document = finishing(r#"<param name="k" expr="big"/>"#).replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="big" sce:type="int64" expr="0"/>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(
+        !ok,
+        "a 64-bit integer has no wire spelling every backend shares:\n{out}"
+    );
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+}
+
+#[test]
+fn a_donedata_param_naming_a_variable_that_is_not_declared_is_refused_on_its_line() {
+    // Only an `expr` was judged once; a `location` reached an engine unread.
+    let (ok, out) = run(
+        &["check"],
+        &finishing(r#"<param name="k" location="missing"/>"#),
+    );
+    assert!(
+        !ok,
+        "a location names a variable the machine declares:\n{out}"
+    );
+    assert_refused_at(&out, "expression/unknown-identifier", 11);
+}
+
+#[test]
+fn a_donedata_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
+    // Measured 2026-10-03: judged, accepted and never lowered. The Rust machine
+    // called `ensure_script_engine`, which a sce-static machine does not have,
+    // and the Kotlin machine raised its done event with no data at all. The
+    // manifest says `needs_script_engine:false` either way, so what is read is
+    // the generated machine.
+    let document = finishing(r#"<param name="k" expr="count + 1"/>"#);
+    for (language, extension, native, engine) in [
+        ("rust", "rs", "json_parts", "ensure_script_engine"),
+        ("kotlin", "kt", "doneParams", "evaluateExpr"),
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &document,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == extension))
+            .collect();
+        assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
+        let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+        assert!(
+            source.contains(native),
+            "{language}: the donedata is built from the lowered value"
+        );
+        assert!(
+            !source.contains(engine),
+            "{language}: no script engine reads a donedata param"
+        );
+    }
+}
+
 #[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
     // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
