@@ -406,6 +406,21 @@ pub trait StaticTarget {
     /// instead. A statement, not an expression: the call sits inside the text
     /// a host action renders, which does not yet end its block on a failure.
     fn receiving_call(&self, statement: &str, failed: &str) -> String;
+    /// [`Self::receiving_call`] for the host call `callee(args…)`, given as the
+    /// finished `statement` and as the parts it was made of.
+    ///
+    /// The default is the statement, which is right where a failing argument
+    /// leaves before the call is made. A target whose failed argument is still
+    /// a value computes every argument first and calls only when none failed.
+    fn receiving_host_call(
+        &self,
+        statement: &str,
+        _callee: &str,
+        _args: &[String],
+        failed: &str,
+    ) -> String {
+        self.receiving_call(statement, failed)
+    }
     /// A condition that can fail: its value, or `false` once `failed` has run
     /// and then `flag` (§scxml-5.9.1: a condition that cannot be evaluated is
     /// false, and `error.execution` says why). `flag` is
@@ -1911,7 +1926,10 @@ impl CppTarget {
     fn unlowered_action(actions: &[Action]) -> Option<String> {
         for action in actions {
             match action.action_type.as_str() {
-                "assign" | "log" | "if" | "raise" | "cancel" => {}
+                // A host call's arguments are typed against the machine's own
+                // variables; one that reads an event payload is refused with
+                // the payload itself.
+                "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
                 // A plain send carries no value of the data model; one that
                 // does needs the typed value crossed to the event.
                 "send" if action.params.is_empty() && action.content.is_empty() => {}
@@ -2092,8 +2110,33 @@ impl StaticTarget for CppTarget {
             write("sce_value")
         )
     }
+    // Only a host call's arguments reach here, and its one spelling is
+    // [`Self::receiving_host_call`].
     fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
-        unreachable!("refused by CppTarget::unsupported")
+        unreachable!("a C++ host call is received through receiving_host_call")
+    }
+    // A failed checked operation is a value, so the call could not be stopped
+    // after its arguments were evaluated: each is computed into a local first,
+    // and the host is called only when none of them failed. A block of its own,
+    // so two calls in one scope do not declare the same locals.
+    fn receiving_host_call(
+        &self,
+        _statement: &str,
+        callee: &str,
+        args: &[String],
+        failed: &str,
+    ) -> String {
+        let locals: String = args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| format!("auto sce_arg{i} = {arg}; "))
+            .collect();
+        let names: Vec<String> = (0..args.len()).map(|i| format!("sce_arg{i}")).collect();
+        format!(
+            "{{ SCE::Forge::AlgorithmFailure sce_failure_; {locals}\
+             if (sce_failure_.failed()) {{ {failed} }} else {{ {callee}({}); }} }}",
+            names.join(", ")
+        )
     }
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
         format!(
@@ -2196,6 +2239,8 @@ pub(crate) fn lower_static_argument(
 pub(crate) fn receive_static_statement(
     lang: Language,
     statement: &str,
+    callee: &str,
+    args: &[String],
     machine: &str,
     raises_error: bool,
     construct: &str,
@@ -2209,7 +2254,7 @@ pub(crate) fn receive_static_statement(
     } else {
         String::new()
     };
-    Some(target.receiving_call(statement, &failed))
+    Some(target.receiving_host_call(statement, callee, args, &failed))
 }
 
 /// The nullable field the Kotlin payload channel binds `event`'s typed

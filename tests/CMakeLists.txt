@@ -398,12 +398,20 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends)
+foreach(_STATIC_CPP_MACHINE static_counter static_overflow static_block_ends static_host_call)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
     )
 endforeach()
+
+# A host action's argument that overflows. The fixture sits beside the test
+# that reads it, as test_thermostat.scxml does: the host recorder is the C++
+# interface the generator emits, so only this test uses it.
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/static_host_call_arguments.scxml
+)
 
 add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_cpp_test)
 

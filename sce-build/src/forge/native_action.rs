@@ -911,6 +911,8 @@ impl CallRendering<'_> {
                 crate::forge::static_lowering::receive_static_statement(
                     lang,
                     &stmt,
+                    &format!("{}{}", receiver(lang), method_name(lang, &name)),
+                    &call_args,
                     self.machine_name,
                     self.raises_error,
                     &format!("<sce:action name='{name}'>"),

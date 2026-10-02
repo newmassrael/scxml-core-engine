@@ -3043,9 +3043,10 @@ C++ lowers the scalar core through the same walk, and refuses the rest by name
 (`CppTarget::unsupported`: `generate/unsupported-feature`, "has no C++ lowering
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 `<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
-data model, and `In()`. A list, a record, an enum or bytes variable, a typed
-event payload, an `<invoke>`, a `<donedata>`, `<foreach>`, `<sce:action>` and an
-imported algorithm are not lowered yet. Each variable is a member of the
+data model, `In()`, and a `<sce:action>` whose arguments are typed expressions
+of the machine's variables. A list, a record, an enum or bytes variable, a
+typed event payload, an `<invoke>`, a `<donedata>`, `<foreach>` and an imported
+algorithm are not lowered yet. Each variable is a member of the
 generated policy, `v_<snake_case id>`, initialised where it is declared; a
 published one has a reader of the author's spelling (`count()`), on the policy
 and forwarded by the machine, by value or as `const std::string&`. The
@@ -3056,10 +3057,14 @@ the members. A failing integer operation is the runtime's checked one
 an `AlgorithmFailure` and answers a zero, so a statement that can fail is a
 lambda called where it stands, answering whether it failed. The value is
 computed into a local first and written only when it did not fail, so a failed
-`<assign>` leaves its variable as it was, and the block ends (W3C SCXML 4.9).
+`<assign>` leaves its variable as it was, and the block ends (W3C SCXML 4.9). A
+host call's arguments that can fail are computed into locals the same way, and
+the host is called only when none of them failed; otherwise `error.execution`
+is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow` and
-`static_block_ends` against the generated machines.
+`static_block_ends` against the generated machines, and drives `static_host_call`
+and `static_host_call_arguments` with a recording host.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

@@ -21,9 +21,14 @@
 //   * `static_block_ends`: an error ends the block it stands in (W3C SCXML 4.9)
 //     — the statements after a failed `<assign>`, after a failed `<if>` cond,
 //     or inside a branch that failed do not run, while the next block does.
+//   * `static_host_call`: a host action takes the machine's variables as typed
+//     arguments, and `static_host_call_arguments` (beside this file): an
+//     argument that overflows stops the call and raises `error.execution`.
 
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_host_call_arguments_sm.h"
+#include "static_host_call_sm.h"
 #include "static_overflow_sm.h"
 
 #include <filesystem>
@@ -34,6 +39,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #ifndef SCE_PROJECT_ROOT
 #define SCE_PROJECT_ROOT "."
@@ -167,6 +173,64 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_block_ends", driver);
+}
+
+namespace {
+
+/// What a host recorded of the calls a machine made, as `(name, value…)` text.
+using Calls = std::vector<std::string>;
+
+}  // namespace
+
+// A host action takes the machine's variables as typed arguments, each read
+// when the call is made: one call per entry of `idle`, with the datamodel as it
+// stood.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHostActionTakesTypedDatamodelArguments) {
+    namespace Hc = G::static_host_call;
+
+    struct Host : Hc::StaticHostCallActions {
+        Calls calls;
+
+        void showAttempts(uint32_t count, bool exhausted) override {
+            calls.push_back(std::to_string(count) + (exhausted ? ",true" : ",false"));
+        }
+    } host;
+
+    Hc::static_host_call machine(host);
+    machine.initialize();
+    for (int i = 0; i < 4; ++i) {
+        machine.raiseExternal("retry");
+        machine.step();
+    }
+    // The fourth retry finds `attempts < 3` false and re-enters nothing.
+    EXPECT_EQ(host.calls, (Calls{"0,false", "1,false", "2,false", "3,true"}));
+}
+
+// An argument that cannot be computed is a failure, not a wrapped value: the
+// host is not called, and `error.execution` is raised in the call's place.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnArgumentThatOverflowsStopsTheCallAndRaisesAnError) {
+    namespace Hc = G::static_host_call_arguments;
+
+    struct Host : Hc::StaticHostCallArgumentsActions {
+        Calls calls;
+
+        void report(uint8_t next) override {
+            calls.push_back(std::to_string(next));
+        }
+    } host;
+
+    Hc::static_host_call_arguments machine(host);
+    machine.initialize();
+
+    machine.raiseExternal("fine");
+    machine.step();
+    EXPECT_EQ(host.calls, (Calls{"251"})) << "250 + 1 fits a uint8";
+    EXPECT_EQ(machine.errors(), 0);
+
+    machine.raiseExternal("overflow");
+    machine.step();
+    EXPECT_EQ(host.calls, (Calls{"251"})) << "250 + 10 does not fit, so the host is not called with 4";
+    EXPECT_EQ(machine.errors(), 1) << "error.execution was raised and the machine saw it";
 }
 
 }  // namespace Tests

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15) under generated C++:
+  a host action whose argument is computed from the machine's own variable, and
+  what a failing computation costs.
+
+  `level` is a `uint8` at 250. `fine` hands the host `level + 1`, which fits;
+  `overflow` hands it `level + 10`, which does not. A checked operation that
+  overflows is a failure, not a wrapped value (SCE_FORGE.md §3.4.1), so the host
+  is NOT called with 4 and `error.execution` is raised in its place
+  (SCE Accepted Subset §2.15, E12 D5); `errors` counts it.
+
+  The fixture sits beside AStaticDatamodelRunsGeneratedCppTest for the reason
+  test_thermostat.scxml sits beside its test: the host recorder is the C++
+  interface the generator emits, so it is read by that test alone.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_call_arguments">
+  <datamodel>
+    <data id="level" sce:type="uint8" expr="250"/>
+    <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fine">
+      <sce:action name="report">
+        <sce:arg name="next" expr="level + 1"/>
+      </sce:action>
+    </transition>
+    <transition event="overflow">
+      <sce:action name="report">
+        <sce:arg name="next" expr="level + 10"/>
+      </sce:action>
+    </transition>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>
