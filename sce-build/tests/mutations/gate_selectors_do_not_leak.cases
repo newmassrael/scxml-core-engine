@@ -102,13 +102,29 @@ PY
 #
 # The seventh site, in the shape it would actually arrive: someone writes a new
 # scenario by copying an old one from before this repair.
+#
+# The anchor opens at the function's own signature because the call below it is
+# spelled the same in every scenario that runs the gate, and a scenario added
+# later copies it again. Anchored on the call alone it matched two places (the
+# dry-run helper and `the_gate_declares_the_corpus_in_one_call`), and a case
+# that matches two places mutates whichever comes first.
 
 mutation_case "a call site builds a bare bash again" <<'PY'
 edit("sce-build/tests/mutation_rounds_selection.rs",
-     """    let out = gate_shell()
+     """fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
+    let dir = gate_fixture();
+    let changed_file = dir.path().join("changed.txt");
+    fs::write(&changed_file, changed.join("\\n") + "\\n").expect("write change set");
+
+    let out = gate_shell()
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(dir.path())""",
-     """    let out = Command::new("bash")
+     """fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeMap<String, String>, String) {
+    let dir = gate_fixture();
+    let changed_file = dir.path().join("changed.txt");
+    fs::write(&changed_file, changed.join("\\n") + "\\n").expect("write change set");
+
+    let out = Command::new("bash")
         .arg("scripts/gates/mutation-rounds.sh")
         .current_dir(dir.path())""")
 PY
