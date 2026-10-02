@@ -79,6 +79,13 @@ STATIC_PARAMS_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static
 # it measures is what a restore does with a request, not what a request holds.
 STATIC_INVOKE_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"
 
+# The other saving fixture: a `datamodel="sce-static"` machine whose delayed
+# host-served `<send>` a saved state carries. Processor declaration only — it
+# invokes nothing — and a document of its own because the three kinds of waiting
+# act (a send to itself, a host invocation, a host send) are separate things a
+# restore must each give back.
+STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -88,6 +95,7 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l rust -o "$TMP/" \
     --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
 "$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
+"$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -100,11 +108,13 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "mod statechart_delayed_host_send_sm;"
     echo "mod statechart_host_invoker_sm;"
     echo "mod statechart_host_processor_sm;"
+    echo "mod statechart_static_delayed_host_send_sm;"
     echo "mod statechart_static_host_invoke_sm;"
     echo "mod statechart_static_host_params_sm;"
     echo "pub use statechart_delayed_host_send_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
+    echo "pub use statechart_static_delayed_host_send_sm::*;"
     echo "pub use statechart_static_host_invoke_sm::*;"
     echo "pub use statechart_static_host_params_sm::*;"
 } > "$MODRS"

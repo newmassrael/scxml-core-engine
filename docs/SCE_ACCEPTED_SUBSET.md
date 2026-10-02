@@ -2946,6 +2946,11 @@ host that owns time (`SceClock::Manual`, `ManualClock`) passes whatever its
 notion of the wall is. The same run saves the same text on every backend,
 `pending` included: `static_timers.json` and `static_timers_midway.json` in the
 shared instances are the text each backend writes, and each restores from them.
+A `host` entry is held the same way through the machine a generator wrote:
+`sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml`
+and `saved/statechart_static_delayed_host_send_waiting.json` carry a host-served
+send armed with `job` 7 and saved after `job` became 8, so a restore is shown to
+hand the host the request the document made and not one evaluated again.
 
 **Running invocations.** A child session an `<invoke type="scxml">` started is
 part of what a machine is doing (§scxml-6.4: the invocation lives as long as its

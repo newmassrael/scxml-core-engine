@@ -151,8 +151,31 @@ for src in "$STATIC_INVOKE_TMP"/*Sm.kt; do
     cp "$src" "$STATIC_INVOKE_DIR/"
 done
 
+# The other saving fixture: a `datamodel="sce-static"` machine whose delayed
+# host-served `<send>` a saved state carries. Processor declaration only, and a
+# document of its own because it measures what a restore does with a waiting
+# request. Its own package for the reason the others have theirs.
+STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
+STATIC_DELAYED_SEND_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_static_delayed_host_send"
+STATIC_DELAYED_SEND_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_INVOKE_TMP" "$STATIC_DELAYED_SEND_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l kotlin -o "$STATIC_DELAYED_SEND_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-processor "$HOST_PROCESSOR"
+
+mkdir -p "$STATIC_DELAYED_SEND_DIR"
+find "$STATIC_DELAYED_SEND_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$STATIC_DELAYED_SEND_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${STATIC_DELAYED_SEND_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$STATIC_DELAYED_SEND_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_PARAMS_DIR/ from $STATIC_PARAMS_FIXTURE (--host-processor and --host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_INVOKE_DIR/ from $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_PROCESSOR)"
+echo "Regenerated: $STATIC_DELAYED_SEND_DIR/ from $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"

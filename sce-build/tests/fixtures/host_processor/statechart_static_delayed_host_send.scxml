@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"): a delayed `<send>` the HOST serves is a wait a saved machine
+  carries, with the request it will make when the wait ends.
+
+  The other saved-send documents here send to the machine itself
+  (`static_timers.scxml`) or invoke the host (`statechart_static_host_invoke.scxml`).
+  A host-served SEND is the third kind of waiting act, and until this document it
+  was held only through the engine's own save and restore calls, on a machine
+  built by hand to reach them. What this measures is the generated half: the
+  policy a generator writes for a machine whose send the host serves, saved and
+  restored through the code the generator emitted.
+
+  `waiting` arms the send on entry, 500 ms ahead, with two typed `<param>`s read
+  from the machine's fields (`label`, `job`), and carries an id (`a`) a
+  `<cancel>` can name. The run `start`, `bump` changes `job` AFTER the send was
+  armed, so the request the wait carries (`job` 7) is told from a request evaluated
+  again when the wait ends (`job` 8):
+
+    start    idle -> waiting, which arms the send with job = 7
+    bump     job = job + 1, in either state
+    cancel   `<cancel sendid="a"/>`: the waiting send is dropped
+    stop     waiting -> idle
+
+  The `<param>`s are declared out of the alphabetical order of their names
+  (`label` before `job`) for the reason `statechart_static_host_invoke.scxml`
+  gives: the request's `event_data` is a JSON object whose members come out
+  ascending by name on every backend, and one text for both to write and read is
+  the rule at work.
+
+  Generated with the processor declaration naming the type x-sce-host
+  (scripts/regen_host_processor.sh and scripts/regen_host_processor_kotlin.sh
+  name the flag; an XML comment cannot spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_static_delayed_host_send">
+  <datamodel>
+    <data id="job" sce:type="uint32" expr="7"/>
+    <data id="label" sce:type="string" expr="'report'"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="job" expr="job + 1"/>
+    </transition>
+    <transition event="start" target="waiting"/>
+  </state>
+
+  <state id="waiting">
+    <onentry>
+      <send type="x-sce-host" target="job://report" event="audit" id="a" delay="500ms">
+        <param name="label" expr="label"/>
+        <param name="job" expr="job"/>
+      </send>
+    </onentry>
+    <transition event="bump">
+      <assign location="job" expr="job + 1"/>
+    </transition>
+    <transition event="cancel">
+      <cancel sendid="a"/>
+    </transition>
+    <transition event="stop" target="idle"/>
+  </state>
+</scxml>
