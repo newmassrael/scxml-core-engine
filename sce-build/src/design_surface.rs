@@ -109,7 +109,7 @@ impl Surface {
     }
 
     /// Whether the design takes an event of this name: some descriptor it
-    /// reacts to matches it (W3C SCXML 3.12.1), or it takes `*`.
+    /// reacts to matches it (§scxml-3.12.1), or it takes `*`.
     pub fn takes(&self, event: &str) -> bool {
         self.takes_any_input
             || self
@@ -268,7 +268,7 @@ mod tests {
         assert!(report.matches);
     }
 
-    /// W3C SCXML 3.12.1: a transition on `coin` takes `coin.inserted`, so the
+    /// §scxml-3.12.1: a transition on `coin` takes `coin.inserted`, so the
     /// shorter descriptor serves the longer name and is accepted by it.
     #[test]
     fn a_descriptor_serves_the_longer_name_the_interface_gives() {
