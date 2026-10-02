@@ -25,6 +25,11 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test an_authoring_profile_holds_a_design_to_what_its_owner_asked
+# ⚠ That suite calls the W3C fixture server's reachability guard (`setup_http_test`)
+# in its other tests, so a round without the fixture reports `baseline is not
+# green` for want of a socket, a true verdict about the wrong thing. The gate
+# `mutation_rounds_selection` refuses a casefile that omits this line.
+mutation_needs http-fixture
 mutation_targets sce-build/src/bin/sce_codegen.rs
 mutation_oracles sce-build/src/bin/sce_codegen.rs sce-build/tests/an_authoring_profile_holds_a_design_to_what_its_owner_asked.rs
 
