@@ -73,10 +73,17 @@ PY
 # A quote is the anchor that lets an owner read an example against their own
 # words, and one that is a paraphrase has none.
 
+# ⚠ A mutated tree is built under `-D warnings`, so a mutation that stops using a
+# binding (`if true {` where `quote` was read) is an unused-variable ERROR: the tree
+# does not compile, the tests never run, and the verdict is INCONCLUSIVE. The first
+# round of this file read three cases that way (2026-10-01). Each of the three below
+# keeps every binding it had in use, so the mutation changes what the tests see and
+# not whether the tree builds.
+
 mutation_case "every quote is found" <<'PY'
 edit("sce-build/src/scenario_set.rs",
      "                if !quote.is_empty() && text.contains(&quote) {",
-     "                if true {")
+     "                if (!quote.is_empty() && text.contains(&quote)) || true {")
 PY
 
 mutation_case "white space is not collapsed before a quote is looked for" <<'PY'
@@ -90,13 +97,13 @@ PY
 mutation_case "a blocked scenario need not say what blocks it" <<'PY'
 edit("sce-build/src/scenario_set.rs",
      "                if !blocked_by {",
-     "                if false {")
+     "                if !blocked_by && false {")
 PY
 
 mutation_case "two scenarios may share an id" <<'PY'
 edit("sce-build/src/scenario_set.rs",
      "            if !seen.insert(scenario.id.as_str()) {",
-     "            if false {")
+     "            if !seen.insert(scenario.id.as_str()) && false {")
 PY
 
 # ── A file of another version is read ───────────────────────────────

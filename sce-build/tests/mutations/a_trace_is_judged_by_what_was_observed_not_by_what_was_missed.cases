@@ -22,11 +22,17 @@ mutation_oracles sce-build/src/scenario_judge.rs sce-build/tests/scenario_judge_
 # ── A gap is let through as a pass ──────────────────────────────────
 #
 # A scenario with a check nobody could observe has not been shown to hold.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so a mutation that stops using a
+# binding (`else if false {` where `gaps_before` was read) is an unused-variable
+# ERROR: the tree does not compile, the tests never run, and the verdict is
+# INCONCLUSIVE. The first round of this file read two cases that way (2026-10-01).
+# Both keep every binding in use.
 
 mutation_case "a gap does not stop a scenario from passing" <<'PY'
 edit("sce-build/src/scenario_judge.rs",
      "    } else if judgement.gaps.len() > gaps_before {",
-     "    } else if false {")
+     "    } else if judgement.gaps.len() > gaps_before && false {")
 PY
 
 # ── A failure is outranked by a gap ─────────────────────────────────
@@ -50,7 +56,7 @@ PY
 mutation_case "an observation that lacks a declared channel is taken as empty" <<'PY'
 edit("sce-build/src/scenario_judge.rs",
      "        if !present {\n",
-     "        if false {\n")
+     "        if !present && false {\n")
 PY
 
 # ── The comparison itself ───────────────────────────────────────────

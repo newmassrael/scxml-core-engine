@@ -252,6 +252,55 @@ fn one_document_answers_as_it_did_before_with_paths_unqualified() {
     );
 }
 
+/// `classify_documents` over ONE member answers as `classify` does, with paths
+/// unqualified: its own documentation says "byte for byte". The command never
+/// reaches it with one document (a single file goes to the one-document path), so
+/// only a caller of the library can, and this is that caller. Until it was
+/// written, the clause that decides it was defended by nothing: a mutation that
+/// qualified the path for one document survived the whole suite (Mutation
+/// Rounds, 2026-10-01, `a node path is qualified even for one document`).
+#[test]
+fn a_set_of_one_document_is_answered_as_the_document_alone_with_paths_unqualified() {
+    use sce_build::requirement_manifest::{
+        citations_of_model, classify, classify_documents, Classification, RequirementManifest,
+    };
+
+    let dir = the_files();
+    let manifest = RequirementManifest::load(&dir.path().join("manifest.json"))
+        .expect("the requirement set loads");
+    let front = dir.path().join("front.scxml");
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(front.to_str().expect("a utf-8 path"))
+        .expect("front.scxml parses");
+
+    let alone = classify(&model, &manifest);
+    let set = classify_documents(
+        &[("front.scxml".to_string(), citations_of_model(&model))],
+        &manifest,
+    );
+    let places = |classification: &Classification| -> Vec<(String, Vec<String>)> {
+        classification
+            .outcomes
+            .iter()
+            .map(|outcome| (outcome.id.clone(), outcome.node_paths.clone()))
+            .collect()
+    };
+    assert_eq!(places(&set), places(&alone));
+    assert!(
+        places(&set)
+            .iter()
+            .any(|(_, node_paths)| !node_paths.is_empty()),
+        "the fixture must cite something, or the comparison above compares two silences"
+    );
+    assert!(
+        places(&set)
+            .iter()
+            .all(|(_, node_paths)| node_paths.iter().all(|path| !path.contains('#'))),
+        "a document alone has no other document to be told apart from: {:?}",
+        places(&set)
+    );
+}
+
 #[test]
 fn several_documents_with_no_requirement_set_are_refused() {
     let dir = the_files();
