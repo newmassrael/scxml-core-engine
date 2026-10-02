@@ -1,0 +1,57 @@
+# Mutation cases for "a house rule says where it came from and who vouches for it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_house_rule_says_where_it_came_from.cases`.
+#
+# A house rule lets a draft apply the owner's standing answer instead of asking, so
+# the authority behind it has to travel with it. A rule now carries the owner's words
+# (`quote`) and, where a client reported the owner's yes, `confirmation: relayed`; the
+# acceptance record keeps both for each rule the design applied, so a reader of the
+# acceptance sees on what authority a rule was applied. Four things are easy to get
+# wrong and read as success: a confirmation of nothing (a yes with no words it was a yes
+# to), an empty quote that reads as having a source, and an applied rule that drops the
+# words or the vouching on the way into the record.
+#
+# Each case below takes one of those away and must make a test red: the unit tests of
+# `authoring_profile.rs` (the reader's sentences, and the table that holds the reader to
+# the schema), or `an_acceptance_pins_the_examples_and_the_rules_it_applied.rs`.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE (2026-10-01, two other casefiles of
+# this family).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test an_acceptance_pins_the_examples_and_the_rules_it_applied
+mutation_targets sce-build/src/authoring_profile.rs sce-build/src/acceptance_record.rs
+mutation_oracles sce-build/src/authoring_profile.rs sce-build/tests/an_acceptance_pins_the_examples_and_the_rules_it_applied.rs
+
+# ── What a profile may say of a rule ────────────────────────────────
+
+mutation_case "a confirmation with no words it confirms is let through" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     "        if rule.confirmation.is_some() && rule.quote.is_none() {",
+     "        if rule.confirmation.is_some() && rule.quote.is_none() && false {")
+PY
+
+mutation_case "an empty quote is taken for a source" <<'PY'
+edit("sce-build/src/authoring_profile.rs",
+     "        if rule.quote.as_deref() == Some(\"\") {",
+     "        if rule.quote.as_deref() == Some(\"\") && false {")
+PY
+
+# ── What the acceptance keeps of a rule it applied ──────────────────
+
+mutation_case "an applied rule forgets the owner's words" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "                    quote: rule.quote.clone(),",
+     "                    quote: None,")
+PY
+
+mutation_case "an applied rule forgets who vouched for it" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "                    confirmation: rule.confirmation,",
+     "                    confirmation: None,")
+PY

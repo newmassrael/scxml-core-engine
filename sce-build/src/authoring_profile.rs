@@ -63,7 +63,7 @@ pub mod names;
 
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::forge::error::{ForgeError, Located};
 use crate::generator_witness::{hex_encode, sha256_bytes};
@@ -168,6 +168,40 @@ pub struct HouseRule {
     pub id: String,
     /// The rule, in the owner's words.
     pub rule: String,
+    /// The owner's own words the rule was made from, copied as they were said.
+    /// Absent where whoever prepared the profile wrote the rule themselves: the
+    /// product then knows nothing of where it came from, and says so.
+    #[serde(default)]
+    pub quote: Option<String>,
+    /// Who vouches that the owner said yes to the rule as it is worded here.
+    /// Absent says nobody did in a way this record can show; it is never read as
+    /// the owner's confirmation.
+    #[serde(default)]
+    pub confirmation: Option<Confirmation>,
+}
+
+/// How a house rule came to hold the owner's authority.
+///
+/// There is one word and it is deliberately modest. The product cannot be in
+/// the conversation, so it cannot know that the owner confirmed anything: it can
+/// only record that a client SAID so, after showing the rule and the owner's
+/// words, and say that wherever the rule is applied. A word that read as "the
+/// owner confirmed" would be a claim nothing here can make.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Confirmation {
+    /// A client reported that the owner confirmed the rule, as worded, after
+    /// being shown it beside their own words. Not verified by the product.
+    Relayed,
+}
+
+impl Confirmation {
+    /// The wire word, and what an owner is told of the rule.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Confirmation::Relayed => "relayed",
+        }
+    }
 }
 
 /// What follows the `record` and `v` header. `deny_unknown_fields` is the
@@ -365,6 +399,20 @@ fn house_rules_refusal(rules: &[HouseRule]) -> Option<String> {
         }
         if rule.rule.is_empty() {
             return Some(format!("the house rule {} says nothing", rule.id));
+        }
+        if rule.quote.as_deref() == Some("") {
+            return Some(format!(
+                "the house rule {} quotes the owner and quotes nothing",
+                rule.id
+            ));
+        }
+        if rule.confirmation.is_some() && rule.quote.is_none() {
+            return Some(format!(
+                "the house rule {} is marked {} and carries no quote: a confirmation of a \
+                 rule says what the owner was shown",
+                rule.id,
+                rule.confirmation.map_or("", Confirmation::as_str)
+            ));
         }
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -1072,6 +1120,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_house_rule_says_where_it_came_from_and_who_vouches() {
+        let text = r#"{"record":"sce-authoring-profile","v":1,"house_rules":[
+            {"id":"H1","rule":"An event a state does not mention is ignored.",
+             "quote":"just ignore anything the screen does not mention",
+             "confirmation":"relayed"},
+            {"id":"H2","rule":"A door that is open stays open until told."}]}"#;
+        let instance: serde_json::Value = serde_json::from_str(text).expect("JSON");
+        assert!(
+            violations(&instance).is_empty(),
+            "{:?}",
+            violations(&instance)
+        );
+        let profile = AuthoringProfile::from_text(text).expect("reads");
+        let [h1, h2] = profile.house_rules() else {
+            panic!("two rules");
+        };
+        assert_eq!(
+            h1.quote.as_deref(),
+            Some("just ignore anything the screen does not mention")
+        );
+        assert_eq!(h1.confirmation, Some(Confirmation::Relayed));
+        assert_eq!(h1.confirmation.map(Confirmation::as_str), Some("relayed"));
+        // Written by whoever prepared the profile: nothing says where it came
+        // from, and that is not read as the owner's confirmation.
+        assert_eq!((h2.quote.as_deref(), h2.confirmation), (None, None));
+    }
+
+    #[test]
+    fn a_confirmation_without_the_words_it_confirms_is_refused_in_a_sentence() {
+        for (rule, said) in [
+            (
+                r#"{"id":"H1","rule":"x","confirmation":"relayed"}"#,
+                "carries no quote",
+            ),
+            (
+                r#"{"id":"H1","rule":"x","quote":""}"#,
+                "quotes the owner and quotes nothing",
+            ),
+        ] {
+            let text =
+                format!(r#"{{"record":"sce-authoring-profile","v":1,"house_rules":[{rule}]}}"#);
+            let refused = AuthoringProfile::from_text(&text).expect_err(&text);
+            assert_eq!(refused.kind, ProfileFault::InvalidShape);
+            assert!(refused.detail.contains(said), "{refused}");
+        }
+    }
+
     /// Settings the schema refuses, one thing changed in each, and the reader
     /// refuses every one of them too: the two are one contract. What only the
     /// reader can say — a range that runs backwards, a word listed twice in
@@ -1083,8 +1179,24 @@ mod tests {
             violations(&control).is_empty(),
             "the control has to be valid"
         );
-        let changes: [(&str, serde_json::Value); 22] = [
+        let changes: [(&str, serde_json::Value); 26] = [
             ("house_rules", serde_json::json!([])),
+            (
+                "house_rules",
+                serde_json::json!([{"id": "H1", "rule": "x", "quote": ""}]),
+            ),
+            (
+                "house_rules",
+                serde_json::json!([{"id": "H1", "rule": "x", "confirmation": "relayed"}]),
+            ),
+            (
+                "house_rules",
+                serde_json::json!([{"id": "H1", "rule": "x", "quote": "q", "confirmation": "owner"}]),
+            ),
+            (
+                "house_rules",
+                serde_json::json!([{"id": "H1", "rule": "x", "said_by": "the owner"}]),
+            ),
             (
                 "house_rules",
                 serde_json::json!([{"id": "H 1", "rule": "x"}]),

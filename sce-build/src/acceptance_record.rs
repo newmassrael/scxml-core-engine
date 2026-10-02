@@ -216,6 +216,17 @@ pub struct AppliedRule {
     /// How many markers of the design cite it. Applying one rule twice is two
     /// places for the owner to confirm and the rule is one.
     pub places: usize,
+    /// The owner's own words the rule was made from, as the profile held them
+    /// when the design was accepted. Absent where the profile carried none, and
+    /// then nothing here knows where the rule came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
+    /// Who vouched for the rule when the design was accepted. Recorded so a
+    /// reader of the acceptance sees on what authority the design applied it,
+    /// and NOT compared afterwards: it says how the rule stood then, and the
+    /// lapse of a rule is about what it SAYS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmation: Option<crate::authoring_profile::Confirmation>,
 }
 
 /// One file the design was authored from.
@@ -587,7 +598,7 @@ impl AcceptanceRecord {
         // house rules is the owner's standing answer, not a value chosen
         // without one.
         let house_rules = house_rules_of(sources)?;
-        let house_rule_ids: Vec<&str> = house_rules.iter().map(|(id, _)| id.as_str()).collect();
+        let house_rule_ids: Vec<&str> = house_rules.iter().map(|rule| rule.id.as_str()).collect();
         let (inputs, reading) = read_design(&root, &document_path, &house_rule_ids)
             .map_err(|failure| failure.into_take_error(document))?;
         let applied_rules = applied_rules_of(&house_rules, &reading.cited);
@@ -982,7 +993,9 @@ impl From<RecordError> for DesignFailure {
 /// none when the record is taken under no profile. The profile is read through
 /// its own reader; one that cannot be read is refused here in its words, though
 /// the command line has already refused it before it got this far.
-fn house_rules_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<(String, String)>, RecordError> {
+fn house_rules_of(
+    sources: &[(SourceRole, &Path)],
+) -> Result<Vec<crate::authoring_profile::HouseRule>, RecordError> {
     let Some((_, path)) = sources
         .iter()
         .find(|(role, _)| *role == SourceRole::Profile)
@@ -994,18 +1007,14 @@ fn house_rules_of(sources: &[(SourceRole, &Path)]) -> Result<Vec<(String, String
             detail: format!("{}: {unusable}", path.display()),
         }
     })?;
-    Ok(profile
-        .house_rules()
-        .iter()
-        .map(|rule| (rule.id.clone(), rule.rule.clone()))
-        .collect())
+    Ok(profile.house_rules().to_vec())
 }
 
 /// The rules the design cited, as the profile worded them: `cited` is the
 /// `(id, places)` the design's markers name, and an id the profile does not hold
 /// is not a house rule and is not here.
 fn applied_rules_of(
-    house_rules: &[(String, String)],
+    house_rules: &[crate::authoring_profile::HouseRule],
     cited: &[(String, usize)],
 ) -> Vec<AppliedRule> {
     let mut applied: Vec<AppliedRule> = cited
@@ -1013,11 +1022,13 @@ fn applied_rules_of(
         .filter_map(|(id, places)| {
             house_rules
                 .iter()
-                .find(|(known, _)| known == id)
-                .map(|(_, rule)| AppliedRule {
+                .find(|known| known.id == *id)
+                .map(|rule| AppliedRule {
                     id: id.clone(),
-                    rule: rule.clone(),
+                    rule: rule.rule.clone(),
                     places: *places,
+                    quote: rule.quote.clone(),
+                    confirmation: rule.confirmation,
                 })
         })
         .collect();

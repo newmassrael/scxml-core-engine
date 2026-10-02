@@ -27,6 +27,7 @@ use std::fs;
 use std::path::Path;
 
 use sce_build::acceptance_record::{AcceptanceRecord, AppliedRule, Lapse, RecordError, SourceRole};
+use sce_build::authoring_profile::Confirmation;
 
 const MANIFEST: &str = r#"{
   "doc_id": "door", "rev": "1",
@@ -147,7 +148,9 @@ fn the_rules_the_design_cited_are_kept_as_the_profile_worded_them() {
         vec![AppliedRule {
             id: "H1".to_string(),
             rule: H1.to_string(),
-            places: 2
+            places: 2,
+            quote: None,
+            confirmation: None,
         }],
         record.applied_rules,
         "H2 is in the profile and not cited; H9 is cited and in no profile"
@@ -157,6 +160,64 @@ fn the_rules_the_design_cited_are_kept_as_the_profile_worded_them() {
     assert_eq!(
         record,
         AcceptanceRecord::from_json(&json).expect("it reads back")
+    );
+}
+
+const QUOTE: &str = "just ignore anything the door does not mention";
+
+/// The profile with `H1` carrying the owner's words and a relayed confirmation.
+fn profile_said(quote: &str) -> String {
+    format!(
+        r#"{{"record":"sce-authoring-profile","v":1,"house_rules":[
+  {{"id":"H1","rule":{H1:?},"quote":{quote:?},"confirmation":"relayed"}},
+  {{"id":"H2","rule":"A door that is open stays open until told."}}]}}"#
+    )
+}
+
+#[test]
+fn a_rule_is_kept_with_the_words_and_the_vouching_it_was_accepted_with() {
+    let tree = Tree::new();
+    tree.write("profile.json", &profile_said(QUOTE));
+    let record = tree.full();
+    let [applied] = record.applied_rules.as_slice() else {
+        panic!("one rule cited: {:?}", record.applied_rules);
+    };
+    assert_eq!(applied.quote.as_deref(), Some(QUOTE));
+    assert_eq!(applied.confirmation, Some(Confirmation::Relayed));
+    let written: serde_json::Value =
+        serde_json::from_str(&record.to_json()).expect("the record is JSON");
+    assert_eq!(written["applied_rules"][0]["quote"], QUOTE);
+    assert_eq!(written["applied_rules"][0]["confirmation"], "relayed");
+    assert_eq!(
+        record,
+        AcceptanceRecord::from_json(&record.to_json()).expect("it reads back")
+    );
+    // A rule the profile holds with neither says neither: the record does not
+    // write a quote nobody gave.
+    let plain = Tree::new().full().to_json();
+    let plain: serde_json::Value = serde_json::from_str(&plain).expect("JSON");
+    assert!(plain["applied_rules"][0].get("quote").is_none(), "{plain}");
+    assert!(
+        plain["applied_rules"][0].get("confirmation").is_none(),
+        "{plain}"
+    );
+}
+
+#[test]
+fn a_rule_whose_provenance_moved_and_whose_words_did_not_lapses_the_profile_only() {
+    // How the rule stood when it was accepted is recorded, and not compared:
+    // the lapse of a rule is about what it SAYS.
+    let tree = Tree::new();
+    tree.write("profile.json", &profile_said(QUOTE));
+    let record = tree.full();
+    tree.write(
+        "profile.json",
+        &profile_said("ignore what the door never says"),
+    );
+    let lapses = record.recheck(tree.root(), "base").expect("recheck");
+    assert_eq!(
+        vec!["source authoring profile profile.json"],
+        named(&lapses)
     );
 }
 

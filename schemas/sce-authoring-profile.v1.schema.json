@@ -138,8 +138,18 @@
             "description": "The rule, in the owner's words.",
             "type": "string",
             "minLength": 1
+          },
+          "quote": {
+            "description": "The owner's own words the rule was made from, copied as they were said. Absent where whoever prepared the profile wrote the rule themselves: nothing then says where it came from, and a run that applies it says so.",
+            "type": "string",
+            "minLength": 1
+          },
+          "confirmation": {
+            "description": "Who vouches that the owner said yes to the rule as it is worded here. `relayed`: a client reported that the owner confirmed it after being shown it beside their own words; the product was not in the conversation and does not verify it. Absent: nobody did in a way this record can show, which is never read as the owner's confirmation. A confirmation says what the owner was shown, so it needs the `quote`.",
+            "enum": ["relayed"]
           }
-        }
+        },
+        "dependencies": { "confirmation": ["quote"] }
       }
     },
     "guidance": {
