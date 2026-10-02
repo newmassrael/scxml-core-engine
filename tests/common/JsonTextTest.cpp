@@ -6,12 +6,20 @@
 // tests/json_text/string_escape.json. This backend writes JSON text three ways
 // — SCE::JsonText, nlohmann, and a script engine's JSON.stringify — and all
 // three are held to the table here.
+//
+// The members of a JSON object written into `_event.data` come in one order on
+// every engine (ARCHITECTURE.md, "JSON Object Key Order"). The cases live in
+// tests/json_text/object_key_order.json, and the core's writer of them,
+// EventDataHelper, is held to it below.
 
 #include "common/JsonText.h"
+#include "common/EventDataHelper.h"
 #include "scripting/ScriptEngineProvider.h"
 
 #include <fstream>
 #include <gtest/gtest.h>
+#include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <variant>
@@ -79,6 +87,36 @@ std::vector<std::string> stringifyDisagreements(SCE::IScriptEngine &engine, cons
     return failures;
 }
 
+// A value of the key-order table as the data model holds it. A number in the
+// table is a whole number, so the cases do not depend on how an engine spells
+// a fraction.
+::ScriptValue held(const nlohmann::json &value) {
+    if (value.is_null()) {
+        return ::ScriptNull{};
+    }
+    if (value.is_boolean()) {
+        return value.get<bool>();
+    }
+    if (value.is_number_integer()) {
+        return value.get<int64_t>();
+    }
+    if (value.is_string()) {
+        return value.get<std::string>();
+    }
+    if (value.is_array()) {
+        auto array = std::make_shared<::ScriptArray>();
+        for (const auto &item : value) {
+            array->elements.push_back(held(item));
+        }
+        return array;
+    }
+    auto object = std::make_shared<::ScriptObject>();
+    for (const auto &[key, item] : value.items()) {
+        object->properties.emplace(key, held(item));
+    }
+    return object;
+}
+
 std::string joined(const std::vector<std::string> &lines) {
     std::string out;
     for (const auto &line : lines) {
@@ -105,6 +143,23 @@ TEST(JsonText, NlohmannWritesTheSameForm) {
     ASSERT_GE(cases.size(), kTableFloor);
     for (const auto &c : cases) {
         EXPECT_EQ(nlohmann::json(c.text).dump(), "\"" + c.escaped + "\"") << c.name;
+    }
+}
+
+// The params a `<send>` evaluated, a name that repeats collecting its values in
+// declaration order (W3C test178), written as `_event.data`.
+TEST(JsonText, TheCoreWritesObjectMembersInTheOneOrder) {
+    std::ifstream file(SCE_JSON_KEY_ORDER_TABLE);
+    const auto table = nlohmann::json::parse(file);
+    const auto &cases = table.at("cases");
+    ASSERT_GE(cases.size(), kTableFloor) << "the table was not read from " << SCE_JSON_KEY_ORDER_TABLE;
+    for (const auto &row : cases) {
+        std::map<std::string, std::vector<::ScriptValue>> evaluated;
+        for (const auto &pair : row.at("params")) {
+            evaluated[pair.at(0).get<std::string>()].push_back(held(pair.at(1)));
+        }
+        EXPECT_EQ(SCE::EventDataHelper::buildJsonFromTypedParams(evaluated), row.at("data").get<std::string>())
+            << row.at("name").get<std::string>();
     }
 }
 

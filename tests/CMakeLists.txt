@@ -368,7 +368,9 @@ endif()
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
 # Source of Truth)"): SCE::JsonText, nlohmann and the script engines'
 # JSON.stringify, each held to tests/json_text/string_escape.json — the table
-# every engine's writer reads.
+# every engine's writer reads. The same target holds the core's writer of an
+# object's members to tests/json_text/object_key_order.json (ARCHITECTURE.md,
+# "JSON Object Key Order").
 # ============================================================================
 add_executable(json_text_test
     common/JsonTextTest.cpp
@@ -391,6 +393,7 @@ target_link_libraries(json_text_test
 target_compile_definitions(json_text_test
     PRIVATE
         SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json"
+        SCE_JSON_KEY_ORDER_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/object_key_order.json"
 )
 
 apply_sce_test_policies(json_text_test)

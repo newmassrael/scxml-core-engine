@@ -20,6 +20,11 @@ interface EngineHeldValue {
      * The value as the engine serialises it to JSON (`JSON.stringify`). A
      * value JSON cannot express (a function, `undefined`) is the text `null`,
      * as the C++ writer spells an undefined value.
+     *
+     * The order of an object's members here is the engine's own and does not
+     * matter: the writer of `_event.data` reads this text and writes it again
+     * with the members in the order every engine writes (ARCHITECTURE.md,
+     * "JSON Object Key Order"). It does have to be JSON.
      */
     fun toJson(): String
 }

@@ -3026,11 +3026,12 @@ signed 64-bit count; both fields are always present.
 `sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml` and
 `saved/statechart_static_host_invoke_running.json` hold it on both backends.
 
-The request's `event_data` is written in the order its backend built it — the
-document's on Kotlin, alphabetical on Rust — which is an existing difference
-between the two and not one a saved state introduces; the fixture declares its
-`<param>`s alphabetically so a shared instance is one text. A host that compares
-a request as bytes rather than reading it as JSON sees the difference.
+The request's `event_data` is a JSON object whose members are written in one
+order on every backend — ascending by name, whatever order the document declared
+its `<param>`s in (ARCHITECTURE.md, "JSON Object Key Order") — so a host that
+compares a request as bytes rather than reading it as JSON sees the same text
+from any backend. The fixture declares its `<param>`s out of that order on
+purpose, so a shared instance being one text shows the rule at work.
 
 A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
 both, and its host calls cannot be made twice), and it is refused, leaving

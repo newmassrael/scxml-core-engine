@@ -691,6 +691,46 @@ with its own engine's JSON parser:
 
 Do NOT write a new escaper; call the engine's writer above.
 
+### JSON Object Key Order (Single Source of Truth)
+
+The members of a JSON object written into `_event.data` come in one order on
+every engine: ascending by the key's UTF-8 bytes — which is ascending by
+Unicode code point — at every depth. RFC 8259 leaves the order open and SCE
+closes it, so the same `<send>` is the same bytes whichever engine wrote it,
+and a saved machine's `event_data` (held as text) reads the same on every
+backend. An array keeps its order; only an object's members are sorted. A
+`<param>` name that repeats collects its values, in document order, into one
+array (W3C SCXML test178).
+
+| Order is | Example |
+|----------|---------|
+| by bytes, not by number | `10` before `2` before `9` |
+| by bytes, not by case | `B` before `a` |
+| by code point, not by UTF-16 unit | U+FF5E before U+1F600 (UTF-16 would put the surrogate pair first) |
+
+Measured 2026-10-02, the Kotlin writer kept the order a document declared its
+`<param>`s in while the C++, Rust, Go and Python writers sorted them, and
+nothing pinned either: a document that declared `b` before `a` wrote
+`{"b":..,"a":..}` on one backend and `{"a":..,"b":..}` on the rest. A value a
+script engine keeps to itself (a QuickJS object) is written by that engine's
+`JSON.stringify`, which orders integer-like keys first whatever the text; the
+Kotlin runtime reads that text back and writes it again in this order.
+
+`tests/json_text/object_key_order.json` holds the cases, and every writer is
+held to it:
+
+| Engine | Writer | Reader of the table |
+|--------|--------|---------------------|
+| C++ | `EventDataHelper::buildJsonFromTypedParams` (nlohmann's `json`, a sorted map) | `tests/common/JsonTextTest.cpp` |
+| Rust | `helpers::event_data::build_json_from_typed_params`, `script_value_to_json` | `backends/rust/runtime/src/helpers/event_data.rs` |
+| Go | `BuildJSONFromTypedParams`, `ScriptValueToJSON` | `backends/go/runtime/event_data_key_order_test.go` |
+| Python | `ScriptValue.to_json_literal` (no parameter builder yet) | `backends/python/tests/json_text/test_object_key_order.py` |
+| Kotlin | `buildJsonFromParams`, `valueToJson`, `Json.writeCanonical`; order is `Json.compareKeys` | `backends/kotlin/tests/.../runtime/EventDataKeyOrderTest.kt` |
+| C11 | none — it reads a payload (`sce_payload_*`) and writes no parameter object | — |
+
+Do NOT write a new object writer in a template or a backend; call the engine's
+writer above, so a new engine arrives with the order already decided.
+
 ### Durations (Single Source of Truth)
 
 A `<send>` delay is read one way on every engine. W3C SCXML 6.2 names the

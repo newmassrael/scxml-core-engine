@@ -1,0 +1,24 @@
+# Mutation cases for "the members of a JSON object the Python runtime writes
+# into `_event.data` come in the one order every engine writes" (ARCHITECTURE.md,
+# "JSON Object Key Order").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_event_data_key_order.cases`.
+#
+# The oracle is `test_object_key_order.py`, which reads
+# `tests/json_text/object_key_order.json` and writes each case through
+# `ScriptValue.to_json_literal`. The Python writer already sorted before the
+# table existed; what the table adds is something that notices if it stops.
+#
+# Python compiles nothing, so the module on disk is the artifact every run
+# reads — the edit is a `mutation_runtime_targets`.
+
+mutation_pytest backends/python/tests json_text/
+mutation_runtime_targets backends/python/runtime/sce_runtime/scripting/i_script_engine.py
+mutation_oracles backends/python/tests/json_text/test_object_key_order.py
+
+mutation_case "the members of an object are written in reverse" <<'PY'
+edit("backends/python/runtime/sce_runtime/scripting/i_script_engine.py",
+     "for k in sorted(self.object_val)",
+     "for k in sorted(self.object_val, reverse=True)")
+PY

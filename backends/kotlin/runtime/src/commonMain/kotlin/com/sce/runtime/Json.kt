@@ -54,9 +54,48 @@ object Json {
      * [value] as compact JSON text. A number is written in the spelling it
      * carries, so a value read by [parse] is written back unchanged.
      */
-    fun write(value: Any?): String = StringBuilder().also { writeInto(value, it) }.toString()
+    fun write(value: Any?): String = StringBuilder().also { writeInto(value, it, canonical = false) }.toString()
 
-    private fun writeInto(value: Any?, out: StringBuilder) {
+    /**
+     * [value] as compact JSON text with every object's members in the one
+     * order every engine writes (ARCHITECTURE.md, "JSON Object Key Order"):
+     * ascending by [compareKeys], at every depth. An array keeps its order.
+     * Otherwise as [write]: a number is written in the spelling it carries.
+     */
+    fun writeCanonical(value: Any?): String =
+        StringBuilder().also { writeInto(value, it, canonical = true) }.toString()
+
+    /**
+     * Orders two object keys by Unicode code point, which is the order of
+     * their UTF-8 bytes — the order the other five engines sort in.
+     *
+     * `String.compareTo` compares UTF-16 units and agrees with that order
+     * except in one place: a character above U+FFFF is a surrogate pair, whose
+     * units (U+D800..U+DFFF) sort BELOW the basic-plane characters
+     * U+E000..U+FFFF although the character itself is above them. So where two
+     * keys first differ and exactly one of the two units is a surrogate, that
+     * one is the greater.
+     */
+    fun compareKeys(left: String, right: String): Int {
+        val shared = minOf(left.length, right.length)
+        for (at in 0 until shared) {
+            val l = left[at]
+            val r = right[at]
+            if (l == r) continue
+            val leftIsSurrogate = l.code in SURROGATES
+            val rightIsSurrogate = r.code in SURROGATES
+            return when {
+                leftIsSurrogate == rightIsSurrogate -> l.compareTo(r)
+                leftIsSurrogate -> 1
+                else -> -1
+            }
+        }
+        return left.length - right.length
+    }
+
+    private val SURROGATES = 0xD800..0xDFFF
+
+    private fun writeInto(value: Any?, out: StringBuilder, canonical: Boolean) {
         when (value) {
             null -> out.append("null")
             is Boolean -> out.append(value.toString())
@@ -66,18 +105,21 @@ object Json {
                 out.append('[')
                 value.forEachIndexed { i, item ->
                     if (i > 0) out.append(',')
-                    writeInto(item, out)
+                    writeInto(item, out, canonical)
                 }
                 out.append(']')
             }
             is Map<*, *> -> {
                 out.append('{')
                 var first = true
-                for ((key, item) in value) {
+                val members =
+                    if (canonical) value.entries.sortedWith { l, r -> compareKeys(l.key as String, r.key as String) }
+                    else value.entries
+                for ((key, item) in members) {
                     if (!first) out.append(',')
                     first = false
                     out.append(quote(key as String)).append(':')
-                    writeInto(item, out)
+                    writeInto(item, out, canonical)
                 }
                 out.append('}')
             }

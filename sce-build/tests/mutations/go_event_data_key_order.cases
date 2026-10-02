@@ -1,0 +1,33 @@
+# Mutation cases for "the members of a JSON object the Go runtime writes into
+# `_event.data` come in the one order every engine writes" (ARCHITECTURE.md,
+# "JSON Object Key Order").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/go_event_data_key_order.cases`.
+#
+# The oracle is `TestTheMembersOfAnObjectAreWrittenInTheOneOrderEveryEngineWrites`,
+# which reads `tests/json_text/object_key_order.json` and writes each case
+# through `BuildJSONFromTypedParams`. The Go writer already sorted before the
+# table existed; what the table adds is something that notices if it stops. A
+# reversed order is a deterministic stand-in for any order but the right one
+# (a map's own iteration order is random, which a case cannot rely on).
+
+mutation_go backends/go/runtime .
+mutation_runtime_targets backends/go/runtime/helpers.go
+mutation_oracles backends/go/runtime/event_data_key_order_test.go
+
+# ── The params a send names come out in the wrong order ────────────
+
+mutation_case "the names of a send's params are written in reverse" <<'PY'
+edit("backends/go/runtime/helpers.go",
+     "sort.Strings(names)",
+     "sort.Sort(sort.Reverse(sort.StringSlice(names)))")
+PY
+
+# ── An object value's members come out in the wrong order ──────────
+
+mutation_case "the members of an object value are written in reverse" <<'PY'
+edit("backends/go/runtime/helpers.go",
+     "sort.Strings(keys)",
+     "sort.Sort(sort.Reverse(sort.StringSlice(keys)))")
+PY

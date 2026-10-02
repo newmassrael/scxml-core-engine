@@ -1,0 +1,42 @@
+{
+  "about": [
+    "In what order every SCE engine writes the members of a JSON object into",
+    "`_event.data`, written out by hand.",
+    "",
+    "One order: ascending by the key's UTF-8 bytes, which is ascending by",
+    "Unicode code point, at every depth. RFC 8259 leaves the order of an",
+    "object's members open and SCE closes it, so the same `<send>` is the same",
+    "bytes whichever engine wrote it - and a machine's saved state, which holds",
+    "a host request's `event_data` as text, reads the same on every backend.",
+    "",
+    "Why a shared table: measured 2026-10-02, the Kotlin writer kept the order",
+    "a document declared its `<param>`s in while the C++, Rust, Go and Python",
+    "writers sorted them, and nothing pinned either. A document that declared",
+    "`b` before `a` produced `{\"b\":..,\"a\":..}` on one backend and",
+    "`{\"a\":..,\"b\":..}` on the rest, and a state saved on one could not be",
+    "compared byte for byte with a state saved on another.",
+    "",
+    "Each case gives `params`, what a `<send>` evaluated, as [name, value]",
+    "pairs in the order the document declared them (a value is any JSON value),",
+    "and `data`, the exact `_event.data` text the writer must produce. A name",
+    "that repeats collects its values, in document order, into one array",
+    "(W3C SCXML test178: an object cannot hold a name twice). A number is a",
+    "whole number, so the cases do not depend on how an engine spells a",
+    "fraction. The rule is stated once, in ARCHITECTURE.md, 'JSON Object Key",
+    "Order', which lists the readers."
+  ],
+  "cases": [
+    { "name": "already in order", "params": [["a", 1], ["b", 2]], "data": "{\"a\":1,\"b\":2}" },
+    { "name": "declaration order is not the written order", "params": [["b", 1], ["a", 2]], "data": "{\"a\":2,\"b\":1}" },
+    { "name": "upper case sorts before lower case", "params": [["a", 1], ["B", 2]], "data": "{\"B\":2,\"a\":1}" },
+    { "name": "digits sort as text, not as numbers", "params": [["10", 1], ["9", 2], ["2", 3]], "data": "{\"10\":1,\"2\":3,\"9\":2}" },
+    { "name": "a prefix sorts before what extends it", "params": [["ab", 1], ["a", 2]], "data": "{\"a\":2,\"ab\":1}" },
+    { "name": "non-ASCII sorts after ASCII", "params": [["é", 1], ["z", 2]], "data": "{\"z\":2,\"é\":1}" },
+    { "name": "a supplementary character sorts after every character of the basic plane", "params": [["😀", 1], ["～", 2], ["a", 3]], "data": "{\"a\":3,\"～\":2,\"😀\":1}" },
+    { "name": "a name that repeats is one array in declaration order", "params": [["k", 1], ["j", 0], ["k", 2]], "data": "{\"j\":0,\"k\":[1,2]}" },
+    { "name": "an object value is ordered at every depth", "params": [["o", { "z": 1, "a": { "y": 1, "x": 2 } }]], "data": "{\"o\":{\"a\":{\"x\":2,\"y\":1},\"z\":1}}" },
+    { "name": "digits sort as text inside an object value too", "params": [["o", { "10": 1, "9": 2, "2": 3 }]], "data": "{\"o\":{\"10\":1,\"2\":3,\"9\":2}}" },
+    { "name": "an object inside an array is ordered and the array is not", "params": [["l", [{ "b": 1, "a": 2 }, { "d": 1, "c": 2 }]]], "data": "{\"l\":[{\"a\":2,\"b\":1},{\"c\":2,\"d\":1}]}" },
+    { "name": "a string value is written in the one escape form", "params": [["s", "a\"b"]], "data": "{\"s\":\"a\\\"b\"}" }
+  ]
+}

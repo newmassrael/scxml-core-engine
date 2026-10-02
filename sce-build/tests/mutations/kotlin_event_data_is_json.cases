@@ -17,7 +17,9 @@
 # nor `\`, so no valid document can observe the difference and the case could
 # only ever survive. The fix is still made there, because the writer is one
 # function and a raw name would be a second spelling of it, but its witness
-# is the member-name case: the same `Json.quote` answers both.
+# is the member-name case: since 2026-10-02 `buildJsonFromParams` and an object
+# value are written by the same `objectToJson`, so the one mutation below
+# reaches both.
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.SendParamPayloadTest'
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/SendParamPayloadTest.kt
@@ -25,8 +27,8 @@ mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/S
 
 mutation_case "a member name inside an object value is written raw" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     r'''"${Json.quote(k.toString())}:${valueToJson(v)}"''',
-     r'''"\"${k}\":${valueToJson(v)}"''')
+     r'''Json.quote(key) + ":" + valueToJson(value)''',
+     r'''"\"" + key + "\":" + valueToJson(value)''')
 PY
 
 mutation_case "a string value escapes only the quote and the backslash" <<'PY'

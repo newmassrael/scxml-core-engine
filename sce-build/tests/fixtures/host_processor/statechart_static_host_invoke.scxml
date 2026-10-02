@@ -17,13 +17,14 @@
     error.invoke.h   leaves `working` for `failed`, and records a 2
     leave            leaves `working` for `idle`, which cancels the invocation
 
-  The `<param>`s are written in the alphabetical order of their names, which is
-  not a style choice. The request's `event_data` is a JSON object whose keys come
-  out in the order each backend builds them — the document's order on Kotlin,
-  alphabetical on Rust (measured 2026-10-02) — and a saved state holds that text
-  as it was, one text for both backends to write and read. In this order the two
-  agree; the difference itself is not hidden by it, only kept out of a test that
-  is about something else.
+  The `<param>`s are declared out of the alphabetical order of their names
+  (`label` before `job`), which is not a style choice. The request's
+  `event_data` is a JSON object whose members come out ascending by name on
+  every backend, whatever order the document declared them in (ARCHITECTURE.md,
+  "JSON Object Key Order"), and a saved state holds that text as it was. One
+  text for both backends to write and read is therefore the rule at work: a
+  document declaring them in the order they are written would agree on both
+  without showing it.
 
   `seen` is a decimal number that grows a digit for each such event, so it says
   WHICH arrived and in what order, as `trace` does in static_timers.scxml: 1 is
@@ -57,8 +58,8 @@
   <state id="working">
     <invoke type="x-sce-host" id="h" src="job://report">
       <param name="_sce_deadline_ms" expr="5000"/>
-      <param name="job" expr="job"/>
       <param name="label" expr="label"/>
+      <param name="job" expr="job"/>
       <content>payload</content>
     </invoke>
     <transition event="bump">

@@ -315,3 +315,72 @@ pub fn build_json_object(pairs: &[(&str, &str)]) -> String {
     json.push('}');
     json
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::json::{parse, Value};
+
+    /// A value of the shared table as the data model holds it. A number in the
+    /// table is a whole number, so the cases do not depend on how an engine
+    /// spells a fraction.
+    fn held(value: &Value) -> ScriptValue {
+        match value {
+            Value::Null => ScriptValue::Null,
+            Value::Bool(b) => ScriptValue::Bool(*b),
+            Value::Number(text) => {
+                ScriptValue::Int(text.parse().expect("the table's numbers are whole"))
+            }
+            Value::Text(text) => ScriptValue::String(text.clone()),
+            Value::Array(items) => ScriptValue::Array(items.iter().map(held).collect()),
+            Value::Object(members) => ScriptValue::Object(
+                members
+                    .iter()
+                    .map(|(key, item)| (key.clone(), held(item)))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// tests/json_text/object_key_order.json: the cases every engine's
+    /// `_event.data` writer is measured against (ARCHITECTURE.md, "JSON Object
+    /// Key Order"), read here with this runtime's own parser.
+    #[test]
+    fn the_members_of_an_object_are_written_in_the_one_order_every_engine_writes() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/json_text/object_key_order.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared key-order table");
+        let table = parse(&table).expect("the table is JSON");
+        let Some(Value::Array(cases)) = table.member("cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 8, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let (Some(Value::Text(name)), Some(Value::Text(data)), Some(Value::Array(params))) = (
+                case.member("name"),
+                case.member("data"),
+                case.member("params"),
+            ) else {
+                panic!("a case has a name, params and data");
+            };
+            // The params a `<send>` evaluated, a name that repeats collecting
+            // its values in document order (W3C test178).
+            let mut evaluated: BTreeMap<String, Vec<ScriptValue>> = BTreeMap::new();
+            for pair in params {
+                let Value::Array(pair) = pair else {
+                    panic!("{name}: a param is a [name, value] pair");
+                };
+                let [Value::Text(param), value] = pair.as_slice() else {
+                    panic!("{name}: a param is a [name, value] pair");
+                };
+                evaluated
+                    .entry(param.clone())
+                    .or_default()
+                    .push(held(value));
+            }
+            assert_eq!(&build_json_from_typed_params(&evaluated), data, "{name}");
+        }
+    }
+}

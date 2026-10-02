@@ -1,0 +1,68 @@
+# Mutation cases for "the members of a JSON object the Kotlin runtime writes
+# into `_event.data` come in the one order every engine writes" (ARCHITECTURE.md,
+# "JSON Object Key Order").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_event_data_key_order.cases`.
+#
+# The oracle is `EventDataKeyOrderTest`, which reads
+# `tests/json_text/object_key_order.json` through the same protected writer a
+# generated `<send>` calls. Measured 2026-10-02, before the sort existed, that
+# test was red on its second case: a document declaring `b` before `a` wrote
+# `{"b":1,"a":2}` here and `{"a":2,"b":1}` on the other backends. Each case
+# below puts one way of losing the order back.
+#
+# ⚠ Every edit has to compile warning-free: this runtime builds with
+# `allWarningsAsErrors`, and a case that fails to compile is INCONCLUSIVE, not
+# a verdict.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.runtime.EventDataKeyOrderTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/runtime/EventDataKeyOrderTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt
+
+# ── The writer keeps the order the document declared ───────────────
+#
+# The stable sort of a comparator that finds every pair equal leaves the
+# members where the document put them: the shape the Kotlin writer had.
+
+mutation_case "an object's members keep the order they were declared in" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     r'''.sortedWith { left, right -> Json.compareKeys(left.first, right.first) }''',
+     r'''.sortedWith { _, _ -> 0 }''')
+PY
+
+# ── A key is ordered by UTF-16 unit again ──────────────────────────
+#
+# `String.compareTo` and the code point order disagree where a surrogate pair
+# meets a character in U+E000..U+FFFF. The condition below makes that pair
+# compare as units, which is exactly what a plain `compareTo` does; the table's
+# U+FF5E-before-U+1F600 case and the unit test of `Json.compareKeys` must go red.
+
+mutation_case "two keys are compared by UTF-16 unit, not by code point" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     r'''leftIsSurrogate == rightIsSurrogate -> l.compareTo(r)''',
+     r'''leftIsSurrogate == rightIsSurrogate || l.code >= 0xE000 || r.code >= 0xE000 -> l.compareTo(r)''')
+PY
+
+# ── The canonical writer stops sorting ─────────────────────────────
+#
+# `Json.writeCanonical` is what an engine-held value is written through, and it
+# is `Json.write` plus the one sort. A dead branch keeps it compiling.
+
+mutation_case "the canonical writer writes members as it found them" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     r'''if (canonical) value.entries.sortedWith''',
+     r'''if (value.size < 0) value.entries.sortedWith''')
+PY
+
+# ── An engine's own text is written as it came ─────────────────────
+#
+# A QuickJS object comes back from `JSON.stringify` with its integer-like keys
+# first, whatever the text. Writing that text through unread is what the
+# runtime did before.
+
+mutation_case "a value an engine keeps is written in the engine's order" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     r'''is EngineHeldValue -> Json.writeCanonical(Json.parse(value.toJson()))''',
+     r'''is EngineHeldValue -> value.toJson()''')
+PY

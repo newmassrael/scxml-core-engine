@@ -4084,20 +4084,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * JSON string writer. A param name is the author's, so it may hold a `"`
      * or a `\`; written raw, it made the payload not JSON at all, and a
      * receiver on any backend read no `_event.data` rather than a wrong one.
+     *
+     * The members come in the order every engine writes — ascending by
+     * [Json.compareKeys], not the order the document declared its `<param>`s
+     * in (ARCHITECTURE.md, "JSON Object Key Order"): the same `<send>` is the
+     * same bytes on every backend, and a saved machine's request text reads
+     * the same on each.
      */
     protected fun buildJsonFromParams(params: Map<String, Any?>): String {
         if (params.isEmpty()) return ""
-        val sb = StringBuilder("{")
-        var first = true
-        for ((key, value) in params) {
-            if (!first) sb.append(",")
-            first = false
-            sb.append(Json.quote(key)).append(":")
-            sb.append(valueToJson(value))
-        }
-        sb.append("}")
-        return sb.toString()
+        return objectToJson(params)
     }
+
+    /** An object as JSON text, its members in [Json.compareKeys] order. */
+    private fun objectToJson(members: Map<*, *>): String = members.entries
+        .map { (key, value) -> key.toString() to value }
+        .sortedWith { left, right -> Json.compareKeys(left.first, right.first) }
+        .joinToString(",", "{", "}") { (key, value) -> Json.quote(key) + ":" + valueToJson(value) }
 
     /**
      * Record one `<send>` `<param>`, where a name may repeat.
@@ -4124,7 +4127,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     protected fun valueToJson(value: Any?): String = when (value) {
         null -> "null"
-        is EngineHeldValue -> value.toJson()
+        // The engine says what the value is; the order of its members is the
+        // runtime's to say, so the text is read back and written again.
+        is EngineHeldValue -> Json.writeCanonical(Json.parse(value.toJson()))
         is Boolean -> value.toString()
         is Number -> {
             val d = value.toDouble()
@@ -4132,12 +4137,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             else d.toString()
         }
         is String -> Json.quote(value)
-        is Map<*, *> -> {
-            val entries = value.entries.joinToString(",") { (k, v) ->
-                "${Json.quote(k.toString())}:${valueToJson(v)}"
-            }
-            "{$entries}"
-        }
+        is Map<*, *> -> objectToJson(value)
         is RepeatedParam -> {
             val items = value.values.joinToString(",") { valueToJson(it) }
             "[$items]"
