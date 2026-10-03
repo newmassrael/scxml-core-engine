@@ -52,7 +52,13 @@ command -v npm >/dev/null 2>&1 \
 # sweeps `sce-build` (whose gated test targets need `--features cli`), and
 # `--workspace` here means `app/`'s members, never the root's. A manifest under
 # a directory the root `Cargo.toml` excludes says so on the line itself.
-cargo fmt --manifest-path app/Cargo.toml --all --check \
+# Formatting names the two packages and does not use `--all`. `--all` adds every
+# local path dependency (`app-core`, which pulls `sce-build` and the backends in
+# through its dev-dependencies) and hands rustfmt every file of them on ONE command
+# line: ~97 KB, over the 32767 characters Windows lets a process be started with
+# ("The filename or extension is too long", measured on the `windows` lane).
+# `app-core` is a member of the root workspace, so `fmt-check.yml` already judges it.
+cargo fmt --manifest-path app/Cargo.toml -p sce-workbench -p sce-web-shell --check \
     || sce_gate_fail "app: cargo fmt --check"
 
 cargo clippy --manifest-path app/Cargo.toml --workspace --all-targets --locked -- -D warnings \
