@@ -2366,11 +2366,17 @@ enum Commands {
     /// figure of the state it leaves, with its row in the table under
     /// that figure. Box text is the pseudocode page's own words.
     ///
-    /// ⚠ Exits with `cli/diagram-does-not-fit` when a figure is larger
-    /// than the page at `--min-pt`. It is never shrunk below that size:
-    /// the minimum is what the reader was promised.
+    /// A document of any other kind (a lookup, a codec, a timer, ...) is
+    /// not boxes and arrows, so it is set as the table of every value it
+    /// states, field by field, in `<out>/fields-<n>.svg`: nothing the
+    /// document says is left off a sheet except where each node was written
+    /// in its file.
+    ///
+    /// ⚠ Exits with `cli/diagram-does-not-fit` when a figure or a table is
+    /// larger than the page at `--min-pt`. It is never shrunk below that
+    /// size: the minimum is what the reader was promised.
     Diagram {
-        /// Statechart (SCXML) document path
+        /// Document path: a statechart, or a document of any other kind
         document: String,
         /// Directory the SVG files are written into
         #[arg(short, long, value_name = "DIR")]
@@ -9085,9 +9091,39 @@ fn registered_pages() -> clap::builder::PossibleValuesParser {
     )
 }
 
+/// Write `files` — a file name and the SVG it holds — into `out` and name
+/// each path on stdout. Every name is decided by the caller before this is
+/// called, so a refusal leaves no partial set behind.
+fn write_diagram_files(out: &str, files: &[(String, String)]) {
+    let dir = Path::new(out);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out.to_string(),
+            source: e,
+        })
+    });
+    let mut written = Vec::new();
+    for (name, svg) in files {
+        let path = dir.join(name);
+        emit_generated(&path, svg.as_bytes(), WritePolicy::IfChanged);
+        written.push(path);
+    }
+    finish_generated_output();
+    out_stream(|w| {
+        for path in &written {
+            writeln!(w, "{}", path.display())?;
+        }
+        Ok(())
+    });
+}
+
 /// Draw `document` as print figures, one SVG per figure, into `out` — and,
 /// given the specification's manifest, the requirement checklist beside
 /// them, on as many `checklist-<n>.svg` pages as it takes.
+///
+/// A document of any other kind is not boxes and arrows, so it is set as
+/// the table of every value it states, on as many `fields-<n>.svg` pages as
+/// it takes.
 ///
 /// Refused whole — nothing written — when any figure or checklist page
 /// cannot be drawn or does not fit: a set of figures missing one reads
@@ -9108,23 +9144,7 @@ fn cmd_diagram(
             detail: format!("--min-pt must be a positive number of points, got {min_pt}"),
         });
     }
-    // A figure is of a statechart: states, and the transitions between
-    // them. Every other kind is refused by name, with where it IS reviewed,
-    // rather than by the SCXML parser as the wrong pipeline — the review
-    // artefact follows the kind's shape (Requirement-closure RFC §7), and
-    // for a table, a formula or a byte layout that shape is the pseudocode
-    // page, which is total for every kind.
-    let model = match read_design(document, error_format) {
-        Design::Statechart(model) => *model,
-        Design::Forge(parsed) => cli_exit(CliError::DiagramUnavailable {
-            feature: format!(
-                "a figure draws a statechart, and this is a {} document; review it \
-                 on its pseudocode page (sce-codegen pseudo), and its requirements \
-                 in sce-codegen acceptance-report",
-                parsed.document.kind().as_attr()
-            ),
-        }),
-    };
+    let design = read_design(document, error_format);
     // Clap has refused names neither registry carries; a miss here is the
     // parser and a registry disagreeing, and says which.
     let lexicon = sce_build::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
@@ -9170,7 +9190,52 @@ fn cmd_diagram(
                 need_pt,
                 area_pt,
             ),
+            Refusal::SheetDoesNotFit { need_pt, area_pt } => does_not_fit(
+                words::phrase(lexicon, Phrase::FieldTable)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{:?}", Phrase::FieldTable)),
+                need_pt,
+                area_pt,
+            ),
+            tree @ Refusal::NotATree(_) => CliError::DiagramUnavailable {
+                feature: tree.to_string(),
+            },
         })
+    };
+
+    // A figure of boxes and arrows is of a statechart: states, and the
+    // transitions between them. A document of any other kind is a table, a
+    // formula or a byte layout, and what is drawn of it is the table of
+    // every value it states (Requirement-closure RFC §7: the review
+    // artefact follows the kind's shape).
+    let model = match design {
+        Design::Statechart(model) => *model,
+        Design::Forge(parsed) => {
+            let kind = parsed.document.kind().as_attr();
+            if manifest.is_some() {
+                cli_exit(CliError::DiagramUnavailable {
+                    feature: format!(
+                        "the requirement checklist names a statechart's boxes and table rows, \
+                         and this is a {kind} document; its requirements are in \
+                         sce-codegen acceptance-report"
+                    ),
+                });
+            }
+            let sheets = sce_build::diagram::fields::pages(&parsed, lexicon, page)
+                .unwrap_or_else(|r| refuse(r));
+            let files: Vec<(String, String)> = sheets
+                .iter()
+                .enumerate()
+                .map(|(n, sheet)| {
+                    (
+                        format!("fields-{}.svg", n + 1),
+                        sce_build::diagram::svg::render_sheet(sheet),
+                    )
+                })
+                .collect();
+            write_diagram_files(out, &files);
+            return;
+        }
     };
     let printed = fit::print(&model, lexicon, page).unwrap_or_else(|r| refuse(r));
 
@@ -9201,39 +9266,18 @@ fn cmd_diagram(
             })
         })
         .collect();
-    let dir = Path::new(out);
-    ensure_output_dir(dir).unwrap_or_else(|e| {
-        cli_exit(CliError::CreateOutputDir {
-            path: out.to_string(),
-            source: e,
-        })
-    });
-    let mut written = Vec::new();
-    for (p, stem) in printed.iter().zip(&stems) {
-        let path = dir.join(format!("{stem}.svg"));
-        emit_generated(
-            &path,
-            sce_build::diagram::svg::render(p).as_bytes(),
-            WritePolicy::IfChanged,
-        );
-        written.push(path);
-    }
-    for (n, sheet) in checklist.iter().flatten().enumerate() {
-        let path = dir.join(format!("checklist-{}.svg", n + 1));
-        emit_generated(
-            &path,
-            sce_build::diagram::svg::render_checklist(sheet).as_bytes(),
-            WritePolicy::IfChanged,
-        );
-        written.push(path);
-    }
-    finish_generated_output();
-    out_stream(|w| {
-        for path in &written {
-            writeln!(w, "{}", path.display())?;
-        }
-        Ok(())
-    });
+    let mut files: Vec<(String, String)> = printed
+        .iter()
+        .zip(&stems)
+        .map(|(p, stem)| (format!("{stem}.svg"), sce_build::diagram::svg::render(p)))
+        .collect();
+    files.extend(checklist.iter().flatten().enumerate().map(|(n, sheet)| {
+        (
+            format!("checklist-{}.svg", n + 1),
+            sce_build::diagram::svg::render_checklist(sheet),
+        )
+    }));
+    write_diagram_files(out, &files);
 }
 
 fn cmd_pseudo(

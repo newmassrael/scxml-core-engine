@@ -146,6 +146,15 @@ pub enum Refusal {
         need_pt: (f64, f64),
         area_pt: (f64, f64),
     },
+    /// A table of a non-statechart kind whose columns, or one row, do not
+    /// fit the page at the minimum type size (see [`super::table::set`]).
+    SheetDoesNotFit {
+        need_pt: (f64, f64),
+        area_pt: (f64, f64),
+    },
+    /// A document that cannot be read as a tree of named values — the
+    /// model carrying a shape the field table has no reading for.
+    NotATree(String),
 }
 
 impl std::fmt::Display for Refusal {
@@ -168,6 +177,16 @@ impl std::fmt::Display for Refusal {
                 "a requirement checklist row needs {:.0} x {:.0} pt at the minimum type size, \
                  and the page gives {:.0} x {:.0} pt; it is not shrunk below that size",
                 need_pt.0, need_pt.1, area_pt.0, area_pt.1
+            ),
+            Refusal::SheetDoesNotFit { need_pt, area_pt } => write!(
+                f,
+                "a table needs {:.0} x {:.0} pt at the minimum type size, \
+                 and the page gives {:.0} x {:.0} pt; it is not shrunk below that size",
+                need_pt.0, need_pt.1, area_pt.0, area_pt.1
+            ),
+            Refusal::NotATree(detail) => write!(
+                f,
+                "the document cannot be read as a tree of fields: {detail}"
             ),
         }
     }

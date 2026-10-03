@@ -45,6 +45,15 @@ pub enum Phrase {
     Assumed,
     /// A requirement resting on something the author marked undecided.
     Open,
+    /// The field table's title: every value the document states, field by
+    /// field.
+    FieldTable,
+    /// Its column heads: the name of a field, and what the document says
+    /// there.
+    Field,
+    Value,
+    /// A table's heading on the page after the one it began on.
+    Continued,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -66,6 +75,10 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::NotShown) => "not shown",
         ("en", Phrase::Assumed) => "includes a guess",
         ("en", Phrase::Open) => "undecided",
+        ("en", Phrase::FieldTable) => "field table",
+        ("en", Phrase::Field) => "field",
+        ("en", Phrase::Value) => "value",
+        ("en", Phrase::Continued) => "continued",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -80,6 +93,10 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::NotShown) => "그림에 없음",
         ("ko", Phrase::Assumed) => "추측 포함",
         ("ko", Phrase::Open) => "미정",
+        ("ko", Phrase::FieldTable) => "항목 표",
+        ("ko", Phrase::Field) => "항목",
+        ("ko", Phrase::Value) => "값",
+        ("ko", Phrase::Continued) => "이어서",
         _ => return None,
     })
 }
@@ -111,7 +128,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 14] = [
+    const ALL: [Phrase; 18] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -126,6 +143,10 @@ mod tests {
         Phrase::NotShown,
         Phrase::Assumed,
         Phrase::Open,
+        Phrase::FieldTable,
+        Phrase::Field,
+        Phrase::Value,
+        Phrase::Continued,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

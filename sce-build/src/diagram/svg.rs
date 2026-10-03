@@ -17,6 +17,7 @@ use super::checklist::ChecklistPage;
 use super::fit::Printed;
 use super::layout::Placed;
 use super::metrics::Face;
+use super::sheet::{Ink, Mark, Sheet};
 use crate::parser::{escape_xml_attribute as attr, escape_xml_text as text};
 use std::fmt::Write as _;
 
@@ -230,6 +231,72 @@ pub fn render_checklist(page: &ChecklistPage) -> String {
                     *x,
                     top + i as f64 * line,
                     s.leading,
+                );
+            }
+        }
+    }
+    out.push_str("</svg>\n");
+    out
+}
+
+/// One sheet — the marks of a table, a chart or a layout — as a standalone
+/// SVG document, drawn in the order the marks come.
+pub fn render_sheet(sheet: &Sheet) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}pt" height="{h}pt" viewBox="0 0 {w} {h}">"#,
+        w = n(sheet.width),
+        h = n(sheet.height),
+    );
+    let _ = writeln!(
+        out,
+        r#"<rect width="{}" height="{}" fill="{PAPER}"/>"#,
+        n(sheet.width),
+        n(sheet.height)
+    );
+    let colour = |ink: Ink| match ink {
+        Ink::Black => INK,
+        Ink::Hairline => RULE,
+        Ink::Shade => ELSEWHERE_FILL,
+    };
+    for mark in &sheet.marks {
+        match mark {
+            Mark::Text { x, top, line } => {
+                write_line(&mut out, line, *x, *top, sheet.style.leading)
+            }
+            Mark::Rect {
+                x,
+                y,
+                width,
+                height,
+                fill,
+            } => {
+                let _ = writeln!(
+                    out,
+                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"/>"#,
+                    n(*x),
+                    n(*y),
+                    n(*width),
+                    n(*height),
+                    colour(*fill)
+                );
+            }
+            Mark::Stroke {
+                from,
+                to,
+                ink,
+                width_pt,
+            } => {
+                let _ = writeln!(
+                    out,
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"/>"#,
+                    n(from.0),
+                    n(from.1),
+                    n(to.0),
+                    n(to.1),
+                    colour(*ink),
+                    n(*width_pt)
                 );
             }
         }

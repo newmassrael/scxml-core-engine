@@ -27,16 +27,28 @@
 //! Figures, states and transitions are ordered by document order, with
 //! the state id as the tie-break. Nothing here reads time, randomness or
 //! the machine.
+//!
+//! # The other kinds
+//!
+//! A statechart is drawn as boxes and arrows; a table, a formula or a
+//! byte layout is not, so a document of any other kind is typeset instead:
+//! [`fields`] reads every value it states into tables ([`table`]) set on
+//! [`sheet::Sheet`]s, which [`svg::render_sheet`] writes out. The kinds'
+//! own pictures are built from the same tables and marks.
 
 use crate::model::SCXMLModel;
 
 pub mod boxes;
 pub mod checklist;
+pub mod fields;
 pub mod fit;
 pub mod layout;
 pub mod metrics;
 pub mod route;
+pub mod sheet;
 pub mod svg;
+pub mod table;
+pub mod tree;
 pub mod words;
 
 /// Which figure — named by the state it opens, never by a number, because a

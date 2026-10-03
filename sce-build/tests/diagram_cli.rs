@@ -223,3 +223,134 @@ fn a_manifest_adds_the_requirement_checklist() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn kind_example(kind: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("kind-examples")
+        .join(format!("{kind}.scxml"))
+}
+
+/// `diagram` with options of its own after the output directory.
+fn diagram_with(doc: &Path, out: &Path, options: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(["--error-format", "json", "diagram"])
+        .arg(doc)
+        .arg("-o")
+        .arg(out)
+        .args(options)
+        .output()
+        .expect("run sce-codegen diagram")
+}
+
+fn svg_words(path: &Path) -> Vec<String> {
+    let svg = std::fs::read_to_string(path).expect("read svg");
+    roxmltree::Document::parse(&svg)
+        .unwrap_or_else(|e| panic!("{path:?}: {e}"))
+        .descendants()
+        .filter(|n| n.has_tag_name("text"))
+        .filter_map(|n| n.text().map(str::to_string))
+        .collect()
+}
+
+/// A document that is not a statechart has no boxes to draw, so it is set
+/// as the table of every value it states: `fields-<n>.svg`, well-formed,
+/// carrying the document's own values, in the page's language, and
+/// checkable for drift like a figure.
+#[test]
+fn a_document_of_another_kind_is_set_as_its_field_table() {
+    let dir = scratch("diagram-fields");
+    let out = dir.join("sheets");
+    let run = diagram(&kind_example("lookup"), &out, &[]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let printed: Vec<PathBuf> = String::from_utf8(run.stdout)
+        .expect("utf-8")
+        .lines()
+        .map(PathBuf::from)
+        .collect();
+    assert_eq!(printed, vec![out.join("fields-1.svg")]);
+    let words = svg_words(&printed[0]);
+    assert_eq!(words[0], "field table: lookup");
+    for expected in ["document.entries", "NONE", "LOW", "MEDIUM", "HIGH", "level"] {
+        assert!(words.iter().any(|w| w == expected), "{expected}: {words:?}");
+    }
+
+    let check = diagram(&kind_example("lookup"), &out, &["--assert-unchanged"]);
+    assert!(
+        check.status.success(),
+        "a fresh set is unchanged: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let korean = dir.join("korean");
+    let run = diagram_with(&kind_example("lookup"), &korean, &["--lexicon", "ko"]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let words = svg_words(&korean.join("fields-1.svg"));
+    assert!(words[0].ends_with(": lookup"), "{words:?}");
+    assert_ne!(
+        words[0], "field table: lookup",
+        "the title is in the page's language"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The checklist's rows name a statechart's boxes and table rows, so a
+/// manifest given with a document of another kind is refused by name and
+/// nothing is written.
+#[test]
+fn a_manifest_is_refused_for_a_document_that_is_not_a_statechart() {
+    let dir = scratch("diagram-fields-manifest");
+    let out = dir.join("sheets");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/requirement_closure/iso13400_2_nl_socket_handling.manifest.json");
+    let run = diagram_with(
+        &kind_example("lookup"),
+        &out,
+        &["--manifest", manifest.to_str().expect("utf-8")],
+    );
+    assert!(!run.status.success());
+    assert!(run.stdout.is_empty());
+    let stderr = String::from_utf8(run.stderr).expect("utf-8");
+    let record: serde_json::Value =
+        serde_json::from_str(stderr.lines().next().expect("one record")).expect("json");
+    assert_eq!(record["code"], "cli/diagram-unavailable", "{record}");
+    assert!(
+        record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("lookup document")),
+        "the message names the kind: {record}"
+    );
+    assert!(!out.exists(), "a refusal writes nothing");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A table that cannot be set at the requested type size is refused as
+/// `cli/diagram-does-not-fit`, naming the field table, with nothing
+/// written.
+#[test]
+fn a_table_that_does_not_fit_is_refused_and_nothing_is_written() {
+    let dir = scratch("diagram-fields-refused");
+    let out = dir.join("sheets");
+    let run = diagram_with(&kind_example("lookup"), &out, &["--min-pt", "96"]);
+    assert_eq!(run.status.code(), Some(20));
+    assert!(run.stdout.is_empty());
+    let stderr = String::from_utf8(run.stderr).expect("utf-8");
+    let record: serde_json::Value =
+        serde_json::from_str(stderr.lines().next().expect("one record")).expect("json");
+    assert_eq!(record["code"], "cli/diagram-does-not-fit", "{record}");
+    assert!(
+        record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("field table")),
+        "the message names the table: {record}"
+    );
+    assert!(!out.exists(), "a refusal writes nothing");
+    let _ = std::fs::remove_dir_all(&dir);
+}
