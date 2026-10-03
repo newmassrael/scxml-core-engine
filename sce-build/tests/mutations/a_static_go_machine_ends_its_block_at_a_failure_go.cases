@@ -74,11 +74,16 @@ edit("tools/codegen/templates/go/actions/if.go.jinja2",
 PY
 
 # ── A guard is the lowered expression ──────────────────────────────
+#
+# ⚠ A guard may be the only place a machine calls an algorithm, and Go refuses an
+# import nothing uses, so a mutant that dropped the guard would not compile
+# (INCONCLUSIVE, measured 2026-10-03 on `static_record` and `sync_client`). The
+# guard stays in the expression and is short-circuited: it is never asked.
 
 mutation_case "a transition's native guard is not asked" <<'PY'
 edit("tools/codegen/templates/go/process_transition.go.jinja2",
      "{%- elif trans.native_guard -%}{{ trans.native_guard }}",
-     "{%- elif trans.native_guard -%}true")
+     "{%- elif trans.native_guard -%}true || ({{ trans.native_guard }})")
 PY
 
 # ── A failed value is not written ──────────────────────────────────
