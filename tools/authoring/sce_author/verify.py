@@ -965,10 +965,12 @@ def diagram_figures(document: pathlib.Path, out: pathlib.Path,
                     manifest: pathlib.Path | None = None,
                     codegen: pathlib.Path | None = None, *,
                     cwd: pathlib.Path | None = None) -> tuple[str, str]:
-    """Draw the document as print figures (`sce-codegen diagram`): one SVG
-    per container, written into `out`, and -- given the specification's
-    `manifest` -- the requirement checklist pages after them. The answer
-    is the list of files.
+    """Draw the document as print figures (`sce-codegen diagram`): for a
+    statechart one SVG per container, for any other kind its own picture
+    (a byte layout, a curve, a row of slots, ...) and the table of every
+    value it states, written into `out`, and -- given the specification's
+    `manifest`, for a statechart -- the requirement checklist pages after
+    them. The answer is the list of files.
 
     ⚠ `page`, `min_pt` and `lexicon` are passed through unchecked and
     omitted when not asked for, for `pseudo_page`'s reason: the product's

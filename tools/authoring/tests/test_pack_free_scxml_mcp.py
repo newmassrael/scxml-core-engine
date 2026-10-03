@@ -342,6 +342,21 @@ class PackFreeScxmlMcp(unittest.TestCase):
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
+    def test_real_product_draws_a_kind_that_is_not_a_statechart(self):
+        root = pathlib.Path(__file__).resolve().parents[3]
+        lookup = root / "sce-build" / "kind-examples" / "lookup.scxml"
+        out = self.document.parent / "lookup-figures"
+        result = call("render_scxml_diagram", document=str(lookup), out=str(out))
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        report = json.loads(result["content"][0]["text"])
+        # The kind's own picture, then the table of every value it states.
+        self.assertEqual([str(out / "mapping.svg"), str(out / "fields-1.svg")],
+                         report["figures"])
+        for name in ("mapping.svg", "fields-1.svg"):
+            self.assertTrue((out / name).read_text(encoding="utf-8").startswith("<svg"))
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
     def test_real_product_draws_the_figures(self):
         out = self.document.parent / "figures"
         result = call("render_scxml_diagram", document=str(self.document), out=str(out))

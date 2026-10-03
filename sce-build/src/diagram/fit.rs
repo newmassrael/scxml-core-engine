@@ -158,6 +158,9 @@ pub enum Refusal {
     /// A document that cannot be read as a tree of named values — the
     /// model carrying a shape the field table has no reading for.
     NotATree(String),
+    /// A document whose own graph the statechart figure could not read:
+    /// the model and the figure disagreeing about what the document is.
+    Unreadable(String),
 }
 
 impl std::fmt::Display for Refusal {
@@ -195,6 +198,7 @@ impl std::fmt::Display for Refusal {
                 f,
                 "the document cannot be read as a tree of fields: {detail}"
             ),
+            Refusal::Unreadable(detail) => write!(f, "the document cannot be drawn: {detail}"),
         }
     }
 }

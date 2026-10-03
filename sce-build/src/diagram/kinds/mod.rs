@@ -40,6 +40,7 @@ pub mod flow;
 pub mod interpolation;
 pub mod mapping;
 pub mod observer;
+pub mod procedure;
 pub mod slots;
 pub mod structure;
 pub mod timer;
@@ -81,12 +82,25 @@ pub fn pictures(
         ForgeDocument::Link(_) | ForgeDocument::Worker(_) => {
             structure::structure(parsed, lexicon, page)
         }
-        // Read from the field table, and from the pseudocode page: a
-        // procedure is a graph of states whose attributes the statechart
-        // figure refuses to read, and an algorithm is steps in order; a
-        // layout for either is its own piece of work, not a reading of
-        // what the field table already says.
+        // A procedure's picture is the statechart figure of its states
+        // ([`figures`]); an algorithm is steps in order, read from the
+        // pseudocode page and the field table.
         ForgeDocument::Procedure(_) | ForgeDocument::Algorithm(_) => Ok(Vec::new()),
+    }
+}
+
+/// The statechart figures `parsed` is drawn as, for a kind whose picture is
+/// the graph of its states: a procedure. They are laid out, routed and
+/// tabled by [`super::fit::print`], not drawn here, so they come back as
+/// the figures that pipeline makes.
+pub fn figures(
+    parsed: &ParsedForge,
+    lexicon: &Lexicon,
+    page: Page,
+) -> Result<Vec<super::fit::Printed>, Refusal> {
+    match &parsed.document {
+        ForgeDocument::Procedure(m) => procedure::figures(m, lexicon, page),
+        _ => Ok(Vec::new()),
     }
 }
 

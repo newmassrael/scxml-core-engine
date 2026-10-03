@@ -673,8 +673,9 @@ drafts render to the same page; the owner's `profile` is accepted so the check
 is held to it. It answers for one document: a statechart that imports schemas is
 checked with them by `validate_scxml_set`, and that answer is the one to quote;
 `render_scxml_diagram` runs `sce-codegen diagram` and writes one print figure
-(SVG) per container, refusing a figure too large for the page rather than
-shrinking it; `scxml_unresolved` and `scxml_requirements` report the document's
+(SVG) per container of a statechart, or, for any other kind, that kind's own
+picture and the table of every value the document states, refusing a figure
+too large for the page rather than shrinking it; `scxml_unresolved` and `scxml_requirements` report the document's
 `sce:unresolved` markers and its requirements (their outcomes, given the
 manifest). `scxml_requirement_set` makes that manifest, and the sentences
 sidecar beside it, from the words of the specification a client quotes as stating
@@ -895,10 +896,18 @@ and it is classified by the same implementation. A kind that carries
 top of its report, so its `missing` rows are read as a property of the kind:
 the owner judges those requirements against the pseudocode page, which covers
 every kind. An acceptance record pins the document and every file it reads,
-including what it imports. A figure is drawn only for a statechart; for any
-other kind `render_scxml_diagram` refuses and names the pseudocode page and
-the acceptance report as the places to review it. The review artefact follows
-the kind's shape.
+including what it imports. `render_scxml_diagram` draws a statechart as its
+figures and any other kind as its own picture (a codec's byte layout, an
+interpolation's curve, a buffer pool's slots, an observer's thresholds, a
+timer's timeline, a lookup's table, a link's imports, a procedure's states)
+beside the table of every value the document states, field by field; the
+requirement checklist is a statechart's alone, since its rows name a
+statechart's boxes, and for any other kind the requirements are in the
+acceptance report. The picture is an aid and the table is the total reading
+(every value of the document appears in it once, less where a node was
+written in its file). An algorithm has no picture of its own: it is reviewed
+on the pseudocode page, whose steps are the reading, and in its field table.
+The review artefact follows the kind's shape.
 
 None of these checks whether the SCXML agrees with the prose specification;
 the specification owner compares the page and the figures with the prose. The

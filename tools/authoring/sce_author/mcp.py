@@ -21,7 +21,7 @@ So the shape a caller gets is:
     scxml_kinds     what each document kind is for, before one is chosen
     validate_scxml  whether an SCXML document passes the product's structural check
     render_scxml_pseudocode show that SCXML document as pseudocode, without a binding
-    render_scxml_diagram    draw it as print figures, one SVG per container
+    render_scxml_diagram    draw it as print figures: a statechart's containers, any other kind's picture and field table
     scxml_unresolved        what it marks as not decided yet
     scxml_requirement_set   the requirements a specification states, from the words quoted
     scxml_house_rule        a standing rule the owner said, from their words, and only on their yes
@@ -870,11 +870,17 @@ TOOLS = [
         "name": "render_scxml_diagram",
         "description": (
             "Draw an existing SCXML document as print figures for a "
-            "specification: one SVG per container (the document, each "
-            "compound or parallel state), written into `out`. Every "
-            "transition is described once, numbered on its arrow with its "
-            "row in the table under the figure, in the pseudocode page's "
-            "own words. Returns JSON: verdict, figures, diagnostics -- the "
+            "specification, written into `out`. A statechart is one SVG per "
+            "container (the document, each compound or parallel state): "
+            "every transition is described once, numbered on its arrow "
+            "with its row in the table under the figure, in the pseudocode "
+            "page's own words. Any other kind is drawn as its own picture "
+            "(a codec's byte layout, an interpolation's curve, a buffer "
+            "pool's slots, an observer's thresholds, a timer's timeline, a "
+            "lookup's table, a procedure's states, ...) and the table of "
+            "every value the document states, field by field "
+            "(`fields-<n>.svg`) -- the picture is an aid, the table is the "
+            "total reading. Returns JSON: verdict, figures, diagnostics -- the "
             "files written into `out`, or, without `out`, each figure's "
             "name and SVG text. A figure larger than the page at `min_pt` is "
             "refused with both sizes (cli/diagram-does-not-fit), never "

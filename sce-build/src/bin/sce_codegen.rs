@@ -9197,9 +9197,11 @@ fn cmd_diagram(
                 need_pt,
                 area_pt,
             } => does_not_fit(what, need_pt, area_pt),
-            tree @ Refusal::NotATree(_) => CliError::DiagramUnavailable {
-                feature: tree.to_string(),
-            },
+            unread @ (Refusal::NotATree(_) | Refusal::Unreadable(_)) => {
+                CliError::DiagramUnavailable {
+                    feature: unread.to_string(),
+                }
+            }
         })
     };
 
@@ -9223,17 +9225,34 @@ fn cmd_diagram(
             }
             let pictures = sce_build::diagram::kinds::pictures(&parsed, lexicon, page)
                 .unwrap_or_else(|r| refuse(r));
+            // A kind whose picture is a statechart figure (a procedure's
+            // states) is drawn by the print pipeline and named as its
+            // figures are.
+            let figures = sce_build::diagram::kinds::figures(&parsed, lexicon, page)
+                .unwrap_or_else(|r| refuse(r));
             let sheets = sce_build::diagram::fields::pages(&parsed, lexicon, page)
                 .unwrap_or_else(|r| refuse(r));
-            let mut files: Vec<(String, String)> = pictures
+            let mut files: Vec<(String, String)> = figures
                 .iter()
                 .map(|p| {
-                    (
-                        format!("{}.svg", p.stem),
-                        sce_build::diagram::svg::render_sheet(&p.sheet),
-                    )
+                    let stem = p.laid.name.file_stem().unwrap_or_else(|| {
+                        cli_exit(CliError::DiagramUnavailable {
+                            feature: format!(
+                                "the figure {:?} has no file name: its state id carries a path \
+                                 separator or a control character",
+                                p.laid.name
+                            ),
+                        })
+                    });
+                    (format!("{stem}.svg"), sce_build::diagram::svg::render(p))
                 })
                 .collect();
+            files.extend(pictures.iter().map(|p| {
+                (
+                    format!("{}.svg", p.stem),
+                    sce_build::diagram::svg::render_sheet(&p.sheet),
+                )
+            }));
             files.extend(sheets.iter().enumerate().map(|(n, sheet)| {
                 (
                     format!("fields-{}.svg", n + 1),
