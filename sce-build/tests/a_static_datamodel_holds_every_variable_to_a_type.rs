@@ -1680,6 +1680,88 @@ fn a_may_fail_algorithm_is_received_where_a_static_machine_calls_it() {
     }
 }
 
+/// A machine calling `Clamp`, importing it alone: the document the two tests
+/// below generate for Go.
+fn go_calling_clamp() -> String {
+    calling_doc(
+        "sce-static",
+        r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
+    )
+    .replace(
+        r#"  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
+"#,
+        "",
+    )
+}
+
+#[test]
+fn a_go_machine_calls_the_package_its_algorithms_generation_put_it_in() {
+    // The call is the package's name and the algorithm's exported symbol, and
+    // the import is the module path the packages live under: the identity a forge
+    // kind importing the same algorithm derives, so the two agree on where it is.
+    // A prefix's trailing slash is the same prefix.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run_beside(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+            "--go-module-prefix",
+            "github.com/acme/gen/",
+        ],
+        &go_calling_clamp(),
+        &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("\t\"github.com/acme/gen/clamp\"\n"),
+        "the machine imports the algorithm's package by the module path"
+    );
+    assert!(
+        source.contains("clamp.Clamp(p.vCount, 5)"),
+        "the call names the package and the exported function"
+    );
+}
+
+#[test]
+fn a_go_machine_calling_an_algorithm_needs_the_module_its_packages_live_under() {
+    // A Go import path has no valid bare form, so without the module path there
+    // is nothing to write the import from. It is a configuration error naming the
+    // flag, not a construct the backend lacks: the same refusal a forge kind
+    // importing another gives.
+    let (ok, out) = run_beside(
+        &["check", "-l", "go"],
+        &go_calling_clamp(),
+        &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
+    );
+    assert!(!ok, "no module path was given:\n{out}");
+    assert!(
+        out.contains("generate/invalid-config") && out.contains("go_module_prefix"),
+        "the refusal names what is missing:\n{out}"
+    );
+    let (ok, out) = run_beside(
+        &[
+            "check",
+            "-l",
+            "go",
+            "--go-module-prefix",
+            "github.com/acme/gen",
+        ],
+        &go_calling_clamp(),
+        &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
+    );
+    assert!(ok, "given the module path, the machine lowers:\n{out}");
+}
+
 #[test]
 fn an_algorithm_import_whose_file_is_missing_is_refused_at_its_import() {
     let (ok, out) = run_beside(
@@ -1759,6 +1841,11 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
 /// commits as targets, because a mutated template reaches the tests only through
 /// them, and it cannot derive that list. A machine the script commits and the
 /// casefile does not name is one the round would regenerate and never restore.
+///
+/// A directory the script commits holds a machine (`<m>_sm.go`) or an imported
+/// algorithm's package (`<m>.go`). Only the machines are targets: a mutated
+/// template or spelling here is the statechart's, and an algorithm's generation
+/// reads neither, so it comes back from the regeneration as it was.
 #[test]
 fn the_go_mutation_casefile_names_every_committed_go_machine() {
     let root = repo_root();
@@ -1767,22 +1854,37 @@ fn the_go_mutation_casefile_names_every_committed_go_machine() {
     ))
     .expect("the Go casefile");
     let committed = root.join("backends/go/tests/integration/static_datamodel");
-    let mut machines: Vec<String> = std::fs::read_dir(&committed)
+    let mut directories: Vec<String> = std::fs::read_dir(&committed)
         .expect("the committed Go machines")
         .map(|entry| entry.expect("an entry").path())
         .filter(|path| path.is_dir())
         .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    machines.sort();
-    assert!(!machines.is_empty(), "no committed Go machine to judge");
-    for machine in machines {
-        let generated =
-            format!("backends/go/tests/integration/static_datamodel/{machine}/{machine}_sm.go");
-        assert!(
-            casefile.contains(&generated),
-            "the Go casefile does not declare {generated} as a mutation target"
-        );
+    directories.sort();
+    assert!(!directories.is_empty(), "no committed Go machine to judge");
+    let mut machines = 0;
+    for directory in directories {
+        let machine_file = committed
+            .join(&directory)
+            .join(format!("{directory}_sm.go"));
+        let algorithm_file = committed.join(&directory).join(format!("{directory}.go"));
+        if machine_file.exists() {
+            machines += 1;
+            let generated = format!(
+                "backends/go/tests/integration/static_datamodel/{directory}/{directory}_sm.go"
+            );
+            assert!(
+                casefile.contains(&generated),
+                "the Go casefile does not declare {generated} as a mutation target"
+            );
+        } else {
+            assert!(
+                algorithm_file.exists(),
+                "{directory} holds neither a machine nor an algorithm's package"
+            );
+        }
     }
+    assert!(machines > 0, "no committed Go machine to judge");
 }
 
 /// A scenario (`fixtures/static_datamodel/scenarios/<name>.json`) is the

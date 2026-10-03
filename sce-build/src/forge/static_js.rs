@@ -224,7 +224,7 @@ impl StaticTarget for JsTarget {
             call: format!("{RUNTIME_GLOBAL}.algorithms.{symbol}"),
             // The function travels in the document, so there is nothing to
             // import.
-            import: String::new(),
+            import: Some(String::new()),
         })
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {

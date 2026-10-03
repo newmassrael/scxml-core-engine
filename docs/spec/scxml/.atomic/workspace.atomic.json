@@ -11707,6 +11707,11 @@
         {
           "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "generate_go_for_module",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

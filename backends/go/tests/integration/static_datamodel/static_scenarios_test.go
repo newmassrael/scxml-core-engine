@@ -41,9 +41,11 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
 // dayRecord is a `record:Day` as a host reads it: each field through the reader
@@ -92,12 +94,19 @@ func drive[S interface {
 			engine.RaiseExternalByName(name, data)
 			engine.Step()
 		},
+		// The current state is the atomic one: a compound state is active for as
+		// long as one of its children is, and is no more where the machine is.
 		state: func() string {
-			active := engine.GetActiveStates()
-			if len(active) != 1 {
-				return fmt.Sprintf("<%d active states>", len(active))
+			var atomic []S
+			for _, state := range engine.GetActiveStates() {
+				if !policy.IsCompoundState(state) {
+					atomic = append(atomic, state)
+				}
 			}
-			return active[0].String()
+			if len(atomic) != 1 {
+				return fmt.Sprintf("<%d active atomic states>", len(atomic))
+			}
+			return atomic[0].String()
 		},
 		ended:     engine.IsInFinalState,
 		variables: variables,
@@ -374,6 +383,36 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		},
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
+	}))
+}
+
+// A guard calls an imported algorithm with the record's own fields, and the
+// call is the package the algorithm's own generation put it in.
+func TestAGuardCallsAnImportedAlgorithm(t *testing.T) {
+	policy := static_record.NewStaticRecordPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record", drive[static_record.StaticRecordState, static_record.StaticRecordEvent](&policy, map[string]func() any{
+		"shown":    func() any { return dayJSON(policy.Shown()) },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A sync run composed of the standard sync rules: each rule an imported
+// algorithm, called from a guard or an assignment, and the run's payloads the
+// standard event schemas'.
+func TestASyncRunIsComposedOfTheStandardSyncRules(t *testing.T) {
+	policy := sync_client.NewSyncClientPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "sync_client", drive[sync_client.SyncClientState, sync_client.SyncClientEvent](&policy, map[string]func() any{
+		"byToken":     func() any { return policy.ByToken() },
+		"fullListing": func() any { return policy.FullListing() },
+		"outcome":     func() any { return policy.Outcome() },
+		"retryAt":     func() any { return policy.RetryAt() },
+		"deleted":     func() any { return policy.Deleted() },
+		"uploaded":    func() any { return policy.Uploaded() },
+		"discarded":   func() any { return policy.Discarded() },
+		"pages":       func() any { return policy.Pages() },
+		"refusals":    func() any { return policy.Refusals() },
 	}))
 }
 

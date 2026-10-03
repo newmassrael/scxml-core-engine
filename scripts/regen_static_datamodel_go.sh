@@ -33,6 +33,11 @@ source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 INPUT_ROOT="sce-build/tests/fixtures/static_datamodel"
 GENERATED_DIR="backends/go/tests/integration/static_datamodel"
+# The Go module path the generated packages live under: the module sce-go-tests
+# (backends/go/tests/go.mod) and the directory GENERATED_DIR is in it. A
+# machine imports each algorithm it calls as `<this>/<package>`, and a Go import
+# path has no valid bare form, so every generation below is given it.
+GO_MODULE_PREFIX="github.com/newmassrael/sce-go-tests/integration/static_datamodel"
 
 # Derived, not listed: every statechart the fixture directory declares under
 # datamodel="sce-static" that the generator lowers for Go — and the ones a test
@@ -49,7 +54,7 @@ MACHINES=()
 SOURCES=()
 for source in "${CANDIDATES[@]}"; do
     status=0
-    "$CODEGEN" check -l go "$source" > /dev/null 2>&1 || status=$?
+    "$CODEGEN" check -l go --go-module-prefix "$GO_MODULE_PREFIX" "$source" > /dev/null 2>&1 || status=$?
     case "$status" in
         0)
             MACHINES+=("$(basename "$source" .scxml)")
@@ -67,11 +72,35 @@ if [ "${#MACHINES[@]}" -lt 1 ]; then
     exit 1
 fi
 
+# Derived from what the lowered machines import, for the reason the machines
+# are: a list here is one more place a new algorithm has to be remembered, and
+# one left out is a machine that imports a package nothing generated. Each
+# algorithm a machine calls is generated beside the machines as a package of its
+# own — a local one is named by its path beside the machine, a standard one by
+# its library name (`sce:std/...`).
+ALGORITHMS=()
+for source in "${SOURCES[@]}"; do
+    while IFS= read -r import; do
+        case "$import" in
+            sce:*) ALGORITHMS+=("$import") ;;
+            *) ALGORITHMS+=("$(dirname "$source")/$import") ;;
+        esac
+    done < <(grep 'kind="algorithm"' "$source" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+done
+if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
+    mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 for i in "${!MACHINES[@]}"; do
-    "$CODEGEN" generate "${SOURCES[$i]}" -l go -o "$TMP/${MACHINES[$i]}/"
+    "$CODEGEN" generate "${SOURCES[$i]}" -l go -o "$TMP/${MACHINES[$i]}/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+# An algorithm's directory is its package's name, which is its file's: the
+# generator names the file for the document, not for the path it was read from.
+for i in "${!ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "${ALGORITHMS[$i]}" -l go -o "$TMP/algorithm_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -80,5 +109,14 @@ for machine in "${MACHINES[@]}"; do
     mkdir -p "$GENERATED_DIR/$machine"
     cp "$TMP/$machine"/*_sm.go "$GENERATED_DIR/$machine/"
 done
+PACKAGES=()
+for i in "${!ALGORITHMS[@]}"; do
+    for generated in "$TMP/algorithm_$i"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]} and the algorithms ${PACKAGES[*]:-none} under $GENERATED_DIR/"

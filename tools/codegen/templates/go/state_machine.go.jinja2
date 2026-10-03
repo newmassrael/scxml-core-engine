@@ -31,6 +31,9 @@ import (
 {% if static_fields %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
+{% for line in static_imports %}
+{{ line }}
+{% endfor %}
 )
 
 // Ensure imports are used

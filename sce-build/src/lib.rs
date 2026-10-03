@@ -1446,8 +1446,14 @@ pub fn emit_model_artifacts(
             }
         }
         generator::Language::Go => {
-            let code = generator::generate_go(model, template_dir)
-                .map_err(|e| locate_codegen_error(e, source_name, model))?;
+            let code = generator::generate_go_for_module(
+                model,
+                template_dir,
+                options
+                    .forge
+                    .and_then(|forge| forge.go_module_prefix.as_deref()),
+            )
+            .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
                 deps: Vec::new(),

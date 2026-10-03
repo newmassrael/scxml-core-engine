@@ -601,40 +601,44 @@ fn validate_options(
     options: &crate::ForgeCompileOptions,
 ) -> Result<(), ForgeError> {
     if matches!(lang, crate::generator::Language::Go) && !imports.is_empty() {
-        match normalized_go_prefix(options) {
-            None => {
-                return Err(GenerateError::InvalidConfig(
-                    "<sce:import> with language=go requires \
-                     ForgeCompileOptions.go_module_prefix. Go module-qualified \
-                     imports have no valid bare form; set this field to the \
-                     go.mod module path that hosts the generated packages \
-                     (e.g. \"github.com/acme/project/generated\")."
-                        .to_string(),
-                )
-                .into());
-            }
-            Some("") => {
-                return Err(GenerateError::InvalidConfig(
-                    "ForgeCompileOptions.go_module_prefix is empty; \
-                     supply a non-empty Go module path such as \
-                     \"github.com/acme/project/generated\"."
-                        .to_string(),
-                )
-                .into());
-            }
-            Some(trimmed) if trimmed.chars().any(char::is_whitespace) => {
-                let raw = options.go_module_prefix.as_deref().unwrap_or("");
-                return Err(GenerateError::InvalidConfig(format!(
-                    "ForgeCompileOptions.go_module_prefix {raw:?} \
-                     contains whitespace; Go import paths may not \
-                     contain spaces or tabs."
-                ))
-                .into());
-            }
-            Some(_) => {}
-        }
+        go_import_root(options.go_module_prefix.as_deref())?;
     }
     Ok(())
+}
+
+/// The Go module path a generated unit imports its sibling packages under,
+/// or the refusal that names what is wrong with the one given.
+///
+/// The one place the rule lives: a forge kind importing another and a
+/// `sce-static` statechart calling an imported algorithm both write an import
+/// line, and a Go import path has no valid bare form, so each asks here before
+/// it writes one.
+pub(crate) fn go_import_root(prefix: Option<&str>) -> Result<&str, GenerateError> {
+    match prefix.map(|p| p.trim_end_matches('/')) {
+        None => Err(GenerateError::InvalidConfig(
+            "<sce:import> with language=go requires \
+             ForgeCompileOptions.go_module_prefix. Go module-qualified \
+             imports have no valid bare form; set this field to the \
+             go.mod module path that hosts the generated packages \
+             (e.g. \"github.com/acme/project/generated\")."
+                .to_string(),
+        )),
+        Some("") => Err(GenerateError::InvalidConfig(
+            "ForgeCompileOptions.go_module_prefix is empty; \
+             supply a non-empty Go module path such as \
+             \"github.com/acme/project/generated\"."
+                .to_string(),
+        )),
+        Some(trimmed) if trimmed.chars().any(char::is_whitespace) => {
+            let raw = prefix.unwrap_or("");
+            Err(GenerateError::InvalidConfig(format!(
+                "ForgeCompileOptions.go_module_prefix {raw:?} \
+                 contains whitespace; Go import paths may not \
+                 contain spaces or tabs."
+            )))
+        }
+        Some(trimmed) => Ok(trimmed),
+    }
 }
 
 /// Build template-ready import data from resolved import contexts.

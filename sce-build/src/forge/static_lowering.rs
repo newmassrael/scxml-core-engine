@@ -199,24 +199,42 @@ pub struct Callee {
     pub call: String,
     /// The import line a forge kind importing the same algorithm writes, so
     /// the machine reaches the function where the algorithm's own generation
-    /// put it.
-    pub import: String,
+    /// put it. `None` when the target was built without what the line needs —
+    /// a Go target without the module path its packages live under — and a
+    /// call is all it can then spell: [`lower`] refuses a document that calls
+    /// the algorithm rather than leave the name unimported.
+    pub import: Option<String>,
 }
 
 /// [`Callee`] for a generated-code backend: the identity and symbol every
 /// other forge kind derives for the same document, so a statechart and an
 /// algorithm that imports it agree on where it lives.
-fn generated_callee(lang: Language, document_name: &str) -> Callee {
-    let identity = crate::forge::generator::forge_import_identity(
-        document_name,
-        &lang,
-        false,
-        &crate::ForgeCompileOptions::default(),
-    );
+///
+/// `go_module_prefix` is what the Go import path is rooted at, and the one
+/// thing of the identity that is not the document's own: the namespace a call
+/// is qualified with is the package's name, which it is not. Any other backend
+/// ignores it.
+fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Option<&str>) -> Callee {
+    let options = crate::ForgeCompileOptions {
+        go_module_prefix: go_module_prefix.map(str::to_owned),
+        ..Default::default()
+    };
     let symbol = crate::forge::generator::forge_algorithm_symbol(document_name, lang);
+    // The identity of a Go document cannot be derived without the root its
+    // path is written under, and the call does not need it: the package is
+    // named for the document alone.
+    if matches!(lang, Language::Go) && go_module_prefix.is_none() {
+        let package = filters::to_snake_case(document_name.to_string());
+        return Callee {
+            call: crate::build_qualified_call(&symbol, &package, &lang),
+            import: None,
+        };
+    }
+    let identity =
+        crate::forge::generator::forge_import_identity(document_name, &lang, false, &options);
     Callee {
         call: crate::build_qualified_call(&symbol, &identity.namespace, &lang),
-        import: identity.include_stmt,
+        import: Some(identity.include_stmt),
     }
 }
 
@@ -467,7 +485,7 @@ impl StaticTarget for KotlinTarget {
         "Kotlin"
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Kotlin, document_name))
+        Some(generated_callee(Language::Kotlin, document_name, None))
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Kotlin
@@ -783,7 +801,7 @@ impl StaticTarget for RustTarget {
         "Rust"
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Rust, document_name))
+        Some(generated_callee(Language::Rust, document_name, None))
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Rust
@@ -1133,15 +1151,23 @@ pub fn lower(
     });
     // A call the target cannot spell would be an undefined name where the
     // machine runs; it is refused here, where the document is read.
-    if let Some(unreached) = scope
-        .callees
-        .iter()
-        .find(|c| target.callee(&c.document_name).is_none())
-    {
-        return Err(GenerateError::unsupported(format!(
-            "`{}(…)`: an imported algorithm has no {lang} lowering yet",
-            unreached.alias
-        )));
+    for callee in &scope.callees {
+        match target.callee(&callee.document_name) {
+            None => {
+                return Err(GenerateError::unsupported(format!(
+                    "`{}(…)`: an imported algorithm has no {lang} lowering yet",
+                    callee.alias
+                )))
+            }
+            Some(Callee { import: None, .. }) => {
+                return Err(GenerateError::unsupported(format!(
+                    "`{}(…)`: the import of an algorithm cannot be written for {lang} \
+                     without the module its packages live under",
+                    callee.alias
+                )))
+            }
+            Some(_) => {}
+        }
     }
     if let Some(construct) = target.unsupported(model, &scope) {
         return Err(GenerateError::unsupported(format!(
@@ -1152,7 +1178,11 @@ pub fn lower(
     let imports: Vec<String> = scope
         .callees
         .iter()
-        .filter_map(|c| target.callee(&c.document_name).map(|callee| callee.import))
+        .filter_map(|c| {
+            target
+                .callee(&c.document_name)
+                .and_then(|callee| callee.import)
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -1958,7 +1988,7 @@ impl StaticTarget for CppTarget {
         "C++"
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Cpp, document_name))
+        Some(generated_callee(Language::Cpp, document_name, None))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // Every type a datamodel holds is spelled but bytes: a list admits only
@@ -2310,14 +2340,21 @@ pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering
 /// a flag raised in `sceFailure`) rather than a jump, as in C++, so a value that
 /// can fail is computed into a local first and written only when it did not.
 ///
-/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`,
-/// `In()` and a `<sce:action>` whose arguments are typed expressions of the
-/// machine's variables; every construct past those is refused by name
-/// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
-/// left as an undefined name in generated code.
-pub struct GoTarget;
+/// Lowers scalar, enum, list and record variables, guards, `<assign>`, `<if>`,
+/// `<foreach>`, `<log>`, `<raise>`, `In()`, a typed payload, a call of an
+/// imported algorithm and a `<sce:action>` whose arguments are typed
+/// expressions of the machine's variables; every construct past those is
+/// refused by name ([`StaticTarget::unsupported`]) until its spelling is
+/// written, rather than left as an undefined name in generated code.
+pub struct GoTarget<'a> {
+    /// The Go module path the generated packages live under, which an import
+    /// line of an algorithm's package is written from. `None` for a target
+    /// that only spells calls (`target_for`), and for a document that calls no
+    /// algorithm.
+    import_root: Option<&'a str>,
+}
 
-impl GoTarget {
+impl GoTarget<'_> {
     /// `parts` as the statements of one block, the empty ones left out — what
     /// runs on a failure may be nothing, when the document declares no
     /// `error.execution` to raise.
@@ -2354,12 +2391,16 @@ impl GoTarget {
     }
 }
 
-impl StaticTarget for GoTarget {
+impl StaticTarget for GoTarget<'_> {
     fn name(&self) -> &'static str {
         "Go"
     }
-    fn callee(&self, _document_name: &str) -> Option<Callee> {
-        None
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(
+            Language::Go,
+            document_name,
+            self.import_root,
+        ))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // Every type a datamodel holds is spelled but bytes: a list admits only
@@ -2716,8 +2757,24 @@ impl StaticTarget for GoTarget {
 
 /// Rewrite `model` — a clone the Go backend renders — so every expression of a
 /// `sce-static` document is native Go.
-pub fn lower_go(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
-    lower(model, machine, &GoTarget)
+///
+/// `go_module_prefix` is the module path the generated packages live under
+/// (`--go-module-prefix`). A machine that calls an imported algorithm imports
+/// its package by that path, and a Go import path has no valid bare form, so a
+/// document that calls one without a usable prefix is refused as any forge kind
+/// importing another is.
+pub fn lower_go(
+    model: &mut SCXMLModel,
+    machine: &str,
+    go_module_prefix: Option<&str>,
+) -> Result<StaticLowering, GenerateError> {
+    let calls_an_algorithm = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty());
+    let import_root = if calls_an_algorithm {
+        Some(crate::forge::generator::go_import_root(go_module_prefix)?)
+    } else {
+        None
+    };
+    lower(model, machine, &GoTarget { import_root })
 }
 
 /// The target that spells `lang`, when it lowers `sce-static` at all.
@@ -2726,7 +2783,8 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         Language::Kotlin => Some(&KotlinTarget),
         Language::Rust => Some(&RustTarget),
         Language::Cpp => Some(&CppTarget),
-        Language::Go => Some(&GoTarget),
+        // Only the call is spelled here, which the package's name alone fixes.
+        Language::Go => Some(&GoTarget { import_root: None }),
         Language::C11 | Language::Python => None,
     }
 }

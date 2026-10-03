@@ -3234,6 +3234,18 @@ fn render_kotlin(
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    generate_go_for_module(model, template_dir, None)
+}
+
+/// [`generate_go`] for a machine whose generated siblings live under the Go
+/// module path `go_module_prefix` (`--go-module-prefix`). A `sce-static`
+/// machine that calls an imported algorithm imports its package by that path,
+/// so it is required exactly then.
+pub fn generate_go_for_module(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    go_module_prefix: Option<&str>,
+) -> Result<String, GenerateError> {
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Go);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
@@ -3248,7 +3260,7 @@ pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, Ge
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
-    render_go(&mut env, model)
+    render_go(&mut env, model, go_module_prefix)
 }
 
 /// Generate Go code using pre-loaded template strings (WASM-compatible).
@@ -3265,7 +3277,7 @@ pub fn generate_go_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
-    render_go(&mut env, model)
+    render_go(&mut env, model, None)
 }
 
 // ── Python generator ────────────────────────────────────────────
@@ -3524,7 +3536,11 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
 
 // ── Go generator ────────────────────────────────────────────────
 
-fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+fn render_go(
+    env: &mut Environment,
+    model: &SCXMLModel,
+    go_module_prefix: Option<&str>,
+) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // EventSchema MCU native lowering — the Go typed
@@ -3551,8 +3567,11 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression
     // lowered to Go — its variables as fields of the policy — before the
     // payload channel is built, as every backend that lowers one does.
-    let static_lowering =
-        crate::forge::static_lowering::lower_go(&mut model_lowered, &machine_name)?;
+    let static_lowering = crate::forge::static_lowering::lower_go(
+        &mut model_lowered,
+        &machine_name,
+        go_module_prefix,
+    )?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .iter()
@@ -3602,6 +3621,7 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        static_imports => &static_lowering.imports,
     };
     tmpl.render(ctx).map_err(render_error)
 }

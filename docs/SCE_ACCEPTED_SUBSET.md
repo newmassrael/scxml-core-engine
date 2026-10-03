@@ -3120,8 +3120,8 @@ not by name: scalar variables of a number, a bool or a string, an enum, a record
 and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
 `<foreach>`; a transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`,
 `<raise>`, a `<send>` / `<cancel>` that carry no value of the data model, `In()`,
-an event's typed payload, and a `<sce:action>` whose arguments are typed
-expressions of the machine's variables. Bytes, a call of an imported algorithm, a
+an event's typed payload, a call of an imported algorithm, and a `<sce:action>`
+whose arguments are typed expressions of the machine's variables. Bytes, a
 `<donedata>` and an `<invoke>` are not lowered yet. Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
@@ -3143,14 +3143,22 @@ stands, answering whether it failed; the value is computed into a local first an
 written only when it did not fail, and `return` leaves the closure the block
 runs in (W3C SCXML 4.9). A host call's arguments that can fail are computed
 into locals the same way, and `error.execution` is raised in the call's place.
+An imported algorithm is called as the package its own generation puts it in
+(`days_in_month.DaysInMonth(...)`), and the machine imports that package by the
+Go module path the packages live under (`--go-module-prefix`): a Go import path
+has no valid bare form, so a document that calls an algorithm without one is
+refused as a configuration error (`generate/invalid-config`), as a forge kind
+importing another is.
 `scripts/regen_static_datamodel_go.sh` commits one package per machine the
-generator lowers for Go — asked of it, not listed — and
+generator lowers for Go — asked of it, not listed — and one per algorithm those
+machines import, read from their `<sce:import kind="algorithm">`, and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_block_ends_list`,
-`static_record_fields`, `static_record_list` and `static_record_enum` against
-them (an event's `data` goes in as the JSON text every other producer fills; a
+`static_record_fields`, `static_record_list`, `static_record_enum`,
+`static_record` and `sync_client` against them (an event's `data` goes in as the
+JSON text every other producer fills; a
 variable the machine keeps to itself is read by reflection, which only reads),
 and drives `static_host_call` and `static_host_call_arguments` with a recording
 host.
