@@ -420,9 +420,12 @@ impl<C: Clock> WorkStore<C> {
             return Ok(Saved::Unchanged { revision });
         }
 
-        // The text first, then the log, then the pointer. A crash anywhere
-        // leaves the previous revision current and at most one unreferenced
-        // file or one trailing log line, neither of which a reader trusts.
+        // The text first, then the log, then the pointer. The pointer is what
+        // makes a save take effect, so a save that stops anywhere before it
+        // (a crash, or the pointer's own write failing) leaves the previous
+        // revision current. It can leave an unreferenced file, or a log line
+        // for a revision that never became current; `history` follows the
+        // pointer back through the log and does not list that line.
         let source_dir = dir.join(SOURCE_DIR);
         fs::create_dir_all(&source_dir).map_err(|e| StoreError::io(&source_dir, e))?;
         let path = source_path(&dir, &revision);
@@ -446,18 +449,35 @@ impl<C: Clock> WorkStore<C> {
         })
     }
 
-    /// Every save, oldest first.
+    /// Every save that took effect, oldest first.
+    ///
+    /// A save takes effect when the pointer moves to it, which happens after it
+    /// is logged. So the log can hold a line for a save that did not take effect
+    /// (the pointer's write failed, or the process stopped between the two), and
+    /// listing every line would show a save the caller was told had failed. The
+    /// history is therefore the chain from the current revision back through
+    /// each save's `parent`, which is exactly the saves the pointer moved
+    /// through; a line off that chain is left out.
+    ///
+    /// The chain is followed by position in the log and not by revision alone,
+    /// because a revision can recur (the text saved, changed, then saved again),
+    /// and a failed save of a text that is later saved successfully leaves two
+    /// lines for it, of which the later one is the save that took effect.
     ///
     /// A final line without its newline that does not parse is a save that was
-    /// interrupted while it was being logged (the pointer moves after the log, so
-    /// that save never took effect) and is left out. Any other line that does not
-    /// parse is damage, and says so.
+    /// interrupted while it was being logged and is left out. Any other line that
+    /// does not parse is damage, and says so; so does a current revision the
+    /// log never recorded.
     pub fn history(&self, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
         let dir = self.existing(id)?;
+        // The pointer is read before the log. A save logs, then moves the
+        // pointer, so a pointer read first can only name a revision whose line
+        // the log read after it already holds.
+        let head = read_head(&dir)?;
         let path = dir.join(LOG_FILE);
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(StoreError::io(&path, e)),
         };
         let ends_cleanly = text.ends_with('\n');
@@ -478,7 +498,33 @@ impl<C: Clock> WorkStore<C> {
                 }
             }
         }
-        Ok(entries)
+
+        // Nothing has taken effect until the pointer exists, whatever the log holds.
+        let Some(head) = head else {
+            return Ok(Vec::new());
+        };
+        let mut chain = Vec::new();
+        let mut before = entries.len();
+        let mut wanted = Some(head);
+        while let Some(revision) = wanted {
+            let Some(at) = entries[..before]
+                .iter()
+                .rposition(|entry| entry.revision == revision)
+            else {
+                return Err(StoreError::corrupt(
+                    &path,
+                    format!(
+                        "revision {} is on the way back from the current one and no save record names it",
+                        revision.short()
+                    ),
+                ));
+            };
+            wanted = entries[at].parent.clone();
+            chain.push(entries[at].clone());
+            before = at;
+        }
+        chain.reverse();
+        Ok(chain)
     }
 }
 

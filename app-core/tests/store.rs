@@ -474,6 +474,156 @@ fn a_bad_line_in_the_middle_of_the_log_is_damage_and_says_so() {
     assert_eq!(store.history(&work.id).unwrap_err().kind(), "corrupt");
 }
 
+// -- a save that did not take effect ----------------------------------------
+//
+// A save logs and then moves the pointer, and the pointer is what makes it take
+// effect. A save that stops between the two (the pointer's write failing, or the
+// process dying) must not be in the history: its caller was told it failed.
+
+/// The log line a save writes before it moves the pointer.
+fn logged_line(text: &str, parent: Option<&Revision>, saved_at: &str) -> String {
+    format!(
+        "{}\n",
+        serde_json::json!({
+            "revision": Revision::of(text.as_bytes()),
+            "parent": parent,
+            "saved_at": saved_at,
+        })
+    )
+}
+
+fn append_to_log(store: &WorkStore<FixedClock>, id: &WorkId, line: &str) {
+    let log = store.root().join(id.as_str()).join("source.log");
+    let mut text = fs::read_to_string(&log).unwrap_or_default();
+    text.push_str(line);
+    fs::write(&log, text).unwrap();
+}
+
+fn revisions(store: &WorkStore<FixedClock>, id: &WorkId) -> Vec<Revision> {
+    store
+        .history(id)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.revision)
+        .collect()
+}
+
+#[test]
+fn a_save_that_logged_but_never_moved_the_pointer_is_not_in_the_history() {
+    let store = store("orphan");
+    let work = store.create_work("Door").unwrap();
+    let one = saved_revision(store.save_source(&work.id, "one", None).unwrap());
+    append_to_log(
+        &store,
+        &work.id,
+        &logged_line("two", Some(&one), "2026-10-03T09:00:01Z"),
+    );
+    assert_eq!(store.head(&work.id).unwrap(), Some(one.clone()));
+    assert_eq!(revisions(&store, &work.id), vec![one.clone()]);
+
+    // The same text saved again, this time to the end, is listed once, as the
+    // later of its two lines: the one that took effect.
+    let later = WorkStore::with_clock(store.root(), FixedClock("2026-10-03T09:00:02Z".to_string()));
+    let two = saved_revision(later.save_source(&work.id, "two", Some(&one)).unwrap());
+    let history = store.history(&work.id).unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .map(|e| e.revision.clone())
+            .collect::<Vec<_>>(),
+        vec![one, two]
+    );
+    assert_eq!(history[1].saved_at, "2026-10-03T09:00:02Z");
+}
+
+#[test]
+fn before_the_first_pointer_nothing_is_history() {
+    let store = store("ghost");
+    let work = store.create_work("Door").unwrap();
+    append_to_log(
+        &store,
+        &work.id,
+        &logged_line("ghost", None, "2026-10-03T09:00:01Z"),
+    );
+    assert_eq!(store.head(&work.id).unwrap(), None);
+    assert!(store.history(&work.id).unwrap().is_empty());
+
+    let one = saved_revision(store.save_source(&work.id, "one", None).unwrap());
+    assert_eq!(revisions(&store, &work.id), vec![one]);
+}
+
+#[test]
+fn a_text_saved_again_after_another_keeps_the_order_it_was_saved_in() {
+    let store = store("recurring");
+    let work = store.create_work("Door").unwrap();
+    let a = saved_revision(store.save_source(&work.id, "a", None).unwrap());
+    let b = saved_revision(store.save_source(&work.id, "b", Some(&a)).unwrap());
+    let again = saved_revision(store.save_source(&work.id, "a", Some(&b)).unwrap());
+    assert_eq!(a, again, "the same text is the same revision");
+
+    let history = store.history(&work.id).unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .map(|e| e.revision.clone())
+            .collect::<Vec<_>>(),
+        vec![a.clone(), b.clone(), a.clone()]
+    );
+    assert_eq!(
+        history.iter().map(|e| e.parent.clone()).collect::<Vec<_>>(),
+        vec![None, Some(a.clone()), Some(b)]
+    );
+}
+
+#[test]
+fn a_current_revision_the_log_never_recorded_is_damage_and_says_so() {
+    let store = store("unrecorded");
+    let work = store.create_work("Door").unwrap();
+    saved_revision(store.save_source(&work.id, "one", None).unwrap());
+    let log = store.root().join(work.id.as_str()).join("source.log");
+    fs::write(&log, "").unwrap();
+    assert_eq!(store.history(&work.id).unwrap_err().kind(), "corrupt");
+}
+
+/// The failure itself, not a log written to look like it: a folder nobody can
+/// add files to lets the revision's file and the log line be written and stops
+/// the pointer's temporary file from being created.
+#[cfg(unix)]
+#[test]
+fn a_save_whose_pointer_cannot_be_written_is_neither_current_nor_in_the_history() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let store = store("pointer");
+    let work = store.create_work("Door").unwrap();
+    let one = saved_revision(store.save_source(&work.id, "one", None).unwrap());
+    let dir = store.root().join(work.id.as_str());
+
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = dir.join(".probe");
+    if fs::File::create(&probe).is_ok() {
+        // A user the permission does not bind (root) cannot show this failure.
+        // Say so rather than pass without having run it.
+        let _ = fs::remove_file(&probe);
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("not run: this user can write into a read-only folder");
+        return;
+    }
+    let failed = store.save_source(&work.id, "two", Some(&one));
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(failed.unwrap_err().kind(), "io");
+    assert_eq!(store.head(&work.id).unwrap(), Some(one.clone()));
+    assert_eq!(
+        revisions(&store, &work.id),
+        vec![one.clone()],
+        "a save that failed was listed as a save"
+    );
+
+    // Once it can be written, the same save takes effect and is listed once.
+    let two = saved_revision(store.save_source(&work.id, "two", Some(&one)).unwrap());
+    assert_eq!(revisions(&store, &work.id), vec![one, two]);
+}
+
 // -- two saves from one base -------------------------------------------------
 
 #[test]

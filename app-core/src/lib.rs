@@ -8,7 +8,7 @@
 //! three of them (the app, the MCP, the browser shell used during development) to
 //! work on the same thing, the thing has to live somewhere none of them owns: a
 //! folder of files with one definition of how it is written. This crate is that
-//! definition.
+//! definition. (The MCP does not use it yet; `sce-work` is how it will.)
 //!
 //! - [`store`] is the works folder: works, immutable revisions, saves that
 //!   refuse to overwrite what the caller has not seen.

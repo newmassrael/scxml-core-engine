@@ -16,6 +16,17 @@ Today it does the first part: **works** (a titled piece of specification text),
 the caller has not seen. Showing the model and accepting a design come next, on
 top of the same folder.
 
+What does not exist yet, so that nothing below is read as done:
+
+- The authoring MCP does not read or write the works folder. `sce-work` is
+  ready for it and the MCP's tool list has no works tool, so an AI client cannot
+  yet be pointed at a work saved here.
+- The screens that show the model, the open questions, the examples' results and
+  the acceptance. They are designs, not code.
+- A desktop window asks nothing when it is closed with text not yet saved. A
+  browser tab does (the browser's own prompt); the window has no such event wired.
+- Windows has not been run; the Linux desktop build and the browser have.
+
 ## How the parts fit
 
 ```
@@ -28,8 +39,9 @@ app/
 ```
 
 Everything the screen can do is one call, `call(name, args)`. The window routes
-it through Tauri's `invoke`, the browser shell through `POST /api/call`, and the
-authoring MCP through `sce-work call <name>`. All three end in
+it through Tauri's `invoke` and the browser shell through `POST /api/call`;
+`sce-work call <name>` is the same call for a process that is not Rust, which the
+authoring MCP is meant to use and does not yet. All of them end in
 `sce_app_core::call`, so there is one definition of what a save is.
 
 The works folder is plain files:
