@@ -29,16 +29,42 @@ FACES = {
 
 # The code points a figure can carry. A label outside them is refused by the
 # measuring code rather than given a width nobody measured.
+#
+# What a specification's values hold decides the list, and it is wider than the
+# words of a sentence: a unit is Ω or μs, a condition is ≥ or ≠, a check is ✓, a
+# Korean specification names a Hanja term. Measured 2026-10-03, a document with
+# any one of those in a value was refused WHOLE (`cli/diagram-unavailable`), the
+# field table included, for one character the font has a glyph for. A code point
+# the font has no glyph for (a colour emoji) is still left out, and still refused
+# by name: `runs` skips what the face does not carry.
+#
+# Cyrillic stays out on purpose: the measuring code's own tests use it as the
+# script that is NOT measured.
 RANGES = [
     (0x0020, 0x007E),  # printable ASCII
     (0x00A0, 0x00FF),  # Latin-1 supplement
-    (0x2010, 0x2027),  # dashes, quotes, bullet, ellipsis
+    (0x0100, 0x024F),  # Latin extended-A and -B
+    (0x0370, 0x03FF),  # Greek and Coptic (Ω, μ, π, Δ)
+    (0x2000, 0x206F),  # general punctuation: spaces, dashes, quotes, per mille
+    (0x2070, 0x209F),  # superscripts and subscripts
+    (0x20A0, 0x20CF),  # currency symbols
+    (0x2100, 0x214F),  # letterlike symbols (℃, №, Ω, ™)
+    (0x2150, 0x218F),  # number forms (fractions, Roman numerals)
     (0x2190, 0x21FF),  # arrows
+    (0x2200, 0x22FF),  # mathematical operators (≤ ≥ ≠ ≈ ∞ √ ∑)
+    (0x2300, 0x23FF),  # miscellaneous technical
     (0x2460, 0x24FF),  # enclosed alphanumerics (circled numbers)
+    (0x2500, 0x257F),  # box drawing
+    (0x25A0, 0x25FF),  # geometric shapes
+    (0x2600, 0x26FF),  # miscellaneous symbols
+    (0x2700, 0x27BF),  # dingbats (✓ ✗)
     (0x3000, 0x303F),  # CJK symbols and punctuation
+    (0x3040, 0x30FF),  # Hiragana and Katakana
     (0x3131, 0x318E),  # Hangul compatibility jamo
+    (0x3400, 0x4DBF),  # CJK unified ideographs, extension A
+    (0x4E00, 0x9FFF),  # CJK unified ideographs (Hanja)
     (0xAC00, 0xD7A3),  # Hangul syllables
-    (0xFF01, 0xFF5E),  # fullwidth ASCII variants
+    (0xFF01, 0xFFEE),  # fullwidth and halfwidth forms
 ]
 
 

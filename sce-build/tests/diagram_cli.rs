@@ -252,6 +252,72 @@ fn svg_words(path: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The paths a run printed, one a line.
+fn written(run: &Output) -> Vec<PathBuf> {
+    String::from_utf8(run.stdout.clone())
+        .expect("utf-8")
+        .lines()
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// The lookup example with one of its values replaced.
+fn lookup_with_value(dir: &Path, value: &str) -> PathBuf {
+    let text = std::fs::read_to_string(kind_example("lookup")).expect("read the example");
+    let path = dir.join("symbols.scxml");
+    std::fs::write(
+        &path,
+        text.replace(r#"value="HIGH""#, &format!(r#"value="{value}""#)),
+    )
+    .expect("write the document");
+    path
+}
+
+/// A value with a unit, an operator, a check mark or a Hanja term is drawn,
+/// with the characters on the sheet; a character the font has no glyph for is
+/// refused by name and nothing is written. Measured 2026-10-03: these were all
+/// refused whole until the font table covered them.
+#[test]
+fn symbols_a_specification_holds_are_drawn_and_a_glyphless_one_is_refused_by_name() {
+    let dir = scratch("diagram-symbols");
+    for value in [
+        "10 \u{03A9}",
+        "\u{2265} 5 \u{03BC}s",
+        "\u{2713} ok",
+        "\u{6F22}\u{5B57}",
+    ] {
+        let out = dir.join("drawn");
+        let run = diagram(&lookup_with_value(&dir, value), &out, &[]);
+        assert!(
+            run.status.success(),
+            "{value}: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let shown: Vec<String> = written(&run).iter().flat_map(|p| svg_words(p)).collect();
+        assert!(
+            shown.iter().any(|w| w == value),
+            "{value} is on a sheet: {shown:?}"
+        );
+        let _ = std::fs::remove_dir_all(&out);
+    }
+
+    let out = dir.join("refused");
+    let run = diagram(&lookup_with_value(&dir, "\u{1F600}"), &out, &[]);
+    assert_eq!(run.status.code(), Some(20));
+    let stderr = String::from_utf8(run.stderr).expect("utf-8");
+    let record: serde_json::Value =
+        serde_json::from_str(stderr.lines().next().expect("one record")).expect("json");
+    assert_eq!(record["code"], "cli/diagram-unavailable", "{record}");
+    assert!(
+        record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("U+1F600")),
+        "the refusal names the character: {record}"
+    );
+    assert!(!out.exists(), "a refusal writes nothing");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A document that is not a statechart has no boxes to draw, so it is set
 /// as the table of every value it states: `fields-<n>.svg`, well-formed,
 /// carrying the document's own values, in the page's language, and

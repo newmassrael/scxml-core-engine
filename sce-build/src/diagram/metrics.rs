@@ -125,6 +125,46 @@ mod tests {
         );
     }
 
+    /// What a specification's values hold is measured in both faces: a unit
+    /// (Ω, μ), an operator (≥, ≠), a mark (✓), a Hanja term, a kana. Written as
+    /// escapes, like the Hangul probes. Before the table covered them a
+    /// document with one in a value was refused whole.
+    #[test]
+    fn the_symbols_a_specification_holds_are_measured() {
+        for (name, c) in [
+            ("ohm", '\u{03A9}'),
+            ("micro (Greek)", '\u{03BC}'),
+            ("micro (Latin-1)", '\u{00B5}'),
+            ("greater-or-equal", '\u{2265}'),
+            ("not-equal", '\u{2260}'),
+            ("infinity", '\u{221E}'),
+            ("check mark", '\u{2713}'),
+            ("degree Celsius", '\u{2103}'),
+            ("Hanja", '\u{6F22}'),
+            ("hiragana", '\u{304B}'),
+            ("superscript two", '\u{00B2}'),
+            ("won sign", '\u{20A9}'),
+        ] {
+            for face in [Face::Proportional, Face::Mono] {
+                let advance = advance(face, c).unwrap_or_else(|| panic!("{name} in {face:?}"));
+                assert!(
+                    (1..=2000).contains(&advance),
+                    "{name} in {face:?}: {advance}"
+                );
+            }
+        }
+    }
+
+    /// What the font has no glyph for stays unmeasured, and so stays refused by
+    /// name: a colour emoji is not in Noto Sans CJK, and a width for it would
+    /// be a guess.
+    #[test]
+    fn a_character_the_font_does_not_carry_is_still_refused() {
+        assert_eq!(advance(Face::Proportional, '\u{1F600}'), None);
+        let e = width_pt(Face::Proportional, "ok \u{1F600}", 9.0).unwrap_err();
+        assert_eq!(e.character, '\u{1F600}');
+    }
+
     /// A character outside the table is refused, not guessed.
     #[test]
     fn an_unmeasured_character_is_refused() {
