@@ -357,7 +357,8 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteFinalizeForChild
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

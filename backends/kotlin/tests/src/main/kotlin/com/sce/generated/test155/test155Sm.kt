@@ -321,8 +321,11 @@ class Test155StateMachine(
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-        val eventName = eventNameOf(event) ?: return
         val meta = currentEventMetadata
+        // §scxml-5.10: the name the event ARRIVED under, which is longer than its
+        // member's when a name the document does not write was matched through a
+        // prefix (§scxml-3.12.1).
+        val eventName = meta.name.ifEmpty { eventNameOf(event) ?: return }
         // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
         val effectiveType = when {
             eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"

@@ -958,7 +958,13 @@ pub fn save<P: StatePolicy>(
             .external_queue
             .queued()
             .map(|queued| SavedEvent {
-                name: P::get_event_name(queued.event).to_string(),
+                // §scxml-5.10: a queued event is saved under the name it ARRIVED
+                // under, so a restore gives the machine the same `_event.name`.
+                name: if queued.metadata.name.is_empty() {
+                    P::get_event_name(queued.event).to_string()
+                } else {
+                    queued.metadata.name.to_string()
+                },
                 data: queued.metadata.data.clone(),
                 event_type: queued.metadata.event_type.as_str().to_string(),
                 send_id: queued.metadata.send_id.clone(),
@@ -1275,7 +1281,9 @@ pub fn enter<P: StatePolicy>(
         .iter()
         .enumerate()
         .map(|(i, e)| {
-            let event = P::get_event_from_name(&e.name).ok_or_else(|| {
+            // The name a queued event arrived under (§scxml-5.10): the document's
+            // own event for it, or the one it extends (§scxml-3.12.1).
+            let event = P::resolve_event_by_name(&e.name).ok_or_else(|| {
                 StateRefusal::new(format!(
                     "external[{i}] is '{}', which the document does not name",
                     e.name
@@ -1288,6 +1296,9 @@ pub fn enter<P: StatePolicy>(
                 ))
             })?;
             let mut queued = EventWithMetadata::<P::Event, P::Payload>::new(event);
+            if P::get_event_name(event) != e.name {
+                queued.metadata.name = e.name.clone();
+            }
             queued.metadata.data = e.data.clone();
             queued.metadata.event_type = event_type;
             queued.metadata.send_id = e.send_id.clone();

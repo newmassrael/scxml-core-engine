@@ -69,7 +69,11 @@ public:
 {%- if model.needs_event_name or model.needs_event_type %}
         if (event != Event()) {
 {% if model.needs_event_name %}
-            pendingEventName_ = {{ model.name }}Policy::getEventName(event);
+            // §scxml-5.10: the name the event ARRIVED under, which is longer than its
+            // member's when a name the document does not write was matched through a
+            // prefix (§scxml-3.12.1).
+            pendingEventName_ = pendingEventArrivalName_.empty() ? ::std::string({{ model.name }}Policy::getEventName(event))
+                                                                 : pendingEventArrivalName_;
 {% endif %}
 {% if model.needs_event_type %}
             // §scxml-5.10.1: typed by the queue the engine took the event from.

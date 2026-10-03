@@ -105,6 +105,17 @@ impl EventType {
 /// sum, never this JSON `data` string.)
 #[derive(Debug, Clone, Default)]
 pub struct EventMetadata {
+    /// `_event.name` — the name the event ARRIVED under (§scxml-5.10), when that is
+    /// not the name of the enum member that carries it. The event is carried as the
+    /// member of a name the document writes, and §scxml-3.12.1 lets `request.new`
+    /// take a transition on `request`, so the member alone loses the longer name.
+    /// Set by a door that resolved a name through a prefix
+    /// ([`StatePolicy::resolve_event_by_name`](crate::StatePolicy::resolve_event_by_name));
+    /// empty means the member's own name IS the name, which is every event the
+    /// document itself raises or sends. No `_event.name` reader exists under
+    /// no_std (reading it is an ECMAScript access), so the field is elided there.
+    #[cfg(not(feature = "no_std"))]
+    pub name: SceString,
     /// `_event.data` — event payload as a JSON string (empty when no payload).
     #[cfg(not(feature = "no_std"))]
     pub data: SceString,

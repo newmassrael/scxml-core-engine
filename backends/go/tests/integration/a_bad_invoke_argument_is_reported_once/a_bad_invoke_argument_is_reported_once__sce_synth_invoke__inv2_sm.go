@@ -383,7 +383,8 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) ExecuteFinali
 func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

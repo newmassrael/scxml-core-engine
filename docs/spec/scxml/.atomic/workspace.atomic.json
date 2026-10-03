@@ -1115,6 +1115,52 @@
         {
           "file": "sce/include/core/EventNameResolver.h",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/event.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/invoke_processing.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "arrivingEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DrainAndRaiseChildEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "EventMetadata",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "savedExternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "name",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5405,6 +5451,153 @@
         {
           "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/invoke_processing.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/saved_state.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternalByNameWithMeta",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "arrivalNameOf",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "arrivingEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "PerformHostSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "endHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "arrivalNameOf",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "autoForwardEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "endHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executeFinalizeForChildEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raiseHostInvokeDeadline",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "savedExternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "savedState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendEventByName",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_expire_host_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "arrival_name_of",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "end_host_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_host_send",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_arrived_as",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_by_name_with_meta",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "createDoneInvokeEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "detail",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "applyExternalEventPreamble",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "arrivalNameOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "endHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "expireHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "name",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5798,6 +5991,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "endHostInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternalByName",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -21343,6 +21541,78 @@
       "target_kind": "section",
       "target_id": "scxml-3.12.1",
       "reason": "the resolver attributes the doc comment above a template function to its namespace, so the symbol never matched"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
     }
   ],
   "frames": {},

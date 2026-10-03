@@ -249,10 +249,11 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 		if reply.EventName == "" {
 			continue
 		}
-		if evt, known := e.ResolveEventByName(reply.EventName); known {
-			meta := NewEventWithMetadata(evt)
-			meta.Metadata = ExternalMetadata("", "")
-			meta.Metadata.Data = reply.EventData
+		// §scxml-5.10: `_event.name` is the name the host gave, not the value a
+		// prefix of it was matched to.
+		metadata := ExternalMetadata("", "")
+		metadata.Data = reply.EventData
+		if meta, known := e.arrivingEvent(reply.EventName, metadata); known {
 			e.externalQueue.Raise(meta)
 		}
 	}
@@ -563,26 +564,23 @@ func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint6
 	// is the name the author wrote a transition for. §scxml-3.12.1: when the
 	// document names no specific one, the generic event its descriptor matches —
 	// as an SCXML child's completion does.
-	specific, generic := CreateDoneInvokeEventName(invokeID), DoneInvokeEvent
+	name := CreateDoneInvokeEventName(invokeID)
 	if failed {
-		specific, generic = ErrorInvokePrefix+invokeID, ErrorInvokeEvent
+		name = ErrorInvokePrefix + invokeID
 	}
-	evt, known := e.policy.GetEventFromName(specific)
-	if !known {
-		evt, known = e.policy.GetEventFromName(generic)
+	metadata := ExternalMetadata("", origin)
+	if originType != "" {
+		metadata.OriginType = originType
 	}
-	if known {
-		meta := NewEventWithMetadata(evt)
-		meta.Metadata = ExternalMetadata("", origin)
-		if originType != "" {
-			meta.Metadata.OriginType = originType
-		}
-		meta.Metadata.Data = data
-		// §scxml-5.10.1: the completion is an event of the invocation, so
-		// `_event.invokeid` is the invocation's id — the one the event names
-		// and the host was handed.
-		meta.Metadata.InvokeID = invokeID
-		meta.Metadata.HostInvokeToken = &token
+	metadata.Data = data
+	// §scxml-5.10.1: the completion is an event of the invocation, so
+	// `_event.invokeid` is the invocation's id — the one the event names
+	// and the host was handed.
+	metadata.InvokeID = invokeID
+	metadata.HostInvokeToken = &token
+	// §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
+	// document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
+	if meta, ok := e.arrivingEvent(name, metadata); ok {
 		e.externalQueue.Raise(meta)
 	}
 	return true
@@ -644,15 +642,10 @@ func (e *Engine[S, E]) expireHostInvoke(deadline HostInvokeDeadline) {
 	if !e.deliverHostInvokeCancel(deadline.ProcessorType, deadline.InvokeID, deadline.Token) {
 		return
 	}
-	evt, known := e.policy.GetEventFromName(ErrorInvokePrefix + deadline.InvokeID)
-	if !known {
-		evt, known = e.policy.GetEventFromName(ErrorInvokeEvent)
-	}
-	if known {
-		meta := NewEventWithMetadata(evt)
-		meta.Metadata = ExternalMetadata("", "")
-		meta.Metadata.Data = `"deadline"`
-		meta.Metadata.InvokeID = deadline.InvokeID
+	metadata := ExternalMetadata("", "")
+	metadata.Data = `"deadline"`
+	metadata.InvokeID = deadline.InvokeID
+	if meta, ok := e.arrivingEvent(ErrorInvokePrefix+deadline.InvokeID, metadata); ok {
 		e.externalQueue.Raise(meta)
 	}
 }

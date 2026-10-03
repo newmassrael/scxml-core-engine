@@ -64,6 +64,7 @@ pub mod a_target_expression_is_routed_as_its_literal_is;
 pub mod ai_loop;
 pub mod an_error_ends_the_block_it_was_raised_in;
 pub mod an_error_inside_a_foreach_ends_its_block;
+pub mod an_event_keeps_the_name_it_was_sent_under;
 pub mod an_invoke_left_before_it_starts_raises_nothing;
 pub mod ancestor_entry_is_not_default_entry;
 pub mod autoforward_dequeue_point;

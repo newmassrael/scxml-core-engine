@@ -1,0 +1,46 @@
+# Mutation cases for "an event keeps the name it was sent under" (Rust engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/rust_an_event_keeps_the_name_it_was_sent_under.cases`.
+#
+# A transition on `request` takes `request.new` by whole-token matching
+# (§scxml-3.12.1), and `_event.name` is then the name the event was sent under
+# (§scxml-5.10), not the descriptor it was matched through. The engine carries the
+# event as the member of a name the document writes, so the whole name has to
+# travel beside it: `Engine::arrival_name_of` decides what it is, every by-name
+# door records it in `EventMetadata.name`, and the generated `bind_current_event`
+# reads it before the member's name.
+# `integration_resources/an_event_keeps_the_name_it_was_sent_under/` is the
+# document: the parent writes `request.new`, the child only `request`, and the
+# child reports `arrivedShortened` unless it is told the whole name.
+#
+# Two things are easy to get wrong and read as success: a door that resolves the
+# name and forgets to carry it (the event is delivered, the transition is taken,
+# the child is told the shorter name), and a binding that reads the member's name
+# first (the carried name is there and unused). Either leaves the machine
+# reaching its final state, so only `_event.name` itself tells them apart.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test an_event_keeps_the_name_it_was_sent_under
+mutation_targets backends/rust/runtime/src/engine.rs backends/rust/tests/src/integration/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener_sm.rs
+mutation_oracles backends/rust/tests/tests/an_event_keeps_the_name_it_was_sent_under.rs
+
+mutation_case "no name is ever recorded as the one an event arrived under" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if P::get_event_name(event) == name {\n            \"\"",
+     "        if true {\n            \"\"")
+PY
+
+mutation_case "the by-name door delivers the event without its arrival name" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                Self::arrival_name_of(event, event_name),\n            );",
+     "                \"\",\n            );")
+PY
+
+mutation_case "the generated binding reads the member's name before the arrival name" <<'PY'
+edit("backends/rust/tests/src/integration/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener_sm.rs",
+     "            let event_name: &str = if arrival.is_empty() {",
+     "            let event_name: &str = if true {")
+PY

@@ -656,7 +656,8 @@ func (p *HostEventReachesTheChildPolicy) SetActiveStates(_ []HostEventReachesThe
 func (p *HostEventReachesTheChildPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[HostEventReachesTheChildEvent], _ *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *HostEventReachesTheChildPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

@@ -182,7 +182,14 @@ data class EventMetadata(
     // policy field the native guard reads. `null` for every untyped event, so
     // the script-engine baseline is byte-unchanged. The Kotlin twin of the Go
     // `EventMetadata.TypedPayload any` / C++ `EventWithMetadata.typedPayload`.
-    val typedPayload: Any? = null
+    val typedPayload: Any? = null,
+    // §scxml-5.10: `_event.name` is the name an event ARRIVED under. The event is
+    // carried as the member of a name the document writes, and §scxml-3.12.1 lets
+    // `request.new` take a transition on `request`, so the member alone loses the
+    // longer name. Set by a door that resolved a name through a prefix; empty
+    // means the member's own name IS the name, which is every event the document
+    // itself raises or sends. The Kotlin twin of the Rust `EventMetadata.name`.
+    val name: String = "",
 ) {
     companion object {
         val EMPTY = EventMetadata()
@@ -1194,11 +1201,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * `_event.invokeid` set and `_event.data` the string `"deadline"`.
      */
     private fun raiseHostInvokeDeadline(invokeId: String) {
-        val expired = resolveEventByName(ERROR_INVOKE_PREFIX + invokeId)
-            ?: resolveEventByName(ERROR_INVOKE_EVENT)
-            ?: return
+        val name = ERROR_INVOKE_PREFIX + invokeId
+        val expired = resolveArrivingEvent(name) ?: return
         // The JSON spelling of the string, as every other backend carries it.
-        send(expired, EventMetadata(type = "external", data = "\"deadline\"", invokeId = invokeId))
+        // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of
+        // the document (`error.invoke.<id>`, `error.invoke`, `error`) it was matched
+        // through.
+        send(
+            expired,
+            EventMetadata(
+                type = "external",
+                data = "\"deadline\"",
+                invokeId = invokeId,
+                name = arrivalNameOf(expired, name),
+            ),
+        )
     }
 
     /**
@@ -1272,12 +1289,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // specific one, as an SCXML child's completion does.
         // §scxml-5.10.1: it is an event of the invocation, so
         // `_event.invokeid` is that same id.
-        val (prefix, generic) = if (failed) {
-            ERROR_INVOKE_PREFIX to ERROR_INVOKE_EVENT
-        } else {
-            DONE_INVOKE_PREFIX to DONE_INVOKE_EVENT
-        }
-        val ended = resolveEventByName(prefix + invokeId) ?: resolveEventByName(generic)
+        val name = (if (failed) ERROR_INVOKE_PREFIX else DONE_INVOKE_PREFIX) + invokeId
+        val ended = resolveArrivingEvent(name)
         if (ended != null) {
             send(
                 ended,
@@ -1288,6 +1301,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     originType = originType,
                     invokeId = invokeId,
                     hostInvokeToken = token,
+                    // §scxml-5.10: the specific name, whichever descriptor of the
+                    // document (`done.invoke.<id>`, `done.invoke`, `done`) it was
+                    // matched through.
+                    name = arrivalNameOf(ended, name),
                 ),
             )
         }
@@ -2429,8 +2446,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             hostInvokeToken = nextHostInvokeToken,
             external = externalEventQueue.map { queued ->
                 SavedEvent(
-                    name = eventNameOf(queued.event)
-                        ?: error("a queued event the document does not name: ${queued.event}"),
+                    // §scxml-5.10: saved under the name the event ARRIVED under, so a
+                    // restore gives the machine the same `_event.name`.
+                    name = queued.metadata.name.ifEmpty {
+                        eventNameOf(queued.event)
+                            ?: error("a queued event the document does not name: ${queued.event}")
+                    },
                     data = queued.metadata.data,
                     type = queued.metadata.type,
                     sendId = queued.metadata.sendId,
@@ -2837,7 +2858,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     private fun savedExternal(saved: SavedState): List<QueuedEvent<E>> =
         saved.external.mapIndexed { i, e ->
-            val event = resolveEventByName(e.name)
+            // The name a queued event arrived under (§scxml-5.10): the document's own
+            // event for it, or the one it extends (§scxml-3.12.1).
+            val event = resolveArrivingEvent(e.name)
                 ?: throw StateRefusal("external[$i] is '${e.name}', which the document does not name")
             if (e.type !in setOf("internal", "external", "platform")) {
                 throw StateRefusal("external[$i] has the type '${e.type}', which is not an event type")
@@ -2845,6 +2868,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             QueuedEvent(
                 event,
                 EventMetadata(
+                    name = arrivalNameOf(event, e.name),
                     data = e.data,
                     type = e.type,
                     sendId = e.sendId,
@@ -4131,7 +4155,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     invokeId = generatedInvokeId,
                     origin = child.scriptSessionId ?: "",
                     originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                    data = eventData
+                    data = eventData,
+                    // §scxml-3.12.1 + §scxml-5.10: the child names the event, and
+                    // its names are not this machine's, so one this document does
+                    // not write reaches it as the event of the longest prefix it
+                    // does, under the name the child sent.
+                    name = arrivalNameOf(it, eventName),
                 ))
             }
         }
@@ -4149,7 +4178,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
                         type = "platform",
                         invokeId = invokeId,
-                        data = child.donedataAtFinal()
+                        data = child.donedataAtFinal(),
+                        // §scxml-5.10: the specific name, whichever descriptor
+                        // (`done.invoke.<id>`, `done.invoke`, `done`) it was matched
+                        // through.
+                        name = arrivalNameOf(doneEvent, DONE_INVOKE_PREFIX + invokeId),
                     )))
                 }
             } else null
@@ -4181,7 +4214,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 send(doneEvent, EventMetadata(
                     type = "platform",
                     invokeId = invokeId,
-                    data = child.donedataAtFinal()
+                    data = child.donedataAtFinal(),
+                    name = arrivalNameOf(doneEvent, DONE_INVOKE_PREFIX + invokeId),
                 ))
             }
         }
@@ -4232,7 +4266,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Internal: only used by parent SM's [sendToChild] for type-erased communication.
      */
     internal fun sendByName(name: String) {
-        resolveArrivingEvent(name)?.let { send(it) }
+        resolveArrivingEvent(name)?.let { send(it, EventMetadata(name = arrivalNameOf(it, name))) }
     }
 
     /**
@@ -4269,7 +4303,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     internal fun sendByNameWithData(name: String, data: String) {
         resolveArrivingEvent(name)?.let {
-            send(it, EventMetadata(type = "external", data = data))
+            send(it, EventMetadata(type = "external", data = data, name = arrivalNameOf(it, name)))
         }
     }
 
@@ -4281,7 +4315,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * [resolveArrivingEvent] and dispatches with metadata.
      */
     fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.EMPTY) {
-        resolveArrivingEvent(name)?.let { send(it, metadata) }
+        // §scxml-5.10: what this machine is told the event is called is a fact about
+        // THIS machine's names — an arrival name the caller's metadata carries was
+        // matched against the caller's, and says nothing here.
+        resolveArrivingEvent(name)?.let { send(it, metadata.copy(name = arrivalNameOf(it, name))) }
     }
 
     // --- Event Data Helpers ---
@@ -4438,6 +4475,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * §scxml-5.10: what [EventMetadata.name] is for an event that arrived as
+     * [name] and was delivered as [event]: empty when [event] is the document's
+     * own event for it, so an event the document raises or sends carries no copy of
+     * a name its member already holds, and [name] when [resolveArrivingEvent] had
+     * to cut it back to a shorter one.
+     */
+    protected fun arrivalNameOf(event: E, name: String): String =
+        if (resolveEventByName(name) == event) "" else name
+
+    /**
      * §scxml-6.4: Resolve Event object to event name string.
      * Reverse of [resolveEventByName]. Override in generated code.
      * Used by autoforward to convert typed parent events to string names
@@ -4467,7 +4514,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (entry.finalizeScript.isNotEmpty() &&
                 entry.child.scriptSessionId == metadata.origin) {
                 // §scxml-6.5: Set _event before finalize execution
-                val eventName = eventNameOf(event) ?: ""
+                // §scxml-5.10: under the name the child sent it.
+                val eventName = metadata.name.ifEmpty { eventNameOf(event) ?: "" }
                 engine.setCurrentEvent(
                     sid,
                     SetCurrentEventArgs(
@@ -4991,7 +5039,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun autoForwardEvent(event: E, metadata: EventMetadata) {
         if (activeInvokes.isEmpty()) return
 
-        val eventName = eventNameOf(event) ?: return
+        // §scxml-5.10: under the name the event arrived under, which is the member's
+        // own unless a door cut a longer one back to it.
+        val eventName = metadata.name.ifEmpty { eventNameOf(event) ?: return }
 
         for ((_, entry) in activeInvokes) {
             if (entry.autoforward) {

@@ -482,7 +482,8 @@ func (p *StaticRecordPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetada
 func (p *StaticRecordPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[StaticRecordState, StaticRecordEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *StaticRecordPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	// NL→IR Item C1 Path A: lift the dequeued event's typed payload from the
 	// type-erased carrier into the typed policy field the native guards read

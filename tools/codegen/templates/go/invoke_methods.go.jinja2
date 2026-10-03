@@ -703,7 +703,12 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		if se != nil {
-			eventName := p.GetEventName(eventWithMeta.Event)
+			// §scxml-5.10: under the name the child sent it, which is the value's own
+			// unless a name this document does not write was matched through a prefix.
+			eventName := eventWithMeta.Metadata.Name
+			if eventName == "" {
+				eventName = p.GetEventName(eventWithMeta.Event)
+			}
 			// W3C SCXML 6.4: `<finalize>` binds the child's event so the
 			// handler can read it, and the rung that binding chose is not
 			// this site's to report. The parent's own dequeue already

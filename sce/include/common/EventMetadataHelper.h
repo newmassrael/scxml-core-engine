@@ -17,6 +17,7 @@
 
 #include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
+#include "core/InvokeHelper.h"
 #include "core/StatePolicyConcepts.h"
 #include <any>
 #include <optional>
@@ -84,6 +85,14 @@ template <typename P, typename = void> struct has_pendingEventName : std::false_
 
 template <typename P>
 struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
+
+// §scxml-5.10: the name an event arrived under when it is not the one its enum member
+// carries (see EventWithMetadata::name); present on a policy that binds `_event.name`.
+template <typename P, typename = void> struct has_pendingEventArrivalName : std::false_type {};
+
+template <typename P>
+struct has_pendingEventArrivalName<P, std::void_t<decltype(std::declval<P>().pendingEventArrivalName_)>>
+    : std::true_type {};
 
 // NL→IR Item C1 Path A (EventSchema native lowering): detect the generated
 // policy's typed-payload bind hook. Present only on a policy whose statechart
@@ -207,6 +216,12 @@ public:
     static void
     populatePolicyFromMetadata(Policy &policy,
                                const typename SCE::Static::StaticExecutionEngine<Policy>::EventWithMetadata &metadata) {
+        // §scxml-5.10: Set the arrival name for _event.name — empty when the enum
+        // member's own name is the name the event was sent under
+        if constexpr (detail::has_pendingEventArrivalName<Policy>::value) {
+            policy.pendingEventArrivalName_ = metadata.name;
+        }
+
         // §scxml-5.10: Set pending event data for _event.data access (test176)
         if constexpr (detail::has_pendingEventData<Policy>::value) {
             policy.pendingEventData_ = metadata.data;
@@ -275,6 +290,10 @@ public:
         // §scxml-5.10: Clear event name for next cycle
         if constexpr (detail::has_pendingEventName<Policy>::value) {
             policy.pendingEventName_.clear();
+        }
+
+        if constexpr (detail::has_pendingEventArrivalName<Policy>::value) {
+            policy.pendingEventArrivalName_.clear();
         }
 
         // §scxml-5.10: Clear event data for next cycle
@@ -366,15 +385,21 @@ public:
      */
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
-        return MetadataType(event,     // event - §scxml-6.4.3: done.invoke or done.invoke.id
-                            "",        // data - empty (no donedata from child)
-                            "",        // origin - empty (child completion doesn't specify origin)
-                            "",        // sendId - empty (not a send event)
-                            "",        // type - empty (internal event, not external)
-                            "",        // originType - empty (not external event)
-                            invokeId,  // invokeId - §scxml-5.10.1: _event.invokeid field
-                            ""         // target - empty (not a send event)
+        MetadataType metadata(event,     // event - §scxml-6.4.3: done.invoke or done.invoke.id
+                              "",        // data - empty (no donedata from child)
+                              "",        // origin - empty (child completion doesn't specify origin)
+                              "",        // sendId - empty (not a send event)
+                              "",        // type - empty (internal event, not external)
+                              "",        // originType - empty (not external event)
+                              invokeId,  // invokeId - §scxml-5.10.1: _event.invokeid field
+                              ""         // target - empty (not a send event)
         );
+        // §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, whichever
+        // descriptor of the document (`done.invoke.<id>`, `done.invoke`, `done`) the
+        // member the caller chose stands for. For the member that IS the specific
+        // name this is the name it already has.
+        metadata.name = ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
+        return metadata;
     }
 
     /**
@@ -413,6 +438,8 @@ public:
                               ""         // target
         );
         metadata.typedData = std::move(typedData);
+        // §scxml-5.10: the specific name, as in the overload above.
+        metadata.name = ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
         return metadata;
     }
 };

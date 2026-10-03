@@ -67,7 +67,6 @@ from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from . import send as send_module
 from .invoke import (
-    ERROR_INVOKE_EVENT,
     ERROR_INVOKE_PREFIX,
     Invoke,
     PendingInvoke,
@@ -1480,11 +1479,8 @@ class Engine(Generic[S, E]):
             deadline.processor_type, deadline.invoke_id, deadline.token
         ):
             return
-        event = self._policy.get_event_from_name(
-            f"{ERROR_INVOKE_PREFIX}{deadline.invoke_id}"
-        )
-        if event is None:
-            event = self._policy.get_event_from_name(ERROR_INVOKE_EVENT)
+        name = f"{ERROR_INVOKE_PREFIX}{deadline.invoke_id}"
+        event = self._policy.resolve_event_by_name(name)
         if event is None:
             return
         # The JSON spelling of the string, as every other backend carries it:
@@ -1497,6 +1493,10 @@ class Engine(Generic[S, E]):
                     event_type="external",
                     data='"deadline"',
                     invoke_id=deadline.invoke_id,
+                    # §scxml-5.10: `_event.name` is the specific name, whichever
+                    # descriptor of the document (`error.invoke.<id>`,
+                    # `error.invoke`, `error`) it was matched through.
+                    name=name if self._policy.get_event_from_name(name) is None else "",
                 ),
             )
         )

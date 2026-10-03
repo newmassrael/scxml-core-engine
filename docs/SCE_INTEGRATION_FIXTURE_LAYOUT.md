@@ -41,6 +41,18 @@ asserts it — C++ Interpreter + AOT, Rust, Go, Kotlin, Python, C11 — because
 each backend forwarded only the event name (Python: name + payload) until the
 carrier landed.
 
+`an_event_keeps_the_name_it_was_sent_under` covers the name an event arrives under
+(W3C §5.10 with §3.12.1): a transition on `request` takes `request.new` by
+whole-token matching, and `_event.name` is then the name the event was sent under,
+not the descriptor it was matched through. The parent writes `request.new`; the
+child writes only `request`, so the name reaches it from outside the document it is
+matched in — the one way a name a document does not write can arrive. Every channel
+asserts it, because every AOT engine carried an event as the enum member of a name
+its document writes: before the arrival name travelled beside the member
+(`ARCHITECTURE.md` "Event Names at the Door") such a name was dropped, and where it
+was delivered the child was told the shorter one. The public IRP suite never reads a
+name its document does not write, so nothing else fails.
+
 **Fixtures stay on one axis.** `autoforward_event_fields` returns the child's
 verdict as its own event rather than as `<donedata>`, so a regression in the
 donedata lift cannot surface as an autoforward failure; `donedata_local_invoke`

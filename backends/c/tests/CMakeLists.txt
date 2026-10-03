@@ -467,6 +467,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.10 + 3.12.1: `_event.name` is the name an event arrived under,
+    # and a transition on `request` takes `request.new` whether or not the
+    # document writes it. The IRP corpus never reads a name the document does not
+    # write.
+    sce_generate_static_integration_c_test(an_event_keeps_the_name_it_was_sent_under "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_an_event_keeps_the_name_it_was_sent_under
+        integration/test_an_event_keeps_the_name_it_was_sent_under.c
+        ${INTEGRATION_C_TEST_an_event_keeps_the_name_it_was_sent_under_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_an_event_keeps_the_name_it_was_sent_under PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_an_event_keeps_the_name_it_was_sent_under PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_event_keeps_the_name_it_was_sent_under PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_event_keeps_the_name_it_was_sent_under
+        COMMAND sce_c_integration_an_event_keeps_the_name_it_was_sent_under
+    )
+    set_tests_properties(c11_integration_an_event_keeps_the_name_it_was_sent_under PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
     # `mainEventLoop` forwards every event dequeued from the external queue to each
     # autoforward child and excludes only the cancel event; §6.4.2 puts

@@ -495,6 +495,13 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
 {% endif %}
+{% if model.needs_event_name and model.needs_script_engine %}
+    // W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer than
+    // the enum member it was matched through (`request.new` for a transition on
+    // `request`); empty when the member's own name is the name. Filled from the
+    // event's metadata before the event is bound, and read by `bind_current_event`.
+    pending_event_arrival_name: ::sce_rust_runtime::SceString,
+{% endif %}
 {% if model.needs_event_data and model.needs_script_engine %}
     // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
     // typed path reads the Payload sum, not this field — so needs_script_engine).
@@ -687,6 +694,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
+{% endif %}
+{% if model.needs_event_name and model.needs_script_engine %}
+            pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_data and model.needs_script_engine %}
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -1123,10 +1133,13 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
    override. `invokeid` is also read by a host-served `<send>`, which carries it
    out (SCE_MESH.md §mesh-10.7) on a machine with no script engine, so it is
    named here in its own right; host sends are std-only, like the field. #}
-{% if (model.needs_event_data and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype or model.needs_event_invokeid %}
+{% if (model.needs_event_data and model.needs_script_engine) or (model.needs_event_name and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype or model.needs_event_invokeid %}
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
+{% if model.needs_event_name and model.needs_script_engine %}
+        self.pending_event_arrival_name = metadata.name.clone();
+{% endif %}
 {% if model.needs_event_data %}
         self.pending_event_data = metadata.data.clone();
 {% endif %}
@@ -1152,6 +1165,9 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn clear_event_metadata(&mut self) {
 {% if model.needs_event_name %}
         self.pending_event_name.clear();
+{% endif %}
+{% if model.needs_event_name and model.needs_script_engine %}
+        self.pending_event_arrival_name.clear();
 {% endif %}
 {% if model.needs_event_data %}
         self.pending_event_data.clear();

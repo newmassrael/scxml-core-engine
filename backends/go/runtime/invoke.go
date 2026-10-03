@@ -211,18 +211,18 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 		return
 	}
 	for _, ev := range queue.Drain() {
-		event, ok := engine.policy.GetEventFromName(ev.Name)
-		if !ok {
-			continue
-		}
-		meta := NewEventWithMetadata(event)
-		meta.Metadata.Data = ev.Data
+		// §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
+		// not the parent's, so one the parent does not write reaches it as the event
+		// of the longest prefix it does, under the name the child sent.
+		metadata := EventMetadata{Data: ev.Data}
 		if cs, found := activeInvokes[invokeKey]; found {
-			meta.Metadata.InvokeID = cs.InvokeID
-			meta.Metadata.Origin = cs.SessionID
-			meta.Metadata.OriginType = SCXMLEventProcessorType
+			metadata.InvokeID = cs.InvokeID
+			metadata.Origin = cs.SessionID
+			metadata.OriginType = SCXMLEventProcessorType
 		}
-		engine.RaiseExternalWithMeta(meta)
+		if meta, ok := engine.arrivingEvent(ev.Name, metadata); ok {
+			engine.RaiseExternalWithMeta(meta)
+		}
 	}
 }
 
@@ -238,17 +238,10 @@ func RaiseDoneInvoke[S comparable, E comparable](
 	donedata string,
 	engine *Engine[S, E],
 ) {
-	eventName := CreateDoneInvokeEventName(invokeID)
-	event, ok := engine.policy.GetEventFromName(eventName)
-	if !ok {
-		// Try without the specific ID (generic done.invoke)
-		event, ok = engine.policy.GetEventFromName(DoneInvokeEvent)
-		if !ok {
-			return
-		}
+	// §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
+	// document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
+	metadata := EventMetadata{InvokeID: invokeID, Data: donedata}
+	if meta, ok := engine.arrivingEvent(CreateDoneInvokeEventName(invokeID), metadata); ok {
+		engine.RaiseExternalWithMeta(meta)
 	}
-	meta := NewEventWithMetadata(event)
-	meta.Metadata.InvokeID = invokeID
-	meta.Metadata.Data = donedata
-	engine.RaiseExternalWithMeta(meta)
 }

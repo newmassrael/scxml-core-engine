@@ -2385,6 +2385,52 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `raiseExternal(Event, const string&, const string&)`.
     pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
+        self.raise_external_arrived_as(event, event_data, origin, "");
+    }
+
+    /// What `EventMetadata::name` is for an event that arrived as `name` and was
+    /// delivered as `event` (§scxml-5.10): empty when `event` is the document's own
+    /// name for it, so an event the document raises or sends carries no copy of a
+    /// name its member already holds, and `name` when
+    /// [`StatePolicy::resolve_event_by_name`] had to cut it back to a shorter one.
+    fn arrival_name_of(event: P::Event, name: &str) -> &str {
+        if P::get_event_name(event) == name {
+            ""
+        } else {
+            name
+        }
+    }
+
+    /// The event an event that arrives BY NAME is delivered as, with the name it
+    /// arrived under carried beside it (§scxml-3.12.1 + §scxml-5.10).
+    ///
+    /// The one constructor for every door that turns a name from outside the
+    /// machine into an event of it — a child's `<send target="#_parent">`, a
+    /// completion `done.invoke.<id>`, a host's reply, an HTTP response — so none of
+    /// them resolves a name its own way. `None` when no transition the document
+    /// has could match the name: it is dropped. `metadata` is what the caller
+    /// knows (`data`, `origin`, `invoke_id`); the arrival name is added to it.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn arriving_event(
+        name: &str,
+        mut metadata: EventMetadata,
+    ) -> Option<EventWithMetadata<P::Event, P::Payload>> {
+        let event = P::resolve_event_by_name(name)?;
+        metadata.name = crate::sce_string_from_str(Self::arrival_name_of(event, name));
+        let mut arriving = EventWithMetadata::new(event);
+        arriving.metadata = metadata;
+        Some(arriving)
+    }
+
+    /// [`raise_external`](Self::raise_external) for an event that arrived under
+    /// `arrival_name` (§scxml-5.10): empty when the member's own name is the name.
+    fn raise_external_arrived_as(
+        &mut self,
+        event: P::Event,
+        event_data: &str,
+        origin: &str,
+        arrival_name: &str,
+    ) {
         let meta = EventWithMetadata {
             event,
             payload: P::Payload::default(),
@@ -2394,6 +2440,7 @@ impl<P: StatePolicy> Engine<P> {
                 #[cfg(not(feature = "no_std"))]
                 {
                     EventMetadata {
+                        name: crate::sce_string_from_str(arrival_name),
                         data: crate::sce_string_from_str(event_data),
                         event_type: EventType::External,
                         origin: crate::sce_string_from_str(origin),
@@ -2405,7 +2452,7 @@ impl<P: StatePolicy> Engine<P> {
                 }
                 #[cfg(feature = "no_std")]
                 {
-                    let _ = (event_data, origin);
+                    let _ = (event_data, origin, arrival_name);
                     EventMetadata {
                         event_type: EventType::External,
                     }
@@ -2515,7 +2562,12 @@ impl<P: StatePolicy> Engine<P> {
     /// declared).
     pub fn raise_external_by_name(&mut self, event_name: &str, event_data: &str) {
         if let Some(event) = P::resolve_event_by_name(event_name) {
-            self.raise_external(event, event_data, "");
+            self.raise_external_arrived_as(
+                event,
+                event_data,
+                "",
+                Self::arrival_name_of(event, event_name),
+            );
         } else {
             sce_log_debug!(
                 "Engine::raise_external_by_name: event '{}' matches no event of the document, ignoring",
@@ -2563,12 +2615,22 @@ impl<P: StatePolicy> Engine<P> {
             );
             return;
         };
+        // §scxml-5.10: the copy is exact, but what this machine is told the event
+        // is called is a fact about THIS machine's names — the source's arrival
+        // name was matched against the source's, and says nothing here.
+        #[cfg(not(feature = "no_std"))]
+        let metadata = EventMetadata {
+            name: crate::sce_string_from_str(Self::arrival_name_of(event, event_name)),
+            ..metadata.clone()
+        };
+        #[cfg(feature = "no_std")]
+        let metadata = metadata.clone();
         // `target` stays default: the copy is delivered to this machine, never
         // re-routed to the original event's target.
         self.raise_external_with_meta(EventWithMetadata {
             event,
             payload: P::Payload::default(),
-            metadata: metadata.clone(),
+            metadata,
             #[cfg(not(feature = "no_std"))]
             target: SceString::new(),
         });
@@ -3169,10 +3231,9 @@ impl<P: StatePolicy> Engine<P> {
                 send_id,
             });
             if let Some(resp) = response {
-                if let Some(evt) = P::get_event_from_name(&resp.event_name) {
-                    let mut meta = EventWithMetadata::new(evt);
-                    meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-                    meta.metadata.data = resp.event_data;
+                let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+                metadata.data = resp.event_data;
+                if let Some(meta) = Self::arriving_event(&resp.event_name, metadata) {
                     self.external_queue.raise(meta);
                 }
             }
@@ -3685,33 +3746,26 @@ impl<P: StatePolicy> Engine<P> {
         // descriptor matches — as an SCXML child's completion does. Looking
         // up only the specific name lost every completion a document handled
         // generically.
-        let (event_name, generic) = match end {
-            HostInvokeEnd::Done => (
-                crate::invoke::create_done_invoke_event_name(invoke_id),
-                crate::invoke::DONE_INVOKE_EVENT,
-            ),
-            HostInvokeEnd::Failed => (
-                format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX),
-                crate::invoke::ERROR_INVOKE_EVENT,
-            ),
+        let event_name = match end {
+            HostInvokeEnd::Done => crate::invoke::create_done_invoke_event_name(invoke_id),
+            HostInvokeEnd::Failed => format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX),
         };
-        if let Some(evt) =
-            P::get_event_from_name(&event_name).or_else(|| P::get_event_from_name(generic))
-        {
-            let mut meta = EventWithMetadata::new(evt);
-            meta.metadata =
-                EventMetadata::external(SceString::new(), crate::sce_string_from_str(origin));
-            // An empty `origin_type` keeps the one every host completion has
-            // carried, so `complete_host_invoke` reads as it always did.
-            if !origin_type.is_empty() {
-                meta.metadata.origin_type = crate::sce_string_from_str(origin_type);
-            }
-            meta.metadata.data = crate::sce_string_from_str(data);
-            // §scxml-5.10.1: the completion is an event of the invocation, so
-            // `_event.invokeid` is the invocation's id — the one the event
-            // names and the host was handed.
-            meta.metadata.invoke_id = crate::sce_string_from_str(invoke_id);
-            meta.metadata.host_invoke_token = Some(token);
+        let mut metadata =
+            EventMetadata::external(SceString::new(), crate::sce_string_from_str(origin));
+        // An empty `origin_type` keeps the one every host completion has
+        // carried, so `complete_host_invoke` reads as it always did.
+        if !origin_type.is_empty() {
+            metadata.origin_type = crate::sce_string_from_str(origin_type);
+        }
+        metadata.data = crate::sce_string_from_str(data);
+        // §scxml-5.10.1: the completion is an event of the invocation, so
+        // `_event.invokeid` is the invocation's id — the one the event
+        // names and the host was handed.
+        metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+        metadata.host_invoke_token = Some(token);
+        // §scxml-5.10: `_event.name` is the specific name, whichever descriptor
+        // of the document it was matched through.
+        if let Some(meta) = Self::arriving_event(&event_name, metadata) {
             self.external_queue.raise(meta);
         }
         true
@@ -3776,13 +3830,10 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "no_std"))]
     fn raise_host_invoke_deadline(&mut self, invoke_id: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
-        if let Some(evt) = P::get_event_from_name(&event_name)
-            .or_else(|| P::get_event_from_name(crate::invoke::ERROR_INVOKE_EVENT))
-        {
-            let mut meta = EventWithMetadata::new(evt);
-            meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-            meta.metadata.data = crate::sce_string_from_str("\"deadline\"");
-            meta.metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+        let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+        metadata.data = crate::sce_string_from_str("\"deadline\"");
+        metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+        if let Some(meta) = Self::arriving_event(&event_name, metadata) {
             self.external_queue.raise(meta);
         }
     }
@@ -3835,12 +3886,12 @@ impl<P: StatePolicy> Engine<P> {
         let handler = self.host_processors.handler_for(&processor_type)?;
         let replies = handler(request);
         for reply in &replies {
-            if let Some(evt) = P::resolve_event_by_name(&reply.event_name) {
-                let mut meta = EventWithMetadata::new(evt);
-                // §scxml-C-1: a reply from outside the machine arrives on
-                // the external queue, like any event the host raises.
-                meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-                meta.metadata.data = reply.event_data.clone();
+            // §scxml-C-1: a reply from outside the machine arrives on the external
+            // queue, like any event the host raises; and `_event.name` is the name
+            // the host gave it (§scxml-5.10).
+            let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+            metadata.data = reply.event_data.clone();
+            if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {
                 self.external_queue.raise(meta);
             }
         }
@@ -4256,6 +4307,15 @@ impl<P: StatePolicy> Engine<P> {
             // the `<send>` that produced the original event, and inheriting it
             // would re-route the child's copy instead of delivering it.
             if concepts::has_autoforward::<P>() {
+                // §scxml-5.10: under the name the event arrived under, which is
+                // the member's own unless a door cut a longer one back to it.
+                #[cfg(not(feature = "no_std"))]
+                let name = if event_with_meta.metadata.name.is_empty() {
+                    P::get_event_name(event_with_meta.event)
+                } else {
+                    event_with_meta.metadata.name.as_str()
+                };
+                #[cfg(feature = "no_std")]
                 let name = P::get_event_name(event_with_meta.event);
                 let metadata = event_with_meta.metadata.clone();
                 self.with_policy(|policy, engine| {

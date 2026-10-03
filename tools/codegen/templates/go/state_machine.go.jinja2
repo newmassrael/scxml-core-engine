@@ -271,6 +271,11 @@ type {{ machine_name }}Policy struct {
 {% endif %}
 {% if model.needs_event_name %}
 	pendingEventName string
+	// W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer
+	// than the enum value it was matched through (`request.new` for a transition on
+	// `request`); empty when the value's own name is the name. Filled from the
+	// event's metadata before the event is bound, and read by BindCurrentEvent.
+	pendingEventArrivalName string
 {% endif %}
 {% if model.needs_event_data %}
 	pendingEventData string
@@ -763,8 +768,12 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(_ string, _ sce.
 {% endif %}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *{{ machine_name }}Policy) PopulateEventMetadata(meta *sce.EventMetadata) {
+{% if model.needs_event_name %}
+	p.pendingEventArrivalName = meta.Name
+{% endif %}
 {% if event_payload_active %}
 	// NL→IR Item C1 Path A: lift the dequeued event's typed payload from the
 	// type-erased carrier into the typed policy field the native guards read
@@ -819,6 +828,7 @@ func (p *{{ machine_name }}Policy) ClearEventMetadata() {
 {% endif %}
 {% if model.needs_event_name %}
 	p.pendingEventName = ""
+	p.pendingEventArrivalName = ""
 {% endif %}
 {% if model.needs_event_data %}
 	p.pendingEventData = ""

@@ -245,6 +245,11 @@ func (e EmptyFinalizeUpdatesTheLocationEvent) String() string {
 
 type EmptyFinalizeUpdatesTheLocationPolicy struct {
 	pendingEventName string
+	// W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer
+	// than the enum value it was matched through (`request.new` for a transition on
+	// `request`); empty when the value's own name is the name. Filled from the
+	// event's metadata before the event is bound, and read by BindCurrentEvent.
+	pendingEventArrivalName string
 	pendingEventData string
 	pendingEventType string
 	pendingEventSendid string
@@ -995,7 +1000,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteFinalizeForChildEvent(eve
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		if se != nil {
-			eventName := p.GetEventName(eventWithMeta.Event)
+			// §scxml-5.10: under the name the child sent it, which is the value's own
+			// unless a name this document does not write was matched through a prefix.
+			eventName := eventWithMeta.Metadata.Name
+			if eventName == "" {
+				eventName = p.GetEventName(eventWithMeta.Event)
+			}
 			// W3C SCXML 6.4: `<finalize>` binds the child's event so the
 			// handler can read it, and the rung that binding chose is not
 			// this site's to report. The parent's own dequeue already
@@ -1289,8 +1299,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetActiveStates(_ []EmptyFinaliz
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
+	p.pendingEventArrivalName = meta.Name
 	p.pendingEventData = meta.Data
 	p.pendingEventType = meta.EventType.String()
 	p.pendingEventSendid = meta.SendID
@@ -1316,6 +1328,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) LiftTypedPayload(event EmptyFina
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ClearEventMetadata() {
 	p.pendingEventName = ""
+	p.pendingEventArrivalName = ""
 	p.pendingEventData = ""
 	p.pendingEventType = ""
 	p.pendingEventSendid = ""
@@ -1502,7 +1515,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) BindCurrentEvent(event EmptyFina
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
-		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
+		//
+		// §scxml-5.10: `_event.name` is the name the event ARRIVED under, which is
+		// longer than its value's when a name the document does not write was matched
+		// through a prefix (§scxml-3.12.1).
+		name := p.pendingEventArrivalName
+		if name == "" {
+			name = p.GetEventName(event)
+		}
+		engine.NotePayloadReading(event, p.setCurrentEvent(name))
 	}
 }
 

@@ -5529,6 +5529,14 @@
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "header_keys",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_an_event_keeps_the_name_it_was_sent_under_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_an_event_keeps_the_name_it_was_sent_under_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

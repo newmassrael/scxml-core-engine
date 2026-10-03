@@ -226,13 +226,13 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
         strncpy(evt.data, event_data, (size_t)SCE_MAX_DATA_LEN - 1u);
         evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
     }
-    {% for ev_name in model.events | sort %}
-    if (strcmp(name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
+    /* §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
+       not this machine's, so one this document does not write reaches it as the
+       event of the longest prefix it does, under the name the child sent
+       (`evt.name`). One that no prefix of is written is dropped. */
+    if ({{ csym_prefix }}{{ model.name }}_arrive(name, strlen(name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
-        return;
     }
-    {% endfor %}
 }
 {% endif %}
 
@@ -541,6 +541,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                    the `Event::Done_invoke_<id>` vs `Event::Done_invoke`
                    ternary. */
                 _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+{% if not invoke_info.use_specific_event %}
+/* §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, though the
+   document listens for the generic descriptor it is matched through. */
+sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
                 sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {% if invoke_info.child_needs_script_engine %}
                 /* W3C SCXML 5.5 + 6.3.1: lift the child's `<final><donedata>`
@@ -666,6 +671,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                     memset(&_done_evt, 0, sizeof(_done_evt));
                     _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+{% if not invoke_info.use_specific_event %}
+/* §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, though the
+   document listens for the generic descriptor it is matched through. */
+sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
                     sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                     {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
                 }
@@ -689,6 +699,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
                 _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+{% if not invoke_info.use_specific_event %}
+/* §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, though the
+   document listens for the generic descriptor it is matched through. */
+sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
                 sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {% if invoke_info.child_needs_script_engine %}
                 /* W3C SCXML 5.5 + 6.3.1: hybrid sync-final donedata carry —
@@ -751,6 +766,11 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+{% if not invoke_info.use_specific_event %}
+/* §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, though the
+   document listens for the generic descriptor it is matched through. */
+sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
             sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {% if invoke_info.child_needs_script_engine %}
             /* W3C SCXML 5.5 + 6.3.1: hybrid async-final donedata carry. */
@@ -788,6 +808,11 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+{% if not invoke_info.use_specific_event %}
+/* §scxml-5.10: `_event.name` is the specific `done.invoke.<id>`, though the
+   document listens for the generic descriptor it is matched through. */
+sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
             sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {% if invoke_info.child_needs_script_engine %}
             /* W3C SCXML 5.5 + 6.3.1: scxml async-final donedata carry —

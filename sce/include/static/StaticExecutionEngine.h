@@ -258,6 +258,13 @@ public:
      */
     struct EventWithMetadata {
         Event event;
+        // §scxml-5.10: `_event.name` is the name an event ARRIVED under. The event is
+        // carried as the enum member of a name the document writes, and §scxml-3.12.1
+        // lets `request.new` take a transition on `request`, so the member alone loses
+        // the longer name. Set by a door that resolved a name through a prefix; empty
+        // means the member's own name IS the name, which is every event the document
+        // itself raises or sends.
+        std::string name;
         std::string data;
         std::string origin;                    // §scxml-5.10.1: _event.origin
         std::string sendId;                    // §scxml-5.10.1: _event.sendid
@@ -988,7 +995,9 @@ public:
      */
     void raiseExternal(const std::string &eventName, const std::string &eventData = "") {
         if (auto event = resolveEventByName(eventName)) {
-            raiseExternal(*event, eventData);
+            EventWithMetadata meta(*event, eventData, "", "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+            meta.name = arrivalNameOf(*event, eventName);
+            raiseExternal(meta);
         } else {
             SCE_LOG_DEBUG("AOT raiseExternal: Event '{}' matches no event of the document, ignoring", eventName);
         }
@@ -1004,6 +1013,18 @@ public:
     [[nodiscard]] std::optional<Event> resolveEventByName(const std::string &name) const {
         return ::SCE::Core::resolveArrivingEventName(
             name, [this](const std::string &exact) { return policy_.getEventFromName(exact); });
+    }
+
+    /**
+     * @brief What `EventWithMetadata::name` is for an event that arrived as `name` and was
+     *        delivered as `event` (§scxml-5.10)
+     *
+     * Empty when `event` is the document's own name for it, so an event the document
+     * raises or sends carries no copy of a name its member already holds; `name` when
+     * `resolveEventByName` had to cut it back to a shorter one.
+     */
+    [[nodiscard]] std::string arrivalNameOf(Event event, const std::string &name) const {
+        return name == policy_.getEventName(event) ? std::string() : name;
     }
 
     /**
@@ -1030,6 +1051,7 @@ public:
         // to this machine, never re-routed to the original event's target.
         EventWithMetadata meta(*event, forwarded.data, forwarded.origin, forwarded.sendId, forwarded.type,
                                forwarded.originType, forwarded.invokeId);
+        meta.name = arrivalNameOf(*event, forwarded.name);
         raiseExternal(meta);
     }
 
@@ -2267,7 +2289,10 @@ protected:
         // instead of delivering it to the child) — see ForwardedEvent.h.
         if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
             ::SCE::Common::ForwardedEvent forwarded;
-            forwarded.name = policy_.getEventName(eventWithMeta.event);
+            // §scxml-6.4 + §scxml-5.10: the copy is exact, so it is forwarded under the
+            // name the event arrived under, not the member it was matched through.
+            forwarded.name = eventWithMeta.name.empty() ? std::string(policy_.getEventName(eventWithMeta.event))
+                                                        : eventWithMeta.name;
             forwarded.data = eventWithMeta.data;
             forwarded.origin = eventWithMeta.origin;
             forwarded.sendId = eventWithMeta.sendId;
@@ -3420,15 +3445,14 @@ private:
         // descriptor matches — as an SCXML child's completion does.
         const std::string name = failed ? std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + invokeId
                                         : ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
-        auto ended = policy_.getEventFromName(name);
-        if (!ended) {
-            ended = policy_.getEventFromName(std::string(failed ? ::SCE::Core::InvokeHelper::ERROR_INVOKE_EVENT
-                                                                : ::SCE::Core::InvokeHelper::DONE_INVOKE_EVENT));
-        }
+        // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
+        // document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
+        const auto ended = resolveEventByName(name);
         if (ended) {
             EventWithMetadata completion(*ended, data, origin, "", "external",
                                          originType.empty() ? SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE : originType,
                                          invokeId);
+            completion.name = arrivalNameOf(*ended, name);
             completion.hostInvokeToken = token;
             raiseExternal(completion);
         } else {
@@ -3507,14 +3531,15 @@ private:
         if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) {
             return;
         }
-        auto expired =
-            policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + deadline.invokeId);
-        if (!expired) {
-            expired = policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_EVENT));
-        }
+        // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
+        // document (`error.invoke.<id>`, `error.invoke`, `error`) it was matched through.
+        const std::string name = std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + deadline.invokeId;
+        const auto expired = resolveEventByName(name);
         if (expired) {
             // The JSON spelling of the string, as every other backend carries it.
-            raiseExternal(EventWithMetadata(*expired, "\"deadline\"", "", "", "external", "", deadline.invokeId));
+            EventWithMetadata raised(*expired, "\"deadline\"", "", "", "external", "", deadline.invokeId);
+            raised.name = arrivalNameOf(*expired, name);
+            raiseExternal(raised);
         }
     }
 

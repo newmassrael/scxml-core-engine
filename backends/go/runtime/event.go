@@ -42,6 +42,15 @@ func (t EventType) String() string {
 // flowing through the engine carries an EventMetadata, which is copied into
 // _event.* fields in the script engine.
 type EventMetadata struct {
+	// Name is the _event.name the event ARRIVED under (§scxml-5.10), when that is
+	// not the name of the enum value that carries it. The event is carried as the
+	// value of a name the document writes, and §scxml-3.12.1 lets `request.new`
+	// take a transition on `request`, so the value alone loses the longer name.
+	// Set by a door that resolved a name through a prefix
+	// (Engine.ResolveEventByName); empty means the value's own name IS the name,
+	// which is every event the document itself raises or sends.
+	Name string
+
 	// Data is the _event.data payload as a JSON string (empty when no payload).
 	Data string
 

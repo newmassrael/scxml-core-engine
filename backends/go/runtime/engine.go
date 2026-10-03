@@ -878,7 +878,42 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 		log.Printf("[sce] Engine::RaiseExternalByName: event '%s' matches no event of the document, ignoring", eventName)
 		return
 	}
-	e.RaiseExternal(event, eventData, "")
+	// §scxml-5.10.1: what a host hands the external queue is typed "external"
+	// here, where it enters that queue; and `_event.name` is the name it gave.
+	meta := NewEventWithFields(event, eventData, "", "", EventTypeExternal, SCXMLEventProcessorType, "", "")
+	meta.Metadata.Name = e.arrivalNameOf(event, eventName)
+	e.externalQueue.Raise(meta)
+}
+
+// arrivalNameOf is what EventMetadata.Name is for an event that arrived as `name`
+// and was delivered as `event` (§scxml-5.10): empty when `event` is the document's
+// own name for it, so an event the document raises or sends carries no copy of a
+// name its value already holds, and `name` when ResolveEventByName had to cut it
+// back to a shorter one.
+func (e *Engine[S, E]) arrivalNameOf(event E, name string) string {
+	if e.policy.GetEventName(event) == name {
+		return ""
+	}
+	return name
+}
+
+// arrivingEvent is the event an event that arrives BY NAME is delivered as, with
+// the name it arrived under carried beside it (§scxml-3.12.1 + §scxml-5.10).
+//
+// The one constructor for every door that turns a name from outside the machine
+// into an event of it — a child's `<send target="#_parent">`, a completion
+// `done.invoke.<id>`, a host's reply, an HTTP response — so none of them resolves a
+// name its own way. False when no transition the document has could match the name:
+// it is dropped. `metadata` is what the caller knows (Data, Origin, InvokeID); the
+// arrival name replaces whatever it carried, since a name matched against another
+// machine's says nothing here. The Rust twin is Engine::arriving_event.
+func (e *Engine[S, E]) arrivingEvent(name string, metadata EventMetadata) (EventWithMetadata[E], bool) {
+	event, ok := e.ResolveEventByName(name)
+	if !ok {
+		return EventWithMetadata[E]{}, false
+	}
+	metadata.Name = e.arrivalNameOf(event, name)
+	return EventWithMetadata[E]{Event: event, Metadata: metadata}, true
 }
 
 // RaiseExternalByNameWithMeta raises an autoforwarded external event that is
@@ -893,6 +928,10 @@ func (e *Engine[S, E]) RaiseExternalByNameWithMeta(eventName string, metadata Ev
 		log.Printf("[sce] Engine::RaiseExternalByNameWithMeta: event '%s' matches no event of the document, ignoring", eventName)
 		return
 	}
+	// §scxml-5.10: the copy is exact, but what this machine is told the event is
+	// called is a fact about THIS machine's names — the source's arrival name was
+	// matched against the source's, and says nothing here.
+	metadata.Name = e.arrivalNameOf(event, eventName)
 	// Target stays empty: the copy is delivered to this machine, never
 	// re-routed to the original event's target.
 	e.RaiseExternalWithMeta(EventWithMetadata[E]{Event: event, Metadata: metadata})
@@ -1726,10 +1765,9 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 		SendID:    sendID,
 	})
 	if resp != nil {
-		if evt, ok := e.policy.GetEventFromName(resp.EventName); ok {
-			meta := NewEventWithMetadata(evt)
-			meta.Metadata = ExternalMetadata("", "")
-			meta.Metadata.Data = resp.EventData
+		metadata := ExternalMetadata("", "")
+		metadata.Data = resp.EventData
+		if meta, ok := e.arrivingEvent(resp.EventName, metadata); ok {
 			e.externalQueue.Raise(meta)
 		}
 	}
@@ -2094,7 +2132,12 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		// decision owned by the originating <send>, and inheriting it would
 		// re-route the child's copy.
 		if e.policy.HasAutoforward() {
-			name := e.policy.GetEventName(eventWithMeta.Event)
+			// §scxml-5.10: under the name the event arrived under, which is the
+			// value's own unless a door cut a longer one back to it.
+			name := eventWithMeta.Metadata.Name
+			if name == "" {
+				name = e.policy.GetEventName(eventWithMeta.Event)
+			}
 			e.policy.ForwardToAutoforwardChildren(name, eventWithMeta.Metadata, e)
 		}
 		// §scxml-5.10: Populate policy metadata from event

@@ -631,7 +631,8 @@ func (p *InvokePrecedesExternalDequeuePolicy) SetActiveStates(_ []InvokePrecedes
 func (p *InvokePrecedesExternalDequeuePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokePrecedesExternalDequeueEvent], _ *sce.Engine[InvokePrecedesExternalDequeueState, InvokePrecedesExternalDequeueEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *InvokePrecedesExternalDequeuePolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

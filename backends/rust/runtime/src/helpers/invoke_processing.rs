@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::event::EventWithMetadata;
+use crate::event::EventMetadata;
 use crate::invoke::ChildSession;
 use crate::policy::StatePolicy;
 use crate::Engine;
@@ -55,17 +55,21 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
     };
 
     for (ev_name, ev_data) in parent_events {
-        if let Some(event) = P::get_event_from_name(&ev_name) {
-            let mut meta = EventWithMetadata::new(event);
-            meta.metadata.data = ev_data;
-            meta.metadata.invoke_id = active_invokes
+        // §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
+        // not the parent's, so one the parent does not write reaches it as the
+        // event of the longest prefix it does, under the name the child sent.
+        let mut metadata = EventMetadata {
+            data: ev_data,
+            invoke_id: active_invokes
                 .get(invoke_key)
-                .map_or_else(String::new, |cs| cs.invoke_id.clone());
-            meta.metadata.origin = active_invokes
+                .map_or_else(String::new, |cs| cs.invoke_id.clone()),
+            origin: active_invokes
                 .get(invoke_key)
-                .map_or_else(String::new, |cs| cs.session_id.clone());
-            meta.metadata.origin_type =
-                super::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
+                .map_or_else(String::new, |cs| cs.session_id.clone()),
+            ..Default::default()
+        };
+        metadata.origin_type = super::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
+        if let Some(meta) = Engine::<P>::arriving_event(&ev_name, metadata) {
             engine.raise_external_with_meta(meta);
         }
     }
@@ -86,11 +90,14 @@ pub fn raise_done_invoke<P: StatePolicy>(
     engine: &mut Engine<P>,
 ) {
     let specific = format!("done.invoke.{}", invoke_id);
-    let event = P::get_event_from_name(&specific).or_else(|| P::get_event_from_name("done.invoke"));
-    if let Some(ev) = event {
-        let mut meta = EventWithMetadata::new(ev);
-        meta.metadata.invoke_id = invoke_id.to_string();
-        meta.metadata.data = donedata;
+    // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
+    // document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
+    let metadata = EventMetadata {
+        invoke_id: invoke_id.to_string(),
+        data: donedata,
+        ..Default::default()
+    };
+    if let Some(meta) = Engine::<P>::arriving_event(&specific, metadata) {
         engine.raise_external_with_meta(meta);
     }
 }

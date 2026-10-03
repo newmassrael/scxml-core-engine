@@ -424,7 +424,8 @@ func (p *StaticDonedataPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMeta
 func (p *StaticDonedataPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[StaticDonedataState, StaticDonedataEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *StaticDonedataPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

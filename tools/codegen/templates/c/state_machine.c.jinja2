@@ -482,14 +482,71 @@ SCE_SM_FN static SCE_C_UNUSED const char *invocation_of_session(const {{ csym_pr
     return NULL;
 }
 {% endif %}
+/* §scxml-3.12.1: the event an event that arrives BY NAME is delivered as.
+
+   An event arrives by name from outside the document — a parent's `<send>`, an
+   autoforward, a child's `<send target="#_parent">`, a host's reply, an HTTP
+   response, a completion `done.invoke.<id>` — so the names it can arrive under
+   are open, while the enum holds only the names the document writes. A
+   transition's descriptor matches an event by whole tokens: `request` matches
+   `request.new` whether or not the document writes `request.new`. Every
+   descriptor that matches an arriving name is a token prefix of it, so is one of
+   the document's names, so is a prefix of the LONGEST of those — which therefore
+   matches exactly what the arriving name would. So the name is looked up whole,
+   and then without its last token, and so on: the first the document writes is
+   the event, and a name none of whose prefixes it writes matches no transition
+   and is dropped.
+
+   The one resolver every such door goes through, so none resolves a name its own
+   way. `arrival` (a buffer of `SCE_MAX_ID_LEN`, an event's `name` field) is left
+   EMPTY when the document writes the name itself and holds the whole name when it
+   had to be cut back to a shorter one (§scxml-5.10: `_event.name` is the name the
+   event arrived under). `name` is `len` bytes, not necessarily terminated, and is
+   copied into a bounded buffer before it is cut, so one longer than an id is
+   refused rather than truncated into another name. */
+SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_exact(const char *candidate) {
+    {% for event_name in model.events | sort %}
+    if (strcmp(candidate, "{{ event_name }}") == 0) {
+        return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
+    }
+    {% endfor %}
+    (void)candidate;
+    return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
+}
+
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_arrive(const char *name, size_t len, {{ csym_prefix }}{{ model.name }}_event_t *out, char *arrival) {
+    char candidate[SCE_MAX_ID_LEN];
+    arrival[0] = '\0';
+    if (name == NULL || len == 0u || len >= sizeof(candidate)) {
+        return false;
+    }
+    memcpy(candidate, name, len);
+    candidate[len] = '\0';
+    for (;;) {
+        const {{ csym_prefix }}{{ model.name }}_event_t found = {{ csym_prefix }}{{ model.name }}_event_exact(candidate);
+        if (found != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+            *out = found;
+            if (strlen(candidate) != len) {
+                memcpy(arrival, name, len);
+                arrival[len] = '\0';
+            }
+            return true;
+        }
+        char *cut = strrchr(candidate, '.');
+        if (cut == NULL) {
+            return false;
+        }
+        *cut = '\0';
+    }
+}
+
+/* Public, so a host can ask whether a name reaches the machine before it sends
+   one. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_resolve_event_by_name(const char *name, {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    char arrival[SCE_MAX_ID_LEN];
+    return name != NULL && {{ csym_prefix }}{{ model.name }}_arrive(name, strlen(name), out, arrival);
+}
 {% if model.host_invoker_types %}
-/* W3C SCXML 6.4.1: the host-invoke start site sits in `execute_pending_invokes`,
-   which this translation unit emits BEFORE the name→event mapping below. The
-   start site needs that mapping to turn a host-reported completion into
-   `done.invoke.<id>`, so it is forward-declared here — the same reason
-   `scheduled_push_routed` above is. Measured: without it an invoker-only document
-   compiled with an implicit declaration and would have failed at link. */
-SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len);
 /* W3C SCXML 6.4.1: the one place a host-run invocation starts. Forward-declared
    for the same reason — every start site sits above its definition. */
 SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
@@ -508,35 +565,12 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
    declaration of this function and would have failed at link. #}
 {% if model.needs_http_send or model.host_processor_types or model.host_invoker_types %}
 
-/* W3C SCXML C.2: standalone server's response carries the receiving
-   event's name as a JSON string (`{"event":"<name>",...}`). The generated
-   per-fixture helper below maps that name to the SM's `Event` enum at
-   runtime.
-
-   §scxml-6.2.5 gave it a second consumer: a host-served act answers with
-   event NAMES, chosen while the machine runs, so the same inverse mapping
-   is what turns the host's report into events. One helper for both,
-   because two would be two spellings of one document's event set.
-
-   The mapping is the inverse of the codegen-time
-   `EVENT_<UPPER>` synthesis used everywhere else in the source — same
-   set of names, same UPPER + dot/dash → underscore transform. Unknown
-   names collapse to `EVENT_NONE` and the surrounding arm declines to
-   raise. Linear scan is fine: the W3C C.2 corpus events are bounded by
-   the document's transition set (≤ ~10 names). The jinja2-inline contract puts
-   no helper functions in the runtime; the fixture-side static helper
-   is generated source, so it is in scope. */
-SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len) {
-    if (name == NULL || len == 0u) {
-        return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
-    }
-    {% for event_name in model.events | sort %}
-    if (len == {{ event_name | length }}u && memcmp(name, "{{ event_name }}", {{ event_name | length }}u) == 0) {
-        return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
-    }
-    {% endfor %}
-    return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
-}
+/* W3C SCXML C.2: standalone server's response carries the receiving event's
+   name as a JSON string (`{"event":"<name>",...}`), and §scxml-6.2.5 gave the
+   mapping a second consumer: a host-served act answers with event NAMES, chosen
+   while the machine runs. Both, like a host-run invocation's completion, turn a
+   name into an event through `_arrive` above, so none is a second spelling of one
+   document's event set. */
 {% if model.needs_http_send %}
 
 /* W3C SCXML C.2 + 6.2.4: perform one BasicHTTP `<send>` — the POST, and the
@@ -610,10 +644,10 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
         memset(&_http_evt, 0, sizeof(_http_evt));
         /* W3C SCXML C.2: dispatch the event by name. The server's response
            shapes `_event.name` from `_scxmleventname` if present, else
-           "HTTP.POST" / "event1"; `_event_from_name` resolves the runtime
-           string against this machine's known event set. */
-        _http_evt.event = {{ csym_prefix }}{{ model.name }}_event_from_name(_http_json.event_name, _http_json.event_name_len);
-        if (_http_evt.event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+           "HTTP.POST" / "event1"; `_arrive` resolves the runtime string
+           against this machine's known event set, and leaves the name it arrived
+           under in `_http_evt.name` (§scxml-5.10). */
+        if ({{ csym_prefix }}{{ model.name }}_arrive(_http_json.event_name, _http_json.event_name_len, &_http_evt.event, _http_evt.name)) {
             bool _http_data_fits = true;
 {% if model.needs_script_engine %}
             /* W3C SCXML C.2: the reply's `data` rides on the event it arrived
@@ -697,14 +731,13 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
     _entry->handler(_entry->user_data, request, &_replies);
     for (int _i = 0; _i < _replies.count; _i++) {
         const char *_name = _replies.entries[_i].event_name;
-        const {{ csym_prefix }}{{ model.name }}_event_t _ev =
-            {{ csym_prefix }}{{ model.name }}_event_from_name(_name, strlen(_name));
-        if (_ev == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-            continue;
-        }
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _reply_evt;
         memset(&_reply_evt, 0, sizeof(_reply_evt));
-        _reply_evt.event = _ev;
+        /* §scxml-5.10: `_event.name` is the name the host gave, not the member a
+           prefix of it was matched to. */
+        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name)) {
+            continue;
+        }
         {
             /* §scxml-B-2-8-1 reads this field as a host payload — XML to a
                DOM, JSON to a value, anything else to a normalized string —
@@ -3054,43 +3087,6 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
 {{ event_payload_lift_def }}
 {% endif %}
 
-/* §scxml-3.12.1: the event an event that arrives BY NAME is delivered as.
-
-   An event arrives by name from outside the document — a parent's `<send>`, an
-   autoforward — so the names it can arrive under are open, while the enum holds
-   only the names the document writes. A transition's descriptor matches an event
-   by whole tokens: `request` matches `request.new` whether or not the document
-   writes `request.new`. Every descriptor that matches an arriving name is a
-   token prefix of it, so is one of the document's names, so is a prefix of the
-   LONGEST of those — which therefore matches exactly what the arriving name
-   would. So the name is looked up whole, and then without its last token, and
-   so on: the first the document writes is the event, and a name none of whose
-   prefixes it writes matches no transition and is dropped. `name` is cut at a
-   `.` in a copy bounded by the buffer a forwarded name lives in, so a longer
-   one is refused rather than truncated into another name. Public, so a host
-   can ask whether a name reaches the machine before it sends one. */
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_resolve_event_by_name(const char *name, {{ csym_prefix }}{{ model.name }}_event_t *out) {
-    char candidate[SCE_MAX_ID_LEN];
-    size_t length = (name == NULL) ? 0u : strlen(name);
-    if (length == 0u || length >= sizeof(candidate)) {
-        return false;
-    }
-    memcpy(candidate, name, length + 1u);
-    for (;;) {
-        {% for ev_name in model.events | sort %}
-        if (strcmp(candidate, "{{ ev_name }}") == 0) {
-            *out = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
-            return true;
-        }
-        {% endfor %}
-        char *cut = strrchr(candidate, '.');
-        if (cut == NULL) {
-            return false;
-        }
-        *cut = '\0';
-    }
-}
-
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.2: String-keyed counterpart for
    `<send target="#_<invokeid>" event="X">` from the invoking parent.
@@ -3108,7 +3104,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     }
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    if ({{ csym_prefix }}{{ model.name }}_resolve_event_by_name(event_name, &evt.event)) {
+    if ({{ csym_prefix }}{{ model.name }}_arrive(event_name, strlen(event_name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
     }
 }
@@ -3131,7 +3127,10 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     sce_copy_bounded_event_type(evt.type, fwd->type);
     sce_copy_bounded_id(evt.origin_type, fwd->origin_type);
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
-    if ({{ csym_prefix }}{{ model.name }}_resolve_event_by_name(fwd->name, &evt.event)) {
+    /* §scxml-5.10: the copy is exact, but what this machine is told the event is
+       called is a fact about THIS machine's names — `evt.name` is the name the
+       sender gave it, or empty when the document writes it itself. */
+    if ({{ csym_prefix }}{{ model.name }}_arrive(fwd->name, strlen(fwd->name), &evt.event, evt.name)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
     }
 }
@@ -3491,6 +3490,17 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
     {% endfor %}
     default:
         break;
+    }
+    /* §scxml-5.10: `_event.name` is the name the event ARRIVED under. The chunk
+       above wrote the enum member's own name; when a door resolved a longer name
+       through a prefix (§scxml-3.12.1) it rides in `evt->name`, and replaces it. */
+    if (evt->name[0] != '\0') {
+        lua_getglobal(L, "_event");
+        if (lua_istable(L, -1)) {
+            lua_pushstring(L, evt->name);
+            lua_setfield(L, -2, "name");
+        }
+        lua_pop(L, 1);
     }
     /* W3C SCXML 6.2 / 6.4 (test233): hydrate `_event.data` from the
        payload the event itself carried — the only place a payload rides.
@@ -5100,7 +5110,8 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
     char name[SCE_MAX_ID_LEN];
     const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
     const size_t id_len = strlen(deadline->deadline_invoke_id);
-    {{ csym_prefix }}{{ model.name }}_event_t expired = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
+    memset(&raised, 0, sizeof(raised));
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, deadline->deadline_processor_type,
                                         deadline->deadline_invoke_id, deadline->deadline_token)) {
         return;
@@ -5109,20 +5120,16 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
                                     deadline->deadline_token)) {
         return;
     }
+    /* §scxml-5.10: `_event.name` is the specific name, whichever descriptor of
+       the document (`error.invoke.<id>`, `error.invoke`, `error`) it was matched
+       through. A name longer than any id cannot name an event of this machine. */
     if (prefix_len + id_len < sizeof(name)) {
         memcpy(name, SCE_ERROR_INVOKE_PREFIX, prefix_len);
         memcpy(name + prefix_len, deadline->deadline_invoke_id, id_len);
         name[prefix_len + id_len] = '\0';
-        expired = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
     }
-    if (expired == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        expired = {{ csym_prefix }}{{ model.name }}_event_from_name(SCE_ERROR_INVOKE_EVENT,
-                                                                    sizeof(SCE_ERROR_INVOKE_EVENT) - 1u);
-    }
-    if (expired != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
-        memset(&raised, 0, sizeof(raised));
-        raised.event = expired;
+    if (prefix_len + id_len < sizeof(name) &&
+        {{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
         /* The JSON spelling of the string, as every other backend carries it. */
         sce_copy_bounded_data(raised.data, "\"deadline\"");
         sce_copy_bounded_id(raised.invoke_id, deadline->deadline_invoke_id);
@@ -5265,10 +5272,10 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
                                       const char *origin, const char *origin_type) {
     char name[SCE_MAX_ID_LEN];
     const char *prefix = failed ? SCE_ERROR_INVOKE_PREFIX : SCE_DONE_INVOKE_PREFIX;
-    const char *generic = failed ? SCE_ERROR_INVOKE_EVENT : SCE_DONE_INVOKE_EVENT;
     const size_t prefix_len = strlen(prefix);
     size_t id_len;
-    {{ csym_prefix }}{{ model.name }}_event_t ended;
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
+    memset(&completion, 0, sizeof(completion));
     if (sm == NULL || processor_type == NULL || invoke_id == NULL) {
         return false;
     }
@@ -5287,14 +5294,11 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
     memcpy(name, prefix, prefix_len);
     memcpy(name + prefix_len, invoke_id, id_len);
     name[prefix_len + id_len] = '\0';
-    ended = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
-    if (ended == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        ended = {{ csym_prefix }}{{ model.name }}_event_from_name(generic, strlen(generic));
-    }
-    if (ended != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
-        memset(&completion, 0, sizeof(completion));
-        completion.event = ended;
+    /* §scxml-3.12.1 + §scxml-5.10: the specific `done.invoke.<id>` /
+       `error.invoke.<id>` when the document names it, otherwise the event of the
+       longest prefix it does (`done.invoke`, `done`) — and `_event.name` is the
+       specific name either way. */
+    if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &completion.event, completion.name)) {
         sce_copy_bounded_data(completion.data, data != NULL ? data : "");
         /* W3C SCXML 5.10.1: the completion is an event of the invocation, so
            `_event.invokeid` is the invocation's id — the one the event names

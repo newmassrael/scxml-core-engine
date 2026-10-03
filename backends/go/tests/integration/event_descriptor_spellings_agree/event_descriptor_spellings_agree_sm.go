@@ -465,7 +465,8 @@ func (p *EventDescriptorSpellingsAgreePolicy) ExecuteFinalizeForChildEvent(_ *sc
 func (p *EventDescriptorSpellingsAgreePolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[EventDescriptorSpellingsAgreeState, EventDescriptorSpellingsAgreeEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *EventDescriptorSpellingsAgreePolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 }
 

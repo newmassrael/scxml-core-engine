@@ -66,7 +66,15 @@
         self.ensure_script_engine();
 {% if model.needs_event_name %}
         if event != Self::null_event() {
-            let event_name = Self::get_event_name(event);
+            // §scxml-5.10: the name the event ARRIVED under, which is longer than
+            // its member's when a name the document does not write was matched
+            // through a prefix (§scxml-3.12.1).
+            let arrival = self.pending_event_arrival_name.clone();
+            let event_name: &str = if arrival.is_empty() {
+                Self::get_event_name(event)
+            } else {
+                arrival.as_str()
+            };
             self.pending_event_name = event_name.to_string();
             // §scxml-5.10.1: typed by the queue the engine took the event from.
             let event_type = sce_rust_runtime::EventType::classify(

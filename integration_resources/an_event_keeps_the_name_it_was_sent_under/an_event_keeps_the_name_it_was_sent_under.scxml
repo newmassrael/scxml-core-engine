@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 5.10 + 3.12.1: `_event.name` is the name an event ARRIVED under.
+
+     A transition's `event` descriptor matches by whole tokens (§3.12.1): a
+     transition on `request` takes `request.new` as well, whether or not the
+     document it sits in ever writes `request.new`. What the machine is then told
+     the event is called is a separate question, and §5.10 answers it: `name` is
+     "the name of the event", which for an event that arrived is the name it was
+     sent under — not the shorter descriptor it was matched through.
+
+     An engine that carries an event as the enumeration member of the descriptor
+     the document writes loses the longer name unless it carries it beside the
+     member, and a guard reading `_event.name` is then told `request`. The
+     public IRP suite never reads a name that is not one the document writes, so
+     nothing but this fixture fails when it is lost.
+
+     The child writes `request` and no other name that starts with it. The PARENT
+     writes `request.new`, so the name reaches the child from outside the
+     document it is matched in — the only way a name the document does not write
+     can arrive. The child's first transition takes it only when the machine is
+     told the whole name; the second takes it either way, so a lost name is
+     reported (`arrivedShortened`) rather than left to a timeout.
+
+     The verdict rides home as its own events and the parent halts in a `<final>`
+     the driver reads, as `autoforward_event_fields` does: this fixture stays on
+     the one axis of the name an event carries.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="an_event_keeps_the_name_it_was_sent_under">
+    <state id="phase">
+        <invoke type="scxml" id="listener">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="waiting">
+                    <state id="waiting">
+                        <onentry>
+                            <send target="#_parent" event="ready"/>
+                        </onentry>
+                        <transition event="request"
+                                    cond="_event.name === 'request.new'"
+                                    target="heard">
+                            <send target="#_parent" event="arrivedAsSent"/>
+                        </transition>
+                        <transition event="request" target="heard">
+                            <send target="#_parent" event="arrivedShortened"/>
+                        </transition>
+                    </state>
+                    <final id="heard"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="ready">
+            <send target="#_listener" event="request.new"/>
+        </transition>
+        <transition event="arrivedAsSent" target="pass"/>
+        <transition event="arrivedShortened" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+        <transition event="error.communication" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

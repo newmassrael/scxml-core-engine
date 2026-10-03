@@ -226,6 +226,13 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
    event record is value-typed and queue storage is statically reservable. #}
 typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
     {{ csym_prefix }}{{ model.name }}_event_t event;
+    /* §scxml-5.10: `_event.name` is the name an event ARRIVED under. The event
+       is carried as the enum member of a name the document writes, and
+       §scxml-3.12.1 lets `request.new` take a transition on `request`, so the
+       member alone loses the longer name. Set by a door that resolved a name
+       through a prefix; empty means the member's own name IS the name, which is
+       every event the document itself raises or sends. */
+    char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
     /* §scxml-C-1: `_event.origin` is the location the sending session
        published, so it is sized as a URI rather than as an id — see

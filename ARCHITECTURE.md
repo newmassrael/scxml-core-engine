@@ -922,9 +922,10 @@ engine has its driver; the Python one is
 
 ### Event Names at the Door (Single Source of Truth)
 
-An event that arrives BY NAME — a child's autoforward, a host's
-`sendEventByName`, a host-served act's reply, a Mesh peer — meets a machine
-whose generated `Event` type holds only the names its document writes. W3C SCXML
+An event that arrives BY NAME — a child's `<send target="#_parent">` or autoforward,
+a completion `done.invoke.<id>`, a host's `sendEventByName` or its host-served
+act's reply, an HTTP response, a Mesh peer — meets a machine whose generated
+`Event` type holds only the names its document writes. W3C SCXML
 3.12.1 matches a transition's `event` against an event's name by whole tokens, so
 `request` matches `request.new` whether or not the document ever writes
 `request.new`, and the names an event can arrive under are open. Every engine
@@ -962,15 +963,41 @@ generator emitted the lookup only for machines with an invoke, a parent, a scrip
 engine, an HTTP send, a host processor or a typed payload, and now emits it for
 every machine.
 
-`sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
-(over `static_event_arrival.scxml` beside it) holds the cases, and a step that
-expects the drop
-says `"dropped": true`; every harness but Kotlin's asks the engine's own rule
-whether the name reaches the machine (Kotlin's lookup is not public, so it holds
-the variables that did not move). Not yet: an arriving name no prefix of which the
-document writes is dropped even where the document listens with `event="*"`, and
-`_event.name` reads the descriptor's name, not the arrival name, on every engine
-but Python (`EventMetadata.name`).
+**The arrival name travels beside the member.** W3C SCXML 5.10 makes
+`_event.name` the name the event was sent under, and an event delivered as the
+member of a shorter descriptor has lost it. Every door therefore also records the
+whole name in the event's metadata (`EventMetadata.name`,
+`EventWithMetadata::name`, `event_with_meta_t.name`) when the member's own name
+differs from it, and leaves it empty otherwise, so an event the document raises or
+sends carries no copy of a name its member already holds. The generated `_event`
+binding reads it before the member's name, an autoforward and a `<finalize>` read
+it too, and a saved queued event is saved under it and restored through the same
+rule. A completion `done.invoke.<id>` is told as the specific name whichever
+descriptor (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through. The
+doors, with one constructor per engine (Rust `Engine::arriving_event`, Go
+`Engine.arrivingEvent`, Kotlin `arrivalNameOf`, C++
+`StaticExecutionEngine::arrivalNameOf`, C11 `<machine>_arrive`):
+
+- a host or a parent delivering by name; an autoforwarded copy; a Mesh envelope;
+- a child's `<send target="#_parent">`;
+- a host-served act's reply, an HTTP response;
+- a host-run invocation's completion, failure and deadline; an SCXML child's
+  `done.invoke`.
+
+Two documents hold two questions. `static_event_arrival.json` (over
+`static_event_arrival.scxml`, both under
+`sce-build/tests/fixtures/static_datamodel/`) holds WHICH event a name is delivered
+as, and a step that expects the drop says `"dropped": true`; every harness but
+Kotlin's asks the engine's own rule whether the name reaches the machine (Kotlin's
+lookup is not public, so it holds the variables that did not move). The integration
+stem `integration_resources/an_event_keeps_the_name_it_was_sent_under/` holds what
+the machine is TOLD it is called, on every channel — a `sce-static` machine has no
+`_event`, so a scenario cannot.
+
+Not yet: an arriving name no prefix of which the document writes is dropped even
+where the document listens with `event="*"` (the transition would take it in the
+Interpreter), and a `<send eventexpr>` a machine sends itself with a computed name
+the document does not write is looked up exactly.
 
 ### LuaDOMBinding
 

@@ -540,6 +540,11 @@ struct {{ model.name }}Policy {
     {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name storage for _event.name access (test318)
     mutable ::std::string pendingEventName_;
+    // W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer than the
+    // enum member it was matched through (`request.new` for a transition on `request`);
+    // empty when the member's own name is the name. Filled from the event's metadata
+    // before the event is bound, and read by bindCurrentEvent.
+    mutable ::std::string pendingEventArrivalName_;
     {% endif %}
     {% if model.needs_event_data %}
     // W3C SCXML 5.10: Event data storage for _event.data access

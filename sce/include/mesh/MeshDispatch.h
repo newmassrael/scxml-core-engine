@@ -269,6 +269,11 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         // here would duplicate that classification in a second place.
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
+        // §scxml-5.10: `_event.name` is the name the peer sent, not the member it
+        // was matched through.
+        if (env.type != Policy::getEventName(*ev)) {
+            meta.name = env.type;
+        }
         // SCE_MESH.md §mesh-9.5: a reply whose `rpc_status` is present and
         // non-Ok carries no result — the payload is empty by construction
         // and the thing the author needs is the reason. Surfacing
@@ -339,6 +344,9 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         }
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
+        if (env.type != Policy::getEventName(*ev)) {
+            meta.name = env.type;
+        }
         meta.data = std::string(env.data.begin(), env.data.end());
         meta.type = "external";
         meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;

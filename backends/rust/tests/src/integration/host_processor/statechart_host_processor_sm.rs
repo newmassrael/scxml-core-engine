@@ -143,6 +143,11 @@ pub struct StatechartHostProcessorPolicy {
     // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer than
+    // the enum member it was matched through (`request.new` for a transition on
+    // `request`); empty when the member's own name is the name. Filled from the
+    // event's metadata before the event is bound, and read by `bind_current_event`.
+    pending_event_arrival_name: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
     // typed path reads the Payload sum, not this field — so needs_script_engine).
     pending_event_data: ::sce_rust_runtime::SceString,
@@ -275,6 +280,7 @@ impl StatechartHostProcessorPolicy {
         Self {
             script_engine,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
+            pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
             pending_event_type: ::sce_rust_runtime::SceString::new(),
             pending_event_sendid: ::sce_rust_runtime::SceString::new(),
@@ -790,6 +796,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
+        self.pending_event_arrival_name = metadata.name.clone();
         self.pending_event_data = metadata.data.clone();
         self.pending_event_type =
             ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
@@ -803,6 +810,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
     // Ports C++ EventMetadataHelper::clearPolicyMetadata
     fn clear_event_metadata(&mut self) {
         self.pending_event_name.clear();
+        self.pending_event_arrival_name.clear();
         self.pending_event_data.clear();
         self.pending_event_type.clear();
         self.pending_event_sendid.clear();
@@ -1119,7 +1127,15 @@ impl StatePolicy for StatechartHostProcessorPolicy {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
         if event != Self::null_event() {
-            let event_name = Self::get_event_name(event);
+            // §scxml-5.10: the name the event ARRIVED under, which is longer than
+            // its member's when a name the document does not write was matched
+            // through a prefix (§scxml-3.12.1).
+            let arrival = self.pending_event_arrival_name.clone();
+            let event_name: &str = if arrival.is_empty() {
+                Self::get_event_name(event)
+            } else {
+                arrival.as_str()
+            };
             self.pending_event_name = event_name.to_string();
             // §scxml-5.10.1: typed by the queue the engine took the event from.
             let event_type = sce_rust_runtime::EventType::classify(

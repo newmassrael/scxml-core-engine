@@ -1,0 +1,43 @@
+# Mutation cases for "an event keeps the name it was sent under" (Python engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_an_event_keeps_the_name_it_was_sent_under.cases`.
+#
+# A transition on `request` takes `request.new` by whole-token matching
+# (§scxml-3.12.1), and `_event.name` is then the name the event was sent under
+# (§scxml-5.10), not the descriptor it was matched through. The engine carries the
+# event as the member of a name the document writes, so the whole name has to
+# travel beside it: every by-name door records it in `EventMetadata.name`, and the
+# generated binding reads it before the member's name.
+# `integration_resources/an_event_keeps_the_name_it_was_sent_under/` is the
+# document: the parent writes `request.new`, the child only `request`, and the
+# child reports `arrivedShortened` unless it is told the whole name.
+#
+# The parent reaches the child through `Invoke.forward_event`, so that is the door
+# this holds; the document's other doors (`send_external_by_name`, a host-run
+# invocation's deadline) carry the name the same way and are held by the static
+# scenario `static_event_arrival`.
+#
+# Python compiles nothing, so the module on disk is the artifact and every edit
+# here is a `mutation_runtime_targets`. The machine the oracle imports is
+# GENERATED and gitignored, so its regeneration is declared.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/an_event_keeps_the_name_it_was_sent_under/
+mutation_regen scripts/regen_an_event_keeps_the_name_it_was_sent_under_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/invoke.py
+mutation_oracles backends/python/tests/integration/an_event_keeps_the_name_it_was_sent_under/test_an_event_keeps_the_name_it_was_sent_under_aot.py
+
+mutation_case "the forwarded event carries no arrival name" <<'PY'
+edit("backends/python/runtime/sce_runtime/invoke.py",
+     "                name=event_name if policy.get_event_from_name(event_name) is None else \"\",\n",
+     "                name=\"\",\n")
+PY
+
+mutation_case "the arrival name carried is not the name that was sent" <<'PY'
+edit("backends/python/runtime/sce_runtime/invoke.py",
+     "                name=event_name if policy.get_event_from_name(event_name) is None else \"\",\n",
+     "                name=event_name[:-1],\n")
+PY

@@ -174,6 +174,11 @@ func (e InvokeExpressionFailureIsReportedEvent) String() string {
 
 type InvokeExpressionFailureIsReportedPolicy struct {
 	pendingEventName string
+	// W3C SCXML 5.10 + 3.12.1: the name the event arrived under when that is longer
+	// than the enum value it was matched through (`request.new` for a transition on
+	// `request`); empty when the value's own name is the name. Filled from the
+	// event's metadata before the event is bound, and read by BindCurrentEvent.
+	pendingEventArrivalName string
 	pendingEventData string
 	pendingEventType string
 	pendingEventSendid string
@@ -762,8 +767,10 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecuteFinalizeForChildEvent(_
 func (p *InvokeExpressionFailureIsReportedPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[InvokeExpressionFailureIsReportedState, InvokeExpressionFailureIsReportedEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
-// Note: event name is set separately via setCurrentEvent(), not from metadata.
+// Note: event name is set separately via setCurrentEvent(); metadata supplies
+// only the name the event ARRIVED under, when that is not its value's own.
 func (p *InvokeExpressionFailureIsReportedPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
+	p.pendingEventArrivalName = meta.Name
 	p.pendingEventData = meta.Data
 	p.pendingEventType = meta.EventType.String()
 	p.pendingEventSendid = meta.SendID
@@ -789,6 +796,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) LiftTypedPayload(event InvokeE
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *InvokeExpressionFailureIsReportedPolicy) ClearEventMetadata() {
 	p.pendingEventName = ""
+	p.pendingEventArrivalName = ""
 	p.pendingEventData = ""
 	p.pendingEventType = ""
 	p.pendingEventSendid = ""
@@ -870,7 +878,15 @@ func (p *InvokeExpressionFailureIsReportedPolicy) BindCurrentEvent(event InvokeE
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
-		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
+		//
+		// §scxml-5.10: `_event.name` is the name the event ARRIVED under, which is
+		// longer than its value's when a name the document does not write was matched
+		// through a prefix (§scxml-3.12.1).
+		name := p.pendingEventArrivalName
+		if name == "" {
+			name = p.GetEventName(event)
+		}
+		engine.NotePayloadReading(event, p.setCurrentEvent(name))
 	}
 }
 
