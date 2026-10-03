@@ -1576,6 +1576,24 @@ INERT = [
     # entry an edit here is an unclassified path, and rule 1 buys the entire
     # suite to verify a script that one always-on gate already exercises.
     "scripts/mutate",
+    # The generator of the print diagram's glyph-advance table, inert on the
+    # strongest reading of the claim: NOTHING reads it. Checked 2026-10-03
+    # rather than assumed — a search of the tree for its name finds the two
+    # `@generated` comments it leaves in `sce-build/src/diagram/` and its own
+    # usage line, and no gate script, workflow or test opens it. What the
+    # build and the tests consume is the table it WRITES
+    # (`sce-build/src/diagram/metrics_table.rs`, path-scoped like every
+    # source under that crate and pinned to one font revision by
+    # `the_table_is_pinned_to_one_font_revision`), so an edit to the
+    # generator that is not followed by a regeneration changes no behaviour
+    # a gate could see.
+    #
+    # ⚠ What this entry does NOT claim is that the pair stays in step: the
+    # generator needs the font file, which no lane has, so "the table is what
+    # this script writes" is held by whoever regenerates it, not by a gate.
+    # Before the entry the path was unclassified and an edit to it took the
+    # Rule 1 branch, buying every gate for a script none of them runs.
+    "tools/diagram/gen_font_metrics.py",
 ]
 
 # Entries here list only TRACKED paths, because a changed path comes from
