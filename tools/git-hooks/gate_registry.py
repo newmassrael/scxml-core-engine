@@ -2721,7 +2721,12 @@ def self_test(repo_root: Path) -> int:
             for rel in include_re.findall(text):
                 resolved = (repo_root / src).parent.joinpath(rel).resolve()
                 try:
-                    path = str(resolved.relative_to(repo_root))
+                    # `as_posix`: a trigger is a glob written with `/`, and a path
+                    # spelled with the platform's own separator (`schemas\x.json` on
+                    # Windows) matches none of them, which read as a hundred inputs
+                    # that no lane starts for (measured 2026-10-03, the first run of
+                    # this runner on Windows).
+                    path = resolved.relative_to(repo_root).as_posix()
                 except ValueError:
                     continue
                 targets_seen += 1
