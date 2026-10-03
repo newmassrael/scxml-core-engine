@@ -1161,6 +1161,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "name",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "symbol": "detail",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5597,6 +5602,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "name",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "symbol": "detail",
           "kind": "references"
         }
       ],

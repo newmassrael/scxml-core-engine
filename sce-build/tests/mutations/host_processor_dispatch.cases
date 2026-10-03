@@ -43,14 +43,12 @@ PY
 # parameter, so the tree stops compiling and the round reports INCONCLUSIVE
 # instead of a verdict — measured, not guessed. Looking the reply up under a
 # name the machine does not declare drops it just as completely and keeps
-# the types inferred.
+# the types inferred. The lookup is `Engine::arriving_event`, the one resolver
+# every by-name door goes through (§scxml-3.12.1).
 mutation_case "the reply is looked up under a name the machine never declared" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        for reply in &replies {
-            if let Some(evt) = P::get_event_from_name(&reply.event_name) {""",
-     """        for reply in &replies {
-            let _ = &reply.event_name;
-            if let Some(evt) = P::get_event_from_name("") {""")
+     """            if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {""",
+     """            if let Some(meta) = Self::arriving_event("", metadata) {""")
 PY
 
 # ── …or is reached for the wrong type ───────────────────────────────

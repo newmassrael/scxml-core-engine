@@ -322,6 +322,8 @@ class StatePolicy(ABC, Generic[S, E]):
         Provided, not generated: the rule is one, and a generated copy per
         document is a copy that can age. `get_event_from_name` stays the
         exact table."""
+        # §scxml-3.12.1: cut the name at its last `.` until the document
+        # writes what is left.
         candidate = event_name
         while True:
             event = self.get_event_from_name(candidate)

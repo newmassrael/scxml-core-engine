@@ -123,10 +123,10 @@ PY
 
 mutation_case "a reply naming an undeclared event is raised anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        if (_ev == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+     """        if (!{{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name)) {
             continue;
         }""",
-     "")
+     """        (void){{ csym_prefix }}{{ model.name }}_arrive(_name, strlen(_name), &_reply_evt.event, _reply_evt.name);""")
 PY
 
 # ── The bounded report is shortened instead of reported ─────────────

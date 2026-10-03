@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "928c9006a02",
+  "embed_version": "ae818b1ab82",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 296,
+  "symbol_count": 297,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -707,6 +707,12 @@
         "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &) EventMetadata"
       ],
       "name": "SCE::Core::EventMetadata"
+    },
+    {
+      "header": "core/EventNameResolver.h",
+      "kind": "function",
+      "name": "SCE::Core::resolveArrivingEventName<T>",
+      "signature": "auto SCE::Core::resolveArrivingEventName<T>(std::string_view, Lookup &&)"
     },
     {
       "header": "core/EventProcessingAlgorithms.h",

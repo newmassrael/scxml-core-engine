@@ -196,6 +196,22 @@ bool tryDeliverInvokeDone(const MeshEnvelope & /*env*/, Engine & /*engine*/, std
     return false;
 }
 
+/// §scxml-5.10: record on `meta` the name `type` arrived under, when `event` is the
+/// member of a shorter name (§scxml-3.12.1) and not of `type` itself. A receiver that
+/// keeps no arrival name — a test double, an engine of a consumer's own — has nowhere
+/// to record it, and is left as it was.
+template <typename Policy, typename Meta, typename Event>
+void recordArrivalName(Meta &meta, const Event &event, const std::string &type) {
+    if constexpr (requires {
+                      meta.name;
+                      Policy::getEventName(event);
+                  }) {
+        if (type != Policy::getEventName(event)) {
+            meta.name = type;
+        }
+    }
+}
+
 }  // namespace detail
 
 /// Dispatch a MeshEnvelope to a state machine engine based on pattern kind.
@@ -249,7 +265,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         // A peer names the event, so the name is open (§scxml-3.12.1): it is delivered
         // as the document's event it extends, when it is not one the document writes.
         auto ev = ::SCE::Core::resolveArrivingEventName(
-            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact); });
+            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact.c_str()); });
         if (!ev) {
             return false;
         }
@@ -271,9 +287,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         meta.event = *ev;
         // §scxml-5.10: `_event.name` is the name the peer sent, not the member it
         // was matched through.
-        if (env.type != Policy::getEventName(*ev)) {
-            meta.name = env.type;
-        }
+        detail::recordArrivalName<Policy>(meta, *ev, env.type);
         // SCE_MESH.md §mesh-9.5: a reply whose `rpc_status` is present and
         // non-Ok carries no result — the payload is empty by construction
         // and the thing the author needs is the reason. Surfacing
@@ -338,15 +352,13 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
             return false;
         }
         auto ev = ::SCE::Core::resolveArrivingEventName(
-            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact); });
+            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact.c_str()); });
         if (!ev) {
             return false;
         }
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
-        if (env.type != Policy::getEventName(*ev)) {
-            meta.name = env.type;
-        }
+        detail::recordArrivalName<Policy>(meta, *ev, env.type);
         meta.data = std::string(env.data.begin(), env.data.end());
         meta.type = "external";
         meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
