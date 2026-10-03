@@ -233,12 +233,22 @@ export class App {
     this.info = null;
     this.removing = false;
     let opened = false;
+    // What the screen held when the read began. `openWork` asked about unsaved text at
+    // that moment only, and a read takes time: whatever is typed after it is not covered
+    // by that question, so it is asked again when the answer arrives.
+    const editorAtAsk = this.editor;
+    const answersAtAsk = this.answers;
     try {
       const [source, entries] = await Promise.all([
         this.api.readSource(work.id),
         this.api.history(work.id),
       ]);
       if (ticket !== this.opening) return;
+      if (this.typedSince(editorAtAsk, answersAtAsk)) {
+        this.pendingSwitch = work;
+        this.render();
+        return;
+      }
       this.session += 1;
       this.selected = work;
       this.editor = open(work.id, source);
@@ -1005,6 +1015,16 @@ export class App {
   private somethingIsSaving(): boolean {
     const acceptInFlight = this.acceptance?.phase === "read" && this.acceptance.state.accepting;
     return this.editor?.phase === "saving" || this.answers?.phase === "saving" || acceptInFlight;
+  }
+
+  /**
+   * Whether the text or the answers were changed after `editor` and `answers` were
+   * taken, and now hold something not given to the core. Changed and then put back
+   * to what is saved holds nothing; and what was already unsaved when they were taken
+   * is the person's to have chosen to give up, which is not asked twice.
+   */
+  private typedSince(editor: EditorModel | null, answers: AnswersModel | null): boolean {
+    return (this.editor !== editor || this.answers !== answers) && this.hasUnsavedChanges();
   }
 
   /** Whether the editor holds text, or the answers hold words, the core has not been given. */

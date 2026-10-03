@@ -605,6 +605,51 @@ describe("text that is not saved", () => {
     expect(root.textContent).toContain("not saved");
   });
 
+  it("is protected from what is typed while the other work is still being read", async () => {
+    await click("Alpha");
+    const slow = core.hold("read_source", (a) => a["id"] === "beta");
+    await click("Beta");
+    // Nothing was unsaved when Beta was asked for, so the read is on its way.
+    await type("typed while waiting");
+    slow.release();
+    await settle();
+
+    expect(heading()).toBe("Alpha");
+    expect(editor().value).toBe("typed while waiting");
+    expect(root.textContent).toContain("not saved");
+    expect(app.hasUnsavedChanges()).toBe(true);
+
+    // The choice is the same one as before the read: the text is kept unless the person lets it go.
+    await click("Save, then open it");
+    expect(core.headText("alpha")).toBe("typed while waiting");
+    expect(heading()).toBe("Beta");
+  });
+
+  it("is not lost to the other work arriving, when the person then lets it go", async () => {
+    await click("Alpha");
+    const slow = core.hold("read_source", (a) => a["id"] === "beta");
+    await click("Beta");
+    await type("typed while waiting");
+    slow.release();
+    await settle();
+    await click("Discard my changes and open it");
+
+    expect(heading()).toBe("Beta");
+    expect(editor().value).toBe("beta one");
+    expect(core.headText("alpha")).toBe("alpha two");
+  });
+
+  it("does not hold the other work back when nothing was typed while it was read", async () => {
+    await click("Alpha");
+    const slow = core.hold("read_source", (a) => a["id"] === "beta");
+    await click("Beta");
+    slow.release();
+    await settle();
+
+    expect(heading()).toBe("Beta");
+    expect(root.textContent).not.toContain("not saved");
+  });
+
   it("is not unsaved once it is saved", async () => {
     await click("Alpha");
     expect(app.hasUnsavedChanges()).toBe(false);
@@ -1168,6 +1213,23 @@ describe("the owner's answers", () => {
     expect(root.textContent).toContain("not saved");
     expect(heading()).toBe("Alpha");
     expect(core.callsOf("read_source").filter((a) => a["id"] === "beta")).toHaveLength(0);
+
+    await click("Save, then open it");
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card." });
+    expect(heading()).toBe("Beta");
+  });
+
+  it("are protected from what is typed while the other work is still being read", async () => {
+    await click("Alpha");
+    const slow = core.hold("read_source", (a) => a["id"] === "beta");
+    await click("Beta");
+    await answer("open-guard", "Any card.");
+    slow.release();
+    await settle();
+
+    expect(heading()).toBe("Alpha");
+    expect(fieldOf("open-guard").value).toBe("Any card.");
+    expect(root.textContent).toContain("not saved");
 
     await click("Save, then open it");
     expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card." });
