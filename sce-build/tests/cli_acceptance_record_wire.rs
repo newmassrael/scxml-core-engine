@@ -368,6 +368,111 @@ fn the_examples_a_design_was_held_to_are_pinned_and_a_changed_set_lapses_it() {
     );
 }
 
+/// `accept` with the channel an acceptance states, as the command line writes it.
+fn accept_stating(root: &Path, channel: &str) -> Output {
+    run(
+        &[
+            "accept",
+            &root.join(HOST).display().to_string(),
+            "--manifest",
+            &root.join(MANIFEST).display().to_string(),
+            "--variant",
+            "base",
+            "--root",
+            &root.display().to_string(),
+            "--out",
+            &root.join(RECORD).display().to_string(),
+            "--channel",
+            channel,
+        ],
+        root,
+    )
+}
+
+/// The channel an acceptance states is written as the caller said it, read back
+/// as the same record, and absent from a record that was never told one — whose
+/// bytes are then exactly what they were before the field existed.
+#[test]
+fn the_channel_an_acceptance_states_is_recorded_and_read_back() {
+    use sce_build::acceptance_record::Channel;
+
+    let root = design_root();
+    for (word, channel) in [("direct", Channel::Direct), ("relayed", Channel::Relayed)] {
+        let out = accept_stating(root.path(), word);
+        assert!(
+            out.status.success(),
+            "`accept --channel {word}` exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let written = fs::read_to_string(root.path().join(RECORD)).expect("the record was written");
+        let wire: serde_json::Value = serde_json::from_str(&written).expect("JSON");
+        assert_eq!(wire["channel"], word, "{written}");
+
+        let read = AcceptanceRecord::from_json(&written).expect("a record states its channel");
+        assert_eq!(read.channel, Some(channel));
+        assert_eq!(read.to_json(), written, "read back and written again");
+        // It says how the acceptance stood and cannot lapse it.
+        let held = check(root.path(), &root.path().join(RECORD), "base");
+        assert_eq!(
+            held.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&held.stderr)
+        );
+    }
+
+    // Left out, nothing is said, and the bytes are the ones the library takes.
+    assert!(accept(root.path()).status.success());
+    let silent = fs::read_to_string(root.path().join(RECORD)).expect("the record was written");
+    assert!(!silent.contains("channel"), "{silent}");
+    let taken = AcceptanceRecord::take(
+        root.path(),
+        &root.path().join(HOST),
+        &root.path().join(MANIFEST),
+        "base",
+    )
+    .expect("the library takes the same record");
+    assert_eq!(taken.channel, None);
+    assert_eq!(silent, taken.to_json());
+    // And stating one afterwards is the only thing that differs.
+    assert_eq!(taken.clone().stated_by(Some(Channel::Direct)).to_json(), {
+        accept_stating(root.path(), "direct");
+        fs::read_to_string(root.path().join(RECORD)).expect("the record was written")
+    });
+}
+
+/// A word that is not a channel is refused before anything is written, and a record
+/// that carries one is refused when the word is not a channel this build knows.
+#[test]
+fn a_channel_that_is_not_one_is_refused() {
+    let root = design_root();
+    for word in ["", "owner", "Direct", "relay", "verified"] {
+        let out = accept_stating(root.path(), word);
+        assert!(!out.status.success(), "`--channel {word:?}` was accepted");
+        assert!(
+            !root.path().join(RECORD).exists(),
+            "a refused channel left a record behind"
+        );
+    }
+
+    assert!(accept_stating(root.path(), "direct").status.success());
+    let written = fs::read_to_string(root.path().join(RECORD)).expect("the record was written");
+    for bad in ["owner", "verified", ""] {
+        let forged = written.replace("\"direct\"", &format!("\"{bad}\""));
+        assert!(
+            AcceptanceRecord::from_json(&forged).is_err(),
+            "a record naming the channel {bad:?} was read"
+        );
+    }
+    // A channel written twice is a key written twice.
+    let twice = written.replace(
+        "\"channel\": \"direct\"",
+        "\"channel\": \"direct\",\n  \"channel\": \"relayed\"",
+    );
+    assert!(AcceptanceRecord::from_json(&twice).is_err(), "{twice}");
+}
+
 /// The record has no schema file, so the registry's row and
 /// `ACCEPTANCE_RECORD_STATUS` are the two places its stability lives —
 /// `SCE_WIRE_CONTRACTS.md` requires one commit to move both.

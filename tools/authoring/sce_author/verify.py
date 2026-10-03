@@ -1105,6 +1105,7 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   sources=(), decisions: pathlib.Path | None = None,
                   profile: pathlib.Path | None = None,
                   scenarios: pathlib.Path | None = None,
+                  channel: str | None = None,
                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
@@ -1123,10 +1124,17 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
     cited, so a profile that changes afterwards is compared rule by rule.
 
     `scenarios` is the scenario set whose examples the design is held to:
-    pinned by its bytes, so a set edited afterwards lapses the acceptance."""
+    pinned by its bytes, so a set edited afterwards lapses the acceptance.
+
+    `channel` is which surface says the owner accepted (`direct` or `relayed`),
+    recorded as stated and never verified. ⚠ Passed through unchecked: which words
+    exist is the product's to say, and a word it does not know comes back as its
+    refusal. Left out, the record says nothing of it."""
     args = ["accept", str(document), "--manifest", str(manifest),
             "--variant", variant, "--root", str(root), "--out", str(out),
             *_authored_from(sources, decisions, profile, scenarios)]
+    if channel is not None:
+        args += ["--channel", channel]
     # The command prints nothing; what it did is the record at `out`.
     return _product_answer(args, codegen, answer="record",
                            read=lambda _stdout: str(out), cwd=cwd)

@@ -1,0 +1,52 @@
+# Mutation cases for "an acceptance says which surface stated it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_acceptance_says_which_surface_stated_it.cases`.
+#
+# An acceptance is a person's act, and the product is never in the room: the surface
+# that calls `accept` states that the owner accepted. The workbench application takes
+# it from a button the owner pressed (`direct`); an AI client reports it (`relayed`).
+# The record keeps the caller's word so a reader sees whose it rests on. Three things
+# are easy to get wrong and read as success: the command line dropping the word on the
+# way to the record (the acceptance then says nothing, as before), the record not
+# writing it, and a record read back without it (a re-written record would have lost
+# who stated it).
+#
+# Each case below takes one of those away and must make a test red:
+# `the_channel_an_acceptance_states_is_recorded_and_read_back` or
+# `a_channel_that_is_not_one_is_refused` of `cli_acceptance_record_wire.rs`.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it
+# had in use: a mutation that stops reading one is an unused-variable ERROR, the tree
+# does not compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test cli_acceptance_record_wire
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/cli_acceptance_record_wire.rs
+
+mutation_case "the command line drops the channel before the record is written" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    .stated_by(channel);",
+     "    .stated_by(channel.filter(|_| false));")
+PY
+
+mutation_case "the record does not write the channel it was told" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            channel: self.channel,\n        };",
+     "            channel: self.channel.filter(|_| false),\n        };")
+PY
+
+mutation_case "a record read back loses who stated it" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            channel: wire.channel,",
+     "            channel: wire.channel.filter(|_| false),")
+PY
+
+mutation_case "the channel is stated as direct whatever the caller said" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        self.channel = channel;\n        self",
+     "        self.channel = channel.map(|_| Channel::Direct);\n        self")
+PY

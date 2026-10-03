@@ -125,6 +125,29 @@
 //! question is the owner's decision, and this only keeps the record honest
 //! about it.
 //!
+//! # Who stated the acceptance
+//!
+//! ```text
+//!   channel   direct | relayed     which surface said the owner accepted
+//! ```
+//!
+//! An acceptance is a person's act, and the product is never in the room: the
+//! surface that calls `accept` states that the owner accepted, and nothing here
+//! can see whether they did. Two surfaces exist, and they stand differently
+//! behind the same record. The workbench application shows the owner the design
+//! and takes the acceptance from a button the owner pressed, so it says `direct`.
+//! An AI client reports that the owner accepted in conversation, so it says
+//! `relayed`, which is a claim and reads as one. A record that states neither
+//! (every record taken before this field, and any taken from a command line that
+//! did not say) says nothing about it.
+//!
+//! ⚠ It is what the CALLER stated, recorded so a reader of the acceptance sees
+//! whose word it rests on. The product does not verify it, and a record read as
+//! proof that the owner pressed anything would claim what nothing here knows.
+//! Not compared on a re-check: it says how the acceptance stood when it was taken,
+//! and it cannot lapse. Optional and omitted when not stated, so a record that
+//! never needed it keeps the bytes it always had.
+//!
 //! # Deliberately not `Deserialize`
 //!
 //! [`AcceptanceRecord`] is obtained from [`AcceptanceRecord::take`] or
@@ -201,6 +224,42 @@ impl fmt::Display for SourceRole {
             SourceRole::Profile => "authoring profile",
             SourceRole::Examples => "scenario set",
         })
+    }
+}
+
+/// Which surface stated that the owner accepted. See the module docs: it is the
+/// caller's statement, recorded and never verified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Channel {
+    /// The surface the owner acts on took the acceptance from their own button.
+    Direct,
+    /// A client reported that the owner accepted, in a conversation the product
+    /// did not see.
+    Relayed,
+}
+
+impl Channel {
+    /// The wire word, and what the CLI's `--channel` takes.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Channel::Direct => "direct",
+            Channel::Relayed => "relayed",
+        }
+    }
+}
+
+impl std::str::FromStr for Channel {
+    type Err = String;
+
+    fn from_str(word: &str) -> Result<Self, Self::Err> {
+        match word {
+            "direct" => Ok(Channel::Direct),
+            "relayed" => Ok(Channel::Relayed),
+            other => Err(format!(
+                "`{other}` is not a channel; the channels are `direct` and `relayed`"
+            )),
+        }
     }
 }
 
@@ -294,6 +353,8 @@ pub struct AcceptanceRecord {
     /// open is pinned by its bytes, and a design whose open matters moved
     /// has moved.
     pub open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
+    /// Which surface stated the acceptance, when it said. See the module docs.
+    pub channel: Option<Channel>,
 }
 
 /// The record exactly as JSON spells it. Private — see the module docs.
@@ -312,6 +373,8 @@ struct RecordWire {
     applied_rules: Vec<AppliedRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel: Option<Channel>,
 }
 
 /// One way what was accepted is no longer what is there.
@@ -627,7 +690,16 @@ impl AcceptanceRecord {
             authored_from,
             applied_rules,
             open_at_acceptance,
+            channel: None,
         })
+    }
+
+    /// The same record, stating `channel` as the surface that took it. Taking the
+    /// record does not know which surface asked, so the caller says it here.
+    #[must_use]
+    pub fn stated_by(mut self, channel: Option<Channel>) -> Self {
+        self.channel = channel;
+        self
     }
 
     /// [`Self::recheck`], and also whether the files a caller asks about are
@@ -829,6 +901,7 @@ impl AcceptanceRecord {
             authored_from: self.authored_from.clone(),
             applied_rules: self.applied_rules.clone(),
             open_at_acceptance: self.open_at_acceptance.clone(),
+            channel: self.channel,
         };
         let mut text = serde_json::to_string_pretty(&wire)
             .expect("a record of strings and one integer always serialises");
@@ -926,6 +999,7 @@ impl AcceptanceRecord {
             authored_from,
             applied_rules,
             open_at_acceptance: wire.open_at_acceptance,
+            channel: wire.channel,
         })
     }
 }

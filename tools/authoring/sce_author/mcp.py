@@ -2520,6 +2520,12 @@ def _authored_from(args: dict, staging: _Staging, *, aside: bool = False):
     return sources, decisions, profile, scenarios
 
 
+# What this server states about an acceptance it records: that a CLIENT reported the
+# owner accepted, in a conversation the product did not see. Never `direct`: that is
+# the word of a surface the owner presses a button on, and this server has none.
+ACCEPTED_BY_CLIENT = "relayed"
+
+
 def _accept_tool(args: dict, staging: _Staging) -> dict:
     variant = _name_arg(args, "variant", "the variant's name", required=True)
     root = staging.local_path(args, "root", "the directory the record's paths are relative to")
@@ -2533,7 +2539,7 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
             variant, root, out, sources=sources, decisions=decisions, profile=profile,
-            scenarios=scenarios)
+            scenarios=scenarios, channel=ACCEPTED_BY_CLIENT)
         if refusal:
             return _failure(refusal)
         return _text(_with_open_at_acceptance(report, out))
@@ -2551,7 +2557,8 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     record = pathlib.Path("acceptance.json")
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
                                     record, sources=sources, decisions=decisions,
-                                    profile=profile, scenarios=scenarios, cwd=staging.dir)
+                                    profile=profile, scenarios=scenarios,
+                                    channel=ACCEPTED_BY_CLIENT, cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))

@@ -100,6 +100,22 @@ class AnAcceptedDesignIsHandedBack(unittest.TestCase):
         kept = json.loads(self.record.read_text(encoding="utf-8"))["open_at_acceptance"]
         self.assertEqual(answer["accepted_with"], [m["message"] for m in kept])
 
+    def test_an_acceptance_reported_by_a_client_is_recorded_as_relayed(self):
+        # This server is a client's door, never a button the owner presses: what it
+        # records is that a CLIENT said the owner accepted, and the record says so
+        # in the product's own field, so a reader does not take it for a direct one.
+        kept = json.loads(self.record.read_text(encoding="utf-8"))
+        self.assertEqual("relayed", kept["channel"])
+        # Handed over as text, the record that comes back says the same.
+        text = call_tool("scxml_accept", {
+            "document_text": (self.root / "design" / DOCUMENT).read_text(encoding="utf-8"),
+            "document_name": DOCUMENT,
+            "manifest_text": (self.root / "spec" / MANIFEST).read_text(encoding="utf-8"),
+            "manifest_name": MANIFEST, "variant": "base",
+        })
+        self.assertFalse(text.get("isError"), text)
+        self.assertEqual("relayed", json.loads(body(text)["record_text"])["channel"])
+
     def test_a_design_that_left_nothing_open_is_answered_as_it_was(self):
         # The control: no new field on the answer, so a finished design's
         # acceptance reads exactly as before.

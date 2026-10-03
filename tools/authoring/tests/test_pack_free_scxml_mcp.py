@@ -288,7 +288,7 @@ class PackFreeScxmlMcp(unittest.TestCase):
             ("scxml_accept",
              dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json"),
              ["accept", doc, "--manifest", manifest, "--variant", "base",
-              "--root", here("."), "--out", here("acc.json")]),
+              "--root", here("."), "--out", here("acc.json"), "--channel", "relayed"]),
             ("scxml_acceptance_check", dict(record=doc, variant="base", root="."),
              ["acceptance-check", doc, "--variant", "base", "--root", here(".")]),
             # What the design was authored from reaches both commands.
@@ -297,7 +297,8 @@ class PackFreeScxmlMcp(unittest.TestCase):
                   sources=[doc], decisions=answers),
              ["accept", doc, "--manifest", manifest, "--variant", "base",
               "--root", here("."), "--out", here("acc.json"),
-              "--source", here(doc), "--decisions", here(answers)]),
+              "--source", here(doc), "--decisions", here(answers),
+              "--channel", "relayed"]),
             ("scxml_acceptance_check",
              dict(record=doc, variant="base", root=".", sources=[doc], decisions=answers),
              ["acceptance-check", doc, "--variant", "base", "--root", here("."),

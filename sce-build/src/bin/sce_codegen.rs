@@ -2512,6 +2512,14 @@ enum Commands {
         /// (`requirements --scenarios --trace`).
         #[arg(long, value_name = "PATH")]
         scenarios: Option<String>,
+        /// Which surface says the owner accepted: `direct` (the surface the
+        /// owner acts on took it from their own button) or `relayed` (a client
+        /// reported it, in a conversation the product did not see).
+        ///
+        /// Recorded as the caller stated it and never verified: the product is
+        /// not in the room. Left out, the record states nothing about it.
+        #[arg(long, value_name = "CHANNEL")]
+        channel: Option<sce_build::acceptance_record::Channel>,
     },
     /// Judge the claims that point OUT of a document — Requirement-closure
     /// RFC §5.2e/§5.2f.
@@ -3379,12 +3387,16 @@ fn main() {
             decisions,
             profile,
             scenarios,
+            channel,
         } => cmd_accept(
-            &scxml,
-            &manifest,
-            &variant,
-            &root,
-            &out,
+            &AcceptRequest {
+                scxml: &scxml,
+                manifest: &manifest,
+                variant: &variant,
+                root: &root,
+                out: &out,
+                channel,
+            },
             &authored_from(
                 &source,
                 decisions.as_deref(),
@@ -9502,15 +9514,30 @@ fn check_scenario_set(sources: &[(sce_build::acceptance_record::SourceRole, Path
     }
 }
 
+/// What `accept` is asked to pin, and where it writes the record.
+struct AcceptRequest<'a> {
+    scxml: &'a str,
+    manifest: &'a str,
+    variant: &'a str,
+    root: &'a str,
+    out: &'a str,
+    /// Which surface says the owner accepted, when the caller said.
+    channel: Option<sce_build::acceptance_record::Channel>,
+}
+
 fn cmd_accept(
-    scxml: &str,
-    manifest: &str,
-    variant: &str,
-    root: &str,
-    out: &str,
+    request: &AcceptRequest<'_>,
     sources: &[(sce_build::acceptance_record::SourceRole, PathBuf)],
     error_format: ErrorFormat,
 ) {
+    let AcceptRequest {
+        scxml,
+        manifest,
+        variant,
+        root,
+        out,
+        channel,
+    } = *request;
     // Each input is refused through its own door first, so a document that
     // does not parse reports its `xml/*` code and a manifest that does not
     // load reports the loader's refusal. Taking the record would refuse both
@@ -9556,7 +9583,8 @@ fn cmd_accept(
             kind: e.kind(),
             detail: e.to_string(),
         })
-    });
+    })
+    .stated_by(channel);
     fs::write(out, record.to_json()).unwrap_or_else(|source| {
         cli_exit(CliError::WriteOutput {
             path: out.to_string(),

@@ -718,6 +718,14 @@ remains the way to refuse a document with an open question outright, and an
 acceptance is not refused for one: accepting with a question open is the
 owner's decision, and the record says that they did.
 
+The record also says which surface stated the acceptance (`channel`). This
+server's `scxml_accept` is a client's door: what it records is that a client
+reported the owner accepted, in a conversation the product did not see, so it
+states `relayed` and never `direct`. The workbench application, which the owner
+presses a button on, is the surface that states `direct`. Either is the caller's
+word, recorded and never verified, and a record from before the field says
+nothing.
+
 A statechart's output needs a receiver. A `<send>` with no `target` and no
 `type` goes to the machine's own queue, and one no transition takes is thrown
 away (`check --lint`: `scxml/self-send-discarded`). What the machine tells its
