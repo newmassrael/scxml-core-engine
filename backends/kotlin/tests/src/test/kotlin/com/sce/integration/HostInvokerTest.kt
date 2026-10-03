@@ -670,6 +670,26 @@ class HostInvokerTest {
     }
 
     /**
+     * What each worker of the default dispatcher — the threads the engine's
+     * coroutine runs on — is doing: its state and the top of its stack, and how
+     * many processors the JVM sees (the dispatcher has as many workers, at
+     * least two). A worker parked in the pool's own idle wait is one the loop
+     * could have been given; one blocked or running in anything else is a
+     * thread the loop was not.
+     */
+    private fun dispatcherWorkers(): String {
+        val workers = Thread.getAllStackTraces().entries
+            .filter { (thread, _) -> thread.name.startsWith("DefaultDispatcher-worker") }
+            .sortedBy { (thread, _) -> thread.name }
+        val seen = "${Runtime.getRuntime().availableProcessors()} processors, "
+        if (workers.isEmpty()) return seen + "no worker thread exists"
+        return seen + workers.joinToString("; ") { (thread, frames) ->
+            "${thread.name} ${thread.state} at " +
+                frames.take(4).joinToString(" <- ") { "${it.className.substringAfterLast('.')}.${it.methodName}" }
+        }
+    }
+
+    /**
      * The coroutine mode keeps its deadlines too. Its loop used to wait on the
      * event channel alone, so a deadline armed in `scheduledSends` never came
      * due there and the host was never told to stop. Real time, because the
@@ -704,13 +724,21 @@ class HostInvokerTest {
                 // what the next hosted failure carries, since the failure has not
                 // been reproduced anywhere else (15 of 15 passed under two loaded
                 // CPUs, with the build cache off so each run executed).
+                //
+                // The first hosted failure said the nudge did NOT wake it, which
+                // leaves the loop unable to run (no thread to run it on) or its
+                // deadline gone. What each thread the loop could run on was doing
+                // at that moment tells those two apart, so it is taken before the
+                // nudge and carried in the message.
+                val workers = dispatcherWorkers()
                 sm.send(StatechartHostInvokerEvent.Time)
                 val afterWake = withTimeoutOrNull(2_000) { cancelled.await() }
                 fail<Unit>(
                     "`slow` started, and its 50 ms deadline never expired within 3 s; " +
                         "an event sent then " +
                         (if (afterWake != null) "WOKE the loop into performing it (the loop slept past the deadline)"
-                        else "did not (the deadline was never armed, or the loop is not running)"),
+                        else "did not (the deadline was never armed, or the loop is not running)") +
+                        "; the default dispatcher at that moment: $workers",
                 )
             }
             // The loop goes on serving events after performing an act, and
