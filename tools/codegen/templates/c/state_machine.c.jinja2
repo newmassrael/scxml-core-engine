@@ -1618,6 +1618,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {{ se.lua_assign(action.location, action.expr) }}
 {% endif %}
         }
+{% elif action.type == 'foreach' and action.native_loop %}
+        /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}>, a native loop over a copy of a sce-static list. A body element that raised its own error leaves the block from inside the loop, which ends the block that holds the <foreach> (§scxml-4.9). */
+        {{ action.native_loop }} {
+            {{ action.native_loop_prologue }}
+{% for sub in action.actions %}
+            {{ emit_action(sub, true, foreach_depth + 1) }}
+{% endfor %}
+        }
 {% elif action.type == 'foreach' %}
         {
             /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}> */
@@ -5794,8 +5802,12 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym
 {% for field in static_published %}
 
 /* SCE Accepted Subset §2.15: the published variable `{{ field.id }}`, declared in the header. */
-SCE_SM_FN {{ field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN {{ field.view or field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+{% if field.view %}
+    return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len };
+{% else %}
     return sm->policy.{{ field.name }};
+{% endif %}
 }
 {% endfor %}
 

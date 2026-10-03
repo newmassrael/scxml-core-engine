@@ -32,6 +32,12 @@
 #include <stddef.h>
 
 #include "sce/types.h"
+{% if static_published | selectattr('view') | list %}
+{# SCE Accepted Subset §2.15: a published list is read through the library's
+   borrowed view of its elements, `{data, len}`, which the host cannot grow past
+   the bound the machine keeps. #}
+#include "sce/forge/list_view.h"
+{% endif %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
    bottom of this header. This header opens `extern "C"`, so a C++
    application linking the generated machine compiles it as C++ —
@@ -1384,7 +1390,7 @@ bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}
    as the machine holds it now. The machine's other variables have no reader:
    they are its own, and a host written against one would break when it is
    renamed. */
-{{ field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{{ field.view or field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endfor %}
 
 /* §scxml-D-exitInterpreter: stop a run. Every active state's `<onexit>` runs,

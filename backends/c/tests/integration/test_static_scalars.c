@@ -35,6 +35,15 @@
 //     functions the machine includes — in a guard and in an assignment, over the
 //     payload of each answer, and a call that refuses its arguments is a failure
 //     like any other.
+//   * `static_list`: a list variable is bounded by its `sce:capacity` — an append
+//     past the bound appends nothing and raises `error.execution` — emptied by
+//     `<sce:clear>`, measured by `len()`, and published as the library's view of
+//     its elements.
+//   * `static_foreach`: a loop walks a copy of the list as it began, so a body
+//     that appends to the list it walks neither lengthens the walk nor reads what
+//     it has just written; the item, its position and a loop in a loop are native.
+//   * `static_block_ends_list`: an append that fails ends the block it stands in,
+//     like any other failed statement.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -49,10 +58,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
+#include "static_foreach_sm.h"
+#include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
 #include "sync_client_sm.h"
@@ -73,6 +85,16 @@ typedef struct {
     int64_t (*read)(const void *sm);
 } variable_t;
 
+// A published list's reader: its elements as the int64s a scenario compares, at
+// most `cap` of them, and how many it holds. A table of these ends at a NULL name.
+typedef struct {
+    const char *name;
+    size_t (*read)(const void *sm, int64_t *out, size_t cap);
+} list_variable_t;
+
+// What a machine with no list passes for its table.
+static const list_variable_t no_lists[] = {{NULL, NULL}};
+
 static bool find(const name_value_t *table, size_t count, const char *name, int *out) {
     for (size_t i = 0; i < count; ++i) {
         if (strcmp(table[i].name, name) == 0) {
@@ -91,10 +113,29 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return (int64_t)M##_get_##VAR((const M##_t *)sm);                                                              \
     }
 
+// A published list's reader, over the library's borrowed view of its elements.
+#define LIST_READER(M, VAR, VIEW)                                                                                      \
+    static size_t M##_read_list_##VAR(const void *sm, int64_t *out, size_t cap) {                                      \
+        const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
+        for (size_t i = 0; i < view.len && i < cap; ++i) {                                                             \
+            out[i] = (int64_t)view.data[i];                                                                            \
+        }                                                                                                              \
+        return view.len;                                                                                               \
+    }
+
 // One machine as `sce_scenario_driver_t` asks for it: the event by the name the
 // machine itself resolves (§scxml-3.12.1), the state by its document name, the
-// variable by its, and the replay of its scenario.
-#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT)                                                                    \
+// variable by its, the lists by theirs, and the replay of its scenario.
+#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS)                                                             \
+    static bool M##_read_lists(void *sm, const char *name, int64_t *out, size_t cap, size_t *len) {                    \
+        for (size_t i = 0; LISTS[i].name != NULL; ++i) {                                                               \
+            if (strcmp(LISTS[i].name, name) == 0) {                                                                    \
+                *len = LISTS[i].read(sm, out, cap);                                                                    \
+                return *len <= cap;                                                                                    \
+            }                                                                                                          \
+        }                                                                                                              \
+        return false;                                                                                                  \
+    }                                                                                                                  \
     static bool M##_raise_event(void *sm, const char *name, const char *data) {                                        \
         M##_event_t event;                                                                                             \
         if (!M##_resolve_event_by_name(name, &event)) {                                                                \
@@ -136,7 +177,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         M##_t sm;                                                                                                      \
         M##_init(&sm);                                                                                                 \
         const sce_scenario_driver_t driver = {                                                                         \
-            #M, &sm, M##_raise_event, M##_state_active, M##_run_ended, M##_read_variable, TEXT};                       \
+            #M, &sm, M##_raise_event, M##_state_active, M##_run_ended, M##_read_variable, TEXT, M##_read_lists};       \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -161,7 +202,7 @@ static const variable_t counter_variables[] = {
     {"count", static_counter_read_count},
     {"ready", static_counter_read_ready},
 };
-STATIC_SCENARIO(static_counter, counter_states, counter_variables, NULL)
+STATIC_SCENARIO(static_counter, counter_states, counter_variables, NULL, no_lists)
 
 // static_event_arrival: an event arrives by name from outside the document
 // (§scxml-3.12.1), so the machine delivers it as the event it resolves the name
@@ -175,7 +216,7 @@ static const variable_t event_arrival_variables[] = {
     {"requests", static_event_arrival_read_requests},
     {"specials", static_event_arrival_read_specials},
 };
-STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL)
+STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL, no_lists)
 
 // static_overflow
 VARIABLE_READER(static_overflow, level)
@@ -188,7 +229,7 @@ static const variable_t overflow_variables[] = {
     {"level", static_overflow_read_level},
     {"refusals", static_overflow_read_refusals},
 };
-STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL)
+STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL, no_lists)
 
 // static_block_ends
 VARIABLE_READER(static_block_ends, a)
@@ -216,7 +257,7 @@ static const variable_t block_ends_variables[] = {
     {"afterOk", static_block_ends_read_afterOk},
     {"errors", static_block_ends_read_errors},
 };
-STATIC_SCENARIO(static_block_ends, block_ends_states, block_ends_variables, NULL)
+STATIC_SCENARIO(static_block_ends, block_ends_states, block_ends_variables, NULL, no_lists)
 
 // static_payload
 VARIABLE_READER(static_payload, day)
@@ -232,7 +273,7 @@ static const variable_t payload_variables[] = {
     {"sinceEpoch", static_payload_read_sinceEpoch},
     {"refusals", static_payload_read_refusals},
 };
-STATIC_SCENARIO(static_payload, payload_states, payload_variables, NULL)
+STATIC_SCENARIO(static_payload, payload_states, payload_variables, NULL, no_lists)
 
 // static_enum: the layout a calendar screen shows its days in. `layout` is
 // published; `previous` is the machine's own, so it is read from the policy the
@@ -269,7 +310,7 @@ static const variable_t enum_variables[] = {
     {"layout", static_enum_read_layout},
     {"previous", static_enum_read_previous},
 };
-STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text)
+STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists)
 
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
@@ -297,7 +338,62 @@ static const variable_t sync_variables[] = {
     {"discarded", sync_client_read_discarded}, {"pages", sync_client_read_pages},
     {"refusals", sync_client_read_refusals},
 };
-STATIC_SCENARIO(sync_client, sync_states, sync_variables, NULL)
+STATIC_SCENARIO(sync_client, sync_states, sync_variables, NULL, no_lists)
+
+// static_list: a list filled to its bound by <sce:append> from a typed payload,
+// measured by len(), emptied by <sce:clear>. A published list is read through the
+// library's view of its elements.
+VARIABLE_READER(static_list, refusals)
+VARIABLE_READER(static_list, count)
+LIST_READER(static_list, picked, sce_forge_uint8_view_t)
+static const name_value_t list_states[] = {
+    {"collecting", STATIC_LIST_STATE_COLLECTING},
+    {"done", STATIC_LIST_STATE_DONE},
+};
+static const variable_t list_variables[] = {
+    {"refusals", static_list_read_refusals},
+    {"count", static_list_read_count},
+};
+static const list_variable_t list_lists[] = {{"picked", static_list_read_list_picked}, {NULL, NULL}};
+STATIC_SCENARIO(static_list, list_states, list_variables, NULL, list_lists)
+
+// static_foreach: a loop over a copy of the list as it began — the item alone, the
+// item and its position, a loop in a loop, and a body that appends to the list it
+// walks.
+VARIABLE_READER(static_foreach, total)
+VARIABLE_READER(static_foreach, weighted)
+VARIABLE_READER(static_foreach, small)
+VARIABLE_READER(static_foreach, crossings)
+VARIABLE_READER(static_foreach, visited)
+VARIABLE_READER(static_foreach, finished)
+VARIABLE_READER(static_foreach, errors)
+LIST_READER(static_foreach, picked, sce_forge_uint8_view_t)
+static const name_value_t foreach_states[] = {
+    {"working", STATIC_FOREACH_STATE_WORKING},
+};
+static const variable_t foreach_variables[] = {
+    {"total", static_foreach_read_total},     {"weighted", static_foreach_read_weighted},
+    {"small", static_foreach_read_small},     {"crossings", static_foreach_read_crossings},
+    {"visited", static_foreach_read_visited}, {"finished", static_foreach_read_finished},
+    {"errors", static_foreach_read_errors},
+};
+static const list_variable_t foreach_lists[] = {{"picked", static_foreach_read_list_picked}, {NULL, NULL}};
+STATIC_SCENARIO(static_foreach, foreach_states, foreach_variables, NULL, foreach_lists)
+
+// static_block_ends_list: a full list ends the block it is appended to.
+VARIABLE_READER(static_block_ends_list, afterAppend)
+VARIABLE_READER(static_block_ends_list, errors)
+LIST_READER(static_block_ends_list, picked, sce_forge_uint8_view_t)
+static const name_value_t block_ends_list_states[] = {
+    {"waiting", STATIC_BLOCK_ENDS_LIST_STATE_WAITING},
+};
+static const variable_t block_ends_list_variables[] = {
+    {"afterAppend", static_block_ends_list_read_afterAppend},
+    {"errors", static_block_ends_list_read_errors},
+};
+static const list_variable_t block_ends_list_lists[] = {{"picked", static_block_ends_list_read_list_picked},
+                                                        {NULL, NULL}};
+STATIC_SCENARIO(static_block_ends_list, block_ends_list_states, block_ends_list_variables, NULL, block_ends_list_lists)
 
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
@@ -332,6 +428,9 @@ int main(void) {
     bad |= static_event_arrival_scenario("static_event_arrival", 8);
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
+    bad |= static_list_scenario("static_list", 11);
+    bad |= static_foreach_scenario("static_foreach", 13);
+    bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= sync_client_scenario("sync_client", 30);

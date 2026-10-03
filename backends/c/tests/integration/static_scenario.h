@@ -51,6 +51,11 @@ typedef struct {
     // for a variable that is not one. A scenario states such a value as a
     // string, and a driver with no enum may leave this unset.
     const char *(*text)(void *sm, const char *name);
+    // The elements of a list variable as numbers — at most `cap` of them written
+    // to `out` — and how many it holds in `*len`. False for a name the machine
+    // publishes no list of. A scenario states such a value as an array, and a
+    // driver with no list may leave this unset.
+    bool (*list)(void *sm, const char *name, int64_t *out, size_t cap, size_t *len);
 } sce_scenario_driver_t;
 
 typedef struct {
@@ -279,6 +284,56 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         return sce_scenario_fail(d, step, "a variable has no name");
                     }
                     sce_scenario_space(c);
+                    if (*c->at == '[') {
+                        // A list is stated as its elements, in order.
+                        enum { MAX_LIST = 16 };
+
+                        int64_t want_list[MAX_LIST];
+                        size_t want_len = 0;
+                        (void)sce_scenario_take(c, '[');
+                        if (!sce_scenario_take(c, ']')) {
+                            for (;;) {
+                                if (want_len == MAX_LIST || !sce_scenario_number(c, &want_list[want_len])) {
+                                    return sce_scenario_fail(d, step,
+                                                             "a list holds more than the reader keeps, or "
+                                                             "an element that is not an integer or a bool");
+                                }
+                                ++want_len;
+                                if (sce_scenario_take(c, ']')) {
+                                    break;
+                                }
+                                if (!sce_scenario_take(c, ',')) {
+                                    return sce_scenario_fail(d, step, "a list is not well formed");
+                                }
+                            }
+                        }
+                        int64_t got_list[MAX_LIST];
+                        size_t got_len = 0;
+                        if (d->list == NULL || !d->list(d->sm, name, got_list, MAX_LIST, &got_len)) {
+                            (void)snprintf(message, sizeof(message), "the machine publishes no list `%s`", name);
+                            bad |= sce_scenario_fail(d, step, message);
+                        } else if (got_len != want_len) {
+                            (void)snprintf(message, sizeof(message), "`%s` holds %zu element(s), want %zu", name,
+                                           got_len, want_len);
+                            bad |= sce_scenario_fail(d, step, message);
+                        } else {
+                            for (size_t i = 0; i < want_len; ++i) {
+                                if (got_list[i] != want_list[i]) {
+                                    (void)snprintf(message, sizeof(message), "`%s`[%zu] is %lld, want %lld", name, i,
+                                                   (long long)got_list[i], (long long)want_list[i]);
+                                    bad |= sce_scenario_fail(d, step, message);
+                                    break;
+                                }
+                            }
+                        }
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
                     if (*c->at == '"') {
                         // An enum is stated as the name its document declares.
                         if (!sce_scenario_string(c, want_text, sizeof(want_text))) {

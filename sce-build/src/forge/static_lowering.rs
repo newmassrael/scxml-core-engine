@@ -191,6 +191,19 @@ pub struct StaticEnumVariant {
     pub ident: String,
 }
 
+/// How a list of scalars is declared by a target that sizes it when the machine
+/// is built ([`StaticTarget::bounded_list`]).
+#[derive(Debug, Clone)]
+pub struct BoundedList {
+    /// The type a variable of the list is held in.
+    pub ty: String,
+    /// The declaration of [`Self::ty`], when the machine's own file is to make
+    /// it. Made once however many variables name the type.
+    pub def: Option<String>,
+    /// The empty list, as an initial value of [`Self::ty`].
+    pub empty: String,
+}
+
 /// An imported algorithm as a target reaches it: the name a call is written
 /// with, and the line that makes the name visible where the machine is.
 #[derive(Debug, Clone)]
@@ -345,6 +358,37 @@ pub trait StaticTarget {
     fn record_list_view(&self, record: &str) -> Option<String>;
     /// An empty list.
     fn list_empty(&self) -> String;
+    /// How a list of the scalar `elem`, bounded by `capacity`, is declared: its
+    /// type, the declaration of that type when it is the target's own to make
+    /// (made once however many variables name it), and its empty value.
+    ///
+    /// The default is [`Self::list_type`] and [`Self::list_empty`] with nothing
+    /// declared, which is right for a list that grows to what it is given and
+    /// holds its bound only where it is appended to. A target whose list is a
+    /// buffer of a size fixed when the machine is built has to know the bound
+    /// to name the type, and answers it here.
+    fn bounded_list(&self, elem: &SceType, _capacity: Option<u32>) -> BoundedList {
+        BoundedList {
+            ty: self.list_type(elem),
+            def: None,
+            empty: self.list_empty(),
+        }
+    }
+    /// [`Self::foreach_loop`] for a target that has to name the type of the item
+    /// it binds and of the list it copies — C has no `auto` — handed both:
+    /// `item_ty` is the scalar element's type, empty for a list of records, and
+    /// `list_ty` the list's own ([`Self::bounded_list`]). The default is the
+    /// untyped loop.
+    fn foreach_loop_typed(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+        _item_ty: &str,
+        _list_ty: &str,
+    ) -> Option<(String, String)> {
+        self.foreach_loop(list, item, index)
+    }
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
     /// Replace field `field` of the record at `target` with `value`.
@@ -1344,13 +1388,17 @@ pub fn lower(
             // records, which are declared as a record variable's are.
             if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
                 use crate::forge::model::ListElemType;
-                let (ty, view, saved_kind, saved_type) = match elem {
-                    ListElemType::Scalar(elem) => (
-                        target.list_type(elem),
-                        target.list_view(elem),
-                        "list",
-                        elem.as_attr(),
-                    ),
+                let (ty, view, saved_kind, saved_type, empty) = match elem {
+                    ListElemType::Scalar(elem) => {
+                        let list = declarations.scalar_list(elem, var.capacity);
+                        (
+                            list.ty,
+                            target.list_view(elem),
+                            "list",
+                            elem.as_attr(),
+                            list.empty,
+                        )
+                    }
                     ListElemType::Record { alias } => {
                         let schema = records.get(alias).ok_or_else(|| {
                             GenerateError::unsupported(format!(
@@ -1365,17 +1413,18 @@ pub fn lower(
                             target.record_list_view(&record_ty),
                             "record_list",
                             record_ty,
+                            target.list_empty(),
                         )
                     }
                 };
-                if let Some(element) = target.data_element(&var.id, &target.list_empty()) {
+                if let Some(element) = target.data_element(&var.id, &empty) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
                     ty,
-                    init: target.list_empty(),
+                    init: empty,
                     published,
                     view,
                     bound: var.capacity,
@@ -1695,6 +1744,19 @@ impl<'t> TypeDeclarations<'t> {
             });
         }
         Ok(ty)
+    }
+
+    /// How a list of the scalar `elem`, bounded by `capacity`, is held
+    /// ([`StaticTarget::bounded_list`]), its type declared the first time any
+    /// variable names it.
+    fn scalar_list(&mut self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
+        let list = self.target.bounded_list(elem, capacity);
+        if let Some(def) = &list.def {
+            if self.declared.insert(list.ty.clone()) {
+                self.type_defs.push(def.clone());
+            }
+        }
+        list
     }
 }
 
@@ -3283,6 +3345,10 @@ pub struct CTarget {
     /// verdict in a local of its own, named by this, so that no two share a
     /// scope: an `<if>` in a branch of another would otherwise shadow it.
     conditions: std::sync::atomic::AtomicU32,
+    /// How many `<foreach>` loops the walk has lowered. Each copies its list into
+    /// a local of its own and counts with another, named by this, so that a loop
+    /// in the body of another does not meet its names.
+    loops: std::sync::atomic::AtomicU32,
     /// The name each imported enum's document declares, by the alias the
     /// machine imports it as. The type and its constants are spelled from the
     /// document's name, not the alias, so that two machines importing one enum —
@@ -3302,6 +3368,7 @@ impl CTarget {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
+            loops: std::sync::atomic::AtomicU32::new(0),
             enums: imported_enums
                 .iter()
                 .map(|(alias, model)| (alias.clone(), model.name.clone()))
@@ -3313,6 +3380,7 @@ impl CTarget {
         Self {
             stem: String::new(),
             conditions: std::sync::atomic::AtomicU32::new(0),
+            loops: std::sync::atomic::AtomicU32::new(0),
             enums: std::collections::BTreeMap::new(),
         }
     }
@@ -3334,9 +3402,8 @@ impl CTarget {
                 // A host action's arguments are typed expressions of the
                 // machine's variables, lowered where the call is rendered
                 // ([`crate::forge::native_action`]).
-                "assign" | "log" | "if" | "raise" | "native_action" => {}
-                "sce_append" => return Some("an <sce:append>".to_string()),
-                "sce_clear" => return Some("an <sce:clear>".to_string()),
+                "assign" | "log" | "if" | "raise" | "native_action" | "sce_append"
+                | "sce_clear" | "foreach" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -3376,25 +3443,39 @@ impl StaticTarget for CTarget {
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // The integers, the bool and an enum: a `bool`, a number and an
         // enumerated type are the values the checked helpers and the policy
-        // hold without a length. A string or a bytes value needs a capacity the
-        // C11 contract does not carry yet, a real is not yet held to a
-        // scenario, and a list and a record need types the machine's own file
-        // does not yet declare.
+        // hold without a length. A list of integers or bools too: it is a
+        // buffer of its bound, which every list declares ([`Self::bounded_list`]).
+        // A string or a bytes value needs a capacity the C11 contract does not
+        // carry yet, a real is not yet held to a scenario, and a record needs a
+        // type the machine's own file does not yet declare.
+        let held_scalar = |ty: &SceType| {
+            matches!(
+                ty,
+                SceType::Bool
+                    | SceType::Uint8
+                    | SceType::Uint16
+                    | SceType::Uint32
+                    | SceType::Uint64
+                    | SceType::Int8
+                    | SceType::Int16
+                    | SceType::Int32
+                    | SceType::Int64
+            )
+        };
         if let Some(var) = scope.variables.iter().find(|v| {
+            let Some(value_type) = v.value_type.as_ref() else {
+                return true;
+            };
+            if let Some(elem) = value_type.list_elem() {
+                return !(v.capacity.is_some()
+                    && matches!(
+                        elem,
+                        crate::forge::model::ListElemType::Scalar(ty) if held_scalar(ty)
+                    ));
+            }
             !matches!(
-                v.value_type.as_ref().and_then(|t| t.scalar()),
-                Some(
-                    SceType::Bool
-                        | SceType::Enum(_)
-                        | SceType::Uint8
-                        | SceType::Uint16
-                        | SceType::Uint32
-                        | SceType::Uint64
-                        | SceType::Int8
-                        | SceType::Int16
-                        | SceType::Int32
-                        | SceType::Int64
-                )
+                value_type.scalar(),
+                Some(ty) if held_scalar(ty) || matches!(ty, SceType::Enum(_))
             )
         }) {
             let ty = match &var.value_type {
@@ -3569,20 +3650,74 @@ impl StaticTarget for CTarget {
     fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
         unreachable!("a C11 document with a record variable is refused by `unsupported`")
     }
+    // A list's type carries its bound, so it is named by [`Self::bounded_list`].
     fn list_type(&self, _elem: &SceType) -> String {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+        unreachable!("a C11 list is declared through `bounded_list`")
     }
-    fn list_view(&self, _elem: &SceType) -> Option<String> {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    // The library's borrowed view over the elements — `{data, len}` — which a host
+    // reads and cannot grow past the bound the machine keeps.
+    fn list_view(&self, elem: &SceType) -> Option<String> {
+        Some(format!("sce_forge_{}_view_t", elem.as_attr()))
     }
     fn record_list_type(&self, _record: &str) -> String {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+        unreachable!("a C11 document with a record list is refused by `unsupported`")
     }
     fn record_list_view(&self, _record: &str) -> Option<String> {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+        unreachable!("a C11 document with a record list is refused by `unsupported`")
     }
     fn list_empty(&self) -> String {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+        unreachable!("a C11 list is declared through `bounded_list`")
+    }
+    // A buffer of its bound with the count of what it holds, named by the element
+    // and the bound so that two variables of one shape share a type, and declared
+    // under a guard so that two machines in one program do. The fields are the
+    // library's views' (`.data`, `.len`), so `len(x)` and `x[i]` lower over a list
+    // as they do over an algorithm's parameter.
+    fn bounded_list(&self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a C11 list has the bound `unsupported` asked of it");
+        let ty = format!("sce_static_list_{}_{capacity}_t", elem.as_attr());
+        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+        let def = format!(
+            "#ifndef {guard}\n#define {guard}\n\
+             /* SCE Accepted Subset §2.15: a `list<{elem}>` of at most {capacity}. */\n\
+             typedef struct {{\n    size_t len;\n    {} data[{capacity}];\n}} {ty};\n#endif",
+            crate::forge::generator::c_type(elem),
+            elem = elem.as_attr()
+        );
+        BoundedList {
+            empty: format!("({ty}){{ 0 }}"),
+            ty,
+            def: Some(def),
+        }
+    }
+    // A copy of the list the loop began with is walked, by a count of its own
+    // (§scxml-4.6). The outer `for` is how a statement declares the copy in a
+    // head that is one statement: it runs its body once.
+    fn foreach_loop_typed(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+        item_ty: &str,
+        list_ty: &str,
+    ) -> Option<(String, String)> {
+        let n = self
+            .loops
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let head = format!(
+            "for ({list_ty} sce_list_{n}_ = {list}, *sce_once_{n}_ = &sce_list_{n}_; \
+             sce_once_{n}_ != NULL; sce_once_{n}_ = NULL) \
+             for (size_t sce_at_{n}_ = 0; sce_at_{n}_ < sce_list_{n}_.len; ++sce_at_{n}_)"
+        );
+        let mut prologue =
+            format!("{item_ty} {item} = sce_list_{n}_.data[sce_at_{n}_]; (void){item};");
+        if let Some(index) = index {
+            prologue.push_str(&format!(
+                " uint32_t {index} = (uint32_t)sce_at_{n}_; (void){index};"
+            ));
+        }
+        Some((head, prologue))
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -3617,19 +3752,34 @@ impl StaticTarget for CTarget {
             )
         }
     }
+    // The value is computed into the slot the append would fill, which nothing
+    // reads until the count moves past it, so a value that failed leaves the list
+    // as it was; the bound is judged first, so a full list computes nothing.
+    // Either failure raises and ends the block the element stands in (§scxml-4.9)
+    // with the `return` every block's function ends on, so the statement spells
+    // its own end and the dispatcher has nothing to act on.
     fn append(
         &self,
-        _target: &str,
-        _capacity: u32,
-        _value: &str,
-        _value_can_fail: bool,
-        _overflow: &str,
-        _failed: &str,
+        target: &str,
+        capacity: u32,
+        value: &str,
+        value_can_fail: bool,
+        overflow: &str,
+        failed: &str,
     ) -> String {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+        let write = format!("{target}.data[{target}.len] = {value};");
+        let full = format!("if ({target}.len >= {capacity}u) {{ {overflow} return; }}");
+        if value_can_fail {
+            format!(
+                "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {full} {write} \
+                 if (sce_failure_.failed) {{ {failed} return; }} {target}.len++; }}"
+            )
+        } else {
+            format!("{{ {full} {write} {target}.len++; }}")
+        }
     }
-    fn clear(&self, _target: &str) -> String {
-        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    fn clear(&self, target: &str) -> String {
+        format!("{target}.len = 0;")
     }
     // `machine` is the symbol every name of the machine starts with, prefix
     // included, which the generator hands the walk for it.
@@ -4118,7 +4268,7 @@ fn lower_action(
         // nothing else is nested below it (§scxml-4.6).
         "foreach" => {
             let list = action.array.trim();
-            let (elem, _) = rewrites.lists.get(list).ok_or_else(|| {
+            let (elem, capacity) = rewrites.lists.get(list).ok_or_else(|| {
                 GenerateError::unsupported(format!(
                     "<foreach array=\"{list}\"> names no list variable"
                 ))
@@ -4142,7 +4292,19 @@ fn lower_action(
                 crate::forge::type_ctx::LoopVariables::new(item, index, elem, &rewrites.schemas);
             let inner = loop_variables.bind(ctx);
             let name = renames.get(list).copied().unwrap_or(list);
-            if let Some((head, prologue)) = target.foreach_loop(name, item, index) {
+            // What a target that has to name the item's type and the list it
+            // copies is told: a list of numbers has both, a list of records
+            // neither yet, which the target that needs them refuses.
+            let (item_ty, list_ty) = match elem {
+                crate::forge::model::ListElemType::Scalar(scalar) => (
+                    target.scalar_type(scalar),
+                    target.bounded_list(scalar, Some(*capacity)).ty,
+                ),
+                crate::forge::model::ListElemType::Record { .. } => (String::new(), String::new()),
+            };
+            if let Some((head, prologue)) =
+                target.foreach_loop_typed(name, item, index, &item_ty, &list_ty)
+            {
                 action.native_loop = head;
                 action.native_loop_prologue = prologue;
             }

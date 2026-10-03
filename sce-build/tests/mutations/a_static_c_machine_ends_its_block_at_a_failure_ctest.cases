@@ -103,3 +103,64 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "    sm->policy.{{ field.name }} = {{ field.init }};",
      "    (void)sm;")
 PY
+
+# ── A list holds what its capacity says and no more ────────────────
+#
+# `static_list`: the fourth append to a list of three appends nothing and
+# raises `error.execution`. A bound tested one element late writes it — past the
+# array, into whatever follows — and the published length says four.
+
+mutation_case "an append to a full list is written anyway" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "if ({target}.len >= {capacity}u) {{ {overflow} return; }}",
+     "if ({target}.len > {capacity}u) {{ {overflow} return; }}")
+PY
+
+# `static_block_ends_list`: the full list's refusal ends the block the append
+# stands in, so the statement after it does not run. (An append whose element
+# itself fails has no scenario on any engine, so no case here can observe the
+# half of `append` that computes the element before it counts the slot.)
+
+mutation_case "a block goes on after an append the full list refused" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "if ({target}.len >= {capacity}u) {{ {overflow} return; }}",
+     "if ({target}.len >= {capacity}u) {{ {overflow} }}")
+PY
+
+mutation_case "a clear leaves the elements in the list" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"{target}.len = 0;\")",
+     "format!(\"{target}.len = {target}.len;\")")
+PY
+
+# ── A loop walks the list as it began ──────────────────────────────
+#
+# `static_foreach` appends each element to the list it walks: a walk of the live
+# list never ends before the list is full, and one that reads the live length
+# for the copy's takes the element it has just written.
+
+mutation_case "a loop walks the live list instead of its copy" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "sce_at_{n}_ < sce_list_{n}_.len",
+     "sce_at_{n}_ < {list}.len")
+PY
+
+mutation_case "a loop's index is one past its position" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "(uint32_t)sce_at_{n}_; (void){index};",
+     "(uint32_t)sce_at_{n}_ + 1u; (void){index};")
+PY
+
+mutation_case "a native loop's head is never entered" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        {{ action.native_loop }} {\n            {{ action.native_loop_prologue }}",
+     "        if (false) {\n            {{ action.native_loop_prologue }}")
+PY
+
+# ── A published list is its elements and their count ───────────────
+
+mutation_case "a published list's view says one element too few" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len };",
+     "    return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len > 0 ? sm->policy.{{ field.name }}.len - 1 : 0 };")
+PY
