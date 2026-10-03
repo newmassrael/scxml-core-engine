@@ -103,7 +103,12 @@
    it through `JSON.stringify` instead turned W3C 561's `<books>` document into
    a syntax error. #}
 {% if action.content %}
-{% if (action.content | trim) is startingwith('<') %}
+{# `datamodel="sce-static"`: the data is the wire text the build finished
+   (`Action::native_content`) — the string the text spells, JSON-quoted, or the
+   XML as written — so no script engine is asked for it. #}
+{% if action.native_content %}
+{% set content_data = '"' ~ (action.native_content | escape_kotlin) ~ '"' %}
+{% elif (action.content | trim) is startingwith('<') %}
 {% set content_data = '"' ~ (action.content | escape_kotlin) ~ '"' %}
 {% else %}
 {% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}

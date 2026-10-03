@@ -544,6 +544,26 @@ pub fn to_lua_data_content(
     Ok(lua_string_literal(&normalize_ws(content)))
 }
 
+/// The event data a `<send>`'s inline `<content>` hands its event in a document
+/// with no script engine, as the wire text: the XML as written, or otherwise the
+/// string the text spells, whitespace-normalised and JSON-quoted.
+///
+/// That is the last two rungs of [`to_lua_data_content`] and the reading the Go
+/// and Rust templates already take when `needs_script_engine` is false ("no data
+/// model, so the text is the value"). The first rung, a text that reads as a
+/// value, is the one an engine would have to evaluate: a `sce-static` document
+/// has none, so its `<content>123</content>` is the string `"123"` on every
+/// backend rather than a number on the ones that happen to carry an engine.
+pub fn static_content_wire(content: &str) -> String {
+    if content.trim_start().starts_with('<') {
+        return content.to_string();
+    }
+    format!(
+        "\"{}\"",
+        escape_json_string(normalize_ws(content.to_string()))
+    )
+}
+
 /// The value an `<assign>`'s in-line children specify, as an expression.
 ///
 /// The ordering is [`to_lua_data_content`]'s and only the last rung

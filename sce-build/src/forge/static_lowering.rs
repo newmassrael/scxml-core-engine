@@ -2379,9 +2379,8 @@ impl GoTarget<'_> {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
                 // A param is the typed value of the data model crossed to the
-                // event's JSON; a `<content>` is not lowered yet.
-                "send" if action.content.is_empty() => {}
-                "send" => return Some("a <send> carrying a <content>".to_string()),
+                // event's JSON, and a literal `<content>` is the text it spells.
+                "send" => {}
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
                 other => return Some(format!("<{other}>")),
@@ -2829,9 +2828,8 @@ impl PythonTarget {
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
                 // A param is the typed value of the data model crossed to the
-                // event's data; a `<content>` is not lowered yet.
-                "send" if action.content.is_empty() => {}
-                "send" => return Some("a <send> carrying a <content>".to_string()),
+                // event's data, and a literal `<content>` is the text it spells.
+                "send" => {}
                 "native_action" => return Some("a <sce:action>".to_string()),
                 other => return Some(format!("<{other}>")),
             }
@@ -3531,6 +3529,12 @@ fn lower_action(
         "send" => {
             for param in &mut action.params {
                 lower_wire_param(param, ctx, renames, rewrites)?;
+            }
+            // A literal `<content>` is the event's data as written, finished
+            // here ([`crate::filters::static_content_wire`]): the machine has
+            // no engine to evaluate the text with.
+            if !action.content.trim().is_empty() {
+                action.native_content = crate::filters::static_content_wire(&action.content);
             }
         }
         _ => {}

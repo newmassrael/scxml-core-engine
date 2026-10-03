@@ -1304,6 +1304,73 @@ fn a_python_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
 }
 
 #[test]
+fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
+    // Measured 2026-10-03: Go and Python refused a literal `<content>` by name,
+    // C++ still does, and Kotlin accepted it and generated
+    // `evaluateSendContent(ScriptSource.lua(…))` — a call to the script engine in
+    // a machine whose manifest says it needs none, so the data depended on an
+    // engine nothing had given the machine. Rust already wrote the text out.
+    //
+    // Under a data model with no engine the text is the value (the rung Go and
+    // Rust take when `needs_script_engine` is false): the string it spells,
+    // whitespace-normalised and JSON-quoted. What is read is the generated
+    // machine, since the manifest says `needs_script_engine:false` either way.
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" type="internal">
+      <send event="note"><content>two   words</content></send>
+    </transition>
+    <transition event="note" type="internal"/>
+  </state>"#,
+    );
+    // The wire text, as each language spells the string literal carrying it.
+    let wire = r#""\"two words\"""#;
+    for (language, extension, native, engine) in [
+        ("kotlin", "kt", wire, "evaluateSendContent("),
+        ("rust", "rs", wire, "evaluate_expression"),
+        ("go", "go", wire, "EvaluateExpression"),
+        (
+            "python",
+            "py",
+            "_data = \"two words\"",
+            "_data = self._eval_send_payload(",
+        ),
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &document,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a sce-static machine's content needs no engine:\n{out}"
+        );
+        let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == extension))
+            .collect();
+        assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
+        let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+        assert!(
+            source.contains(native),
+            "{language}: the event's data is the text the content spells"
+        );
+        assert!(
+            !source.contains(engine),
+            "{language}: no script engine reads a send content"
+        );
+    }
+}
+
+#[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
     // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
     // would hand to an engine this data model does not have; they are refused,

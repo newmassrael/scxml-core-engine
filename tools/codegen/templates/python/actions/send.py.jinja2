@@ -228,7 +228,17 @@
 {% else %}
 {# ── The payload ── W3C SCXML 5.10: evaluated once, by the helper every arm
    reads. #}
-{% if action.params and (action.params | selectattr("native_value") | list | length > 0) %}
+{% if action.native_content %}
+{# `datamodel="sce-static"`: a literal `<content>` is the event's data as the
+   build finished it (`Action::native_content`) — the XML as written, or the
+   string the text spells, whitespace-normalised — so no script engine reads it.
+   The value is what the helper below returns for the same text: a string. #}
+{% if (action.content | trim) is startingwith('<') %}
+{{ indent }}_data = {{ action.content | py_string_literal }}
+{% else %}
+{{ indent }}_data = {{ action.content | normalize_ws | py_string_literal }}
+{% endif %}
+{% elif action.params and (action.params | selectattr("native_value") | list | length > 0) %}
 {# `datamodel="sce-static"`: each param's value is native code
    (`Param::native_value`) reading the policy's own attributes, so no script
    engine is asked for it. A checked operation that fails raises

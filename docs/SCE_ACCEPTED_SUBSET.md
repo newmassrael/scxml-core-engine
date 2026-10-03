@@ -3119,8 +3119,9 @@ Go lowers the model through the same walk (`GoTarget`), and refuses what it does
 not by name: scalar variables of a number, a bool or a string, an enum, a record,
 and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
 `<foreach>`; a transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`,
-`<raise>`, a `<send>` / `<cancel>`, the `<param>`s of a `<send>` (a `<content>`
-is not lowered yet), `In()`, an event's typed payload, a call of an imported
+`<raise>`, a `<send>` / `<cancel>`, the `<param>`s and a literal `<content>` of a
+`<send>` (the text it spells, as `Python` below says), `In()`, an event's typed
+payload, a call of an imported
 algorithm, the `<param>`s of a `<final>`'s `<donedata>`, an `<invoke
 type="scxml">` and the values it hands its child, and a `<sce:action>` whose
 arguments are typed expressions of the machine's variables. Bytes, and an
@@ -3203,9 +3204,13 @@ its values by the build: each `<param>` and `namelist` name is native code read
 when the invoke executes, put in a `<Machine>InvokeParams` and given to the
 child's `accept_params` before it initializes (6.4.1), a value that failed is
 reported and the child starts one value short (5.7.1), and the child is imported
-as a module beside its parent. A host-run, a hybrid and a mesh `<invoke>`, a
-`<send>` that carries a `<content>`, a `<sce:action>` and `bytes` are not
-lowered yet. Each variable is an attribute of
+as a module beside its parent. A `<send>`'s literal `<content>` is the text it
+spells: the build finishes the event's data (the XML as written, or the string,
+whitespace-normalised, that Go and Rust already wrote when no engine was there),
+so a `<content>123</content>` is the string `"123"` on every backend rather than
+a number on the ones that happened to carry an engine. A host-run, a hybrid and a
+mesh `<invoke>`, a `<sce:action>` and `bytes` are not lowered yet. Each variable
+is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the

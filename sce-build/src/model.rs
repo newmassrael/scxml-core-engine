@@ -512,6 +512,16 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_loop_prologue: String,
+    /// Codegen-internal: the event data of a `<send>` carrying a literal
+    /// `<content>` in a `sce-static` document, as the wire text
+    /// ([`crate::filters::static_content_wire`]) — the JSON string the text
+    /// spells, or the XML as written. When set, the backend's `<send>` template
+    /// hands it to the event as it stands, with no script engine to evaluate
+    /// the text. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
