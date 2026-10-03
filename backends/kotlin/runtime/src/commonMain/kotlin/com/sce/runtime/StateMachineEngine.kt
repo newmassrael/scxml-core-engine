@@ -8,11 +8,14 @@ package com.sce.runtime
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.atomics.incrementAndFetch
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -1632,6 +1635,36 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var engineScope: CoroutineScope? = null
 
     /**
+     * The monitor the coroutine mode's macrosteps and [stop] / [cleanup] share.
+     *
+     * This engine's state — the configuration, the queues, the delayed sends —
+     * belongs to the one coroutine that runs its macrosteps, and none of it is
+     * thread-safe. [stop] is called from the host's thread, and cancelling the
+     * coroutine does not interrupt a macrostep that is running, so it used to
+     * clear that state beside the thread still working on it: a hosted run
+     * failed with a `NullPointerException` out of a sort of [scheduledSends]
+     * that [stop] had just emptied. Everything the coroutine does between two
+     * suspensions is done holding this, and so is the teardown.
+     */
+    private val macrostepLock = Any()
+
+    /**
+     * Run [block], one stretch of the coroutine mode's loop between two
+     * suspensions, holding [macrostepLock] and only if the coroutine [running]
+     * it has not been cancelled.
+     *
+     * [stop] cancels the coroutine before it asks for the lock, so a stretch
+     * that starts after the teardown has begun finds the cancellation here and
+     * touches nothing: it would otherwise run a macrostep on a machine already
+     * torn down, taking an event that [stop] was clearing.
+     */
+    private fun <T> underMacrostepLock(running: CoroutineContext, block: () -> T): T =
+        withMacrostepLock(macrostepLock) {
+            running.ensureActive()
+            block()
+        }
+
+    /**
      * Whether the state machine has reached a final state.
      *
      * Guaranteed to be visible only after [currentState] reflects the final state.
@@ -2153,35 +2186,48 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         beginRun()
         job = scope.launch(Dispatchers.Default) {
-            // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
-            enterInitialConfiguration()
-            settleCurrentState()
+            val running = coroutineContext
+            // The entry is one stretch of the loop between two suspensions, held
+            // under [macrostepLock] as every other is. Whether the loop goes on
+            // is read inside it, where [stop] cannot be changing what it reads.
+            val loops = underMacrostepLock(running) {
+                // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
+                enterInitialConfiguration()
+                settleCurrentState()
 
-            // Flush pending final state from initial entry (e.g., test415:
-            // initial state IS a final state)
-            flushPendingFinalState()
+                // Flush pending final state from initial entry (e.g., test415:
+                // initial state IS a final state)
+                flushPendingFinalState()
 
-            // W3C SCXML Appendix D: Process eventless transitions and internal
-            // events raised during initial entry (e.g., done.state from <final>)
-            drainEventlessAndInternal()
+                // W3C SCXML Appendix D: Process eventless transitions and internal
+                // events raised during initial entry (e.g., done.state from <final>)
+                drainEventlessAndInternal()
 
-            // §scxml-6.4: Execute deferred invokes after initial configuration
-            executePendingInvokes()
-            macrostepSettled()
+                // §scxml-6.4: Execute deferred invokes after initial configuration
+                executePendingInvokes()
+                macrostepSettled()
 
-            // §scxml-3.7: Only enter event loop if not already in final state
-            // (child SMs may reach final state during drainEventlessAndInternal)
-            if (!isInFinalState) {
-                while (true) {
-                    val queued = awaitNextExternalEvent() ?: break
-                    if (isInFinalState) break
-                    // §scxml-6.4: the refusal the sync loop applies at its
-                    // dequeue, applied at this one.
-                    if (refusesHostInvokeCompletion(queued)) continue
-                    currentEventMetadata = queued.metadata
-                    bindTypedPayload(queued.event, queued.metadata)
-                    processMicrostep(queued.event, queued.metadata)
+                // §scxml-3.7: Only enter event loop if not already in final state
+                // (child SMs may reach final state during drainEventlessAndInternal)
+                !isInFinalState
+            }
+            while (loops) {
+                val queued = awaitNextExternalEvent() ?: break
+                val goOn = underMacrostepLock(running) {
+                    if (isInFinalState) {
+                        false
+                    } else {
+                        // §scxml-6.4: the refusal the sync loop applies at its
+                        // dequeue, applied at this one.
+                        if (!refusesHostInvokeCompletion(queued)) {
+                            currentEventMetadata = queued.metadata
+                            bindTypedPayload(queued.event, queued.metadata)
+                            processMicrostep(queued.event, queued.metadata)
+                        }
+                        true
+                    }
                 }
+                if (!goOn) break
             }
 
             // §scxml-6.2: a terminated session must not deliver the delayed
@@ -3275,21 +3321,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Destroy script engine session and release resources (sync mode cleanup).
      * Call after test assertions. Does not reset state — [currentState] remains readable.
+     *
+     * Like [stop], it does not run beside a macrostep of the same engine.
      */
     fun cleanup() {
-        scheduledSends.clear()
-        externalEventQueue.clear()
-        for ((_, entry) in activeInvokes) {
-            entry.child.cleanup()
+        withMacrostepLock(macrostepLock) {
+            scheduledSends.clear()
+            externalEventQueue.clear()
+            for ((_, entry) in activeInvokes) {
+                entry.child.cleanup()
+            }
+            activeInvokes.clear()
+            pendingInvokes.clear()
+            if (scriptEngineInitialized) {
+                scriptSessionId?.let { scriptEngine?.destroySession(it) }
+                scriptEngineInitialized = false
+                scriptSessionId = null
+            }
+            sessionUsedByARun = false
         }
-        activeInvokes.clear()
-        pendingInvokes.clear()
-        if (scriptEngineInitialized) {
-            scriptSessionId?.let { scriptEngine?.destroySession(it) }
-            scriptEngineInitialized = false
-            scriptSessionId = null
-        }
-        sessionUsedByARun = false
     }
 
     /**
@@ -3686,42 +3736,54 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Cancels the coroutine and closes the event channel.
      * The engine can be restarted with [start].
+     *
+     * It does not return while the coroutine is in the middle of a macrostep:
+     * cancelling does not interrupt one, and the teardown below clears the state
+     * that macrostep is using, so it waits for the macrostep to end. A macrostep
+     * is bounded (the microstep and external-event budgets), and what [stop]
+     * waits for is never a deadline or an event — the coroutine holds the lock
+     * only between two suspensions. A handler the engine calls from inside a
+     * macrostep may stop the engine it was called by: the lock is reentrant.
      */
     fun stop() {
+        // Before the lock is asked for, so a stretch of the loop that is waiting
+        // for it finds the cancellation when it gets it ([underMacrostepLock]).
         job?.cancel()
         job = null
-        // §scxml-D-exitInterpreter: a run the host stops is exited as one that
-        // ended — every active state's `onExit` runs, innermost first, while
-        // the script session its content needs still exists. A run that
-        // already ended has an empty configuration and exits nothing.
-        exitInterpreter()
-        engineScope = null
-        eventChannel.close()
-        // §scxml-6.4: Cancel all active invokes
-        for ((_, entry) in activeInvokes) {
-            // Cut off before the stop, as in [cancelInvoke].
-            entry.child.onSendToParent = null
-            entry.child.stop()
-            entry.monitorJob.cancel()
+        withMacrostepLock(macrostepLock) {
+            // §scxml-D-exitInterpreter: a run the host stops is exited as one that
+            // ended — every active state's `onExit` runs, innermost first, while
+            // the script session its content needs still exists. A run that
+            // already ended has an empty configuration and exits nothing.
+            exitInterpreter()
+            engineScope = null
+            eventChannel.close()
+            // §scxml-6.4: Cancel all active invokes
+            for ((_, entry) in activeInvokes) {
+                // Cut off before the stop, as in [cancelInvoke].
+                entry.child.onSendToParent = null
+                entry.child.stop()
+                entry.monitorJob.cancel()
+            }
+            activeInvokes.clear()
+            pendingInvokes.clear()
+            // §scxml-B-1: the script session is NOT destroyed here. A run ended by
+            // stop() leaves its datamodel readable, as one that ended in a
+            // top-level final does; [cleanup] releases it, and so does the next
+            // run's start ([beginRun]).
+            // Reset state for stop/start reuse. What each `<history>` recorded
+            // belongs to the session that is ending (§scxml-3.10): a restarted
+            // machine is a new session, and one that remembered would enter a
+            // history's recorded configuration where the document says default.
+            configuration.clear()
+            historyValues.clear()
+            pendingFinalState = false
+            internalEventQueue.clear()
+            externalEventQueue.clear()
+            scheduledSends.clear()
+            syncMode = false
+            completion = CompletableDeferred()
         }
-        activeInvokes.clear()
-        pendingInvokes.clear()
-        // §scxml-B-1: the script session is NOT destroyed here. A run ended by
-        // stop() leaves its datamodel readable, as one that ended in a
-        // top-level final does; [cleanup] releases it, and so does the next
-        // run's start ([beginRun]).
-        // Reset state for stop/start reuse. What each `<history>` recorded
-        // belongs to the session that is ending (§scxml-3.10): a restarted
-        // machine is a new session, and one that remembered would enter a
-        // history's recorded configuration where the document says default.
-        configuration.clear()
-        historyValues.clear()
-        pendingFinalState = false
-        internalEventQueue.clear()
-        externalEventQueue.clear()
-        scheduledSends.clear()
-        syncMode = false
-        completion = CompletableDeferred()
     }
 
     // --- Internal Event Queue (for <raise>) ---
@@ -4476,13 +4538,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * starts may `<cancel>` a later one that has not been taken yet.
      */
     private suspend fun awaitNextExternalEvent(): QueuedEvent<E>? {
-        while (!isInFinalState) {
+        val running = currentCoroutineContext()
+        while (true) {
+            // Each stretch between two suspensions runs under [macrostepLock]: what
+            // it reads and takes is what [stop] clears, and [stop] runs on another
+            // thread. The suspensions themselves — the yield and the wait — are
+            // outside it, so a host that stops this engine waits for a macrostep
+            // and never for a deadline.
+            var ended = false
             // A due send promoted below, taken in the turn it was promoted for.
-            externalEventQueue.removeFirstOrNull()?.let { return it }
+            val promoted = underMacrostepLock(running) {
+                ended = isInFinalState
+                if (ended) null else externalEventQueue.removeFirstOrNull()
+            }
+            if (ended) return null
+            if (promoted != null) return promoted
             // A loop that never suspends cannot be cancelled by [stop], and one
             // whose sends re-arm themselves at the same instant never suspends.
             yield()
-            val due = scheduledSends.firstOrNull()?.fireTimeMs
+            val due = underMacrostepLock(running) { scheduledSends.firstOrNull()?.fireTimeMs }
             val received = if (due == null) {
                 eventChannel.receiveCatching()
             } else {
@@ -4492,20 +4566,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (received != null) {
                 return received.getOrNull()
             }
-            val opened = beginTurn()
-            try {
-                while (!isInFinalState && promoteNextDueSend()) {
-                    // A plain send queued its event: it is the caller's to take.
-                    if (externalEventQueue.isNotEmpty()) break
-                    macrostepTruncated = false
-                    macrostepMicrostepsTaken = 0
-                    finishMacrostep()
+            underMacrostepLock(running) {
+                val opened = beginTurn()
+                try {
+                    while (!isInFinalState && promoteNextDueSend()) {
+                        // A plain send queued its event: it is the caller's to take.
+                        if (externalEventQueue.isNotEmpty()) break
+                        macrostepTruncated = false
+                        macrostepMicrostepsTaken = 0
+                        finishMacrostep()
+                    }
+                } finally {
+                    endTurn(opened)
                 }
-            } finally {
-                endTurn(opened)
             }
         }
-        return null
     }
 
     /**
