@@ -8,9 +8,80 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sce_app_core::{FigureRenderer, FigureRequest, FigureSet, RenderError, Sheet};
+use sce_app_core::{
+    Check, FigureRenderer, FigureRequest, FigureSet, ModelReviewer, PageRefusal, Record,
+    RenderError, Review, ReviewRequest, Sheet, Unresolved, Verdict,
+};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// What the stand-in product says of a model, by what the model says: one that
+/// contains `REFUSE` is refused with a record, one that contains `NOPAGE` is
+/// accepted and its page refused, and any other is accepted, leaves one question
+/// open, and has a page that says what it was asked.
+fn review_of(request: &ReviewRequest<'_>) -> Review {
+    let generator = Some("fake-sce 0".to_string());
+    if request.model.contains("REFUSE") {
+        return Review {
+            generator,
+            check: Check {
+                verdict: Verdict::Refused,
+                kind: None,
+                open: Vec::new(),
+                unresolved: Vec::new(),
+                records: vec![Record {
+                    code: "validation/invalid-reference".to_string(),
+                    message: "Transition in state 'closed' references non-existent target state 'nowhere'"
+                        .to_string(),
+                    stage: Some("validation".to_string()),
+                    line: Some(3),
+                    fix: None,
+                }],
+            },
+            page: None,
+            page_refusal: None,
+        };
+    }
+    let page_refused = request.model.contains("NOPAGE");
+    Review {
+        generator,
+        check: Check {
+            verdict: Verdict::Accepted,
+            kind: Some("statechart".to_string()),
+            open: vec!["1 question(s) the specification leaves open (open-guard)".to_string()],
+            unresolved: vec![Unresolved {
+                id: "open-guard".to_string(),
+                node_path: "states.closed.transitions[0]".to_string(),
+                line: Some(3),
+            }],
+            records: Vec::new(),
+        },
+        page: (!page_refused).then(|| {
+            format!(
+                "machine {} (lexicon: {})\n  model: {}\n",
+                request.name.unwrap_or("-"),
+                request.lexicon.unwrap_or("-"),
+                request.model.chars().take(40).collect::<String>(),
+            )
+        }),
+        page_refusal: page_refused.then(|| PageRefusal {
+            code: "cli/pseudo-unsupported".to_string(),
+            message: "the page does not abbreviate this construct".to_string(),
+        }),
+    }
+}
+
+impl ModelReviewer for FakeRenderer {
+    fn review(&self, request: &ReviewRequest<'_>) -> Result<Review, RenderError> {
+        Ok(review_of(request))
+    }
+}
+
+impl ModelReviewer for RefusingRenderer {
+    fn review(&self, _: &ReviewRequest<'_>) -> Result<Review, RenderError> {
+        Err(RenderError::TimedOut { seconds: 30 })
+    }
+}
 
 /// A generator that draws nothing real: one picture and one table whose text
 /// says what it was asked, so a test sees that the model and the options

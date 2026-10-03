@@ -41,6 +41,7 @@ import {
   ZOOMS,
   type ModelPanel,
   type ModelRead,
+  type ReviewPanel,
 } from "./model_view";
 import { tokenFromPaste, type Credentials } from "./token";
 
@@ -91,6 +92,10 @@ export class App {
   private model: ModelPanel | null = null;
   /** The newest request to read and draw the model; an older one that answers later is dropped. */
   private modelTicket = 0;
+  /** What SCE says of the model (its check and pseudocode page), apart from its drawing. */
+  private review: ReviewPanel | null = null;
+  /** The newest request for the review; an older one that answers later is dropped. */
+  private reviewTicket = 0;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
   /** What is typed in the new-work field, kept across redraws. */
@@ -179,6 +184,8 @@ export class App {
       // text back: the editor is shown now and the model fills in when SCE has drawn it.
       this.modelTicket += 1;
       this.model = { phase: "reading" };
+      this.reviewTicket += 1;
+      this.review = null;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -206,6 +213,8 @@ export class App {
       if (!current()) return;
       if (read.model === null || read.standing === null) {
         this.model = { phase: "none" };
+        this.reviewTicket += 1;
+        this.review = null;
         this.render();
         return;
       }
@@ -216,6 +225,9 @@ export class App {
         return;
       }
       this.model = { phase: "drawing", read: known };
+      // SCE's check and page are asked for beside the drawing and answer in their
+      // own time: a model that is slow to draw does not hold the page back.
+      void this.loadReview(id, known.model.revision);
       this.render();
       try {
         // SCE draws in the language the screen is in: its page vocabularies are
@@ -234,6 +246,31 @@ export class App {
       // A token wanted is the sign-in form's to answer; anything else is the
       // panel's own message, so it does not look like the work has no model.
       if (!this.askForToken(error)) this.model = { phase: "failed", message: this.explain(error) };
+    }
+    this.render();
+  }
+
+  /**
+   * Ask SCE what it says of the model: its check and its pseudocode page, in the
+   * language the screen is in. Only the newest request, for the editor that asked,
+   * is applied.
+   */
+  private async loadReview(id: string, revision: string): Promise<void> {
+    const session = this.session;
+    const ticket = ++this.reviewTicket;
+    const current = (): boolean => session === this.session && ticket === this.reviewTicket;
+    this.review = { phase: "reading" };
+    try {
+      const review = await this.api.review(id, revision, this.locale);
+      if (!current()) return;
+      this.review = { phase: "read", review };
+    } catch (error) {
+      if (!current()) return;
+      // A token wanted is the sign-in form's to answer; anything else is the
+      // panel's own message, so it does not look like SCE had nothing to say.
+      if (this.askForToken(error)) return;
+      const failure = drawFailureOf(error);
+      this.review = { phase: "failed", message: failure === null ? this.explain(error) : failure.message };
     }
     this.render();
   }
@@ -262,7 +299,9 @@ export class App {
       this.session += 1;
       this.opening += 1;
       this.modelTicket += 1;
+      this.reviewTicket += 1;
       this.looking += 1;
+      this.review = null;
       this.selected = null;
       this.editor = null;
       this.entries = [];
@@ -813,6 +852,7 @@ export class App {
           : h("span", { class: "muted rev" }, `${this.t("modelRevision")}: ${read.model.revision.slice(0, 12)}`),
       ),
       read === null ? null : this.standingBanner(read),
+      read === null ? null : this.reviewSection(),
       this.modelBody(model),
       read === null
         ? null
@@ -822,6 +862,112 @@ export class App {
             h("summary", {}, this.t("modelScxml")),
             h("pre", { class: "scxml" }, read.model.text),
           ),
+    );
+  }
+
+  /**
+   * What SCE says of the model: its verdict, what the model leaves open, and the
+   * pseudocode page the person reads against their own text. Every word of it is
+   * the product's; the screen only arranges it. Said once, where it can be read:
+   * a passed check does not say the model agrees with the text.
+   */
+  private reviewSection(): HTMLElement | null {
+    const review = this.review;
+    if (review === null) return null;
+    const heading = h("h4", {}, this.t("reviewTitle"));
+    if (review.phase === "reading") {
+      return h("section", { class: "review" }, heading, h("p", { class: "muted" }, this.t("reviewReading")));
+    }
+    if (review.phase === "failed") {
+      return h(
+        "section",
+        { class: "review" },
+        heading,
+        h("p", { class: "banner banner-error", role: "alert" }, this.t("reviewFailed", { detail: review.message })),
+      );
+    }
+    const { check, page, page_refusal: pageRefusal } = review.review;
+    const accepted = check.verdict === "accepted";
+    return h(
+      "section",
+      { class: "review" },
+      heading,
+      h(
+        "p",
+        { class: accepted ? "banner banner-ok" : "banner banner-error", role: "status" },
+        !accepted
+          ? this.t("reviewRefused")
+          : check.kind === null
+            ? this.t("reviewAcceptedUnknownKind")
+            : this.t("reviewAccepted", { kind: check.kind }),
+      ),
+      accepted ? this.openMatters(check.open, check.unresolved) : null,
+      accepted ? null : this.records(check.records),
+      accepted ? h("p", { class: "muted" }, this.t("reviewNote")) : null,
+      page === null
+        ? null
+        : h(
+            "details",
+            { class: "page", open: true },
+            h("summary", {}, this.t("reviewPageTitle")),
+            h("pre", { class: "pseudo" }, page),
+          ),
+      pageRefusal === null
+        ? null
+        : h(
+            "p",
+            { class: "banner banner-warn", role: "alert" },
+            this.t("reviewPageRefused", { detail: `${pageRefusal.message} (${pageRefusal.code})` }),
+          ),
+    );
+  }
+
+  /** What an accepted model leaves to a person: SCE's sentences, and the questions the model marks. */
+  private openMatters(open: readonly string[], unresolved: readonly { id: string; line: number | null }[]): HTMLElement {
+    if (open.length === 0 && unresolved.length === 0) {
+      return h("p", { class: "muted" }, this.t("reviewNothingOpen"));
+    }
+    return h(
+      "div",
+      { class: "open-matters" },
+      h("h5", {}, this.t("reviewOpenTitle")),
+      h(
+        "ul",
+        {},
+        ...open.map((sentence) => h("li", {}, sentence)),
+        ...unresolved.map((u) =>
+          h(
+            "li",
+            { class: "muted" },
+            u.line === null
+              ? this.t("reviewUnresolvedNoLine", { id: u.id })
+              : this.t("reviewUnresolvedAt", { id: u.id, line: String(u.line) }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /** Every record SCE wrote about a model it refused, with its code and where it found it. */
+  private records(records: readonly { code: string; message: string; line: number | null }[]): HTMLElement {
+    return h(
+      "div",
+      { class: "records" },
+      h("h5", {}, this.t("reviewRecordsTitle")),
+      h(
+        "ul",
+        {},
+        ...records.map((r) =>
+          h(
+            "li",
+            {},
+            r.message,
+            " ",
+            h("code", {}, r.code),
+            r.line === null ? null : ` ${this.t("reviewRecordLine", { line: String(r.line) })}`,
+          ),
+        ),
+      ),
     );
   }
 

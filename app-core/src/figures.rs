@@ -9,6 +9,10 @@
 //! and `sce-work` cannot disagree about what a model looks like or about what
 //! the product refused. The screen shows the SVG it is handed.
 //!
+//! The running of the generator (where it is found, how a run is staged and
+//! bounded, what a refusal looks like) lives here too, and `review` runs the
+//! same program the same way.
+//!
 //! # Why a program and not a library
 //!
 //! `sce-codegen` is the same binary an author and the authoring MCP run, so
@@ -33,6 +37,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+
+use crate::review::Product;
 
 /// How long the generator may take for one model.
 pub const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -81,7 +87,7 @@ pub struct FigureSet {
     pub sheets: Vec<Sheet>,
 }
 
-/// Why nothing was drawn.
+/// Why the product gave no answer: nothing was drawn, or nothing could be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderError {
     /// There is no generator to run, or it could not be started.
@@ -138,23 +144,30 @@ pub trait FigureRenderer: Send + Sync {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoRenderer;
 
-impl FigureRenderer for NoRenderer {
-    fn render(&self, _: &FigureRequest<'_>) -> Result<FigureSet, RenderError> {
-        Err(RenderError::Unavailable {
+impl NoRenderer {
+    /// The one sentence every request of a process with no generator is refused with.
+    pub(crate) fn unavailable() -> RenderError {
+        RenderError::Unavailable {
             reason: format!(
                 "no `sce-codegen` was found; set {GENERATOR_ENV} to its path, or put it beside \
                  this program or on PATH"
             ),
-        })
+        }
     }
 }
 
-/// The renderer a process uses unless it is told otherwise: the generator
+impl FigureRenderer for NoRenderer {
+    fn render(&self, _: &FigureRequest<'_>) -> Result<FigureSet, RenderError> {
+        Err(NoRenderer::unavailable())
+    }
+}
+
+/// The product a process uses unless it is told otherwise: the generator
 /// [`SceCodegen::discover`] finds, or [`NoRenderer`] saying there is none.
 ///
 /// One definition, so the application, the browser shell and `sce-work` look
 /// in the same places.
-pub fn default_renderer() -> Box<dyn FigureRenderer> {
+pub fn default_renderer() -> Box<dyn Product> {
     match SceCodegen::discover() {
         Some(generator) => Box::new(generator),
         None => Box::new(NoRenderer),
@@ -188,6 +201,16 @@ impl SceCodegen {
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    /// A command that runs the generator, for the module that adds its arguments.
+    pub(crate) fn command(&self) -> Command {
+        Command::new(&self.program)
+    }
+
+    /// How long one run of the generator may take.
+    pub(crate) fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     /// Where the generator is: [`GENERATOR_ENV`] when it is set, otherwise
@@ -323,7 +346,7 @@ impl FigureRenderer for SceCodegen {
 /// The file stem a document is staged under: `name` when it is a short word of
 /// lowercase letters, digits and `-` that starts with a letter or digit, else
 /// `model`. A name is never trusted as a path.
-fn stem(name: Option<&str>) -> &str {
+pub(crate) fn stem(name: Option<&str>) -> &str {
     const FALLBACK: &str = "model";
     match name {
         Some(name)
@@ -341,7 +364,7 @@ fn stem(name: Option<&str>) -> &str {
 }
 
 /// A value that is a word: letters, digits, `-` and `_`, and not an option.
-fn word(flag: &str, value: &str) -> Result<String, RenderError> {
+pub(crate) fn word(flag: &str, value: &str) -> Result<String, RenderError> {
     let ok = !value.is_empty()
         && !value.starts_with('-')
         && value
@@ -358,7 +381,7 @@ fn word(flag: &str, value: &str) -> Result<String, RenderError> {
 
 /// The product's refusal from what it wrote on standard error: its first record
 /// is JSON with a `code` and a `message`.
-fn refusal(stderr: &str, status: Option<i32>) -> RenderError {
+pub(crate) fn refusal(stderr: &str, status: Option<i32>) -> RenderError {
     let record = stderr
         .lines()
         .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
@@ -380,7 +403,7 @@ fn refusal(stderr: &str, status: Option<i32>) -> RenderError {
 }
 
 /// The start of what a program wrote, for a message.
-fn excerpt(text: &str) -> String {
+pub(crate) fn excerpt(text: &str) -> String {
     let text = text.trim();
     let mut kept: String = text.chars().take(400).collect();
     if text.chars().count() > 400 {
@@ -394,18 +417,22 @@ fn excerpt(text: &str) -> String {
 }
 
 /// What a bounded run left.
-struct Run {
-    success: bool,
-    code: Option<i32>,
-    stdout: String,
-    stderr: String,
+pub(crate) struct Run {
+    pub(crate) success: bool,
+    pub(crate) code: Option<i32>,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
 /// Run `command` in `dir`, and stop it if it takes longer than `timeout`.
 ///
 /// Its output goes to files, not pipes: a program that writes more than a pipe
 /// holds would otherwise wait for a reader this loop is not.
-fn run_bounded(mut command: Command, dir: &Path, timeout: Duration) -> Result<Run, RenderError> {
+pub(crate) fn run_bounded(
+    mut command: Command,
+    dir: &Path,
+    timeout: Duration,
+) -> Result<Run, RenderError> {
     let stdout_path = dir.join(".stdout");
     let stderr_path = dir.join(".stderr");
     let open = |path: &Path| {
@@ -459,10 +486,10 @@ static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A folder of its own under the system's temporary directory, removed when it
 /// is dropped.
-struct Scratch(PathBuf);
+pub(crate) struct Scratch(PathBuf);
 
 impl Scratch {
-    fn new() -> io::Result<Self> {
+    pub(crate) fn new() -> io::Result<Self> {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -476,7 +503,7 @@ impl Scratch {
         Ok(Scratch(path))
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }

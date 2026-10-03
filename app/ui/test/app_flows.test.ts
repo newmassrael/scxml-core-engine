@@ -100,7 +100,46 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 3, commands: [], root: "/fake/works" };
+        return { command_set_version: 4, commands: [], root: "/fake/works" };
+      case "review": {
+        const model = typeof args["id"] === "string" ? this.models.get(args["id"]) : undefined;
+        if (model === undefined) throw new CommandFailure("not-found", "no model");
+        const head = work?.revisions.at(-1)?.revision ?? null;
+        const revision = this.revision(`model:${model.text}`);
+        const standing =
+          model.writtenFor === null ? "unstated" : model.writtenFor === head ? "current" : "behind";
+        const base = { model: { revision, written_for: model.writtenFor }, source_head: head, standing, generator: "fake-sce 0" };
+        if (model.text.includes("REFUSE")) {
+          return {
+            ...base,
+            check: {
+              verdict: "refused",
+              kind: null,
+              open: [],
+              unresolved: [],
+              records: [
+                { code: "validation/invalid-reference", message: "no such state 'nowhere'", stage: "validation", line: 3 },
+              ],
+            },
+            page: null,
+            page_refusal: null,
+          };
+        }
+        const refused = model.text.includes("NOPAGE");
+        return {
+          ...base,
+          check: {
+            verdict: "accepted",
+            kind: "statechart",
+            open: ["1 question(s) the specification leaves open (open-guard)"],
+            unresolved: [{ id: "open-guard", node_path: "states.closed.transitions[0]", line: 3 }],
+            records: [],
+          },
+          // Indented, with a run of spaces and a final newline: the screen keeps them.
+          page: refused ? null : `machine door (lexicon: ${String(args["lexicon"] ?? "-")})\n  state closed:\n    on open   -> opened\n`,
+          page_refusal: refused ? { code: "cli/pseudo-unsupported", message: "the page does not abbreviate this" } : null,
+        };
+      }
       case "remove_work": {
         if (work === undefined) throw new CommandFailure("not-found", "no such work");
         this.works.delete(String(args["id"]));
@@ -593,6 +632,144 @@ describe("the model panel", () => {
     expect(modelText()).toContain("the model file is damaged");
     expect(modelText()).not.toContain("No model yet");
     expect(editor().value).toBe("alpha two");
+  });
+});
+
+// ---- what SCE says of the model -------------------------------------------
+
+const reviewText = (): string => root.querySelector(".review")?.textContent ?? "";
+const pseudo = (): HTMLElement | null => root.querySelector(".review pre.pseudo");
+
+describe("what SCE says of the model", () => {
+  it("shows the verdict, what the model leaves open, and the page exactly as SCE wrote it", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("SCE accepted the model as a statechart.");
+    expect(reviewText()).toContain("1 question(s) the specification leaves open (open-guard)");
+    expect(reviewText()).toContain("open-guard (line 3)");
+    // Every space and line break of the page is the product's.
+    expect(pseudo()?.textContent).toBe("machine door (lexicon: en)\n  state closed:\n    on open   -> opened\n");
+    // The page is text, never markup.
+    expect(root.querySelector(".review pre.pseudo *")).toBeNull();
+  });
+
+  it("says once that a passed check does not say the model agrees with the text", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("does not say the model agrees with your text");
+    expect(reviewText()).not.toContain("proved");
+  });
+
+  it("asks SCE for the page in the language the screen is in, and again when it changes", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    expect(core.callsOf("review")[0]?.["lexicon"]).toBe("en");
+
+    const picker = root.querySelector("header select") as HTMLSelectElement;
+    picker.value = "ko";
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+
+    expect(core.callsOf("review")).toHaveLength(2);
+    expect(core.callsOf("review")[1]?.["lexicon"]).toBe("ko");
+    expect(pseudo()?.textContent).toContain("(lexicon: ko)");
+  });
+
+  it("shows every record SCE wrote for a model it refuses, and no page", async () => {
+    core.setModel("alpha", "<scxml>REFUSE</scxml>", core.revision("alpha two"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("SCE refused the model");
+    expect(reviewText()).toContain("no such state 'nowhere'");
+    expect(reviewText()).toContain("validation/invalid-reference");
+    expect(reviewText()).toContain("line 3");
+    expect(pseudo()).toBeNull();
+    // A refused model is not told it passed.
+    expect(reviewText()).not.toContain("does not say the model agrees");
+  });
+
+  it("keeps the verdict and says why when SCE accepts a model and will not write its page", async () => {
+    core.setModel("alpha", "<scxml>NOPAGE</scxml>", core.revision("alpha two"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("SCE accepted the model");
+    expect(reviewText()).toContain("did not write its pseudocode page");
+    expect(reviewText()).toContain("cli/pseudo-unsupported");
+    expect(pseudo()).toBeNull();
+  });
+
+  it("says SCE could not answer, in the product's words, and still draws the figures", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    core.failNext("review", new CommandFailure("sce-timeout", "the SCE generator did not finish in 30 s and was stopped"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("SCE could not read the model");
+    expect(reviewText()).toContain("did not finish in 30 s");
+    expect(pseudo()).toBeNull();
+    expect(images()).toHaveLength(2);
+  });
+
+  it("does not hold the page back for a slow drawing, nor the drawing for a slow page", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    const drawing = core.hold("figures");
+    await click("Alpha");
+    expect(pseudo()?.textContent).toContain("machine door");
+    expect(images()).toHaveLength(0);
+    drawing.release();
+    await settle();
+    expect(images()).toHaveLength(2);
+
+    await click("Beta");
+    core.setModel("beta", "<scxml/>", core.revision("beta one"));
+    const page = core.hold("review");
+    await click("Alpha");
+    expect(images()).toHaveLength(2);
+    expect(reviewText()).toContain("Reading what SCE says");
+    page.release();
+    await settle();
+    expect(pseudo()).not.toBeNull();
+  });
+
+  it("does not put one work's page under another work", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    const page = core.hold("review", (args) => args["id"] === "alpha");
+    await click("Alpha");
+    await click("Beta");
+    page.release();
+    await settle();
+
+    expect(heading()).toBe("Beta");
+    expect(root.querySelector(".review")).toBeNull();
+    expect(pseudo()).toBeNull();
+  });
+
+  it("is not asked for a work that has no model, and is gone with a work that is removed", async () => {
+    await click("Alpha");
+    expect(core.callsOf("review")).toHaveLength(0);
+    expect(root.querySelector(".review")).toBeNull();
+
+    core.setModel("beta", "<scxml/>", core.revision("beta one"));
+    await click("Beta");
+    expect(pseudo()).not.toBeNull();
+    await click("Remove this work");
+    await click("Remove");
+    expect(root.querySelector(".review")).toBeNull();
+  });
+
+  it("is not asked again when only the text is saved: the model is the same", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    expect(core.callsOf("review")).toHaveLength(1);
+
+    await type("alpha changed");
+    await click("Save");
+    expect(core.callsOf("review")).toHaveLength(1);
+    expect(core.callsOf("figures")).toHaveLength(1);
+    // Where the model stands has moved, and the screen says so.
+    expect(modelText()).toContain("earlier text");
+    expect(pseudo()).not.toBeNull();
   });
 });
 

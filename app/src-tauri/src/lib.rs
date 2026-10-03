@@ -13,14 +13,15 @@
 //! network. The works folder is reached only through the store, which is the
 //! only code that touches it.
 
-use sce_app_core::{call, default_renderer, default_root, CommandError, FigureRenderer, WorkStore};
+use sce_app_core::{call, default_renderer, default_root, CommandError, Product, WorkStore};
 use serde_json::Value;
 use tauri::Manager;
 
-/// The works folder this window works on, and what draws a model for it.
+/// The works folder this window works on, and the product that draws a model
+/// and reads one for it.
 struct Works {
     store: WorkStore,
-    figures: Box<dyn FigureRenderer>,
+    figures: Box<dyn Product>,
 }
 
 /// Run one of the store's commands. The screen's only way to anything.

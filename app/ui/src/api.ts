@@ -12,6 +12,7 @@ import {
   parseReadModel,
   parseReadSource,
   parseRemoved,
+  parseReview,
   parseSaved,
   parseWork,
   parseWorkAndHead,
@@ -20,6 +21,7 @@ import {
   type HistoryEntry,
   type Listing,
   type ReadModel,
+  type Review,
   type Revision,
   type Saved,
   type SourceText,
@@ -46,6 +48,13 @@ export interface Api {
    * when SCE will not draw it, in the product's own words.
    */
   figures(id: string, revision?: Revision, lexicon?: string): Promise<Figures>;
+  /**
+   * What SCE says of the work's model (the current one, or `revision`'s): its check
+   * and its pseudocode page, in the vocabulary `lexicon` names. A model SCE refuses
+   * is an answer (`check.verdict` is `refused`); SCE not answering at all is a
+   * refusal with a `sce-*` kind.
+   */
+  review(id: string, revision?: Revision, lexicon?: string): Promise<Review>;
   /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
@@ -88,6 +97,14 @@ export function apiOver(transport: Transport): Api {
         ...(lexicon === undefined ? {} : { lexicon }),
       };
       return parseFigures(await transport.call("figures", args));
+    },
+    async review(id, revision, lexicon) {
+      const args = {
+        id,
+        ...(revision === undefined ? {} : { revision }),
+        ...(lexicon === undefined ? {} : { lexicon }),
+      };
+      return parseReview(await transport.call("review", args));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

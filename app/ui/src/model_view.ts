@@ -10,7 +10,7 @@
 // failure to draw is told from every other failure; `app.ts` holds the order of
 // events around them.
 
-import type { Figures, ModelText, Revision, Standing } from "./contract";
+import type { Figures, ModelText, Review, Revision, Standing } from "./contract";
 import { CommandFailure } from "./ipc";
 
 /** The model a work has, and how it stands to the text now. */
@@ -41,6 +41,16 @@ export type ModelPanel =
   /** SCE would not, or could not: the model is still shown, as text. */
   | { readonly phase: "not-drawn"; readonly read: ModelRead; readonly failure: DrawFailure }
   /** The model could not be read at all. */
+  | { readonly phase: "failed"; readonly message: string };
+
+/**
+ * Where the review is: what SCE says of the model apart from its figures. It is
+ * asked for beside the drawing and answers in its own time, so it has its own state.
+ */
+export type ReviewPanel =
+  | { readonly phase: "reading" }
+  | { readonly phase: "read"; readonly review: Review }
+  /** SCE did not answer, or the answer could not be read: said in words, not as an empty review. */
   | { readonly phase: "failed"; readonly message: string };
 
 /** The kinds the core gives when the model exists and was not drawn. */

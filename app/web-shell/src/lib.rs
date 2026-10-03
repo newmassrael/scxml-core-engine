@@ -29,7 +29,7 @@ pub mod assets;
 pub mod server;
 pub mod token;
 
-use sce_app_core::{call, CommandError, FigureRenderer, WorkStore, MAX_SOURCE_BYTES};
+use sce_app_core::{call, CommandError, Product, WorkStore, MAX_SOURCE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -92,11 +92,11 @@ struct Envelope {
     args: Value,
 }
 
-/// The handler: the works folder it serves, what draws a model for it, the token
-/// it requires, the screen it shows.
+/// The handler: the works folder it serves, the product that draws a model and
+/// reads one for it, the token it requires, the screen it shows.
 pub struct Shell {
     store: WorkStore,
-    figures: Box<dyn FigureRenderer>,
+    figures: Box<dyn Product>,
     token: String,
     assets: Option<Assets>,
 }
@@ -104,7 +104,7 @@ pub struct Shell {
 impl Shell {
     pub fn new(
         store: WorkStore,
-        figures: Box<dyn FigureRenderer>,
+        figures: Box<dyn Product>,
         token: String,
         assets: Option<Assets>,
     ) -> Self {

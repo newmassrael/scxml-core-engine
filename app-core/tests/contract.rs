@@ -21,8 +21,7 @@
 mod common;
 
 use sce_app_core::{
-    call, CommandError, FigureRenderer, FixedClock, NoRenderer, WorkStore, COMMANDS,
-    COMMAND_SET_VERSION,
+    call, CommandError, FixedClock, NoRenderer, Product, WorkStore, COMMANDS, COMMAND_SET_VERSION,
 };
 use serde_json::{json, Map, Value};
 
@@ -59,7 +58,7 @@ fn refusal(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
 
 fn refusal_by(
     store: &WorkStore<FixedClock>,
-    renderer: &dyn FigureRenderer,
+    renderer: &dyn Product,
     name: &str,
     args: Value,
 ) -> Value {
@@ -175,6 +174,10 @@ fn replies() -> Value {
         .unwrap()
         .to_string();
     answers.insert(
+        "review".into(),
+        answer(&store, "review", json!({"id": id, "lexicon": "en"})),
+    );
+    answers.insert(
         "save_model_kept".into(),
         answer(
             &store,
@@ -195,6 +198,27 @@ fn replies() -> Value {
     // reply that follows.
     let other = answer(&store, "create_work", json!({"title": "Window blind"}));
     let other_id = other["id"].as_str().expect("a work id").to_string();
+    // What SCE says of a model it refuses, and of one it accepts and cannot write
+    // the page of, each on this work before it is removed.
+    let refused_model = answer(
+        &store,
+        "save_model",
+        json!({"id": other_id, "text": "<scxml>REFUSE</scxml>"}),
+    );
+    answers.insert(
+        "review_refused".into(),
+        answer(&store, "review", json!({"id": other_id})),
+    );
+    answer(
+        &store,
+        "save_model",
+        json!({"id": other_id, "text": "<scxml>NOPAGE</scxml>",
+               "base": refused_model["revision"]}),
+    );
+    answers.insert(
+        "review_no_page".into(),
+        answer(&store, "review", json!({"id": other_id})),
+    );
     answers.insert(
         "remove_work".into(),
         answer(&store, "remove_work", json!({"id": other_id})),

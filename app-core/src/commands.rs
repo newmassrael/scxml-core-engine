@@ -18,7 +18,8 @@ use serde_json::{json, Value};
 
 use crate::clock::Clock;
 use crate::error::StoreError;
-use crate::figures::{FigureRenderer, FigureRequest, RenderError};
+use crate::figures::{FigureRequest, RenderError};
+use crate::review::{Product, ReviewRequest};
 use crate::revision::Revision;
 use crate::store::{WorkId, WorkStore};
 
@@ -36,6 +37,7 @@ pub const COMMANDS: &[&str] = &[
     "model_history",
     "figures",
     "remove_work",
+    "review",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -48,7 +50,9 @@ pub const COMMANDS: &[&str] = &[
 /// 3: a work can be removed (`remove_work`). A screen written for 3 offers it and
 /// would be refused by a core of 2 with `unknown-command`, so the two are told
 /// apart before the person presses the button.
-pub const COMMAND_SET_VERSION: u32 = 3;
+///
+/// 4: SCE's check and pseudocode page of a model can be read (`review`).
+pub const COMMAND_SET_VERSION: u32 = 4;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -164,6 +168,16 @@ struct Figures {
     min_pt: Option<f64>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReviewModel {
+    id: String,
+    #[serde(default)]
+    revision: Option<Revision>,
+    #[serde(default)]
+    lexicon: Option<String>,
+}
+
 /// How a model stands to the text now, as one word every shell uses the same
 /// way: `current` when it was written for the text as it is, `behind` when it
 /// was written for an earlier one, `unstated` when its writer did not say.
@@ -189,11 +203,11 @@ fn work_id(text: &str) -> Result<WorkId, CommandError> {
     WorkId::parse(text).map_err(CommandError::from)
 }
 
-/// Run the command `name` with `args` against `store`; `renderer` draws a
-/// model for `figures`.
+/// Run the command `name` with `args` against `store`; `renderer` is the
+/// product: it draws a model for `figures` and reads one for `review`.
 pub fn call<C: Clock>(
     store: &WorkStore<C>,
-    renderer: &dyn FigureRenderer,
+    renderer: &dyn Product,
     name: &str,
     args: Value,
 ) -> Result<Value, CommandError> {
@@ -287,6 +301,34 @@ pub fn call<C: Clock>(
                 "standing": standing(model.written_for.as_ref(), source_head.as_ref()),
                 "generator": drawn.generator,
                 "sheets": drawn.sheets,
+            }))
+        }
+        "review" => {
+            let ReviewModel {
+                id,
+                revision,
+                lexicon,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let Some(model) = store.read_model(&id, revision.as_ref())? else {
+                return Err(CommandError::from(StoreError::NotFound {
+                    what: format!("a model of work `{}` (none was saved)", id.as_str()),
+                }));
+            };
+            let source_head = store.head(&id)?;
+            let read = renderer.review(&ReviewRequest {
+                model: &model.text,
+                name: Some(id.slug()),
+                lexicon: lexicon.as_deref(),
+            })?;
+            Ok(json!({
+                "model": { "revision": model.revision, "written_for": model.written_for },
+                "source_head": source_head,
+                "standing": standing(model.written_for.as_ref(), source_head.as_ref()),
+                "generator": read.generator,
+                "check": read.check,
+                "page": read.page,
+                "page_refusal": read.page_refusal,
             }))
         }
         "remove_work" => {

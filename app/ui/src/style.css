@@ -332,6 +332,36 @@ textarea:focus-visible {
   font: 0.75rem/1.4 var(--mono);
 }
 
+/* What SCE says of the model: its verdict, what it leaves open, and the pseudocode
+   page the person reads against their text. The page keeps its spaces and its
+   line breaks exactly (it is indented text, and a value in it is spelled as the
+   author wrote it), and scrolls sideways rather than wrapping. */
+.review {
+  margin: 12px 0;
+}
+
+.review h4,
+.review h5 {
+  margin: 8px 0 4px;
+  font-size: 0.9rem;
+}
+
+.review h5 {
+  font-size: 0.85rem;
+}
+
+.review ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.review .page > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.pseudo,
 .scxml {
   margin: 8px 0 0;
   max-height: 50vh;

@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 3;
+export const SUPPORTED_COMMAND_SET_VERSION = 4;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -81,6 +81,53 @@ export interface Figures {
   /** The generator's own version line, when it gave one. */
   readonly generator: string | null;
   readonly sheets: readonly DrawnSheet[];
+}
+
+/** SCE's verdict on a document. It is the product's verdict, not a claim that the model matches the text. */
+export type Verdict = "accepted" | "refused";
+
+/** One question the model marks as not decided, and where. */
+export interface Unresolved {
+  readonly id: string;
+  readonly node_path: string;
+  readonly line: number | null;
+}
+
+/** One record SCE wrote about the document, in its words. */
+export interface CheckRecord {
+  readonly code: string;
+  readonly message: string;
+  readonly stage: string | null;
+  readonly line: number | null;
+}
+
+/** SCE's check of a model. */
+export interface Check {
+  readonly verdict: Verdict;
+  /** The kind SCE read the document as; `null` for one it refused. */
+  readonly kind: string | null;
+  /** What an accepted model still leaves to a person, in SCE's sentences. */
+  readonly open: readonly string[];
+  readonly unresolved: readonly Unresolved[];
+  readonly records: readonly CheckRecord[];
+}
+
+/** Why SCE did not write the page of a model it accepted. */
+export interface PageRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** `review`: what SCE says of a model, for the person who reads it against the text. */
+export interface Review {
+  readonly model: { readonly revision: Revision; readonly written_for: Revision | null };
+  readonly source_head: Revision | null;
+  readonly standing: Standing;
+  readonly generator: string | null;
+  readonly check: Check;
+  /** The pseudocode page, as SCE wrote it; `null` when there is none (see `page_refusal`, or a refused model). */
+  readonly page: string | null;
+  readonly page_refusal: PageRefusal | null;
 }
 
 export interface Described {
@@ -261,6 +308,85 @@ export function parseFigures(value: unknown): Figures {
       const sheet = record(s, where);
       return { name: text(sheet, "name", where), svg: text(sheet, "svg", where) };
     }),
+  };
+}
+
+function nullableText(value: Obj, key: string, where: string): string | null {
+  const field = value[key];
+  if (field === null || field === undefined) return null;
+  if (typeof field !== "string") throw new ContractError(`${where}.${key}`, "a string or null");
+  return field;
+}
+
+function nullableNumber(value: Obj, key: string, where: string): number | null {
+  const field = value[key];
+  if (field === null || field === undefined) return null;
+  if (typeof field !== "number") throw new ContractError(`${where}.${key}`, "a number or null");
+  return field;
+}
+
+function parseCheck(value: unknown): Check {
+  const where = "review.check";
+  const r = record(value, where);
+  const verdict = r["verdict"];
+  if (verdict !== "accepted" && verdict !== "refused") {
+    throw new ContractError(`${where}.verdict`, '"accepted" or "refused"');
+  }
+  return {
+    verdict,
+    kind: nullableText(r, "kind", where),
+    open: list(r, "open", where).map((m, i) => {
+      if (typeof m !== "string") throw new ContractError(`${where}.open[${i}]`, "a string");
+      return m;
+    }),
+    unresolved: list(r, "unresolved", where).map((u, i) => {
+      const at = `${where}.unresolved[${i}]`;
+      const entry = record(u, at);
+      return {
+        id: text(entry, "id", at),
+        node_path: text(entry, "node_path", at),
+        line: nullableNumber(entry, "line", at),
+      };
+    }),
+    records: list(r, "records", where).map((rec, i) => {
+      const at = `${where}.records[${i}]`;
+      const entry = record(rec, at);
+      return {
+        code: text(entry, "code", at),
+        message: text(entry, "message", at),
+        stage: nullableText(entry, "stage", at),
+        line: nullableNumber(entry, "line", at),
+      };
+    }),
+  };
+}
+
+/** `review`. */
+export function parseReview(value: unknown): Review {
+  const r = record(value, "review");
+  const model = record(r["model"], "review.model");
+  const generator = r["generator"];
+  if (generator !== null && typeof generator !== "string") {
+    throw new ContractError("review.generator", "a string or null");
+  }
+  const refusal = r["page_refusal"];
+  let page_refusal: PageRefusal | null = null;
+  if (refusal !== null) {
+    const at = "review.page_refusal";
+    const entry = record(refusal, at);
+    page_refusal = { code: text(entry, "code", at), message: text(entry, "message", at) };
+  }
+  return {
+    model: {
+      revision: revision(model["revision"], "review.model.revision"),
+      written_for: nullableRevision(model["written_for"], "review.model.written_for"),
+    },
+    source_head: nullableRevision(r["source_head"], "review.source_head"),
+    standing: standing(r["standing"], "review.standing"),
+    generator,
+    check: parseCheck(r["check"]),
+    page: nullableText(r, "page", "review"),
+    page_refusal,
   };
 }
 

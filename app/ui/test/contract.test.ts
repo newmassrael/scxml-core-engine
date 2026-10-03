@@ -23,6 +23,7 @@ import {
   parseReadModel,
   parseReadSource,
   parseRemoved,
+  parseReview,
   parseSaved,
   parseWork,
   parseWorkAndHead,
@@ -52,6 +53,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   model_history: parseHistory,
   figures: parseFigures,
   remove_work: parseRemoved,
+  review: parseReview,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -104,6 +106,32 @@ describe("the replies the core gives", () => {
     expect(drawn.sheets.map((s) => s.name)).toEqual(["picture.svg", "fields-1.svg"]);
     expect(drawn.sheets[0]?.svg.startsWith("<svg")).toBe(true);
     expect(drawn.generator).toBe("fake-sce 0");
+  });
+
+  it("carry what the screen shows of SCE's review: the verdict, what is left open, the page or why not", () => {
+    const accepted = parseReview(replies.answers["review"]);
+    expect(accepted.check).toMatchObject({ verdict: "accepted", kind: "statechart", records: [] });
+    expect(accepted.check.open).toHaveLength(1);
+    expect(accepted.check.unresolved[0]).toEqual({
+      id: "open-guard",
+      node_path: "states.closed.transitions[0]",
+      line: 3,
+    });
+    expect(accepted.page).toContain("machine");
+    expect(accepted.page_refusal).toBeNull();
+    // The same standing the figures and the model read carry: one word, from the core.
+    expect(accepted.standing).toBe("behind");
+
+    const refused = parseReview(replies.answers["review_refused"]);
+    expect(refused.check.verdict).toBe("refused");
+    expect(refused.check.kind).toBeNull();
+    expect(refused.page).toBeNull();
+    expect(refused.check.records[0]).toMatchObject({ code: "validation/invalid-reference", line: 3 });
+
+    const noPage = parseReview(replies.answers["review_no_page"]);
+    expect(noPage.check.verdict).toBe("accepted");
+    expect(noPage.page).toBeNull();
+    expect(noPage.page_refusal?.code).toBe("cli/pseudo-unsupported");
   });
 
   it("say which work was removed, and that it is no longer listed or readable", () => {
@@ -173,6 +201,18 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
     expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
+  });
+
+  it("is refused when a review's verdict is not a word the screen knows, or a record has no code", () => {
+    const review = replies.answers["review"] as { check: Record<string, unknown> } & Record<string, unknown>;
+    expect(() => parseReview({ ...review, check: { ...review.check, verdict: "maybe" } })).toThrow(
+      /review\.check\.verdict/,
+    );
+    expect(() =>
+      parseReview({ ...review, check: { ...review.check, records: [{ message: "m", stage: null, line: null }] } }),
+    ).toThrow(/review\.check\.records\[0\]\.code/);
+    expect(() => parseReview({ ...review, page: 3 })).toThrow(/review\.page/);
+    expect(() => parseReview({ ...review, page_refusal: { code: "c" } })).toThrow(/review\.page_refusal\.message/);
   });
 
   it("is refused when a model's standing is a word the screen does not know, or a sheet has no svg", () => {

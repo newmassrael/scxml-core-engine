@@ -88,6 +88,22 @@ const en = {
   removeConfirm: "Remove",
   removeCancel: "Keep the work",
   removedNotice: "\"{title}\" was removed from the list.",
+  reviewTitle: "What SCE says of the model",
+  reviewReading: "Reading what SCE says of the model...",
+  reviewFailed: "SCE could not read the model: {detail}",
+  reviewAccepted: "SCE accepted the model as a {kind}.",
+  reviewAcceptedUnknownKind: "SCE accepted the model.",
+  reviewRefused: "SCE refused the model, so there is no pseudocode page.",
+  reviewNote:
+    "SCE's check says the model is well formed. It does not say the model agrees with your text: read the pseudocode against it.",
+  reviewOpenTitle: "Left open",
+  reviewNothingOpen: "SCE found nothing the model leaves open.",
+  reviewUnresolvedAt: "{id} (line {line})",
+  reviewUnresolvedNoLine: "{id}",
+  reviewRecordsTitle: "What SCE reported",
+  reviewRecordLine: "line {line}",
+  reviewPageTitle: "Pseudocode: read it against your text",
+  reviewPageRefused: "SCE accepted the model and did not write its pseudocode page: {detail}",
 } as const;
 
 export type Key = keyof typeof en;
@@ -175,6 +191,22 @@ const ko: Record<Key, string> = {
   removeConfirm: "지우기",
   removeCancel: "그대로 두기",
   removedNotice: "\"{title}\"을(를) 목록에서 지웠습니다.",
+  reviewTitle: "SCE가 모델에 대해 말하는 것",
+  reviewReading: "SCE가 모델에 대해 말하는 것을 읽는 중...",
+  reviewFailed: "SCE가 모델을 읽지 못했습니다: {detail}",
+  reviewAccepted: "SCE가 모델을 {kind}(으)로 받아들였습니다.",
+  reviewAcceptedUnknownKind: "SCE가 모델을 받아들였습니다.",
+  reviewRefused: "SCE가 모델을 거절했으므로 의사코드 페이지가 없습니다.",
+  reviewNote:
+    "SCE의 검사는 모델의 형식이 맞다는 뜻입니다. 모델이 내 글과 일치한다는 뜻은 아닙니다. 의사코드를 내 글과 대조해 읽으세요.",
+  reviewOpenTitle: "미결로 남은 것",
+  reviewNothingOpen: "SCE가 모델에서 미결로 남은 것을 찾지 못했습니다.",
+  reviewUnresolvedAt: "{id} ({line}행)",
+  reviewUnresolvedNoLine: "{id}",
+  reviewRecordsTitle: "SCE가 보고한 것",
+  reviewRecordLine: "{line}행",
+  reviewPageTitle: "의사코드: 내 글과 대조해 읽으세요",
+  reviewPageRefused: "SCE가 모델을 받아들였지만 의사코드 페이지는 쓰지 않았습니다: {detail}",
 };
 
 export type Locale = "en" | "ko";

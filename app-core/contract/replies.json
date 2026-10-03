@@ -7,7 +7,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 3,
+      "command_set_version": 4,
       "commands": [
         "describe",
         "list_works",
@@ -20,7 +20,8 @@
         "read_model",
         "model_history",
         "figures",
-        "remove_work"
+        "remove_work",
+        "review"
       ],
       "root": "<root>"
     },
@@ -158,6 +159,87 @@
         "title": "Window blind"
       }
     },
+    "review": {
+      "check": {
+        "kind": "statechart",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "records": [],
+        "unresolved": [
+          {
+            "id": "open-guard",
+            "line": 3,
+            "node_path": "states.closed.transitions[0]"
+          }
+        ],
+        "verdict": "accepted"
+      },
+      "generator": "fake-sce 0",
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "written_for": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+      },
+      "page": "machine door-lock (lexicon: en)\n  model: <scxml xmlns=\"http://www.w3.org/2005/07/\n",
+      "page_refusal": null,
+      "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "standing": "behind"
+    },
+    "review_no_page": {
+      "check": {
+        "kind": "statechart",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "records": [],
+        "unresolved": [
+          {
+            "id": "open-guard",
+            "line": 3,
+            "node_path": "states.closed.transitions[0]"
+          }
+        ],
+        "verdict": "accepted"
+      },
+      "generator": "fake-sce 0",
+      "model": {
+        "revision": "6130d0abf23042bf4abd045ae4530abd98026adb138e46470a8b1712b73e8403",
+        "written_for": null
+      },
+      "page": null,
+      "page_refusal": {
+        "code": "cli/pseudo-unsupported",
+        "message": "the page does not abbreviate this construct"
+      },
+      "source_head": null,
+      "standing": "unstated"
+    },
+    "review_refused": {
+      "check": {
+        "kind": null,
+        "open": [],
+        "records": [
+          {
+            "code": "validation/invalid-reference",
+            "fix": null,
+            "line": 3,
+            "message": "Transition in state 'closed' references non-existent target state 'nowhere'",
+            "stage": "validation"
+          }
+        ],
+        "unresolved": [],
+        "verdict": "refused"
+      },
+      "generator": "fake-sce 0",
+      "model": {
+        "revision": "3e658138461fa240338e5aff9dc29a117d1148828bfe89e8f37d464d135a0ede",
+        "written_for": null
+      },
+      "page": null,
+      "page_refusal": null,
+      "source_head": null,
+      "standing": "unstated"
+    },
     "save_model_first": {
       "outcome": "saved",
       "parent": null,
@@ -187,7 +269,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 3,
+  "command_set_version": 4,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -242,7 +324,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review"
     }
   }
 }
