@@ -22,6 +22,7 @@ import {
   parseListing,
   parseReadModel,
   parseReadSource,
+  parseRemoved,
   parseSaved,
   parseWork,
   parseWorkAndHead,
@@ -50,6 +51,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_model: parseReadModel,
   model_history: parseHistory,
   figures: parseFigures,
+  remove_work: parseRemoved,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -102,6 +104,16 @@ describe("the replies the core gives", () => {
     expect(drawn.sheets.map((s) => s.name)).toEqual(["picture.svg", "fields-1.svg"]);
     expect(drawn.sheets[0]?.svg.startsWith("<svg")).toBe(true);
     expect(drawn.generator).toBe("fake-sce 0");
+  });
+
+  it("say which work was removed, and that it is no longer listed or readable", () => {
+    expect(parseRemoved(replies.answers["remove_work"]).title).toBe("Window blind");
+    const after = parseListing(replies.answers["list_works_after_removal"]);
+    expect(after.works.map((w) => w.title)).toEqual(["Door lock"]);
+    expect(after.unreadable).toEqual([]);
+    const refusal = asCommandError(replies.refusals["removed-work"]);
+    expect(refusal?.kind).toBe("not-found");
+    expect(refusal?.message).toContain("removed");
   });
 
   it("include a refusal for every kind the screen handles, each in the shape of a refusal", () => {
@@ -160,6 +172,7 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWork(work)).toThrow(/work\.title/);
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
+    expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
   });
 
   it("is refused when a model's standing is a word the screen does not know, or a sheet has no svg", () => {

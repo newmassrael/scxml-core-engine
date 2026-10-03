@@ -191,6 +191,23 @@ fn replies() -> Value {
         answer(&store, "model_history", json!({"id": id})),
     );
 
+    // A removal, on a work of its own so the one above keeps its place in every
+    // reply that follows.
+    let other = answer(&store, "create_work", json!({"title": "Window blind"}));
+    let other_id = other["id"].as_str().expect("a work id").to_string();
+    answers.insert(
+        "remove_work".into(),
+        answer(&store, "remove_work", json!({"id": other_id})),
+    );
+    answers.insert(
+        "list_works_after_removal".into(),
+        answer(&store, "list_works", json!({})),
+    );
+    refusals.insert(
+        "removed-work".into(),
+        refusal(&store, "read_work", json!({"id": other_id})),
+    );
+
     refusals.insert(
         "model-conflict".into(),
         refusal(
@@ -262,6 +279,7 @@ fn replies() -> Value {
     });
     name_the_unstable(&mut document, &root.display().to_string(), "<root>");
     name_the_unstable(&mut document, &id, "<work-id>");
+    name_the_unstable(&mut document, &other_id, "<removed-work-id>");
     let _ = std::fs::remove_dir_all(&root);
     document
 }

@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 2;
+export const SUPPORTED_COMMAND_SET_VERSION = 3;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -150,6 +150,11 @@ export function parseWork(value: unknown, where = "work"): Work {
     title: text(r, "title", where),
     created_at: text(r, "created_at", where),
   };
+}
+
+/** `remove_work`: the work that was taken out of the list. */
+export function parseRemoved(value: unknown): Work {
+  return parseWork(record(value, "remove_work")["removed"], "remove_work.removed");
 }
 
 export function parseListing(value: unknown): Listing {

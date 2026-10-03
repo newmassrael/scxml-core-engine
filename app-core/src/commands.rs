@@ -35,6 +35,7 @@ pub const COMMANDS: &[&str] = &[
     "read_model",
     "model_history",
     "figures",
+    "remove_work",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -43,7 +44,11 @@ pub const COMMANDS: &[&str] = &[
 /// 2: a work also keeps a model (`save_model`, `read_model`, `model_history`) and
 /// SCE draws it (`figures`). A screen written for 1 has no use for them, and a
 /// screen written for 2 cannot run on a core of 1, so the two are told apart.
-pub const COMMAND_SET_VERSION: u32 = 2;
+///
+/// 3: a work can be removed (`remove_work`). A screen written for 3 offers it and
+/// would be refused by a core of 2 with `unknown-command`, so the two are told
+/// apart before the person presses the button.
+pub const COMMAND_SET_VERSION: u32 = 3;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -283,6 +288,10 @@ pub fn call<C: Clock>(
                 "generator": drawn.generator,
                 "sheets": drawn.sheets,
             }))
+        }
+        "remove_work" => {
+            let OneWork { id } = arguments(args)?;
+            Ok(json!({ "removed": store.remove_work(&work_id(&id)?)? }))
         }
         other => Err(CommandError {
             kind: "unknown-command".to_string(),

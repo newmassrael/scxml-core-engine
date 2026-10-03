@@ -11,6 +11,7 @@ import {
   parseListing,
   parseReadModel,
   parseReadSource,
+  parseRemoved,
   parseSaved,
   parseWork,
   parseWorkAndHead,
@@ -45,6 +46,11 @@ export interface Api {
    * when SCE will not draw it, in the product's own words.
    */
   figures(id: string, revision?: Revision, lexicon?: string): Promise<Figures>;
+  /**
+   * Take a work out of the list. Its files stay in the works folder, so this can be
+   * undone by hand; every later read or save of it is refused as `not-found`.
+   */
+  removeWork(id: string): Promise<Work>;
 }
 
 export function apiOver(transport: Transport): Api {
@@ -82,6 +88,9 @@ export function apiOver(transport: Transport): Api {
         ...(lexicon === undefined ? {} : { lexicon }),
       };
       return parseFigures(await transport.call("figures", args));
+    },
+    async removeWork(id) {
+      return parseRemoved(await transport.call("remove_work", { id }));
     },
   };
 }

@@ -71,6 +71,10 @@ export class App {
   /** An older revision being looked at, read-only. */
   private viewing: SourceText | null = null;
   private notice: string | null = null;
+  /** Something that went well and that the person should hear of, apart from a failure. */
+  private info: string | null = null;
+  /** The person pressed "remove" for the selected work and has not yet said yes or no. */
+  private removing = false;
   private loading = true;
   /**
    * Which editor the screen is showing, counted. Every answer that arrives for a
@@ -157,6 +161,8 @@ export class App {
     const ticket = ++this.opening;
     this.pendingSwitch = null;
     this.notice = null;
+    this.info = null;
+    this.removing = false;
     let opened = false;
     try {
       const [source, entries] = await Promise.all([
@@ -238,6 +244,33 @@ export class App {
       this.draftTitle = "";
       this.listing = await this.api.listWorks();
       await this.openWork(work);
+    });
+    this.render();
+  }
+
+  /** The person said yes to removing the selected work. */
+  private async remove(): Promise<void> {
+    const work = this.selected;
+    const editor = this.editor;
+    // A save still on its way would write into a work the person is told is gone.
+    if (work === null || editor === null || editor.phase === "saving") return;
+    this.removing = false;
+    await this.guard(async () => {
+      const removed = await this.api.removeWork(work.id);
+      // Whatever was asked for the removed work and has not answered is dropped:
+      // the editor it would have landed in is gone.
+      this.session += 1;
+      this.opening += 1;
+      this.modelTicket += 1;
+      this.looking += 1;
+      this.selected = null;
+      this.editor = null;
+      this.entries = [];
+      this.viewing = null;
+      this.model = null;
+      this.pendingSwitch = null;
+      this.info = this.t("removedNotice", { title: removed.title });
+      this.listing = await this.api.listWorks();
     });
     this.render();
   }
@@ -408,6 +441,7 @@ export class App {
   /** Run `work`; whatever it throws becomes the notice, or the fatal text if nothing can work. */
   private async guard(work: () => Promise<void>): Promise<void> {
     this.notice = null;
+    this.info = null;
     try {
       await work();
     } catch (error) {
@@ -541,6 +575,7 @@ export class App {
         { class: "work" },
         this.switchBanner(),
         this.notice === null ? null : h("p", { class: "banner banner-error", role: "alert" }, this.notice),
+        this.info === null ? null : h("p", { class: "banner banner-ok", role: "status" }, this.info),
         this.selected === null || this.editor === null
           ? h("p", { class: "muted" }, this.t("pickAWork"))
           : this.workPane(this.selected, this.editor),
@@ -673,7 +708,25 @@ export class App {
     return h(
       "div",
       { class: "pane" },
-      h("h2", {}, work.title),
+      h(
+        "div",
+        { class: "pane-head" },
+        h("h2", {}, work.title),
+        h(
+          "button",
+          {
+            type: "button",
+            class: "quiet",
+            disabled: editor.phase === "saving",
+            onclick: () => {
+              this.removing = true;
+              this.render();
+            },
+          },
+          this.t("workRemove"),
+        ),
+      ),
+      this.removing ? this.removeBanner(work, editor) : null,
       viewing !== null
         ? h(
             "p",
@@ -700,6 +753,37 @@ export class App {
       ),
       this.historyPanel(editor),
       this.modelPanel(work),
+    );
+  }
+
+  /** Asked before a work leaves the list; said in terms of what stays and how to bring it back. */
+  private removeBanner(work: Work, editor: EditorModel): HTMLElement {
+    return h(
+      "section",
+      { class: "banner banner-warn", role: "alert" },
+      h("strong", {}, this.t("removeTitle", { title: work.title })),
+      h("p", {}, this.t("removeBody")),
+      isDirty(editor) ? h("p", {}, this.t("removeBodyUnsaved")) : null,
+      h(
+        "div",
+        { class: "choices" },
+        h(
+          "button",
+          { type: "button", disabled: editor.phase === "saving", onclick: () => void this.remove() },
+          this.t("removeConfirm"),
+        ),
+        h(
+          "button",
+          {
+            type: "button",
+            onclick: () => {
+              this.removing = false;
+              this.render();
+            },
+          },
+          this.t("removeCancel"),
+        ),
+      ),
     );
   }
 

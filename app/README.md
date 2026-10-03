@@ -18,12 +18,17 @@ and shown as the figures **SCE draws of it** (the application draws nothing: it
 runs `sce-codegen diagram` and shows the SVG it writes). Accepting a design comes
 next, on top of the same folder.
 
+An authoring client reaches the same folder through the MCP (`works_list`,
+`works_read`, `works_save_model`, in `tools/authoring`): it reads the text you
+saved, writes the model, and saves it back after the product's own check accepts
+it. They run `sce-work`, so the application and the MCP cannot disagree about the
+folder because only one thing writes it. The text is yours: no MCP tool writes
+it, and none removes a work.
+
 What does not exist yet, so that nothing below is read as done:
 
-- The authoring MCP does not read or write the works folder. `sce-work` is
-  ready for it (it saves a model too, `save_model`) and the MCP's tool list has
-  no works tool, so an AI client cannot yet be pointed at a work saved here.
-  Until then a model gets into a work through `sce-work`.
+- Nothing starts the AI client. You ask it in its own window ("model the work
+  Door lock") and the application shows what it saved when you read again.
 - The screens for the open questions, the examples' results and the acceptance.
   They are designs, not code. The model screen shows what SCE drew and where the
   model stands to the text; it does not edit the model (an AI client writes it).
@@ -47,8 +52,8 @@ app/
 Everything the screen can do is one call, `call(name, args)`. The window routes
 it through Tauri's `invoke` and the browser shell through `POST /api/call`;
 `sce-work call <name>` is the same call for a process that is not Rust, which the
-authoring MCP is meant to use and does not yet. All of them end in
-`sce_app_core::call`, so there is one definition of what a save is.
+authoring MCP uses. All of them end in `sce_app_core::call`, so there is one
+definition of what a save is.
 
 The works folder is plain files:
 
@@ -61,6 +66,7 @@ The works folder is plain files:
                  model.head           the current model
                  model.log            one line per save, and the source revision
                                       the writer said it read (`written_for`)
+                 removed.json         only for a removed work (see below)
 ```
 
 `<root>` is `SCE_WORKS_DIR` if set, else the per-user data directory
@@ -68,6 +74,19 @@ The works folder is plain files:
 its exact bytes; a save names the revision it was written from and is refused
 with `conflict` if that is no longer current. The text and the model are two
 chains kept by one implementation (one lock, one compare-and-swap).
+
+### Removing a work
+
+`remove_work` (the screen's "Remove this work", after it asks) takes a work out
+of the list and refuses every later read and save of it as `not-found`. It does
+not delete anything: the work's files stay, with a `removed.json` beside them,
+because a specification is a person's writing and the one command that can end
+it should not be the one that cannot be taken back. Deleting `removed.json`
+brings the work back whole, history included; deleting the folder is the removal
+that cannot be undone, done by the person who means it. The marker is written
+under the work's lock and a save re-checks for it once it holds the lock, so a
+save that was waiting when the removal came writes nothing. No MCP tool removes a
+work.
 
 ### The model, and where it stands
 
@@ -135,6 +154,8 @@ else: it has no file-system, shell or network permission.
 |---|---|
 | Works folder and command layer | `cargo test -p sce-app-core --features cli` |
 | The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
+| Removing a work, and a save racing it | `--test removal` of the same package |
+| The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |
 | The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |
 | Browser shell: handler, sockets | `cargo test -p sce-web-shell` (from `app/`) |
 | Screen: guards, editor model, model panel, transport, words | `npm test` (in `app/ui`) |

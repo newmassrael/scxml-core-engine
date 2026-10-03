@@ -14,6 +14,7 @@
 //!     model.head         the digest of the current model, one line
 //!     model.log          one JSON line per save, and the source revision it was written for
 //!     .lock              what a save holds while it checks and moves a pointer
+//!     removed.json       present only for a removed work (see [`WorkStore::remove_work`])
 //! ```
 //!
 //! The files are the truth. Nothing else (an index, a database) may hold a fact
@@ -57,7 +58,9 @@ pub const LOCK_WAIT: Duration = Duration::from_secs(30);
 
 const WORK_FILE: &str = "work.json";
 const LOCK_FILE: &str = ".lock";
+const REMOVED_FILE: &str = "removed.json";
 const WORK_FORMAT: &str = "sce-work";
+const REMOVED_FORMAT: &str = "sce-work-removed";
 const WORK_VERSION: u32 = 1;
 const ID_SUFFIX_HEX: usize = 8;
 const ID_SLUG_MAX: usize = 40;
@@ -205,6 +208,15 @@ struct WorkFile {
     created_at: String,
 }
 
+/// `removed.json` as written: who reads it is a person restoring a work by hand,
+/// so it says what it is and when. The store itself reads only that the file exists.
+#[derive(Debug, Serialize)]
+struct RemovedFile {
+    format: &'static str,
+    v: u32,
+    removed_at: String,
+}
+
 /// A folder under the root that looked like a work and could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Unreadable {
@@ -298,16 +310,51 @@ impl<C: Clock> WorkStore<C> {
         self.root.join(id.as_str())
     }
 
-    /// The folder of an existing work, or `NotFound`.
+    /// The folder of an existing work, or `NotFound`. A removed work is not an
+    /// existing one: every read and every save refuses it the way it refuses a
+    /// work that was never made.
     fn existing(&self, id: &WorkId) -> Result<PathBuf, StoreError> {
         let dir = self.work_dir(id);
-        if dir.join(WORK_FILE).is_file() {
-            Ok(dir)
-        } else {
-            Err(StoreError::NotFound {
+        if !dir.join(WORK_FILE).is_file() {
+            return Err(StoreError::NotFound {
                 what: format!("work `{}`", id.as_str()),
-            })
+            });
         }
+        if is_removed(&dir) {
+            return Err(removed_work(id));
+        }
+        Ok(dir)
+    }
+
+    /// Take a work out of the folder's list, and refuse every later read and
+    /// save of it. Answers the work it removed, so the caller can say which.
+    ///
+    /// The files stay where they are, with a `removed.json` beside them. A
+    /// specification is a person's writing, and the one command that can end it
+    /// should not be the one that cannot be taken back: deleting that file brings
+    /// the work back whole, history included, and deleting the folder is the
+    /// removal that cannot be taken back, done by the person who means it.
+    ///
+    /// The marker is written under the work's lock, and a save re-checks for it
+    /// once it holds the lock. Without that a save that passed [`Self::existing`]
+    /// just before the removal would write into a work the person was told is gone.
+    pub fn remove_work(&self, id: &WorkId) -> Result<Work, StoreError> {
+        let dir = self.existing(id)?;
+        let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
+        // A removal that waited on the lock for another removal finds it done.
+        if is_removed(&dir) {
+            return Err(removed_work(id));
+        }
+        let work = self.read_work_file(id)?;
+        let mut bytes = serde_json::to_vec_pretty(&RemovedFile {
+            format: REMOVED_FORMAT,
+            v: WORK_VERSION,
+            removed_at: self.clock.now(),
+        })
+        .map_err(|e| StoreError::corrupt(&dir, e.to_string()))?;
+        bytes.push(b'\n');
+        atomic_write(&dir.join(REMOVED_FILE), &bytes)?;
+        Ok(work)
     }
 
     /// Start a work. Its folder is created exclusively, so two creations never
@@ -366,7 +413,7 @@ impl<C: Clock> WorkStore<C> {
             let Ok(id) = WorkId::parse(&name) else {
                 continue;
             };
-            if !entry.path().is_dir() {
+            if !entry.path().is_dir() || is_removed(&entry.path()) {
                 continue;
             }
             match self.read_work_file(&id) {
@@ -587,6 +634,10 @@ impl<C: Clock> WorkStore<C> {
         // Without it two saves from one base both pass the check and the later
         // silently replaces the earlier.
         let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
+        // A removal that came first, while this save waited for the lock.
+        if is_removed(&dir) {
+            return Err(removed_work(id));
+        }
 
         if let Some(source) = written_for {
             if !revision_path(&dir, Artifact::Source, source).is_file() {
@@ -691,6 +742,17 @@ impl<C: Clock> WorkStore<C> {
 
     fn history_of(&self, artifact: Artifact, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
         history_in(&self.existing(id)?, artifact)
+    }
+}
+
+/// Whether the work folder `dir` carries a removal marker.
+fn is_removed(dir: &Path) -> bool {
+    dir.join(REMOVED_FILE).is_file()
+}
+
+fn removed_work(id: &WorkId) -> StoreError {
+    StoreError::NotFound {
+        what: format!("work `{}` (it was removed)", id.as_str()),
     }
 }
 

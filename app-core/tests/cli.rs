@@ -281,3 +281,32 @@ fn of_several_processes_saving_from_one_base_exactly_one_succeeds() {
     let history = ok(&run(&root, "history", Some(&json!({ "id": id }))));
     assert_eq!(history["entries"].as_array().unwrap().len(), 2);
 }
+
+/// A removal made by one process is seen by the next: the work is out of the list
+/// and a read of it is a refusal of the ordinary kind (exit 1, `not-found`).
+#[test]
+fn a_removal_by_one_process_is_seen_by_the_next() {
+    let root = common::scratch("cli-remove");
+    let keep = create(&root, "Door");
+    let gone = create(&root, "Window");
+
+    let removed = ok(&run(&root, "remove_work", Some(&json!({ "id": gone }))));
+    assert_eq!(removed["removed"]["title"], "Window");
+
+    let listed = ok(&run(&root, "list_works", None));
+    let ids: Vec<&str> = listed["works"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, [keep.as_str()]);
+
+    let (status, error) = refusal(&run(&root, "read_work", Some(&json!({ "id": gone }))));
+    assert_eq!(status, 1);
+    assert_eq!(error["kind"], "not-found");
+    assert!(
+        error["message"].as_str().unwrap().contains("removed"),
+        "{error}"
+    );
+}

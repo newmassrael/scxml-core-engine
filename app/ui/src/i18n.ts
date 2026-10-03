@@ -80,6 +80,14 @@ const en = {
   modelNotDrawn: "SCE did not draw this model.",
   modelNotDrawnHint:
     "The model is saved and is shown below as text. What SCE refused is its own answer, not a fault of this screen.",
+  workRemove: "Remove this work",
+  removeTitle: "Remove \"{title}\" from the list?",
+  removeBody:
+    "The work leaves the list and cannot be opened here. Its files stay in the works folder, so it can be brought back by deleting the file removed.json in its folder.",
+  removeBodyUnsaved: "Text in the editor that is not saved is lost with it.",
+  removeConfirm: "Remove",
+  removeCancel: "Keep the work",
+  removedNotice: "\"{title}\" was removed from the list.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -159,6 +167,14 @@ const ko: Record<Key, string> = {
   modelNotDrawn: "SCE가 이 모델을 그리지 않았습니다.",
   modelNotDrawnHint:
     "모델은 저장되어 있고 아래에 글로 보입니다. SCE가 거절한 것은 SCE 자신의 답이며 이 화면의 결함이 아닙니다.",
+  workRemove: "이 작업 지우기",
+  removeTitle: "\"{title}\"을(를) 목록에서 지울까요?",
+  removeBody:
+    "작업이 목록에서 사라지고 여기서는 열 수 없습니다. 파일은 작업 폴더에 그대로 있으므로, 그 폴더의 removed.json 파일을 지우면 되살릴 수 있습니다.",
+  removeBodyUnsaved: "편집기에 저장하지 않은 글은 함께 사라집니다.",
+  removeConfirm: "지우기",
+  removeCancel: "그대로 두기",
+  removedNotice: "\"{title}\"을(를) 목록에서 지웠습니다.",
 };
 
 export type Locale = "en" | "ko";

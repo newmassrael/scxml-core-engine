@@ -7,7 +7,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 2,
+      "command_set_version": 3,
       "commands": [
         "describe",
         "list_works",
@@ -19,7 +19,8 @@
         "save_model",
         "read_model",
         "model_history",
-        "figures"
+        "figures",
+        "remove_work"
       ],
       "root": "<root>"
     },
@@ -57,6 +58,16 @@
       ]
     },
     "list_works": {
+      "unreadable": [],
+      "works": [
+        {
+          "created_at": "2026-10-03T09:00:00Z",
+          "id": "<work-id>",
+          "title": "Door lock"
+        }
+      ]
+    },
+    "list_works_after_removal": {
       "unreadable": [],
       "works": [
         {
@@ -140,6 +151,13 @@
         "title": "Door lock"
       }
     },
+    "remove_work": {
+      "removed": {
+        "created_at": "2026-10-03T09:00:00Z",
+        "id": "<removed-work-id>",
+        "title": "Window blind"
+      }
+    },
     "save_model_first": {
       "outcome": "saved",
       "parent": null,
@@ -169,7 +187,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 2,
+  "command_set_version": 3,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -207,6 +225,10 @@
       "kind": "not-found",
       "message": "work `absent` does not exist"
     },
+    "removed-work": {
+      "kind": "not-found",
+      "message": "work `<removed-work-id>` (it was removed) does not exist"
+    },
     "sce-refused": {
       "detail": {
         "code": "cli/diagram-does-not-fit"
@@ -220,7 +242,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work"
     }
   }
 }

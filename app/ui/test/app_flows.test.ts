@@ -100,7 +100,12 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 2, commands: [], root: "/fake/works" };
+        return { command_set_version: 3, commands: [], root: "/fake/works" };
+      case "remove_work": {
+        if (work === undefined) throw new CommandFailure("not-found", "no such work");
+        this.works.delete(String(args["id"]));
+        return { removed: { id: String(args["id"]), title: work.title, created_at: "2026-10-03T09:00:00Z" } };
+      }
       case "read_model":
       case "figures": {
         const model = typeof args["id"] === "string" ? this.models.get(args["id"]) : undefined;
@@ -588,5 +593,92 @@ describe("the model panel", () => {
     expect(modelText()).toContain("the model file is damaged");
     expect(modelText()).not.toContain("No model yet");
     expect(editor().value).toBe("alpha two");
+  });
+});
+
+// ---- removing a work ------------------------------------------------------
+
+const workLinks = (): string[] => [...root.querySelectorAll(".work-link")].map((b) => b.textContent ?? "");
+
+describe("removing a work", () => {
+  it("asks first, says what stays, and removes nothing until the person says yes", async () => {
+    await click("Alpha");
+    await click("Remove this work");
+
+    expect(root.textContent).toContain('Remove "Alpha" from the list?');
+    expect(root.textContent).toContain("removed.json");
+    expect(core.callsOf("remove_work")).toHaveLength(0);
+
+    await click("Keep the work");
+    expect(root.textContent).not.toContain('Remove "Alpha" from the list?');
+    expect(core.callsOf("remove_work")).toHaveLength(0);
+    expect(workLinks()).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("takes the work out of the list and the screen, and tells the person", async () => {
+    await click("Alpha");
+    await click("Remove this work");
+    await click("Remove");
+
+    expect(core.callsOf("remove_work")).toEqual([{ id: "alpha" }]);
+    expect(workLinks()).toEqual(["Beta"]);
+    expect(editor()).toBeNull();
+    expect(root.textContent).toContain("Pick a work");
+    expect(root.textContent).toContain('"Alpha" was removed from the list.');
+
+    // The work beside it is as it was.
+    await click("Beta");
+    expect(editor().value).toBe("beta one");
+    expect(root.textContent).not.toContain("was removed from the list");
+  });
+
+  it("says that text not yet saved goes with the work, and only then", async () => {
+    await click("Alpha");
+    await click("Remove this work");
+    expect(root.textContent).not.toContain("not saved is lost");
+    await click("Keep the work");
+
+    await type("alpha changed");
+    await click("Remove this work");
+    expect(root.textContent).toContain("not saved is lost");
+  });
+
+  it("is not offered while a save is on its way", async () => {
+    await click("Alpha");
+    const held = core.hold("save_source");
+    await type("alpha changed");
+    await click("Save");
+
+    const remove = buttons("Remove this work")[0];
+    expect(remove?.disabled).toBe(true);
+    held.release();
+    await settle();
+    expect(buttons("Remove this work")[0]?.disabled).toBe(false);
+  });
+
+  it("does not let a drawing that was still on its way land under the work that replaced it", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    const drawing = core.hold("figures");
+    await click("Alpha");
+    await click("Remove this work");
+    await click("Remove");
+    drawing.release();
+    await settle();
+
+    expect(images()).toHaveLength(0);
+    expect(root.querySelector(".model")).toBeNull();
+    expect(root.textContent).toContain("Pick a work");
+  });
+
+  it("keeps the work on screen, with the core's words, when the removal is refused", async () => {
+    await click("Alpha");
+    core.failNext("remove_work", new CommandFailure("busy", "another save held the work for 30000 ms"));
+    await click("Remove this work");
+    await click("Remove");
+
+    expect(root.textContent).toContain("another save held the work");
+    expect(heading()).toBe("Alpha");
+    expect(workLinks()).toEqual(["Alpha", "Beta"]);
+    expect(root.textContent).not.toContain("was removed from the list");
   });
 });
