@@ -59,6 +59,12 @@ pub enum Phrase {
     Bytes,
     /// What a collection's capacity counts.
     Entries,
+    /// What an interpolation is drawn as: a curve over one axis, a grid
+    /// over two; and which axis runs down and which across a grid.
+    Curve,
+    Grid,
+    Rows,
+    Columns,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -87,6 +93,10 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::Slots) => "slots",
         ("en", Phrase::Bytes) => "bytes",
         ("en", Phrase::Entries) => "entries",
+        ("en", Phrase::Curve) => "curve",
+        ("en", Phrase::Grid) => "grid",
+        ("en", Phrase::Rows) => "rows",
+        ("en", Phrase::Columns) => "columns",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -108,6 +118,10 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::Slots) => "슬롯",
         ("ko", Phrase::Bytes) => "바이트",
         ("ko", Phrase::Entries) => "원소",
+        ("ko", Phrase::Curve) => "곡선",
+        ("ko", Phrase::Grid) => "격자",
+        ("ko", Phrase::Rows) => "행",
+        ("ko", Phrase::Columns) => "열",
         _ => return None,
     })
 }
@@ -139,7 +153,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 21] = [
+    const ALL: [Phrase; 25] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -161,6 +175,10 @@ mod tests {
         Phrase::Slots,
         Phrase::Bytes,
         Phrase::Entries,
+        Phrase::Curve,
+        Phrase::Grid,
+        Phrase::Rows,
+        Phrase::Columns,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

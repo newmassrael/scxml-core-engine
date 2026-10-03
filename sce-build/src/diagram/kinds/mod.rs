@@ -35,6 +35,7 @@ use super::words::{self, Phrase};
 use crate::forge::model::ForgeDocument;
 use crate::forge::page::Lexicon;
 
+pub mod interpolation;
 pub mod slots;
 
 /// One picture of a document: the file it is written to (without its
@@ -57,6 +58,7 @@ pub fn pictures(
         ForgeDocument::Statechart(_) => Ok(Vec::new()),
         ForgeDocument::BufferPool(m) => slots::buffer_pool(m, lexicon, page),
         ForgeDocument::BoundedCollection(m) => slots::bounded_collection(m, lexicon, page),
+        ForgeDocument::Interpolation(m) => interpolation::interpolation(m, lexicon, page),
         // Read from the field table alone, for now.
         ForgeDocument::Transform(_)
         | ForgeDocument::Lookup(_)
@@ -65,7 +67,6 @@ pub fn pictures(
         | ForgeDocument::Validator(_)
         | ForgeDocument::Procedure(_)
         | ForgeDocument::Filter(_)
-        | ForgeDocument::Interpolation(_)
         | ForgeDocument::Timer(_)
         | ForgeDocument::Observer(_)
         | ForgeDocument::Algorithm(_)

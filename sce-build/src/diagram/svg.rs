@@ -27,6 +27,9 @@ const ELSEWHERE_FILL: &str = "#e6e6e6";
 const PAPER: &str = "#ffffff";
 const FLAG_FILL: &str = "#fff4cc";
 const RULE: &str = "#b0b0b0";
+/// The greys of [`Ink::Level`], lightest first.
+const LEVEL_FILLS: [&str; super::sheet::LEVELS as usize] =
+    ["#f4f4f4", "#e4e4e4", "#d2d2d2", "#c0c0c0", "#aeaeae"];
 
 /// `printed` as one standalone SVG document.
 pub fn render(printed: &Printed) -> String {
@@ -260,6 +263,7 @@ pub fn render_sheet(sheet: &Sheet) -> String {
         Ink::Muted => BRIEF_INK,
         Ink::Hairline => RULE,
         Ink::Shade => ELSEWHERE_FILL,
+        Ink::Level(l) => LEVEL_FILLS[usize::from(l).min(LEVEL_FILLS.len() - 1)],
     };
     let dash = |dashed: bool| {
         if dashed {

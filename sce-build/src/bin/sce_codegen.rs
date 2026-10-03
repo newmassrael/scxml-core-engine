@@ -9192,13 +9192,11 @@ fn cmd_diagram(
                 need_pt,
                 area_pt,
             ),
-            Refusal::SheetDoesNotFit { need_pt, area_pt } => does_not_fit(
-                words::phrase(lexicon, Phrase::FieldTable)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| format!("{:?}", Phrase::FieldTable)),
+            Refusal::SheetDoesNotFit {
+                what,
                 need_pt,
                 area_pt,
-            ),
+            } => does_not_fit(what, need_pt, area_pt),
             tree @ Refusal::NotATree(_) => CliError::DiagramUnavailable {
                 feature: tree.to_string(),
             },

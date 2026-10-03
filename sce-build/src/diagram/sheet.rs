@@ -33,7 +33,14 @@ pub enum Ink {
     Hairline,
     /// A light fill: the band a table's heading stands on, a box's body.
     Shade,
+    /// One of [`LEVELS`] light greys, 0 the lightest: how large a value is,
+    /// shown as a shade under its number. Light, so the number stays
+    /// legible on the darkest.
+    Level(u8),
 }
+
+/// How many [`Ink::Level`]s there are.
+pub const LEVELS: u8 = 5;
 
 /// An outline: its ink and its width in points.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]

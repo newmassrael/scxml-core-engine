@@ -306,6 +306,7 @@ pub fn set(
     let (avail_w, avail_h) = page.area_pt();
     let line = style.body_pt * style.leading;
     let too_wide = |need: f64| Refusal::SheetDoesNotFit {
+        what: title.to_string(),
         need_pt: (need, line),
         area_pt: (avail_w, avail_h),
     };
@@ -417,6 +418,7 @@ pub fn set(
         let alone = body_top + heading_height + head_height + tallest;
         if alone > avail_h + EPSILON {
             return Err(Refusal::SheetDoesNotFit {
+                what: title.to_string(),
                 need_pt: (l.width, alone),
                 area_pt: (avail_w, avail_h),
             });
@@ -640,7 +642,9 @@ mod tests {
         let t = table("h", &["a"], &[&[tall.as_str()]]);
         let r = set("t", "c", &[t], page);
         match r {
-            Err(Refusal::SheetDoesNotFit { need_pt, area_pt }) => {
+            Err(Refusal::SheetDoesNotFit {
+                need_pt, area_pt, ..
+            }) => {
                 assert!(need_pt.1 > area_pt.1, "{need_pt:?} in {area_pt:?}");
             }
             other => panic!("{other:?}"),

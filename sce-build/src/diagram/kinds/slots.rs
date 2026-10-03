@@ -171,7 +171,7 @@ pub fn buffer_pool(
     )?;
     Ok(vec![Picture {
         stem: "slots",
-        sheet: c.finish(page)?,
+        sheet: c.finish(page, &title)?,
     }])
 }
 
@@ -201,7 +201,7 @@ pub fn bounded_collection(
     )?;
     Ok(vec![Picture {
         stem: "slots",
-        sheet: c.finish(page)?,
+        sheet: c.finish(page, &title)?,
     }])
 }
 

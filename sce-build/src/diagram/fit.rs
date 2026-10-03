@@ -146,9 +146,12 @@ pub enum Refusal {
         need_pt: (f64, f64),
         area_pt: (f64, f64),
     },
-    /// A table of a non-statechart kind whose columns, or one row, do not
-    /// fit the page at the minimum type size (see [`super::table::set`]).
+    /// A sheet of a non-statechart kind — a table whose columns or one row,
+    /// or a picture, do not fit the page at the minimum type size (see
+    /// [`super::table::set`], [`super::canvas::Canvas::finish`]). `what` is
+    /// the sheet's own title.
     SheetDoesNotFit {
+        what: String,
         need_pt: (f64, f64),
         area_pt: (f64, f64),
     },
@@ -178,9 +181,13 @@ impl std::fmt::Display for Refusal {
                  and the page gives {:.0} x {:.0} pt; it is not shrunk below that size",
                 need_pt.0, need_pt.1, area_pt.0, area_pt.1
             ),
-            Refusal::SheetDoesNotFit { need_pt, area_pt } => write!(
+            Refusal::SheetDoesNotFit {
+                what,
+                need_pt,
+                area_pt,
+            } => write!(
                 f,
-                "a table needs {:.0} x {:.0} pt at the minimum type size, \
+                "{what:?} needs {:.0} x {:.0} pt at the minimum type size, \
                  and the page gives {:.0} x {:.0} pt; it is not shrunk below that size",
                 need_pt.0, need_pt.1, area_pt.0, area_pt.1
             ),

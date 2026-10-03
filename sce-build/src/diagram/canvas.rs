@@ -169,8 +169,9 @@ impl Canvas {
     }
 
     /// The sheet: every mark shifted inside the margin, sized to what was
-    /// drawn, and checked against `page`.
-    pub fn finish(self, page: Page) -> Result<Sheet, Refusal> {
+    /// drawn, and checked against `page`. `what` names the sheet in the
+    /// refusal when it does not fit.
+    pub fn finish(self, page: Page, what: &str) -> Result<Sheet, Refusal> {
         let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
         let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
         let mut cover = |x0: f64, y0: f64, x1: f64, y1: f64| {
@@ -230,6 +231,7 @@ impl Canvas {
         let area = page.area_pt();
         if width > area.0 + 1e-9 || height > area.1 + 1e-9 {
             return Err(Refusal::SheetDoesNotFit {
+                what: what.to_string(),
                 need_pt: (width, height),
                 area_pt: area,
             });
@@ -266,7 +268,7 @@ mod tests {
         c.stroke((0.0, 0.0), (300.0, 10.0), Ink::Muted, true);
         c.polyline(vec![(0.0, 0.0), (10.0, 80.0)], Ink::Black, false);
         c.dot(5.0, 5.0, Ink::Black);
-        let sheet = c.finish(page()).unwrap();
+        let sheet = c.finish(page(), "test").unwrap();
         let margin = sheet.style.body_pt;
         let xs = sheet.marks.iter().map(|m| match m {
             Mark::Text { x, .. } | Mark::Rect { x, .. } | Mark::Dot { x, .. } => *x,
@@ -283,8 +285,13 @@ mod tests {
     fn a_picture_larger_than_the_page_is_refused() {
         let mut c = Canvas::new(page());
         c.frame((0.0, 0.0, 5000.0, 10.0), None);
-        match c.finish(page()) {
-            Err(Refusal::SheetDoesNotFit { need_pt, area_pt }) => {
+        match c.finish(page(), "a wide picture") {
+            Err(Refusal::SheetDoesNotFit {
+                what,
+                need_pt,
+                area_pt,
+            }) => {
+                assert_eq!(what, "a wide picture");
                 assert!(need_pt.0 > area_pt.0, "{need_pt:?} in {area_pt:?}");
             }
             other => panic!("{other:?}"),
