@@ -418,6 +418,13 @@ name = "diagram_cli"
 path = "tests/diagram_cli.rs"
 required-features = ["cli"]
 
+# Every kind's example drawn on the real binary, in both page languages:
+# the pictures a kind has, then its field table, the same bytes twice.
+[[test]]
+name = "diagram_every_kind"
+path = "tests/diagram_every_kind.rs"
+required-features = ["cli"]
+
 # End-to-end CLI contract test for the mesh pipeline (--deploy). Shares
 # the binary target of `error_format_json` and the same `cli` feature
 # gate so mesh codegen errors get the same NDJSON wire-format coverage
