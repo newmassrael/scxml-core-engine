@@ -1066,10 +1066,12 @@ export class App {
             ? this.t("reviewAcceptedUnknownKind")
             : this.t("reviewAccepted", { kind: check.kind }),
       ),
+      // Said right under the verdict, before anything else is read: a passed check
+      // is the product's verdict on the document and not agreement with the text.
+      accepted ? h("p", { class: "muted" }, this.t("reviewNote")) : null,
       accepted ? this.openMatters(check.open, check.unresolved.length) : null,
       accepted ? this.questions(check.unresolved) : null,
       accepted ? null : this.records(check.records),
-      accepted ? h("p", { class: "muted" }, this.t("reviewNote")) : null,
       page === null
         ? null
         : h(
