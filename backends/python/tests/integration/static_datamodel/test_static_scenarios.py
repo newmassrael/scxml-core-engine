@@ -13,9 +13,11 @@ each an external event with its payload and what the machine must hold after it
 runs to quiescence: its current state and any of its published variables.
 
 The machines are the ones ``scripts/regen_static_datamodel_python.sh`` generates,
-into this directory and out of version control. Those with no scenario here are
-generated for their effect: a machine nobody built is a machine nobody
-type-checked.
+into this directory and out of version control, with the algorithms they call as
+modules beside them: the directory is a package, and a machine is imported as
+one of its members so that its ``from . import <algorithm>`` resolves. Those
+with no scenario here are generated for their effect: a machine nobody built is
+a machine nobody type-checked.
 
 Regeneration (after a fixture or template edit):
   ``scripts/regen_static_datamodel_python.sh`` (local)
@@ -30,7 +32,8 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE))
+# The tests directory, so this package is importable by the name it has there.
+sys.path.insert(0, str(_HERE.parents[1]))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
@@ -81,7 +84,9 @@ def replay(name: str, machine: str | None = None) -> None:
     scenario = json.loads((_SCENARIOS / f"{name}.json").read_text())
     steps = scenario["steps"]
     assert steps, f"scenario {name} has no steps, which judges nothing"
-    module = importlib.import_module(f"{machine or scenario['machine']}_sm")
+    module = importlib.import_module(
+        f"integration.static_datamodel.{machine or scenario['machine']}_sm"
+    )
     engine = module.create_engine()
     engine.initialize()
     policy = engine.policy
@@ -169,3 +174,16 @@ def test_a_list_holds_records_and_a_foreach_walks_them() -> None:
 # document declares.
 def test_a_record_holds_an_enum_field() -> None:
     replay("static_record_enum")
+
+
+# A guard calls an imported algorithm with the record's own fields, and the
+# call is the module the algorithm's own generation put beside the machine.
+def test_a_guard_calls_an_imported_algorithm() -> None:
+    replay("static_record")
+
+
+# A sync run composed of the standard sync rules: each rule an imported
+# algorithm, called from a guard or an assignment, and the run's payloads the
+# standard event schemas'.
+def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
+    replay("sync_client")

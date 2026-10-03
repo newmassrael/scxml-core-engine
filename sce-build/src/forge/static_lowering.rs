@@ -2796,7 +2796,9 @@ pub fn lower_go(
 /// therefore a block of lines, not an expression: the templates indent each.
 ///
 /// Lowers scalar, enum, list and record variables, guards, `<assign>`, `<if>`,
-/// `<foreach>`, `<log>`, `<raise>`, `In()` and a typed payload; every construct
+/// `<foreach>`, `<log>`, `<raise>`, `In()`, a typed payload and a call of an
+/// imported algorithm — a module beside the machine's own, whose failing call
+/// raises the same `AlgorithmFailure` a checked operation does; every construct
 /// past those is refused by name ([`StaticTarget::unsupported`]) until its
 /// spelling is written, rather than left as an undefined name in generated
 /// code.
@@ -2847,8 +2849,8 @@ impl StaticTarget for PythonTarget {
     fn name(&self) -> &'static str {
         "Python"
     }
-    fn callee(&self, _document_name: &str) -> Option<Callee> {
-        None
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(Language::Python, document_name, None))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // Every type a datamodel holds is spelled but bytes: a list admits only

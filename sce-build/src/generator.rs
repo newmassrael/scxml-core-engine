@@ -3570,6 +3570,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        static_imports => &static_lowering.imports,
     };
     tmpl.render(ctx).map_err(render_error)
 }

@@ -68,17 +68,50 @@ if [ "${#MACHINES[@]}" -lt 1 ]; then
     exit 1
 fi
 
+# Derived from what the lowered machines import, for the reason the machines
+# are: a list here is one more place a new algorithm has to be remembered, and
+# one left out is a machine that imports a module nothing generated. Each
+# algorithm a machine calls is generated beside the machines as a module of its
+# own — a local one is named by its path beside the machine, a standard one by
+# its library name (`sce:std/...`).
+ALGORITHMS=()
+for source in "${SOURCES[@]}"; do
+    while IFS= read -r import; do
+        case "$import" in
+            sce:*) ALGORITHMS+=("$import") ;;
+            *) ALGORITHMS+=("$(dirname "$source")/$import") ;;
+        esac
+    done < <(grep 'kind="algorithm"' "$source" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+done
+if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
+    mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 for i in "${!MACHINES[@]}"; do
     "$CODEGEN" generate "${SOURCES[$i]}" -l python -o "$TMP/${MACHINES[$i]}/"
 done
+for i in "${!ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "${ALGORITHMS[$i]}" -l python -o "$TMP/algorithm_$i/"
+done
 
+# What this directory holds that is not generated is its package marker and its
+# test: a machine imports an algorithm as a sibling module (`from . import x`),
+# as a forge kind imports another, so the machines and the algorithms are one
+# package.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
+find "$GENERATED_DIR" -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'test_*.py' -delete
 for machine in "${MACHINES[@]}"; do
     cp "$TMP/$machine"/*_sm.py "$GENERATED_DIR/"
 done
+MODULES=()
+for i in "${!ALGORITHMS[@]}"; do
+    for generated in "$TMP/algorithm_$i"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]} and the algorithms ${MODULES[*]:-none} under $GENERATED_DIR/"

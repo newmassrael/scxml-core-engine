@@ -98,6 +98,13 @@ import sce_forge_runtime.algorithm as sce_algorithm
 # replacing it.
 import dataclasses as sce_dataclasses
 {% endif %}
+{% if static_imports %}
+# SCE Accepted Subset §2.15: each algorithm the document calls is a module
+# beside this one, imported as a forge kind imports another.
+{% for line in static_imports %}
+{{ line }}
+{% endfor %}
+{% endif %}
 
 
 # ======================================================================

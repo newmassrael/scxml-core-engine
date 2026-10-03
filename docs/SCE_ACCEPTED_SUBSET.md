@@ -3184,10 +3184,14 @@ Python lowers the model through the same walk (`PythonTarget`), and refuses what
 it does not by name: scalar variables, an enum, a record, and a list of numbers,
 bools or records with `<sce:append>`, `<sce:clear>` and `<foreach>`; a
 transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, a
-`<send>` / `<cancel>` that carry no value of the data model, `In()` and an
-event's typed payload. A call of an imported algorithm, a `<donedata>`, an
-`<invoke>`, a `<send>` that carries a `<param>` or a `<content>`, a
-`<sce:action>` and `bytes` are not lowered yet. Each variable is an attribute of
+`<send>` / `<cancel>` that carry no value of the data model, `In()`, an
+event's typed payload, and a call of an imported algorithm — the call is the
+module's name and the algorithm's function (`days_in_month.days_in_month(…)`),
+and the machine imports the module by the line a forge kind importing it writes
+(`from . import days_in_month`), so a machine and the algorithms it calls are
+modules of one package. A `<donedata>`, an `<invoke>`, a `<send>` that carries a
+`<param>` or a `<content>`, a `<sce:action>` and `bytes` are not lowered yet.
+Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
@@ -3204,15 +3208,18 @@ computed through a helper that answers `false` and raises the same event
 hands every engine one session for its system variables, which is why a Python
 machine is constructed with a script engine, and no lowered expression is
 evaluated by it. Unlike the Rust, Kotlin and Go trees, the generated Python is
-not committed (`backends/python/tests/integration/*/*_sm.py` is ignored):
+not committed (`backends/python/tests/integration/*/*_sm.py` is ignored, and in
+the `static_datamodel` package every module but its marker and its test):
 `scripts/regen_static_datamodel_python.sh` derives the machines the generator
-lowers — asked of it, not listed — and `scripts/gates/w3c-python.sh` runs it
+lowers — asked of it, not listed — and the algorithms they import, read from
+their `<sce:import kind="algorithm">`, and `scripts/gates/w3c-python.sh` runs it
 before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_block_ends_list`,
-`static_record_fields`, `static_record_list` and `static_record_enum` against
+`static_record_fields`, `static_record_list`, `static_record_enum`,
+`static_record` and `sync_client` against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
 reads).

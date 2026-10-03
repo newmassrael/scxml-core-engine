@@ -208,6 +208,12 @@ backends/python/tests/generated/
 backends/python/tests/integration/*/*_sm.py
 backends/python/tests/integration/*/sce_sourcemap.json
 backends/python/tests/integration/*/__pycache__/
+# The sce-static tree is one package: a machine imports the algorithm it calls
+# as a sibling module, so every module there but the marker and the test is
+# generated (`scripts/regen_static_datamodel_python.sh`).
+backends/python/tests/integration/static_datamodel/*.py
+!backends/python/tests/integration/static_datamodel/__init__.py
+!backends/python/tests/integration/static_datamodel/test_*.py
 
 build_debug_qjs/
 

@@ -1729,7 +1729,7 @@ fn a_may_fail_algorithm_is_received_where_a_static_machine_calls_it() {
 "#,
         "",
     );
-    for lang in ["kotlin", "rust"] {
+    for lang in ["kotlin", "rust", "python"] {
         let (ok, out) = run_beside(
             &["check", "-l", lang],
             &document,
@@ -1742,9 +1742,9 @@ fn a_may_fail_algorithm_is_received_where_a_static_machine_calls_it() {
     }
 }
 
-/// A machine calling `Clamp`, importing it alone: the document the two tests
-/// below generate for Go.
-fn go_calling_clamp() -> String {
+/// A machine calling `Clamp`, importing it alone: the document the tests below
+/// generate for the backends whose imports are written by the machine.
+fn calling_clamp_alone() -> String {
     calling_doc(
         "sce-static",
         r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
@@ -1773,7 +1773,7 @@ fn a_go_machine_calls_the_package_its_algorithms_generation_put_it_in() {
             "--go-module-prefix",
             "github.com/acme/gen/",
         ],
-        &go_calling_clamp(),
+        &calling_clamp_alone(),
         &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
     );
     assert!(ok, "the machine generates:\n{out}");
@@ -1795,6 +1795,41 @@ fn a_go_machine_calls_the_package_its_algorithms_generation_put_it_in() {
 }
 
 #[test]
+fn a_python_machine_calls_the_module_its_algorithms_generation_put_it_in() {
+    // The call is the module's name and the algorithm's function, and the import
+    // is the sibling-module one a forge kind importing the same algorithm
+    // writes: the two agree on where the algorithm is.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run_beside(
+        &[
+            "generate",
+            "-l",
+            "python",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &calling_clamp_alone(),
+        &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "py"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("\nfrom . import clamp\n"),
+        "the machine imports the algorithm's module as a sibling"
+    );
+    assert!(
+        source.contains("clamp.clamp(self.v_count, 5)"),
+        "the call names the module and the function"
+    );
+}
+
+#[test]
 fn a_go_machine_calling_an_algorithm_needs_the_module_its_packages_live_under() {
     // A Go import path has no valid bare form, so without the module path there
     // is nothing to write the import from. It is a configuration error naming the
@@ -1802,7 +1837,7 @@ fn a_go_machine_calling_an_algorithm_needs_the_module_its_packages_live_under() 
     // importing another gives.
     let (ok, out) = run_beside(
         &["check", "-l", "go"],
-        &go_calling_clamp(),
+        &calling_clamp_alone(),
         &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
     );
     assert!(!ok, "no module path was given:\n{out}");
@@ -1818,7 +1853,7 @@ fn a_go_machine_calling_an_algorithm_needs_the_module_its_packages_live_under() 
             "--go-module-prefix",
             "github.com/acme/gen",
         ],
-        &go_calling_clamp(),
+        &calling_clamp_alone(),
         &[("algorithm_clamp.scxml", ALGORITHM_CLAMP)],
     );
     assert!(ok, "given the module path, the machine lowers:\n{out}");

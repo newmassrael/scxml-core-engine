@@ -73,6 +73,20 @@ edit("tools/codegen/templates/python/state_machine.py.jinja2",
      "        {{ field.name }}: {{ field.ty }} = None\n")
 PY
 
+# ── A called algorithm is a module the machine imports ─────────────
+
+mutation_case "an algorithm the machine calls is not imported" <<'PY'
+edit("tools/codegen/templates/python/state_machine.py.jinja2",
+     "{% for line in static_imports %}\n{{ line }}\n{% endfor %}",
+     "{% for line in static_imports %}\n{% endfor %}")
+PY
+
+mutation_case "a call names the module of another language's identity" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        Some(generated_callee(Language::Python, document_name, None))",
+     "        Some(generated_callee(Language::Rust, document_name, None))")
+PY
+
 # ── A list holds no more than its bound ────────────────────────────
 
 mutation_case "an append past the capacity is not refused" <<'PY'
