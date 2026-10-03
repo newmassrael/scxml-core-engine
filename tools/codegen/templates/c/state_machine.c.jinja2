@@ -2739,6 +2739,15 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
             {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
+{% if trans.content_reads_payload %}
+            /* SCE Accepted Subset §2.15: this content reads the event's typed payload, so
+               it runs only for a delivery that carried one. One that did not, or whose
+               payload could not be read, was answered when it was lifted, and raises
+               nothing of its own here. */
+            if (sm->pending_payload.tag != {{ model.name | upper }}_PAYLOAD_{{ trans.event | to_c11_upper_ident }}) {
+                break;
+            }
+{% endif %}
             {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "c", "            ") -}}

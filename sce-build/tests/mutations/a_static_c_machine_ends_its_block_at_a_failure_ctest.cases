@@ -72,6 +72,18 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "        /* dropped */\n{% elif action.type == 'raise' %}")
 PY
 
+# ── Content that reads a payload runs for a payload ────────────────
+#
+# No scenario carries a delivery without one, so `test_static_scalars.c` states
+# it itself: against the zeroed buffer of such a delivery the content would
+# assign `day = 0` over the thirtieth.
+
+mutation_case "content that reads a payload runs for a delivery that carried none" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (sm->pending_payload.tag != {{ model.name | upper }}_PAYLOAD_{{ trans.event | to_c11_upper_ident }}) {\n                break;\n            }",
+     "            if (false) {\n                break;\n            }")
+PY
+
 # ── A variable starts at its declared value ────────────────────────
 
 mutation_case "a variable is not given its initial value" <<'PY'

@@ -2274,10 +2274,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
 
     # SCE Accepted Subset §2.15: `datamodel="sce-static"` under generated C —
-    # the scalar variables of the three fixtures every engine replays the
-    # shared scenarios against. Linked without `sce_c_scripting` and `lua54`:
-    # the machines have no script engine, and the link is the proof. The
-    # checked integer operations their statements call are the forge runtime's
+    # the scalar variables of the fixtures every engine replays the shared
+    # scenarios against. Linked without `sce_c_scripting` and `lua54`: the
+    # machines have no script engine, and the link is the proof. The checked
+    # integer operations their statements call are the forge runtime's
     # header-only half, reached by its include directory.
     foreach(_STATIC_SCALAR_MACHINE static_counter static_overflow static_block_ends)
         sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
@@ -2285,12 +2285,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SCALAR_MACHINE}.scxml"
         )
     endforeach()
+    # The event's typed payload is the fields of the schema it imports, which
+    # the staging has to carry beside it for the import to resolve.
+    sce_generate_static_integration_c_test(static_payload
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload.scxml"
+        STAGE_ALSO schema_day.scxml
+    )
 
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}
         ${INTEGRATION_C_TEST_static_overflow_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
+        ${INTEGRATION_C_TEST_static_payload_SOURCES}
     )
     target_link_libraries(sce_c_integration_static_scalars PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

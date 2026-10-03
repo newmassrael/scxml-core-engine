@@ -23,6 +23,10 @@
 //   * `static_block_ends`: an error ends the block it stands in (§scxml-4.9) —
 //     the statements after a failed `<assign>`, after a failed `<if>` cond, or
 //     inside a branch that failed do not run, while the next block does.
+//   * `static_payload`: an event's typed payload is read in a guard and in
+//     assignments through the channel the machine declares for it, lifted from
+//     the `data` the event carries; an operation over it that overflows is a
+//     failure like any other, and the statements before it have run.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -37,6 +41,7 @@
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_sm.h"
 
 #include "static_scenario.h"
 
@@ -75,7 +80,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // One machine as `sce_scenario_driver_t` asks for it: the event by its document
 // name, the state by its, the variable by its, and the replay of its scenario.
 #define STATIC_SCENARIO(M, EVENTS, STATES, VARIABLES)                                                                  \
-    static bool M##_raise_event(void *sm, const char *name) {                                                          \
+    static bool M##_raise_event(void *sm, const char *name, const char *data) {                                        \
         int event = 0;                                                                                                 \
         if (!find(EVENTS, COUNT_OF(EVENTS), name, &event)) {                                                           \
             return false;                                                                                              \
@@ -83,6 +88,12 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         M##_event_with_meta_t meta;                                                                                    \
         memset(&meta, 0, sizeof(meta));                                                                                \
         meta.event = (M##_event_t)event;                                                                               \
+        if (data != NULL) {                                                                                            \
+            if (strlen(data) >= sizeof(meta.data)) {                                                                   \
+                return false;                                                                                          \
+            }                                                                                                          \
+            memcpy(meta.data, data, strlen(data) + 1u);                                                                \
+        }                                                                                                              \
         M##_raise_external((M##_t *)sm, &meta);                                                                        \
         M##_step((M##_t *)sm);                                                                                         \
         return true;                                                                                                   \
@@ -192,6 +203,50 @@ static const variable_t block_ends_variables[] = {
 };
 STATIC_SCENARIO(static_block_ends, block_ends_events, block_ends_states, block_ends_variables)
 
+// static_payload
+VARIABLE_READER(static_payload, day)
+VARIABLE_READER(static_payload, late)
+VARIABLE_READER(static_payload, sinceEpoch)
+VARIABLE_READER(static_payload, refusals)
+static const name_value_t payload_events[] = {
+    {"day.picked", STATIC_PAYLOAD_EVENT_DAY_PICKED},
+};
+static const name_value_t payload_states[] = {
+    {"waiting", STATIC_PAYLOAD_STATE_WAITING},
+};
+static const variable_t payload_variables[] = {
+    {"day", static_payload_read_day},
+    {"late", static_payload_read_late},
+    {"sinceEpoch", static_payload_read_sinceEpoch},
+    {"refusals", static_payload_read_refusals},
+};
+STATIC_SCENARIO(static_payload, payload_events, payload_states, payload_variables)
+
+// What no scenario can state, because a scenario's event carries its data or is
+// a different event: a delivery that carried no payload. Content that reads one
+// runs for a payload and for nothing else — against the zeroed buffer of a
+// delivery with none it would assign `day = 0` and say the thirtieth never
+// happened.
+static int content_that_reads_a_payload_does_not_run_for_a_delivery_without_one(void) {
+    static_payload_t sm;
+    static_payload_init(&sm);
+    int bad = 0;
+    int64_t day = 0;
+    if (!static_payload_raise_event(&sm, "day.picked", "{\"year\":2026,\"month\":9,\"dayOfMonth\":30}") ||
+        !static_payload_raise_event(&sm, "day.picked", NULL)) {
+        (void)fprintf(stderr, "static_payload: FAIL - the machine has no day.picked\n");
+        return 1;
+    }
+    if (!static_payload_read_variable(&sm, "day", &day) || day != 30) {
+        (void)fprintf(
+            stderr,
+            "static_payload: FAIL - a delivery with no payload ran content that reads one: day is %lld, want 30\n",
+            (long long)day);
+        bad = 1;
+    }
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -199,6 +254,8 @@ int main(void) {
     bad |= static_counter_scenario("static_counter_bound", 12);
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
+    bad |= static_payload_scenario("static_payload", 5);
+    bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     if (bad != 0) {
         return 1;
     }

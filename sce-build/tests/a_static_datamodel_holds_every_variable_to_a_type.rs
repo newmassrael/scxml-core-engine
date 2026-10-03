@@ -302,9 +302,10 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
     // C lowers integer and bool variables, guards, `<assign>`, `<if>`, `<log>`,
-    // `<raise>` and `In()`. What is past that — a string, a real, a list, a
-    // record, an enum or bytes variable, a `<send>`, an `<invoke>`, a final's
-    // `<donedata>`, a host action, an event's typed payload — is refused by
+    // `<raise>`, `In()` and an event's typed payload of numbers and bools. What
+    // is past that — a string, a real, a list, a record, an enum or bytes
+    // variable, a `<send>`, an `<invoke>`, a final's `<donedata>`, a host
+    // action, a payload field that is not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -377,9 +378,18 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a <sce:action>",
         ),
         (
-            "a typed payload",
-            fixture("static_payload.scxml"),
-            "an event that carries a typed payload",
+            "a typed payload with a string field",
+            r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_echo.scxml" as="Echo"/>
+  <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="echo" cond="_event.data.total &gt; 1" target="done"/></state>
+  <final id="done"/>
+</scxml>
+"##
+            .to_string(),
+            "an event whose payload carries `tag` of type string",
         ),
     ];
     let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)

@@ -14,9 +14,10 @@
 // enough to own: a C test has no JSON library to borrow, and the other C tests
 // that read a shared table scan it for its keys, which would take a step's
 // `expect` for any other object that spelled `state`. It reads what a step
-// carries — `event`, `expect.state`, `expect.ended`, `expect.variables` — and
-// stops, naming it, at what it does not (an event's `data`, a real number),
-// rather than passing a scenario it did not replay.
+// carries — `event`, an event's `data` as the compact JSON text every producer
+// fills it with, `expect.state`, `expect.ended`, `expect.variables` — and stops,
+// naming it, at what it does not (a real number), rather than passing a
+// scenario it did not replay.
 
 #ifndef SCE_C_TESTS_STATIC_SCENARIO_H
 #define SCE_C_TESTS_STATIC_SCENARIO_H
@@ -33,9 +34,11 @@
 typedef struct {
     const char *machine;
     void *sm;
-    // The event goes in, and the macrostep it starts runs to its end. False for
-    // a name the machine has no event of.
-    bool (*raise)(void *sm, const char *event);
+    // The event goes in, and the macrostep it starts runs to its end. `data` is
+    // the event's payload as the JSON text every producer fills `data` with, or
+    // NULL when the step carries none. False for a name the machine has no event
+    // of.
+    bool (*raise)(void *sm, const char *event, const char *data);
     // 1 when the state is active, 0 when it is not, -1 for a name the machine
     // has no state of.
     int (*in_state)(void *sm, const char *state);
@@ -185,6 +188,38 @@ static bool sce_scenario_number(sce_scenario_cursor_t *c, int64_t *out) {
     return true;
 }
 
+// `from` up to `to`, without the whitespace between its tokens: the compact
+// text an event's `data` is written in, which is what every producer hands a
+// machine. Whitespace inside a string stays. False when it does not fit `cap`.
+static bool sce_scenario_compact(const char *from, const char *to, char *out, size_t cap) {
+    size_t n = 0;
+    bool in_string = false;
+    for (const char *p = from; p < to; ++p) {
+        const char ch = *p;
+        if (in_string) {
+            if (ch == '\\' && p + 1 < to) {
+                if (n + 2 >= cap) {
+                    return false;
+                }
+                out[n++] = ch;
+                out[n++] = *++p;
+                continue;
+            }
+            in_string = ch != '"';
+        } else if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t') {
+            continue;
+        } else if (ch == '"') {
+            in_string = true;
+        }
+        if (n + 1 >= cap) {
+            return false;
+        }
+        out[n++] = ch;
+    }
+    out[n] = '\0';
+    return true;
+}
+
 static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const char *what) {
     (void)fprintf(stderr, "%s: FAIL [step %d] - %s\n", d->machine, step, what);
     return 1;
@@ -274,7 +309,9 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
 static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
     char key[64];
     char event[64] = "";
+    char data[256];
     bool has_event = false;
+    bool has_data = false;
     sce_scenario_cursor_t expect = {NULL};
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "a step is not an object");
@@ -289,6 +326,13 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
                     return sce_scenario_fail(d, step, "`event` is not a string");
                 }
                 has_event = true;
+            } else if (strcmp(key, "data") == 0) {
+                sce_scenario_space(c);
+                const char *from = c->at;
+                if (!sce_scenario_skip_value(c) || !sce_scenario_compact(from, c->at, data, sizeof(data))) {
+                    return sce_scenario_fail(d, step, "`data` is not well formed, or is longer than the buffer");
+                }
+                has_data = true;
             } else if (strcmp(key, "expect") == 0) {
                 sce_scenario_space(c);
                 expect = *c;
@@ -312,7 +356,7 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             }
         }
     }
-    if (has_event && !d->raise(d->sm, event)) {
+    if (has_event && !d->raise(d->sm, event, has_data ? data : NULL)) {
         char message[128];
         (void)snprintf(message, sizeof(message), "the machine has no event `%s`", event);
         return sce_scenario_fail(d, step, message);

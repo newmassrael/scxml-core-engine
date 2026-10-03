@@ -488,6 +488,14 @@ pub trait StaticTarget {
     /// `lowered`, a guard reading the payload, held to the delivery having
     /// carried one.
     fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String;
+    /// Whether [`Self::payload_guard`] is asked of the guard's value, before
+    /// [`Self::receiving_condition`] receives its failure, rather than of the
+    /// condition once received. The default — once received — is right where
+    /// the received condition is an expression the check can wrap. A target
+    /// whose failing condition is statements (C) takes it on the value.
+    fn payload_guards_the_value(&self) -> bool {
+        false
+    }
     /// `value`, a lowered expression of type `ty` ([`InferredType::wire_param_slot`]
     /// admits the bool, string, narrow-integer and real types), as the typed
     /// value this backend's wire helpers take: the one a `<param>` crosses to a
@@ -1512,9 +1520,23 @@ pub fn lower(
                 // `error.execution` says why (E12 D5).
                 // A guard stands in no block, so there is nothing to end.
                 transition.native_guard_fails = cond.can_fail;
+                // A condition that reads the payload holds only while the
+                // dequeued event carried one — the guard every typed
+                // payload read on the backend takes. A target whose failing
+                // condition is statements has no expression to put that check
+                // around, so it takes it on the value, before the failure is
+                // received: the operations of a delivery that did not carry a
+                // payload are not run, and so fail nothing.
+                let reads_payload = schema.is_some()
+                    && crate::forge::expr::references_event_data_lexically(&transition.cond);
+                let value = if reads_payload && target.payload_guards_the_value() {
+                    target.payload_guard(machine, &transition.event, &cond.text)
+                } else {
+                    cond.text
+                };
                 let lowered = if cond.can_fail {
                     target.receiving_condition(
-                        &cond.text,
+                        &value,
                         &execution_failure(
                             &rewrites,
                             &format!("<transition cond='{}'>", transition.cond),
@@ -1522,18 +1544,18 @@ pub fn lower(
                         "",
                     )
                 } else {
-                    cond.text
+                    value
                 };
-                // A condition that reads the payload holds only while the
-                // dequeued event carried one — the guard every typed
-                // payload read on the backend takes. It lands in the one
-                // slot every backend's guard macro reads for a guard lowered
-                // at generate time; `cond_kt` stays the author's `kt:` text.
-                transition.native_guard = if schema.is_some()
-                    && crate::forge::expr::references_event_data_lexically(&transition.cond)
-                {
+                // It lands in the one slot every backend's guard macro reads
+                // for a guard lowered at generate time; `cond_kt` stays the
+                // author's `kt:` text.
+                transition.native_guard = if reads_payload {
                     payload_events.insert(transition.event.clone());
-                    target.payload_guard(machine, &transition.event, &lowered)
+                    if target.payload_guards_the_value() {
+                        lowered
+                    } else {
+                        target.payload_guard(machine, &transition.event, &lowered)
+                    }
                 } else {
                     lowered
                 };
@@ -3246,8 +3268,11 @@ pub fn lower_python(
 /// `<raise>` and `In()`; every construct past those is refused by name
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
 /// left as an undefined name in generated code.
-#[derive(Default)]
 pub struct CTarget {
+    /// The machine's name without the suite prefix, which the payload channel's
+    /// tag constants are spelled from: the channel's own types do not carry the
+    /// prefix, the machine's symbols do.
+    stem: String,
     /// How many conditions that can fail the walk has lowered. Each leaves its
     /// verdict in a local of its own, named by this, so that no two share a
     /// scope: an `<if>` in a branch of another would otherwise shadow it.
@@ -3255,6 +3280,13 @@ pub struct CTarget {
 }
 
 impl CTarget {
+    fn new(stem: &str) -> Self {
+        Self {
+            stem: stem.to_string(),
+            conditions: std::cell::Cell::new(0),
+        }
+    }
+
     /// The first action of `actions`, or of a block nested in one, that this
     /// target has no lowering for yet.
     fn unlowered_action(actions: &[Action]) -> Option<String> {
@@ -3347,17 +3379,28 @@ impl StaticTarget for CTarget {
                 }
             }
             // A typed payload is read through the channel the machine's own
-            // file declares for it, which a C machine under this data model
-            // does not yet carry.
-            if let Some(t) = state
-                .transitions
-                .iter()
-                .find(|t| model.imported_event_schemas.contains_key(&t.event))
-            {
-                return Some(format!(
-                    "a transition on `{}`, an event that carries a typed payload",
-                    t.event
-                ));
+            // file declares for it, field by field. A number and a bool are the
+            // fields it holds as values; a string is a borrowed pointer into a
+            // buffer the machine owns, bytes a buffer with a length, and an
+            // enum has no field type there — none of them is held to a
+            // scenario.
+            for t in &state.transitions {
+                let Some(schema) = model.imported_event_schemas.get(&t.event) else {
+                    continue;
+                };
+                if let Some(field) = schema.fields.iter().find(|f| {
+                    matches!(
+                        f.sce_type,
+                        SceType::String | SceType::Bytes | SceType::Enum(_)
+                    )
+                }) {
+                    return Some(format!(
+                        "a transition on `{}`, an event whose payload carries `{}` of type {}",
+                        t.event,
+                        field.id,
+                        field.sce_type.as_attr()
+                    ));
+                }
             }
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
@@ -3537,11 +3580,29 @@ impl StaticTarget for CTarget {
     fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
         "_if_cond_failed = true;".to_string()
     }
-    fn payload_accessor(&self, _event: &str) -> String {
-        "sm->pending_payload".to_string()
+    // The member of the channel's union the event's payload is lifted into
+    // (`build_c11_event_payload`), whose fields carry the schema's own ids.
+    fn payload_accessor(&self, event: &str) -> String {
+        format!(
+            "sm->pending_payload.as.{}",
+            filters::to_c11_lower_ident(std::borrow::Cow::Borrowed(event))
+        )
     }
-    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
-        unreachable!("a C11 transition on a typed payload is refused by `unsupported`")
+    // The tag says which event's payload the channel holds now, so a guard that
+    // reads this event's fields holds only for a delivery that carried them
+    // (`_PAYLOAD_NONE` for one that did not, or whose payload could not be
+    // read). The channel's constants are spelled from the machine's name
+    // without the suite prefix.
+    fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "sm->pending_payload.tag == {}_PAYLOAD_{} && ({lowered})",
+            self.stem.to_uppercase(),
+            filters::to_c11_upper_ident(std::borrow::Cow::Borrowed(event))
+        )
+    }
+    // A failing condition is statements here, so the check wraps the value.
+    fn payload_guards_the_value(&self) -> bool {
+        true
     }
     fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
         unreachable!("a C11 document with a <send> or an <invoke> is refused by `unsupported`")
@@ -3549,10 +3610,15 @@ impl StaticTarget for CTarget {
 }
 
 /// Rewrite `model` — a clone the C11 backend renders — so every expression of
-/// a `sce-static` document is native C. `symbol` is the stem every name of the
-/// machine starts with, suite prefix included.
-pub fn lower_c11(model: &mut SCXMLModel, symbol: &str) -> Result<StaticLowering, GenerateError> {
-    lower(model, symbol, &CTarget::default())
+/// a `sce-static` document is native C. `csym_prefix` is the suite symbol
+/// prefix (`"<prefix>_"`, empty when unset) every symbol of the machine starts
+/// with.
+pub fn lower_c11(
+    model: &mut SCXMLModel,
+    csym_prefix: &str,
+) -> Result<StaticLowering, GenerateError> {
+    let stem = model.name.clone();
+    lower(model, &format!("{csym_prefix}{stem}"), &CTarget::new(&stem))
 }
 
 /// The target that spells `lang`, when it lowers `sce-static` at all.

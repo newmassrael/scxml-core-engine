@@ -3262,12 +3262,20 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types and `bool`, a transition's guard, `<assign>`,
-`<if>` / `<elseif>`, `<log>`, `<raise>` and `In()`. A string, a real, bytes, a
-list, a record and an enum variable, a `<send>` / `<cancel>`, a `<foreach>`, a
-`<sce:action>`, an `<invoke>`, a final's `<donedata>`, a call of an imported
-algorithm and a transition on an event that carries a typed payload are refused
-until their spellings are written: a string and bytes need a capacity the C11
-contract does not carry yet, and a real is not yet held to a scenario. Each
+`<if>` / `<elseif>`, `<log>`, `<raise>`, `In()` and an event's typed payload of
+numbers and bools. A string, a real, bytes, a list, a record and an enum
+variable, a `<send>` / `<cancel>`, a `<foreach>`, a `<sce:action>`, an
+`<invoke>`, a final's `<donedata>`, a call of an imported algorithm and a
+transition on an event whose payload carries a string, bytes or enum field are
+refused until their spellings are written: a string and bytes need a capacity
+the C11 contract does not carry yet, and a real is not yet held to a scenario.
+A typed payload is read through the channel the machine already declares for
+it (`sm->pending_payload.as.<event>.<field>`, lifted from the `data` the event
+carries): a guard that reads it is held to `pending_payload.tag` naming that
+event, inside the value it computes so that an operation over a payload that
+did not arrive is not run, and content that reads it runs only for a delivery
+that carried one — a delivery with none runs nothing of it, rather than reading
+a zeroed buffer. Each
 variable is a member of the generated `<machine>_policy_t`, `v_<snake_case id>`,
 set in `_init` from the variables declared before it; a published one has a
 reader, `<machine>_get_<id>(sm)`, which answers it by value, and the machine's
@@ -3286,9 +3294,12 @@ meaning they have everywhere (5.9.1). `In("id")` in a lowered expression is the
 machine's own `<machine>_in_state(sm, <ENUMERATOR>)`, which the template writes
 from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
-`static_counter`, `static_overflow` and `static_block_ends` against machines
-generated from the shared fixtures, reading `scenarios/<machine>.json` itself
-(`static_scenario.h`) rather than writing the expected values out a second time.
+`static_counter`, `static_counter_bound`, `static_overflow`,
+`static_block_ends` and `static_payload` against machines generated from the
+shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,
+an event's `data` included) rather than writing the expected values out a second
+time, and states the one thing no scenario can — a delivery that carried no
+payload.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

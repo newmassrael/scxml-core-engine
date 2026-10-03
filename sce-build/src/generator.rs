@@ -2945,18 +2945,17 @@ fn render_c11(
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression
     // lowered to C — its variables as members of the policy — before the
     // payload channel is built, as every backend that lowers one does. The
-    // walk is handed the symbol every name of the machine starts with, which
-    // the error it raises is spelled from.
+    // walk is handed the suite prefix, which the symbols it raises the error
+    // through are spelled from, beside the machine's name the payload channel's
+    // constants are.
     //
     // Before the native actions are rendered, unlike the hosted backends: this
     // is where a construct C does not lower yet is refused by name, and a host
     // action is one — rendering it first would ask the walk for the typed
     // arguments of a call it is about to refuse
     // ([`crate::forge::native_action`] reaches only what a backend lowers).
-    let static_lowering = crate::forge::static_lowering::lower_c11(
-        &mut model_lowered,
-        &format!("{csym_prefix}{}", model.name),
-    )?;
+    let static_lowering =
+        crate::forge::static_lowering::lower_c11(&mut model_lowered, &csym_prefix)?;
     // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
     // dispatch (engine-free). The C11 token is the raw snake stem — the same
     // one `build_c11_event_payload` names its types after — not the PascalCase
