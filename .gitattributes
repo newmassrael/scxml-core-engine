@@ -1,0 +1,7 @@
+# The workbench's tests compare bytes of files the repository checks out: the
+# contract file the core's test writes and the screen's test reads, the lock files
+# a clean install refuses to repair. They are checked out with the line endings
+# they were written with, whatever a Windows clone's `core.autocrlf` says.
+# `text=auto` keeps git's own detection of binary files (the icons) in force.
+/app-core/** text=auto eol=lf
+/app/** text=auto eol=lf

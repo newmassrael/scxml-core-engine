@@ -12,6 +12,12 @@ name: Workbench application
 # The paths include `app-core/`: the screen's tests read the contract file the
 # core's tests write, and a change to either side has to be judged against the
 # other.
+#
+# The same gate runs a second time on Windows (`windows`), because the people the
+# workbench is for write specifications on it and nothing else in this repository
+# has ever run there. What is judged is the same: the screen, the core's commands,
+# the browser shell and the desktop shell compiled and linted. Nothing here claims
+# a window was opened on Windows; that is checked by hand until a lane can.
 
 on:
   push:
@@ -68,5 +74,51 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: app/ui/package-lock.json
+      - name: Application gate
+        run: scripts/gate app
+
+  windows:
+    name: The same gate on Windows
+    runs-on: windows-latest
+    # A cold Windows run compiles the Tauri shell's dependency tree with MSVC and
+    # installs the screen's packages besides; there is no run of this job yet to
+    # measure, so the ceiling is generous and is to be replaced by a measurement.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/target
+          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-app-
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Name the interpreter the gate runner calls
+        # `scripts/gate` runs `python3`, and a Windows Python installs `python`
+        # only. The runner is not changed to guess: this is the one place that
+        # knows which platform it is on.
+        run: |
+          interpreter="$(command -v python)"
+          directory="$(dirname "$interpreter")"
+          [[ -e "$directory/python3.exe" ]] || cp "$interpreter" "$directory/python3.exe"
+          python3 --version
       - name: Application gate
         run: scripts/gate app
