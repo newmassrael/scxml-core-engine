@@ -1,13 +1,18 @@
 {
   "about": "Every reply of the command layer, produced by tests/contract.rs and read by the screen's tests.",
   "answers": {
+    "accept": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+    },
     "create_work": {
       "created_at": "2026-10-03T09:00:00Z",
       "id": "<work-id>",
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 6,
+      "command_set_version": 7,
       "commands": [
         "describe",
         "list_works",
@@ -23,7 +28,12 @@
         "remove_work",
         "review",
         "read_answers",
-        "save_answers"
+        "save_answers",
+        "save_requirements",
+        "read_requirements",
+        "requirements_report",
+        "accept",
+        "read_acceptance"
       ],
       "root": "<root>"
     },
@@ -100,6 +110,55 @@
         }
       ]
     },
+    "read_acceptance": {
+      "acceptance": {
+        "accepted_at": "2026-10-03T09:00:00Z",
+        "basis": {
+          "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+          "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+          "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        },
+        "channel": "direct",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+      },
+      "lapse": null,
+      "now": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "standing": "holds"
+    },
+    "read_acceptance_lapsed": {
+      "acceptance": {
+        "accepted_at": "2026-10-03T09:00:00Z",
+        "basis": {
+          "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+          "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+          "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        },
+        "channel": "direct",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+      },
+      "lapse": "design/model.scxml moved",
+      "now": {
+        "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "standing": "lapsed"
+    },
+    "read_acceptance_none": {
+      "acceptance": null,
+      "lapse": null,
+      "standing": "none"
+    },
     "read_answers": {
       "answers": {
         "entries": {
@@ -171,6 +230,21 @@
       "source_head": null,
       "standing": "unstated"
     },
+    "read_requirements": {
+      "requirements": {
+        "manifest": "{\"doc_id\":\"door\",\"rev\":\"1\",\"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n",
+        "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "sidecar": "{\"doc_id\":\"door\",\"rev\":\"1\",\"text\":{\"R1\":\"The door opens.\"}}\n",
+        "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
+      "standing": "current"
+    },
+    "read_requirements_none": {
+      "requirements": null,
+      "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
+      "standing": null
+    },
     "read_source": {
       "source": {
         "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
@@ -208,6 +282,70 @@
         "id": "<removed-work-id>",
         "title": "Window blind"
       }
+    },
+    "requirements_report": {
+      "basis": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "denominator": "synthesized",
+      "generator": "fake-sce 0",
+      "model_standing": "current",
+      "outcomes": [
+        {
+          "id": "R1",
+          "node_paths": [
+            "states.s0"
+          ],
+          "outcome": "implemented",
+          "section": "S1"
+        },
+        {
+          "id": "R2",
+          "node_paths": [
+            "states.s1"
+          ],
+          "outcome": "implemented",
+          "section": "S2"
+        }
+      ],
+      "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+      "page_refusal": null,
+      "requirements_standing": "current",
+      "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+    },
+    "requirements_report_behind": {
+      "basis": {
+        "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "bbeb087885329934b2ca6acbef4b1a2ae54dd3b1f6aaa7c5cc920440de11cdd4"
+      },
+      "denominator": "synthesized",
+      "generator": "fake-sce 0",
+      "model_standing": "behind",
+      "outcomes": [
+        {
+          "id": "R1",
+          "node_paths": [
+            "states.s0"
+          ],
+          "outcome": "implemented",
+          "section": "S1"
+        },
+        {
+          "id": "R2",
+          "node_paths": [
+            "states.s1"
+          ],
+          "outcome": "implemented",
+          "section": "S2"
+        }
+      ],
+      "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+      "page_refusal": null,
+      "requirements_standing": "behind",
+      "source_head": "bbeb087885329934b2ca6acbef4b1a2ae54dd3b1f6aaa7c5cc920440de11cdd4"
     },
     "review": {
       "check": {
@@ -320,6 +458,15 @@
       "outcome": "unchanged",
       "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
     },
+    "save_requirements_first": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d"
+    },
+    "save_requirements_unchanged": {
+      "outcome": "unchanged",
+      "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d"
+    },
     "save_source_first": {
       "outcome": "saved",
       "parent": null,
@@ -335,7 +482,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 6,
+  "command_set_version": 7,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -361,6 +508,10 @@
       "kind": "invalid-model",
       "message": "these documents are not a model: `../escape.scxml` is not a file name an import can name: one plain name of letters, digits, `_`, `.` and `-`, at most 100 characters, starting with a letter, a digit or `_`"
     },
+    "invalid-requirements": {
+      "kind": "invalid-requirements",
+      "message": "this is not a requirement list: the manifest is not JSON: expected ident at line 1 column 2"
+    },
     "invalid-title": {
       "kind": "invalid-title",
       "message": "the title cannot be used: it is empty"
@@ -377,6 +528,31 @@
       "kind": "not-found",
       "message": "the source revision 000000000000 of `<work-id>` that the model names as written_for does not exist"
     },
+    "moved": {
+      "detail": {
+        "current": {
+          "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+          "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+          "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        },
+        "moved": [
+          "model"
+        ]
+      },
+      "kind": "moved",
+      "message": "model changed after you were shown it, so nothing was accepted; read it again"
+    },
+    "not-current": {
+      "detail": {
+        "behind": [
+          "model",
+          "requirements"
+        ],
+        "source_head": "bbeb087885329934b2ca6acbef4b1a2ae54dd3b1f6aaa7c5cc920440de11cdd4"
+      },
+      "kind": "not-current",
+      "message": "the model and the requirements was not written for the text as it is now, so it cannot be accepted as an answer to it"
+    },
     "not-found": {
       "kind": "not-found",
       "message": "work `absent` does not exist"
@@ -392,13 +568,20 @@
       "kind": "sce-refused",
       "message": "SCE refused the model (cli/diagram-does-not-fit): the figure needs 925 x 125 pt and the page gives 510 x 757 pt"
     },
+    "sce-timeout": {
+      "detail": {
+        "seconds": 30
+      },
+      "kind": "sce-timeout",
+      "message": "the SCE generator did not finish in 30 s and was stopped"
+    },
     "sce-unavailable": {
       "kind": "sce-unavailable",
       "message": "the SCE generator is not available: no `sce-codegen` was found; set SCE_CODEGEN to its path, or put it beside this program or on PATH"
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance"
     }
   }
 }

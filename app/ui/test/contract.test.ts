@@ -20,10 +20,13 @@ import {
   parseFigures,
   parseHistory,
   parseListing,
+  parseReadAcceptance,
   parseReadAnswers,
   parseReadModel,
+  parseReadRequirements,
   parseReadSource,
   parseRemoved,
+  parseRequirementsReport,
   parseReview,
   parseSaved,
   parseWork,
@@ -57,6 +60,11 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   review: parseReview,
   read_answers: parseReadAnswers,
   save_answers: parseSaved,
+  save_requirements: parseSaved,
+  read_requirements: parseReadRequirements,
+  requirements_report: parseRequirementsReport,
+  accept: parseSaved,
+  read_acceptance: parseReadAcceptance,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -166,6 +174,55 @@ describe("the replies the core gives", () => {
     expect(review.check.unresolved[0]?.reason).toBe("Which card values open the door?");
   });
 
+  it("carry the requirement list, SCE's measure of the design against it, and what the owner accepted", () => {
+    expect(parseReadRequirements(replies.answers["read_requirements_none"])).toMatchObject({
+      requirements: null,
+      standing: null,
+    });
+    const held = parseReadRequirements(replies.answers["read_requirements"]);
+    expect(held.standing).toBe("current");
+    // The two files come back as the authoring client wrote them: an acceptance pins their bytes.
+    expect(held.requirements?.manifest).toContain('"requirements":[{"id":"R1"},{"id":"R2"}]');
+    expect(held.requirements?.sidecar).toContain('"R1":"The door opens."');
+    expect(parseSaved(replies.answers["save_requirements_first"]).outcome).toBe("saved");
+    expect(parseSaved(replies.answers["save_requirements_unchanged"]).outcome).toBe("unchanged");
+
+    const report = parseRequirementsReport(replies.answers["requirements_report"]);
+    expect(report.outcomes.map((o) => [o.id, o.outcome])).toEqual([
+      ["R1", "implemented"],
+      ["R2", "implemented"],
+    ]);
+    expect(report).toMatchObject({ model_standing: "current", requirements_standing: "current", denominator: "synthesized" });
+    expect(report.basis.answers).toBeNull();
+    expect(report.page).toContain("ACCEPTANCE REPORT");
+    const behind = parseRequirementsReport(replies.answers["requirements_report_behind"]);
+    expect(behind).toMatchObject({ model_standing: "behind", requirements_standing: "behind" });
+
+    expect(parseSaved(replies.answers["accept"]).outcome).toBe("saved");
+    const none = parseReadAcceptance(replies.answers["read_acceptance_none"]);
+    expect(none).toMatchObject({ acceptance: null, standing: "none", lapse: null, now: null });
+    // What the owner accepted is what they were shown: the same revisions, stated here.
+    const accepted = parseReadAcceptance(replies.answers["read_acceptance"]);
+    expect(accepted).toMatchObject({ standing: "holds", lapse: null });
+    expect(accepted.acceptance?.channel).toBe("direct");
+    expect(accepted.acceptance?.basis).toEqual(report.basis);
+    expect(accepted.acceptance?.open).toEqual(["1 question(s) the specification leaves open (open-guard)"]);
+    const lapsed = parseReadAcceptance(replies.answers["read_acceptance_lapsed"]);
+    expect(lapsed).toMatchObject({ standing: "lapsed", lapse: "design/model.scxml moved" });
+    expect(lapsed.now?.model).not.toBe(lapsed.acceptance?.basis.model);
+  });
+
+  it("refuse an acceptance of what moved, or of a design for an earlier text, and say which", () => {
+    const moved = asCommandError(replies.refusals["moved"]);
+    expect(moved?.kind).toBe("moved");
+    expect(moved?.detail).toMatchObject({ moved: ["model"] });
+    const notCurrent = asCommandError(replies.refusals["not-current"]);
+    expect(notCurrent?.kind).toBe("not-current");
+    expect(notCurrent?.detail).toMatchObject({ behind: ["model", "requirements"] });
+    expect(asCommandError(replies.refusals["invalid-requirements"])?.message).toContain("not JSON");
+    expect(asCommandError(replies.refusals["sce-timeout"])?.detail).toEqual({ seconds: 30 });
+  });
+
   it("say which work was removed, and that it is no longer listed or readable", () => {
     expect(parseRemoved(replies.answers["remove_work"]).title).toBe("Window blind");
     const after = parseListing(replies.answers["list_works_after_removal"]);
@@ -186,6 +243,10 @@ describe("the replies the core gives", () => {
       "unknown-command",
       "sce-refused",
       "sce-unavailable",
+      "sce-timeout",
+      "moved",
+      "not-current",
+      "invalid-requirements",
     ]) {
       const refusal = asCommandError(replies.refusals[kind]);
       expect(refusal, kind).not.toBeNull();
@@ -266,6 +327,26 @@ describe("a reply that is not the promised shape", () => {
     const figures = replies.answers["figures"] as { sheets: Record<string, unknown>[] };
     expect(() => parseFigures({ ...figures, sheets: [{ name: "a.svg" }] })).toThrow(/figures\.sheets\[0\]\.svg/);
     expect(() => parseFigures({ ...figures, generator: 3 })).toThrow(/figures\.generator/);
+  });
+
+  it("is refused when an acceptance and its standing disagree, or a measure is not the shape the screen reads", () => {
+    const held = replies.answers["read_acceptance"] as Record<string, unknown>;
+    expect(() => parseReadAcceptance({ ...held, standing: "stale" })).toThrow(/read_acceptance\.standing/);
+    expect(() => parseReadAcceptance({ ...held, standing: "none" })).toThrow(/holds or lapsed/);
+    expect(() => parseReadAcceptance({ ...held, acceptance: null })).toThrow(/an acceptance unless/);
+    // A lapse is SCE's sentence, and only a lapsed acceptance has one.
+    expect(() => parseReadAcceptance({ ...held, standing: "lapsed", lapse: null })).toThrow(/read_acceptance\.lapse/);
+    expect(() => parseReadAcceptance({ ...held, lapse: "design/model.scxml moved" })).toThrow(/read_acceptance\.lapse/);
+
+    const report = replies.answers["requirements_report"] as Record<string, unknown>;
+    expect(() => parseRequirementsReport({ ...report, basis: { source: "a".repeat(64) } })).toThrow(/basis\.model/);
+    expect(() => parseRequirementsReport({ ...report, model_standing: "stale" })).toThrow(/model_standing/);
+    expect(() => parseRequirementsReport({ ...report, outcomes: [{ id: "R1", outcome: "ok", node_paths: [3] }] })).toThrow(
+      /outcomes\[0\]\.node_paths\[0\]/,
+    );
+    expect(() => parseRequirementsReport({ ...report, page_refusal: { code: "c" } })).toThrow(/page_refusal\.message/);
+    const list = replies.answers["read_requirements"] as Record<string, unknown>;
+    expect(() => parseReadRequirements({ ...list, requirements: null })).toThrow(/null when there is no list/);
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

@@ -26,6 +26,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::acceptance_run::Acceptor;
 use crate::figures::{
     excerpt, refusal, run_bounded, stage_model, word, FigureRenderer, NoRenderer, RenderError,
     SceCodegen, Scratch,
@@ -121,12 +122,13 @@ pub trait ModelReviewer: Send + Sync {
     fn review(&self, request: &ReviewRequest<'_>) -> Result<Review, RenderError>;
 }
 
-/// The product as the command layer uses it: it draws a model and reads one.
-/// Implemented by anything that does both, so a test double gives each its own
-/// answer and the real generator gives both its own.
-pub trait Product: FigureRenderer + ModelReviewer {}
+/// The product as the command layer uses it: it draws a model, reads one, and
+/// answers for a work's requirements and acceptance. Implemented by anything that
+/// does all three, so a test double gives each its own answer and the real
+/// generator gives every one its own.
+pub trait Product: FigureRenderer + ModelReviewer + Acceptor {}
 
-impl<T: FigureRenderer + ModelReviewer + ?Sized> Product for T {}
+impl<T: FigureRenderer + ModelReviewer + Acceptor + ?Sized> Product for T {}
 
 impl ModelReviewer for SceCodegen {
     fn review(&self, request: &ReviewRequest<'_>) -> Result<Review, RenderError> {

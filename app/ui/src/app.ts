@@ -6,6 +6,16 @@
 // in the core and the editor model; this file asks, shows the answer, and offers
 // the person the choices a refusal leaves.
 
+import {
+  acceptRefused,
+  accepting,
+  gate,
+  isUnsettled,
+  tally,
+  type AcceptancePanel,
+  type AcceptanceState,
+  type Withheld,
+} from "./acceptance_model";
 import { apiOver, type Api } from "./api";
 import {
   answersConflicted,
@@ -26,6 +36,8 @@ import {
   type Described,
   type HistoryEntry,
   type Listing,
+  type ReadAcceptance,
+  type RequirementsReport,
   type SourceText,
   type Unresolved,
   type Work,
@@ -61,6 +73,29 @@ import { tokenFromPaste, type Credentials } from "./token";
 
 const LOCALE_KEY = "sce.locale";
 const ZOOM_KEY = "sce.zoom";
+
+/** SCE's words for a requirement, each with the sentence that says what it means. A word SCE adds later is shown as spelled. */
+const OUTCOME_SENTENCES: Record<string, Key> = {
+  implemented: "outcomeImplemented",
+  "scenario-passed": "outcomeScenarioPassed",
+  missing: "outcomeMissing",
+  unresolved: "outcomeUnresolved",
+  dangling: "outcomeDangling",
+  contradicted: "outcomeContradicted",
+  "scenario-failed": "outcomeScenarioFailed",
+  "needs-scenario": "outcomeNeedsScenario",
+  delegated: "outcomeDelegated",
+  "out-of-scope": "outcomeOutOfScope",
+  "system-level": "outcomeSystemLevel",
+};
+
+/** The sentence that says why the accept button is not offered; `accepting` is said by the button itself. */
+const WITHHELD_WORDS: Record<Exclude<Withheld, "accepting">, Key> = {
+  unsaved: "withheldUnsaved",
+  "not-measured": "withheldNotMeasured",
+  behind: "withheldBehind",
+  already: "withheldAlready",
+};
 
 export interface Environment {
   readonly transport: Transport;
@@ -118,6 +153,10 @@ export class App {
   private answersUnreadable: string | null = null;
   /** The newest request for the answers; an older one that answers later is dropped. */
   private answersTicket = 0;
+  /** The requirement list, SCE's measure of the design against it, and what the owner accepted. */
+  private acceptance: AcceptancePanel | null = null;
+  /** The newest request for the acceptance; an older one that answers later is dropped. */
+  private acceptanceTicket = 0;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
   /** The window was asked to close while something was not saved, and the person has not yet said what to do. */
@@ -214,6 +253,8 @@ export class App {
       this.answersTicket += 1;
       this.answers = null;
       this.answersUnreadable = null;
+      this.acceptanceTicket += 1;
+      this.acceptance = null;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -301,10 +342,14 @@ export class App {
       this.answersUnreadable = this.explain(error);
     }
     this.render();
+    // The owner's answers are part of what an acceptance is of, so what they now say
+    // moves whether it holds.
+    if (session === this.session) void this.loadAcceptance(work.id);
   }
 
   /** The save button and its words follow every keystroke, without redrawing the field being typed in. */
   private refreshAnswersChrome(): void {
+    this.refreshAcceptChrome();
     const model = this.answers;
     const button = this.root.querySelector<HTMLButtonElement>("#save-answers");
     const status = this.root.querySelector<HTMLElement>("#answers-status");
@@ -342,10 +387,15 @@ export class App {
         this.model = { phase: "none" };
         this.reviewTicket += 1;
         this.review = null;
+        this.acceptanceTicket += 1;
+        this.acceptance = null;
         this.render();
         return;
       }
       const known: ModelRead = { model: read.model, standing: read.standing, sourceHead: read.source_head };
+      // What was accepted is of the model as it is now, and the text may have moved
+      // under it: asked again whenever the model is read, drawn again or not.
+      void this.loadAcceptance(id);
       if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
         this.model = { phase: "drawn", read: known, figures: prior.figures };
         this.render();
@@ -402,6 +452,97 @@ export class App {
     this.render();
   }
 
+  /**
+   * Read the requirement list, SCE's measure of the design against it, and whether the
+   * owner's acceptance still holds. SCE not measuring does not hide an acceptance the
+   * owner made, and a work with no list says so instead of showing an empty table.
+   * Only the newest request, for the editor that asked, is applied.
+   */
+  private async loadAcceptance(id: string): Promise<void> {
+    const session = this.session;
+    const ticket = ++this.acceptanceTicket;
+    const current = (): boolean => session === this.session && ticket === this.acceptanceTicket;
+    // A panel already on screen stays until the new answer replaces it: a reread after
+    // an accept or a save does not flash a "reading" over what the person is looking at.
+    if (this.acceptance === null) this.acceptance = { phase: "reading" };
+    try {
+      const list = await this.api.readRequirements(id);
+      if (!current()) return;
+      if (list.requirements === null) {
+        this.acceptance = { phase: "no-list" };
+        this.render();
+        return;
+      }
+      const [acceptance, measured] = await Promise.all([this.api.readAcceptance(id), this.measure(id)]);
+      if (!current()) return;
+      this.acceptance = {
+        phase: "read",
+        state: {
+          list,
+          acceptance,
+          report: measured.report,
+          measureFailure: measured.failure,
+          accepting: false,
+          refusal: null,
+        },
+      };
+    } catch (error) {
+      if (!current()) return;
+      // A token wanted is the sign-in form's to answer; anything else is the panel's own message.
+      if (this.askForToken(error)) return;
+      this.acceptance = { phase: "failed", message: this.explain(error) };
+    }
+    this.render();
+  }
+
+  /**
+   * SCE's measure of the design against the list. SCE saying no, or nothing, is a state
+   * of the panel (`failure`); anything else (the server unreachable, a wrong token, an
+   * answer in a shape this screen does not know) is thrown for the caller to report.
+   */
+  private async measure(id: string): Promise<{ report: RequirementsReport | null; failure: string | null }> {
+    try {
+      return { report: await this.api.requirementsReport(id), failure: null };
+    } catch (error) {
+      const failure = drawFailureOf(error);
+      if (failure === null) throw error;
+      return { report: null, failure: failure.message };
+    }
+  }
+
+  /**
+   * The owner pressed accept on the page they were shown. What they were shown (the
+   * revisions in its `basis`) is what is sent, and the core accepts it only if all of
+   * it is still what is saved. Whatever the answer, what is there NOW is read and
+   * shown, so a refusal comes with the page it refers to and the next press is made
+   * knowing what changed.
+   */
+  private async accept(): Promise<void> {
+    const panel = this.acceptance;
+    const work = this.selected;
+    if (panel === null || panel.phase !== "read" || work === null) return;
+    const report = panel.state.report;
+    if (report === null || gate(panel.state, this.hasUnsavedChanges()) !== null) return;
+    const session = this.session;
+    this.acceptance = { phase: "read", state: accepting(panel.state) };
+    this.render();
+    let refusal: string | null = null;
+    try {
+      await this.api.accept(work.id, report.basis);
+    } catch (error) {
+      if (session !== this.session) return;
+      if (this.askForToken(error)) return;
+      refusal = this.explain(error);
+    }
+    await this.loadAcceptance(work.id);
+    if (session !== this.session || refusal === null) return;
+    const now = this.acceptance;
+    if (now !== null && now.phase === "read") {
+      this.acceptance = { phase: "read", state: acceptRefused(now.state, refusal) };
+      this.render();
+    }
+  }
+
   private async create(title: string): Promise<void> {
     await this.guard(async () => {
       const work = await this.api.createWork(title);
@@ -428,10 +569,12 @@ export class App {
       this.modelTicket += 1;
       this.reviewTicket += 1;
       this.answersTicket += 1;
+      this.acceptanceTicket += 1;
       this.looking += 1;
       this.review = null;
       this.answers = null;
       this.answersUnreadable = null;
+      this.acceptance = null;
       this.selected = null;
       this.editor = null;
       this.entries = [];
@@ -858,9 +1001,10 @@ export class App {
     );
   }
 
-  /** Whether a save of the text or of the answers is on its way: a work cannot be removed under it. */
+  /** Whether a save of the text or of the answers, or an acceptance, is on its way: a work cannot be removed under it. */
   private somethingIsSaving(): boolean {
-    return this.editor?.phase === "saving" || this.answers?.phase === "saving";
+    const acceptInFlight = this.acceptance?.phase === "read" && this.acceptance.state.accepting;
+    return this.editor?.phase === "saving" || this.answers?.phase === "saving" || acceptInFlight;
   }
 
   /** Whether the editor holds text, or the answers hold words, the core has not been given. */
@@ -1079,6 +1223,7 @@ export class App {
       ),
       read === null ? null : this.standingBanner(read),
       read === null ? null : this.reviewSection(),
+      read === null ? null : this.acceptanceSection(),
       this.modelBody(model),
       read === null ? null : this.scxmlOf(read),
     );
@@ -1173,6 +1318,226 @@ export class App {
             this.t("reviewPageRefused", { detail: `${pageRefusal.message} (${pageRefusal.code})` }),
           ),
     );
+  }
+
+  /**
+   * Accepting the design: what SCE finds of each requirement, the page the owner reads
+   * before deciding, and whether what they accepted before still holds. Every
+   * classification is SCE's; the screen arranges it, tells the owner what the design
+   * leaves open, and offers the button. A design with a gap is the owner's to accept.
+   */
+  private acceptanceSection(): HTMLElement | null {
+    const panel = this.acceptance;
+    if (panel === null) return null;
+    const heading = h("h4", {}, this.t("acceptTitle"));
+    switch (panel.phase) {
+      case "reading":
+        return h("section", { class: "acceptance" }, heading, h("p", { class: "muted" }, this.t("acceptReading")));
+      case "no-list":
+        return h("section", { class: "acceptance" }, heading, h("p", { class: "muted" }, this.t("acceptNoList")));
+      case "failed":
+        return h(
+          "section",
+          { class: "acceptance" },
+          heading,
+          h("p", { class: "banner banner-error", role: "alert" }, this.t("acceptFailed", { detail: panel.message })),
+        );
+      case "read":
+        return this.acceptanceBody(heading, panel.state);
+    }
+  }
+
+  private acceptanceBody(heading: HTMLElement, state: AcceptanceState): HTMLElement {
+    const report = state.report;
+    const standing = state.list.standing;
+    return h(
+      "section",
+      { class: "acceptance" },
+      heading,
+      standing === "behind"
+        ? h("p", { class: "banner banner-warn", role: "status" }, this.t("requirementsBehind"))
+        : standing === "unstated"
+          ? h("p", { class: "banner", role: "status" }, this.t("requirementsUnstated"))
+          : null,
+      this.acceptedBanner(state.acceptance),
+      report === null
+        ? h(
+            "p",
+            { class: "banner banner-warn", role: "alert" },
+            this.t("measureFailed", { detail: state.measureFailure ?? "" }),
+          )
+        : this.measureBlock(report),
+      state.refusal === null
+        ? null
+        : h("p", { class: "banner banner-error", role: "alert" }, this.t("acceptRefused", { detail: state.refusal })),
+      this.acceptBar(state),
+    );
+  }
+
+  /** Whether the owner has accepted, whether it still holds, and what SCE listed as open when they did. */
+  private acceptedBanner(read: ReadAcceptance): HTMLElement {
+    const held = read.acceptance;
+    if (held === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
+    const time = formatTime(held.accepted_at, this.locale);
+    return h(
+      "div",
+      { class: "accepted" },
+      h(
+        "p",
+        { class: read.standing === "holds" ? "banner banner-ok" : "banner banner-warn", role: "status" },
+        read.standing === "holds"
+          ? this.t("acceptedHolds", { time })
+          : this.t("acceptedLapsed", { time, lapse: read.lapse ?? "" }),
+      ),
+      h("p", { class: "muted" }, this.channelSentence(held.channel)),
+      held.open.length === 0
+        ? null
+        : h(
+            "details",
+            { class: "accepted-open" },
+            h("summary", {}, this.t("acceptedOpenTitle")),
+            h("ul", {}, ...held.open.map((sentence) => h("li", {}, sentence))),
+          ),
+    );
+  }
+
+  /** Which surface the acceptance was stated on, as the record says it: not every acceptance is the owner's own press. */
+  private channelSentence(channel: string): string {
+    if (channel === "direct") return this.t("channelDirect");
+    if (channel === "relayed") return this.t("channelRelayed");
+    return this.t("channelUnknown", { channel });
+  }
+
+  /** What SCE finds of the requirements: counts, the table, and the page it writes for the owner. */
+  private measureBlock(report: RequirementsReport): HTMLElement {
+    const gloss = (word: string): string => {
+      const sentence = OUTCOME_SENTENCES[word];
+      return sentence === undefined ? word : this.t(sentence);
+    };
+    const counted = tally(report.outcomes);
+    return h(
+      "div",
+      { class: "measure" },
+      h(
+        "p",
+        {},
+        report.denominator === null
+          ? this.t("requirementsCountUnstated", { count: String(report.outcomes.length) })
+          : this.t("requirementsCount", {
+              count: String(report.outcomes.length),
+              denominator: report.denominator,
+            }),
+      ),
+      h(
+        "ul",
+        { class: "tally" },
+        ...counted.map(([word, count]) =>
+          h(
+            "li",
+            { class: isUnsettled(word) ? "unsettled" : undefined },
+            h("span", { class: "count" }, String(count)),
+            " ",
+            gloss(word),
+          ),
+        ),
+      ),
+      counted.some(([word]) => isUnsettled(word)) ? h("p", { class: "muted" }, this.t("acceptGapsHint")) : null,
+      h(
+        "details",
+        { class: "requirements" },
+        h("summary", {}, this.t("requirementsTable")),
+        h(
+          "table",
+          {},
+          h(
+            "thead",
+            {},
+            h(
+              "tr",
+              {},
+              h("th", {}, this.t("requirementId")),
+              h("th", {}, this.t("requirementOutcome")),
+              h("th", {}, this.t("requirementSection")),
+              h("th", {}, this.t("requirementCarried")),
+            ),
+          ),
+          h(
+            "tbody",
+            {},
+            ...report.outcomes.map((o) =>
+              h(
+                "tr",
+                {},
+                h("td", {}, h("code", {}, o.id)),
+                h("td", {}, o.outcome),
+                h("td", {}, o.section ?? ""),
+                h("td", {}, o.node_paths.length === 0 ? this.t("requirementNowhere") : o.node_paths.join(", ")),
+              ),
+            ),
+          ),
+        ),
+      ),
+      report.page === null
+        ? null
+        : h(
+            "details",
+            { class: "page" },
+            h("summary", {}, this.t("acceptPageTitle")),
+            h("pre", { class: "pseudo" }, report.page),
+          ),
+      report.page_refusal === null
+        ? null
+        : h(
+            "p",
+            { class: "banner banner-warn", role: "alert" },
+            this.t("acceptPageRefused", {
+              detail: `${report.page_refusal.message} (${report.page_refusal.code})`,
+            }),
+          ),
+    );
+  }
+
+  /**
+   * What the owner is told before they press: the matters SCE lists as left open
+   * (accepting closes none of them; the requirements it leaves unsettled are marked in
+   * its count above), then the button. Whether the button is offered is `gate`'s, and
+   * follows what is typed (`refreshAcceptChrome`).
+   */
+  private acceptBar(state: AcceptanceState): HTMLElement {
+    const review = this.review;
+    const open = review !== null && review.phase === "read" ? review.review.check.open.length : null;
+    // "Again" is said only where pressing is possible and means something: after a lapse.
+    // An acceptance that holds is withheld, and says so, under the same words as a first one.
+    const lapsed = state.acceptance.standing === "lapsed";
+    return h(
+      "div",
+      { class: "accept-bar" },
+      open === null || open === 0
+        ? null
+        : h("ul", { class: "gaps" }, h("li", {}, this.t("acceptGapOpen", { count: String(open) }))),
+      h("p", { class: "muted" }, this.t("acceptNote")),
+      h(
+        "div",
+        { class: "bar" },
+        h(
+          "button",
+          { id: "accept", type: "button", onclick: () => void this.accept() },
+          state.accepting ? this.t("acceptBusy") : this.t(lapsed ? "acceptAgainButton" : "acceptButton"),
+        ),
+        h("span", { id: "accept-note", class: "status", role: "status", "aria-live": "polite" }),
+      ),
+    );
+  }
+
+  /** Why the accept button is not offered now, in words; follows every keystroke without a redraw. */
+  private refreshAcceptChrome(): void {
+    const panel = this.acceptance;
+    const button = this.root.querySelector<HTMLButtonElement>("#accept");
+    const note = this.root.querySelector<HTMLElement>("#accept-note");
+    if (panel === null || panel.phase !== "read" || button === null || note === null) return;
+    const withheld = gate(panel.state, this.hasUnsavedChanges());
+    button.disabled = withheld !== null;
+    note.textContent = withheld === null || withheld === "accepting" ? "" : this.t(WITHHELD_WORDS[withheld]);
   }
 
   /** What an accepted model leaves to a person, in SCE's own sentences. */
@@ -1459,6 +1824,7 @@ export class App {
 
   /** The parts that follow every keystroke, without redrawing the editor under the cursor. */
   private refreshChrome(): void {
+    this.refreshAcceptChrome();
     const editor = this.editor;
     const status = this.root.querySelector<HTMLElement>("#status");
     const button = this.root.querySelector<HTMLButtonElement>("#save");

@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 6;
+export const SUPPORTED_COMMAND_SET_VERSION = 7;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -156,6 +156,85 @@ export interface Review {
   /** The pseudocode page, as SCE wrote it; `null` when there is none (see `page_refusal`, or a refused model). */
   readonly page: string | null;
   readonly page_refusal: PageRefusal | null;
+}
+
+/**
+ * The revisions of everything an acceptance is about: the text, the model, the
+ * requirement list, and the owner's answers when they have given some. What the
+ * owner is shown carries these, and what they accept is sent back with them, so the
+ * core can tell that what they accepted is what they saw.
+ */
+export interface Basis {
+  readonly source: Revision;
+  readonly model: Revision;
+  readonly requirements: Revision;
+  /** `null` when the owner had answered nothing. */
+  readonly answers: Revision | null;
+}
+
+/** The requirement list a text was read into: two JSON files, kept as the authoring client wrote them. */
+export interface RequirementsList {
+  readonly revision: Revision;
+  readonly written_for: Revision | null;
+  readonly manifest: string;
+  readonly sidecar: string | null;
+}
+
+/** `read_requirements`: the work's list, or `null` for a work with none yet. */
+export interface ReadRequirements {
+  readonly requirements: RequirementsList | null;
+  readonly source_head: Revision | null;
+  readonly standing: Standing | null;
+}
+
+/** One requirement and how SCE finds the design to stand to it. */
+export interface RequirementOutcome {
+  readonly id: string;
+  /** SCE's word: `implemented`, `missing`, `needs-scenario`, or one a later SCE adds. */
+  readonly outcome: string;
+  /** The place of the text the requirement is anchored in. */
+  readonly section: string | null;
+  /** Where in the design it is carried, in SCE's path syntax. */
+  readonly node_paths: readonly string[];
+}
+
+/** `requirements_report`: SCE's measure of the design against the list, and the page the owner reads before accepting. */
+export interface RequirementsReport {
+  readonly basis: Basis;
+  readonly source_head: Revision | null;
+  readonly model_standing: Standing;
+  readonly requirements_standing: Standing;
+  readonly generator: string | null;
+  /** What the list is a denominator OF, as SCE states it. */
+  readonly denominator: string | null;
+  readonly outcomes: readonly RequirementOutcome[];
+  /** SCE's acceptance page; `null` when SCE did not write it (see `page_refusal`). */
+  readonly page: string | null;
+  readonly page_refusal: PageRefusal | null;
+}
+
+/** Whether the owner's acceptance still holds for the work as it is now: SCE's answer. */
+export type AcceptanceStanding = "none" | "holds" | "lapsed";
+
+/** What the owner accepted, and when, and on which surface it was stated. */
+export interface AcceptanceRecord {
+  readonly revision: Revision;
+  readonly accepted_at: string;
+  /** `direct` (stated in this application) or `relayed` (an authoring client's statement). */
+  readonly channel: string;
+  readonly basis: Basis;
+  /** What SCE listed as left open when it was accepted, in its sentences. */
+  readonly open: readonly string[];
+}
+
+/** `read_acceptance`. */
+export interface ReadAcceptance {
+  readonly acceptance: AcceptanceRecord | null;
+  readonly standing: AcceptanceStanding;
+  /** SCE's one sentence of what moved, when the acceptance lapsed. */
+  readonly lapse: string | null;
+  /** The revisions of the work as it is now, when there is an acceptance to compare them with. */
+  readonly now: Basis | null;
 }
 
 export interface Described {
@@ -409,13 +488,6 @@ export function parseReview(value: unknown): Review {
   if (generator !== null && typeof generator !== "string") {
     throw new ContractError("review.generator", "a string or null");
   }
-  const refusal = r["page_refusal"];
-  let page_refusal: PageRefusal | null = null;
-  if (refusal !== null) {
-    const at = "review.page_refusal";
-    const entry = record(refusal, at);
-    page_refusal = { code: text(entry, "code", at), message: text(entry, "message", at) };
-  }
   return {
     model: {
       revision: revision(model["revision"], "review.model.revision"),
@@ -426,8 +498,15 @@ export function parseReview(value: unknown): Review {
     generator,
     check: parseCheck(r["check"]),
     page: nullableText(r, "page", "review"),
-    page_refusal,
+    page_refusal: parsePageRefusal(r["page_refusal"], "review.page_refusal"),
   };
+}
+
+/** Why SCE did not write a page it was asked for, or `null` when it wrote it. */
+function parsePageRefusal(value: unknown, where: string): PageRefusal | null {
+  if (value === null || value === undefined) return null;
+  const entry = record(value, where);
+  return { code: text(entry, "code", where), message: text(entry, "message", where) };
 }
 
 /** `read_answers`: the owner's answers, or `null` when they have answered nothing. */
@@ -445,6 +524,112 @@ export function parseReadAnswers(value: unknown): Answers | null {
     parsed[id] = { answer: text(e, "answer", at), answered_at: text(e, "answered_at", at) };
   }
   return { revision: revision(a["revision"], `${where}.revision`), entries: parsed };
+}
+
+function parseBasis(value: unknown, where: string): Basis {
+  const r = record(value, where);
+  return {
+    source: revision(r["source"], `${where}.source`),
+    model: revision(r["model"], `${where}.model`),
+    requirements: revision(r["requirements"], `${where}.requirements`),
+    // Absent when the owner had answered nothing: the core leaves it out rather than say null.
+    answers: nullableRevision(r["answers"] ?? null, `${where}.answers`),
+  };
+}
+
+function stringList(value: Obj, key: string, where: string): string[] {
+  return list(value, key, where).map((item, i) => {
+    if (typeof item !== "string") throw new ContractError(`${where}.${key}[${i}]`, "a string");
+    return item;
+  });
+}
+
+/** `read_requirements`. */
+export function parseReadRequirements(value: unknown): ReadRequirements {
+  const where = "read_requirements";
+  const r = record(value, where);
+  const source_head = nullableRevision(r["source_head"], `${where}.source_head`);
+  const held = r["requirements"];
+  if (held === null) {
+    if (r["standing"] !== null) throw new ContractError(`${where}.standing`, "null when there is no list");
+    return { requirements: null, source_head, standing: null };
+  }
+  const at = `${where}.requirements`;
+  const entry = record(held, at);
+  return {
+    requirements: {
+      revision: revision(entry["revision"], `${at}.revision`),
+      written_for: nullableRevision(entry["written_for"], `${at}.written_for`),
+      manifest: text(entry, "manifest", at),
+      sidecar: nullableText(entry, "sidecar", at),
+    },
+    source_head,
+    standing: standing(r["standing"], `${where}.standing`),
+  };
+}
+
+/** `requirements_report`. */
+export function parseRequirementsReport(value: unknown): RequirementsReport {
+  const where = "requirements_report";
+  const r = record(value, where);
+  const generator = r["generator"];
+  if (generator !== null && typeof generator !== "string") {
+    throw new ContractError(`${where}.generator`, "a string or null");
+  }
+  return {
+    basis: parseBasis(r["basis"], `${where}.basis`),
+    source_head: nullableRevision(r["source_head"], `${where}.source_head`),
+    model_standing: standing(r["model_standing"], `${where}.model_standing`),
+    requirements_standing: standing(r["requirements_standing"], `${where}.requirements_standing`),
+    generator,
+    denominator: nullableText(r, "denominator", where),
+    outcomes: list(r, "outcomes", where).map((o, i) => {
+      const at = `${where}.outcomes[${i}]`;
+      const outcome = record(o, at);
+      return {
+        id: text(outcome, "id", at),
+        outcome: text(outcome, "outcome", at),
+        section: nullableText(outcome, "section", at),
+        node_paths: stringList(outcome, "node_paths", at),
+      };
+    }),
+    page: nullableText(r, "page", where),
+    page_refusal: parsePageRefusal(r["page_refusal"], `${where}.page_refusal`),
+  };
+}
+
+/** `read_acceptance`. */
+export function parseReadAcceptance(value: unknown): ReadAcceptance {
+  const where = "read_acceptance";
+  const r = record(value, where);
+  const state = r["standing"];
+  if (state !== "none" && state !== "holds" && state !== "lapsed") {
+    throw new ContractError(`${where}.standing`, '"none", "holds" or "lapsed"');
+  }
+  const held = r["acceptance"];
+  if (held === null) {
+    if (state !== "none") throw new ContractError(`${where}.acceptance`, "an acceptance unless the standing is none");
+    return { acceptance: null, standing: state, lapse: null, now: null };
+  }
+  if (state === "none") throw new ContractError(`${where}.standing`, "holds or lapsed when there is an acceptance");
+  const at = `${where}.acceptance`;
+  const entry = record(held, at);
+  const lapse = nullableText(r, "lapse", where);
+  if ((state === "lapsed") !== (lapse !== null)) {
+    throw new ContractError(`${where}.lapse`, "SCE's sentence exactly when the acceptance lapsed");
+  }
+  return {
+    acceptance: {
+      revision: revision(entry["revision"], `${at}.revision`),
+      accepted_at: text(entry, "accepted_at", at),
+      channel: text(entry, "channel", at),
+      basis: parseBasis(entry["basis"], `${at}.basis`),
+      open: stringList(entry, "open", at),
+    },
+    standing: state,
+    lapse,
+    now: parseBasis(r["now"], `${where}.now`),
+  };
 }
 
 export function parseDescribed(value: unknown): Described {

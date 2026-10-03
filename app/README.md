@@ -16,25 +16,28 @@ text), **immutable revisions** of each, and a **save that refuses to overwrite**
 text the caller has not seen; and the **model** of a work, kept beside the text
 and shown as the figures **SCE draws of it** and what **SCE says of it** (its check
 and the pseudocode page you read against your text): the application draws and
-judges nothing, it runs `sce-codegen` and shows what the product writes. Accepting
-a design comes next, on top of the same folder.
+judges nothing, it runs `sce-codegen` and shows what the product writes. On top of
+the same folder you **accept a design** against the requirement list your text was
+read into, and the application says whether that acceptance still holds.
 
 An authoring client reaches the same folder through the MCP (`works_list`,
-`works_read`, `works_save_model`, in `tools/authoring`): it reads the text you
-saved and your answers, writes the model, and saves it back after the product's
-own check accepts it and your answers are kept to. They run `sce-work`, so the
-application and the MCP cannot disagree about the folder because only one thing
-writes it. The text and the answers are yours: no MCP tool writes either, and
-none removes a work.
+`works_read`, `works_save_model`, `works_save_requirements`, in `tools/authoring`):
+it reads the text you saved and your answers, writes the model and the requirement
+list, and saves them back after the product's own check accepts them and your
+answers are kept to. They run `sce-work`, so the application and the MCP cannot
+disagree about the folder because only one thing writes it. The text and the
+answers are yours: no MCP tool writes either, none removes a work, and none
+accepts a design for you.
 
 What does not exist yet, so that nothing below is read as done:
 
 - Nothing starts the AI client. You ask it in its own window ("model the work
   Door lock") and the application shows what it saved when you read again.
-- The screens for the examples' results and the acceptance. They are designs, not
-  code. The model screen shows what SCE drew, what SCE says of the model, where
-  it stands to the text, and a field for your answer under each question the
-  model leaves open; it does not edit the model (an AI client writes it).
+- The screens for the examples' results. They are designs, not code. The model
+  screen shows what SCE drew, what SCE says of the model, where it stands to the
+  text, a field for your answer under each question the model leaves open, and
+  what you accepted; it does not edit the model (an AI client writes it) and it does
+  not write the requirement list (an AI client reads your text into one).
 - Windows has not been run on a window; the lane `windows` in `app.yml` runs the
   same gate there, and the Linux desktop build and the browser have been run.
 
@@ -69,14 +72,19 @@ The works folder is plain files:
                  answers/<sha256>.json  your answers to the model's open questions
                  answers.head         the current answers
                  answers.log          one line per save
+                 requirements/<sha256>.json  the requirement list the text was read into
+                 requirements.head, requirements.log   (and the text it was read from)
+                 acceptances/<sha256>.json   what you accepted, one file per acceptance
+                 acceptances.head, acceptances.log
                  removed.json         only for a removed work (see below)
 ```
 
 `<root>` is `SCE_WORKS_DIR` if set, else the per-user data directory
 (`~/.local/share/sce-workbench/works` on Linux). A revision is the SHA-256 of
 its exact bytes; a save names the revision it was written from and is refused
-with `conflict` if that is no longer current. The text, the model and the answers
-are three chains kept by one implementation (one lock, one compare-and-swap).
+with `conflict` if that is no longer current. The text, the model, the answers,
+the requirement list and the acceptances are five chains kept by one
+implementation (one lock, one compare-and-swap).
 
 ### Removing a work
 
@@ -188,6 +196,61 @@ loads what turned up.
 - Nothing here changes the model. Your answers reach the authoring client the next
   time it reads the work, and it applies them.
 
+### Accepting a design
+
+An authoring client reads your text into a **requirement list** (`save_requirements`:
+two JSON files, the manifest of coordinates and the sidecar of quoted sentences,
+kept as written because an acceptance pins their bytes) and writes the design. The
+screen then shows what the product finds, and nothing the application worked out:
+
+- `requirements_report` runs `sce-codegen requirements --manifest` and
+  `acceptance-report`: each requirement in SCE's own word (`implemented`,
+  `missing`, `needs-scenario`, or one a later SCE adds, shown as spelled), where
+  the text anchors it and where the design carries it, and the page you read
+  before deciding, byte for byte. It also gives the `basis`: the revisions of the
+  text, the model, the list and your answers, which is exactly what you were shown.
+- `accept` takes that `basis` back as `expect`. If any of it has moved (the text
+  saved from another window, the client's next model, an answer saved since) nothing
+  is accepted, the refusal is `moved` and names which, and the screen reads what is
+  there now before you can press again. A design or a list written for an earlier
+  text is refused as `not-current`. Otherwise the core stages the work in a fixed
+  layout (`design/`, `spec/`), asks the product to take the record
+  (`sce-codegen accept --channel direct`), and keeps it as a new entry of the
+  acceptances chain. The record pins every file by path and hash.
+- `read_acceptance` asks the product whether the record still holds
+  (`acceptance-check`) for the work as it is now. It is the product that says, by the
+  bytes of each pinned file: a design put back to what was accepted is the design that
+  was accepted. When it no longer holds the screen shows the product's own sentence of
+  what moved.
+
+What this does not claim, stated so nothing on the screen is read as more:
+
+- **A design with a gap is yours to accept.** The screen tells you before you press:
+  SCE's count marks the requirements it finds unsettled (`missing`, `unresolved`,
+  `dangling`, `contradicted`, `scenario-failed`, `needs-scenario`), each of SCE's
+  eleven words is shown with what the product means by it, and a word SCE adds later
+  is shown as spelled and not guessed at; the matters SCE lists as left open are
+  counted beside the button. The record keeps what was open. Accepting closes none of
+  them and is not refused for them.
+- **The channel is a statement and not a proof.** `direct` is how this application's
+  own button states itself; the product records it and cannot verify it. An
+  acceptance a client relayed on your word would say `relayed`, and the screen says
+  so. No MCP tool records an acceptance, because the command layer states every one
+  it records as `direct`.
+- **The product's lapse is one sentence.** It joins its lapses with `; ` and one lapse
+  can contain one, so the sentence is passed on whole and not split into a list the
+  product does not state.
+- **Your answers are pinned, not applied.** The product keeps the answers file as a
+  pinned input and does not read it, so the record's list of what was open is the
+  product's statement about the design and does not shrink when you answer in the
+  application. The screen shows your answers beside it.
+- **The sidecar is not pinned.** The product pins the manifest and the files the design
+  read; the sentences sidecar only feeds the page, so editing it does not lapse an
+  acceptance.
+- **What is accepted is what is saved.** The button is withheld while text or answers
+  are typed and not saved, while SCE has not measured the design, and while the design
+  or the list was written for an earlier text.
+
 ## Seeing the screen
 
 ### In a browser, on a machine with no display (and from a phone)
@@ -237,10 +300,11 @@ else: it has no file-system, shell or network permission.
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
 | What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |
+| Requirements and acceptance: the commands, and the product behind them (a stand-in, and the real generator with `SCE_CODEGEN`) | `--test acceptance`, `--test acceptance_product` (and `--lib`) of the same package |
 | The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |
 | The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |
 | Browser shell: handler, sockets | `cargo test -p sce-web-shell` (from `app/`) |
-| Screen: guards, editor model, model panel, transport, words | `npm test` (in `app/ui`) |
+| Screen: guards, editor model, model panel, acceptance, transport, words | `npm test` (in `app/ui`) |
 | Screen types and build | `npm run build` (in `app/ui`) |
 
 `app-core/contract/replies.json` is every command's reply, written by running

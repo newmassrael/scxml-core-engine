@@ -116,19 +116,23 @@ def list_works() -> dict:
 
 def read_work(work: str) -> dict:
     """A work as an authoring client needs it: who it is, its text now, its model
-    with where that stands to the text, and the owner's answers to what the model
-    left open.
+    with where that stands to the text, the owner's answers to what the model left
+    open, the requirement list the text was read into, and whether the owner has
+    accepted the design (`acceptance`, only for a work that has a list and a model).
 
-    Four reads of the command layer, so a save between them is possible. That is
-    not hidden: every revision in the answer is the one that was read, and the
-    model's `standing` is the command layer's own comparison of its `written_for`
-    with the text's head at the moment of the model read.
+    Several reads of the command layer, so a save between them is possible. That is
+    not hidden: every revision in the answer is the one that was read, and each
+    `standing` is the command layer's own comparison of a `written_for` with the
+    text's head at the moment of that read.
     """
     head = call_work("read_work", {"id": work})
     source = call_work("read_source", {"id": work})["source"]
     model = call_work("read_model", {"id": work})
+    requirements = read_requirements(work)
     return {"work": head["work"], "source": source, "model": _model_of(model),
-            "answers": read_answers(work)}
+            "answers": read_answers(work), "requirements": requirements,
+            "acceptance": (read_acceptance(work)
+                           if requirements is not None and model["model"] is not None else None)}
 
 
 def read_answers(work: str) -> dict | None:
@@ -136,6 +140,75 @@ def read_answers(work: str) -> dict | None:
     "entries": {question id: {"answer", "answered_at"}}}`, or None when they have
     answered nothing. The owner writes them in the application; nothing here does."""
     return call_work("read_answers", {"id": work})["answers"]
+
+
+def read_requirements(work: str) -> dict | None:
+    """The requirement list the work's text was read into, or None when it has none.
+
+    `manifest_text` and `sidecar_text` are the two files exactly as they were saved
+    (the names the requirement tools take them under), `written_for` the text
+    revision the list says it was read from, and `standing` the command layer's own
+    comparison of that with the text's head: `current`, `behind` or `unstated`. The
+    sidecar is left out for a list that came without one.
+    """
+    answer = call_work("read_requirements", {"id": work})
+    held = answer["requirements"]
+    if held is None:
+        return None
+    read = {"revision": held["revision"], "written_for": held["written_for"],
+            "standing": answer["standing"], "source_head": answer["source_head"],
+            "manifest_text": held["manifest"]}
+    if held["sidecar"] is not None:
+        read["sidecar_text"] = held["sidecar"]
+    return read
+
+
+def read_acceptance(work: str) -> dict:
+    """Whether the owner has accepted this work's design, and whether it still holds.
+
+    `standing` is `none` (nothing accepted), `holds`, or `lapsed`; a lapse carries the
+    product's own sentence of what moved (`lapse`). An acceptance says when it was
+    made (`accepted_at`), the `channel` it was stated on (`direct`: the owner's own
+    press in the application; an acceptance relayed by a client says `relayed`), and
+    what the design left open when it was accepted (`open`).
+
+    ⚠ Read here and never written: the owner accepts in the application. The command
+    layer states every acceptance it records as the application's own, so a client
+    that could call it would be stating, as the owner's press, what the owner never
+    pressed.
+
+    The product answers whether it holds, so the product not answering (`sce-*`) is
+    reported as `unavailable` with its words and does not stop a work being read.
+    """
+    try:
+        answer = call_work("read_acceptance", {"id": work})
+    except WorksError as exc:
+        if not exc.kind.startswith("sce-"):
+            raise
+        return {"standing": "unavailable", "kind": exc.kind, "message": str(exc)}
+    held = answer["acceptance"]
+    if held is None:
+        return {"standing": "none"}
+    read = {"standing": answer["standing"], "accepted_at": held["accepted_at"],
+            "channel": held["channel"], "open": held["open"]}
+    if answer["lapse"] is not None:
+        read["lapse"] = answer["lapse"]
+    return read
+
+
+def save_requirements(work: str, base: str | None, written_for: str | None, *,
+                      manifest: str, sidecar: str | None = None) -> dict:
+    """Save the work's next requirement list: the `manifest` (coordinates) and the
+    `sidecar` (the quoted sentences), each as the text `scxml_requirement_set` made.
+
+    `base` is the list revision the writer read (None for a work's first list); a base
+    that is no longer current is refused as a `conflict` and nothing is written.
+    `written_for` is the text revision the list was read from, or None when the writer
+    cannot say -- which the application shows as unstated, and not as current.
+    """
+    return call_work("save_requirements", {
+        "id": work, "base": base, "written_for": written_for, "manifest": manifest,
+        **({"sidecar": sidecar} if sidecar is not None else {})})
 
 
 def _model_of(answer: dict) -> dict | None:

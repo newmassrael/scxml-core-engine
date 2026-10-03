@@ -9,11 +9,148 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sce_app_core::{
-    Check, FigureRenderer, FigureRequest, FigureSet, ModelReviewer, PageRefusal, Record,
-    RenderError, Review, ReviewRequest, Sheet, Unresolved, Verdict,
+    Acceptor, Check, CheckOutcome, FigureRenderer, FigureRequest, FigureSet, ModelReviewer,
+    PageRefusal, Record, RenderError, RequirementOutcome, RequirementsReport, Review,
+    ReviewRequest, Revision, Sheet, Snapshot, Taken, Unresolved, Verdict,
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Every file of a work as the product reads it, by the path the layout gives it and a
+/// digest of its bytes: what a real record pins, in the form a stand-in can compare.
+fn pinned(snapshot: &Snapshot) -> Vec<(String, String)> {
+    let mut files: Vec<(String, String)> = snapshot
+        .model
+        .documents()
+        .into_iter()
+        .map(|d| {
+            (
+                format!("design/{}", d.name),
+                Revision::of(d.text.as_bytes()).to_string(),
+            )
+        })
+        .collect();
+    files.push((
+        "spec/requirements.manifest.json".to_string(),
+        Revision::of(snapshot.requirements.manifest.as_bytes()).to_string(),
+    ));
+    files.push((
+        "spec/source.txt".to_string(),
+        Revision::of(snapshot.source.as_bytes()).to_string(),
+    ));
+    if let Some(answers) = &snapshot.answers {
+        files.push((
+            "spec/answers.json".to_string(),
+            Revision::of(answers.as_bytes()).to_string(),
+        ));
+    }
+    files
+}
+
+/// A stand-in for what the product says of requirements and acceptance, built to
+/// behave as the product does where the application depends on it: the requirement
+/// list names ids and each is `implemented` unless the entry document says `MISSING`;
+/// a record pins every file by path and digest; a check names the paths that moved.
+impl Acceptor for FakeRenderer {
+    fn report_requirements(&self, snapshot: &Snapshot) -> Result<RequirementsReport, RenderError> {
+        let manifest: serde_json::Value =
+            serde_json::from_str(&snapshot.requirements.manifest).expect("a manifest is JSON");
+        let ids: Vec<String> = manifest["requirements"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|r| r["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let missing = snapshot.model.entry_text().contains("MISSING");
+        let outcomes = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| RequirementOutcome {
+                id: id.clone(),
+                outcome: if missing && i == 0 {
+                    "missing"
+                } else {
+                    "implemented"
+                }
+                .to_string(),
+                section: Some(format!("S{}", i + 1)),
+                node_paths: if missing && i == 0 {
+                    Vec::new()
+                } else {
+                    vec![format!("states.s{i}")]
+                },
+            })
+            .collect();
+        Ok(RequirementsReport {
+            generator: Some("fake-sce 0".to_string()),
+            denominator: Some("synthesized".to_string()),
+            outcomes,
+            page: Some(format!(
+                "ACCEPTANCE REPORT of {} requirement(s)\n",
+                ids.len()
+            )),
+            page_refusal: None,
+        })
+    }
+
+    fn take_acceptance(&self, snapshot: &Snapshot) -> Result<Taken, RenderError> {
+        if snapshot.model.entry_text().contains("UNACCEPTABLE") {
+            return Err(RenderError::Refused {
+                code: "xml/parse-error".to_string(),
+                message: "the design cannot be read".to_string(),
+            });
+        }
+        let record = serde_json::json!({
+            "record": "fake-acceptance",
+            "channel": "direct",
+            "pins": pinned(snapshot),
+        })
+        .to_string();
+        let open = if snapshot.model.entry_text().contains("OPEN") {
+            vec!["1 question(s) the specification leaves open (open-guard)".to_string()]
+        } else {
+            Vec::new()
+        };
+        Ok(Taken {
+            generator: Some("fake-sce 0".to_string()),
+            record,
+            open,
+        })
+    }
+
+    fn check_acceptance(
+        &self,
+        snapshot: &Snapshot,
+        record: &str,
+    ) -> Result<CheckOutcome, RenderError> {
+        let wire: serde_json::Value = serde_json::from_str(record).expect("a fake record");
+        let then: Vec<(String, String)> = serde_json::from_value(wire["pins"].clone()).unwrap();
+        let now = pinned(snapshot);
+        let mut lapses = Vec::new();
+        for (path, digest) in &then {
+            match now.iter().find(|(p, _)| p == path) {
+                Some((_, d)) if d == digest => {}
+                Some(_) => lapses.push(format!("{path} moved")),
+                None => lapses.push(format!("{path} is gone")),
+            }
+        }
+        for (path, _) in &now {
+            if !then.iter().any(|(p, _)| p == path) {
+                lapses.push(format!("{path} was not there when it was accepted"));
+            }
+        }
+        // One sentence, as the product writes it: its lapses joined by `; `.
+        Ok(if lapses.is_empty() {
+            CheckOutcome::Holds
+        } else {
+            CheckOutcome::Lapsed {
+                says: lapses.join("; "),
+            }
+        })
+    }
+}
 
 /// What the stand-in product says of a model, by what the model says: one that
 /// contains `REFUSE` is refused with a record, one that contains `NOPAGE` is
@@ -80,6 +217,21 @@ impl ModelReviewer for FakeRenderer {
 
 impl ModelReviewer for RefusingRenderer {
     fn review(&self, _: &ReviewRequest<'_>) -> Result<Review, RenderError> {
+        Err(RenderError::TimedOut { seconds: 30 })
+    }
+}
+
+/// The product not answering at all, for each of the three questions.
+impl Acceptor for RefusingRenderer {
+    fn report_requirements(&self, _: &Snapshot) -> Result<RequirementsReport, RenderError> {
+        Err(RenderError::TimedOut { seconds: 30 })
+    }
+
+    fn take_acceptance(&self, _: &Snapshot) -> Result<Taken, RenderError> {
+        Err(RenderError::TimedOut { seconds: 30 })
+    }
+
+    fn check_acceptance(&self, _: &Snapshot, _: &str) -> Result<CheckOutcome, RenderError> {
         Err(RenderError::TimedOut { seconds: 30 })
     }
 }

@@ -18,11 +18,14 @@ use serde_json::{json, Value};
 
 use std::collections::BTreeMap;
 
+use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
+use crate::acceptance_run::CheckOutcome;
 use crate::answers::{Answers, AnswersError};
 use crate::clock::Clock;
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
+use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, ReviewRequest};
 use crate::revision::Revision;
 use crate::store::{ModelText, WorkId, WorkStore};
@@ -44,6 +47,11 @@ pub const COMMANDS: &[&str] = &[
     "review",
     "read_answers",
     "save_answers",
+    "save_requirements",
+    "read_requirements",
+    "requirements_report",
+    "accept",
+    "read_acceptance",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -66,7 +74,12 @@ pub const COMMANDS: &[&str] = &[
 /// `documents` (and an `entry`) in place of `text`, and a model that was read says
 /// its `entry` and lists its `documents`; a screen written for 5 shows one text and
 /// would show a set's entry as if it were the whole.
-pub const COMMAND_SET_VERSION: u32 = 6;
+///
+/// 7: the requirements a text states are kept (`save_requirements`,
+/// `read_requirements`), measured against the model (`requirements_report`), and the
+/// owner can accept a design against them (`accept`) and ask whether the acceptance
+/// still holds (`read_acceptance`).
+pub const COMMAND_SET_VERSION: u32 = 7;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -133,6 +146,30 @@ impl From<ModelError> for CommandError {
                 ModelError::Corrupt(_) => "corrupt",
             }
             .to_string(),
+            message: error.to_string(),
+            detail: Value::Null,
+        }
+    }
+}
+
+impl From<RequirementsError> for CommandError {
+    fn from(error: RequirementsError) -> Self {
+        CommandError {
+            kind: match error {
+                RequirementsError::Invalid(_) => "invalid-requirements",
+                RequirementsError::Corrupt(_) => "corrupt",
+            }
+            .to_string(),
+            message: error.to_string(),
+            detail: Value::Null,
+        }
+    }
+}
+
+impl From<AcceptanceCorrupt> for CommandError {
+    fn from(error: AcceptanceCorrupt) -> Self {
+        CommandError {
+            kind: "corrupt".to_string(),
             message: error.to_string(),
             detail: Value::Null,
         }
@@ -233,6 +270,42 @@ struct SaveAnswers {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct SaveRequirements {
+    id: String,
+    /// The manifest, as the authoring package wrote it, byte for byte.
+    manifest: String,
+    /// The sidecar of quoted sentences, when the list came with one.
+    #[serde(default)]
+    sidecar: Option<String>,
+    /// Absent or `null` means "this is the work's first requirement list".
+    #[serde(default)]
+    base: Option<Revision>,
+    /// The source revision the list was read from; absent or `null` when it cannot say.
+    #[serde(default)]
+    written_for: Option<Revision>,
+}
+
+/// The revisions the owner was shown when they pressed accept.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Expect {
+    source: Revision,
+    model: Revision,
+    requirements: Revision,
+    /// Absent or `null` when the owner had answered nothing.
+    #[serde(default)]
+    answers: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Accept {
+    id: String,
+    expect: Expect,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ReviewModel {
     id: String,
     #[serde(default)]
@@ -264,6 +337,55 @@ fn answer<T: Serialize>(value: &T) -> Result<Value, CommandError> {
 
 fn work_id(text: &str) -> Result<WorkId, CommandError> {
     WorkId::parse(text).map_err(CommandError::from)
+}
+
+fn none_saved(what: &str, id: &WorkId) -> CommandError {
+    CommandError::from(StoreError::NotFound {
+        what: format!("{what} of work `{}` (none was saved)", id.as_str()),
+    })
+}
+
+/// What a work's four chains hold now, as the product is asked about them: the
+/// text, the model, the requirement list and the owner's answers, each at the
+/// revision it was read at (`basis`), and the source claims the model's and the
+/// list's saves made.
+struct WorkNow {
+    snapshot: Snapshot,
+    basis: Basis,
+    model_written_for: Option<Revision>,
+    requirements_written_for: Option<Revision>,
+}
+
+/// Read the work as it is now. A chain with nothing in it is `not-found`, naming
+/// which: the requirement list and the model are not things the application makes up.
+fn work_now<C: Clock>(store: &WorkStore<C>, id: &WorkId) -> Result<WorkNow, CommandError> {
+    let source = store
+        .read_source(id, None)?
+        .ok_or_else(|| none_saved("a text", id))?;
+    let model = store
+        .read_model(id, None)?
+        .ok_or_else(|| none_saved("a model", id))?;
+    let requirements = store
+        .read_requirements(id, None)?
+        .ok_or_else(|| none_saved("a requirement list", id))?;
+    let answers = store.read_answers(id, None)?;
+    let basis = Basis {
+        source: source.revision.clone(),
+        model: model.revision.clone(),
+        requirements: requirements.revision.clone(),
+        answers: answers.as_ref().map(|a| a.revision.clone()),
+    };
+    Ok(WorkNow {
+        snapshot: Snapshot {
+            model: ModelFiles::parse(&model.text)?,
+            requirements: Requirements::parse(&requirements.text)?,
+            source: source.text,
+            answers: answers.map(|a| a.text),
+        },
+        basis,
+        model_written_for: model.written_for,
+        requirements_written_for: requirements.written_for,
+    })
 }
 
 /// A saved model as the screens read it: its revision and what it was written for,
@@ -478,6 +600,163 @@ pub fn call<C: Clock>(
             };
             let next = held.amended(&answers, &store.now())?;
             answer(&store.save_answers(&id, &next.text(), base.as_ref())?)
+        }
+        "save_requirements" => {
+            let SaveRequirements {
+                id,
+                manifest,
+                sidecar,
+                base,
+                written_for,
+            } = arguments(args)?;
+            let list = Requirements::new(manifest, sidecar)?;
+            answer(&store.save_requirements(
+                &work_id(&id)?,
+                &list.stored_text(),
+                base.as_ref(),
+                written_for.as_ref(),
+            )?)
+        }
+        "read_requirements" => {
+            let ReadSource { id, revision } = arguments(args)?;
+            let id = work_id(&id)?;
+            let saved = store.read_requirements(&id, revision.as_ref())?;
+            let source_head = store.head(&id)?;
+            let (requirements, standing) = match saved {
+                None => (None, None),
+                Some(saved) => {
+                    let list = Requirements::parse(&saved.text)?;
+                    let standing = standing(saved.written_for.as_ref(), source_head.as_ref());
+                    (
+                        Some(json!({
+                            "revision": saved.revision,
+                            "written_for": saved.written_for,
+                            "manifest": list.manifest,
+                            "sidecar": list.sidecar,
+                        })),
+                        Some(standing),
+                    )
+                }
+            };
+            Ok(json!({
+                "requirements": requirements,
+                "source_head": source_head,
+                "standing": standing,
+            }))
+        }
+        "requirements_report" => {
+            let OneWork { id } = arguments(args)?;
+            let id = work_id(&id)?;
+            let now = work_now(store, &id)?;
+            let source_head = store.head(&id)?;
+            let report = renderer.report_requirements(&now.snapshot)?;
+            Ok(json!({
+                "basis": now.basis,
+                "source_head": source_head,
+                "model_standing": standing(now.model_written_for.as_ref(), source_head.as_ref()),
+                "requirements_standing":
+                    standing(now.requirements_written_for.as_ref(), source_head.as_ref()),
+                "generator": report.generator,
+                "denominator": report.denominator,
+                "outcomes": report.outcomes,
+                "page": report.page,
+                "page_refusal": report.page_refusal,
+            }))
+        }
+        "accept" => {
+            let Accept { id, expect } = arguments(args)?;
+            let id = work_id(&id)?;
+            let now = work_now(store, &id)?;
+            let source_head = store.head(&id)?;
+
+            // The owner accepts what they were SHOWN. If any of it moved since (the
+            // text saved from another window, the client's next model), nothing is
+            // accepted and they are shown what is there now.
+            let shown = [
+                ("source", &expect.source, Some(&now.basis.source)),
+                ("model", &expect.model, Some(&now.basis.model)),
+                (
+                    "requirements",
+                    &expect.requirements,
+                    Some(&now.basis.requirements),
+                ),
+            ];
+            let mut moved: Vec<&str> = shown
+                .iter()
+                .filter(|(_, seen, current)| Some(*seen) != *current)
+                .map(|(name, _, _)| *name)
+                .collect();
+            if expect.answers != now.basis.answers {
+                moved.push("answers");
+            }
+            if !moved.is_empty() {
+                return Err(CommandError {
+                    kind: "moved".to_string(),
+                    message: format!(
+                        "{} changed after you were shown it, so nothing was accepted; read it again",
+                        moved.join(", ")
+                    ),
+                    detail: json!({ "moved": moved, "current": now.basis }),
+                });
+            }
+
+            // A design written for an earlier text is not an answer to this one.
+            let behind: Vec<&str> = [
+                ("model", now.model_written_for.as_ref()),
+                ("requirements", now.requirements_written_for.as_ref()),
+            ]
+            .iter()
+            .filter(|(_, written_for)| *written_for != source_head.as_ref())
+            .map(|(name, _)| *name)
+            .collect();
+            if !behind.is_empty() {
+                return Err(CommandError {
+                    kind: "not-current".to_string(),
+                    message: format!(
+                        "the {} was not written for the text as it is now, so it cannot be accepted as \
+                         an answer to it",
+                        behind.join(" and the ")
+                    ),
+                    detail: json!({ "behind": behind, "source_head": source_head }),
+                });
+            }
+
+            let taken = renderer.take_acceptance(&now.snapshot)?;
+            let acceptance = Acceptance::new(store.now(), now.basis, taken.record, taken.open);
+            let base = store.read_acceptance(&id, None)?.map(|a| a.revision);
+            answer(&store.save_acceptance(&id, &acceptance.stored_text(), base.as_ref())?)
+        }
+        "read_acceptance" => {
+            let OneWork { id } = arguments(args)?;
+            let id = work_id(&id)?;
+            let Some(saved) = store.read_acceptance(&id, None)? else {
+                return Ok(json!({
+                    "acceptance": null,
+                    "standing": "none",
+                    "lapse": null,
+                }));
+            };
+            let acceptance = Acceptance::parse(&saved.text)?;
+            // Whether it still holds is the product's to say, about the work as it is
+            // now laid out the way it was when the record was taken.
+            let now = work_now(store, &id)?;
+            let (standing, lapse) =
+                match renderer.check_acceptance(&now.snapshot, &acceptance.record)? {
+                    CheckOutcome::Holds => ("holds", Value::Null),
+                    CheckOutcome::Lapsed { says } => ("lapsed", Value::String(says)),
+                };
+            Ok(json!({
+                "acceptance": {
+                    "revision": saved.revision,
+                    "accepted_at": acceptance.accepted_at,
+                    "channel": acceptance.channel,
+                    "basis": acceptance.basis,
+                    "open": acceptance.open,
+                },
+                "standing": standing,
+                "lapse": lapse,
+                "now": now.basis,
+            }))
         }
         "remove_work" => {
             let OneWork { id } = arguments(args)?;

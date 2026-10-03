@@ -17,10 +17,16 @@
 //! - [`figures`] and [`review`] are what SCE says of a model, asked of the
 //!   product's own generator: the figures it draws, its check and its pseudocode
 //!   page. The workbench works none of it out.
+//! - [`requirements`], [`acceptance`] and [`acceptance_run`] are the requirement list
+//!   a text is read into and what the owner accepted of a design against it: the
+//!   product measures, records and re-checks, and the workbench keeps the files and
+//!   asks.
 //!
 //! Nothing in this crate knows what a specification is about. It stores text and
 //! the history of that text; what the text means is the authoring tools' business.
 
+pub mod acceptance;
+pub mod acceptance_run;
 pub mod answers;
 pub mod clock;
 pub mod commands;
@@ -28,10 +34,13 @@ pub mod error;
 pub mod figures;
 mod lock;
 pub mod model_set;
+pub mod requirements;
 pub mod review;
 pub mod revision;
 pub mod store;
 
+pub use acceptance::{Acceptance, Basis, Snapshot};
+pub use acceptance_run::{Acceptor, CheckOutcome, RequirementOutcome, RequirementsReport, Taken};
 pub use answers::{Answers, AnswersError};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
@@ -41,11 +50,13 @@ pub use figures::{
     SceCodegen, Sheet,
 };
 pub use model_set::{Document, ModelError, ModelFiles};
+pub use requirements::{Requirements, RequirementsError};
 pub use review::{
     Check, ModelReviewer, PageRefusal, Product, Record, Review, ReviewRequest, Unresolved, Verdict,
 };
 pub use revision::Revision;
 pub use store::{
-    default_root, AnswersText, HistoryEntry, Listing, ModelText, Saved, SourceText, Unreadable,
-    Work, WorkId, WorkStore, MAX_ANSWERS_BYTES, MAX_MODEL_BYTES, MAX_SOURCE_BYTES,
+    default_root, AcceptanceText, AnswersText, HistoryEntry, Listing, ModelText, RequirementsText,
+    Saved, SourceText, Unreadable, Work, WorkId, WorkStore, MAX_ACCEPTANCE_BYTES,
+    MAX_ANSWERS_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
 };

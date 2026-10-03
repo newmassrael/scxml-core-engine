@@ -120,8 +120,9 @@ and point the client at http://HOST:8765/mcp with the header
 "Authorization: Bearer <the token>". A remote client hands every document
 over as text (document_text); a path is refused.
 
-works_list, works_read and works_save_model read the specification the owner
-keeps in the workbench application and save the model written for it. They run
+works_list, works_read, works_save_model and works_save_requirements read the
+specification the owner keeps in the workbench application and save the model
+and the requirement list written for it. They run
 bin/sce-work when this bundle carries one, on the works folder the application
 opens (SCE_WORKS_DIR, else the per-user data directory), and are never offered
 to a remote client.

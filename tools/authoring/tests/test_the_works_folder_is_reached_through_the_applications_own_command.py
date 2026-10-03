@@ -1,8 +1,9 @@
 """An authoring client reads a work and saves its model through the application's own command.
 
 The workbench application keeps a specification as a work, and the owner asks an AI
-client to write the model of it. These cases drive the three tools that connect the
-two (`works_list`, `works_read`, `works_save_model`) against the REAL `sce-work`
+client to write the model of it. These cases drive the tools that connect the two
+(`works_list`, `works_read`, `works_save_model`, `works_save_requirements`) against
+the REAL `sce-work`
 and the real generator, because what they promise is a property of the pair: the
 text the owner saved is the text the client reads, the model the client saves is the
 model the owner sees, and the folder has one writer.
@@ -363,12 +364,168 @@ class TheOwnersAnswers(unittest.TestCase):
         self.assertNotIn("decisions", data(saved))
 
 
+@BUILT
+class TheRequirementsAndTheOwnersAcceptance(unittest.TestCase):
+    """A client saves the requirement list it read from the text, and is told whether the
+    owner accepted the design in the application; it cannot accept for them."""
+
+    QUOTE = "The door opens when the card matches."
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        patch = unittest.mock.patch.dict(
+            os.environ, {"SCE_WORKS_DIR": str(pathlib.Path(self._tmp.name) / "works")})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.work = works.call_work("create_work", {"title": "Door lock"})["id"]
+        self.revision = works.call_work(
+            "save_source", {"id": self.work, "text": SPEC})["revision"]
+        built = data(call("scxml_requirement_set", specification_text=SPEC, requirements=[
+            {"quote": self.QUOTE, "statement": "The door opens for a matching card."}]))
+        self.manifest, self.sidecar = built["manifest_text"], built["sidecar_text"]
+
+    def save_list(self, **extra):
+        return call("works_save_requirements", work=self.work, manifest_text=self.manifest,
+                    sidecar_text=self.sidecar, source_revision=self.revision, **extra)
+
+    def owner_accepts(self):
+        """The owner's side: the press of the application's button, on what it shows."""
+        shown = works.call_work("requirements_report", {"id": self.work})["basis"]
+        return works.call_work("accept", {"id": self.work, "expect": shown})
+
+    def test_a_work_nobody_listed_requirements_for_says_so_and_says_what_to_do(self):
+        call("works_save_model", work=self.work, model_text=DOOR, source_revision=self.revision)
+        read = data(call("works_read", work=self.work))
+        self.assertIsNone(read["requirements"])
+        self.assertIsNone(read["acceptance"])
+        self.assertIn("works_save_requirements", read["next"])
+
+    def test_a_list_saved_for_the_text_read_comes_back_as_the_files_the_tools_take(self):
+        saved = self.save_list()
+        self.assertFalse(saved.get("isError"), body(saved))
+        self.assertEqual("saved", data(saved)["outcome"])
+        self.assertIn("not accepted", data(saved)["next"])
+
+        read = data(call("works_read", work=self.work))
+        requirements = read["requirements"]
+        # Byte for byte: an acceptance pins these files by their hash.
+        self.assertEqual(self.manifest, requirements["manifest_text"])
+        self.assertEqual(self.sidecar, requirements["sidecar_text"])
+        self.assertEqual("current", requirements["standing"])
+        self.assertEqual(self.revision, requirements["written_for"])
+        self.assertNotIn("requirement list", read["next"])
+
+    def test_a_list_saved_without_the_text_it_was_read_from_is_unstated_not_current(self):
+        call("works_save_requirements", work=self.work, manifest_text=self.manifest)
+        requirements = data(call("works_read", work=self.work))["requirements"]
+        self.assertEqual("unstated", requirements["standing"])
+        self.assertNotIn("sidecar_text", requirements)
+
+    def test_a_list_of_a_text_that_moved_on_stands_behind_and_the_client_is_told_to_build_it_again(self):
+        self.save_list()
+        works.call_work("save_source", {"id": self.work, "text": SPEC + "More.\n",
+                                        "base": self.revision})
+        read = data(call("works_read", work=self.work))
+        self.assertEqual("behind", read["requirements"]["standing"])
+        self.assertIn("base = requirements.revision", read["next"])
+
+    def test_a_list_the_product_will_not_load_is_not_saved(self):
+        refused = call("works_save_requirements", work=self.work,
+                       manifest_text='{"requirements": "nope"}\n', source_revision=self.revision)
+        self.assertTrue(refused.get("isError"), body(refused))
+        self.assertIn("not saved", body(refused))
+        # The product's own words come back, to build the list again by.
+        self.assertIn("cli/closure-input-unusable", body(refused))
+        self.assertIsNone(data(call("works_read", work=self.work))["requirements"])
+
+    def test_a_manifest_that_is_not_json_is_refused_and_not_kept(self):
+        refused = call("works_save_requirements", work=self.work, manifest_text="not json at all",
+                       source_revision=self.revision)
+        self.assertTrue(refused.get("isError"), body(refused))
+        self.assertIsNone(data(call("works_read", work=self.work))["requirements"])
+
+    def test_a_save_from_a_list_that_is_not_current_is_a_conflict_and_writes_nothing(self):
+        first = data(self.save_list())
+        again = self.save_list()
+        self.assertTrue(again.get("isError"))
+        refusal = data(again)
+        self.assertEqual("conflict", refusal["refused"])
+        self.assertEqual(first["revision"], refusal["detail"]["current"])
+        self.assertFalse(self.save_list(base=first["revision"]).get("isError"))
+
+    def test_an_arguments_shape_is_refused_before_anything_runs(self):
+        for arguments, wanted in (({"manifest_text": ""}, "manifest_text"),
+                                  ({"manifest_text": 3}, "manifest_text"),
+                                  ({"manifest_text": "{}", "sidecar_text": 3}, "sidecar_text"),
+                                  ({"manifest_text": "{}", "source_revision": "latest"},
+                                   "64 lowercase hexadecimal digits")):
+            with self.subTest(arguments=sorted(arguments)):
+                answer = call("works_save_requirements", work=self.work, **arguments)
+                self.assertTrue(answer.get("isError"))
+                self.assertIn(wanted, body(answer))
+
+    def test_a_design_the_owner_accepted_is_told_to_the_client_and_no_new_draft_is_asked_for(self):
+        call("works_save_model", work=self.work, model_text=DOOR, source_revision=self.revision)
+        self.save_list()
+        read = data(call("works_read", work=self.work))
+        self.assertEqual({"standing": "none"}, read["acceptance"])
+        self.assertIn("base = model.revision", read["next"])
+
+        self.owner_accepts()
+        read = data(call("works_read", work=self.work))
+        accepted = read["acceptance"]
+        self.assertEqual("holds", accepted["standing"])
+        self.assertEqual("direct", accepted["channel"], "the owner's own press in the application")
+        self.assertNotIn("lapse", accepted)
+        self.assertIn("write no new draft unless they ask for one", read["next"])
+        self.assertNotIn("source_revision = source.revision", read["next"])
+
+    def test_an_acceptance_that_lapsed_says_what_moved_and_the_owner_accepts_again(self):
+        saved = data(call("works_save_model", work=self.work, model_text=DOOR,
+                          source_revision=self.revision))
+        self.save_list()
+        self.owner_accepts()
+
+        call("works_save_model", work=self.work, model_text=DOOR + "<!-- second -->\n",
+             source_revision=self.revision, base=saved["revision"])
+        read = data(call("works_read", work=self.work))
+        accepted = read["acceptance"]
+        self.assertEqual("lapsed", accepted["standing"])
+        # The product's own sentence, whole: it names the file that moved.
+        self.assertIn("design/model.scxml", accepted["lapse"])
+        self.assertIn("no longer holds", read["next"])
+        self.assertIn("nothing here records an acceptance", read["next"])
+        # The client's way back is the normal one: it may write the model again.
+        self.assertIn("source_revision = source.revision", read["next"])
+
+    def test_the_product_not_answering_does_not_stop_a_work_being_read(self):
+        call("works_save_model", work=self.work, model_text=DOOR, source_revision=self.revision)
+        self.save_list()
+        self.owner_accepts()
+        # The work is read through `works` itself: the generator the application would run is
+        # named by the same variable the package runs its own checks with, and what is under
+        # test is the application's answer, not those checks.
+        with unittest.mock.patch.dict(os.environ, {"SCE_CODEGEN": "/nowhere/sce-codegen"}):
+            read = works.read_work(self.work)
+        self.assertEqual("unavailable", read["acceptance"]["standing"])
+        self.assertTrue(read["acceptance"]["kind"].startswith("sce-"))
+        # The rest of the work is still there to read.
+        self.assertEqual(DOOR, read["model"]["text"])
+
+    def test_there_is_no_tool_that_states_an_acceptance_for_the_owner(self):
+        names = {t["name"] for t in mcp.TOOLS}
+        for forbidden in ("works_accept", "works_save_acceptance", "works_acceptance"):
+            self.assertNotIn(forbidden, names)
+
+
 class TheWorksFolderIsThisMachinesOwn(unittest.TestCase):
     """What needs no binary: the refusals that come before one is run."""
 
     def test_a_remote_caller_is_not_offered_it(self):
         for name, arguments in (("works_list", {}),
                                 ("works_read", {"work": "x"}),
+                                ("works_save_requirements", {"work": "x", "manifest_text": "{}"}),
                                 ("works_save_model", {"work": "x", "model_text": DOOR})):
             with self.subTest(tool=name):
                 answer = mcp.call_tool(name, arguments, remote=True)

@@ -49,6 +49,62 @@ class FakeCore implements Transport {
     { revision: string; entries: Record<string, { answer: string; answered_at: string }> }
   >();
   private answerSaves = 0;
+  private readonly lists = new Map<string, { revision: string; writtenFor: string | null; ids: string[] }>();
+  private readonly acceptances = new Map<
+    string,
+    { revision: string; basis: Record<string, string>; channel: string; open: string[] }
+  >();
+  private listSaves = 0;
+  private acceptSaves = 0;
+
+  /**
+   * The requirement list an authoring client saved for a work, and the text revision it
+   * says it read. A later call is a new revision of the list.
+   */
+  setRequirements(id: string, writtenFor: string | null, ids: string[] = ["R1", "R2"]): void {
+    this.listSaves += 1;
+    this.lists.set(id, { revision: this.revision(`list:${this.listSaves}`), writtenFor, ids });
+  }
+
+  /** What the owner accepted, as the core keeps it: the work as it stands now, stated on `channel`. */
+  setAcceptance(id: string, channel = "direct"): void {
+    const basis = this.basisOf(id);
+    if (basis === null) throw new Error(`${id} has no text, model and list to accept`);
+    this.acceptSaves += 1;
+    this.acceptances.set(id, {
+      revision: this.revision(`acceptance:${this.acceptSaves}`),
+      basis,
+      channel,
+      open: ["1 question(s) the specification leaves open (open-guard)"],
+    });
+  }
+
+  /** The revisions of everything an acceptance is about, or `null` while one of them is missing. */
+  private basisOf(id: string): Record<string, string> | null {
+    const source = this.works.get(id)?.revisions.at(-1)?.revision;
+    const model = this.models.get(id);
+    const list = this.lists.get(id);
+    if (source === undefined || model === undefined || list === undefined) return null;
+    const answers = this.answersOf.get(id)?.revision;
+    return {
+      source,
+      model: this.revision(`model:${model.text}`),
+      requirements: list.revision,
+      ...(answers === undefined ? {} : { answers }),
+    };
+  }
+
+  /** What an acceptance lapsed over, in the product's one sentence. */
+  private lapseOf(then: Record<string, string>, now: Record<string, string>): string | null {
+    const files: Array<[string, string]> = [
+      ["design/model.scxml", "model"],
+      ["spec/requirements.manifest.json", "requirements"],
+      ["spec/source.txt", "source"],
+      ["spec/answers.json", "answers"],
+    ];
+    const moved = files.filter(([, key]) => then[key] !== now[key]).map(([path]) => `${path} moved`);
+    return moved.length === 0 ? null : moved.join("; ");
+  }
 
   /** The owner's answers as saved, from another entrance or an earlier session. */
   setAnswers(id: string, entries: Record<string, string>): void {
@@ -133,7 +189,100 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 6, commands: [], root: "/fake/works" };
+        return { command_set_version: 7, commands: [], root: "/fake/works" };
+      case "read_requirements": {
+        const list = typeof args["id"] === "string" ? this.lists.get(args["id"]) : undefined;
+        const head = work?.revisions.at(-1)?.revision ?? null;
+        return {
+          requirements:
+            list === undefined
+              ? null
+              : { revision: list.revision, written_for: list.writtenFor, manifest: "{}", sidecar: null },
+          source_head: head,
+          standing: list === undefined ? null : standingOf(list.writtenFor, head),
+        };
+      }
+      case "requirements_report": {
+        const id = String(args["id"]);
+        const basis = this.basisOf(id);
+        const model = this.models.get(id);
+        const list = this.lists.get(id);
+        if (basis === null || model === undefined || list === undefined) {
+          throw new CommandFailure("not-found", "a model or a requirement list of this work (none was saved)");
+        }
+        const head = work?.revisions.at(-1)?.revision ?? null;
+        return {
+          basis,
+          source_head: head,
+          model_standing: standingOf(model.writtenFor, head),
+          requirements_standing: standingOf(list.writtenFor, head),
+          generator: "fake-sce 0",
+          denominator: "synthesized",
+          outcomes: list.ids.map((requirement, i) => ({
+            id: requirement,
+            outcome:
+              model.text.includes("MISSING") && i === 0
+                ? "missing"
+                : model.text.includes("SCENARIO") && i === 1
+                  ? "needs-scenario"
+                  : model.text.includes("DANGLING") && i === 1
+                    ? "dangling"
+                    : model.text.includes("WAIVED") && i === 1
+                      ? "waived"
+                      : "implemented",
+            section: `S${i + 1}`,
+            node_paths: model.text.includes("MISSING") && i === 0 ? [] : [`states.s${i}`],
+          })),
+          page: `ACCEPTANCE REPORT\n  ${list.ids.length} requirements\n`,
+          page_refusal: null,
+        };
+      }
+      case "read_acceptance": {
+        const id = String(args["id"]);
+        const held = this.acceptances.get(id);
+        const now = this.basisOf(id);
+        if (held === undefined || now === null) return { acceptance: null, standing: "none", lapse: null };
+        const lapse = this.lapseOf(held.basis, now);
+        return {
+          acceptance: {
+            revision: held.revision,
+            accepted_at: "2026-10-03T09:00:10Z",
+            channel: held.channel,
+            basis: held.basis,
+            open: held.open,
+          },
+          standing: lapse === null ? "holds" : "lapsed",
+          lapse,
+          now,
+        };
+      }
+      case "accept": {
+        const id = String(args["id"]);
+        const now = this.basisOf(id);
+        const model = this.models.get(id);
+        const list = this.lists.get(id);
+        if (now === null || model === undefined || list === undefined) {
+          throw new CommandFailure("not-found", "a model or a requirement list of this work (none was saved)");
+        }
+        const expected = args["expect"] as Record<string, string>;
+        // The core compares each revision, and the owner's answers are none (`null`, or absent) until given.
+        const moved = Object.keys({ ...now, ...expected }).filter((key) => (now[key] ?? null) !== (expected[key] ?? null));
+        if (moved.length > 0) {
+          throw new CommandFailure(
+            "moved",
+            `${moved.join(", ")} changed after you were shown it, so nothing was accepted; read it again`,
+            { moved, current: now },
+          );
+        }
+        const head = work?.revisions.at(-1)?.revision ?? null;
+        if (model.writtenFor !== head || list.writtenFor !== head) {
+          throw new CommandFailure("not-current", "the model was not written for the text as it is now");
+        }
+        this.acceptSaves += 1;
+        const revision = this.revision(`acceptance:${this.acceptSaves}`);
+        this.acceptances.set(id, { revision, basis: now, channel: "direct", open: [] });
+        return { outcome: "saved", revision, parent: null };
+      }
       case "read_answers": {
         const held = typeof args["id"] === "string" ? this.answersOf.get(args["id"]) : undefined;
         return { answers: held ?? null };
@@ -282,6 +431,11 @@ class FakeCore implements Transport {
         throw new CommandFailure("unknown-command", name);
     }
   }
+}
+
+/** The core's rule, in one place: written for the text as it is, for an earlier one, or unsaid. */
+function standingOf(writtenFor: string | null, head: string | null): "current" | "behind" | "unstated" {
+  return writtenFor === null ? "unstated" : writtenFor === head ? "current" : "behind";
 }
 
 const settle = async (): Promise<void> => {
@@ -1286,5 +1440,254 @@ describe("removing a work", () => {
     expect(heading()).toBe("Alpha");
     expect(workLinks()).toEqual(["Alpha", "Beta"]);
     expect(root.textContent).not.toContain("was removed from the list");
+  });
+});
+
+// ---- accepting the design ---------------------------------------------------
+
+const acceptanceText = (): string => root.querySelector(".acceptance")?.textContent ?? "";
+const acceptButton = (): HTMLButtonElement => root.querySelector("#accept") as HTMLButtonElement;
+const acceptNote = (): string => root.querySelector("#accept-note")?.textContent ?? "";
+const requirementRows = (): string[][] =>
+  [...root.querySelectorAll(".acceptance tbody tr")].map((row) =>
+    [...row.querySelectorAll("td")].map((cell) => cell.textContent ?? ""),
+  );
+
+/** The revision of the text a work holds now: what a model or a list says it was written for. */
+const headOf = (id: string): string => core.revision(core.headText(id) as string);
+
+describe("accepting the design", () => {
+  beforeEach(() => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+  });
+
+  it("says there is no requirement list when the work has none, and offers nothing to accept", async () => {
+    core.setModel("beta", "<scxml/>", headOf("beta"));
+    await click("Beta");
+
+    expect(acceptanceText()).toContain("No requirement list yet");
+    expect(root.querySelector("#accept")).toBeNull();
+    expect(core.callsOf("requirements_report")).toHaveLength(0);
+    expect(core.callsOf("read_acceptance")).toHaveLength(0);
+  });
+
+  it("is not asked for a work that has no model", async () => {
+    await click("Beta");
+
+    expect(root.querySelector(".acceptance")).toBeNull();
+    expect(core.callsOf("read_requirements")).toHaveLength(0);
+  });
+
+  it("shows SCE's count, each requirement in SCE's word, and the page exactly as SCE wrote it", async () => {
+    core.setModel("alpha", "<scxml>MISSING SCENARIO</scxml>", headOf("alpha"));
+    await click("Alpha");
+
+    expect(acceptanceText()).toContain("SCE measured the design against 2 requirements (synthesized).");
+    expect([...root.querySelectorAll(".acceptance .tally li")].map((li) => li.textContent)).toEqual([
+      "1 missing: nothing in the design carries it",
+      "1 needs-scenario: only a test can settle it",
+    ]);
+    expect(requirementRows()).toEqual([
+      ["R1", "missing", "S1", "nowhere"],
+      ["R2", "needs-scenario", "S2", "states.s1"],
+    ]);
+    expect(root.querySelector(".acceptance .page pre")?.textContent).toBe("ACCEPTANCE REPORT\n  2 requirements\n");
+  });
+
+  it("marks the requirements SCE finds unsettled, says what each of SCE's words means, and shows a new one as spelled", async () => {
+    core.setModel("alpha", "<scxml>MISSING DANGLING</scxml>", headOf("alpha"));
+    await click("Alpha");
+    const lines = (selector: string): Array<string | null> =>
+      [...root.querySelectorAll(selector)].map((li) => li.textContent);
+    expect(lines(".acceptance .tally li")).toEqual([
+      "1 missing: nothing in the design carries it",
+      "1 dangling: the design cites it and the list has no such requirement",
+    ]);
+    expect(lines(".acceptance .tally li.unsettled")).toHaveLength(2);
+    expect(acceptanceText()).toContain("The marked lines are requirements the design leaves unsettled.");
+
+    // A word a later SCE writes is shown as it was spelled, and is not guessed to be a gap.
+    core.setModel("alpha", "<scxml>WAIVED</scxml>", headOf("alpha"));
+    await click("Read again");
+    expect(lines(".acceptance .tally li")).toEqual(["1 implemented: a node of the design carries it", "1 waived"]);
+    expect(lines(".acceptance .tally li.unsettled")).toEqual([]);
+    expect(acceptanceText()).not.toContain("leaves unsettled");
+  });
+
+  it("tells the owner of the gaps before they accept, and still lets them accept", async () => {
+    core.setModel("alpha", "<scxml>MISSING</scxml>", headOf("alpha"));
+    await click("Alpha");
+    expect([...root.querySelectorAll(".acceptance .tally li.unsettled")].map((li) => li.textContent)).toEqual([
+      "1 missing: nothing in the design carries it",
+    ]);
+    expect([...root.querySelectorAll(".acceptance .gaps li")].map((li) => li.textContent)).toEqual([
+      "Matters SCE lists as left open: 1",
+    ]);
+    expect(acceptanceText()).toContain("Nothing has been accepted yet.");
+    expect(acceptButton().disabled).toBe(false);
+
+    await click("Accept this design");
+
+    const [sent] = core.callsOf("accept");
+    expect(core.callsOf("accept")).toHaveLength(1);
+    expect(sent?.["id"]).toBe("alpha");
+    const expectation = sent?.["expect"] as Record<string, string | null>;
+    // Exactly what the page showed, revision for revision; the owner had answered nothing.
+    expect(Object.keys(expectation).sort()).toEqual(["answers", "model", "requirements", "source"]);
+    expect(expectation["answers"]).toBeNull();
+    expect(expectation["source"]).toBe(headOf("alpha"));
+    expect(expectation["model"]).toBe(core.revision("model:<scxml>MISSING</scxml>"));
+    expect(acceptanceText()).toContain("It holds");
+    expect(acceptanceText()).toContain("Accepted here, in this application.");
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toBe("This design is accepted as it is.");
+  });
+
+  it("accepts only what it showed: what moved meanwhile is not accepted, and what is there now is shown", async () => {
+    await click("Alpha");
+    // Another entrance saves a different design after this screen showed the page.
+    core.setModel("alpha", "<scxml><!-- another --></scxml>", headOf("alpha"));
+    await click("Accept this design");
+
+    expect(core.callsOf("accept")).toHaveLength(1);
+    expect(acceptanceText()).toContain("Nothing was accepted: model changed after you were shown it");
+    expect(acceptanceText()).toContain("Nothing has been accepted yet.");
+    // What is there now was read, so the next press is made knowing it.
+    expect(core.callsOf("requirements_report")).toHaveLength(2);
+    await click("Accept this design");
+
+    const second = core.callsOf("accept")[1]?.["expect"] as Record<string, string>;
+    expect(second["model"]).toBe(core.revision("model:<scxml><!-- another --></scxml>"));
+    expect(acceptanceText()).toContain("It holds");
+    expect(acceptanceText()).not.toContain("Nothing was accepted");
+  });
+
+  it("accepts nothing when the text moved on in another entrance after the page was shown", async () => {
+    await click("Alpha");
+    // The text moves on in another entrance; this screen has not read it yet.
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two", "alpha three"]);
+    await click("Accept this design");
+
+    expect(acceptanceText()).toContain("Nothing was accepted: source changed after you were shown it");
+    expect(core.callsOf("accept")).toHaveLength(1);
+  });
+
+  it("is withheld while text or answers are typed and not saved, with the reason, and offered again when they are not", async () => {
+    await click("Alpha");
+    expect(acceptButton().disabled).toBe(false);
+    expect(acceptNote()).toBe("");
+
+    await type("alpha changed");
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toBe("Save the text and your answers first: what is accepted is what is saved.");
+    await type("alpha two");
+    expect(acceptButton().disabled).toBe(false);
+    expect(acceptNote()).toBe("");
+
+    await answer("open-guard", "Any card on the list.");
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("Save the text and your answers first");
+    await answer("open-guard", "");
+    expect(acceptButton().disabled).toBe(false);
+    expect(core.callsOf("accept")).toHaveLength(0);
+  });
+
+  it("is withheld for a design or a list written for an earlier text, and says so", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha one"));
+    await click("Alpha");
+
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("written for an earlier text");
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", core.revision("alpha one"));
+    await click("Read again");
+    expect(acceptanceText()).toContain("The requirement list was written for an earlier text");
+    expect(acceptButton().disabled).toBe(true);
+  });
+
+  it("says an acceptance lapsed, in SCE's sentence, and offers to accept the design as it is now", async () => {
+    core.setAcceptance("alpha");
+    core.setModel("alpha", "<scxml><!-- edited --></scxml>", headOf("alpha"));
+    await click("Alpha");
+
+    expect(acceptanceText()).toContain("no longer holds. SCE says: design/model.scxml moved");
+    expect(acceptanceText()).toContain("What SCE listed as left open when it was accepted");
+    expect(acceptButton().textContent).toBe("Accept the design as it is now");
+    expect(acceptButton().disabled).toBe(false);
+  });
+
+  it("says when an acceptance was relayed by an authoring client and not made in this application", async () => {
+    core.setAcceptance("alpha", "relayed");
+    await click("Alpha");
+
+    expect(acceptanceText()).toContain("It holds");
+    expect(acceptanceText()).toContain("Relayed by an authoring client: it was not accepted in this application.");
+  });
+
+  it("says SCE did not measure the design, keeps what was accepted, and offers nothing to accept", async () => {
+    core.setAcceptance("alpha");
+    core.failNext("requirements_report", new CommandFailure("sce-timeout", "SCE did not answer within 30 s"));
+    await click("Alpha");
+
+    expect(acceptanceText()).toContain("SCE did not measure the design against the list: SCE did not answer within 30 s");
+    expect(acceptanceText()).toContain("It holds");
+    expect(root.querySelector(".acceptance table")).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("SCE did not measure the design");
+  });
+
+  it("says in words when the acceptance cannot be read, and the review still shows", async () => {
+    core.failNext("read_acceptance", new CommandFailure("sce-failed", "the product crashed"));
+    await click("Alpha");
+
+    expect(acceptanceText()).toContain("could not be read: the product crashed");
+    expect(pseudo()).not.toBeNull();
+  });
+
+  it("is read again when the answers are saved, which are part of what is accepted", async () => {
+    await click("Alpha");
+    await click("Accept this design");
+    expect(acceptanceText()).toContain("It holds");
+    const before = core.callsOf("read_acceptance").length;
+
+    await answer("open-guard", "Any card on the list.");
+    await click("Save answers");
+
+    expect(core.callsOf("read_acceptance")).toHaveLength(before + 1);
+    expect(acceptanceText()).toContain("no longer holds. SCE says: spec/answers.json moved");
+    expect(acceptButton().textContent).toBe("Accept the design as it is now");
+  });
+
+  it("is not put under another work when it arrives late, and is gone with a work that is removed", async () => {
+    core.setRequirements("alpha", headOf("alpha"), ["A1", "A2"]);
+    core.setModel("beta", "<scxml/>", headOf("beta"));
+    core.setRequirements("beta", headOf("beta"), ["B1"]);
+    const slow = core.hold("read_requirements", (a) => a["id"] === "alpha");
+    await click("Alpha");
+    await click("Beta");
+    slow.release();
+    await settle();
+
+    expect(requirementRows().map((row) => row[0])).toEqual(["B1"]);
+    await click("Remove this work");
+    await click("Remove");
+    expect(root.querySelector(".acceptance")).toBeNull();
+  });
+
+  it("is not accepted twice while the first is on its way, and a work is not removed under it", async () => {
+    await click("Alpha");
+    const held = core.hold("accept");
+    buttons("Accept this design")[0]?.click();
+    await settle();
+
+    expect(acceptButton().textContent).toBe("Accepting...");
+    expect(acceptButton().disabled).toBe(true);
+    expect(buttons("Remove this work")[0]?.disabled).toBe(true);
+    held.release();
+    await settle();
+
+    expect(core.callsOf("accept")).toHaveLength(1);
+    expect(acceptanceText()).toContain("It holds");
   });
 });

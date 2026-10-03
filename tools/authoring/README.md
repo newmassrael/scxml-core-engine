@@ -918,8 +918,8 @@ on the pseudocode page, whose steps are the reading, and in its field table.
 The review artefact follows the kind's shape.
 
 **Works: the specification the owner keeps in the workbench application.**
-`works_list`, `works_read` and `works_save_model` connect this server to the
-application (`app/`, `app-core/`). The owner writes the specification there and
+`works_list`, `works_read`, `works_save_model` and `works_save_requirements`
+connect this server to the application (`app/`, `app-core/`). The owner writes the specification there and
 asks an AI client to model it; the client reads the text from the work, writes
 and checks the model as above, and saves it back, where the owner sees the
 figures SCE draws of it beside their text. They do it by running `sce-work`,
@@ -965,6 +965,31 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   `conflict` and writes nothing. The client says which text it wrote the model
   from (`source_revision`); without it the application can only say that nobody
   recorded it.
+- `works_save_requirements` takes the `manifest_text` and `sidecar_text` that
+  `scxml_requirement_set` made from the work's text, unchanged, with the
+  `source_revision` they were read from and the `base` (the `requirements.revision`
+  `works_read` returned; none for a first list). The product's own loader runs
+  first, against an empty statechart because loading a list does not look at a
+  design: a manifest it refuses is not saved and comes back in its words, so a
+  work's list chain holds lists the product loads. A stale `base` is a `conflict`.
+  `works_read` gives the list back as `requirements`: `manifest_text` and
+  `sidecar_text` byte for byte (the owner's acceptance pins their hash), the text
+  revision it was `written_for`, and its `standing` against the text, so a list
+  read from an earlier text is `behind` and the client is told to build it again.
+- **The owner's acceptance is read and never written here.** `works_read` gives
+  `acceptance` for a work that has a list and a model: `standing` is `none`,
+  `holds`, or `lapsed`, with the product's own sentence of what moved (`lapse`,
+  one sentence passed on whole: the product joins its lapses with `; ` and a
+  single lapse can contain one, so it is not split), when (`accepted_at`), the
+  `channel` it was stated on and what the design left `open` when the owner
+  accepted. The owner accepts in the application, on the page SCE writes there;
+  the command layer states every acceptance it records as the application's own
+  (`direct`), so a tool that called it for a client would state, as the owner's
+  press, what the owner never pressed, and none does. An acceptance that holds is
+  the owner having said yes to THIS design, and `works_read` withdraws the
+  instruction to write a new draft; one that lapsed is told as what it is, and the
+  owner accepts again themselves. The product not answering (`sce-*`) is reported
+  as `standing: unavailable` and does not stop a work being read.
 - The owner's text and answers are the owner's: no tool writes either, and none
   removes a work. The works tools are refused to a remote caller, like a path:
   the folder is the machine this server runs on.

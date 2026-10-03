@@ -9,20 +9,27 @@ import {
   parseFigures,
   parseHistory,
   parseListing,
+  parseReadAcceptance,
   parseReadAnswers,
   parseReadModel,
+  parseReadRequirements,
   parseReadSource,
   parseRemoved,
+  parseRequirementsReport,
   parseReview,
   parseSaved,
   parseWork,
   parseWorkAndHead,
   type Answers,
+  type Basis,
   type Described,
   type Figures,
   type HistoryEntry,
   type Listing,
+  type ReadAcceptance,
   type ReadModel,
+  type ReadRequirements,
+  type RequirementsReport,
   type Review,
   type Revision,
   type Saved,
@@ -65,6 +72,26 @@ export interface Api {
    * Refused with `conflict` if `base` is no longer current.
    */
   saveAnswers(id: string, answers: Readonly<Record<string, string>>, base: Revision | null): Promise<Saved>;
+  /**
+   * The requirement list the work's text was read into, and where it stands to the
+   * text. The list is written by an authoring client; this screen only reads it.
+   */
+  readRequirements(id: string): Promise<ReadRequirements>;
+  /**
+   * SCE's measure of the work's design against its requirement list, and the page
+   * the owner reads before accepting. Refused with `not-found` when the work has no
+   * model or no list yet, and with a `sce-*` kind when SCE does not answer.
+   */
+  requirementsReport(id: string): Promise<RequirementsReport>;
+  /** Whether the owner's acceptance still holds, and what SCE says moved when it does not. */
+  readAcceptance(id: string): Promise<ReadAcceptance>;
+  /**
+   * Accept the design as the owner was shown it: `expect` is the `basis` of the report
+   * they read. Refused with `moved` when any of it has changed since, and with
+   * `not-current` when the design or the list was written for an earlier text; in
+   * both nothing is accepted.
+   */
+  accept(id: string, expect: Basis): Promise<Saved>;
   /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
@@ -121,6 +148,18 @@ export function apiOver(transport: Transport): Api {
     },
     async saveAnswers(id, answers, base) {
       return parseSaved(await transport.call("save_answers", { id, answers, base }));
+    },
+    async readRequirements(id) {
+      return parseReadRequirements(await transport.call("read_requirements", { id }));
+    },
+    async requirementsReport(id) {
+      return parseRequirementsReport(await transport.call("requirements_report", { id }));
+    },
+    async readAcceptance(id) {
+      return parseReadAcceptance(await transport.call("read_acceptance", { id }));
+    },
+    async accept(id, expect) {
+      return parseSaved(await transport.call("accept", { id, expect }));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

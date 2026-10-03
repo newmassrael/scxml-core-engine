@@ -343,6 +343,126 @@ fn replies() -> Value {
     );
     refusals.insert("unknown-command".into(), refusal(&store, "nope", json!({})));
 
+    // What the owner accepts: a work of its own (a text, a design that leaves a question
+    // open, the requirement list the text was read into), measured, accepted, and then
+    // moved under the acceptance. Its replies carry the revisions the owner was shown.
+    let accepted_work = answer(&store, "create_work", json!({"title": "Garage door"}));
+    let accepted_id = accepted_work["id"].as_str().expect("a work id").to_string();
+    let accepted_text = answer(
+        &store,
+        "save_source",
+        json!({"id": accepted_id, "text": "The door opens for a listed card."}),
+    );
+    let accepted_head = accepted_text["revision"].as_str().unwrap().to_string();
+    let accepted_model = answer(
+        &store,
+        "save_model",
+        json!({"id": accepted_id, "text": "<scxml><!-- OPEN --></scxml>",
+               "written_for": accepted_head}),
+    );
+    answers.insert(
+        "read_requirements_none".into(),
+        answer(&store, "read_requirements", json!({"id": accepted_id})),
+    );
+    answers.insert(
+        "read_acceptance_none".into(),
+        answer(&store, "read_acceptance", json!({"id": accepted_id})),
+    );
+    let manifest = "{\"doc_id\":\"door\",\"rev\":\"1\",\
+                    \"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n";
+    let sidecar = "{\"doc_id\":\"door\",\"rev\":\"1\",\"text\":{\"R1\":\"The door opens.\"}}\n";
+    let listed = answer(
+        &store,
+        "save_requirements",
+        json!({"id": accepted_id, "manifest": manifest, "sidecar": sidecar,
+               "written_for": accepted_head}),
+    );
+    let list_revision = listed["revision"].as_str().unwrap().to_string();
+    answers.insert("save_requirements_first".into(), listed);
+    answers.insert(
+        "save_requirements_unchanged".into(),
+        answer(
+            &store,
+            "save_requirements",
+            json!({"id": accepted_id, "manifest": manifest, "sidecar": sidecar,
+                   "base": list_revision, "written_for": accepted_head}),
+        ),
+    );
+    answers.insert(
+        "read_requirements".into(),
+        answer(&store, "read_requirements", json!({"id": accepted_id})),
+    );
+    let report = answer(&store, "requirements_report", json!({"id": accepted_id}));
+    let shown = report["basis"].clone();
+    answers.insert("requirements_report".into(), report);
+    answers.insert(
+        "accept".into(),
+        answer(
+            &store,
+            "accept",
+            json!({"id": accepted_id, "expect": shown}),
+        ),
+    );
+    answers.insert(
+        "read_acceptance".into(),
+        answer(&store, "read_acceptance", json!({"id": accepted_id})),
+    );
+    refusals.insert(
+        "invalid-requirements".into(),
+        refusal(
+            &store,
+            "save_requirements",
+            json!({"id": accepted_id, "manifest": "not json", "base": list_revision}),
+        ),
+    );
+    // The design moves under the acceptance, and the owner presses accept on the page
+    // they were shown before it did.
+    answer(
+        &store,
+        "save_model",
+        json!({"id": accepted_id, "text": "<scxml><!-- OPEN, edited --></scxml>",
+               "base": accepted_model["revision"], "written_for": accepted_head}),
+    );
+    answers.insert(
+        "read_acceptance_lapsed".into(),
+        answer(&store, "read_acceptance", json!({"id": accepted_id})),
+    );
+    refusals.insert(
+        "moved".into(),
+        refusal(
+            &store,
+            "accept",
+            json!({"id": accepted_id, "expect": shown}),
+        ),
+    );
+    // The text moves on and the design and the list were written for the old one.
+    answer(
+        &store,
+        "save_source",
+        json!({"id": accepted_id, "text": "The door opens for a listed card, twice.",
+               "base": accepted_head}),
+    );
+    let behind = answer(&store, "requirements_report", json!({"id": accepted_id}));
+    let behind_shown = behind["basis"].clone();
+    answers.insert("requirements_report_behind".into(), behind);
+    refusals.insert(
+        "not-current".into(),
+        refusal(
+            &store,
+            "accept",
+            json!({"id": accepted_id, "expect": behind_shown}),
+        ),
+    );
+    refusals.insert(
+        "sce-timeout".into(),
+        refusal_by(
+            &store,
+            &RefusingRenderer,
+            "requirements_report",
+            json!({"id": accepted_id}),
+        ),
+    );
+
     // A command without a written-down reply is a command the screen's test
     // cannot hold to account.
     for command in COMMANDS {
@@ -363,6 +483,7 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &root.display().to_string(), "<root>");
     name_the_unstable(&mut document, &id, "<work-id>");
     name_the_unstable(&mut document, &other_id, "<removed-work-id>");
+    name_the_unstable(&mut document, &accepted_id, "<accepted-work-id>");
     let _ = std::fs::remove_dir_all(&root);
     document
 }

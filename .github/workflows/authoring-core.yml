@@ -20,7 +20,8 @@ name: Authoring Core (domain-free)
 # 86 ran nowhere on a generator change — the push selected this gate only for
 # `tools/authoring/**` — so the paths below include what they run through.
 #
-# The works tools (`works_list`, `works_read`, `works_save_model`) run a second
+# The works tools (`works_list`, `works_read`, `works_save_model`,
+# `works_save_requirements`) run a second
 # product binary, the workbench application's `sce-work` (`app-core`), and the
 # cases that drive them skip the same way where it is not built. So that job
 # builds it too and refuses to run without it, and `app-core/**` is among the

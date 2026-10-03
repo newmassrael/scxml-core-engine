@@ -31,8 +31,9 @@ So the shape a caller gets is:
     scxml_acceptance_check  whether that acceptance still holds
     scxml_acceptance_impact which of several acceptances a changed shared file touches
     works_list              the specifications the owner keeps in the workbench application
-    works_read              one work: its text now, and the model saved for it
+    works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
     works_save_model        save the model written for it, once the product accepts it
+    works_save_requirements save the requirement list read from its text, once the product loads it
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -234,7 +235,18 @@ SERVER_INSTRUCTIONS = (
     "Apply each answer in the model and cite it as sce:assumed=\"<id>\", "
     "never leave an answered question sce:unresolved, never answer one for "
     "the owner, and put every new question works_save_model reports to them. "
-    "works_save_model refuses a draft that does not keep to their answers."
+    "works_save_model refuses a draft that does not keep to their answers. "
+    "The requirements a work's text states are kept with the work: build them "
+    "with scxml_requirement_set from the text works_read gave you and save "
+    "them with works_save_requirements (source_revision = source.revision), "
+    "and works_read gives them back as manifest_text and sidecar_text for "
+    "scxml_requirements and scxml_acceptance_report. The owner accepts a "
+    "design in the application, on the page SCE writes there: nothing here "
+    "records that acceptance, and works_read only tells you whether one "
+    "exists (`acceptance`) and whether it still holds. When it holds, the "
+    "owner has accepted this design: do not write a new draft unless they "
+    "ask for one, because a new draft of the same specification is never "
+    "the same document. When it lapsed, tell the owner what SCE says moved."
 )
 
 _PACK_ARG = {
@@ -1264,6 +1276,14 @@ TOOLS = [
             "the text moved on after that model was written: read the text "
             "again and write the model again from it. A work that has no text "
             "yet has `source` null: tell the owner, and write nothing. "
+            "`requirements` is the list the text was read into, when one was "
+            "saved (`manifest_text` and `sidecar_text` exactly as saved, its "
+            "`standing` against the text); `acceptance` says whether the OWNER "
+            "accepted this design in the application: `standing` is `none`, "
+            "`holds` or `lapsed` (with SCE's own sentence of what moved, "
+            "`lapse`), with when (`accepted_at`), on which `channel` and what "
+            "the design left `open` when they accepted. You cannot accept for "
+            "the owner. "
             "`answers` is what the owner has answered to the questions the model "
             "left open (each question's id, their words, and when they said it), "
             "and `decisions_text` is the decision record those answers make, to "
@@ -1341,6 +1361,41 @@ TOOLS = [
                 # The check that gates the save is validate_scxml's, so it is held
                 # to the owner's profile the same way.
                 **_PROFILE_INPUT,
+            },
+        },
+    },
+    {
+        "name": "works_save_requirements",
+        "description": (
+            "Save the requirement list you read from a work's text, so the owner "
+            "can accept a design against it in the application. Build the list "
+            "with scxml_requirement_set from the `source.text` works_read gave "
+            "you and pass its `manifest_text` and `sidecar_text` here unchanged; "
+            "give `source_revision` = the `source.revision` you read (without it "
+            "the application can only say that nobody recorded which text the "
+            "list is about), and `base` = the `requirements.revision` works_read "
+            "returned (omit it for a work with no list yet). The product's own "
+            "loader runs first: a manifest it REFUSES is not saved, and the "
+            "answer is its refusal. A save from a `base` that is no longer the "
+            "current list is refused as a conflict and writes nothing: read the "
+            "work again. A list written for an earlier text reads as `behind` "
+            "until you read the text again and save the list again. Saving a "
+            "list is not the owner's acceptance of anything. Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work", "manifest_text"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "manifest_text": {"type": "string", "description": (
+                    "The manifest scxml_requirement_set returned, exactly as it returned it.")},
+                "sidecar_text": {"type": "string", "description": (
+                    "The sidecar scxml_requirement_set returned (the sentences each id "
+                    "quotes), exactly as it returned it.")},
+                "source_revision": {"type": "string", "description": (
+                    "The `source.revision` of the specification text the list was read from.")},
+                "base": {"type": "string", "description": (
+                    "The `requirements.revision` read from the work; omit for a first list.")},
             },
         },
     },
@@ -2768,7 +2823,38 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
                 "leave an answered question sce:unresolved, and hand `decisions_text` to "
                 "validate_scxml and decisions as the decision record. works_save_model "
                 "holds the draft to these answers")
+        read["next"] += _requirements_next(read["requirements"])
+        read["next"] = _acceptance_next(read["acceptance"], read["next"])
     return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
+
+
+def _requirements_next(requirements: dict | None) -> str:
+    """What a client is told to do about a work's requirement list: save one when there
+    is none, and again when the text moved on after the list was read from it."""
+    if requirements is None:
+        return ("; this work keeps no requirement list yet: build one from `source.text` with "
+                "scxml_requirement_set and save it with works_save_requirements, so the owner "
+                "can accept a design against it")
+    if requirements["standing"] != "current":
+        return (f"; the requirement list is `{requirements['standing']}` against the text: build "
+                "it again from `source.text` and save it with works_save_requirements, giving "
+                "base = requirements.revision")
+    return ""
+
+
+def _acceptance_next(acceptance: dict | None, otherwise: str) -> str:
+    """What a client is told of the owner's acceptance. One that holds is the owner
+    having said yes to THIS design, so the instruction to write one is withdrawn;
+    one that lapsed is told as what it is, and the owner accepts again themselves."""
+    if acceptance is None or acceptance["standing"] in ("none", "unavailable"):
+        return otherwise
+    if acceptance["standing"] == "holds":
+        return ("the owner accepted this design in the application and the acceptance still "
+                "holds: tell them so, and write no new draft unless they ask for one, because a "
+                "new draft of the same specification is never the same document")
+    return (otherwise + "; the owner's acceptance of the earlier design no longer holds "
+            f"(`acceptance.lapse`: {acceptance['lapse']}): tell the owner what moved. They "
+            "accept again in the application; nothing here records an acceptance")
 
 
 def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
@@ -2811,6 +2897,52 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         answer["open"] = matters
         answer["next"] = ("saved is not finished: tell the owner each line of `open` -- "
                           "the model leaves them to a person")
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+# The loader of a requirement list does not look at a design, so an empty statechart
+# answers "does the product load this list" and nothing else. It is what a list is
+# held to when it is saved, before any design is at hand.
+_STUB_DESIGN = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">'
+                '<state id="s"/></scxml>\n')
+
+
+def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
+    """Save a requirement list to a work, after the product's own loader has accepted it.
+
+    ⚠ The product's check comes first, as for a model: a work's list chain holds lists
+    the product loads, because the acceptance page and the owner's acceptance read
+    the list through the same product and a list it refuses would make each of them
+    refuse in turn. A list that is refused is told back in the product's words and
+    the work keeps the list it had. Saving is not the owner's acceptance of anything:
+    that is stated in the application, and nothing here can state it.
+    """
+    staging.refuse_works("works_save_requirements")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    source_revision = _revision_arg(args, "source_revision")
+    base = _revision_arg(args, "base")
+    manifest_text, sidecar_text = args.get("manifest_text"), args.get("sidecar_text")
+    if not isinstance(manifest_text, str) or not manifest_text.strip():
+        raise ToolArgumentError(
+            "'manifest_text' has to be the manifest scxml_requirement_set returned, as text")
+    if sidecar_text is not None and not isinstance(sidecar_text, str):
+        raise ToolArgumentError(
+            "'sidecar_text' has to be the sidecar scxml_requirement_set returned, as text")
+    manifest = staging.write("requirements.manifest.json", manifest_text, "manifest")
+    document = staging.write("stub.scxml", _STUB_DESIGN, "design")
+    _, refusal = requirement_records(document, manifest, cwd=staging.dir)
+    if refusal:
+        return _failure("not saved: the product does not load this requirement list, so the "
+                        "work keeps the list it has. Build it again with scxml_requirement_set "
+                        "and save it unchanged.\n" + refusal)
+    try:
+        saved = works.save_requirements(work, base, source_revision,
+                                        manifest=manifest_text, sidecar=sidecar_text)
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    answer = {"version": 1, "work": work, **saved,
+              "next": "saved is not accepted: the owner accepts a design against this list "
+                      "in the application, and nothing here records it"}
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -2892,6 +3024,7 @@ _PACK_FREE = {
     "works_list": _works_list_tool,
     "works_read": _works_read_tool,
     "works_save_model": _works_save_model_tool,
+    "works_save_requirements": _works_save_requirements_tool,
     "scxml_kinds": _kinds_tool,
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,

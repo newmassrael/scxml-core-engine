@@ -16,6 +16,12 @@
 //!     answers/<digest>.json  the owner's answers to the model's open questions, the same way
 //!     answers.head       the digest of the current answers
 //!     answers.log        one JSON line per save
+//!     requirements/<digest>.json  the requirement list the owner's text was read into, the same way
+//!     requirements.head  the digest of the current list
+//!     requirements.log   one JSON line per save, and the source revision it was written for
+//!     acceptances/<digest>.json   what the owner accepted, one revision per acceptance
+//!     acceptances.head   the digest of the current acceptance
+//!     acceptances.log    one JSON line per acceptance
 //!     .lock              what a save holds while it checks and moves a pointer
 //!     removed.json       present only for a removed work (see [`WorkStore::remove_work`])
 //! ```
@@ -28,7 +34,8 @@
 //! says which revision its text was written from (`base`), and the store refuses
 //! a base that is no longer current rather than overwrite what it has not seen.
 //!
-//! The text, the model and the owner's answers are three chains kept by ONE implementation
+//! The text, the model, the owner's answers, the requirement list and the acceptances are
+//! five chains kept by ONE implementation
 //! ([`Artifact`] says where each lives and how large it may be), because two
 //! implementations of "what a save is" would be two chances to disagree about
 //! it. A model's save also records the source revision the writer read
@@ -58,6 +65,12 @@ pub const MAX_MODEL_BYTES: usize = 8 * 1024 * 1024;
 
 /// The most one set of answers may hold.
 pub const MAX_ANSWERS_BYTES: usize = 1024 * 1024;
+
+/// The most one requirement list (its manifest and the sentences quoted) may hold.
+pub const MAX_REQUIREMENTS_BYTES: usize = 4 * 1024 * 1024;
+
+/// The most one acceptance (the product's record and what it was taken from) may hold.
+pub const MAX_ACCEPTANCE_BYTES: usize = 4 * 1024 * 1024;
 
 /// How long a save waits for another save of the same work.
 pub const LOCK_WAIT: Duration = Duration::from_secs(30);
@@ -147,6 +160,10 @@ enum Artifact {
     Model,
     /// What the owner answered to the questions the model leaves open.
     Answers,
+    /// The requirements the text states, as the authoring client read them out of it.
+    Requirements,
+    /// What the owner accepted: the product's record and what it was taken from.
+    Acceptances,
 }
 
 impl Artifact {
@@ -156,6 +173,8 @@ impl Artifact {
             Artifact::Source => "source",
             Artifact::Model => "model",
             Artifact::Answers => "answers",
+            Artifact::Requirements => "requirements",
+            Artifact::Acceptances => "acceptances",
         }
     }
 
@@ -163,7 +182,7 @@ impl Artifact {
         match self {
             Artifact::Source => "txt",
             Artifact::Model => "scxml",
-            Artifact::Answers => "json",
+            Artifact::Answers | Artifact::Requirements | Artifact::Acceptances => "json",
         }
     }
 
@@ -173,6 +192,8 @@ impl Artifact {
             Artifact::Source => "source.head",
             Artifact::Model => "model.head",
             Artifact::Answers => "answers.head",
+            Artifact::Requirements => "requirements.head",
+            Artifact::Acceptances => "acceptances.head",
         }
     }
 
@@ -182,6 +203,8 @@ impl Artifact {
             Artifact::Source => "source.log",
             Artifact::Model => "model.log",
             Artifact::Answers => "answers.log",
+            Artifact::Requirements => "requirements.log",
+            Artifact::Acceptances => "acceptances.log",
         }
     }
 
@@ -190,6 +213,8 @@ impl Artifact {
             Artifact::Source => MAX_SOURCE_BYTES,
             Artifact::Model => MAX_MODEL_BYTES,
             Artifact::Answers => MAX_ANSWERS_BYTES,
+            Artifact::Requirements => MAX_REQUIREMENTS_BYTES,
+            Artifact::Acceptances => MAX_ACCEPTANCE_BYTES,
         }
     }
 
@@ -199,7 +224,15 @@ impl Artifact {
             Artifact::Source => "source",
             Artifact::Model => "model",
             Artifact::Answers => "answers",
+            Artifact::Requirements => "requirements",
+            Artifact::Acceptances => "acceptance",
         }
+    }
+
+    /// Whether a save of this chain says which source revision it was written for,
+    /// so that the same text written for another revision is news and not "unchanged".
+    fn is_written_for_a_source(self) -> bool {
+        matches!(self, Artifact::Model | Artifact::Requirements)
     }
 }
 
@@ -268,6 +301,22 @@ pub struct ModelText {
 /// The owner's answers as saved, and the revision they are.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AnswersText {
+    pub revision: Revision,
+    pub text: String,
+}
+
+/// One saved requirement list, the revision it is, and the text it was written for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RequirementsText {
+    pub revision: Revision,
+    /// The source revision the writer said it read, when it said.
+    pub written_for: Option<Revision>,
+    pub text: String,
+}
+
+/// One acceptance as saved, and the revision it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AcceptanceText {
     pub revision: Revision,
     pub text: String,
 }
@@ -534,23 +583,37 @@ impl<C: Clock> WorkStore<C> {
         id: &WorkId,
         revision: Option<&Revision>,
     ) -> Result<Option<ModelText>, StoreError> {
-        let Some((revision, text)) = self.read_text(Artifact::Model, id, revision)? else {
+        Ok(self.read_claimed(Artifact::Model, id, revision)?.map(
+            |(revision, written_for, text)| ModelText {
+                revision,
+                written_for,
+                text,
+            },
+        ))
+    }
+
+    /// A revision of a chain whose saves say which source revision they were written
+    /// for (the model's and the requirement list's), with that claim.
+    ///
+    /// What the writer said it read is in the log line of the save that made this
+    /// revision current; a revision no save on the chain names (one a failed save
+    /// left behind) says nothing.
+    fn read_claimed(
+        &self,
+        artifact: Artifact,
+        id: &WorkId,
+        revision: Option<&Revision>,
+    ) -> Result<Option<(Revision, Option<Revision>, String)>, StoreError> {
+        let Some((revision, text)) = self.read_text(artifact, id, revision)? else {
             return Ok(None);
         };
-        // What the writer said it read is in the log line of the save that
-        // made this revision current; a revision no save on the chain names
-        // (one a failed save left behind) says nothing.
-        let chain = self.history_of(Artifact::Model, id)?;
+        let chain = self.history_of(artifact, id)?;
         let written_for = chain
             .iter()
             .rev()
             .find(|entry| entry.revision == revision)
             .and_then(|entry| entry.written_for.clone());
-        Ok(Some(ModelText {
-            revision,
-            written_for,
-            text,
-        }))
+        Ok(Some((revision, written_for, text)))
     }
 
     fn read_text(
@@ -659,6 +722,65 @@ impl<C: Clock> WorkStore<C> {
         self.save_text(Artifact::Answers, id, answers, base, None)
     }
 
+    /// The requirement list `revision`, or the current one, with the source revision it
+    /// was written for. `None` only for a work nobody has read requirements out of.
+    pub fn read_requirements(
+        &self,
+        id: &WorkId,
+        revision: Option<&Revision>,
+    ) -> Result<Option<RequirementsText>, StoreError> {
+        Ok(self
+            .read_claimed(Artifact::Requirements, id, revision)?
+            .map(|(revision, written_for, text)| RequirementsText {
+                revision,
+                written_for,
+                text,
+            }))
+    }
+
+    /// Save a requirement list as the work's next, from `base`, written for the source
+    /// revision `written_for`. A list is quotes anchored in one text, so it is about
+    /// that revision: the same list saved for another revision is news, as a model's is.
+    /// What the text says is [`crate::requirements`]'s to define; the store keeps text.
+    pub fn save_requirements(
+        &self,
+        id: &WorkId,
+        requirements: &str,
+        base: Option<&Revision>,
+        written_for: Option<&Revision>,
+    ) -> Result<Saved, StoreError> {
+        self.save_text(Artifact::Requirements, id, requirements, base, written_for)
+    }
+
+    /// The acceptance `revision`, or the current one. `None` only for a work the
+    /// owner has accepted nothing of.
+    pub fn read_acceptance(
+        &self,
+        id: &WorkId,
+        revision: Option<&Revision>,
+    ) -> Result<Option<AcceptanceText>, StoreError> {
+        Ok(self
+            .read_text(Artifact::Acceptances, id, revision)?
+            .map(|(revision, text)| AcceptanceText { revision, text }))
+    }
+
+    /// Record an acceptance as the work's next, from `base`. An acceptance is an
+    /// event: the same record taken twice (it names the time) is two acceptances,
+    /// and a `base` that is not the latest is refused like any other.
+    pub fn save_acceptance(
+        &self,
+        id: &WorkId,
+        acceptance: &str,
+        base: Option<&Revision>,
+    ) -> Result<Saved, StoreError> {
+        self.save_text(Artifact::Acceptances, id, acceptance, base, None)
+    }
+
+    /// Every acceptance, oldest first, read as [`Self::history`] reads a text's.
+    pub fn acceptance_history(&self, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
+        self.history_of(Artifact::Acceptances, id)
+    }
+
     /// The time the store would stamp a save with, so a caller that stamps what it
     /// keeps inside a text uses the same clock the log does.
     pub fn now(&self) -> String {
@@ -694,9 +816,10 @@ impl<C: Clock> WorkStore<C> {
             if !revision_path(&dir, Artifact::Source, source).is_file() {
                 return Err(StoreError::NotFound {
                     what: format!(
-                        "the source revision {} of `{}` that the model names as written_for",
+                        "the source revision {} of `{}` that the {} names as written_for",
                         source.short(),
-                        id.as_str()
+                        id.as_str(),
+                        artifact.noun()
                     ),
                 });
             }
@@ -713,16 +836,12 @@ impl<C: Clock> WorkStore<C> {
             // A text is unchanged when it is the current one. A model is too
             // only if it is also written for the same text: the same model for
             // another text is the writer's news (see `save_model`).
-            let same_claim = match artifact {
-                Artifact::Source | Artifact::Answers => true,
-                Artifact::Model => {
-                    history_in(&dir, artifact)?
-                        .pop()
-                        .and_then(|entry| entry.written_for)
-                        .as_ref()
-                        == written_for
-                }
-            };
+            let same_claim = !artifact.is_written_for_a_source()
+                || history_in(&dir, artifact)?
+                    .pop()
+                    .and_then(|entry| entry.written_for)
+                    .as_ref()
+                    == written_for;
             if same_claim {
                 return Ok(Saved::Unchanged { revision });
             }

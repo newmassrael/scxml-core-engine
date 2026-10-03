@@ -412,10 +412,79 @@ textarea:focus-visible {
   margin-top: 16px;
 }
 
-.review .page > summary {
+.review .page > summary,
+.acceptance .page > summary,
+.acceptance .requirements > summary,
+.acceptance .accepted-open > summary {
   cursor: pointer;
   font-weight: 600;
   margin-bottom: 6px;
+}
+
+/* Accepting the design: SCE's count of the requirements, its table of them, and the
+   button with what the owner is told before pressing it. The table scrolls sideways
+   inside its box rather than widening the column. */
+.acceptance {
+  margin: 12px 0;
+}
+
+.acceptance h4 {
+  margin: 8px 0 4px;
+  font-size: 0.9rem;
+}
+
+.acceptance ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.acceptance .requirements {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.acceptance table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.acceptance th,
+.acceptance td {
+  padding: 4px 10px 4px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.acceptance .accept-bar {
+  margin-top: 12px;
+}
+
+/* SCE's count, one line to each of its words, the number first so the column reads down.
+   A requirement SCE finds the design leaves unsettled is marked, and read before pressing accept. */
+.acceptance .tally {
+  list-style: none;
+  padding-left: 0;
+}
+
+.acceptance .tally li {
+  padding: 2px 8px;
+  border-left: 3px solid transparent;
+}
+
+.acceptance .tally li.unsettled {
+  font-weight: 600;
+  border-left-color: var(--warn-line);
+  background: var(--warn-bg);
+}
+
+.acceptance .tally .count {
+  display: inline-block;
+  min-width: 2.2em;
+  margin-right: 4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .pseudo,
