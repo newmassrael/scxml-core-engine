@@ -255,12 +255,13 @@ fn svg_words(path: &Path) -> Vec<String> {
 /// A document that is not a statechart has no boxes to draw, so it is set
 /// as the table of every value it states: `fields-<n>.svg`, well-formed,
 /// carrying the document's own values, in the page's language, and
-/// checkable for drift like a figure.
+/// checkable for drift like a figure. (An algorithm has no picture of its
+/// own, so the table is all it gets.)
 #[test]
 fn a_document_of_another_kind_is_set_as_its_field_table() {
     let dir = scratch("diagram-fields");
     let out = dir.join("sheets");
-    let run = diagram(&kind_example("lookup"), &out, &[]);
+    let run = diagram(&kind_example("algorithm"), &out, &[]);
     assert!(
         run.status.success(),
         "{}",
@@ -273,12 +274,12 @@ fn a_document_of_another_kind_is_set_as_its_field_table() {
         .collect();
     assert_eq!(printed, vec![out.join("fields-1.svg")]);
     let words = svg_words(&printed[0]);
-    assert_eq!(words[0], "field table: lookup");
-    for expected in ["document.entries", "NONE", "LOW", "MEDIUM", "HIGH", "level"] {
+    assert_eq!(words[0], "field table: algorithm");
+    for expected in ["document.signature", "data", "bytes", "uint32"] {
         assert!(words.iter().any(|w| w == expected), "{expected}: {words:?}");
     }
 
-    let check = diagram(&kind_example("lookup"), &out, &["--assert-unchanged"]);
+    let check = diagram(&kind_example("algorithm"), &out, &["--assert-unchanged"]);
     assert!(
         check.status.success(),
         "a fresh set is unchanged: {}",
@@ -286,16 +287,16 @@ fn a_document_of_another_kind_is_set_as_its_field_table() {
     );
 
     let korean = dir.join("korean");
-    let run = diagram_with(&kind_example("lookup"), &korean, &["--lexicon", "ko"]);
+    let run = diagram_with(&kind_example("algorithm"), &korean, &["--lexicon", "ko"]);
     assert!(
         run.status.success(),
         "{}",
         String::from_utf8_lossy(&run.stderr)
     );
     let words = svg_words(&korean.join("fields-1.svg"));
-    assert!(words[0].ends_with(": lookup"), "{words:?}");
+    assert!(words[0].ends_with(": algorithm"), "{words:?}");
     assert_ne!(
-        words[0], "field table: lookup",
+        words[0], "field table: algorithm",
         "the title is in the page's language"
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -338,7 +339,7 @@ fn a_manifest_is_refused_for_a_document_that_is_not_a_statechart() {
 fn a_table_that_does_not_fit_is_refused_and_nothing_is_written() {
     let dir = scratch("diagram-fields-refused");
     let out = dir.join("sheets");
-    let run = diagram_with(&kind_example("lookup"), &out, &["--min-pt", "96"]);
+    let run = diagram_with(&kind_example("algorithm"), &out, &["--min-pt", "96"]);
     assert_eq!(run.status.code(), Some(20));
     assert!(run.stdout.is_empty());
     let stderr = String::from_utf8(run.stderr).expect("utf-8");
@@ -350,6 +351,30 @@ fn a_table_that_does_not_fit_is_refused_and_nothing_is_written() {
             .as_str()
             .is_some_and(|m| m.contains("field table")),
         "the message names the table: {record}"
+    );
+    assert!(!out.exists(), "a refusal writes nothing");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A picture that cannot be set is refused by its own title, and the table
+/// beside it is not written either: a set missing a sheet reads like a
+/// complete one.
+#[test]
+fn a_picture_that_does_not_fit_is_refused_by_name_and_nothing_is_written() {
+    let dir = scratch("diagram-picture-refused");
+    let out = dir.join("sheets");
+    let run = diagram_with(&kind_example("lookup"), &out, &["--min-pt", "96"]);
+    assert_eq!(run.status.code(), Some(20));
+    assert!(run.stdout.is_empty());
+    let stderr = String::from_utf8(run.stderr).expect("utf-8");
+    let record: serde_json::Value =
+        serde_json::from_str(stderr.lines().next().expect("one record")).expect("json");
+    assert_eq!(record["code"], "cli/diagram-does-not-fit", "{record}");
+    assert!(
+        record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("lookup: mapping")),
+        "the message names the picture: {record}"
     );
     assert!(!out.exists(), "a refusal writes nothing");
     let _ = std::fs::remove_dir_all(&dir);

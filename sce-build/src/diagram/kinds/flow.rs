@@ -316,7 +316,7 @@ pub fn dataflow(
         b.draw(&mut c, out_x, out_tops[o], None)?;
     }
     Ok(vec![Picture {
-        stem: "dataflow",
+        stem: "dataflow".into(),
         sheet: c.finish(page, &title)?,
     }])
 }

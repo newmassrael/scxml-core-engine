@@ -114,7 +114,7 @@ pub fn observer(m: &ObserverModel, lexicon: &Lexicon, page: Page) -> Result<Vec<
     let scalars = facts(m, &["name"])?;
     super::caption(&mut c, 0.0, y, &scalars)?;
     Ok(vec![Picture {
-        stem: "thresholds",
+        stem: "thresholds".into(),
         sheet: c.finish(page, &title)?,
     }])
 }

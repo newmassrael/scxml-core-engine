@@ -208,7 +208,7 @@ fn curve(m: &InterpolationModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pi
     let facts = facts(m, &["name"])?;
     caption(&mut c, left, axis_label_top + line + 2.0 * gap, &facts)?;
     Ok(vec![Picture {
-        stem: "curve",
+        stem: "curve".into(),
         sheet: c.finish(page, &title)?,
     }])
 }
@@ -328,7 +328,7 @@ fn grid(m: &InterpolationModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pic
     let below = top + (r + 1) as f64 * cell_h + gap + line;
     caption(&mut c, 0.0, below, &lines)?;
     Ok(vec![Picture {
-        stem: "grid",
+        stem: "grid".into(),
         sheet: c.finish(page, &title)?,
     }])
 }

@@ -526,7 +526,7 @@ pub fn codec(m: &CodecModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pictur
     top += caption(&mut c, 0.0, top, &facts(m, &["name"])?)?;
     caption(&mut c, 0.0, top + gap, &legend(m, lexicon)?)?;
     Ok(vec![Picture {
-        stem: "layout",
+        stem: "layout".into(),
         sheet: c.finish(page, &title)?,
     }])
 }

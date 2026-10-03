@@ -38,6 +38,7 @@ use crate::forge::page::Lexicon;
 pub mod codec;
 pub mod flow;
 pub mod interpolation;
+pub mod mapping;
 pub mod observer;
 pub mod slots;
 pub mod timer;
@@ -46,7 +47,7 @@ pub mod timer;
 /// extension) and the sheet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picture {
-    pub stem: &'static str,
+    pub stem: String,
     pub sheet: Sheet,
 }
 
@@ -70,15 +71,32 @@ pub fn pictures(
         | ForgeDocument::Validator(_) => flow::dataflow(doc, lexicon, page),
         ForgeDocument::Observer(m) => observer::observer(m, lexicon, page),
         ForgeDocument::Timer(m) => timer::timer(m, lexicon, page),
+        ForgeDocument::Lookup(m) => mapping::lookup(m, lexicon, page),
+        ForgeDocument::Enum(m) => mapping::enumeration(m, lexicon, page),
+        ForgeDocument::EventSchema(m) => mapping::event_schema(m, lexicon, page),
         // Read from the field table alone, for now.
-        ForgeDocument::Lookup(_)
-        | ForgeDocument::Procedure(_)
+        ForgeDocument::Procedure(_)
         | ForgeDocument::Algorithm(_)
         | ForgeDocument::Link(_)
-        | ForgeDocument::Worker(_)
-        | ForgeDocument::Enum(_)
-        | ForgeDocument::EventSchema(_) => Ok(Vec::new()),
+        | ForgeDocument::Worker(_) => Ok(Vec::new()),
     }
+}
+
+/// The sheets a table was set on as pictures: `stem` for the first and
+/// `stem-2`, `stem-3`, ... for those it continues on.
+pub(crate) fn numbered(stem: &str, sheets: Vec<Sheet>) -> Vec<Picture> {
+    sheets
+        .into_iter()
+        .enumerate()
+        .map(|(n, sheet)| Picture {
+            stem: if n == 0 {
+                stem.to_string()
+            } else {
+                format!("{stem}-{}", n + 1)
+            },
+            sheet,
+        })
+        .collect()
 }
 
 /// A box of text, measured but not yet placed: what the dataflow and the

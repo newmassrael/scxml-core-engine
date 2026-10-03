@@ -85,7 +85,7 @@ pub fn timer(m: &TimerModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pictur
     let scalars = facts(m, &["name", "period_us", "fire_event"])?;
     caption(&mut c, 0.0, axis_y + body * 0.7 + line + line, &scalars)?;
     Ok(vec![Picture {
-        stem: "timeline",
+        stem: "timeline".into(),
         sheet: c.finish(page, &title)?,
     }])
 }

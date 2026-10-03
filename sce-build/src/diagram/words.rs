@@ -100,6 +100,14 @@ pub enum Phrase {
     InsideZone,
     /// What a timer is drawn as.
     Timeline,
+    /// What a lookup, an enum and an event schema are drawn as, the key
+    /// of a lookup's last row, and the heads of their columns.
+    Mapping,
+    Variants,
+    Payload,
+    Otherwise,
+    Name,
+    Type,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -157,6 +165,12 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::OutsideZone) => "outside",
         ("en", Phrase::InsideZone) => "inside",
         ("en", Phrase::Timeline) => "timeline",
+        ("en", Phrase::Mapping) => "mapping",
+        ("en", Phrase::Variants) => "variants",
+        ("en", Phrase::Payload) => "payload",
+        ("en", Phrase::Otherwise) => "otherwise",
+        ("en", Phrase::Name) => "name",
+        ("en", Phrase::Type) => "type",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -207,6 +221,12 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::OutsideZone) => "밖",
         ("ko", Phrase::InsideZone) => "안",
         ("ko", Phrase::Timeline) => "타임라인",
+        ("ko", Phrase::Mapping) => "대응표",
+        ("ko", Phrase::Variants) => "변형",
+        ("ko", Phrase::Payload) => "페이로드",
+        ("ko", Phrase::Otherwise) => "그 외",
+        ("ko", Phrase::Name) => "이름",
+        ("ko", Phrase::Type) => "형식",
         _ => return None,
     })
 }
@@ -250,7 +270,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 50] = [
+    const ALL: [Phrase; 56] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -301,6 +321,12 @@ mod tests {
         Phrase::OutsideZone,
         Phrase::InsideZone,
         Phrase::Timeline,
+        Phrase::Mapping,
+        Phrase::Variants,
+        Phrase::Payload,
+        Phrase::Otherwise,
+        Phrase::Name,
+        Phrase::Type,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered
