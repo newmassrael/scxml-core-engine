@@ -69,13 +69,22 @@ class ProcessTimeout(Exception):
     """A trusted program did not finish in the time it was given."""
 
 
-def run(argv: list, *, cwd=None, timeout: float | None = None) -> subprocess.CompletedProcess:
+def run(argv: list, *, cwd=None, timeout: float | None = None,
+        stdin_text: str | None = None) -> subprocess.CompletedProcess:
     """Run a program this tree trusts to end, and read what it printed as text.
 
     A clock is the only protection: the product's generator is code this
-    repository builds, and what it is handed is a document, not a program."""
+    repository builds, and what it is handed is a document, not a program.
+
+    `stdin_text` is what the program reads on its standard input, for a text
+    too large for a command line (a specification). ⚠ Text in both directions is
+    UTF-8, named rather than left to the locale: every program started here is
+    this repository's Rust, which writes and reads UTF-8, and a console code
+    page (a Korean Windows one is not UTF-8) would otherwise turn a specification
+    into other characters on the way in."""
     try:
-        return subprocess.run(argv, capture_output=True, text=True, cwd=cwd, timeout=timeout)
+        return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
+                              cwd=cwd, timeout=timeout, input=stdin_text)
     except subprocess.TimeoutExpired as exc:
         raise ProcessTimeout(
             f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc

@@ -19,6 +19,13 @@ name: Authoring Core (domain-free)
 # skipped, so the lane passed without judging them. Measured 2026-09-24, those
 # 86 ran nowhere on a generator change — the push selected this gate only for
 # `tools/authoring/**` — so the paths below include what they run through.
+#
+# The works tools (`works_list`, `works_read`, `works_save_model`) run a second
+# product binary, the workbench application's `sce-work` (`app-core`), and the
+# cases that drive them skip the same way where it is not built. So that job
+# builds it too and refuses to run without it, and `app-core/**` is among the
+# paths: a change to the command layer reaches the one caller that is not Rust.
+# `scripts/package_sce_author.sh` is too, since the bundle cases run it.
 
 on:
   push:
@@ -27,6 +34,8 @@ on:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
+      - 'scripts/package_sce_author.sh'
+      - 'app-core/**'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
@@ -39,6 +48,8 @@ on:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
+      - 'scripts/package_sce_author.sh'
+      - 'app-core/**'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
@@ -88,7 +99,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml', 'app-core/**/*.rs', 'app-core/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-codegen-
       - name: Build sce-codegen
@@ -96,11 +107,15 @@ jobs:
           source scripts/lib/sce_codegen.sh
           sce_codegen_drop_stale_release
           cargo build --bin sce-codegen --features cli -p sce-build
-      - name: Refuse to run the suite without the generator
-        # The 86 run-driven cases skip when this file is absent, and a skip
-        # reads as a pass. Built one step up, so absence is a broken build
-        # step, not a reason to judge less.
-        run: test -x target/debug/sce-codegen
+      - name: Build sce-work
+        # The workbench application's command layer, which the works tools run
+        # to read a work and save its model. Its own step, as the generator's is.
+        run: cargo build -p sce-app-core --features cli --bin sce-work
+      - name: Refuse to run the suite without the generator and sce-work
+        # The 86 run-driven cases skip when the generator is absent, and the
+        # works cases when sce-work is, and a skip reads as a pass. Built one
+        # step up, so absence is a broken build step, not a reason to judge less.
+        run: test -x target/debug/sce-codegen && test -x target/debug/sce-work
       - uses: actions/setup-python@v7
         with:
           python-version: '3.x'

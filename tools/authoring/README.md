@@ -909,6 +909,41 @@ written in its file). An algorithm has no picture of its own: it is reviewed
 on the pseudocode page, whose steps are the reading, and in its field table.
 The review artefact follows the kind's shape.
 
+**Works: the specification the owner keeps in the workbench application.**
+`works_list`, `works_read` and `works_save_model` connect this server to the
+application (`app/`, `app-core/`). The owner writes the specification there and
+asks an AI client to model it; the client reads the text from the work, writes
+and checks the model as above, and saves it back, where the owner sees the
+figures SCE draws of it beside their text. They do it by running `sce-work`,
+the application's own command layer, and never by opening the folder: the
+desktop application and this server both save, a save is a compare-and-swap on
+the revision the writer read under a lock, and a second implementation of that
+here would be a second definition of when two saves conflict. `sce-work` is
+found as `SCE_WORK` names it, else `target/debug/sce-work` of the tree
+(`cargo build -p sce-app-core --features cli --bin sce-work`), and a bundle
+carries it when packaged with `--work PATH`. The works folder is the one the
+application opens (`SCE_WORKS_DIR`, else the per-user data directory).
+
+- `works_read` gives the text with its `revision` and the model with its
+  `revision`, the text revision it was `written_for`, and its `standing`
+  (`current`, `behind` or `unstated`: the command layer's own word, which the
+  application shows the same way).
+- `works_save_model` runs the product's check first, exactly as `validate_scxml`
+  does (and takes the owner's `profile` the same way): a model it refuses is not
+  saved and comes back with the product's records, so a work's model chain holds
+  documents SCE accepts. A save from a `base` that is no longer the current
+  model is a `conflict` and writes nothing. The client says which text it wrote
+  the model from (`source_revision`); without it the application can only say
+  that nobody recorded it.
+- The owner's text is the owner's: no tool writes it, and none removes a work.
+  The works tools are refused to a remote caller, like a path: the folder is
+  the machine this server runs on.
+
+`tests/test_the_works_folder_is_reached_through_the_applications_own_command.py`
+drives them against the real `sce-work` and generator, including a text of
+three-byte scalars across both pipes; the authoring lane builds `sce-work` and
+refuses to run without it, so there a skip is a broken build step.
+
 None of these checks whether the SCXML agrees with the prose specification;
 the specification owner compares the page and the figures with the prose. The
 pack-based `check` and `pseudo` tools below serve the separate

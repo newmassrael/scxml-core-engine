@@ -30,6 +30,9 @@ So the shape a caller gets is:
     scxml_accept            record the OWNER's acceptance, on their word only
     scxml_acceptance_check  whether that acceptance still holds
     scxml_acceptance_impact which of several acceptances a changed shared file touches
+    works_list              the specifications the owner keeps in the workbench application
+    works_read              one work: its text now, and the model saved for it
+    works_save_model        save the model written for it, once the product accepts it
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -74,7 +77,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
-from . import house_rule, requirement_set
+from . import house_rule, requirement_set, works
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -214,7 +217,15 @@ SERVER_INSTRUCTIONS = (
     "without the owner's explicit acceptance, and when you do, give it the "
     "specification and the decision record the design was written from as "
     "its sources, and the profile it is held to. No pack or binding is "
-    "needed for this flow."
+    "needed for this flow. "
+    "When the owner keeps the specification in the workbench application, "
+    "read it from there: works_list names their works and works_read gives "
+    "the text as it is now with its revision. Write and check the model as "
+    "above, then save it with works_save_model, giving the revision you read "
+    "as source_revision, so the owner sees the figures SCE draws of it beside "
+    "their text. The text is the owner's: nothing here writes it, and a work "
+    "whose text moved after your model was written reads as `behind` until "
+    "you read it again and save the model again."
 )
 
 _PACK_ARG = {
@@ -1212,6 +1223,81 @@ TOOLS = [
         },
     },
     {
+        "name": "works_list",
+        "description": (
+            "List the works the owner keeps in the workbench application: each "
+            "one's `id` and title. A work is a specification the owner wrote "
+            "there, and the model you write from it is saved back to the same "
+            "work, where the owner sees it drawn beside the text. Use it when the "
+            "owner names a work, or asks you to work on 'the specification in "
+            "the workbench'; ask them which when several could be meant. "
+            "`unreadable` lists folders that should have been works and could "
+            "not be read. Local servers only: the works folder is on the machine "
+            "this server runs on."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "works_read",
+        "description": (
+            "Read a work: the specification text as it is now (`source`, with "
+            "its `revision`) and the model saved for it, if any (`model`, with "
+            "its `revision`, the text revision it was `written_for`, its "
+            "`standing` -- `current`, `behind` or `unstated` -- and its SCXML). "
+            "Read the specification from here, not from memory: the owner edits "
+            "it in the application, and `source.revision` is the version you "
+            "are about to write a model for. When `model.standing` is `behind` "
+            "the text moved on after that model was written: read the text "
+            "again and write the model again from it. A work that has no text "
+            "yet has `source` null: tell the owner, and write nothing. "
+            "Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+            },
+        },
+    },
+    {
+        "name": "works_save_model",
+        "description": (
+            "Save the SCXML model you wrote as the work's model, so the owner "
+            "sees what SCE draws of it in the application. Give `source_revision` "
+            "= the `source.revision` works_read returned for the text you wrote "
+            "this model from (without it the application can only say that nobody "
+            "recorded which text the model is about), and `base` = the "
+            "`model.revision` works_read returned (omit it for a work with no "
+            "model yet). The product's own check runs first, exactly as "
+            "validate_scxml runs it: a model it REFUSES is not saved, and the "
+            "answer is its refusal, to fix in the draft. A save from a `base` "
+            "that is no longer the current model is refused as a conflict and "
+            "writes nothing: read the work again, and decide what your model "
+            "becomes now. An accepted model that leaves something open comes "
+            "back with `open`: tell the owner each line. Saving is not the "
+            "owner's acceptance of the design, and nothing here records one. "
+            "Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work", "model_text"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "model_text": {"type": "string", "description": (
+                    "The SCXML document, exactly as you checked it.")},
+                "source_revision": {"type": "string", "description": (
+                    "The `source.revision` of the specification text the model was "
+                    "written from.")},
+                "base": {"type": "string", "description": (
+                    "The `model.revision` read from the work; omit for a first model.")},
+                # The check that gates the save is validate_scxml's, so it is held
+                # to the owner's profile the same way.
+                **_PROFILE_INPUT,
+            },
+        },
+    },
+    {
         "name": "scaffold",
         "description": (
             "Write a binding skeleton from the interface model, as a file that "
@@ -1670,6 +1756,14 @@ class _Staging:
             raise ToolArgumentError(
                 f"'{key}' names a file on the machine this server runs on, "
                 f"which a remote caller cannot reach; send it as '{key}_text'")
+
+    def refuse_works(self, tool: str) -> None:
+        """The works folder is this machine's, like a path: a remote caller is
+        not offered it."""
+        if self.remote:
+            raise ToolArgumentError(
+                f"'{tool}' reads the works folder of the machine this server runs on, "
+                f"which a remote caller cannot reach")
 
     def local_path(self, args: dict, key: str, what: str) -> pathlib.Path | None:
         """A path argument naming where something is WRITTEN or read
@@ -2539,8 +2633,95 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
+def _works_refused(exc: works.WorksError) -> dict:
+    """A refusal of the works folder, as the data a client branches on and the
+    sentence it reads: the command layer's `kind`, its words, and its facts."""
+    answer = {"refused": exc.kind, "message": str(exc)}
+    if exc.detail is not None:
+        answer["detail"] = exc.detail
+    return _failure(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _revision_arg(args: dict, key: str) -> str | None:
+    """A revision as works_read returned it, or None when the caller left it out.
+    Its shape only: whether a work has such a revision is the folder's to say."""
+    value = args.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise ToolArgumentError(
+            f"'{key}' has to be a revision exactly as works_read returned it "
+            f"(64 lowercase hexadecimal digits), not {value!r}")
+    return value
+
+
+def _works_list_tool(args: dict, staging: _Staging) -> dict:
+    staging.refuse_works("works_list")
+    try:
+        listing = works.list_works()
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    return _text(json.dumps({"version": 1, **listing}, indent=2, ensure_ascii=False) + "\n")
+
+
+def _works_read_tool(args: dict, staging: _Staging) -> dict:
+    staging.refuse_works("works_read")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    try:
+        read = works.read_work(work)
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    if read["source"] is None:
+        read["next"] = "this work has no text yet: tell the owner, and write no model"
+    else:
+        read["next"] = (
+            "write the model from `source.text`, check it with validate_scxml, then "
+            "save it with works_save_model giving source_revision = source.revision"
+            + (" and base = model.revision" if read["model"] is not None else ""))
+    return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
+
+
+def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
+    """Save a model to a work, after the product's own check has accepted it.
+
+    ⚠ The check comes first and is the product's, the one `validate_scxml` runs: a
+    work's model chain holds documents SCE accepts, because everything the owner
+    does with a model afterwards (the figures, an acceptance) reads it through the
+    same product and a refused document would make each of them refuse in turn.
+    A model that is refused is told back, with the product's own records, and the
+    work keeps the model it had.
+    """
+    staging.refuse_works("works_save_model")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    text = args.get("model_text")
+    if not isinstance(text, str) or not text.strip():
+        raise ToolArgumentError("'model_text' is required: the SCXML document, as text")
+    source_revision = _revision_arg(args, "source_revision")
+    base = _revision_arg(args, "base")
+    document = staging.write("model.scxml", text, "model")
+    report, refusal = run_scxml_validation(
+        document, profile=_profile_file(args, staging), cwd=staging.dir)
+    if refusal:
+        return _failure("not saved: the product's check refuses this model, so the work "
+                        "keeps the model it has. Fix the draft and save again.\n" + refusal)
+    try:
+        saved = works.save_model(work, text, base, source_revision)
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    answer = {"version": 1, "work": work, **saved}
+    matters = json.loads(report).get("open")
+    if matters:
+        answer["open"] = matters
+        answer["next"] = ("saved is not finished: tell the owner each line of `open` -- "
+                          "the model leaves them to a person")
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
 # The tools that need no pack: each takes its files by path or as text.
 _PACK_FREE = {
+    "works_list": _works_list_tool,
+    "works_read": _works_read_tool,
+    "works_save_model": _works_save_model_tool,
     "scxml_kinds": _kinds_tool,
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,

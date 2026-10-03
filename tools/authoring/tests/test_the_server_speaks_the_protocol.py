@@ -132,7 +132,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
              "scxml_requirements", "scxml_scenarios", "scxml_house_rule",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
-             "scxml_acceptance_impact", "scxml_accepted_for"},
+             "scxml_acceptance_impact", "scxml_accepted_for",
+             "works_list", "works_read", "works_save_model"},
             names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):
@@ -178,7 +179,13 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `scxml_acceptance_impact` is an adapter over the product's own
         # `acceptance-impact`, like the other acceptance tools: the question is
         # about the owner's records, and no pack is in it.
+        # `works_list`, `works_read` and `works_save_model` reach the workbench
+        # application's works folder through its own `sce-work`, a step with no
+        # pack in it and no command-line face here: the owner's text is saved
+        # in the application, and a second route to the same folder would be a
+        # second definition of what a save is.
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
+                    "works_list", "works_read", "works_save_model",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
