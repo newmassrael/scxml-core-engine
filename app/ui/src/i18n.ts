@@ -61,6 +61,25 @@ const en = {
   contractBroken:
     "The application answered in a shape this screen does not know ({detail}). The two are probably different versions.",
   loading: "Loading...",
+  modelTitle: "Model, as SCE draws it",
+  modelNone:
+    "No model yet. When an authoring client saves a model for this work, the figures SCE draws of it appear here.",
+  modelReading: "Reading the model...",
+  modelDrawing: "SCE is drawing the model...",
+  modelRead: "Read again",
+  modelZoom: "Size",
+  modelCurrent: "This model was written for the text as it is now.",
+  modelBehind:
+    "This model was written for an earlier text ({written}). The text is now at {now}. Ask the authoring client to read it again and save the model.",
+  modelBehindUnknown:
+    "This model was written for an earlier text ({written}), and the text has since moved on.",
+  modelUnstated: "Nothing records which text this model was written for.",
+  modelRevision: "Model revision",
+  modelGenerator: "Drawn by {generator}",
+  modelScxml: "The model's SCXML",
+  modelNotDrawn: "SCE did not draw this model.",
+  modelNotDrawnHint:
+    "The model is saved and is shown below as text. What SCE refused is its own answer, not a fault of this screen.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -121,6 +140,25 @@ const ko: Record<Key, string> = {
   contractBroken:
     "애플리케이션이 이 화면이 모르는 모양으로 답했습니다 ({detail}). 둘의 버전이 다를 가능성이 큽니다.",
   loading: "불러오는 중...",
+  modelTitle: "모델 (SCE가 그린 그림)",
+  modelNone:
+    "아직 모델이 없습니다. AI 클라이언트가 이 작업의 모델을 저장하면 SCE가 그린 그림이 여기에 나타납니다.",
+  modelReading: "모델을 읽는 중...",
+  modelDrawing: "SCE가 모델을 그리는 중...",
+  modelRead: "다시 읽기",
+  modelZoom: "크기",
+  modelCurrent: "이 모델은 지금의 원문을 보고 쓴 것입니다.",
+  modelBehind:
+    "이 모델은 이전 원문({written})을 보고 쓴 것입니다. 지금 원문은 {now}입니다. AI 클라이언트가 원문을 다시 읽고 모델을 저장하게 하세요.",
+  modelBehindUnknown:
+    "이 모델은 이전 원문({written})을 보고 쓴 것이며, 그 뒤로 원문이 바뀌었습니다.",
+  modelUnstated: "이 모델이 어느 원문을 보고 쓰였는지 기록이 없습니다.",
+  modelRevision: "모델 리비전",
+  modelGenerator: "그린 곳: {generator}",
+  modelScxml: "모델의 SCXML 전문",
+  modelNotDrawn: "SCE가 이 모델을 그리지 않았습니다.",
+  modelNotDrawnHint:
+    "모델은 저장되어 있고 아래에 글로 보입니다. SCE가 거절한 것은 SCE 자신의 답이며 이 화면의 결함이 아닙니다.",
 };
 
 export type Locale = "en" | "ko";

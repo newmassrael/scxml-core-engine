@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use sce_app_core::{default_root, WorkStore};
+use sce_app_core::{default_renderer, default_root, SceCodegen, WorkStore};
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
 use sce_web_shell::server::{serve, Limits};
@@ -90,14 +90,22 @@ fn run() -> Result<(), String> {
         .local_addr()
         .map_err(|e| format!("the listener has no address: {e}"))?;
 
+    let figures = default_renderer();
     eprintln!("works folder: {}", root.display());
+    eprintln!(
+        "SCE generator: {}",
+        SceCodegen::discover().map_or_else(
+            || "none found (set SCE_CODEGEN); models are stored but not drawn".to_string(),
+            |g| g.program().display().to_string()
+        )
+    );
     if generated {
         eprintln!("open:         http://{bound}/#token={token}");
     } else {
         eprintln!("open:         http://{bound}/#token=<SCE_WEB_TOKEN>");
     }
 
-    let shell = Arc::new(Shell::new(WorkStore::at(root), token, assets));
+    let shell = Arc::new(Shell::new(WorkStore::at(root), figures, token, assets));
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

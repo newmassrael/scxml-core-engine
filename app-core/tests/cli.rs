@@ -17,7 +17,18 @@ use std::process::{Command, Output, Stdio};
 use serde_json::{json, Value};
 
 fn run(root: &Path, command: &str, args: Option<&Value>) -> Output {
+    run_with(root, command, args, &[])
+}
+
+/// The same, with `environment` set for the process.
+fn run_with(
+    root: &Path,
+    command: &str,
+    args: Option<&Value>,
+    environment: &[(&str, &str)],
+) -> Output {
     let mut process = Command::new(env!("CARGO_BIN_EXE_sce-work"));
+    process.envs(environment.iter().copied());
     process
         .arg("--root")
         .arg(root)
@@ -66,7 +77,10 @@ fn create(root: &Path, title: &str) -> String {
 fn describe_lists_the_commands_and_the_root() {
     let root = common::scratch("cli-describe");
     let described = ok(&run(&root, "describe", None));
-    assert_eq!(described["command_set_version"], 1);
+    assert_eq!(
+        described["command_set_version"],
+        sce_app_core::COMMAND_SET_VERSION
+    );
     let names: Vec<&str> = described["commands"]
         .as_array()
         .unwrap()
@@ -173,6 +187,53 @@ fn other_refusals_exit_with_one_and_name_their_kind() {
         assert_eq!(status, 1, "{command} {args}");
         assert_eq!(error["kind"], kind, "{command} {args}");
     }
+}
+
+/// The model travels through the command as the text does, and drawing it
+/// when there is no generator is its own status, five, and its own kind: not
+/// a refusal of the request, and not a conflict.
+#[test]
+fn a_model_is_saved_and_read_and_drawing_it_without_a_generator_is_status_five() {
+    let root = common::scratch("cli-model");
+    let id = create(&root, "Door controller");
+    let text = ok(&run(
+        &root,
+        "save_source",
+        Some(&json!({ "id": id, "text": "The door opens." })),
+    ));
+    let model = "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>";
+    let saved = ok(&run(
+        &root,
+        "save_model",
+        Some(&json!({ "id": id, "text": model, "written_for": text["revision"] })),
+    ));
+    assert_eq!(saved["outcome"], "saved");
+
+    let read = ok(&run(&root, "read_model", Some(&json!({ "id": id }))));
+    assert_eq!(read["model"]["text"], model);
+    assert_eq!(read["model"]["written_for"], text["revision"]);
+    assert_eq!(read["standing"], "current");
+
+    let history = ok(&run(&root, "model_history", Some(&json!({ "id": id }))));
+    assert_eq!(history["entries"].as_array().unwrap().len(), 1);
+
+    let output = run_with(
+        &root,
+        "figures",
+        Some(&json!({ "id": id })),
+        &[("SCE_CODEGEN", "/nonexistent/sce-codegen")],
+    );
+    let (status, error) = refusal(&output);
+    assert_eq!(status, 5);
+    assert_eq!(error["kind"], "sce-unavailable");
+
+    // A stale model base is the same conflict a text has, status three.
+    let (status, error) = refusal(&run(
+        &root,
+        "save_model",
+        Some(&json!({ "id": id, "text": "<scxml/>" })),
+    ));
+    assert_eq!((status, error["kind"].as_str()), (3, Some("conflict")));
 }
 
 #[test]

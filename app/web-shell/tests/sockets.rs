@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sce_app_core::WorkStore;
+use sce_app_core::{NoRenderer, WorkStore};
 use sce_web_shell::server::{serve, Limits};
 use sce_web_shell::{Shell, MAX_BODY_BYTES};
 use serde_json::json;
@@ -59,6 +59,7 @@ impl Running {
         let scratch = Scratch::new(name);
         let shell = Arc::new(Shell::new(
             WorkStore::at(scratch.0.join("works")),
+            Box::new(NoRenderer),
             TOKEN.to_string(),
             None,
         ));

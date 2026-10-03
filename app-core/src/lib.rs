@@ -21,6 +21,7 @@
 pub mod clock;
 pub mod commands;
 pub mod error;
+pub mod figures;
 mod lock;
 pub mod revision;
 pub mod store;
@@ -28,8 +29,12 @@ pub mod store;
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
 pub use error::StoreError;
+pub use figures::{
+    default_renderer, FigureRenderer, FigureRequest, FigureSet, NoRenderer, RenderError,
+    SceCodegen, Sheet,
+};
 pub use revision::Revision;
 pub use store::{
-    default_root, HistoryEntry, Listing, Saved, SourceText, Unreadable, Work, WorkId, WorkStore,
-    MAX_SOURCE_BYTES,
+    default_root, HistoryEntry, Listing, ModelText, Saved, SourceText, Unreadable, Work, WorkId,
+    WorkStore, MAX_MODEL_BYTES, MAX_SOURCE_BYTES,
 };

@@ -17,8 +17,10 @@ import {
   conflictRevisions,
   ContractError,
   parseDescribed,
+  parseFigures,
   parseHistory,
   parseListing,
+  parseReadModel,
   parseReadSource,
   parseSaved,
   parseWork,
@@ -44,6 +46,10 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_source: parseReadSource,
   save_source: parseSaved,
   history: parseHistory,
+  save_model: parseSaved,
+  read_model: parseReadModel,
+  model_history: parseHistory,
+  figures: parseFigures,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -85,12 +91,40 @@ describe("the replies the core gives", () => {
     expect(parseHistory(replies.answers["history"])).toHaveLength(2);
   });
 
+  it("carry what the screen shows of a model: where it stands, and the sheets in SCE's order", () => {
+    expect(parseReadModel(replies.answers["read_model_none"])).toMatchObject({ model: null, standing: null });
+    // The same model, for the text before and after it moved on.
+    expect(parseReadModel(replies.answers["read_model"]).standing).toBe("behind");
+    expect(parseReadModel(replies.answers["read_model_kept"]).standing).toBe("current");
+    const model = parseReadModel(replies.answers["read_model"]);
+    expect(model.model?.written_for).not.toBe(model.source_head);
+    const drawn = parseFigures(replies.answers["figures"]);
+    expect(drawn.sheets.map((s) => s.name)).toEqual(["picture.svg", "fields-1.svg"]);
+    expect(drawn.sheets[0]?.svg.startsWith("<svg")).toBe(true);
+    expect(drawn.generator).toBe("fake-sce 0");
+  });
+
   it("include a refusal for every kind the screen handles, each in the shape of a refusal", () => {
-    for (const kind of ["conflict", "not-found", "invalid-id", "invalid-title", "bad-request", "unknown-command"]) {
+    for (const kind of [
+      "conflict",
+      "not-found",
+      "invalid-id",
+      "invalid-title",
+      "bad-request",
+      "unknown-command",
+      "sce-refused",
+      "sce-unavailable",
+    ]) {
       const refusal = asCommandError(replies.refusals[kind]);
       expect(refusal, kind).not.toBeNull();
       expect(refusal?.kind).toBe(kind);
     }
+  });
+
+  it("give SCE's refusal the product's own code, for the screen to show beside its sentence", () => {
+    const refusal = asCommandError(replies.refusals["sce-refused"]);
+    expect(refusal?.detail).toEqual({ code: "cli/diagram-does-not-fit" });
+    expect(refusal?.message).toContain("cli/diagram-does-not-fit");
   });
 
   it("give a conflict the two revisions the screen offers the person", () => {
@@ -126,6 +160,15 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWork(work)).toThrow(/work\.title/);
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
+  });
+
+  it("is refused when a model's standing is a word the screen does not know, or a sheet has no svg", () => {
+    const read = replies.answers["read_model"] as Record<string, unknown>;
+    expect(() => parseReadModel({ ...read, standing: "stale" })).toThrow(/read_model\.standing/);
+    expect(() => parseReadModel({ ...read, model: null })).toThrow(/null when there is no model/);
+    const figures = replies.answers["figures"] as { sheets: Record<string, unknown>[] };
+    expect(() => parseFigures({ ...figures, sheets: [{ name: "a.svg" }] })).toThrow(/figures\.sheets\[0\]\.svg/);
+    expect(() => parseFigures({ ...figures, generator: 3 })).toThrow(/figures\.generator/);
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

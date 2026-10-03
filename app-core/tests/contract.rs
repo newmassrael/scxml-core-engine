@@ -20,8 +20,13 @@
 
 mod common;
 
-use sce_app_core::{call, CommandError, FixedClock, WorkStore, COMMANDS, COMMAND_SET_VERSION};
+use sce_app_core::{
+    call, CommandError, FigureRenderer, FixedClock, NoRenderer, WorkStore, COMMANDS,
+    COMMAND_SET_VERSION,
+};
 use serde_json::{json, Map, Value};
+
+use common::{FakeRenderer, RefusingRenderer};
 
 const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/replies.json");
 
@@ -45,11 +50,21 @@ fn name_the_unstable(value: &mut Value, from: &str, to: &str) {
 }
 
 fn answer(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
-    call(store, name, args).unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
+    call(store, &FakeRenderer, name, args).unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
 }
 
 fn refusal(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
-    let error: CommandError = call(store, name, args).expect_err("the command should be refused");
+    refusal_by(store, &FakeRenderer, name, args)
+}
+
+fn refusal_by(
+    store: &WorkStore<FixedClock>,
+    renderer: &dyn FigureRenderer,
+    name: &str,
+    args: Value,
+) -> Value {
+    let error: CommandError =
+        call(store, renderer, name, args).expect_err("the command should be refused");
     serde_json::to_value(error).unwrap()
 }
 
@@ -119,6 +134,87 @@ fn replies() -> Value {
     answers.insert(
         "history".into(),
         answer(&store, "history", json!({"id": id})),
+    );
+
+    // The model: none yet, then saved for the first text, then read as the text
+    // moved on, then kept for the new one.
+    answers.insert(
+        "read_model_none".into(),
+        answer(&store, "read_model", json!({"id": id})),
+    );
+    let model = "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>";
+    let model_first = answer(
+        &store,
+        "save_model",
+        json!({"id": id, "text": model, "written_for": first_revision}),
+    );
+    let model_revision = model_first["revision"].as_str().unwrap().to_string();
+    answers.insert("save_model_first".into(), model_first);
+    answers.insert(
+        "save_model_unchanged".into(),
+        answer(
+            &store,
+            "save_model",
+            json!({"id": id, "text": model, "base": model_revision, "written_for": first_revision}),
+        ),
+    );
+    answers.insert(
+        "read_model".into(),
+        answer(&store, "read_model", json!({"id": id})),
+    );
+    answers.insert(
+        "figures".into(),
+        answer(
+            &store,
+            "figures",
+            json!({"id": id, "page": "a4-portrait", "lexicon": "en", "min_pt": 7}),
+        ),
+    );
+    let source_head = answer(&store, "read_work", json!({"id": id}))["head"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    answers.insert(
+        "save_model_kept".into(),
+        answer(
+            &store,
+            "save_model",
+            json!({"id": id, "text": model, "base": model_revision, "written_for": source_head}),
+        ),
+    );
+    answers.insert(
+        "read_model_kept".into(),
+        answer(&store, "read_model", json!({"id": id})),
+    );
+    answers.insert(
+        "model_history".into(),
+        answer(&store, "model_history", json!({"id": id})),
+    );
+
+    refusals.insert(
+        "model-conflict".into(),
+        refusal(
+            &store,
+            "save_model",
+            json!({"id": id, "text": "<scxml/>", "base": null}),
+        ),
+    );
+    refusals.insert(
+        "model-for-an-unknown-text".into(),
+        refusal(
+            &store,
+            "save_model",
+            json!({"id": id, "text": "<scxml/>", "base": model_revision,
+                   "written_for": "0000000000000000000000000000000000000000000000000000000000000000"}),
+        ),
+    );
+    refusals.insert(
+        "sce-refused".into(),
+        refusal_by(&store, &RefusingRenderer, "figures", json!({"id": id})),
+    );
+    refusals.insert(
+        "sce-unavailable".into(),
+        refusal_by(&store, &NoRenderer, "figures", json!({"id": id})),
     );
 
     refusals.insert(

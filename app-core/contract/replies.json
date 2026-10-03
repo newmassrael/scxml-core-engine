@@ -7,7 +7,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 1,
+      "command_set_version": 2,
       "commands": [
         "describe",
         "list_works",
@@ -15,9 +15,32 @@
         "read_work",
         "read_source",
         "save_source",
-        "history"
+        "history",
+        "save_model",
+        "read_model",
+        "model_history",
+        "figures"
       ],
       "root": "<root>"
+    },
+    "figures": {
+      "generator": "fake-sce 0",
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "written_for": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+      },
+      "sheets": [
+        {
+          "name": "picture.svg",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text><scxml xmlns=\"http://www.w3.org/2005/07/ | name=door-lock page=a4-portrait lexicon=en min_pt=7</text></svg>\n"
+        },
+        {
+          "name": "fields-1.svg",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>fields</text></svg>\n"
+        }
+      ],
+      "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "standing": "behind"
     },
     "history": {
       "entries": [
@@ -46,6 +69,45 @@
     "list_works_empty": {
       "unreadable": [],
       "works": []
+    },
+    "model_history": {
+      "entries": [
+        {
+          "parent": null,
+          "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+          "saved_at": "2026-10-03T09:00:00Z",
+          "written_for": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+        },
+        {
+          "parent": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+          "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+          "saved_at": "2026-10-03T09:00:00Z",
+          "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        }
+      ]
+    },
+    "read_model": {
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>",
+        "written_for": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+      },
+      "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "standing": "behind"
+    },
+    "read_model_kept": {
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>",
+        "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "standing": "current"
+    },
+    "read_model_none": {
+      "model": null,
+      "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+      "standing": null
     },
     "read_source": {
       "source": {
@@ -78,6 +140,20 @@
         "title": "Door lock"
       }
     },
+    "save_model_first": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
+    },
+    "save_model_kept": {
+      "outcome": "saved",
+      "parent": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+      "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
+    },
+    "save_model_unchanged": {
+      "outcome": "unchanged",
+      "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
+    },
     "save_source_first": {
       "outcome": "saved",
       "parent": null,
@@ -93,7 +169,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 1,
+  "command_set_version": 2,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -115,13 +191,36 @@
       "kind": "invalid-title",
       "message": "the title cannot be used: it is empty"
     },
+    "model-conflict": {
+      "detail": {
+        "base": null,
+        "current": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
+      },
+      "kind": "conflict",
+      "message": "the text was saved from no revision, and the work is now at 3ebe687c4f56: nothing was written. Read the current text, decide what the two become, and save again from it"
+    },
+    "model-for-an-unknown-text": {
+      "kind": "not-found",
+      "message": "the source revision 000000000000 of `<work-id>` that the model names as written_for does not exist"
+    },
     "not-found": {
       "kind": "not-found",
       "message": "work `absent` does not exist"
     },
+    "sce-refused": {
+      "detail": {
+        "code": "cli/diagram-does-not-fit"
+      },
+      "kind": "sce-refused",
+      "message": "SCE refused the model (cli/diagram-does-not-fit): the figure needs 925 x 125 pt and the page gives 510 x 757 pt"
+    },
+    "sce-unavailable": {
+      "kind": "sce-unavailable",
+      "message": "the SCE generator is not available: no `sce-codegen` was found; set SCE_CODEGEN to its path, or put it beside this program or on PATH"
+    },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures"
     }
   }
 }

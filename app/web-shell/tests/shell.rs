@@ -6,7 +6,7 @@
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use sce_app_core::WorkStore;
+use sce_app_core::{NoRenderer, WorkStore};
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
 use sce_web_shell::{token, Reply, Shell};
@@ -36,6 +36,7 @@ impl Drop for Scratch {
 fn shell(scratch: &Scratch, assets: Option<Assets>) -> Shell {
     Shell::new(
         WorkStore::at(scratch.0.join("works")),
+        Box::new(NoRenderer),
         TOKEN.to_string(),
         assets,
     )

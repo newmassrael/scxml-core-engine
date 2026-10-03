@@ -33,9 +33,19 @@ import {
 } from "./editor_model";
 import { initialLocale, languageName, LOCALES, translate, type Key, type Locale } from "./i18n";
 import { CommandFailure, TRANSPORT, UNAUTHORIZED, type Transport } from "./ipc";
+import {
+  drawFailureOf,
+  sheetName,
+  svgAddress,
+  zoomFrom,
+  ZOOMS,
+  type ModelPanel,
+  type ModelRead,
+} from "./model_view";
 import { tokenFromPaste, type Credentials } from "./token";
 
 const LOCALE_KEY = "sce.locale";
+const ZOOM_KEY = "sce.zoom";
 
 export interface Environment {
   readonly transport: Transport;
@@ -48,6 +58,8 @@ export interface Environment {
 export class App {
   private readonly api: Api;
   private locale: Locale;
+  /** How large the drawings are shown, as a multiple of the size SCE set them at. */
+  private zoom: number;
 
   /** Set when nothing can work: the screen shows it and stops. */
   private fatal: string | null = null;
@@ -71,6 +83,10 @@ export class App {
   private opening = 0;
   /** The newest request to look at an older revision. */
   private looking = 0;
+  /** The model of the selected work, and how far its drawing has got. */
+  private model: ModelPanel | null = null;
+  /** The newest request to read and draw the model; an older one that answers later is dropped. */
+  private modelTicket = 0;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
   /** What is typed in the new-work field, kept across redraws. */
@@ -86,6 +102,7 @@ export class App {
   ) {
     this.api = apiOver(env.transport);
     this.locale = initialLocale(readKept(env.storage, LOCALE_KEY), env.browserLanguage);
+    this.zoom = zoomFrom(readKept(env.storage, ZOOM_KEY));
   }
 
   async start(): Promise<void> {
@@ -140,6 +157,7 @@ export class App {
     const ticket = ++this.opening;
     this.pendingSwitch = null;
     this.notice = null;
+    let opened = false;
     try {
       const [source, entries] = await Promise.all([
         this.api.readSource(work.id),
@@ -151,9 +169,65 @@ export class App {
       this.editor = open(work.id, source);
       this.entries = entries;
       this.viewing = null;
+      // The model is a separate read, and a slow drawing of it must not hold the
+      // text back: the editor is shown now and the model fills in when SCE has drawn it.
+      this.modelTicket += 1;
+      this.model = { phase: "reading" };
+      opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
       this.report(error);
+    }
+    this.render();
+    if (opened) void this.loadModel(work.id, true);
+  }
+
+  /**
+   * Read the work's model, and have SCE draw it.
+   *
+   * Only the newest request, for the work and the editor that asked, is applied.
+   * `redraw` is false after a save of the text, which moves where the model
+   * stands but not the model: its sheets are kept, and SCE is not run again for
+   * an answer it has already given.
+   */
+  private async loadModel(id: string, redraw: boolean): Promise<void> {
+    const session = this.session;
+    const ticket = ++this.modelTicket;
+    const current = (): boolean => session === this.session && ticket === this.modelTicket;
+    const prior = this.model;
+    try {
+      const read = await this.api.readModel(id);
+      if (!current()) return;
+      if (read.model === null || read.standing === null) {
+        this.model = { phase: "none" };
+        this.render();
+        return;
+      }
+      const known: ModelRead = { model: read.model, standing: read.standing, sourceHead: read.source_head };
+      if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
+        this.model = { phase: "drawn", read: known, figures: prior.figures };
+        this.render();
+        return;
+      }
+      this.model = { phase: "drawing", read: known };
+      this.render();
+      try {
+        // SCE draws in the language the screen is in: its page vocabularies are
+        // named as the screen's languages are (`en`, `ko`).
+        const figures = await this.api.figures(id, known.model.revision, this.locale);
+        if (!current()) return;
+        this.model = { phase: "drawn", read: known, figures };
+      } catch (error) {
+        if (!current()) return;
+        const failure = drawFailureOf(error);
+        if (failure === null) throw error;
+        this.model = { phase: "not-drawn", read: known, failure };
+      }
+    } catch (error) {
+      if (!current()) return;
+      // A token wanted is the sign-in form's to answer; anything else is the
+      // panel's own message, so it does not look like the work has no model.
+      if (!this.askForToken(error)) this.model = { phase: "failed", message: this.explain(error) };
     }
     this.render();
   }
@@ -228,6 +302,9 @@ export class App {
       }
     }
     this.render();
+    // The text moved, so where the model stands may have: asked again, and not
+    // drawn again unless the model itself changed.
+    if (session === this.session) void this.loadModel(request.id, false);
   }
 
   private async takeTheirs(): Promise<void> {
@@ -305,6 +382,21 @@ export class App {
     this.locale = locale;
     try {
       this.env.storage?.setItem(LOCALE_KEY, locale);
+    } catch {
+      // The choice holds for this session only.
+    }
+    this.render();
+    // What SCE drew was drawn in the other language: it draws again in this one.
+    const model = this.model;
+    if (this.selected !== null && model !== null && (model.phase === "drawn" || model.phase === "not-drawn")) {
+      void this.loadModel(this.selected.id, true);
+    }
+  }
+
+  private chooseZoom(zoom: number): void {
+    this.zoom = zoom;
+    try {
+      this.env.storage?.setItem(ZOOM_KEY, String(zoom));
     } catch {
       // The choice holds for this session only.
     }
@@ -607,7 +699,128 @@ export class App {
         ),
       ),
       this.historyPanel(editor),
+      this.modelPanel(work),
     );
+  }
+
+  /** The model SCE draws of this work, where it stands to the text, and the model itself as text. */
+  private modelPanel(work: Work): HTMLElement {
+    const model = this.model;
+    const busy = model === null || model.phase === "reading" || model.phase === "drawing";
+    const read =
+      model !== null && (model.phase === "drawing" || model.phase === "drawn" || model.phase === "not-drawn")
+        ? model.read
+        : null;
+    return h(
+      "section",
+      { class: "model", "aria-label": this.t("modelTitle") },
+      h(
+        "div",
+        { class: "model-head" },
+        h("h3", {}, this.t("modelTitle")),
+        h(
+          "button",
+          { type: "button", disabled: busy, onclick: () => void this.loadModel(work.id, true) },
+          this.t("modelRead"),
+        ),
+        model !== null && model.phase === "drawn" ? this.zoomControl() : null,
+        read === null
+          ? null
+          : h("span", { class: "muted rev" }, `${this.t("modelRevision")}: ${read.model.revision.slice(0, 12)}`),
+      ),
+      read === null ? null : this.standingBanner(read),
+      this.modelBody(model),
+      read === null
+        ? null
+        : h(
+            "details",
+            { class: "model-scxml" },
+            h("summary", {}, this.t("modelScxml")),
+            h("pre", { class: "scxml" }, read.model.text),
+          ),
+    );
+  }
+
+  /** The sizes a drawing can be shown at; the one in use is pressed. */
+  private zoomControl(): HTMLElement {
+    return h(
+      "span",
+      { class: "zoom", role: "group", "aria-label": this.t("modelZoom") },
+      this.t("modelZoom"),
+      ...ZOOMS.map((zoom) =>
+        h(
+          "button",
+          {
+            type: "button",
+            "aria-pressed": String(zoom === this.zoom),
+            onclick: () => this.chooseZoom(zoom),
+          },
+          `${Math.round(zoom * 100)}%`,
+        ),
+      ),
+    );
+  }
+
+  /** Whether the model was written for the text on screen, in the words the core's `standing` carries. */
+  private standingBanner(read: ModelRead): HTMLElement {
+    const short = (revision: string | null): string => (revision === null ? "?" : revision.slice(0, 12));
+    if (read.standing === "current") {
+      return h("p", { class: "banner banner-ok", role: "status" }, this.t("modelCurrent"));
+    }
+    if (read.standing === "behind") {
+      const written = short(read.model.written_for);
+      return h(
+        "p",
+        { class: "banner banner-warn", role: "status" },
+        read.sourceHead === null
+          ? this.t("modelBehindUnknown", { written })
+          : this.t("modelBehind", { written, now: short(read.sourceHead) }),
+      );
+    }
+    return h("p", { class: "banner", role: "status" }, this.t("modelUnstated"));
+  }
+
+  private modelBody(model: ModelPanel | null): HTMLElement | null {
+    if (model === null || model.phase === "reading") {
+      return h("p", { class: "muted" }, this.t("modelReading"));
+    }
+    switch (model.phase) {
+      case "none":
+        return h("p", { class: "muted" }, this.t("modelNone"));
+      case "drawing":
+        return h("p", { class: "muted" }, this.t("modelDrawing"));
+      case "failed":
+        return h("p", { class: "banner banner-error", role: "alert" }, model.message);
+      case "not-drawn":
+        return h(
+          "section",
+          { class: "banner banner-error", role: "alert" },
+          h("strong", {}, this.t("modelNotDrawn")),
+          h("p", {}, model.failure.message),
+          model.failure.code === null ? null : h("p", { class: "muted" }, model.failure.code),
+          h("p", { class: "muted" }, this.t("modelNotDrawnHint")),
+        );
+      case "drawn":
+        return h(
+          "div",
+          {},
+          h(
+            "div",
+            { class: "sheets", style: `--sheet-zoom: ${this.zoom}` },
+            ...model.figures.sheets.map((sheet) =>
+              h(
+                "figure",
+                { class: "sheet" },
+                h("img", { src: svgAddress(sheet.svg), alt: sheetName(sheet.name) }),
+                h("figcaption", {}, sheet.name),
+              ),
+            ),
+          ),
+          model.figures.generator === null
+            ? null
+            : h("p", { class: "muted" }, this.t("modelGenerator", { generator: model.figures.generator })),
+        );
+    }
   }
 
   private back(): void {

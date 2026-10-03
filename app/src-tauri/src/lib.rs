@@ -13,21 +13,33 @@
 //! network. The works folder is reached only through the store, which is the
 //! only code that touches it.
 
-use sce_app_core::{call, default_root, CommandError, WorkStore};
+use sce_app_core::{call, default_renderer, default_root, CommandError, FigureRenderer, WorkStore};
 use serde_json::Value;
 use tauri::Manager;
 
-/// The works folder this window works on.
-struct Works(WorkStore);
+/// The works folder this window works on, and what draws a model for it.
+struct Works {
+    store: WorkStore,
+    figures: Box<dyn FigureRenderer>,
+}
 
 /// Run one of the store's commands. The screen's only way to anything.
-#[tauri::command]
+///
+/// `async` here means "not on the thread that draws the window": drawing a model
+/// runs the SCE generator, which may take seconds, and a command on the main
+/// thread would freeze the window for all of them.
+#[tauri::command(async)]
 fn sce_call(
     works: tauri::State<'_, Works>,
     name: String,
     args: Option<Value>,
 ) -> Result<Value, CommandError> {
-    call(&works.0, &name, args.unwrap_or(Value::Null))
+    call(
+        &works.store,
+        works.figures.as_ref(),
+        &name,
+        args.unwrap_or(Value::Null),
+    )
 }
 
 pub fn run() {
@@ -41,7 +53,10 @@ pub fn run() {
                     .expect("the platform has no per-user data directory")
                     .join("works")
             });
-            app.manage(Works(WorkStore::at(root)));
+            app.manage(Works {
+                store: WorkStore::at(root),
+                figures: default_renderer(),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sce_call])

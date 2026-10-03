@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 use crate::clock::Clock;
 use crate::error::StoreError;
+use crate::figures::{FigureRenderer, FigureRequest, RenderError};
 use crate::revision::Revision;
 use crate::store::{WorkId, WorkStore};
 
@@ -30,11 +31,19 @@ pub const COMMANDS: &[&str] = &[
     "read_source",
     "save_source",
     "history",
+    "save_model",
+    "read_model",
+    "model_history",
+    "figures",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
 /// answer change in a way a caller written against the last one would misread.
-pub const COMMAND_SET_VERSION: u32 = 1;
+///
+/// 2: a work also keeps a model (`save_model`, `read_model`, `model_history`) and
+/// SCE draws it (`figures`). A screen written for 1 has no use for them, and a
+/// screen written for 2 cannot run on a core of 1, so the two are told apart.
+pub const COMMAND_SET_VERSION: u32 = 2;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -54,6 +63,21 @@ impl From<StoreError> for CommandError {
     fn from(error: StoreError) -> Self {
         let detail = match &error {
             StoreError::Conflict { base, current } => json!({ "base": base, "current": current }),
+            _ => Value::Null,
+        };
+        CommandError {
+            kind: error.kind().to_string(),
+            message: error.to_string(),
+            detail,
+        }
+    }
+}
+
+impl From<RenderError> for CommandError {
+    fn from(error: RenderError) -> Self {
+        let detail = match &error {
+            RenderError::Refused { code, .. } => json!({ "code": code }),
+            RenderError::TimedOut { seconds } => json!({ "seconds": seconds }),
             _ => Value::Null,
         };
         CommandError {
@@ -108,6 +132,44 @@ struct SaveSource {
     base: Option<Revision>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveModel {
+    id: String,
+    text: String,
+    /// Absent or `null` means "this is the work's first model".
+    #[serde(default)]
+    base: Option<Revision>,
+    /// The source revision the writer read; absent or `null` when it cannot say.
+    #[serde(default)]
+    written_for: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Figures {
+    id: String,
+    #[serde(default)]
+    revision: Option<Revision>,
+    #[serde(default)]
+    page: Option<String>,
+    #[serde(default)]
+    lexicon: Option<String>,
+    #[serde(default)]
+    min_pt: Option<f64>,
+}
+
+/// How a model stands to the text now, as one word every shell uses the same
+/// way: `current` when it was written for the text as it is, `behind` when it
+/// was written for an earlier one, `unstated` when its writer did not say.
+fn standing(written_for: Option<&Revision>, source_head: Option<&Revision>) -> &'static str {
+    match (written_for, source_head) {
+        (Some(written), Some(head)) if written == head => "current",
+        (Some(_), _) => "behind",
+        (None, _) => "unstated",
+    }
+}
+
 fn arguments<T: for<'de> Deserialize<'de>>(args: Value) -> Result<T, CommandError> {
     // A caller that sends nothing means an empty object.
     let args = if args.is_null() { json!({}) } else { args };
@@ -122,9 +184,11 @@ fn work_id(text: &str) -> Result<WorkId, CommandError> {
     WorkId::parse(text).map_err(CommandError::from)
 }
 
-/// Run the command `name` with `args` against `store`.
+/// Run the command `name` with `args` against `store`; `renderer` draws a
+/// model for `figures`.
 pub fn call<C: Clock>(
     store: &WorkStore<C>,
+    renderer: &dyn FigureRenderer,
     name: &str,
     args: Value,
 ) -> Result<Value, CommandError> {
@@ -164,6 +228,61 @@ pub fn call<C: Clock>(
         "history" => {
             let OneWork { id } = arguments(args)?;
             Ok(json!({ "entries": store.history(&work_id(&id)?)? }))
+        }
+        "save_model" => {
+            let SaveModel {
+                id,
+                text,
+                base,
+                written_for,
+            } = arguments(args)?;
+            answer(&store.save_model(&work_id(&id)?, &text, base.as_ref(), written_for.as_ref())?)
+        }
+        "read_model" => {
+            let ReadSource { id, revision } = arguments(args)?;
+            let id = work_id(&id)?;
+            let model = store.read_model(&id, revision.as_ref())?;
+            let source_head = store.head(&id)?;
+            let standing = model
+                .as_ref()
+                .map(|m| standing(m.written_for.as_ref(), source_head.as_ref()));
+            Ok(json!({ "model": model, "source_head": source_head, "standing": standing }))
+        }
+        "model_history" => {
+            let OneWork { id } = arguments(args)?;
+            Ok(json!({ "entries": store.model_history(&work_id(&id)?)? }))
+        }
+        "figures" => {
+            let Figures {
+                id,
+                revision,
+                page,
+                lexicon,
+                min_pt,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let Some(model) = store.read_model(&id, revision.as_ref())? else {
+                return Err(CommandError::from(StoreError::NotFound {
+                    what: format!("a model of work `{}` (none was saved)", id.as_str()),
+                }));
+            };
+            let source_head = store.head(&id)?;
+            let drawn = renderer.render(&FigureRequest {
+                model: &model.text,
+                // The product titles its figures by the document's name, which it
+                // takes from the file's: the work's own name, not `model`.
+                name: Some(id.slug()),
+                page: page.as_deref(),
+                lexicon: lexicon.as_deref(),
+                min_pt,
+            })?;
+            Ok(json!({
+                "model": { "revision": model.revision, "written_for": model.written_for },
+                "source_head": source_head,
+                "standing": standing(model.written_for.as_ref(), source_head.as_ref()),
+                "generator": drawn.generator,
+                "sheets": drawn.sheets,
+            }))
         }
         other => Err(CommandError {
             kind: "unknown-command".to_string(),

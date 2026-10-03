@@ -11,18 +11,24 @@ nothing about what a specification is about. The text it stores is whatever the
 person writes, and what that text means is the authoring tools' business
 (`tools/authoring`).
 
-Today it does the first part: **works** (a titled piece of specification text),
-**immutable revisions** of each, and a **save that refuses to overwrite** text
-the caller has not seen. Showing the model and accepting a design come next, on
-top of the same folder.
+Today it does the first two parts: **works** (a titled piece of specification
+text), **immutable revisions** of each, and a **save that refuses to overwrite**
+text the caller has not seen; and the **model** of a work, kept beside the text
+and shown as the figures **SCE draws of it** (the application draws nothing: it
+runs `sce-codegen diagram` and shows the SVG it writes). Accepting a design comes
+next, on top of the same folder.
 
 What does not exist yet, so that nothing below is read as done:
 
 - The authoring MCP does not read or write the works folder. `sce-work` is
-  ready for it and the MCP's tool list has no works tool, so an AI client cannot
-  yet be pointed at a work saved here.
-- The screens that show the model, the open questions, the examples' results and
-  the acceptance. They are designs, not code.
+  ready for it (it saves a model too, `save_model`) and the MCP's tool list has
+  no works tool, so an AI client cannot yet be pointed at a work saved here.
+  Until then a model gets into a work through `sce-work`.
+- The screens for the open questions, the examples' results and the acceptance.
+  They are designs, not code. The model screen shows what SCE drew and where the
+  model stands to the text; it does not edit the model (an AI client writes it).
+- A model of several documents. `figures` draws ONE document: a link that
+  imports a codec is refused by SCE for the import it cannot find, in SCE's words.
 - A desktop window asks nothing when it is closed with text not yet saved. A
   browser tab does (the browser's own prompt); the window has no such event wired.
 - Windows has not been run; the Linux desktop build and the browser have.
@@ -51,12 +57,38 @@ The works folder is plain files:
                  source/<sha256>.txt  one file per revision, named by its digest
                  source.head          the current revision
                  source.log           one line per save: revision, parent, time
+                 model/<sha256>.scxml the same, for the model
+                 model.head           the current model
+                 model.log            one line per save, and the source revision
+                                      the writer said it read (`written_for`)
 ```
 
 `<root>` is `SCE_WORKS_DIR` if set, else the per-user data directory
 (`~/.local/share/sce-workbench/works` on Linux). A revision is the SHA-256 of
 its exact bytes; a save names the revision it was written from and is refused
-with `conflict` if that is no longer current.
+with `conflict` if that is no longer current. The text and the model are two
+chains kept by one implementation (one lock, one compare-and-swap).
+
+### The model, and where it stands
+
+A model is saved for a text revision (`written_for`), so "is this model about the
+text I am looking at" is a comparison of two digests, and the core says the answer
+in one word every shell shows the same way (`standing`): `current`, `behind` (the
+text moved on), or `unstated`. The same model saved again for a later text is a
+new entry of its history, not an `unchanged`: the writer read the new text and
+kept the model, and that is a fact about the model.
+
+`figures` runs the generator: the first of `SCE_CODEGEN`, an `sce-codegen` beside
+the running program, or one on `PATH`. It stages the model under the work's own
+name (the product names its figures by its document's file), waits for it at most
+30 seconds, writes its output to files and not pipes, and reads back only files
+inside the folder it was given. What SCE refuses (a figure that does not fit its
+page, a character its font table has no width for, a document it does not
+accept) reaches the screen as the product's own code and sentence, with the model
+still shown as text. The screen asks for the language it is in (`--lexicon`),
+shows each sheet as an `<img>` (an image never runs script), at 150% unless the
+person chooses another size, and scrolls a wide sheet sideways instead of
+shrinking it.
 
 ## Seeing the screen
 
@@ -102,8 +134,10 @@ else: it has no file-system, shell or network permission.
 | What | Command |
 |---|---|
 | Works folder and command layer | `cargo test -p sce-app-core --features cli` |
+| The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
+| The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |
 | Browser shell: handler, sockets | `cargo test -p sce-web-shell` (from `app/`) |
-| Screen: guards, editor model, transport, words | `npm test` (in `app/ui`) |
+| Screen: guards, editor model, model panel, transport, words | `npm test` (in `app/ui`) |
 | Screen types and build | `npm run build` (in `app/ui`) |
 
 `app-core/contract/replies.json` is every command's reply, written by running

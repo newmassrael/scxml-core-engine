@@ -32,8 +32,13 @@ pub enum StoreError {
         base: Option<Revision>,
         current: Option<Revision>,
     },
-    /// A text larger than the store accepts as one source.
-    TooLarge { bytes: usize, limit: usize },
+    /// A text larger than the store accepts as one source, or one model
+    /// (`what` says which).
+    TooLarge {
+        what: &'static str,
+        bytes: usize,
+        limit: usize,
+    },
     /// A file the store wrote is not what it says it is.
     Corrupt { path: PathBuf, reason: String },
     /// Another save held the work's lock for the whole wait.
@@ -96,10 +101,10 @@ impl fmt::Display for StoreError {
                     show(current)
                 )
             }
-            StoreError::TooLarge { bytes, limit } => {
+            StoreError::TooLarge { what, bytes, limit } => {
                 write!(
                     f,
-                    "the text is {bytes} bytes and a source may hold at most {limit}"
+                    "the text is {bytes} bytes and a {what} may hold at most {limit}"
                 )
             }
             StoreError::Corrupt { path, reason } => {

@@ -25,6 +25,7 @@
 //! | 2 | the command line itself was wrong |
 //! | 3 | `conflict`: the text was saved from a revision that is no longer current |
 //! | 4 | `busy`: another save held the work's lock for the whole wait |
+//! | 5 | SCE would not draw the model: `sce-refused` (it said no), `sce-unavailable`, `sce-timeout`, `sce-failed` |
 //!
 //! A text to save travels on stdin (`--args-stdin`), not in `--args`: an
 //! operating system limits a command line, and a specification is larger.
@@ -36,7 +37,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use serde_json::Value;
 
-use sce_app_core::{call, default_root, CommandError, WorkStore};
+use sce_app_core::{call, default_renderer, default_root, CommandError, WorkStore};
 
 #[derive(Parser)]
 #[command(name = "sce-work", about = "Commands on a specification works folder")]
@@ -87,7 +88,12 @@ fn main() -> ExitCode {
                 Ok(value) => value,
                 Err(message) => return refuse_plainly(&message),
             };
-            match call(&WorkStore::at(root), &name, arguments) {
+            match call(
+                &WorkStore::at(root),
+                default_renderer().as_ref(),
+                &name,
+                arguments,
+            ) {
                 Ok(value) => {
                     println!("{value}");
                     ExitCode::SUCCESS
@@ -119,6 +125,7 @@ fn refuse(error: &CommandError) -> ExitCode {
     ExitCode::from(match error.kind.as_str() {
         "conflict" => 3,
         "busy" => 4,
+        "sce-refused" | "sce-unavailable" | "sce-timeout" | "sce-failed" => 5,
         _ => 1,
     })
 }

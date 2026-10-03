@@ -40,9 +40,20 @@ class FakeCore implements Transport {
   private readonly revisionOf = new Map<string, string>();
   private readonly gates: Gate[] = [];
   private readonly failures: Array<{ name: string; error: CommandFailure }> = [];
+  private readonly models = new Map<string, { text: string; writtenFor: string | null }>();
 
   addWork(id: string, title: string, texts: string[]): void {
     this.works.set(id, { title, revisions: texts.map((text) => ({ revision: this.revision(text), text })) });
+  }
+
+  /** The work's model, and the text revision its writer says it read. */
+  setModel(id: string, text: string, writtenFor: string | null): void {
+    this.models.set(id, { text, writtenFor });
+  }
+
+  /** The SVG this core draws for a model, so a test can look for it on the screen. */
+  figureSvg(text: string): string {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="40pt" height="20pt"><text x="0" y="10">picture of ${text}</text></svg>`;
   }
 
   revision(text: string): string {
@@ -89,7 +100,37 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 1, commands: [], root: "/fake/works" };
+        return { command_set_version: 2, commands: [], root: "/fake/works" };
+      case "read_model":
+      case "figures": {
+        const model = typeof args["id"] === "string" ? this.models.get(args["id"]) : undefined;
+        const head = work?.revisions.at(-1)?.revision ?? null;
+        if (model === undefined) {
+          if (name === "figures") throw new CommandFailure("not-found", "no model");
+          return { model: null, source_head: head, standing: null };
+        }
+        const revision = this.revision(`model:${model.text}`);
+        // The core's rule, in one place: for the text as it is, for an earlier one, or unsaid.
+        const standing =
+          model.writtenFor === null ? "unstated" : model.writtenFor === head ? "current" : "behind";
+        if (name === "read_model") {
+          return {
+            model: { revision, written_for: model.writtenFor, text: model.text },
+            source_head: head,
+            standing,
+          };
+        }
+        return {
+          model: { revision, written_for: model.writtenFor },
+          source_head: head,
+          standing,
+          generator: "fake-sce 0",
+          sheets: [
+            { name: "picture.svg", svg: this.figureSvg(model.text) },
+            { name: "fields-1.svg", svg: this.figureSvg("the fields") },
+          ],
+        };
+      }
       case "list_works":
         return {
           works: [...this.works].map(([id, w]) => ({ id, title: w.title, created_at: "2026-10-03T09:00:00Z" })),
@@ -347,5 +388,205 @@ describe("the new-work field", () => {
     await click("Alpha");
 
     expect((root.querySelector('input[name="title"]') as HTMLInputElement).value).toBe("Gamma");
+  });
+});
+
+// ---- the model, as SCE draws it -------------------------------------------
+
+const images = (): HTMLImageElement[] => [...root.querySelectorAll<HTMLImageElement>(".sheet img")];
+const modelText = (): string => root.querySelector(".model")?.textContent ?? "";
+const decoded = (image: HTMLImageElement): string =>
+  decodeURIComponent(image.src.replace("data:image/svg+xml;charset=utf-8,", ""));
+
+describe("the model panel", () => {
+  it("says there is no model when the work has none, and draws nothing", async () => {
+    await click("Alpha");
+    expect(modelText()).toContain("No model yet");
+    expect(images()).toHaveLength(0);
+    expect(core.callsOf("figures")).toHaveLength(0);
+  });
+
+  it("shows the sheets SCE drew, in its order, as images the model's text cannot script", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+
+    expect(images()).toHaveLength(2);
+    expect([...root.querySelectorAll(".sheet figcaption")].map((c) => c.textContent)).toEqual([
+      "picture.svg",
+      "fields-1.svg",
+    ]);
+    expect(decoded(images()[0] as HTMLImageElement)).toBe(core.figureSvg("<scxml/>"));
+    expect(images()[0]?.getAttribute("alt")).toBe("picture");
+    expect(modelText()).toContain("written for the text as it is now");
+    expect(modelText()).toContain("Drawn by fake-sce 0");
+    // The model's own text is there to read, folded.
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml/>");
+  });
+
+  it("never turns the drawing into elements of the page", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    // Whatever the product wrote, even markup that would run in a page, is only an image here.
+    const hostile = '<svg xmlns="http://www.w3.org/2000/svg"><script>window.__ran = true</script></svg>';
+    core.figureSvg = () => hostile;
+    await click("Alpha");
+
+    expect(root.querySelector("script")).toBeNull();
+    expect(root.querySelector(".sheet svg")).toBeNull();
+    expect((window as unknown as Record<string, unknown>)["__ran"]).toBeUndefined();
+    expect(images()).toHaveLength(2);
+  });
+
+  it("says a model written for an earlier text is behind, with both revisions", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha one"));
+    await click("Alpha");
+
+    const banner = root.querySelector(".model .banner-warn")?.textContent ?? "";
+    expect(banner).toContain("earlier text");
+    expect(banner).toContain(core.revision("alpha one").slice(0, 12));
+    expect(banner).toContain(core.revision("alpha two").slice(0, 12));
+    expect(images()).toHaveLength(2);
+  });
+
+  it("says when nothing records which text the model was written for", async () => {
+    core.setModel("alpha", "<scxml/>", null);
+    await click("Alpha");
+    expect(modelText()).toContain("Nothing records which text");
+  });
+
+  it("shows SCE's refusal in the product's words, with the model still readable", async () => {
+    core.setModel("alpha", "<scxml>big</scxml>", core.revision("alpha two"));
+    core.failNext(
+      "figures",
+      new CommandFailure(
+        "sce-refused",
+        "SCE refused the model (cli/diagram-does-not-fit): the figure needs 925 x 125 pt",
+        { code: "cli/diagram-does-not-fit" },
+      ),
+    );
+    await click("Alpha");
+
+    expect(images()).toHaveLength(0);
+    const refusal = root.querySelector(".model .banner-error")?.textContent ?? "";
+    expect(refusal).toContain("SCE did not draw this model");
+    expect(refusal).toContain("the figure needs 925 x 125 pt");
+    expect(refusal).toContain("cli/diagram-does-not-fit");
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml>big</scxml>");
+    // The refusal is the model's, not the text's: the editor is untouched.
+    expect(editor().value).toBe("alpha two");
+    expect(root.querySelector("main > .banner-error")).toBeNull();
+  });
+
+  it("does not hold the editor back while SCE draws", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    const held = core.hold("figures");
+    await click("Alpha");
+
+    expect(editor().value).toBe("alpha two");
+    expect(modelText()).toContain("SCE is drawing the model");
+    expect(images()).toHaveLength(0);
+
+    held.release();
+    await settle();
+    expect(images()).toHaveLength(2);
+    expect(modelText()).not.toContain("SCE is drawing");
+  });
+
+  it("does not put one work's drawing under another work", async () => {
+    core.setModel("alpha", "<scxml>alpha</scxml>", core.revision("alpha two"));
+    const held = core.hold("figures");
+    await click("Alpha");
+    await click("Beta");
+    held.release();
+    await settle();
+
+    expect(heading()).toBe("Beta");
+    expect(images()).toHaveLength(0);
+    expect(modelText()).toContain("No model yet");
+  });
+
+  it("moves where the model stands when the text is saved, without drawing it again", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    expect(core.callsOf("figures")).toHaveLength(1);
+    expect(modelText()).toContain("written for the text as it is now");
+
+    await type("alpha three");
+    await click("Save");
+
+    expect(modelText()).toContain("earlier text");
+    expect(modelText()).toContain(core.revision("alpha two").slice(0, 12));
+    expect(core.callsOf("figures")).toHaveLength(1);
+    expect(images()).toHaveLength(2);
+  });
+
+  it("draws again when asked to read again", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    core.setModel("alpha", "<scxml>changed</scxml>", core.revision("alpha two"));
+    await click("Read again");
+
+    expect(core.callsOf("figures")).toHaveLength(2);
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml>changed</scxml>");
+    expect(decoded(images()[0] as HTMLImageElement)).toBe(core.figureSvg("<scxml>changed</scxml>"));
+  });
+
+  it("asks SCE to draw in the language the screen is in, and again when the language changes", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    expect(core.callsOf("figures")[0]?.["lexicon"]).toBe("en");
+
+    const picker = root.querySelector("header select") as HTMLSelectElement;
+    picker.value = "ko";
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+
+    expect(core.callsOf("figures")).toHaveLength(2);
+    expect(core.callsOf("figures")[1]?.["lexicon"]).toBe("ko");
+    expect(images()).toHaveLength(2);
+  });
+
+  it("shows the drawings larger than SCE set them, in a size the person can change and that is kept", async () => {
+    const kept = new Map<string, string>();
+    const storage = {
+      getItem: (key: string): string | null => kept.get(key) ?? null,
+      setItem: (key: string, value: string): void => void kept.set(key, value),
+    };
+    const open = async (): Promise<void> => {
+      document.body.innerHTML = '<div id="app"></div>';
+      root = document.getElementById("app") as HTMLElement;
+      core = new FakeCore();
+      core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+      core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+      app = new App(root, { transport: core, storage, browserLanguage: "en" });
+      await app.start();
+      await settle();
+      await click("Alpha");
+    };
+    const zoom = (): string => root.querySelector<HTMLElement>(".sheets")?.getAttribute("style") ?? "";
+
+    await open();
+    expect(zoom()).toContain("--sheet-zoom: 1.5");
+    expect(buttons("150%")[0]?.getAttribute("aria-pressed")).toBe("true");
+
+    await click("200%");
+    expect(zoom()).toContain("--sheet-zoom: 2");
+    expect(buttons("200%")[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(buttons("150%")[0]?.getAttribute("aria-pressed")).toBe("false");
+    expect(kept.get("sce.zoom")).toBe("2");
+    expect(core.callsOf("figures")).toHaveLength(1);
+
+    // A new screen starts at the size the person chose.
+    await open();
+    expect(zoom()).toContain("--sheet-zoom: 2");
+  });
+
+  it("reports a model that cannot be read as the panel's own message, not as an empty one", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    core.failNext("read_model", new CommandFailure("corrupt", "the model file is damaged"));
+    await click("Alpha");
+
+    expect(modelText()).toContain("the model file is damaged");
+    expect(modelText()).not.toContain("No model yet");
+    expect(editor().value).toBe("alpha two");
   });
 });

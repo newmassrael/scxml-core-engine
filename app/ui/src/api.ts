@@ -6,15 +6,19 @@
 
 import {
   parseDescribed,
+  parseFigures,
   parseHistory,
   parseListing,
+  parseReadModel,
   parseReadSource,
   parseSaved,
   parseWork,
   parseWorkAndHead,
   type Described,
+  type Figures,
   type HistoryEntry,
   type Listing,
+  type ReadModel,
   type Revision,
   type Saved,
   type SourceText,
@@ -33,6 +37,14 @@ export interface Api {
   /** Save `text` on top of `base` (`null` for a work's first text). Refused with `conflict` if `base` is no longer current. */
   saveSource(id: string, text: string, base: Revision | null): Promise<Saved>;
   history(id: string): Promise<HistoryEntry[]>;
+  /** The current model, or the model of `revision`; `model` is `null` for a work with none yet. */
+  readModel(id: string, revision?: Revision): Promise<ReadModel>;
+  /**
+   * What SCE draws of the work's model (the current one, or `revision`'s): its own
+   * pictures, then the table of every value it states. Refused with `sce-refused`
+   * when SCE will not draw it, in the product's own words.
+   */
+  figures(id: string, revision?: Revision, lexicon?: string): Promise<Figures>;
 }
 
 export function apiOver(transport: Transport): Api {
@@ -58,6 +70,18 @@ export function apiOver(transport: Transport): Api {
     },
     async history(id) {
       return parseHistory(await transport.call("history", { id }));
+    },
+    async readModel(id, revision) {
+      const args = revision === undefined ? { id } : { id, revision };
+      return parseReadModel(await transport.call("read_model", args));
+    },
+    async figures(id, revision, lexicon) {
+      const args = {
+        id,
+        ...(revision === undefined ? {} : { revision }),
+        ...(lexicon === undefined ? {} : { lexicon }),
+      };
+      return parseFigures(await transport.call("figures", args));
     },
   };
 }

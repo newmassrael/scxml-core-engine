@@ -16,6 +16,8 @@
   --warn-line: #d9a400;
   --error-bg: #fde8e8;
   --error-line: #c13b3b;
+  --ok-bg: #e6f4ea;
+  --ok-line: #2f8f4e;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
@@ -32,6 +34,8 @@
     --warn-line: #b88a00;
     --error-bg: #3b1d1d;
     --error-line: #d65a5a;
+    --ok-bg: #16301f;
+    --ok-line: #4cae6c;
   }
 }
 
@@ -237,6 +241,95 @@ textarea:focus-visible {
 .banner-error {
   background: var(--error-bg);
   border-color: var(--error-line);
+}
+
+.banner-ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-line);
+}
+
+/* The model, as SCE draws it: each sheet at the size it was set, scrolled sideways
+   rather than shrunk, because a figure is set at a minimum type size and a smaller
+   picture would break that promise on the screen. The page of a sheet is white in
+   either theme: it is a print figure. */
+.model {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.model-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.model-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.model-head .rev {
+  margin-left: auto;
+}
+
+.sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 8px 0 12px;
+}
+
+.sheet {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-x: auto;
+  background: #ffffff;
+}
+
+.sheet img {
+  display: block;
+  max-width: none;
+  height: auto;
+  zoom: var(--sheet-zoom, 1.5);
+}
+
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.zoom button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.sheet figcaption {
+  padding: 3px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font: 0.75rem/1.4 var(--mono);
+}
+
+.scxml {
+  margin: 8px 0 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font: 12px/1.45 var(--mono);
+  white-space: pre;
+  tab-size: 2;
 }
 
 .banner p {

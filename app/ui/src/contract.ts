@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 1;
+export const SUPPORTED_COMMAND_SET_VERSION = 2;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -45,6 +45,43 @@ export interface HistoryEntry {
 export type Saved =
   | { readonly outcome: "saved"; readonly revision: Revision; readonly parent: Revision | null }
   | { readonly outcome: "unchanged"; readonly revision: Revision };
+
+/**
+ * How a model stands to the text now, as the core words it: `current` was written
+ * for the text as it is, `behind` for an earlier one, `unstated` its writer did
+ * not say. One definition, in the core; the screen only shows it.
+ */
+export type Standing = "current" | "behind" | "unstated";
+
+/** A saved model, and the text revision it was written for. */
+export interface ModelText {
+  readonly revision: Revision;
+  readonly written_for: Revision | null;
+  readonly text: string;
+}
+
+/** `read_model`: the model, or `null` for a work with none yet. */
+export interface ReadModel {
+  readonly model: ModelText | null;
+  readonly source_head: Revision | null;
+  readonly standing: Standing | null;
+}
+
+/** One sheet SCE drew: the file name it gave it, and the SVG. */
+export interface DrawnSheet {
+  readonly name: string;
+  readonly svg: string;
+}
+
+/** `figures`: what SCE drew of a model, in the order it wrote it. */
+export interface Figures {
+  readonly model: { readonly revision: Revision; readonly written_for: Revision | null };
+  readonly source_head: Revision | null;
+  readonly standing: Standing;
+  /** The generator's own version line, when it gave one. */
+  readonly generator: string | null;
+  readonly sheets: readonly DrawnSheet[];
+}
 
 export interface Described {
   readonly command_set_version: number;
@@ -170,6 +207,56 @@ export function parseHistory(value: unknown): HistoryEntry[] {
       saved_at: text(entry, "saved_at", where),
     };
   });
+}
+
+function standing(value: unknown, where: string): Standing {
+  if (value === "current" || value === "behind" || value === "unstated") return value;
+  throw new ContractError(where, '"current", "behind" or "unstated"');
+}
+
+/** `read_model`. */
+export function parseReadModel(value: unknown): ReadModel {
+  const r = record(value, "read_model");
+  const model = r["model"];
+  const source_head = nullableRevision(r["source_head"], "read_model.source_head");
+  if (model === null) {
+    if (r["standing"] !== null) throw new ContractError("read_model.standing", "null when there is no model");
+    return { model: null, source_head, standing: null };
+  }
+  const m = record(model, "read_model.model");
+  return {
+    model: {
+      revision: revision(m["revision"], "read_model.model.revision"),
+      written_for: nullableRevision(m["written_for"], "read_model.model.written_for"),
+      text: text(m, "text", "read_model.model"),
+    },
+    source_head,
+    standing: standing(r["standing"], "read_model.standing"),
+  };
+}
+
+/** `figures`. */
+export function parseFigures(value: unknown): Figures {
+  const r = record(value, "figures");
+  const model = record(r["model"], "figures.model");
+  const generator = r["generator"];
+  if (generator !== null && typeof generator !== "string") {
+    throw new ContractError("figures.generator", "a string or null");
+  }
+  return {
+    model: {
+      revision: revision(model["revision"], "figures.model.revision"),
+      written_for: nullableRevision(model["written_for"], "figures.model.written_for"),
+    },
+    source_head: nullableRevision(r["source_head"], "figures.source_head"),
+    standing: standing(r["standing"], "figures.standing"),
+    generator,
+    sheets: list(r, "sheets", "figures").map((s, i) => {
+      const where = `figures.sheets[${i}]`;
+      const sheet = record(s, where);
+      return { name: text(sheet, "name", where), svg: text(sheet, "svg", where) };
+    }),
+  };
 }
 
 export function parseDescribed(value: unknown): Described {

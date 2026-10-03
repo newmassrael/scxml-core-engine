@@ -29,7 +29,7 @@ pub mod assets;
 pub mod server;
 pub mod token;
 
-use sce_app_core::{call, CommandError, WorkStore, MAX_SOURCE_BYTES};
+use sce_app_core::{call, CommandError, FigureRenderer, WorkStore, MAX_SOURCE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -75,7 +75,11 @@ fn status_of(kind: &str) -> u16 {
         "invalid-id" | "invalid-title" | "bad-request" => 400,
         "conflict" => 409,
         "too-large" => 413,
-        "busy" => 503,
+        "busy" | "sce-unavailable" => 503,
+        // SCE answered and said no to this model: the request was understood.
+        "sce-refused" => 422,
+        "sce-timeout" => 504,
+        "sce-failed" => 502,
         _ => 500,
     }
 }
@@ -88,17 +92,25 @@ struct Envelope {
     args: Value,
 }
 
-/// The handler: the works folder it serves, the token it requires, the screen it shows.
+/// The handler: the works folder it serves, what draws a model for it, the token
+/// it requires, the screen it shows.
 pub struct Shell {
     store: WorkStore,
+    figures: Box<dyn FigureRenderer>,
     token: String,
     assets: Option<Assets>,
 }
 
 impl Shell {
-    pub fn new(store: WorkStore, token: String, assets: Option<Assets>) -> Self {
+    pub fn new(
+        store: WorkStore,
+        figures: Box<dyn FigureRenderer>,
+        token: String,
+        assets: Option<Assets>,
+    ) -> Self {
         Shell {
             store,
+            figures,
             token,
             assets,
         }
@@ -173,7 +185,12 @@ impl Shell {
                 return Reply::error(400, "bad-request", format!("the body is not a call: {e}"))
             }
         };
-        match call(&self.store, &envelope.name, envelope.args) {
+        match call(
+            &self.store,
+            self.figures.as_ref(),
+            &envelope.name,
+            envelope.args,
+        ) {
             Ok(answer) => Reply {
                 status: 200,
                 content_type: JSON,
