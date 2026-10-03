@@ -52,6 +52,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -693,7 +694,25 @@ class HostInvokerTest {
             // so a stall names its stage instead of surfacing as that limit.
             sm.send(StatechartHostInvokerEvent.Time)
             assertNotNull(withTimeoutOrNull(3_000) { started.await() }, "`slow` was never started in coroutine mode")
-            assertNotNull(withTimeoutOrNull(3_000) { cancelled.await() }, "`slow` started, and its 50 ms deadline never expired")
+            val expired = withTimeoutOrNull(3_000) { cancelled.await() }
+            if (expired == null) {
+                // The deadline was armed (the start was seen) and never came due.
+                // What would tell a loop that slept past it from one that never
+                // armed it is whether an event arriving NOW wakes it into
+                // performing it — so one is sent, and the message says what came
+                // of it. Diagnosis only: this test still fails, and the answer is
+                // what the next hosted failure carries, since the failure has not
+                // been reproduced anywhere else (15 of 15 passed under two loaded
+                // CPUs, with the build cache off so each run executed).
+                sm.send(StatechartHostInvokerEvent.Time)
+                val afterWake = withTimeoutOrNull(2_000) { cancelled.await() }
+                fail<Unit>(
+                    "`slow` started, and its 50 ms deadline never expired within 3 s; " +
+                        "an event sent then " +
+                        (if (afterWake != null) "WOKE the loop into performing it (the loop slept past the deadline)"
+                        else "did not (the deadline was never armed, or the loop is not running)"),
+                )
+            }
             // The loop goes on serving events after performing an act, and
             // `done` is reached only once the expiry's own macrostep has run —
             // so the engine is idle when it is stopped below.
