@@ -170,6 +170,8 @@ const en = {
   withheldNotMeasured: "SCE did not measure the design, so you have not been shown what you would accept.",
   withheldBehind:
     "The design or the requirement list was written for an earlier text, so it cannot be accepted as an answer to this one.",
+  withheldUnread:
+    "The text, the design or your saved answers are still being read onto the screen, or could not be read: you have not been shown all of what you would accept.",
   withheldDiffers:
     "What is on screen is not the one the design was measured against. Open the work again to read what is saved.",
   withheldAlready: "This design is accepted as it is.",
@@ -350,6 +352,8 @@ const ko: Record<Key, string> = {
   withheldNotMeasured: "SCE가 설계를 재지 못해서, 수락할 것을 아직 보지 못했습니다.",
   withheldBehind:
     "설계나 요구사항 목록이 이전 원문을 보고 만들어져서, 지금 원문에 대한 답으로 수락할 수 없습니다.",
+  withheldUnread:
+    "글, 설계, 저장된 답을 아직 화면에 읽는 중이거나 읽지 못해서, 수락할 것을 모두 보지 못했습니다.",
   withheldDiffers:
     "화면에 있는 것이 설계를 잰 기준과 다릅니다. 작업을 다시 열어 저장된 것을 읽으세요.",
   withheldAlready: "이 설계는 이미 지금 그대로 수락되어 있습니다.",

@@ -1625,6 +1625,46 @@ describe("accepting the design", () => {
     expect(acceptanceText()).not.toContain("Nothing was accepted");
   });
 
+  it("is withheld while the saved answers are still being read, and offered when they are shown", async () => {
+    core.setAnswers("alpha", { "open-guard": "Only listed cards." });
+    const slow = core.hold("read_answers");
+    await click("Alpha");
+
+    // The page was measured with the answers, and the owner has not been shown them yet.
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("still being read");
+    acceptButton().click();
+    await settle();
+    expect(core.callsOf("accept")).toHaveLength(0);
+
+    slow.release();
+    await settle();
+    expect(fieldOf("open-guard").value).toBe("Only listed cards.");
+    expect(acceptButton().disabled).toBe(false);
+    expect(acceptNote()).toBe("");
+  });
+
+  it("stays withheld when the saved answers cannot be read, and says so", async () => {
+    core.setAnswers("alpha", { "open-guard": "Only listed cards." });
+    core.failNext("read_answers", new CommandFailure("corrupt", "the saved answers are not what the store wrote"));
+    await click("Alpha");
+
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("could not be read");
+  });
+
+  it("is withheld when the answers read are not the ones the page measured", async () => {
+    core.setAnswers("alpha", { "open-guard": "Only listed cards." });
+    await click("Alpha");
+    expect(acceptButton().disabled).toBe(false);
+
+    // Answers saved from another entrance after the page was measured; this screen read them before.
+    core.setAnswers("alpha", { "open-guard": "Any card." });
+    await click("Read again");
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("not the one the design was measured against");
+  });
+
   it("accepts nothing when the text moved on in another entrance after the page was shown", async () => {
     await click("Alpha");
     // The text moves on in another entrance; this screen has not read it yet.

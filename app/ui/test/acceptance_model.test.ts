@@ -15,6 +15,7 @@ import {
   OUTCOME_WORDS,
   tally,
   type AcceptanceState,
+  type Shown,
 } from "../src/acceptance_model";
 import type { Basis, RequirementOutcome, RequirementsReport } from "../src/contract";
 
@@ -47,72 +48,83 @@ const state = (over: Partial<AcceptanceState> = {}): AcceptanceState => ({
   ...over,
 });
 
+// What the screen shows when it shows what `report()` measured: the text, the design, and no answers.
+const shown: Shown = { source: basis.source, model: basis.model, answers: null };
+
 describe("the accept button", () => {
   it("is offered for a measured design written for the text as it is", () => {
-    expect(gate(state(), false)).toBeNull();
+    expect(gate(state(), false, shown)).toBeNull();
   });
 
   it("is not withheld for a gap: a design that misses a requirement is the owner's to accept", () => {
     const gapped = state({ report: report({ outcomes: [outcome("R1", "missing"), outcome("R2", "needs-scenario")] }) });
-    expect(gate(gapped, false)).toBeNull();
+    expect(gate(gapped, false, shown)).toBeNull();
   });
 
   it("is withheld while what is typed is not saved, because what is accepted is what is saved", () => {
-    expect(gate(state(), true)).toBe("unsaved");
+    expect(gate(state(), true, shown)).toBe("unsaved");
   });
 
   it("is withheld while an acceptance is on its way, whatever else is true", () => {
-    expect(gate(accepting(state()), false)).toBe("accepting");
-    expect(gate(accepting(state()), true)).toBe("accepting");
+    expect(gate(accepting(state()), false, shown)).toBe("accepting");
+    expect(gate(accepting(state()), true, shown)).toBe("accepting");
   });
 
   it("is withheld when SCE did not measure the design: the owner has not been shown what they would accept", () => {
-    expect(gate(state({ report: null, measureFailure: "SCE took too long" }), false)).toBe("not-measured");
+    expect(gate(state({ report: null, measureFailure: "SCE took too long" }), false, shown)).toBe("not-measured");
   });
 
   it("is withheld for a design or a list written for an earlier text, or for none that says", () => {
-    expect(gate(state({ report: report({ model_standing: "behind" }) }), false)).toBe("behind");
-    expect(gate(state({ report: report({ requirements_standing: "behind" }) }), false)).toBe("behind");
-    expect(gate(state({ report: report({ model_standing: "unstated" }) }), false)).toBe("behind");
+    expect(gate(state({ report: report({ model_standing: "behind" }) }), false, shown)).toBe("behind");
+    expect(gate(state({ report: report({ requirements_standing: "behind" }) }), false, shown)).toBe("behind");
+    expect(gate(state({ report: report({ model_standing: "unstated" }) }), false, shown)).toBe("behind");
   });
 
   it("is withheld for exactly what is accepted and still holds, and offered again for anything else", () => {
     const record = { revision: hex(9), accepted_at: "t", channel: "direct", basis, open: [] };
     const holds = state({ acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis } });
-    expect(gate(holds, false)).toBe("already");
+    expect(gate(holds, false, shown)).toBe("already");
 
     const lapsed = state({
       acceptance: { acceptance: record, standing: "lapsed", lapse: "design/model.scxml moved", now: basis },
     });
-    expect(gate(lapsed, false)).toBeNull();
-    // Answers given since are a different basis, which holds no longer says.
+    expect(gate(lapsed, false, shown)).toBeNull();
+    // Answers given since are a different basis, which holds no longer says; the screen shows them.
     const answered = state({
       acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis },
       report: report({ basis: { ...basis, answers: hex(4) } }),
     });
-    expect(gate(answered, false)).toBeNull();
+    expect(gate(answered, false, { ...shown, answers: hex(4) })).toBeNull();
   });
 
   it("is withheld while what the screen shows is not what the report measured, whichever part differs", () => {
-    expect(gate(state(), false, { source: basis.source, model: basis.model })).toBeNull();
-    expect(gate(state(), false, { source: hex(8) })).toBe("differs");
-    expect(gate(state(), false, { model: hex(8) })).toBe("differs");
+    expect(gate(state(), false, { ...shown, source: hex(8) })).toBe("differs");
+    expect(gate(state(), false, { ...shown, model: hex(8) })).toBe("differs");
     // Answers on screen that are not the ones measured, and answers measured that are not on screen.
-    expect(gate(state(), false, { answers: hex(8) })).toBe("differs");
-    expect(gate(state({ report: report({ basis: { ...basis, answers: hex(4) } }) }), false, { answers: null })).toBe(
-      "differs",
+    expect(gate(state(), false, { ...shown, answers: hex(8) })).toBe("differs");
+    expect(gate(state({ report: report({ basis: { ...basis, answers: hex(4) } }) }), false, shown)).toBe("differs");
+  });
+
+  it("is withheld for a part that is not on the screen, which is not a part that matches", () => {
+    for (const part of ["source", "model", "answers"] as const) {
+      expect(gate(state(), false, { ...shown, [part]: undefined })).toBe("unread");
+    }
+    expect(gate(state(), false, { source: undefined, model: undefined, answers: undefined })).toBe("unread");
+    // Not even when the report measured no answers: the screen has not said there are none.
+    expect(gate(state(), false, { ...shown, answers: undefined })).toBe("unread");
+  });
+
+  it("takes 'no answers saved' on the screen and 'no answers' in the report for the same thing", () => {
+    expect(gate(state(), false, { ...shown, answers: null })).toBeNull();
+  });
+
+  it("says a design for an earlier text is behind before it says what is not on the screen", () => {
+    expect(gate(state({ report: report({ model_standing: "behind" }) }), false, { ...shown, source: hex(8) })).toBe(
+      "behind",
     );
-  });
-
-  it("does not take a part the screen does not show yet for a difference", () => {
-    expect(gate(state(), false, {})).toBeNull();
-    expect(gate(state(), false, { source: undefined, model: undefined, answers: undefined })).toBeNull();
-    // "No answers saved" shown and measured is the same thing however it is spelled.
-    expect(gate(state(), false, { answers: null })).toBeNull();
-  });
-
-  it("says a design for an earlier text is behind before it says the screen differs", () => {
-    expect(gate(state({ report: report({ model_standing: "behind" }) }), false, { source: hex(8) })).toBe("behind");
+    expect(
+      gate(state({ report: report({ model_standing: "behind" }) }), false, { ...shown, answers: undefined }),
+    ).toBe("behind");
   });
 });
 
@@ -179,7 +191,7 @@ describe("a refused acceptance", () => {
     const refused = acceptRefused(accepting(state()), "model changed after you were shown it");
     expect(refused.refusal).toBe("model changed after you were shown it");
     expect(refused.accepting).toBe(false);
-    expect(gate(refused, false)).toBeNull();
+    expect(gate(refused, false, shown)).toBeNull();
     // A new press clears the last refusal.
     expect(accepting(refused).refusal).toBeNull();
   });

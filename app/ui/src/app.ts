@@ -95,6 +95,7 @@ const WITHHELD_WORDS: Record<Exclude<Withheld, "accepting">, Key> = {
   unsaved: "withheldUnsaved",
   "not-measured": "withheldNotMeasured",
   behind: "withheldBehind",
+  unread: "withheldUnread",
   differs: "withheldDiffers",
   already: "withheldAlready",
 };
@@ -1570,8 +1571,10 @@ export class App {
   /**
    * The revisions the screen is showing, for `gate` to hold against the report. The text
    * is the editor's base (what it was read or last saved as), the design is the model
-   * panel's, and the answers are the answers editor's; a part not on screen yet is left
-   * out, which is not a difference.
+   * panel's, and the answers are the answers editor's. A part that is not on the screen
+   * (still being read, or it could not be read) is `undefined`, which `gate` withholds the
+   * button for: it is not the same as a part that matches, and not the same as `null`,
+   * which is a part that is on the screen and has nothing saved.
    */
   private shown(): Shown {
     const model = this.model;

@@ -264,7 +264,9 @@ What this does not claim, stated so nothing on the screen is read as more:
   or the list was written for an earlier text, and while the text, the design or the
   answers on screen are not the ones the page measured (a text saved from another
   entrance moves under the screen, and the page is then of a newer text than the one
-  being read: the screen is read again before it can be accepted).
+  being read: the screen is read again before it can be accepted). An answer sheet the
+  screen has not read yet is not "no answers": the button waits for it and says so
+  (`unread`), because a page measured with answers cannot be shown against none.
 
 ## Seeing the screen
 
