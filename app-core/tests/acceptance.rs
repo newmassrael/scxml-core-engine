@@ -309,6 +309,63 @@ fn a_design_for_an_earlier_text_cannot_be_accepted_as_an_answer_to_a_newer_one()
     assert_eq!(f.accepted(), 1);
 }
 
+/// The same design and the same list kept for the new text are saves like any other, and
+/// a save whose pointer cannot move did not take effect: the design and the list stay
+/// the ones for the earlier text, the owner is refused, and only a save that took effect
+/// brings them up to the text. A save that failed is not a reason to accept.
+#[cfg(unix)]
+#[test]
+fn a_design_and_a_list_kept_for_a_newer_text_by_saves_that_failed_stay_behind() {
+    let f = ready("acceptance-failed-relink", MODEL);
+    let first = f.head();
+    f.save_source(
+        "The door opens for a listed card and closes after ten seconds.",
+        Some(&first),
+    );
+    let model = revision_of(&f.ask("read_model")["model"]);
+    let list = revision_of(&f.ask("read_requirements")["requirements"]);
+    let dir = f.root.join(f.id.as_str());
+
+    let failed_model = common::while_the_pointer_cannot_move(&dir, || {
+        f.run(
+            "save_model",
+            json!({"id": f.id.as_str(), "text": MODEL, "base": model, "written_for": f.head()}),
+        )
+    });
+    let Some(failed_model) = failed_model else {
+        return;
+    };
+    assert_eq!(failed_model.unwrap_err().kind, "io");
+    let failed_list = common::while_the_pointer_cannot_move(&dir, || {
+        f.run(
+            "save_requirements",
+            json!({
+                "id": f.id.as_str(),
+                "manifest": MANIFEST,
+                "sidecar": SIDECAR,
+                "base": list,
+                "written_for": f.head(),
+            }),
+        )
+    })
+    .expect("the first save showed the failure can be made");
+    assert_eq!(failed_list.unwrap_err().kind, "io");
+
+    let report = f.ask("requirements_report");
+    assert_eq!(report["model_standing"], "behind", "{report}");
+    assert_eq!(report["requirements_standing"], "behind", "{report}");
+    let refusal = f.accept(report["basis"].clone()).expect_err("still behind");
+    assert_eq!(refusal.kind, "not-current");
+    assert_eq!(refusal.detail["behind"], json!(["model", "requirements"]));
+    assert_eq!(f.accepted(), 0);
+
+    // Saved where it can be written, each takes effect, and then the owner may accept.
+    f.save_model(json!({"text": MODEL}), Some(&model));
+    f.save_requirements(Some(&list));
+    f.accept(f.shown()).unwrap();
+    assert_eq!(f.accepted(), 1);
+}
+
 /// Whether an acceptance still holds is the product's to say about the work as it is
 /// now: a design that moved lapses it, naming the file, and a design put back to the
 /// bytes that were accepted is the design that was accepted.
