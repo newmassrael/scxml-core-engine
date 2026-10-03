@@ -1153,6 +1153,12 @@ fn a_donedata_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
     for (language, extension, native, engine) in [
         ("rust", "rs", "json_parts", "ensure_script_engine"),
         ("kotlin", "kt", "doneParams", "evaluateExpr"),
+        (
+            "go",
+            "go",
+            "ScriptValueToJSON(sceValue)",
+            "EvaluateExpression",
+        ),
     ] {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(

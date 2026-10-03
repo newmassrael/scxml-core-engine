@@ -2445,9 +2445,6 @@ impl StaticTarget for GoTarget<'_> {
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
             }
-            if state.donedata.is_some() {
-                return Some("a <donedata>".to_string());
-            }
         }
         None
     }
@@ -2750,8 +2747,15 @@ impl StaticTarget for GoTarget<'_> {
             filters::to_event_variant(event.to_string())
         )
     }
-    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    // What the runtime's `ScriptValueToJSON` writes as the pair's value: a bool
+    // and a string as they are, a narrow integer widened to `int64` and a real
+    // to `float64`, both exactly.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool | InferredType::Str => value.to_string(),
+            InferredType::Int { .. } => format!("int64({value})"),
+            _ => format!("float64({value})"),
+        }
     }
 }
 

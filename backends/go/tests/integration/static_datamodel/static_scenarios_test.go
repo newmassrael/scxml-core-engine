@@ -34,6 +34,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
@@ -79,6 +80,7 @@ type machine struct {
 	send      func(name, data string)
 	state     func() string
 	ended     func() bool
+	donedata  func() string
 	variables map[string]func() any
 }
 
@@ -109,6 +111,7 @@ func drive[S interface {
 			return atomic[0].String()
 		},
 		ended:     engine.IsInFinalState,
+		donedata:  engine.DonedataAtFinal,
 		variables: variables,
 	}
 }
@@ -158,6 +161,7 @@ func replay(t *testing.T, name string, m machine) {
 			Expect struct {
 				State     *string        `json:"state"`
 				Ended     bool           `json:"ended"`
+				Donedata  map[string]any `json:"donedata"`
 				Variables map[string]any `json:"variables"`
 			} `json:"expect"`
 		} `json:"steps"`
@@ -180,6 +184,16 @@ func replay(t *testing.T, name string, m machine) {
 		if step.Expect.Ended {
 			if !m.ended() {
 				t.Errorf("%s: the machine ended in a top-level <final>", where())
+			}
+			// What its <donedata> left for the invoking parent, as the JSON the
+			// parent reads: the pairs that were carried, and no other.
+			if step.Expect.Donedata != nil {
+				var got any
+				if err := json.Unmarshal([]byte(m.donedata()), &got); err != nil {
+					t.Errorf("%s: the donedata %q is not JSON: %v", where(), m.donedata(), err)
+				} else if !reflect.DeepEqual(got, any(step.Expect.Donedata)) {
+					t.Errorf("%s: the donedata is %v, not %v", where(), got, step.Expect.Donedata)
+				}
 			}
 			continue
 		}
@@ -383,6 +397,17 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		},
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
+	}))
+}
+
+// A top-level final hands its done event the pairs of its <donedata>, each read
+// from the machine's fields when the state is entered; a pair whose value does
+// not fit its type is left out and the others still cross.
+func TestAFinalHandsItsDoneEventItsParams(t *testing.T) {
+	policy := static_donedata.NewStaticDonedataPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_donedata", drive[static_donedata.StaticDonedataState, static_donedata.StaticDonedataEvent](&policy, map[string]func() any{
+		"count": func() any { return policy.Count() },
 	}))
 }
 

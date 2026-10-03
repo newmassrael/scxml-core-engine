@@ -28,10 +28,11 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_go backends/go/tests ./integration/static_datamodel/
-mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_donedata/static_donedata_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_enum/static_enum_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_foreach/static_foreach_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_history/static_history_sm.go
@@ -95,6 +96,14 @@ mutation_case "content reads a payload no delivery carried" <<'PY'
 edit("tools/codegen/templates/go/process_transition.go.jinja2",
      "{% if trans.content_reads_payload %}\n\t\t\t\tif p.pendingPayloadTag != {{ machine_name }}PayloadTag{{ trans.event | to_event_variant }} {\n\t\t\t\t\treturn\n\t\t\t\t}\n{% endif %}",
      "")
+PY
+
+# ── A donedata pair that failed is left out ────────────────────────
+
+mutation_case "a donedata pair that failed is carried as the zero" <<'PY'
+edit("tools/codegen/templates/go/entry_exit_actions.go.jinja2",
+     "{% if param.native_fails %}\n\t\t\t\t\tif !sceFailure.Failed() {\n",
+     "{% if param.native_fails %}\n\t\t\t\t\tif true || !sceFailure.Failed() {\n")
 PY
 
 # ── A list holds no more than its bound ────────────────────────────
