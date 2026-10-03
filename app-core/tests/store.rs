@@ -624,6 +624,39 @@ fn a_save_whose_pointer_cannot_be_written_is_neither_current_nor_in_the_history(
     assert_eq!(revisions(&store, &work.id), vec![one, two]);
 }
 
+/// A history read takes the pointer and then the log, and a save can land between the
+/// two. What the reader names is the save the pointer named, however much the log
+/// has since gained: a failed save of the same text, logged after, is not it.
+#[cfg(unix)]
+#[test]
+fn a_history_read_with_an_older_pointer_stops_at_that_pointer() {
+    let store = store("stale-pointer");
+    let work = store.create_work("Door").unwrap();
+    let head_file = store.root().join(work.id.as_str()).join("source.head");
+    let a = saved_revision(store.save_source(&work.id, "a", None).unwrap());
+    // What a reader that took the pointer now holds.
+    let pointer_then = fs::read(&head_file).unwrap();
+    let b = saved_revision(store.save_source(&work.id, "b", Some(&a)).unwrap());
+
+    // The later save of the first text, whose pointer move fails: a line in the log
+    // that never took effect.
+    let dir = store.root().join(work.id.as_str());
+    let Some(failed) =
+        common::while_the_pointer_cannot_move(&dir, || store.save_source(&work.id, "a", Some(&b)))
+    else {
+        return;
+    };
+    assert_eq!(failed.unwrap_err().kind(), "io");
+    assert_eq!(revisions(&store, &work.id), vec![a.clone(), b]);
+
+    fs::write(&head_file, pointer_then).unwrap();
+    assert_eq!(
+        revisions(&store, &work.id),
+        vec![a],
+        "the failed save was listed under a pointer that was taken before it"
+    );
+}
+
 // -- two saves from one base -------------------------------------------------
 
 #[test]

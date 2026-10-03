@@ -63,7 +63,8 @@ The works folder is plain files:
 ```
 <root>/<work-id>/work.json            title, created_at
                  source/<sha256>.txt  one file per revision, named by its digest
-                 source.head          the current revision
+                 source.head          the current revision, and which save of
+                                      source.log made it current (`log <n>`)
                  source.log           one line per save: revision, parent, time
                  model/<sha256>.scxml the same, for the model
                  model.head           the current model

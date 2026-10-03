@@ -169,6 +169,105 @@ fn a_model_kept_for_a_later_text_is_a_new_entry_and_for_the_same_text_is_not() {
     );
 }
 
+/// A work whose text moved on from the one its model was written for, and whose model
+/// is read again at the new text without changing: the save that would say so.
+#[cfg(unix)]
+struct Behind {
+    f: Fixture,
+    model: Revision,
+    second: Revision,
+}
+
+#[cfg(unix)]
+fn behind(label: &str) -> Behind {
+    let f = work(label);
+    let model = saved_revision(
+        f.store
+            .save_model(&f.id, MODEL, None, Some(&f.first))
+            .unwrap(),
+    );
+    let second = saved_revision(
+        f.store
+            .save_source(
+                &f.id,
+                "The lock opens. Three misses lock it.",
+                Some(&f.first),
+            )
+            .unwrap(),
+    );
+    Behind { f, model, second }
+}
+
+/// The same model kept for the new text is a save like any other, and a save whose
+/// pointer cannot move did not take effect: the model is still the one for the
+/// earlier text, which is what the screen says (`behind`), and the history has one entry.
+#[cfg(unix)]
+#[test]
+fn a_model_kept_for_a_later_text_by_a_save_that_failed_is_still_behind() {
+    let Behind { f, model, second } = behind("models-kept-failed");
+    let dir = f.store.root().join(f.id.as_str());
+    let Some(failed) = common::while_the_pointer_cannot_move(&dir, || {
+        f.store
+            .save_model(&f.id, MODEL, Some(&model), Some(&second))
+    }) else {
+        return;
+    };
+    assert_eq!(failed.unwrap_err().kind(), "io");
+
+    let read = f.store.read_model(&f.id, None).unwrap().unwrap();
+    assert_eq!(
+        read.written_for,
+        Some(f.first.clone()),
+        "the claim of a save that did not take effect was read as the model's"
+    );
+    let standing = run(&f, "read_model", json!({"id": f.id.as_str()})).unwrap();
+    assert_eq!(standing["standing"], "behind", "{standing}");
+    assert_eq!(f.store.model_history(&f.id).unwrap().len(), 1);
+
+    // Retried where it can be written, it takes effect, and only then is it current.
+    let kept = f
+        .store
+        .save_model(&f.id, MODEL, Some(&model), Some(&second))
+        .unwrap();
+    assert!(matches!(kept, Saved::Saved { .. }), "{kept:?}");
+    let read = f.store.read_model(&f.id, None).unwrap().unwrap();
+    assert_eq!(read.written_for, Some(second));
+    assert_eq!(f.store.model_history(&f.id).unwrap().len(), 2);
+}
+
+/// A failed save leaves its line in the log for good. A model saved after it descends
+/// from the save that took effect, not from the failed one that has the same text.
+#[cfg(unix)]
+#[test]
+fn a_model_saved_after_a_failed_save_of_the_same_model_follows_the_one_that_took_effect() {
+    let Behind { f, model, second } = behind("models-after-failed");
+    let dir = f.store.root().join(f.id.as_str());
+    let Some(failed) = common::while_the_pointer_cannot_move(&dir, || {
+        f.store
+            .save_model(&f.id, MODEL, Some(&model), Some(&second))
+    }) else {
+        return;
+    };
+    assert_eq!(failed.unwrap_err().kind(), "io");
+
+    let other = "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"a\"><state id=\"a\"/></scxml>";
+    let next = saved_revision(
+        f.store
+            .save_model(&f.id, other, Some(&model), Some(&second))
+            .unwrap(),
+    );
+
+    let history = f.store.model_history(&f.id).unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .map(|entry| (entry.revision.clone(), entry.written_for.clone()))
+            .collect::<Vec<_>>(),
+        vec![(model, Some(f.first.clone())), (next, Some(second)),],
+        "the failed save was listed as a save the next one followed"
+    );
+}
+
 /// The `standing` word: `current` for the text as it is, `behind` once the
 /// text moved on, `unstated` when the writer did not say.
 #[test]

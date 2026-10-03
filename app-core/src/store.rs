@@ -8,8 +8,11 @@
 //!   <work-id>/
 //!     work.json          the work's identity and title
 //!     source/<digest>.txt   every saved text, named by its own SHA-256, never rewritten
-//!     source.head        the digest of the current text, one line
-//!     source.log         one JSON line per save: digest, parent digest, time
+//!     source.head        the digest of the current text, and the place of the save that
+//!                        made it current in source.log (`log <n>`); an older pointer is
+//!                        the digest alone, one line, and is read as it always was
+//!     source.log         one JSON line per save: digest, parent digest, time, and the
+//!                        place of the line of the save it followed (`parent_at`)
 //!     model/<digest>.scxml  the same, for the SCXML model written from the text
 //!     model.head         the digest of the current model, one line
 //!     model.log          one JSON line per save, and the source revision it was written for
@@ -33,6 +36,13 @@
 //! A save is an optimistic compare-and-swap on the current digest. The caller
 //! says which revision its text was written from (`base`), and the store refuses
 //! a base that is no longer current rather than overwrite what it has not seen.
+//!
+//! A digest does not say which SAVE made it current. The same model kept for a later
+//! source is saved again under the same digest, and a save that logged and then could
+//! not move the pointer leaves a line that never took effect. So the pointer names the
+//! save by its place in the log, in the one atomic write that makes it current; every
+//! read (the history, the source a model was written for) starts from that line and
+//! follows each save's `parent_at`, and a line off that path was never current.
 //!
 //! The text, the model, the owner's answers, the requirement list and the acceptances are
 //! five chains kept by ONE implementation
@@ -598,16 +608,26 @@ impl<C: Clock> WorkStore<C> {
     /// What the writer said it read is in the log line of the save that made this
     /// revision current; a revision no save on the chain names (one a failed save
     /// left behind) says nothing.
+    ///
+    /// The pointer is read ONCE, and both the text and the chain come from it. Read
+    /// twice, a save landing between the two reads would hand over the text of one
+    /// pointer with the claim of the next.
     fn read_claimed(
         &self,
         artifact: Artifact,
         id: &WorkId,
         revision: Option<&Revision>,
     ) -> Result<Option<(Revision, Option<Revision>, String)>, StoreError> {
-        let Some((revision, text)) = self.read_text(artifact, id, revision)? else {
-            return Ok(None);
+        let dir = self.existing(id)?;
+        let pointer = read_pointer(&dir, artifact)?;
+        let wanted = match (revision, pointer.as_ref()) {
+            (Some(named), _) => named.clone(),
+            (None, Some(pointer)) => pointer.revision.clone(),
+            (None, None) => return Ok(None),
         };
-        let chain = self.history_of(artifact, id)?;
+        let (revision, text) =
+            self.read_revision(&dir, artifact, id, wanted, revision.is_some())?;
+        let chain = chain_to(&dir, artifact, pointer.as_ref())?;
         let written_for = chain
             .iter()
             .rev()
@@ -630,10 +650,25 @@ impl<C: Clock> WorkStore<C> {
                 None => return Ok(None),
             },
         };
-        let path = revision_path(&dir, artifact, &wanted);
+        self.read_revision(&dir, artifact, id, wanted, revision.is_some())
+            .map(Some)
+    }
+
+    /// The text of `wanted`, checked against its name. `named` says whether the caller
+    /// asked for this revision (one that is missing is then not found) or was handed it
+    /// as the current one (one that is missing is then a damaged folder).
+    fn read_revision(
+        &self,
+        dir: &Path,
+        artifact: Artifact,
+        id: &WorkId,
+        wanted: Revision,
+        named: bool,
+    ) -> Result<(Revision, String), StoreError> {
+        let path = revision_path(dir, artifact, &wanted);
         let bytes = fs::read(&path).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
-                if revision.is_some() {
+                if named {
                     StoreError::NotFound {
                         what: format!(
                             "{} revision {} of `{}`",
@@ -657,7 +692,7 @@ impl<C: Clock> WorkStore<C> {
         }
         let text = String::from_utf8(bytes)
             .map_err(|_| StoreError::corrupt(&path, "the text is not valid UTF-8"))?;
-        Ok(Some((wanted, text)))
+        Ok((wanted, text))
     }
 
     /// Save `text` as the work's next revision, from `base`.
@@ -824,7 +859,8 @@ impl<C: Clock> WorkStore<C> {
                 });
             }
         }
-        let current = read_head(&dir, artifact)?;
+        let pointer = read_pointer(&dir, artifact)?;
+        let current = pointer.as_ref().map(|p| p.revision.clone());
         if current.as_ref() != base {
             return Err(StoreError::Conflict {
                 base: base.cloned(),
@@ -837,7 +873,7 @@ impl<C: Clock> WorkStore<C> {
             // only if it is also written for the same text: the same model for
             // another text is the writer's news (see `save_model`).
             let same_claim = !artifact.is_written_for_a_source()
-                || history_in(&dir, artifact)?
+                || chain_to(&dir, artifact, pointer.as_ref())?
                     .pop()
                     .and_then(|entry| entry.written_for)
                     .as_ref()
@@ -863,16 +899,22 @@ impl<C: Clock> WorkStore<C> {
         if !intact {
             atomic_write(&path, text.as_bytes())?;
         }
-        let entry = HistoryEntry {
-            revision: revision.clone(),
-            parent: current.clone(),
-            saved_at: self.clock.now(),
-            written_for: written_for.cloned(),
+        let line = LogLine {
+            entry: HistoryEntry {
+                revision: revision.clone(),
+                parent: current.clone(),
+                saved_at: self.clock.now(),
+                written_for: written_for.cloned(),
+            },
+            // The save this one follows is the one the pointer names, which is not
+            // always the last line of its revision.
+            parent_at: pointer.as_ref().and_then(|p| p.entry),
         };
-        append_log(&dir.join(artifact.log_file()), &entry)?;
+        let place = append_log(&dir.join(artifact.log_file()), &line)?;
+        // The pointer and the place of the save it makes current move together.
         atomic_write(
             &dir.join(artifact.head_file()),
-            format!("{revision}\n").as_bytes(),
+            format!("{revision}\n{POINTER_ENTRY_PREFIX}{place}\n").as_bytes(),
         )?;
         Ok(Saved::Saved {
             revision,
@@ -928,10 +970,21 @@ fn removed_work(id: &WorkId) -> StoreError {
 
 /// The history of `artifact` in the work's folder `dir`.
 fn history_in(dir: &Path, artifact: Artifact) -> Result<Vec<HistoryEntry>, StoreError> {
-    // The pointer is read before the log. A save logs, then moves the
-    // pointer, so a pointer read first can only name a revision whose line
-    // the log read after it already holds.
-    let head = read_head(dir, artifact)?;
+    let pointer = read_pointer(dir, artifact)?;
+    chain_to(dir, artifact, pointer.as_ref())
+}
+
+/// The saves that took effect up to the one `pointer` names, oldest first.
+///
+/// `pointer` is the one the caller read, and the answer is the chain AS OF that
+/// pointer: the log only grows, and a line it gained after the pointer was read (a
+/// save that landed, or one that logged and failed) is not part of it, because the
+/// walk starts at the line the pointer names and goes back from there.
+fn chain_to(
+    dir: &Path,
+    artifact: Artifact,
+    pointer: Option<&Pointer>,
+) -> Result<Vec<HistoryEntry>, StoreError> {
     let path = dir.join(artifact.log_file());
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
@@ -939,15 +992,15 @@ fn history_in(dir: &Path, artifact: Artifact) -> Result<Vec<HistoryEntry>, Store
         Err(e) => return Err(StoreError::io(&path, e)),
     };
     let ends_cleanly = text.ends_with('\n');
-    let lines: Vec<&str> = text.lines().collect();
-    let mut entries = Vec::with_capacity(lines.len());
-    for (index, line) in lines.iter().enumerate() {
+    let raw: Vec<&str> = text.lines().collect();
+    let mut lines = Vec::with_capacity(raw.len());
+    for (index, line) in raw.iter().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        match serde_json::from_str::<HistoryEntry>(line) {
-            Ok(entry) => entries.push(entry),
-            Err(_) if !ends_cleanly && index + 1 == lines.len() => {}
+        match serde_json::from_str::<LogLine>(line) {
+            Ok(parsed) => lines.push(parsed),
+            Err(_) if !ends_cleanly && index + 1 == raw.len() => {}
             Err(e) => {
                 return Err(StoreError::corrupt(
                     &path,
@@ -958,28 +1011,49 @@ fn history_in(dir: &Path, artifact: Artifact) -> Result<Vec<HistoryEntry>, Store
     }
 
     // Nothing has taken effect until the pointer exists, whatever the log holds.
-    let Some(head) = head else {
+    let Some(pointer) = pointer else {
         return Ok(Vec::new());
     };
-    let mut chain = Vec::new();
-    let mut before = entries.len();
-    let mut wanted = Some(head);
-    while let Some(revision) = wanted {
-        let Some(at) = entries[..before]
+    let missing = |revision: &Revision| {
+        StoreError::corrupt(
+            &path,
+            format!(
+                "revision {} is on the way back from the current one and no save record names it",
+                revision.short()
+            ),
+        )
+    };
+    // The save the pointer names, by its place; a pointer without one (or one that
+    // does not lead to its own revision) is read as before, by the last line of it.
+    let mut at = match pointer.entry {
+        Some(place)
+            if lines
+                .get(place)
+                .is_some_and(|l| l.entry.revision == pointer.revision) =>
+        {
+            place
+        }
+        _ => lines
             .iter()
-            .rposition(|entry| entry.revision == revision)
-        else {
-            return Err(StoreError::corrupt(
-                    &path,
-                    format!(
-                        "revision {} is on the way back from the current one and no save record names it",
-                        revision.short()
-                    ),
-                ));
+            .rposition(|l| l.entry.revision == pointer.revision)
+            .ok_or_else(|| missing(&pointer.revision))?,
+    };
+    let mut chain = Vec::new();
+    loop {
+        let line = &lines[at];
+        chain.push(line.entry.clone());
+        let Some(parent) = line.entry.parent.as_ref() else {
+            break;
         };
-        wanted = entries[at].parent.clone();
-        chain.push(entries[at].clone());
-        before = at;
+        // The save this one followed, by its place; failing that, the last line of
+        // that revision before this one, as a log from before places were kept needs.
+        at = match line.parent_at {
+            Some(place) if place < at && lines[place].entry.revision == *parent => place,
+            _ => lines[..at]
+                .iter()
+                .rposition(|l| l.entry.revision == *parent)
+                .ok_or_else(|| missing(parent))?,
+        };
     }
     chain.reverse();
     Ok(chain)
@@ -1083,15 +1157,57 @@ fn revision_path(dir: &Path, artifact: Artifact, revision: &Revision) -> PathBuf
         .join(format!("{revision}.{}", artifact.extension()))
 }
 
-fn read_head(dir: &Path, artifact: Artifact) -> Result<Option<Revision>, StoreError> {
+/// What a pointer file names: the current revision and the save that made it current.
+///
+/// A revision alone cannot say which save that was. The same text can be saved more
+/// than once (a model kept for a later source is one), and a save that logged and
+/// then failed to move the pointer leaves a line for a revision the pointer may
+/// already name. Every reader has to know WHICH line is the one that took effect, and
+/// the pointer knows: it is moved in one atomic write together with the position it
+/// carries, so a position is only ever written by a save that is taking effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pointer {
+    revision: Revision,
+    /// The place of that save's line among the log's saves. `None` for a pointer
+    /// written before places were kept, which is read as it always was: the last
+    /// line of the revision.
+    entry: Option<usize>,
+}
+
+/// The second line of a pointer file: `log <n>`, the save's place in the log.
+const POINTER_ENTRY_PREFIX: &str = "log ";
+
+fn read_pointer(dir: &Path, artifact: Artifact) -> Result<Option<Pointer>, StoreError> {
     let path = dir.join(artifact.head_file());
-    match fs::read_to_string(&path) {
-        Ok(text) => Revision::parse(text.trim())
-            .map(Some)
-            .map_err(|e| StoreError::corrupt(&path, e.to_string())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(StoreError::io(&path, e)),
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(StoreError::io(&path, e)),
+    };
+    let corrupt = |why: String| StoreError::corrupt(&path, why);
+    let mut lines = text.lines();
+    let revision =
+        Revision::parse(lines.next().unwrap_or("").trim()).map_err(|e| corrupt(e.to_string()))?;
+    let entry = match lines.next().map(str::trim) {
+        None | Some("") => None,
+        Some(line) => Some(
+            line.strip_prefix(POINTER_ENTRY_PREFIX)
+                .and_then(|n| n.parse::<usize>().ok())
+                .ok_or_else(|| {
+                    corrupt(format!("`{line}` is not the place of a save in the log"))
+                })?,
+        ),
+    };
+    if lines.any(|rest| !rest.trim().is_empty()) {
+        return Err(corrupt(
+            "the pointer has more lines than a revision and a place".to_string(),
+        ));
     }
+    Ok(Some(Pointer { revision, entry }))
+}
+
+fn read_head(dir: &Path, artifact: Artifact) -> Result<Option<Revision>, StoreError> {
+    Ok(read_pointer(dir, artifact)?.map(|pointer| pointer.revision))
 }
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1135,19 +1251,42 @@ fn sync_directory(dir: &Path) {
     let _ = dir;
 }
 
-fn append_log(path: &Path, entry: &HistoryEntry) -> Result<(), StoreError> {
-    let mut line =
-        serde_json::to_string(entry).map_err(|e| StoreError::corrupt(path, e.to_string()))?;
-    line.push('\n');
+/// One line of a log: the save, and the place of the line of the save it followed.
+///
+/// The parent is named in the log by its revision, and a revision can have several
+/// lines. A line that never took effect and a line that did can share one (a model
+/// kept for a later source, saved and failed), so "the last line of the parent's
+/// revision" can be the one that failed. The place says which one the save followed.
+/// A line from before places were kept has none, and is followed as it always was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct LogLine {
+    #[serde(flatten)]
+    entry: HistoryEntry,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_at: Option<usize>,
+}
+
+/// Append `line` to the log and say its place: how many saves the log held before it.
+/// Under the save's lock, so no other save moves the count between the two.
+fn append_log(path: &Path, line: &LogLine) -> Result<usize, StoreError> {
+    let mut text =
+        serde_json::to_string(line).map_err(|e| StoreError::corrupt(path, e.to_string()))?;
+    text.push('\n');
     drop_torn_tail(path).map_err(|e| StoreError::io(path, e))?;
+    let place = match fs::read_to_string(path) {
+        Ok(held) => held.lines().filter(|l| !l.trim().is_empty()).count(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
+        Err(e) => return Err(StoreError::io(path, e)),
+    };
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .map_err(|e| StoreError::io(path, e))?;
-    file.write_all(line.as_bytes())
+    file.write_all(text.as_bytes())
         .and_then(|()| file.sync_all())
-        .map_err(|e| StoreError::io(path, e))
+        .map_err(|e| StoreError::io(path, e))?;
+    Ok(place)
 }
 
 /// Cut a log back to its last complete line.

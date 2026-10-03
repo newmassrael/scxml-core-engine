@@ -289,6 +289,30 @@ impl FigureRenderer for RefusingRenderer {
     }
 }
 
+/// Run `save` while nobody can add files to the work's folder, so a save writes the
+/// revision's file and its log line and cannot create the pointer's temporary file:
+/// the failure itself, not a log written to look like it. `None` when this user is not
+/// bound by the permission (root), which cannot show it -- said, not passed.
+#[cfg(unix)]
+pub fn while_the_pointer_cannot_move<T>(
+    work_dir: &std::path::Path,
+    save: impl FnOnce() -> T,
+) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(work_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = work_dir.join(".probe");
+    if std::fs::File::create(&probe).is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        std::fs::set_permissions(work_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("not run: this user can write into a read-only folder");
+        return None;
+    }
+    let outcome = save();
+    std::fs::set_permissions(work_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    Some(outcome)
+}
+
 /// A fresh, empty folder under the build's temporary directory, named for the
 /// test that asked and unique to this run.
 pub fn scratch(label: &str) -> PathBuf {
