@@ -25,6 +25,10 @@
 //!   cannot be set in the page's width, each row is set as a table of its
 //!   own instead ([`super::table::Table::fallback`]) — the same values,
 //!   the other way up.
+//! - A list of scalars is a column of `# | value`; a long one (the bytes of
+//!   a test vector) is set [`PER_ROW`] to a row, headed by the positions the
+//!   row holds (`16..31`), so five hundred bytes are a page and not eight.
+//!   Every value is still there, once, in order.
 //! - A scalar is written as the AST writes it: text as it is, numbers and
 //!   booleans as literals, `null`, and `[]` / `{}` for nothing. Text that
 //!   could be mistaken for one of those — an empty string, `true`, a
@@ -49,6 +53,39 @@ pub const OMITTED_FIELDS: [&str; 1] = ["source_location"];
 
 /// The head of a column of positions.
 const INDEX_HEAD: &str = "#";
+
+/// A list of scalars longer than this is set several to a row.
+const COMPACT_ABOVE: usize = 8;
+
+/// How many items of a compact list a row holds.
+const PER_ROW: usize = 16;
+
+/// The rows of a column of scalars: one each, or — for a long list whose
+/// items can be told apart by a space (none holds whitespace or a comma) —
+/// [`PER_ROW`] to a row, headed by the positions it holds.
+fn column_rows(rows: &[(usize, String)]) -> Vec<Vec<Cell>> {
+    let separable = |v: &str| !v.chars().any(|c| c.is_whitespace() || c == ',');
+    if rows.len() <= COMPACT_ABOVE || !rows.iter().all(|(_, v)| separable(v)) {
+        return rows
+            .iter()
+            .map(|(i, v)| vec![Cell::mono(i.to_string()), Cell::mono(v.clone())])
+            .collect();
+    }
+    rows.chunks(PER_ROW)
+        .map(|group| {
+            // A column is one unbroken run of positions (`list` flushes it at
+            // every item with something in it), so a row's head is a range.
+            let (first, last) = (group[0].0, group[group.len() - 1].0);
+            let head = if first == last {
+                first.to_string()
+            } else {
+                format!("{first}..{last}")
+            };
+            let items: Vec<&str> = group.iter().map(|(_, v)| v.as_str()).collect();
+            vec![Cell::mono(head), Cell::mono(items.join(" "))]
+        })
+        .collect()
+}
 
 /// One table's worth of values, before it is set: what the walk found,
 /// with the path that reaches it.
@@ -262,10 +299,7 @@ fn tables(blocks: &[Block], words: &Words) -> Vec<Table> {
             Block::Column { path, rows } => Table {
                 heading: heading(path, words),
                 head: vec![Cell::prose(INDEX_HEAD), Cell::prose(words.value)],
-                rows: rows
-                    .iter()
-                    .map(|(i, v)| vec![Cell::mono(i.to_string()), Cell::mono(v.clone())])
-                    .collect(),
+                rows: column_rows(rows),
                 fallback: Vec::new(),
             },
             Block::Records {
@@ -567,6 +601,74 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn texts(rows: &[Vec<Cell>]) -> Vec<Vec<String>> {
+        rows.iter()
+            .map(|r| r.iter().map(|c| c.text.clone()).collect())
+            .collect()
+    }
+
+    fn run(count: usize) -> Vec<(usize, String)> {
+        (0..count).map(|i| (i, (i * 7 % 256).to_string())).collect()
+    }
+
+    /// A short list stays one item to a row; a long one is set sixteen to a
+    /// row under the positions it holds, and in either every value is there,
+    /// once, in order.
+    #[test]
+    fn a_long_list_of_scalars_is_set_several_to_a_row_with_every_value() {
+        let short = column_rows(&run(COMPACT_ABOVE));
+        assert_eq!(short.len(), COMPACT_ABOVE, "a short list is a row each");
+        assert_eq!(texts(&short)[3], vec!["3".to_string(), "21".to_string()]);
+
+        let long = run(512);
+        let rows = texts(&column_rows(&long));
+        assert_eq!(rows.len(), 32, "five hundred and twelve in rows of sixteen");
+        assert_eq!(rows[0][0], "0..15");
+        assert_eq!(rows[31][0], "496..511");
+        let flat: Vec<String> = rows
+            .iter()
+            .flat_map(|r| r[1].split(' ').map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        let wanted: Vec<String> = long.iter().map(|(_, v)| v.clone()).collect();
+        assert_eq!(flat, wanted, "every value once, in order");
+
+        // The last row holds what is left, and a row of one is headed by its
+        // own position.
+        let odd = texts(&column_rows(&run(33)));
+        assert_eq!(odd.last().map(|r| r[0].as_str()), Some("32"));
+        assert_eq!(odd[1][0], "16..31");
+    }
+
+    /// Items that cannot be told apart by a space (one holds a space or a
+    /// comma) are never joined: the list stays a row each.
+    #[test]
+    fn items_a_space_cannot_separate_are_never_joined() {
+        let mut rows = run(20);
+        rows[5].1 = "two words".to_string();
+        assert_eq!(column_rows(&rows).len(), 20);
+        let mut rows = run(20);
+        rows[7].1 = "a,b".to_string();
+        assert_eq!(column_rows(&rows).len(), 20);
+    }
+
+    /// The bytes of a test vector that took eight pages one to a row are a
+    /// page: the codec the survey measured at eight now sets on one.
+    #[test]
+    fn five_hundred_bytes_in_a_codec_vector_are_one_page() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("tests/forge/resources/codec_length_ref_uint16_be.scxml"),
+        )
+        .expect("reads");
+        let parsed = parse_forge_with_imports(&text, DocumentLabel::for_input_path("c.scxml"))
+            .expect("parses")
+            .expect("not a statechart");
+        let sheets = pages(&parsed, &EN, Page::a4_portrait(7.0)).expect("sets");
+        assert!(sheets.len() <= 2, "{} pages", sheets.len());
     }
 
     /// Every kind's example is set on a page in both languages, deterministic
