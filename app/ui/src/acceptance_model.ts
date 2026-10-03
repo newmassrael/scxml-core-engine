@@ -44,19 +44,47 @@ export type Withheld =
   | "not-measured"
   /** The design or the list was written for an earlier text. */
   | "behind"
+  /** What the screen shows is not what the report measured: the owner would accept what they have not read. */
+  | "differs"
   /** This very design, text, list and answers are accepted already and the acceptance holds. */
   | "already";
 
 /**
- * Whether the owner may press accept now, and if not, why. The core refuses what is
- * not current and what moved; this keeps the button from offering what it will refuse.
+ * The revisions the screen is showing, as far as it knows them. `undefined` says the
+ * screen shows none of that kind yet (the design is still being read, say), which is
+ * not a difference; `null` is a shown value of "nothing saved" (no answers).
  */
-export function gate(state: AcceptanceState, unsaved: boolean): Withheld | null {
+export interface Shown {
+  readonly source?: string | null | undefined;
+  readonly model?: string | null | undefined;
+  readonly answers?: string | null | undefined;
+}
+
+/**
+ * Whether what is shown is what the report measured. The report is asked for beside the
+ * text, the model and the answers and answers in its own time, and a text saved from
+ * another entrance moves under the screen: the report can be of a newer text than the
+ * one the owner is reading. The core accepts what the report names because that is the
+ * newest, so the screen is where the owner is kept from accepting what they did not read.
+ */
+function showsWhatWasMeasured(shown: Shown, basis: Basis): boolean {
+  const same = (shownRevision: string | null | undefined, measured: string | null): boolean =>
+    shownRevision === undefined || (shownRevision ?? null) === (measured ?? null);
+  return same(shown.source, basis.source) && same(shown.model, basis.model) && same(shown.answers, basis.answers);
+}
+
+/**
+ * Whether the owner may press accept now, and if not, why. The core refuses what is
+ * not current and what moved; this keeps the button from offering what it will refuse,
+ * and from offering what the owner is not looking at.
+ */
+export function gate(state: AcceptanceState, unsaved: boolean, shown: Shown = {}): Withheld | null {
   if (state.accepting) return "accepting";
   if (unsaved) return "unsaved";
   const report = state.report;
   if (report === null) return "not-measured";
   if (report.model_standing !== "current" || report.requirements_standing !== "current") return "behind";
+  if (!showsWhatWasMeasured(shown, report.basis)) return "differs";
   const accepted = state.acceptance;
   if (accepted.standing === "holds" && accepted.acceptance !== null && sameBasis(accepted.acceptance.basis, report.basis)) {
     return "already";

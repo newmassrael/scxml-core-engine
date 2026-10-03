@@ -249,8 +249,11 @@ What this does not claim, stated so nothing on the screen is read as more:
   read; the sentences sidecar only feeds the page, so editing it does not lapse an
   acceptance.
 - **What is accepted is what is saved.** The button is withheld while text or answers
-  are typed and not saved, while SCE has not measured the design, and while the design
-  or the list was written for an earlier text.
+  are typed and not saved, while SCE has not measured the design, while the design
+  or the list was written for an earlier text, and while the text, the design or the
+  answers on screen are not the ones the page measured (a text saved from another
+  entrance moves under the screen, and the page is then of a newer text than the one
+  being read: the screen is read again before it can be accepted).
 
 ## Seeing the screen
 

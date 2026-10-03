@@ -14,6 +14,7 @@ import {
   tally,
   type AcceptancePanel,
   type AcceptanceState,
+  type Shown,
   type Withheld,
 } from "./acceptance_model";
 import { apiOver, type Api } from "./api";
@@ -94,6 +95,7 @@ const WITHHELD_WORDS: Record<Exclude<Withheld, "accepting">, Key> = {
   unsaved: "withheldUnsaved",
   "not-measured": "withheldNotMeasured",
   behind: "withheldBehind",
+  differs: "withheldDiffers",
   already: "withheldAlready",
 };
 
@@ -385,7 +387,7 @@ export class App {
    * stands but not the model: its sheets are kept, and SCE is not run again for
    * an answer it has already given.
    */
-  private async loadModel(id: string, redraw: boolean): Promise<void> {
+  private async loadModel(id: string, redraw: boolean, alsoAcceptance = true): Promise<void> {
     const session = this.session;
     const ticket = ++this.modelTicket;
     const current = (): boolean => session === this.session && ticket === this.modelTicket;
@@ -405,7 +407,7 @@ export class App {
       const known: ModelRead = { model: read.model, standing: read.standing, sourceHead: read.source_head };
       // What was accepted is of the model as it is now, and the text may have moved
       // under it: asked again whenever the model is read, drawn again or not.
-      void this.loadAcceptance(id);
+      if (alsoAcceptance) void this.loadAcceptance(id);
       if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
         this.model = { phase: "drawn", read: known, figures: prior.figures };
         this.render();
@@ -532,7 +534,7 @@ export class App {
     const work = this.selected;
     if (panel === null || panel.phase !== "read" || work === null) return;
     const report = panel.state.report;
-    if (report === null || gate(panel.state, this.hasUnsavedChanges()) !== null) return;
+    if (report === null || gate(panel.state, this.hasUnsavedChanges(), this.shown()) !== null) return;
     const session = this.session;
     this.acceptance = { phase: "read", state: accepting(panel.state) };
     this.render();
@@ -551,6 +553,11 @@ export class App {
       this.acceptance = { phase: "read", state: acceptRefused(now.state, refusal) };
       this.render();
     }
+    // The core named what it holds now. The page was read again above; the design the
+    // screen draws is read again here (the page is not measured a second time), so that
+    // what the owner is looking at is what the next press would accept: `gate` holds the
+    // button until it is.
+    void this.loadModel(work.id, false, false);
   }
 
   private async create(title: string): Promise<void> {
@@ -1555,9 +1562,28 @@ export class App {
     const button = this.root.querySelector<HTMLButtonElement>("#accept");
     const note = this.root.querySelector<HTMLElement>("#accept-note");
     if (panel === null || panel.phase !== "read" || button === null || note === null) return;
-    const withheld = gate(panel.state, this.hasUnsavedChanges());
+    const withheld = gate(panel.state, this.hasUnsavedChanges(), this.shown());
     button.disabled = withheld !== null;
     note.textContent = withheld === null || withheld === "accepting" ? "" : this.t(WITHHELD_WORDS[withheld]);
+  }
+
+  /**
+   * The revisions the screen is showing, for `gate` to hold against the report. The text
+   * is the editor's base (what it was read or last saved as), the design is the model
+   * panel's, and the answers are the answers editor's; a part not on screen yet is left
+   * out, which is not a difference.
+   */
+  private shown(): Shown {
+    const model = this.model;
+    const shownModel =
+      model !== null && (model.phase === "drawing" || model.phase === "drawn" || model.phase === "not-drawn")
+        ? model.read.model.revision
+        : undefined;
+    return {
+      source: this.editor === null ? undefined : this.editor.base,
+      model: shownModel,
+      answers: this.answers === null ? undefined : this.answers.base,
+    };
   }
 
   /** What an accepted model leaves to a person, in SCE's own sentences. */

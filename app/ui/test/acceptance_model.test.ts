@@ -92,6 +92,28 @@ describe("the accept button", () => {
     });
     expect(gate(answered, false)).toBeNull();
   });
+
+  it("is withheld while what the screen shows is not what the report measured, whichever part differs", () => {
+    expect(gate(state(), false, { source: basis.source, model: basis.model })).toBeNull();
+    expect(gate(state(), false, { source: hex(8) })).toBe("differs");
+    expect(gate(state(), false, { model: hex(8) })).toBe("differs");
+    // Answers on screen that are not the ones measured, and answers measured that are not on screen.
+    expect(gate(state(), false, { answers: hex(8) })).toBe("differs");
+    expect(gate(state({ report: report({ basis: { ...basis, answers: hex(4) } }) }), false, { answers: null })).toBe(
+      "differs",
+    );
+  });
+
+  it("does not take a part the screen does not show yet for a difference", () => {
+    expect(gate(state(), false, {})).toBeNull();
+    expect(gate(state(), false, { source: undefined, model: undefined, answers: undefined })).toBeNull();
+    // "No answers saved" shown and measured is the same thing however it is spelled.
+    expect(gate(state(), false, { answers: null })).toBeNull();
+  });
+
+  it("says a design for an earlier text is behind before it says the screen differs", () => {
+    expect(gate(state({ report: report({ model_standing: "behind" }) }), false, { source: hex(8) })).toBe("behind");
+  });
 });
 
 describe("what SCE finds of the requirements", () => {

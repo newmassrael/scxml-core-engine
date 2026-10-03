@@ -1668,6 +1668,39 @@ describe("accepting the design", () => {
     expect(acceptButton().disabled).toBe(true);
   });
 
+  it("is withheld while the text on screen is not the one the design was measured against", async () => {
+    await click("Alpha");
+    expect(acceptButton().disabled).toBe(false);
+
+    // Another entrance saves a new text, and the authoring client writes the design and
+    // the list for it. This screen reads the model again and not the text.
+    await core.call("save_source", { id: "alpha", text: "alpha three", base: headOf("alpha") });
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Read again");
+
+    expect(editor().value).toBe("alpha two");
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("not the one the design was measured against");
+    acceptButton().click();
+    await settle();
+    expect(core.callsOf("accept")).toHaveLength(0);
+
+    // Reading the work again shows the text the design is about, and the owner may accept.
+    await click("Alpha");
+    expect(editor().value).toBe("alpha three");
+    expect(acceptButton().disabled).toBe(false);
+    expect(acceptNote()).toBe("");
+  });
+
+  it("does not ask the owner to read the text again when the screen already shows it", async () => {
+    await click("Alpha");
+    await click("Read again");
+
+    expect(acceptButton().disabled).toBe(false);
+    expect(acceptNote()).toBe("");
+  });
+
   it("says an acceptance lapsed, in SCE's sentence, and offers to accept the design as it is now", async () => {
     core.setAcceptance("alpha");
     core.setModel("alpha", "<scxml><!-- edited --></scxml>", headOf("alpha"));
