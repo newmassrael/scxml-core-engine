@@ -40,7 +40,10 @@ class FakeCore implements Transport {
   private readonly revisionOf = new Map<string, string>();
   private readonly gates: Gate[] = [];
   private readonly failures: Array<{ name: string; error: CommandFailure }> = [];
-  private readonly models = new Map<string, { text: string; writtenFor: string | null }>();
+  private readonly models = new Map<
+    string,
+    { text: string; writtenFor: string | null; others: ReadonlyArray<{ name: string; text: string }> }
+  >();
   private readonly answersOf = new Map<
     string,
     { revision: string; entries: Record<string, { answer: string; answered_at: string }> }
@@ -67,9 +70,18 @@ class FakeCore implements Transport {
     this.works.set(id, { title, revisions: texts.map((text) => ({ revision: this.revision(text), text })) });
   }
 
-  /** The work's model, and the text revision its writer says it read. */
-  setModel(id: string, text: string, writtenFor: string | null): void {
-    this.models.set(id, { text, writtenFor });
+  /**
+   * The work's model, and the text revision its writer says it read. `others` makes it
+   * a model of several documents: `text` is then the entry `door.scxml`, and each of
+   * `others` is a document it imports.
+   */
+  setModel(
+    id: string,
+    text: string,
+    writtenFor: string | null,
+    others: ReadonlyArray<{ name: string; text: string }> = [],
+  ): void {
+    this.models.set(id, { text, writtenFor, others });
   }
 
   /** The SVG this core draws for a model, so a test can look for it on the screen. */
@@ -121,7 +133,7 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 5, commands: [], root: "/fake/works" };
+        return { command_set_version: 6, commands: [], root: "/fake/works" };
       case "read_answers": {
         const held = typeof args["id"] === "string" ? this.answersOf.get(args["id"]) : undefined;
         return { answers: held ?? null };
@@ -206,8 +218,15 @@ class FakeCore implements Transport {
         const standing =
           model.writtenFor === null ? "unstated" : model.writtenFor === head ? "current" : "behind";
         if (name === "read_model") {
+          const entry = model.others.length > 0 ? "door.scxml" : "model.scxml";
           return {
-            model: { revision, written_for: model.writtenFor, text: model.text },
+            model: {
+              revision,
+              written_for: model.writtenFor,
+              text: model.text,
+              entry,
+              documents: [{ name: entry, text: model.text }, ...model.others],
+            },
             source_head: head,
             standing,
           };
@@ -513,6 +532,43 @@ describe("the model panel", () => {
     expect(modelText()).toContain("Drawn by fake-sce 0");
     // The model's own text is there to read, folded.
     expect(root.querySelector(".scxml")?.textContent).toBe("<scxml/>");
+  });
+
+  it("shows a model of one document as one text, as before", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+
+    const folded = root.querySelector(".model-scxml");
+    expect(folded?.querySelector("summary")?.textContent).toBe("The model's SCXML");
+    expect(folded?.querySelectorAll("pre.scxml")).toHaveLength(1);
+    expect(folded?.querySelector("h5")).toBeNull();
+  });
+
+  it("shows a model of several documents under the file name each is imported by, the entry named", async () => {
+    core.setModel("alpha", "<scxml>entry</scxml>", core.revision("alpha two"), [
+      { name: "close.scxml", text: "<event-schema>close</event-schema>" },
+      { name: "open.scxml", text: "<event-schema>open</event-schema>" },
+    ]);
+    await click("Alpha");
+
+    const folded = root.querySelector(".model-scxml");
+    expect(folded?.querySelector("summary")?.textContent).toBe("The model's SCXML: 3 documents");
+    expect([...(folded?.querySelectorAll("h5.document-name code") ?? [])].map((c) => c.textContent)).toEqual([
+      "door.scxml",
+      "close.scxml",
+      "open.scxml",
+    ]);
+    expect([...(folded?.querySelectorAll("pre.scxml") ?? [])].map((p) => p.textContent)).toEqual([
+      "<scxml>entry</scxml>",
+      "<event-schema>close</event-schema>",
+      "<event-schema>open</event-schema>",
+    ]);
+    // Only the entry says so.
+    expect(folded?.querySelectorAll("h5.document-name")[0]?.textContent).toContain("the document SCE is asked about");
+    expect(folded?.querySelectorAll("h5.document-name")[1]?.textContent).not.toContain("asked about");
+    // The review and the figures are of the same model.
+    expect(core.callsOf("review")).toHaveLength(1);
+    expect(images()).toHaveLength(2);
   });
 
   it("never turns the drawing into elements of the page", async () => {

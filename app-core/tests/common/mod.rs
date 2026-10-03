@@ -92,9 +92,16 @@ pub struct FakeRenderer;
 impl FigureRenderer for FakeRenderer {
     fn render(&self, request: &FigureRequest<'_>) -> Result<FigureSet, RenderError> {
         let asked = format!(
-            "{} | name={} page={} lexicon={} min_pt={}",
+            "{} | name={} entry_file={} siblings={} page={} lexicon={} min_pt={}",
             request.model.chars().take(40).collect::<String>(),
             request.name.unwrap_or("-"),
+            request.entry_file.unwrap_or("-"),
+            request
+                .siblings
+                .iter()
+                .map(|d| d.name.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
             request.page.unwrap_or("-"),
             request.lexicon.unwrap_or("-"),
             request.min_pt.map_or("-".to_string(), |p| p.to_string()),

@@ -21,8 +21,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use sce_app_core::{
-    call, FigureRenderer, FigureRequest, ModelReviewer, RenderError, ReviewRequest, SceCodegen,
-    Verdict, WorkStore,
+    call, Document, FigureRenderer, FigureRequest, ModelReviewer, RenderError, ReviewRequest,
+    SceCodegen, Verdict, WorkStore,
 };
 use serde_json::json;
 
@@ -101,6 +101,7 @@ fn a_model_is_staged_drawn_and_returned_in_the_generators_order() {
             page: Some("a3-landscape"),
             lexicon: Some("ko"),
             min_pt: Some(8.5),
+            ..FigureRequest::default()
         })
         .unwrap();
     let names: Vec<&str> = drawn.sheets.iter().map(|s| s.name.as_str()).collect();
@@ -263,6 +264,7 @@ fn an_accepted_model_comes_back_with_its_open_matters_and_its_page() {
             model: "<scxml/>",
             name: Some("door-lock"),
             lexicon: Some("ko"),
+            ..ReviewRequest::default()
         })
         .unwrap();
     assert_eq!(read.check.verdict, Verdict::Accepted);
@@ -496,6 +498,7 @@ fn the_real_generator_reads_a_model_and_says_why_it_refuses_one() {
             model: &open,
             name: Some("door"),
             lexicon: Some("ko"),
+            ..ReviewRequest::default()
         })
         .expect("the product reads a statechart");
     assert_eq!(read.check.verdict, Verdict::Accepted);
@@ -529,4 +532,124 @@ fn the_real_generator_reads_a_model_and_says_why_it_refuses_one() {
         "{:?}",
         refused.check.records
     );
+}
+
+/// A statechart with a CLOSED interface and the event schema it imports (the product's
+/// own fixture): the entry names its import by file, so the schema has to be staged
+/// beside it under that name, and a closed interface is exactly what makes the product
+/// refuse the entry when it is not.
+const ENTRY_FILE: &str = "door.scxml";
+const ENTRY: &str = concat!(
+    "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" ",
+    "sce:kind=\"statechart\" sce:interface=\"closed\" version=\"1.0\" initial=\"waiting\">",
+    "<sce:import src=\"schema_job_completed_minimal.scxml\" kind=\"event-schema\" ",
+    "as=\"JobCompletedSchema\"/>",
+    "<state id=\"waiting\"><transition event=\"job.completed\" target=\"done\"/></state>",
+    "<state id=\"done\"/></scxml>"
+);
+const SCHEMA_FILE: &str = "schema_job_completed_minimal.scxml";
+const SCHEMA: &str =
+    include_str!("../../sce-build/tests/fixtures/event_schema/schema_job_completed_minimal.scxml");
+
+/// The real generator reads and draws a model of two documents when both are staged
+/// beside each other, and refuses the entry alone for the import it cannot find.
+#[test]
+fn the_real_generator_reads_and_draws_a_model_of_several_documents() {
+    let Some(program) = std::env::var_os("SCE_CODEGEN").filter(|v| !v.is_empty()) else {
+        eprintln!("SKIPPED: SCE_CODEGEN names no generator");
+        return;
+    };
+    let real = SceCodegen::at(PathBuf::from(program));
+    let schema = [Document {
+        name: SCHEMA_FILE.to_string(),
+        text: SCHEMA.to_string(),
+    }];
+
+    let read = real
+        .review(&ReviewRequest {
+            model: ENTRY,
+            entry_file: Some(ENTRY_FILE),
+            siblings: &schema,
+            ..ReviewRequest::default()
+        })
+        .expect("the product reads the set");
+    assert_eq!(read.check.verdict, Verdict::Accepted, "{:?}", read.check);
+    assert!(read.page.is_some_and(|p| p.contains("job.completed")));
+
+    let alone = real
+        .review(&ReviewRequest {
+            model: ENTRY,
+            entry_file: Some(ENTRY_FILE),
+            ..ReviewRequest::default()
+        })
+        .expect("a refused model is an answer");
+    assert_eq!(
+        alone.check.verdict,
+        Verdict::Refused,
+        "the import is not staged"
+    );
+    assert!(
+        alone
+            .check
+            .records
+            .iter()
+            .any(|r| r.code == "import/file-not-found"),
+        "{:?}",
+        alone.check.records
+    );
+
+    let drawn = real
+        .render(&FigureRequest {
+            model: ENTRY,
+            entry_file: Some(ENTRY_FILE),
+            siblings: &schema,
+            ..FigureRequest::default()
+        })
+        .expect("the product draws the set");
+    assert!(drawn.sheets.iter().all(|s| s.svg.starts_with("<svg")));
+    assert!(
+        drawn.sheets.iter().any(|s| s.svg.contains("waiting")),
+        "the entry's states are drawn"
+    );
+}
+
+/// A name that would leave the staging folder is refused before anything is written,
+/// whatever checked it when the model was saved.
+#[test]
+fn a_document_name_that_is_a_path_is_refused_at_staging() {
+    for bad in ["../escape.scxml", "sub/dir.scxml", "a b.scxml", ""] {
+        let sibling = [Document {
+            name: bad.to_string(),
+            text: "x".to_string(),
+        }];
+        let refused = generator().render(&FigureRequest {
+            model: "<scxml/>",
+            siblings: &sibling,
+            ..FigureRequest::default()
+        });
+        assert!(
+            matches!(refused, Err(RenderError::Failed { .. })),
+            "{bad:?}: {refused:?}"
+        );
+        let entry = generator().render(&FigureRequest {
+            model: "<scxml/>",
+            entry_file: Some(bad),
+            ..FigureRequest::default()
+        });
+        assert!(matches!(entry, Err(RenderError::Failed { .. })), "{bad:?}");
+    }
+    // Two documents under one name are one name too many.
+    let twin = [Document {
+        name: "door.scxml".to_string(),
+        text: "x".to_string(),
+    }];
+    assert!(matches!(
+        generator().render(&FigureRequest {
+            model: "<scxml/>",
+            entry_file: Some("door.scxml"),
+            siblings: &twin,
+            ..FigureRequest::default()
+        }),
+        Err(RenderError::Failed { .. })
+    ));
 }

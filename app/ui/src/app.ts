@@ -1080,14 +1080,38 @@ export class App {
       read === null ? null : this.standingBanner(read),
       read === null ? null : this.reviewSection(),
       this.modelBody(model),
-      read === null
-        ? null
-        : h(
-            "details",
-            { class: "model-scxml" },
-            h("summary", {}, this.t("modelScxml")),
-            h("pre", { class: "scxml" }, read.model.text),
-          ),
+      read === null ? null : this.scxmlOf(read),
+    );
+  }
+
+  /**
+   * The model's SCXML, folded. A model of several documents shows each under the file
+   * name its imports know it by, the entry first and named as such: the person reads
+   * what an import points at, not only the document that holds it.
+   */
+  private scxmlOf(read: ModelRead): HTMLElement {
+    const documents = read.model.documents;
+    if (documents.length <= 1) {
+      return h(
+        "details",
+        { class: "model-scxml" },
+        h("summary", {}, this.t("modelScxml")),
+        h("pre", { class: "scxml" }, read.model.text),
+      );
+    }
+    return h(
+      "details",
+      { class: "model-scxml" },
+      h("summary", {}, this.t("modelScxmlSet", { count: String(documents.length) })),
+      ...documents.flatMap((document) => [
+        h(
+          "h5",
+          { class: "document-name" },
+          h("code", {}, document.name),
+          document.name === read.model.entry ? ` ${this.t("modelEntry")}` : null,
+        ),
+        h("pre", { class: "scxml" }, document.text),
+      ]),
     );
   }
 

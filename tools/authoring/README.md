@@ -927,7 +927,11 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
 - `works_read` gives the text with its `revision` and the model with its
   `revision`, the text revision it was `written_for`, and its `standing`
   (`current`, `behind` or `unstated`: the command layer's own word, which the
-  application shows the same way). It also gives `answers`, what the owner
+  application shows the same way). A model of one document is its `text`; a model of
+  several documents that name each other (a statechart and the event schemas it
+  imports, which is how a closed interface is written) is its `entry` and its
+  `documents`, each under the file name its imports know it by, and no `text`.
+  It also gives `answers`, what the owner
   answered in the application to the questions the model left open (each
   question's id, their words, and when the words last changed), and
   `decisions_text`, **the decision record those answers make**
@@ -937,8 +941,10 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   next draft may cite it. The workbench keeps a plain map of ids to words, and
   this package writes the record from it, so the format of that record stays where
   it is read (`decisions.v1.schema.json`).
-- `works_save_model` runs the product's check first, exactly as `validate_scxml`
-  does (and takes the owner's `profile` the same way): a model it refuses is not
+- `works_save_model` takes `model_text` (one document) or `documents_text` with an
+  `entry_name` (several), never both. It runs the product's check first, exactly
+  as `validate_scxml` does for one document and `validate_scxml_set` for several
+  (and takes the owner's `profile` the same way): a model it refuses is not
   saved and comes back with the product's records, so a work's model chain holds
   documents SCE accepts. When the owner has answered anything, the draft is also
   held to those answers by the product's own `decisions` check, as the tool of

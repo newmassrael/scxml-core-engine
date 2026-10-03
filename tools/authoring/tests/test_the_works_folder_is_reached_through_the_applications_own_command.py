@@ -63,6 +63,24 @@ ASKS_MORE = APPLIES.replace(
     'sce:unresolved-reason="How long before it closes again?"/>')
 
 
+# A statechart with a CLOSED interface and the event schema it imports, as the
+# authoring tools ask a statechart to be written: two documents that name each other.
+ROOT = pathlib.Path(__file__).resolve().parents[3]
+SCHEMA_NAME = "schema_job_completed_minimal.scxml"
+SCHEMA = (ROOT / "sce-build" / "tests" / "fixtures" / "event_schema" / SCHEMA_NAME
+          ).read_text(encoding="utf-8")
+GATE_NAME = "gate.scxml"
+GATE = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
+        'xmlns:sce="http://sce.dev/ext" sce:kind="statechart" sce:interface="closed" '
+        'version="1.0" initial="waiting">\n'
+        f'  <sce:import src="{SCHEMA_NAME}" kind="event-schema" as="JobCompletedSchema"/>\n'
+        '  <state id="waiting"><transition event="job.completed" target="done"/></state>\n'
+        '  <state id="done"/>\n'
+        '</scxml>\n')
+SET = [{"name": GATE_NAME, "text": GATE}, {"name": SCHEMA_NAME, "text": SCHEMA}]
+
+
 def call(name: str, remote: bool = False, **arguments) -> dict:
     return mcp.call_tool(name, arguments, remote=remote)
 
@@ -162,6 +180,60 @@ class TheWorksFolder(unittest.TestCase):
                      source_revision=self.revision)
         self.assertFalse(saved.get("isError"), body(saved))
         self.assertEqual(model, data(call("works_read", work=self.work))["model"]["text"])
+
+    def test_a_model_of_several_documents_is_checked_as_a_set_and_read_back_as_its_documents(self):
+        saved = call("works_save_model", work=self.work, documents_text=SET,
+                     entry_name=GATE_NAME, source_revision=self.revision)
+        self.assertFalse(saved.get("isError"), body(saved))
+        self.assertEqual("saved", data(saved)["outcome"])
+
+        model = data(call("works_read", work=self.work))["model"]
+        self.assertEqual(GATE_NAME, model["entry"])
+        self.assertEqual([GATE_NAME, SCHEMA_NAME], [d["name"] for d in model["documents"]])
+        self.assertEqual(GATE, model["documents"][0]["text"])
+        self.assertEqual(SCHEMA, model["documents"][1]["text"])
+        # A model of several is its documents, not the entry twice.
+        self.assertNotIn("text", model)
+        self.assertEqual("current", model["standing"])
+
+    def test_a_model_of_one_document_is_still_read_back_as_its_text(self):
+        call("works_save_model", work=self.work, model_text=DOOR, source_revision=self.revision)
+        model = data(call("works_read", work=self.work))["model"]
+        self.assertEqual(DOOR, model["text"])
+        self.assertNotIn("documents", model)
+        self.assertNotIn("entry", model)
+
+    def test_a_set_whose_import_is_not_among_its_documents_is_not_saved(self):
+        refused = call("works_save_model", work=self.work,
+                       documents_text=[{"name": GATE_NAME, "text": GATE}],
+                       source_revision=self.revision)
+        # One document is checked as one: the product, reading the entry alone, cannot
+        # find the import it names, and says so.
+        self.assertTrue(refused.get("isError"), body(refused))
+        self.assertIn("not saved", body(refused))
+        self.assertIn("import/file-not-found", body(refused))
+        self.assertIsNone(data(call("works_read", work=self.work))["model"])
+
+    def test_a_model_given_both_ways_or_neither_way_is_refused_before_anything_runs(self):
+        for arguments in ({"model_text": DOOR, "documents_text": SET}, {}):
+            with self.subTest(arguments=sorted(arguments)):
+                answer = call("works_save_model", work=self.work, **arguments)
+                self.assertTrue(answer.get("isError"))
+                self.assertIn("exactly one of", body(answer))
+        for bad, wanted in (
+                ([{"name": "../escape.scxml", "text": "x"}], "plain file name"),
+                ([{"name": "a.scxml", "text": "x"}, {"name": "a.scxml", "text": "y"}],
+                 "two files are named"),
+                ("not a list", "non-empty list"),
+                ([], "non-empty list")):
+            with self.subTest(documents=bad):
+                answer = call("works_save_model", work=self.work, documents_text=bad)
+                self.assertTrue(answer.get("isError"))
+                self.assertIn(wanted, body(answer))
+        named = call("works_save_model", work=self.work, documents_text=SET,
+                     entry_name="nowhere.scxml")
+        self.assertTrue(named.get("isError"))
+        self.assertIn("entry_name", body(named))
 
     def test_a_revision_that_is_not_one_is_refused_by_shape_before_anything_runs(self):
         answer = call("works_save_model", work=self.work, model_text=DOOR,

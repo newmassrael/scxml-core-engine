@@ -38,6 +38,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::model_set::{check_name, Document};
 use crate::review::Product;
 
 /// How long the generator may take for one model.
@@ -55,13 +56,21 @@ const POLL: Duration = Duration::from_millis(20);
 /// What to draw and how.
 #[derive(Debug, Clone, Default)]
 pub struct FigureRequest<'a> {
-    /// The model: an SCXML document, as text.
+    /// The model: an SCXML document, as text. For a model of several documents,
+    /// the entry's.
     pub model: &'a str,
     /// What the document is called, which is what the product names its figures
     /// by (it takes a document's name from its file's, so the staged file is
     /// given this one). Lowercase letters, digits and `-`; anything else, or
     /// nothing, is `model`.
     pub name: Option<&'a str>,
+    /// The file the entry is staged under, for a model of several documents: its
+    /// imports name documents by file, so each keeps its own name. `name` is used
+    /// when this is absent.
+    pub entry_file: Option<&'a str>,
+    /// The other documents of a model of several, staged beside the entry under
+    /// their own names, which is where its imports find them.
+    pub siblings: &'a [Document],
     /// A page the product lists (`a4-portrait`, ...). Its default when absent.
     pub page: Option<&'a str>,
     /// A vocabulary the product lists (`en`, `ko`). Its default when absent.
@@ -268,10 +277,13 @@ impl FigureRenderer for SceCodegen {
         let scratch = Scratch::new().map_err(|e| RenderError::Failed {
             reason: format!("no place to stage the model: {e}"),
         })?;
-        let document = scratch.path().join(format!("{}.scxml", stem(request.name)));
-        fs::write(&document, request.model).map_err(|e| RenderError::Failed {
-            reason: format!("the model could not be staged: {e}"),
-        })?;
+        let document = stage_model(
+            scratch.path(),
+            request.model,
+            request.name,
+            request.entry_file,
+            request.siblings,
+        )?;
         let out = scratch.path().join("figures");
 
         let mut command = Command::new(&self.program);
@@ -341,6 +353,44 @@ impl FigureRenderer for SceCodegen {
             sheets,
         })
     }
+}
+
+/// Write a model into `dir/model/` for the product to read: the entry under the file
+/// name it is known by, and each other document of a set beside it under its own,
+/// because an import names a document by file and resolves it from the entry's
+/// folder. The folder is its own so that no document's name can collide with what the
+/// run writes into `dir` (`figures`, the captured output).
+///
+/// Every name is checked again here, whatever checked it when the model was saved:
+/// it is about to become a path.
+pub(crate) fn stage_model(
+    dir: &Path,
+    model: &str,
+    name: Option<&str>,
+    entry_file: Option<&str>,
+    siblings: &[Document],
+) -> Result<PathBuf, RenderError> {
+    let staging = dir.join("model");
+    let failed = |what: String| RenderError::Failed {
+        reason: format!("the model could not be staged: {what}"),
+    };
+    fs::create_dir(&staging).map_err(|e| failed(e.to_string()))?;
+    let entry = match entry_file {
+        Some(file) => {
+            check_name(file).map_err(|e| failed(e.to_string()))?;
+            file.to_string()
+        }
+        None => format!("{}.scxml", stem(name)),
+    };
+    fs::write(staging.join(&entry), model).map_err(|e| failed(e.to_string()))?;
+    for sibling in siblings {
+        check_name(&sibling.name).map_err(|e| failed(e.to_string()))?;
+        if sibling.name == entry {
+            return Err(failed(format!("two documents are named `{entry}`")));
+        }
+        fs::write(staging.join(&sibling.name), &sibling.text).map_err(|e| failed(e.to_string()))?;
+    }
+    Ok(staging.join(entry))
 }
 
 /// The file stem a document is staged under: `name` when it is a short word of

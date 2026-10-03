@@ -27,6 +27,7 @@ pub mod commands;
 pub mod error;
 pub mod figures;
 mod lock;
+pub mod model_set;
 pub mod review;
 pub mod revision;
 pub mod store;
@@ -39,6 +40,7 @@ pub use figures::{
     default_renderer, FigureRenderer, FigureRequest, FigureSet, NoRenderer, RenderError,
     SceCodegen, Sheet,
 };
+pub use model_set::{Document, ModelError, ModelFiles};
 pub use review::{
     Check, ModelReviewer, PageRefusal, Product, Record, Review, ReviewRequest, Unresolved, Verdict,
 };

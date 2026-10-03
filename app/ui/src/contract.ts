@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 5;
+export const SUPPORTED_COMMAND_SET_VERSION = 6;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -53,11 +53,25 @@ export type Saved =
  */
 export type Standing = "current" | "behind" | "unstated";
 
-/** A saved model, and the text revision it was written for. */
+/** One document of a model: the file name its imports know it by, and its text. */
+export interface ModelDocument {
+  readonly name: string;
+  readonly text: string;
+}
+
+/**
+ * A saved model, and the text revision it was written for. A model of several
+ * documents (a statechart and the event schemas it imports) lists them all, the
+ * entry first; a model of one document lists it under the name `model.scxml`.
+ */
 export interface ModelText {
   readonly revision: Revision;
   readonly written_for: Revision | null;
+  /** The entry's text: what SCE is asked about. */
   readonly text: string;
+  /** The entry's file name. */
+  readonly entry: string;
+  readonly documents: readonly ModelDocument[];
 }
 
 /** `read_model`: the model, or `null` for a work with none yet. */
@@ -290,11 +304,22 @@ export function parseReadModel(value: unknown): ReadModel {
     return { model: null, source_head, standing: null };
   }
   const m = record(model, "read_model.model");
+  const documents = list(m, "documents", "read_model.model").map((d, i) => {
+    const where = `read_model.model.documents[${i}]`;
+    const document = record(d, where);
+    return { name: text(document, "name", where), text: text(document, "text", where) };
+  });
+  const entry = text(m, "entry", "read_model.model");
+  if (!documents.some((d) => d.name === entry)) {
+    throw new ContractError("read_model.model.entry", "the name of one of its documents");
+  }
   return {
     model: {
       revision: revision(m["revision"], "read_model.model.revision"),
       written_for: nullableRevision(m["written_for"], "read_model.model.written_for"),
       text: text(m, "text", "read_model.model"),
+      entry,
+      documents,
     },
     source_head,
     standing: standing(r["standing"], "read_model.standing"),

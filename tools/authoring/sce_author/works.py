@@ -139,19 +139,32 @@ def read_answers(work: str) -> dict | None:
 
 
 def _model_of(answer: dict) -> dict | None:
+    """The model as a client reads it. A model of ONE document is `text`, as it has
+    always been; a model of several is `entry` (the file the product is asked about)
+    and `documents` (each under the file name its imports know it by), and no `text`:
+    a second copy of the entry would be tokens spent twice on a statechart's worth."""
     model = answer["model"]
     if model is None:
         return None
-    return {**model, "standing": answer["standing"], "source_head": answer["source_head"]}
+    standing = {"standing": answer["standing"], "source_head": answer["source_head"]}
+    if len(model["documents"]) <= 1:
+        return {key: value for key, value in model.items()
+                if key not in ("entry", "documents")} | standing
+    return {key: value for key, value in model.items() if key != "text"} | standing
 
 
-def save_model(work: str, text: str, base: str | None, written_for: str | None) -> dict:
-    """Save `text` as the work's next model.
+def save_model(work: str, base: str | None, written_for: str | None, *,
+               text: str | None = None, documents: list[dict] | None = None,
+               entry: str | None = None) -> dict:
+    """Save the work's next model: `text` (one document), or `documents` (several that
+    name each other, as `{"name", "text"}`) with the `entry` the product is asked about.
 
     `base` is the model revision the writer read (None for a work's first model);
     a base that is no longer current is refused as a `conflict` and nothing is
     written. `written_for` is the text revision the writer read, or None when it
     cannot say -- which the screen shows as "unstated", and not as current.
     """
-    return call_work("save_model", {"id": work, "text": text, "base": base,
-                                    "written_for": written_for})
+    model = ({"text": text} if documents is None else
+             {"documents": documents, **({"entry": entry} if entry is not None else {})})
+    return call_work("save_model", {"id": work, "base": base,
+                                    "written_for": written_for, **model})

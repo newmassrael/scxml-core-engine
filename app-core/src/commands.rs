@@ -22,9 +22,10 @@ use crate::answers::{Answers, AnswersError};
 use crate::clock::Clock;
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
+use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::review::{Product, ReviewRequest};
 use crate::revision::Revision;
-use crate::store::{WorkId, WorkStore};
+use crate::store::{ModelText, WorkId, WorkStore};
 
 /// Every command, in the order a person would meet them.
 pub const COMMANDS: &[&str] = &[
@@ -60,7 +61,12 @@ pub const COMMANDS: &[&str] = &[
 ///
 /// 5: the owner's answers to the questions a model leaves open are kept
 /// (`read_answers`, `save_answers`).
-pub const COMMAND_SET_VERSION: u32 = 5;
+///
+/// 6: a model can be several documents that name each other. `save_model` takes
+/// `documents` (and an `entry`) in place of `text`, and a model that was read says
+/// its `entry` and lists its `documents`; a screen written for 5 shows one text and
+/// would show a set's entry as if it were the whole.
+pub const COMMAND_SET_VERSION: u32 = 6;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -119,6 +125,20 @@ impl From<AnswersError> for CommandError {
     }
 }
 
+impl From<ModelError> for CommandError {
+    fn from(error: ModelError) -> Self {
+        CommandError {
+            kind: match error {
+                ModelError::Invalid(_) => "invalid-model",
+                ModelError::Corrupt(_) => "corrupt",
+            }
+            .to_string(),
+            message: error.to_string(),
+            detail: Value::Null,
+        }
+    }
+}
+
 impl CommandError {
     fn bad_request(message: impl Into<String>) -> Self {
         CommandError {
@@ -167,7 +187,16 @@ struct SaveSource {
 #[serde(deny_unknown_fields)]
 struct SaveModel {
     id: String,
-    text: String,
+    /// The model as one document. Exactly one of `text` and `documents` is given.
+    #[serde(default)]
+    text: Option<String>,
+    /// The model as several documents that name each other, each under the file name
+    /// its imports know it by.
+    #[serde(default)]
+    documents: Option<Vec<Document>>,
+    /// Which of `documents` SCE is asked about: the first when absent.
+    #[serde(default)]
+    entry: Option<String>,
     /// Absent or `null` means "this is the work's first model".
     #[serde(default)]
     base: Option<Revision>,
@@ -237,6 +266,36 @@ fn work_id(text: &str) -> Result<WorkId, CommandError> {
     WorkId::parse(text).map_err(CommandError::from)
 }
 
+/// A saved model as the screens read it: its revision and what it was written for,
+/// the entry's text (what a screen written for one document shows), and every
+/// document of the model, the entry first. A model of one document is listed under
+/// the name `model.scxml`.
+fn model_json(model: &ModelText, files: &ModelFiles) -> Value {
+    json!({
+        "revision": model.revision,
+        "written_for": model.written_for,
+        "text": files.entry_text(),
+        "entry": files.entry_file(),
+        "documents": files.documents(),
+    })
+}
+
+/// The model of `id` as the product is asked about it: parsed into its documents,
+/// the staging that goes with it, and the save it came from.
+fn read_model_files<C: Clock>(
+    store: &WorkStore<C>,
+    id: &WorkId,
+    revision: Option<&Revision>,
+) -> Result<(ModelText, ModelFiles), CommandError> {
+    let Some(model) = store.read_model(id, revision)? else {
+        return Err(CommandError::from(StoreError::NotFound {
+            what: format!("a model of work `{}` (none was saved)", id.as_str()),
+        }));
+    };
+    let files = ModelFiles::parse(&model.text)?;
+    Ok((model, files))
+}
+
 /// Run the command `name` with `args` against `store`; `renderer` is the
 /// product: it draws a model for `figures` and reads one for `review`.
 pub fn call<C: Clock>(
@@ -286,19 +345,45 @@ pub fn call<C: Clock>(
             let SaveModel {
                 id,
                 text,
+                documents,
+                entry,
                 base,
                 written_for,
             } = arguments(args)?;
-            answer(&store.save_model(&work_id(&id)?, &text, base.as_ref(), written_for.as_ref())?)
+            let files =
+                match (text, documents) {
+                    (Some(text), None) if entry.is_none() => ModelFiles::single(text),
+                    (Some(_), None) => return Err(CommandError::bad_request(
+                        "`entry` names one of several `documents`; a model given as `text` has one",
+                    )),
+                    (None, Some(documents)) => ModelFiles::set(documents, entry.as_deref())?,
+                    _ => {
+                        return Err(CommandError::bad_request(
+                            "give the model as `text` (one document) or as `documents` (several), \
+                         not both and not neither",
+                        ))
+                    }
+                };
+            answer(&store.save_model(
+                &work_id(&id)?,
+                &files.stored_text(),
+                base.as_ref(),
+                written_for.as_ref(),
+            )?)
         }
         "read_model" => {
             let ReadSource { id, revision } = arguments(args)?;
             let id = work_id(&id)?;
-            let model = store.read_model(&id, revision.as_ref())?;
+            let saved = store.read_model(&id, revision.as_ref())?;
             let source_head = store.head(&id)?;
-            let standing = model
-                .as_ref()
-                .map(|m| standing(m.written_for.as_ref(), source_head.as_ref()));
+            let (model, standing) = match saved {
+                None => (None, None),
+                Some(model) => {
+                    let files = ModelFiles::parse(&model.text)?;
+                    let standing = standing(model.written_for.as_ref(), source_head.as_ref());
+                    (Some(model_json(&model, &files)), Some(standing))
+                }
+            };
             Ok(json!({ "model": model, "source_head": source_head, "standing": standing }))
         }
         "model_history" => {
@@ -314,17 +399,17 @@ pub fn call<C: Clock>(
                 min_pt,
             } = arguments(args)?;
             let id = work_id(&id)?;
-            let Some(model) = store.read_model(&id, revision.as_ref())? else {
-                return Err(CommandError::from(StoreError::NotFound {
-                    what: format!("a model of work `{}` (none was saved)", id.as_str()),
-                }));
-            };
+            let (model, files) = read_model_files(store, &id, revision.as_ref())?;
+            let others: Vec<Document> = files.others().into_iter().cloned().collect();
             let source_head = store.head(&id)?;
             let drawn = renderer.render(&FigureRequest {
-                model: &model.text,
+                model: files.entry_text(),
                 // The product titles its figures by the document's name, which it
-                // takes from the file's: the work's own name, not `model`.
+                // takes from the file's: the work's own name, not `model`. A model of
+                // several documents keeps the names its imports know them by.
                 name: Some(id.slug()),
+                entry_file: files.entry_name(),
+                siblings: &others,
                 page: page.as_deref(),
                 lexicon: lexicon.as_deref(),
                 min_pt,
@@ -344,15 +429,14 @@ pub fn call<C: Clock>(
                 lexicon,
             } = arguments(args)?;
             let id = work_id(&id)?;
-            let Some(model) = store.read_model(&id, revision.as_ref())? else {
-                return Err(CommandError::from(StoreError::NotFound {
-                    what: format!("a model of work `{}` (none was saved)", id.as_str()),
-                }));
-            };
+            let (model, files) = read_model_files(store, &id, revision.as_ref())?;
+            let others: Vec<Document> = files.others().into_iter().cloned().collect();
             let source_head = store.head(&id)?;
             let read = renderer.review(&ReviewRequest {
-                model: &model.text,
+                model: files.entry_text(),
                 name: Some(id.slug()),
+                entry_file: files.entry_name(),
+                siblings: &others,
                 lexicon: lexicon.as_deref(),
             })?;
             Ok(json!({

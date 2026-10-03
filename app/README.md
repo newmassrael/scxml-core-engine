@@ -35,9 +35,8 @@ What does not exist yet, so that nothing below is read as done:
   code. The model screen shows what SCE drew, what SCE says of the model, where
   it stands to the text, and a field for your answer under each question the
   model leaves open; it does not edit the model (an AI client writes it).
-- A model of several documents. `figures` draws ONE document: a link that
-  imports a codec is refused by SCE for the import it cannot find, in SCE's words.
-- Windows has not been run; the Linux desktop build and the browser have.
+- Windows has not been run on a window; the lane `windows` in `app.yml` runs the
+  same gate there, and the Linux desktop build and the browser have been run.
 
 ## How the parts fit
 
@@ -100,6 +99,22 @@ in one word every shell shows the same way (`standing`): `current`, `behind` (th
 text moved on), or `unstated`. The same model saved again for a later text is a
 new entry of its history, not an `unchanged`: the writer read the new text and
 kept the model, and that is a fact about the model.
+
+**A model of several documents.** A statechart written the way the authoring tools
+ask for one imports an event schema for each event and closes its interface, so the
+model is a set of documents that name each other by file name. The store still keeps
+ONE text per revision: a set is a JSON object holding every document under its file
+name (`model_set.rs`), a model of one document is the document itself exactly as it
+always was, and the two are told apart by their first character (`<` or `{`). The
+same documents are the same bytes however they were listed, so saving them again is
+no change. `save_model` takes `text` (one document) or `documents` and an `entry`
+(several), and a model that is read says its `entry` and lists its `documents`, the
+entry first. Every file name is one plain name (letters, digits, `_`, `.`, `-`; no
+directory) and is checked again when the set is written out for SCE, because it
+becomes a path there. SCE is asked about the whole set: the entry under its own file
+name and every other document beside it, where an import finds it. With a closed
+interface, a set whose schema is not staged is refused by the product
+(`import/file-not-found`), which is how the tests know the schema reached it.
 
 `figures` runs the generator: the first of `SCE_CODEGEN`, an `sce-codegen` beside
 the running program, or one on `PATH`. It stages the model under the work's own
@@ -219,6 +234,7 @@ else: it has no file-system, shell or network permission.
 | Works folder and command layer | `cargo test -p sce-app-core --features cli` |
 | The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
 | Removing a work, and a save racing it | `--test removal` of the same package |
+| A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
 | What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |
 | The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |

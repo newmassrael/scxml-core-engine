@@ -1250,7 +1250,12 @@ TOOLS = [
             "Read a work: the specification text as it is now (`source`, with "
             "its `revision`) and the model saved for it, if any (`model`, with "
             "its `revision`, the text revision it was `written_for`, its "
-            "`standing` -- `current`, `behind` or `unstated` -- and its SCXML). "
+            "`standing` -- `current`, `behind` or `unstated` -- and its SCXML: "
+            "`text` for a model of one document, and for a model of several "
+            "documents that name each other (a statechart and the event schemas "
+            "it imports) `entry`, the file the product is asked about, and "
+            "`documents`, each as {name, text} under the file name its imports "
+            "know it by). "
             "Read the specification from here, not from memory: the owner edits "
             "it in the application, and `source.revision` is the version you "
             "are about to write a model for. When `model.standing` is `behind` "
@@ -1278,7 +1283,13 @@ TOOLS = [
         "name": "works_save_model",
         "description": (
             "Save the SCXML model you wrote as the work's model, so the owner "
-            "sees what SCE draws of it in the application. Give `source_revision` "
+            "sees what SCE draws of it in the application. A model of one "
+            "document is `model_text`; a model of several documents that name "
+            "each other (a statechart and the event schemas it imports) is "
+            "`documents_text`, each as {name, text} under the file name its "
+            "imports know it by, with `entry_name` naming the one the product "
+            "is asked about (the first when you leave it out): the whole set is "
+            "checked together, as validate_scxml_set checks it. Give `source_revision` "
             "= the `source.revision` works_read returned for the text you wrote "
             "this model from (without it the application can only say that nobody "
             "recorded which text the model is about), and `base` = the "
@@ -1300,11 +1311,26 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work", "model_text"],
+            "required": ["work"],
             "properties": {
                 "work": {"type": "string", "description": "The work's `id`, from works_list."},
                 "model_text": {"type": "string", "description": (
-                    "The SCXML document, exactly as you checked it.")},
+                    "The SCXML document, exactly as you checked it. Give this OR "
+                    "`documents_text`, not both.")},
+                "documents_text": {
+                    "type": "array",
+                    "description": (
+                        "The documents of a model of several, each under the file name "
+                        "its imports know it by (one plain name such as door.scxml)."),
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "text"],
+                        "properties": {"name": {"type": "string"}, "text": {"type": "string"}},
+                    },
+                },
+                "entry_name": {"type": "string", "description": (
+                    "With `documents_text`: the name of the document the product is "
+                    "asked about; the first when absent.")},
                 "source_revision": {"type": "string", "description": (
                     "The `source.revision` of the specification text the model was "
                     "written from.")},
@@ -2702,8 +2728,13 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
     answers = (read["answers"] or {}).get("entries") or {}
     markers: list[dict] = []
     if read["model"] is not None:
-        document = staging.write("model.scxml", read["model"]["text"], "model")
-        markers, refusal = _markers_of(document, staging)
+        model = read["model"]
+        # The entry of a model of several is read with its imports beside it; one
+        # document is staged as it has always been.
+        documents = model.get("documents") or [{"name": "model.scxml", "text": model["text"]}]
+        entry = model.get("entry", "model.scxml")
+        staged = {d["name"]: staging.write(d["name"], d["text"], "model") for d in documents}
+        markers, refusal = _markers_of(staged[entry], staging)
         if refusal:
             read["decisions_refusal"] = json.loads(refusal)
     if answers or markers:
@@ -2743,14 +2774,16 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
     """
     staging.refuse_works("works_save_model")
     work = _name_arg(args, "work", "a work's id", required=True)
-    text = args.get("model_text")
-    if not isinstance(text, str) or not text.strip():
-        raise ToolArgumentError("'model_text' is required: the SCXML document, as text")
     source_revision = _revision_arg(args, "source_revision")
     base = _revision_arg(args, "base")
-    document = staging.write("model.scxml", text, "model")
-    report, refusal = run_scxml_validation(
-        document, profile=_profile_file(args, staging), cwd=staging.dir)
+    documents, document, model = _model_given(args, staging)
+    profile = _profile_file(args, staging)
+    # One document is checked as one; several are checked as the SET they are, which
+    # is the only way an import between them is read.
+    if len(documents) == 1:
+        report, refusal = run_scxml_validation(document, profile=profile, cwd=staging.dir)
+    else:
+        report, refusal = validate_scxml_set(documents, profile=profile, cwd=staging.dir)
     if refusal:
         return _failure("not saved: the product's check refuses this model, so the work "
                         "keeps the model it has. Fix the draft and save again.\n" + refusal)
@@ -2758,7 +2791,7 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         held, refused = _held_to_the_answers(work, document, source_revision, args, staging)
         if refused:
             return _failure(refused)
-        saved = works.save_model(work, text, base, source_revision)
+        saved = works.save_model(work, base, source_revision, **model)
     except works.WorksError as exc:
         return _works_refused(exc)
     answer = {"version": 1, "work": work, **saved}
@@ -2770,6 +2803,42 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         answer["next"] = ("saved is not finished: tell the owner each line of `open` -- "
                           "the model leaves them to a person")
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _model_given(args: dict, staging: _Staging) -> tuple[list[pathlib.Path], pathlib.Path, dict]:
+    """The model a caller handed over, staged for the product: every document's
+    path, the entry's, and what to save it with (`text`, or `documents` and `entry`
+    for `works.save_model`).
+
+    A model is `model_text` (one document) or `documents_text` (several that name
+    each other), never both and never neither: what to save would be a guess.
+    """
+    text, documents = args.get("model_text"), args.get("documents_text")
+    if (text is None) == (documents is None):
+        raise ToolArgumentError(
+            "give the model as exactly one of 'model_text' (one document) and "
+            "'documents_text' (several that name each other)")
+    if text is not None:
+        if not isinstance(text, str) or not text.strip():
+            raise ToolArgumentError("'model_text' has to be the SCXML document, as text")
+        path = staging.write("model.scxml", text, "model")
+        return [path], path, {"text": text}
+    if not isinstance(documents, list) or not documents:
+        raise ToolArgumentError("'documents_text' has to be a non-empty list of {name, text}")
+    staged: dict[str, pathlib.Path] = {}
+    saved: list[dict] = []
+    for entry in documents:
+        if not isinstance(entry, dict):
+            raise ToolArgumentError("each 'documents_text' entry has a name and a text")
+        path = staging.write(entry.get("name"), entry.get("text"), "documents")
+        staged[entry["name"]] = path
+        saved.append({"name": entry["name"], "text": entry["text"]})
+    entry_name = args.get("entry_name", saved[0]["name"])
+    if not isinstance(entry_name, str) or entry_name not in staged:
+        raise ToolArgumentError(
+            f"'entry_name' has to be the name of one of the documents ({', '.join(staged)}), "
+            f"not {entry_name!r}")
+    return list(staged.values()), staged[entry_name], {"documents": saved, "entry": entry_name}
 
 
 def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str | None,

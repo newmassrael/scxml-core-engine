@@ -23,23 +23,27 @@
 //! model agrees with the specification. Nothing here, and nothing on the screen,
 //! says it does: the person compares the page with their own text.
 
-use std::fs;
-
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::figures::{
-    excerpt, refusal, run_bounded, stem, word, FigureRenderer, NoRenderer, RenderError, SceCodegen,
-    Scratch,
+    excerpt, refusal, run_bounded, stage_model, word, FigureRenderer, NoRenderer, RenderError,
+    SceCodegen, Scratch,
 };
+use crate::model_set::Document;
 
 /// What to read and how.
 #[derive(Debug, Clone, Default)]
 pub struct ReviewRequest<'a> {
-    /// The model: an SCXML document, as text.
+    /// The model: an SCXML document, as text. For a model of several documents,
+    /// the entry's.
     pub model: &'a str,
     /// What the document is called; it is staged under this name, as for figures.
     pub name: Option<&'a str>,
+    /// The file the entry is staged under, for a model of several documents.
+    pub entry_file: Option<&'a str>,
+    /// The other documents of a model of several, staged beside the entry.
+    pub siblings: &'a [Document],
     /// A vocabulary the product lists (`en`, `ko`). Its default when absent.
     pub lexicon: Option<&'a str>,
 }
@@ -143,10 +147,13 @@ impl SceCodegen {
         let scratch = Scratch::new().map_err(|e| RenderError::Failed {
             reason: format!("no place to stage the model: {e}"),
         })?;
-        let document = scratch.path().join(format!("{}.scxml", stem(request.name)));
-        fs::write(&document, request.model).map_err(|e| RenderError::Failed {
-            reason: format!("the model could not be staged: {e}"),
-        })?;
+        let document = stage_model(
+            scratch.path(),
+            request.model,
+            request.name,
+            request.entry_file,
+            request.siblings,
+        )?;
 
         // ⚠ `--lint`, always: the design-time lints are off in the product only
         // because its conformance corpus declares unreachable states on purpose,

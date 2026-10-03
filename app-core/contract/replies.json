@@ -7,7 +7,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 5,
+      "command_set_version": 6,
       "commands": [
         "describe",
         "list_works",
@@ -36,7 +36,7 @@
       "sheets": [
         {
           "name": "picture.svg",
-          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text><scxml xmlns=\"http://www.w3.org/2005/07/ | name=door-lock page=a4-portrait lexicon=en min_pt=7</text></svg>\n"
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text><scxml xmlns=\"http://www.w3.org/2005/07/ | name=door-lock entry_file=- siblings= page=a4-portrait lexicon=en min_pt=7</text></svg>\n"
         },
         {
           "name": "fields-1.svg",
@@ -116,6 +116,13 @@
     },
     "read_model": {
       "model": {
+        "documents": [
+          {
+            "name": "model.scxml",
+            "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>"
+          }
+        ],
+        "entry": "model.scxml",
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
         "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>",
         "written_for": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
@@ -125,6 +132,13 @@
     },
     "read_model_kept": {
       "model": {
+        "documents": [
+          {
+            "name": "model.scxml",
+            "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>"
+          }
+        ],
+        "entry": "model.scxml",
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
         "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"/>",
         "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
@@ -136,6 +150,26 @@
       "model": null,
       "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
       "standing": null
+    },
+    "read_model_set": {
+      "model": {
+        "documents": [
+          {
+            "name": "door.scxml",
+            "text": "<scxml>NOPAGE</scxml>"
+          },
+          {
+            "name": "open.scxml",
+            "text": "<scxml/>"
+          }
+        ],
+        "entry": "door.scxml",
+        "revision": "c8a6f7b913c31cf0a4606998d1153e60f520ab0f89aed1657c64724c867e38e7",
+        "text": "<scxml>NOPAGE</scxml>",
+        "written_for": null
+      },
+      "source_head": null,
+      "standing": "unstated"
     },
     "read_source": {
       "source": {
@@ -277,6 +311,11 @@
       "parent": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
       "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
     },
+    "save_model_set": {
+      "outcome": "saved",
+      "parent": "6130d0abf23042bf4abd045ae4530abd98026adb138e46470a8b1712b73e8403",
+      "revision": "c8a6f7b913c31cf0a4606998d1153e60f520ab0f89aed1657c64724c867e38e7"
+    },
     "save_model_unchanged": {
       "outcome": "unchanged",
       "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
@@ -296,7 +335,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 5,
+  "command_set_version": 6,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -317,6 +356,10 @@
     "invalid-id": {
       "kind": "invalid-id",
       "message": "`../x` is not a work id (lowercase letters, digits and hyphens)"
+    },
+    "invalid-model": {
+      "kind": "invalid-model",
+      "message": "these documents are not a model: `../escape.scxml` is not a file name an import can name: one plain name of letters, digits, `_`, `.` and `-`, at most 100 characters, starting with a letter, a digit or `_`"
     },
     "invalid-title": {
       "kind": "invalid-title",

@@ -77,6 +77,8 @@ const en = {
   modelRevision: "Model revision",
   modelGenerator: "Drawn by {generator}",
   modelScxml: "The model's SCXML",
+  modelScxmlSet: "The model's SCXML: {count} documents",
+  modelEntry: "(the document SCE is asked about)",
   modelNotDrawn: "SCE did not draw this model.",
   modelNotDrawnHint:
     "The model is saved and is shown below as text. What SCE refused is its own answer, not a fault of this screen.",
@@ -202,6 +204,8 @@ const ko: Record<Key, string> = {
   modelRevision: "모델 리비전",
   modelGenerator: "그린 곳: {generator}",
   modelScxml: "모델의 SCXML 전문",
+  modelScxmlSet: "모델의 SCXML 전문: 문서 {count}개",
+  modelEntry: "(SCE가 묻는 기준 문서)",
   modelNotDrawn: "SCE가 이 모델을 그리지 않았습니다.",
   modelNotDrawnHint:
     "모델은 저장되어 있고 아래에 글로 보입니다. SCE가 거절한 것은 SCE 자신의 답이며 이 화면의 결함이 아닙니다.",

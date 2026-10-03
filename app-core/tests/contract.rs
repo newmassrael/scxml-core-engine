@@ -249,9 +249,25 @@ fn replies() -> Value {
         json!({"id": other_id, "text": "<scxml>NOPAGE</scxml>",
                "base": refused_model["revision"]}),
     );
+    let one_document = answer(&store, "read_model", json!({"id": other_id}));
     answers.insert(
         "review_no_page".into(),
         answer(&store, "review", json!({"id": other_id})),
+    );
+    // A model of several documents: a statechart and the event schema it imports.
+    let model_set = answer(
+        &store,
+        "save_model",
+        json!({"id": other_id, "entry": "door.scxml",
+               "documents": [
+                   {"name": "open.scxml", "text": "<scxml/>"},
+                   {"name": "door.scxml", "text": "<scxml>NOPAGE</scxml>"}],
+               "base": one_document["model"]["revision"]}),
+    );
+    answers.insert("save_model_set".into(), model_set);
+    answers.insert(
+        "read_model_set".into(),
+        answer(&store, "read_model", json!({"id": other_id})),
     );
     answers.insert(
         "remove_work".into(),
@@ -266,6 +282,15 @@ fn replies() -> Value {
         refusal(&store, "read_work", json!({"id": other_id})),
     );
 
+    refusals.insert(
+        "invalid-model".into(),
+        refusal(
+            &store,
+            "save_model",
+            json!({"id": id, "documents": [{"name": "../escape.scxml", "text": "x"}],
+                   "base": model_revision}),
+        ),
+    );
     refusals.insert(
         "model-conflict".into(),
         refusal(

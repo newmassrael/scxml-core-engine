@@ -111,6 +111,20 @@ describe("the replies the core gives", () => {
     expect(drawn.generator).toBe("fake-sce 0");
   });
 
+  it("carry a model as its documents: one under the name model.scxml, or several with the entry first", () => {
+    const one = parseReadModel(replies.answers["read_model"]).model;
+    expect(one?.entry).toBe("model.scxml");
+    expect(one?.documents).toEqual([{ name: "model.scxml", text: one?.text }]);
+
+    const several = parseReadModel(replies.answers["read_model_set"]).model;
+    expect(several?.entry).toBe("door.scxml");
+    expect(several?.documents.map((d) => d.name)).toEqual(["door.scxml", "open.scxml"]);
+    expect(several?.text).toBe(several?.documents[0]?.text);
+    expect(parseSaved(replies.answers["save_model_set"]).outcome).toBe("saved");
+    expect(asCommandError(replies.refusals["invalid-model"])?.kind).toBe("invalid-model");
+    expect(asCommandError(replies.refusals["invalid-model"])?.message).toContain("file name an import can name");
+  });
+
   it("carry what the screen shows of SCE's review: the verdict, what is left open, the page or why not", () => {
     const accepted = parseReview(replies.answers["review"]);
     expect(accepted.check).toMatchObject({ verdict: "accepted", kind: "statechart", records: [] });
@@ -219,6 +233,13 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
     expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
+    const set = replies.answers["read_model_set"] as { model: Record<string, unknown> } & Record<string, unknown>;
+    expect(() => parseReadModel({ ...set, model: { ...set.model, entry: "gone.scxml" } })).toThrow(
+      /read_model\.model\.entry/,
+    );
+    expect(() => parseReadModel({ ...set, model: { ...set.model, documents: [{ name: "a" }] } })).toThrow(
+      /documents\[0\]\.text/,
+    );
     expect(() => parseReadAnswers({})).toThrow(/read_answers/);
     expect(() => parseReadAnswers({ answers: { revision: "abc", entries: {} } })).toThrow(/revision/);
     expect(() =>
