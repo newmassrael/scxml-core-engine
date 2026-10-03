@@ -1169,6 +1169,15 @@ fn a_donedata_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
             "ScriptValueToJSON(sceValue)",
             "EvaluateExpression",
         ),
+        // The generated module keeps its engine helpers whatever the document
+        // is, so the spelling that reads a donedata param is the one looked for:
+        // a pair whose value is the engine's answer, joined to its name.
+        (
+            "python",
+            "py",
+            "_ScriptValue.of(",
+            "+ engine._script_engine.evaluate_expression(",
+        ),
     ] {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(

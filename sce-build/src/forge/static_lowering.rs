@@ -2895,9 +2895,6 @@ impl StaticTarget for PythonTarget {
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
             }
-            if state.donedata.is_some() {
-                return Some("a <donedata>".to_string());
-            }
         }
         None
     }
@@ -3139,8 +3136,17 @@ impl StaticTarget for PythonTarget {
             self.payload_accessor(event)
         )
     }
-    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
-        unreachable!("refused by PythonTarget::unsupported")
+    // What the runtime's `ScriptValue.to_json_literal` writes as the pair's
+    // value: a bool, an integer and a string as Python holds them, and a real as
+    // a float, so that one an integer-valued computation produced is still read
+    // as a real.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool | InferredType::Str | InferredType::Int { .. } => {
+                format!("_ScriptValue.of({value})")
+            }
+            _ => format!("_ScriptValue.of(float({value}))"),
+        }
     }
 }
 

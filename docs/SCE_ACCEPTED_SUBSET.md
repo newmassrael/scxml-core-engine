@@ -3189,9 +3189,12 @@ event's typed payload, and a call of an imported algorithm — the call is the
 module's name and the algorithm's function (`days_in_month.days_in_month(…)`),
 and the machine imports the module by the line a forge kind importing it writes
 (`from . import days_in_month`), so a machine and the algorithms it calls are
-modules of one package. A `<donedata>`, an `<invoke>`, a `<send>` that carries a
-`<param>` or a `<content>`, a `<sce:action>` and `bytes` are not lowered yet.
-Each variable is an attribute of
+modules of one package. A final's `<donedata>` `<param>` is lowered too: each
+pair's value is native code reading the policy, written to the done event as the
+JSON the runtime's `to_json_literal` gives it, and a pair whose value failed is
+reported and left out while the others cross (5.7.1). An `<invoke>`, a `<send>`
+that carries a `<param>` or a `<content>`, a `<sce:action>` and `bytes` are not
+lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
@@ -3219,7 +3222,8 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record` and `sync_client` against
+`static_record`, `sync_client` and `static_donedata` (the done event's pairs are
+read back from the engine's `done_data`) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
 reads).

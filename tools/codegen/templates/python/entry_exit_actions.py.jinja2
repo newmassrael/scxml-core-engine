@@ -85,7 +85,23 @@
 {# §scxml-5.7: the parser admits exactly one of the two attributes, so the
    one that is PRESENT is the value — tested for presence, not truth. #}
 {% set _pexpr = param.expr if param.expr is not none else param.location %}
-{% if not _pexpr %}
+{% if param.native_value %}
+{# `datamodel="sce-static"`: the value is native code
+   (`DoneDataParam::native_value`) reading the policy's own attributes, so no
+   script engine is asked for it. A checked operation that fails raises
+   `AlgorithmFailure` out of the evaluation: it is reported, and the pair is
+   left out (§scxml-5.7.1). #}
+            try:
+                _done_parts.append(
+                    '"{{ param.name | escape_json_string }}":'
+                    + ({{ param.native_value }}).to_json_literal()
+                )
+            except sce_algorithm.AlgorithmFailure:
+                self._raise_error_execution(
+                    engine,
+                    "<donedata> <param name='{{ param.name }}'> failed to evaluate",
+                )
+{% elif not _pexpr %}
             # §scxml-5.7: an empty location names no location —
             # error.execution, and this pair is ignored.
             self._raise_error_execution(

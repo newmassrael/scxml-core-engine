@@ -102,6 +102,13 @@ def replay(name: str, machine: str | None = None) -> None:
         expect = step["expect"]
         if expect.get("ended"):
             assert engine.reached_final, f"{where}: the machine ended in a top-level <final>"
+            if "donedata" in expect:
+                # What the final's `<donedata>` left for an invoking parent, as
+                # the JSON text every producer writes.
+                got = json.loads(engine.done_data)
+                assert got == expect["donedata"], (
+                    f"{where}: the donedata is {got!r}, not {expect['donedata']!r}"
+                )
             continue
         if "state" in expect:
             assert _atomic_state(engine) == expect["state"], where
@@ -187,3 +194,10 @@ def test_a_guard_calls_an_imported_algorithm() -> None:
 # standard event schemas'.
 def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
+
+
+# A top-level final hands its done event the pairs of its `<donedata>`, each read
+# from the machine's fields when the state is entered; a pair whose value failed
+# is left out and the others cross.
+def test_a_final_hands_its_done_event_the_pairs_of_its_donedata() -> None:
+    replay("static_donedata")

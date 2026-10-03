@@ -30,7 +30,7 @@
 
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_regen scripts/regen_static_datamodel_python.sh
-mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py
 
 # ── A failed statement ends its block ──────────────────────────────
@@ -71,6 +71,14 @@ mutation_case "a variable is not given its declared value" <<'PY'
 edit("tools/codegen/templates/python/state_machine.py.jinja2",
      "        {{ field.name }}: {{ field.ty }} = {{ field.init }}\n",
      "        {{ field.name }}: {{ field.ty }} = None\n")
+PY
+
+# ── A donedata pair that failed is left out ────────────────────────
+
+mutation_case "a donedata pair that failed is carried anyway" <<'PY'
+edit("tools/codegen/templates/python/entry_exit_actions.py.jinja2",
+     "            except sce_algorithm.AlgorithmFailure:\n                self._raise_error_execution(\n                    engine,\n                    \"<donedata> <param name='{{ param.name }}'> failed to evaluate\",\n                )\n{% elif not _pexpr %}",
+     "            except sce_algorithm.AlgorithmFailure:\n                _done_parts.append('\"{{ param.name | escape_json_string }}\":0')\n{% elif not _pexpr %}")
 PY
 
 # ── A called algorithm is a module the machine imports ─────────────
