@@ -1454,6 +1454,9 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
+    // The whitespace a `sce-static` machine's literal `<send><content>` is
+    // normalised by, as the other backends spell it.
+    env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);

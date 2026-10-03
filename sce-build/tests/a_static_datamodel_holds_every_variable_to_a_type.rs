@@ -1304,9 +1304,80 @@ fn a_python_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
 }
 
 #[test]
+fn a_cpp_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
+    // C++ refused a <send> carrying a <param> or a <content> by name. The value is
+    // now computed into a `ScriptValue` from the machine's own fields and put in
+    // the typed map the event's JSON is built from; the manifest says
+    // `needs_script_engine:false` either way, so what is read is the machine.
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" type="internal">
+      <send event="note"><param name="k" expr="count + 1"/></send>
+    </transition>
+  </state>"#,
+    );
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "cpp",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a sce-static machine's params are read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        // The C++ generator writes a machine's code to the `.inl` its header
+        // includes, so that is the file a send's code is in.
+        .filter(|path| path.extension().is_some_and(|e| e == "inl"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("typedParams[\"k\"].push_back(std::move(paramValue))"),
+        "the pair is built from the lowered value"
+    );
+    assert!(
+        !source.contains("scriptEngine.evaluateExpression("),
+        "no script engine reads a send param"
+    );
+}
+
+#[test]
+fn a_basic_http_send_carrying_a_param_is_refused_by_name_in_cpp() {
+    // A BasicHTTP send carries each value as the text a form does, which the C++
+    // machine does not spell from a typed value; it is named, not left to
+    // generate a request with no body. The refusal is decided by the construct,
+    // not by where the request would go, so the target names no endpoint of the
+    // suite (the fixture port is spelled once, in `basic_http_test_endpoint.h`).
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" type="internal">
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://example.invalid/hook" event="note"><param name="k" expr="count"/></send>
+    </transition>
+  </state>"#,
+    );
+    let (ok, out) = run(&["check", "-l", "cpp"], &document);
+    assert!(!ok, "C++ has no lowering for it yet:\n{out}");
+    assert!(
+        out.contains("generate/unsupported-feature")
+            && out.contains("a BasicHTTP <send> carrying a <param>"),
+        "expected the unsupported-feature refusal naming the construct:\n{out}"
+    );
+}
+
+#[test]
 fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
-    // Measured 2026-10-03: Go and Python refused a literal `<content>` by name,
-    // C++ still does, and Kotlin accepted it and generated
+    // Measured 2026-10-03: Go, Python and C++ refused a literal `<content>` by
+    // name, and Kotlin accepted it and generated
     // `evaluateSendContent(ScriptSource.lua(…))` — a call to the script engine in
     // a machine whose manifest says it needs none, so the data depended on an
     // engine nothing had given the machine. Rust already wrote the text out.
@@ -1334,6 +1405,14 @@ fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
             "py",
             "_data = \"two words\"",
             "_data = self._eval_send_payload(",
+        ),
+        // C++ hands the normalised text to the helper `<donedata>` takes with no
+        // data model, which quotes it as the others do here.
+        (
+            "cpp",
+            "inl",
+            "emitContentLiteral(\"two words\"",
+            "DoneDataHelper::evaluateContent(",
         ),
     ] {
         let out_dir = tempdir().expect("tempdir");

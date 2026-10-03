@@ -25,7 +25,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
-mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/invoke_methods.jinja2
+mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/invoke_methods.jinja2
 mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
 
 # ── A failed statement ends its block ──────────────────────────────
@@ -69,6 +69,19 @@ mutation_case "the donedata pairs are not handed to the done event" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
      "                    ::SCE::DoneDataHelper::collectParams(doneValues, eventData, &typedData);",
      "                    (void)doneValues;")
+PY
+
+# ── A <send> carries the pairs that survived ───────────────────────
+#
+# `static_send_params`: a param whose value does not fit is reported and left out
+# and the message still goes, so the receiver, finding the field missing, refuses
+# it a second time. A pair carried with the 0 a failed operation yields is one
+# refusal and a `partialTotal` of 6.
+
+mutation_case "a send param that failed is carried with its zero" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    if (sce_failure_.failed()) SCE_UNLIKELY {\n{{ param_eval_failed(param, '        ') }}",
+     "    if (false) SCE_UNLIKELY {\n{{ param_eval_failed(param, '        ') }}")
 PY
 
 # ── A child is handed what its invoke names ────────────────────────

@@ -92,6 +92,28 @@ std::optional<ScriptValue> typedData;
 // expression. It enters both maps so the typed payload holds every pair.
 params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("{{ param.static_value | escape_cpp }}")));
+{% elif param.native_value %}
+{# `datamodel="sce-static"`: the value is native code (`Param::native_value`)
+   reading the machine's own fields, so no script engine is asked for it. A
+   checked operation that fails is reported and its pair left out, and the
+   message still goes (§scxml-5.7.1): `paramFailed` ends the block after it. Only
+   the typed map is filled — the JSON every non-HTTP delivery carries — and a
+   BasicHTTP send with a param is refused by name where the machine is lowered. #}
+{
+{% if param.native_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    ScriptValue paramValue = {{ param.native_value }};
+{% if param.native_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+{{ param_eval_failed(param, '        ') }}
+    } else {
+        typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
+    }
+{% else %}
+    typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
+{% endif %}
+}
 {% elif not (param.expr or param.location) %}
 {{ param_eval_failed(param, '') }}
 {% elif model.needs_script_engine or model.needs_event_origin %}
@@ -143,6 +165,11 @@ eventData = contentData;
         },
         &typedData);
 }
+{% elif action.native_content %}
+// `datamodel="sce-static"` (`Action::native_content`): the text is the value, as
+// the other backends write it — whitespace-normalised, since the helper quotes
+// what it is given and does not normalise it — and no engine reads it.
+::SCE::DoneDataHelper::emitContentLiteral("{{ action.content | normalize_ws | escape_cpp }}", eventData, &typedData);
 {% else %}
 // §scxml-B-1: a machine with no data model has no value expressions, so the
 // children *are* the value — the same arm `<donedata>` takes there.

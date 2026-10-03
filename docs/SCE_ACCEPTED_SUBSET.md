@@ -3061,8 +3061,14 @@ the statement returns out of it before it writes.
 C++ lowers the model through the same walk, and refuses what it does not by name
 (`CppTarget::unsupported`: `generate/unsupported-feature`, "has no C++ lowering
 yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
-`<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` that carry no value of the
-data model, `In()`, a `<sce:action>` whose arguments are typed expressions
+`<elseif>`, `<log>`, `<raise>`, `<send>` / `<cancel>` — the `<param>`s of a
+`<send>` are computed into `ScriptValue`s from the machine's own fields and put in
+the typed map the event's JSON is built from (a pair whose value failed is
+reported and left out and the message still goes, §scxml-5.7.1), and a literal
+`<content>` is the normalised text handed to the helper `<donedata>` takes with
+no data model; a BasicHTTP `<send>` that carries a `<param>` is refused by name,
+because it needs each value as the text a form carries — `In()`, a `<sce:action>`
+whose arguments are typed expressions
 of the machine's variables, an event's typed payload, an enum variable, a
 record variable, and a list of numbers, bools or records with `<sce:append>`,
 `<sce:clear>` and `<foreach>`, a call of an imported algorithm, and the

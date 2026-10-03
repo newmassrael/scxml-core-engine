@@ -41,6 +41,7 @@
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_sm.h"
+#include "static_send_params_sm.h"
 #include "sync_client_sm.h"
 
 #include <filesystem>
@@ -295,6 +296,22 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventItsPar
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata", driver);
+}
+
+// A `<send>` hands its event the pairs of its `<param>`s, each computed from the
+// machine's own fields when the send runs. A pair whose value does not fit is
+// reported and left out, the message still goes, and the receiver, finding the
+// field missing, raises an `error.execution` of its own and takes no transition.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendHandsItsEventThePairsOfItsParams) {
+    using Machine = G::static_send_params::static_send_params;
+    Driver<Machine> driver({
+        {"total", [](const Machine &m) { return json(m.total()); }},
+        {"ok", [](const Machine &m) { return json(m.ok()); }},
+        {"tag", [](const Machine &m) { return json(m.tag()); }},
+        {"partialTotal", [](const Machine &m) { return json(m.partialTotal()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_send_params", driver);
 }
 
 // An `<invoke type="scxml">` hands its child the values its `<param>`s and

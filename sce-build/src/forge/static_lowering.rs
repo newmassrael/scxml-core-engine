@@ -1967,10 +1967,18 @@ impl CppTarget {
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
-                // A plain send carries no value of the data model; one that
-                // does needs the typed value crossed to the event.
-                "send" if action.params.is_empty() && action.content.is_empty() => {}
-                "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
+                // A param is the typed value of the data model crossed to the
+                // event's JSON, and a literal `<content>` is the text it spells.
+                // A BasicHTTP send also needs each value as the text a form
+                // carries, which the machine does not spell yet.
+                "send"
+                    if !action.params.is_empty()
+                        && action.send_type
+                            == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" =>
+                {
+                    return Some("a BasicHTTP <send> carrying a <param>".to_string())
+                }
+                "send" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
