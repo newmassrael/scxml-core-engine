@@ -581,6 +581,58 @@ fn smoke_c_symbol_prefix() {
     );
 }
 
+/// An `In()` predicate is the machine's own `in_state` call, and the C template
+/// writes it from the condition's text in three places — a guard, an `<if>` and
+/// an `<elseif>`. Each took the machine name alone, so under `--c-symbol-prefix`
+/// the call named a function and an enumerator that do not exist
+/// (`in_pred_in_state`, `IN_PRED_STATE_A`) and the unit did not compile.
+#[test]
+fn smoke_c_symbol_prefix_reaches_an_in_predicate() {
+    const FIXTURE: &str = "namespace_prefix_in_predicate";
+    const PREFIX: &str = "ScePrefixTest";
+
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped("smoke_c_symbol_prefix_reaches_an_in_predicate: gcc/cc not on PATH");
+        return;
+    };
+    let scratch = reset_scratch("c_sym_prefix_in");
+    let out_dir = scratch.join("prefixed");
+    std::fs::create_dir_all(&out_dir).expect("create out dir");
+    let output = Command::new(sce_codegen_bin())
+        .args(["generate", "-l", "c11", "-o"])
+        .arg(&out_dir)
+        .args(["--c-symbol-prefix", PREFIX])
+        .arg(fixtures_dir().join(format!("{FIXTURE}.scxml")))
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        output.status.success(),
+        "sce-codegen generate -l c11 failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let source = std::fs::read_to_string(out_dir.join(format!("{FIXTURE}_sm.c"))).expect("the .c");
+    // The guard, the `<if>` and the `<elseif>`: three calls, all prefixed.
+    let prefixed = format!("{PREFIX}_{FIXTURE}_in_state(sm, ");
+    assert!(
+        source.matches(&prefixed).count() >= 3,
+        "the three In() predicates are not all written with the prefix:\n{source}"
+    );
+    let compiled = Command::new(&gcc)
+        .args(["-std=c11", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(repo_root().join("backends/c/runtime/include"))
+        .arg("-I")
+        .arg(&out_dir)
+        .arg(out_dir.join(format!("{FIXTURE}_sm.c")))
+        .output()
+        .expect("run gcc");
+    assert!(
+        compiled.status.success(),
+        "prefixed In() predicates do not compile: {}",
+        String::from_utf8_lossy(&compiled.stderr),
+    );
+}
+
 #[test]
 fn smoke_rust() {
     // `syn::parse_file` runs in-process — no external toolchain, so

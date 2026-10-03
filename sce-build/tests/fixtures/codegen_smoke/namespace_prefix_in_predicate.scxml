@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An `In()` predicate under a C symbol prefix (the suite prefix option): it is the
+  machine's own `<prefix>_<machine>_in_state(sm, <PREFIX>_<MACHINE>_STATE_<ID>)`,
+  written from the condition's text by the C template, and all three places
+  that write it — a transition's guard, an `<if>` and an `<elseif>` — must
+  carry the prefix as every other symbol of the machine does. Nothing here
+  needs a script engine, so the unit compiles with the runtime headers alone.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a"
+       name="namespace_prefix_in_predicate">
+  <state id="a">
+    <onentry>
+      <if cond="In('a')">
+        <raise event="seen"/>
+      <elseif cond="In('b')"/>
+        <raise event="other"/>
+      </if>
+    </onentry>
+    <transition event="go" cond="In('a')" target="b"/>
+    <transition event="seen" target="b"/>
+  </state>
+  <state id="b"/>
+</scxml>
