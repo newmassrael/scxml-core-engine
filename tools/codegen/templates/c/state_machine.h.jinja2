@@ -399,6 +399,11 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
 } {{ csym_prefix }}{{ model.name }}_scheduled_queue_t;
 {% endif %}
 
+{% if static_type_defs %}
+/* ── Datamodel types (SCE Accepted Subset §2.15) ──────────────────── */
+{{ static_type_defs }}
+
+{% endif %}
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
 {# C++ `{name}Policy` mutable members: the last microstep's source and
    every <history>'s recorded configuration. #}

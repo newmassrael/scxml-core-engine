@@ -3027,6 +3027,7 @@ fn render_c11(
         host_invoker_decls => &host_invoker.decls,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
+        static_type_defs => static_lowering.type_defs.join("\n\n"),
     };
     let source_ctx = minijinja::context! {
         model => &model_val,

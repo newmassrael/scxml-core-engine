@@ -3283,18 +3283,29 @@ pub struct CTarget {
     /// verdict in a local of its own, named by this, so that no two share a
     /// scope: an `<if>` in a branch of another would otherwise shadow it.
     conditions: std::sync::atomic::AtomicU32,
+    /// The name each imported enum's document declares, by the alias the
+    /// machine imports it as. The type and its constants are spelled from the
+    /// document's name, not the alias, so that two machines importing one enum —
+    /// whatever they call it — share one declaration in a program that includes
+    /// both.
+    enums: std::collections::BTreeMap<String, String>,
 }
 
 /// What lowers the arguments of a host action ([`target_for`]): the one thing a
-/// caller outside the walk asks of C, and it asks no condition and no payload
-/// guard, so there is nothing for it to count or to name a machine for.
+/// caller outside the walk asks of C, and it asks no condition, no payload
+/// guard and no enum, so there is nothing for it to count or to name a machine
+/// for.
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
-    fn new(stem: &str) -> Self {
+    fn new(stem: &str, imported_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
+            enums: imported_enums
+                .iter()
+                .map(|(alias, model)| (alias.clone(), model.name.clone()))
+                .collect(),
         }
     }
 
@@ -3302,7 +3313,17 @@ impl CTarget {
         Self {
             stem: String::new(),
             conditions: std::sync::atomic::AtomicU32::new(0),
+            enums: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// The name the document of the enum imported as `alias` declares — the
+    /// alias itself for one the walk has no document of.
+    fn enum_document_name(&self, alias: &str) -> String {
+        self.enums
+            .get(alias)
+            .cloned()
+            .unwrap_or_else(|| alias.to_string())
     }
 
     /// The first action of `actions`, or of a block nested in one, that this
@@ -3327,11 +3348,16 @@ impl CTarget {
         None
     }
 
-    /// The C type a value of `ty` is held in while it is computed.
+    /// The C type a value of `ty` is held in while it is computed. An enum's
+    /// value has no inferred type of its own, and is held in an `int` — which
+    /// the enumerated type takes back by assignment.
     fn value_type(ty: InferredType) -> String {
-        match ty.to_sce_type() {
-            Some(held) => crate::forge::generator::c_type(&held).to_string(),
-            None => unreachable!("C11 lowers only values that have a declared type: {ty:?}"),
+        match ty {
+            InferredType::Unknown => "int".to_string(),
+            _ => match ty.to_sce_type() {
+                Some(held) => crate::forge::generator::c_type(&held).to_string(),
+                None => unreachable!("C11 lowers only values that have a declared type: {ty:?}"),
+            },
         }
     }
 }
@@ -3346,16 +3372,18 @@ impl StaticTarget for CTarget {
         None
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // The integers and the bool: a `bool` and a number are the values the
-        // checked helpers and the policy hold without a length. A string or a
-        // bytes value needs a capacity the C11 contract does not carry yet, a
-        // real is not yet held to a scenario, and a list, a record and an enum
-        // need types the machine's own file does not yet declare.
+        // The integers, the bool and an enum: a `bool`, a number and an
+        // enumerated type are the values the checked helpers and the policy
+        // hold without a length. A string or a bytes value needs a capacity the
+        // C11 contract does not carry yet, a real is not yet held to a
+        // scenario, and a list and a record need types the machine's own file
+        // does not yet declare.
         if let Some(var) = scope.variables.iter().find(|v| {
             !matches!(
                 v.value_type.as_ref().and_then(|t| t.scalar()),
                 Some(
                     SceType::Bool
+                        | SceType::Enum(_)
                         | SceType::Uint8
                         | SceType::Uint16
                         | SceType::Uint32
@@ -3467,6 +3495,59 @@ impl StaticTarget for CTarget {
     }
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
+    }
+    // The type is the document's, shared by every machine that imports the
+    // enum: one declaration, guarded, in each machine's header ([`Self::enum_def`]).
+    fn enum_type(&self, _machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{}_enum_t",
+            filters::to_snake_case(self.enum_document_name(alias))
+        ))
+    }
+    // C has no namespace, so the constant carries the document's name — the one
+    // spelling the enum kind's own C artifact declares, and a reference to a
+    // variant ([`crate::forge::enum_naming::variant_ref`]) contains.
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::C11, enum_name, variant)
+    }
+    // The declaration is guarded by a macro of the document's name, so that a
+    // program including two machines which import the same enum declares it
+    // once. The function answers the name the document declares for a value —
+    // what a saved or observed value is — and NULL for one no variant names.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
+        let guard = format!("SCE_STATIC_ENUM_{}", prefix.to_uppercase());
+        let variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    {} = {},\n",
+                    self.enum_variant(&model.name, &v.name),
+                    v.value
+                )
+            })
+            .collect();
+        let names: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    case {}:\n        return \"{}\";\n",
+                    self.enum_variant(&model.name, &v.name),
+                    filters::escape_c(v.name.clone())
+                )
+            })
+            .collect();
+        format!(
+            "#ifndef {guard}\n#define {guard}\n\
+             /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
+             typedef enum {{\n{variants}}} {ty};\n\n\
+             /* The name the enum document declares for `value`, or NULL for a value no\n   \
+             variant names. */\n\
+             static inline const char *{prefix}_declared_name({ty} value) {{\n    \
+             switch (value) {{\n{names}    }}\n    return NULL;\n}}\n#endif"
+        )
     }
     fn record_type(&self, _machine: &str, _alias: &str) -> String {
         unreachable!("a C11 document with a record variable is refused by `unsupported`")
@@ -3674,7 +3755,8 @@ pub fn lower_c11(
     csym_prefix: &str,
 ) -> Result<StaticLowering, GenerateError> {
     let stem = model.name.clone();
-    lower(model, &format!("{csym_prefix}{stem}"), &CTarget::new(&stem))
+    let target = CTarget::new(&stem, &model.imported_enums);
+    lower(model, &format!("{csym_prefix}{stem}"), &target)
 }
 
 /// The target that spells `lang`, when it lowers `sce-static` at all.

@@ -27,6 +27,9 @@
 //     assignments through the channel the machine declares for it, lifted from
 //     the `data` the event carries; an operation over it that overflows is a
 //     failure like any other, and the statements before it have run.
+//   * `static_enum`: an enum variable starts at a variant, is compared with `===`
+//     and `!==`, takes a conditional of two variants, and is observed as the name
+//     its document declares, not as the constant C spells for it.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -40,6 +43,7 @@
 
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_enum_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
 
@@ -79,7 +83,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 
 // One machine as `sce_scenario_driver_t` asks for it: the event by its document
 // name, the state by its, the variable by its, and the replay of its scenario.
-#define STATIC_SCENARIO(M, EVENTS, STATES, VARIABLES)                                                                  \
+#define STATIC_SCENARIO(M, EVENTS, STATES, VARIABLES, TEXT)                                                            \
     static bool M##_raise_event(void *sm, const char *name, const char *data) {                                        \
         int event = 0;                                                                                                 \
         if (!find(EVENTS, COUNT_OF(EVENTS), name, &event)) {                                                           \
@@ -121,7 +125,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         M##_t sm;                                                                                                      \
         M##_init(&sm);                                                                                                 \
         const sce_scenario_driver_t driver = {                                                                         \
-            #M, &sm, M##_raise_event, M##_state_active, M##_run_ended, M##_read_variable};                             \
+            #M, &sm, M##_raise_event, M##_state_active, M##_run_ended, M##_read_variable, TEXT};                       \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -150,7 +154,7 @@ static const variable_t counter_variables[] = {
     {"count", static_counter_read_count},
     {"ready", static_counter_read_ready},
 };
-STATIC_SCENARIO(static_counter, counter_events, counter_states, counter_variables)
+STATIC_SCENARIO(static_counter, counter_events, counter_states, counter_variables, NULL)
 
 // static_overflow
 VARIABLE_READER(static_overflow, level)
@@ -167,7 +171,7 @@ static const variable_t overflow_variables[] = {
     {"level", static_overflow_read_level},
     {"refusals", static_overflow_read_refusals},
 };
-STATIC_SCENARIO(static_overflow, overflow_events, overflow_states, overflow_variables)
+STATIC_SCENARIO(static_overflow, overflow_events, overflow_states, overflow_variables, NULL)
 
 // static_block_ends
 VARIABLE_READER(static_block_ends, a)
@@ -201,7 +205,7 @@ static const variable_t block_ends_variables[] = {
     {"afterOk", static_block_ends_read_afterOk},
     {"errors", static_block_ends_read_errors},
 };
-STATIC_SCENARIO(static_block_ends, block_ends_events, block_ends_states, block_ends_variables)
+STATIC_SCENARIO(static_block_ends, block_ends_events, block_ends_states, block_ends_variables, NULL)
 
 // static_payload
 VARIABLE_READER(static_payload, day)
@@ -220,7 +224,50 @@ static const variable_t payload_variables[] = {
     {"sinceEpoch", static_payload_read_sinceEpoch},
     {"refusals", static_payload_read_refusals},
 };
-STATIC_SCENARIO(static_payload, payload_events, payload_states, payload_variables)
+STATIC_SCENARIO(static_payload, payload_events, payload_states, payload_variables, NULL)
+
+// static_enum: the layout a calendar screen shows its days in. `layout` is
+// published; `previous` is the machine's own, so it is read from the policy the
+// struct holds, as the C++ suite reads it from the policy member. A value is
+// stated as the name its document declares.
+VARIABLE_READER(static_enum, changes)
+
+static int64_t static_enum_read_layout(const void *sm) {
+    return (int64_t)static_enum_get_layout((const static_enum_t *)sm);
+}
+
+static int64_t static_enum_read_previous(const void *sm) {
+    return (int64_t)((const static_enum_t *)sm)->policy.v_previous;
+}
+
+static const char *static_enum_text(void *sm, const char *name) {
+    const static_enum_t *machine = (const static_enum_t *)sm;
+    // The function is named for the enum document's own name, which the
+    // generator reads from its file: `enum_view_mode.scxml`.
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(static_enum_get_layout(machine));
+    }
+    if (strcmp(name, "previous") == 0) {
+        return enum_view_mode_declared_name(machine->policy.v_previous);
+    }
+    return NULL;
+}
+
+static const name_value_t enum_events[] = {
+    {"zoom", STATIC_ENUM_EVENT_ZOOM},
+    {"back", STATIC_ENUM_EVENT_BACK},
+    {"swap", STATIC_ENUM_EVENT_SWAP},
+    {"agenda", STATIC_ENUM_EVENT_AGENDA},
+};
+static const name_value_t enum_states[] = {
+    {"browsing", STATIC_ENUM_STATE_BROWSING},
+};
+static const variable_t enum_variables[] = {
+    {"changes", static_enum_read_changes},
+    {"layout", static_enum_read_layout},
+    {"previous", static_enum_read_previous},
+};
+STATIC_SCENARIO(static_enum, enum_events, enum_states, enum_variables, static_enum_text)
 
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
@@ -255,6 +302,7 @@ int main(void) {
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_payload_scenario("static_payload", 5);
+    bad |= static_enum_scenario("static_enum", 11);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     if (bad != 0) {
         return 1;

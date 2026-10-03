@@ -46,6 +46,10 @@ typedef struct {
     // False for a name the machine publishes no variable of. A bool reads as 0
     // or 1.
     bool (*variable)(void *sm, const char *name, int64_t *out);
+    // The name a variable of an enum holds, as its document declares it; NULL
+    // for a variable that is not one. A scenario states such a value as a
+    // string, and a driver with no enum may leave this unset.
+    const char *(*text)(void *sm, const char *name);
 } sce_scenario_driver_t;
 
 typedef struct {
@@ -268,10 +272,37 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             if (!sce_scenario_take(c, '}')) {
                 for (;;) {
                     char name[64];
+                    char want_text[64];
                     int64_t want = 0;
-                    if (!sce_scenario_string(c, name, sizeof(name)) || !sce_scenario_take(c, ':') ||
-                        !sce_scenario_number(c, &want)) {
-                        return sce_scenario_fail(d, step, "a variable is not a name and an integer or a bool");
+                    if (!sce_scenario_string(c, name, sizeof(name)) || !sce_scenario_take(c, ':')) {
+                        return sce_scenario_fail(d, step, "a variable has no name");
+                    }
+                    sce_scenario_space(c);
+                    if (*c->at == '"') {
+                        // An enum is stated as the name its document declares.
+                        if (!sce_scenario_string(c, want_text, sizeof(want_text))) {
+                            return sce_scenario_fail(d, step, "a variable's name is not a string");
+                        }
+                        const char *got_text = d->text == NULL ? NULL : d->text(d->sm, name);
+                        if (got_text == NULL) {
+                            (void)snprintf(message, sizeof(message), "the machine publishes no enum variable `%s`",
+                                           name);
+                            bad |= sce_scenario_fail(d, step, message);
+                        } else if (strcmp(got_text, want_text) != 0) {
+                            (void)snprintf(message, sizeof(message), "`%s` is `%s`, want `%s`", name, got_text,
+                                           want_text);
+                            bad |= sce_scenario_fail(d, step, message);
+                        }
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
+                    if (!sce_scenario_number(c, &want)) {
+                        return sce_scenario_fail(d, step, "a variable is not an integer, a bool or an enum name");
                     }
                     int64_t got = 0;
                     if (!d->variable(d->sm, name, &got)) {

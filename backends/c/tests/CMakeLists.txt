@@ -2292,6 +2292,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # An enum variable's variants are the enum document's, imported by name.
+    sce_generate_static_integration_c_test(static_enum
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum.scxml"
+        STAGE_ALSO enum_view_mode.scxml
+    )
 
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
@@ -2299,6 +2305,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_overflow_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_enum_SOURCES}
     )
     target_link_libraries(sce_c_integration_static_scalars PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

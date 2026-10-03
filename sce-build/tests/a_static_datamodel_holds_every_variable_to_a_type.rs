@@ -301,10 +301,10 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
-    // C lowers integer and bool variables, guards, `<assign>`, `<if>`, `<log>`,
-    // `<raise>`, `In()`, an event's typed payload of numbers and bools, and a
-    // host action whose arguments are typed expressions of them. What is past
-    // that — a string, a real, a list, a record, an enum or bytes variable, a
+    // C lowers integer, bool and enum variables, guards, `<assign>`, `<if>`,
+    // `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and bools,
+    // and a host action whose arguments are typed expressions of them. What is
+    // past that — a string, a real, a list, a record or a bytes variable, a
     // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
     // not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
@@ -334,11 +334,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a list variable",
             variable(r#"<data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>"#),
             r#"<data id="picked" sce:type="list">"#,
-        ),
-        (
-            "an enum variable",
-            fixture("static_enum.scxml"),
-            r#"<data id="layout" sce:type="enum:ViewMode">"#,
         ),
         (
             "a record variable",
