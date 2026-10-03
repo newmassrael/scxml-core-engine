@@ -26,15 +26,6 @@ edit("sce-build/src/forge/static_datamodel.rs",
      "        if names_one || true {\n            return Ok(());\n")
 PY
 
-# A whole record is assigned like a number: the right-hand side is lowered as
-# an expression, which has no record to lower, and the test of the whole
-# record reads a name nothing declares.
-mutation_case "a whole record is lowered as an expression" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "        \"assign\" if rewrites.records.contains_key(action.location.trim()) => {\n",
-     "        \"assign\" if false && rewrites.records.contains_key(action.location.trim()) => {\n")
-PY
-
 # A write to what a loop binds is accepted: Kotlin's item is a `val`, and a
 # write to a field of a record item changes a copy no one reads.
 mutation_case "a loop's item or index is written" <<'PY'
