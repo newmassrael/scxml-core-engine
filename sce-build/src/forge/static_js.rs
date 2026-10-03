@@ -346,7 +346,7 @@ impl StaticTarget for JsTarget {
             xml_attribute_value(init)
         ))
     }
-    fn log(&self, _label: &str, _value: &str) -> String {
+    fn log(&self, _label: &str, _value: &str, _ty: InferredType) -> String {
         String::new()
     }
     // The element that replaces the `<sce:append>`: an `<assign>` of the list,

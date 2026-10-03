@@ -1571,7 +1571,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
 }
 
 /// Escape C string literals (identical escaping rules to Rust/C++).
-fn escape_c(text: String) -> String {
+pub fn escape_c(text: String) -> String {
     escape_rust(text)
 }
 

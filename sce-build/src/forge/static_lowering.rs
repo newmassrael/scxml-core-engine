@@ -281,6 +281,13 @@ pub trait StaticTarget {
     }
     /// How a statement or a guard reaches the field named `name`.
     fn field_ref(&self, name: &str) -> String;
+    /// How a variable's initial value reaches the field named `name` of a
+    /// variable declared before it, while the machine is being built. The
+    /// field's own name, for a target whose fields are in scope there; C
+    /// builds the machine through a pointer to it.
+    fn initial_field_ref(&self, name: &str) -> String {
+        name.to_string()
+    }
     /// How the machine's active-state test is called (`In(...)`).
     fn in_function(&self) -> &'static str;
     /// The type of a scalar variable.
@@ -362,8 +369,10 @@ pub trait StaticTarget {
     fn data_element(&self, _id: &str, _init: &str) -> Option<String> {
         None
     }
-    /// Log `value`, prefixed with `label` when there is one (§scxml-4.7).
-    fn log(&self, label: &str, value: &str) -> String;
+    /// Log `value`, of type `ty`, prefixed with `label` when there is one
+    /// (§scxml-4.7). A target that formats by the value's type — C has no
+    /// overloading — reads `ty`; the others show the value as the language does.
+    fn log(&self, label: &str, value: &str, ty: InferredType) -> String;
     /// Append `value` to the list at `target` while it holds fewer than
     /// `capacity` elements, as an expression that is `true` when the append
     /// failed. It fails when the list is full — `overflow`, if any, runs, and
@@ -406,17 +415,31 @@ pub trait StaticTarget {
     /// stands in (§scxml-4.9); which block that is, and what leaves it,
     /// the dispatcher knows from where it renders the action, so it acts on
     /// the `true`.
+    ///
+    /// A target with no expression that runs statements — C has no closure and
+    /// no statement expression — spells the statement itself, and the block
+    /// that ends the block in it, with the `return` its function ends on
+    /// (§scxml-4.9: every block is a function there). Its dispatcher then has
+    /// nothing to act on, and does not read [`crate::model::Action::native_fails`].
     fn receiving_statement(&self, statement: &str, failed: &str) -> String;
     /// `write(value)`, a statement that stores or shows `value`, as
-    /// [`Self::receiving_statement`] receives it, for a `value` that can fail.
+    /// [`Self::receiving_statement`] receives it, for a `value` of type `ty`
+    /// that can fail.
     ///
     /// The default is the statement with the value written in place, which is
     /// right where a failure leaves the statement before it writes — an early
     /// return, a throw. A target whose failed value is still a value (zero,
     /// with a flag raised) computes it first and writes only when it did not
     /// fail, so a statement that failed leaves what it was going to write
-    /// as it was (§scxml-4.9).
-    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+    /// as it was (§scxml-4.9). One that has to name the type of the value it
+    /// holds in the meantime — C has no `auto` — reads `ty`.
+    fn receiving_write(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        _ty: InferredType,
+        failed: &str,
+    ) -> String {
         self.receiving_statement(&write(value), failed)
     }
     /// `statement`, a call whose arguments can fail, run where its failure is
@@ -445,6 +468,14 @@ pub trait StaticTarget {
     /// [`Self::condition_failed_flag`] for the condition of an `<if>` or an
     /// `<elseif>`, and empty for a transition's guard, which stands in no
     /// block.
+    ///
+    /// A target with no expression that runs statements (see
+    /// [`Self::receiving_statement`]) spells the head of the `if` instead: the
+    /// statements that evaluate the condition, raising and setting `flag` when
+    /// it fails, and then `if (<verdict>)`, which its dispatcher follows with
+    /// the branch's block. The slot says which it holds
+    /// ([`crate::model::Action::native_cond_fails`],
+    /// [`crate::model::Transition::native_guard_fails`]).
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String;
     /// The statement that records, on the `<if>` numbered `if_ordinal`, that
     /// one of its conditions failed. The `<if>` runs its chain on — a
@@ -654,7 +685,7 @@ impl StaticTarget for KotlinTarget {
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target} = {target}.copy({field} = {value})")
     }
-    fn log(&self, label: &str, value: &str) -> String {
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
         let label = if label.is_empty() {
             String::new()
         } else {
@@ -916,7 +947,7 @@ impl StaticTarget for RustTarget {
     }
     // Debug formatting, as the script-engine arm of the same template logs a
     // value: a record has no `Display`, and one spelling serves every type.
-    fn log(&self, label: &str, value: &str) -> String {
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
         if label.is_empty() {
             format!("::sce_rust_runtime::sce_log_info!(\"{{:?}}\", {value});")
         } else {
@@ -1235,7 +1266,12 @@ pub fn lower(
         let ctx = scope.ctx(&no_payload, &enums);
         let init_names: Vec<(String, String)> = variables
             .iter()
-            .map(|v| (v.id.clone(), target.field_name(&v.id)))
+            .map(|v| {
+                (
+                    v.id.clone(),
+                    target.initial_field_ref(&target.field_name(&v.id)),
+                )
+            })
             .chain(names.iter().skip(variables.len()).cloned())
             .collect();
         let renames = renames(&init_names, None, target);
@@ -1475,6 +1511,7 @@ pub fn lower(
                 // §scxml-5.9.1: a condition that fails is false, and
                 // `error.execution` says why (E12 D5).
                 // A guard stands in no block, so there is nothing to end.
+                transition.native_guard_fails = cond.can_fail;
                 let lowered = if cond.can_fail {
                     target.receiving_condition(
                         &cond.text,
@@ -2170,7 +2207,7 @@ impl StaticTarget for CppTarget {
     }
     // Through `sceLogName`, which an enum declares beside its type and every
     // other value passes through unchanged.
-    fn log(&self, label: &str, value: &str) -> String {
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
         if label.is_empty() {
             format!("SCE_LOG_INFO(\"{{}}\", sceLogName({value}));")
         } else {
@@ -2243,7 +2280,13 @@ impl StaticTarget for CppTarget {
              if (sce_failure_.failed()) {{ {failed} return true; }} return false; }})()"
         )
     }
-    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+    fn receiving_write(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        _ty: InferredType,
+        failed: &str,
+    ) -> String {
         format!(
             "([&]() -> bool {{ SCE::Forge::AlgorithmFailure sce_failure_; auto sce_value = {value}; \
              if (sce_failure_.failed()) {{ {failed} return true; }} {} return false; }})()",
@@ -2619,7 +2662,7 @@ impl StaticTarget for GoTarget<'_> {
     }
     // The label is an argument of `Printf`, never part of its format, as the
     // script-engine arm's is.
-    fn log(&self, label: &str, value: &str) -> String {
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
         format!(
             "fmt.Printf(\"%s%v\\n\", \"{}\", {value})",
             filters::escape_go(label.to_string())
@@ -2692,7 +2735,13 @@ impl StaticTarget for GoTarget<'_> {
             Self::then(&[failed, "return true"])
         )
     }
-    fn receiving_write(&self, write: &dyn Fn(&str) -> String, value: &str, failed: &str) -> String {
+    fn receiving_write(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        _ty: InferredType,
+        failed: &str,
+    ) -> String {
         format!(
             "func() bool {{ var sceFailure scealgorithm.Failure; sceValue := {value}; \
              if sceFailure.Failed() {{ {} }}; {}; return false }}()",
@@ -3043,7 +3092,7 @@ impl StaticTarget for PythonTarget {
     // Through `_sce_log_name`, which an enum member answers with the name its
     // document declares and every other value passes through unchanged, to the
     // policy's `log_hook`, which a host overrides to redirect `<log>` output.
-    fn log(&self, label: &str, value: &str) -> String {
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
         format!(
             "self.log_hook({}, _sce_log_name({value}))",
             filters::py_string_literal(label.to_string())
@@ -3181,6 +3230,331 @@ pub fn lower_python(
     lower(model, machine, &PythonTarget)
 }
 
+/// C11: a variable is a member of the machine's policy struct (`sm->policy`),
+/// set by the machine's own statements. A failed checked operation is a value
+/// (zero, with a flag raised in `sce_failure_`) rather than a jump, as in C++, so
+/// a value that can fail is computed into a local first and written only when it
+/// did not.
+///
+/// C has no closure and no statement expression, so what the other backends
+/// spell as an expression that runs a statement is spelled here as the
+/// statement itself, ending its block with the `return` every block's function
+/// ends on (§scxml-4.9), and a condition that can fail as the head of its `if`
+/// ([`StaticTarget::receiving_condition`]).
+///
+/// Lowers integer and bool variables, guards, `<assign>`, `<if>`, `<log>`,
+/// `<raise>` and `In()`; every construct past those is refused by name
+/// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
+/// left as an undefined name in generated code.
+#[derive(Default)]
+pub struct CTarget {
+    /// How many conditions that can fail the walk has lowered. Each leaves its
+    /// verdict in a local of its own, named by this, so that no two share a
+    /// scope: an `<if>` in a branch of another would otherwise shadow it.
+    conditions: std::cell::Cell<u32>,
+}
+
+impl CTarget {
+    /// The first action of `actions`, or of a block nested in one, that this
+    /// target has no lowering for yet.
+    fn unlowered_action(actions: &[Action]) -> Option<String> {
+        for action in actions {
+            match action.action_type.as_str() {
+                "assign" | "log" | "if" | "raise" => {}
+                "native_action" => return Some("a <sce:action>".to_string()),
+                "sce_append" => return Some("an <sce:append>".to_string()),
+                "sce_clear" => return Some("an <sce:clear>".to_string()),
+                other => return Some(format!("<{other}>")),
+            }
+            for block in action.nested_blocks() {
+                if let Some(found) = Self::unlowered_action(block.actions) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// The C type a value of `ty` is held in while it is computed.
+    fn value_type(ty: InferredType) -> String {
+        match ty.to_sce_type() {
+            Some(held) => crate::forge::generator::c_type(&held).to_string(),
+            None => unreachable!("C11 lowers only values that have a declared type: {ty:?}"),
+        }
+    }
+}
+
+impl StaticTarget for CTarget {
+    fn name(&self) -> &'static str {
+        "C11"
+    }
+    // No algorithm is called from a C machine yet: a call is refused where the
+    // document is read ([`lower`]), not left an undefined name.
+    fn callee(&self, _document_name: &str) -> Option<Callee> {
+        None
+    }
+    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // The integers and the bool: a `bool` and a number are the values the
+        // checked helpers and the policy hold without a length. A string or a
+        // bytes value needs a capacity the C11 contract does not carry yet, a
+        // real is not yet held to a scenario, and a list, a record and an enum
+        // need types the machine's own file does not yet declare.
+        if let Some(var) = scope.variables.iter().find(|v| {
+            !matches!(
+                v.value_type.as_ref().and_then(|t| t.scalar()),
+                Some(
+                    SceType::Bool
+                        | SceType::Uint8
+                        | SceType::Uint16
+                        | SceType::Uint32
+                        | SceType::Uint64
+                        | SceType::Int8
+                        | SceType::Int16
+                        | SceType::Int32
+                        | SceType::Int64
+                )
+            )
+        }) {
+            let ty = match &var.value_type {
+                Some(t) => t.scalar().map_or_else(
+                    || {
+                        t.record_alias()
+                            .map_or("list".to_string(), |alias| format!("record:{alias}"))
+                    },
+                    SceType::as_attr,
+                ),
+                None => "no type".to_string(),
+            };
+            return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
+        }
+        if !model.global_scripts.is_empty() {
+            return Some("a <script>".to_string());
+        }
+        for state in model.states.values() {
+            let blocks = state
+                .on_entry_blocks
+                .iter()
+                .chain(&state.on_exit_blocks)
+                .map(Vec::as_slice)
+                .chain([
+                    state.initial_transition_actions.as_slice(),
+                    state.initial_history_default_actions.as_slice(),
+                ])
+                .chain(state.transitions.iter().map(|t| t.actions.as_slice()));
+            for block in blocks {
+                if let Some(found) = Self::unlowered_action(block) {
+                    return Some(found);
+                }
+            }
+            // A typed payload is read through the channel the machine's own
+            // file declares for it, which a C machine under this data model
+            // does not yet carry.
+            if let Some(t) = state
+                .transitions
+                .iter()
+                .find(|t| model.imported_event_schemas.contains_key(&t.event))
+            {
+                return Some(format!(
+                    "a transition on `{}`, an event that carries a typed payload",
+                    t.event
+                ));
+            }
+            if !state.invokes.is_empty() {
+                return Some("an <invoke>".to_string());
+            }
+            if state.donedata.as_ref().is_some_and(|done| {
+                !done.params.is_empty()
+                    || !matches!(done.content, crate::model::DoneDataContent::None)
+            }) {
+                return Some("a <donedata>".to_string());
+            }
+        }
+        None
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::C
+    }
+    // A prefix keeps a variable's member from meeting another member of the
+    // policy, which a bare name could (`last_transition_source_state`).
+    fn field_name(&self, id: &str) -> String {
+        format!("v_{}", filters::to_snake_case(id.to_string()))
+    }
+    // A free function of the machine, as every typed reader of the backend is;
+    // the `get_` keeps it from meeting `_init`, `_step` or `_raise`, which a
+    // bare name could.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        Some(format!("get_{}", id.replace(['.', '-'], "_")))
+    }
+    fn field_ref(&self, name: &str) -> String {
+        format!("sm->policy.{name}")
+    }
+    // The machine is built through its pointer, so the variables declared
+    // before an initial value are reached as every statement reaches them.
+    fn initial_field_ref(&self, name: &str) -> String {
+        self.field_ref(name)
+    }
+    // A name the lowered text still carries as a call, which the template's
+    // `to_in_predicate_c11` turns into the enumerator test the machine already
+    // answers a pure `In()` with: C has no string-keyed test of a state.
+    fn in_function(&self) -> &'static str {
+        "In"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::c_type(ty).to_string()
+    }
+    fn scalar_view(&self, _ty: &SceType) -> Option<String> {
+        None
+    }
+    fn record_type(&self, _machine: &str, _alias: &str) -> String {
+        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    }
+    fn record_def(
+        &self,
+        _ty: &str,
+        _alias: &str,
+        _schema: &EventSchemaModel,
+        _enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
+        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    }
+    fn record_field(&self, _id: &str) -> String {
+        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    }
+    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
+        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    }
+    fn list_type(&self, _elem: &SceType) -> String {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn record_list_type(&self, _record: &str) -> String {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn list_empty(&self) -> String {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value};")
+    }
+    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
+        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    }
+    // To stderr, as the machine's other `<log>` is. The value is widened to the
+    // type its conversion names, because C has no `fmt` that picks one: a
+    // signed integer to `long long`, an unsigned one to `unsigned long long`, a
+    // bool to its word. The label is an argument, not part of the format, so a
+    // `%` in it is text.
+    fn log(&self, label: &str, value: &str, ty: InferredType) -> String {
+        let (conversion, argument) = match ty {
+            InferredType::Bool => ("%s", format!("({value}) ? \"true\" : \"false\"")),
+            InferredType::Str => ("%s", value.to_string()),
+            InferredType::Int { signed: false, .. } => {
+                ("%llu", format!("(unsigned long long)({value})"))
+            }
+            InferredType::Float { .. } | InferredType::UntypedFloat => {
+                ("%g", format!("(double)({value})"))
+            }
+            // A signed integer, and an integer no context typed.
+            _ => ("%lld", format!("(long long)({value})")),
+        };
+        if label.is_empty() {
+            format!("(void)fprintf(stderr, \"{conversion}\\n\", {argument});")
+        } else {
+            format!(
+                "(void)fprintf(stderr, \"%s: {conversion}\\n\", \"{}\", {argument});",
+                filters::escape_c(label.to_string())
+            )
+        }
+    }
+    fn append(
+        &self,
+        _target: &str,
+        _capacity: u32,
+        _value: &str,
+        _value_can_fail: bool,
+        _overflow: &str,
+        _failed: &str,
+    ) -> String {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    fn clear(&self, _target: &str) -> String {
+        unreachable!("a C11 document with a list variable is refused by `unsupported`")
+    }
+    // `machine` is the symbol every name of the machine starts with, prefix
+    // included, which the generator hands the walk for it.
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+        format!(
+            "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, \"{}\");",
+            machine.to_uppercase(),
+            filters::escape_c(message.to_string())
+        )
+    }
+    // The runtime's checked helpers record a failure in `sce_failure_` and
+    // answer a zero, so a statement that wrote its value would write that zero.
+    // The statement runs in a block of its own, and a failure ends the block
+    // the element stands in by returning from its function.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {statement} \
+             if (sce_failure_.failed) {{ {failed} return; }} }}"
+        )
+    }
+    fn receiving_write(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        ty: InferredType,
+        failed: &str,
+    ) -> String {
+        format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {} sce_value = {value}; \
+             if (sce_failure_.failed) {{ {failed} return; }} {} }}",
+            Self::value_type(ty),
+            write("sce_value")
+        )
+    }
+    fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
+        unreachable!("a C11 document with a host action is refused by `unsupported`")
+    }
+    // The head of the `if`: the verdict is `false` when the condition failed,
+    // and its local is the walk's own, never declared twice in one scope.
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        let n = self.conditions.get() + 1;
+        self.conditions.set(n);
+        format!(
+            "bool sce_cond_{n}_ = false; \
+             {{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; bool sce_value = {value}; \
+             if (sce_failure_.failed) {{ {failed} {flag} }} else {{ sce_cond_{n}_ = sce_value; }} }} \
+             if (sce_cond_{n}_)"
+        )
+    }
+    // The local the `<if>` declares for it.
+    fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
+        "_if_cond_failed = true;".to_string()
+    }
+    fn payload_accessor(&self, _event: &str) -> String {
+        "sm->pending_payload".to_string()
+    }
+    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
+        unreachable!("a C11 transition on a typed payload is refused by `unsupported`")
+    }
+    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
+        unreachable!("a C11 document with a <send> or an <invoke> is refused by `unsupported`")
+    }
+}
+
+/// Rewrite `model` — a clone the C11 backend renders — so every expression of
+/// a `sce-static` document is native C. `symbol` is the stem every name of the
+/// machine starts with, suite prefix included.
+pub fn lower_c11(model: &mut SCXMLModel, symbol: &str) -> Result<StaticLowering, GenerateError> {
+    lower(model, symbol, &CTarget::default())
+}
+
 /// The target that spells `lang`, when it lowers `sce-static` at all.
 pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
     match lang {
@@ -3190,6 +3564,9 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         // Only the call is spelled here, which the package's name alone fixes.
         Language::Go => Some(&GoTarget { import_root: None }),
         Language::Python => Some(&PythonTarget),
+        // A C machine's lowering counts the conditions it lowers ([`CTarget`]),
+        // so it is a value of its own per document ([`lower_c11`]), and a C
+        // machine hands a host action no lowered argument yet.
         Language::C11 => None,
     }
 }
@@ -3356,17 +3733,20 @@ fn lower_action(
     // `write(value)`, received where it stands when `value` can fail — and
     // then an expression that says whether it did, which the dispatcher acts
     // on by ending the block (§scxml-4.9) — with whether it can.
-    let statement =
-        |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| -> (String, bool) {
-            if value.can_fail {
-                (
-                    target.receiving_write(write, &value.text, &failed(construct)),
-                    true,
-                )
-            } else {
-                (write(&value.text), false)
-            }
-        };
+    let statement = |value: &Receiving,
+                     ty: InferredType,
+                     write: &dyn Fn(&str) -> String,
+                     construct: String|
+     -> (String, bool) {
+        if value.can_fail {
+            (
+                target.receiving_write(write, &value.text, ty, &failed(construct)),
+                true,
+            )
+        } else {
+            (write(&value.text), false)
+        }
+    };
     let reads = crate::forge::expr::references_event_data_lexically;
     let mut reads_payload = false;
     // Each statement lands whole in `native_code`, and each condition in
@@ -3406,11 +3786,16 @@ fn lower_action(
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
                     let field = target.record_field(field.trim());
-                    statement(&value, &|v| target.assign_field(name, &field, v), construct)
+                    statement(
+                        &value,
+                        slot,
+                        &|v| target.assign_field(name, &field, v),
+                        construct,
+                    )
                 }
                 None => {
                     let name = renames.get(location).copied().unwrap_or(location);
-                    statement(&value, &|v| target.assign(name, v), construct)
+                    statement(&value, slot, &|v| target.assign(name, v), construct)
                 }
             };
         }
@@ -3437,8 +3822,24 @@ fn lower_action(
             let value = lower(&action.expr, InferredType::Unknown)?;
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let label = action.label.clone();
-            (action.native_code, action.native_fails) =
-                statement(&value, &|v| target.log(&label, v), "<log>".to_string());
+            // The value's own type, which a target that formats by it reads.
+            let ty = crate::forge::expr::judge_into(
+                &action.expr,
+                ctx,
+                crate::forge::expr::Expected::Hint(InferredType::Unknown),
+            )
+            .map_err(|r| {
+                GenerateError::unsupported(format!(
+                    "`{}` has no {lang} lowering: {}",
+                    action.expr, r.error
+                ))
+            })?;
+            (action.native_code, action.native_fails) = statement(
+                &value,
+                ty,
+                &|v| target.log(&label, v, ty),
+                "<log>".to_string(),
+            );
         }
         // An append happens only while the list is under its bound — on
         // every backend, so a machine holds the same list wherever it runs.

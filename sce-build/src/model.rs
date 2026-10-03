@@ -157,6 +157,16 @@ pub struct Transition {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_guard: String,
+    /// Codegen-internal: whether [`Self::native_guard`] can fail — a checked
+    /// integer operation in a `sce-static` guard overflowed. A guard that
+    /// cannot be evaluated is false and raises `error.execution`
+    /// (§scxml-5.9.1). A backend with no expression that runs statements (C)
+    /// then holds in `native_guard` the head of the `if` rather than the
+    /// condition: the statements that evaluate it, and `if (<verdict>)`.
+    /// Outside the AST contract, as [`Self::native_guard`] is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_guard_fails: bool,
     /// The canonical path of the
     /// state that OWNS this transition, paired with
     /// [`symbol_artifact`](Self::symbol_artifact) to form the identity
@@ -475,6 +485,11 @@ pub struct Action {
     /// the element sits in on an error, and which block that is — and what
     /// leaves it — is the backend's to say from where it renders the action,
     /// so the dispatcher emits the exit after a `true`.
+    ///
+    /// A backend with no expression that runs statements (C) holds the
+    /// statement itself instead, with the exit written in it
+    /// ([`crate::forge::static_lowering::StaticTarget::receiving_statement`]),
+    /// and its dispatcher does not read this.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_fails: bool,
@@ -493,6 +508,10 @@ pub struct Action {
     /// is set the dispatcher declares the flag and ends the block after the
     /// chain — of this condition and of each `<elseif>`'s
     /// ([`ElseIfBranch::native_cond_fails`]).
+    ///
+    /// A backend with no expression that runs statements (C) then holds in
+    /// [`Self::native_cond`] the head of the `if` rather than the condition,
+    /// as [`Transition::native_guard_fails`] says.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_cond_fails: bool,

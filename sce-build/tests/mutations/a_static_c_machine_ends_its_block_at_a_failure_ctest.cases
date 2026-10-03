@@ -1,0 +1,81 @@
+# Mutation cases for §scxml-4.9 and the guard of a `datamodel="sce-static"`
+# machine generated as C (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_machine_ends_its_block_at_a_failure_ctest.cases`.
+#
+# A statement of such a machine is C the lowering wrote, and the templates only
+# place it. C has no closure and no statement expression, so a statement that can
+# fail is the statement itself — it computes the value into a local, and when
+# that failed raises `error.execution` and returns, which ends the block because
+# every block is a C function — and a condition that can fail is the head of its
+# `if`. The values those decide are the ones `scenarios/*.json` state, replayed
+# by `backends/c/tests/integration/test_static_scalars.c` over machines
+# generated from the fixtures beside them.
+#
+# What is easy to get wrong and reads as success: a failed value written anyway
+# is a zero where a variable keeps what it held, and a block that goes on after
+# an error still ends with the right counters whenever the statements after it
+# write what they would have written anyway. `static_overflow` tells the first
+# apart, and `static_block_ends` — a write after the failure that must not
+# happen — the second.
+#
+# The lowering's own spellings are in `sce-build/src/forge/static_lowering.rs`
+# and reach the machine through `sce-codegen`, which the ctest fixture
+# rebuilds, so both halves are declared: the templates place the lowered text,
+# and the spellings are what the cases below break on the Rust side.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h
+
+# ── A failed statement writes nothing and ends its block ───────────
+
+mutation_case "a statement that failed writes the zero its operation yielded" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "if (sce_failure_.failed) {{ {failed} return; }} {} }}\",",
+     "if (sce_failure_.failed) {{ {failed} }} {} }}\",")
+PY
+
+# ── A condition that cannot be computed is false ───────────────────
+
+mutation_case "a condition that failed is true" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "{{ {failed} {flag} }} else {{ sce_cond_{n}_ = sce_value; }} }} \\",
+     "{{ {failed} {flag} sce_cond_{n}_ = true; }} else {{ sce_cond_{n}_ = sce_value; }} }} \\")
+PY
+
+# ── An <if> whose cond failed ends its block ───────────────────────
+
+mutation_case "a block goes on after an <if> whose cond failed" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (_if_cond_failed) {\n                return;\n            }",
+     "            if (false && _if_cond_failed) {\n                return;\n            }")
+PY
+
+# ── A guard is the lowered expression ──────────────────────────────
+
+mutation_case "a transition's native guard is not asked" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if ({{ native_guard_expr | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}) {",
+     "            if (true) {")
+PY
+
+# ── A lowered statement runs ───────────────────────────────────────
+
+mutation_case "a lowered statement is not placed" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        {{ action.native_code | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}\n{% elif action.type == 'raise' %}",
+     "        /* dropped */\n{% elif action.type == 'raise' %}")
+PY
+
+# ── A variable starts at its declared value ────────────────────────
+
+mutation_case "a variable is not given its initial value" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sm->policy.{{ field.name }} = {{ field.init }};",
+     "    (void)sm;")
+PY

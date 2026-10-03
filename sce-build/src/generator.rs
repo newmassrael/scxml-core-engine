@@ -1561,18 +1561,29 @@ const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
     Language::Cpp,
     Language::Go,
     Language::Python,
+    Language::C11,
 ];
 
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
     language: Language,
 ) -> Result<(), GenerateError> {
-    if model.datamodel != crate::model::Datamodel::SceStatic
-        || STATIC_DATAMODEL_BACKENDS.contains(&language)
-    {
+    reject_static_datamodel_outside(model, language, STATIC_DATAMODEL_BACKENDS)
+}
+
+/// [`reject_static_datamodel_in_unsupported_lang`] against the backends `lowered`
+/// names — what a test hands it, since every backend is on the list and the
+/// refusal is what the next one to be added stands behind until its templates
+/// learn the model.
+fn reject_static_datamodel_outside(
+    model: &SCXMLModel,
+    language: Language,
+    lowered: &[Language],
+) -> Result<(), GenerateError> {
+    if model.datamodel != crate::model::Datamodel::SceStatic || lowered.contains(&language) {
         return Ok(());
     }
-    let served: Vec<&'static str> = STATIC_DATAMODEL_BACKENDS
+    let served: Vec<&'static str> = lowered
         .iter()
         .map(|candidate| candidate.canonical_name())
         .collect();
@@ -2912,12 +2923,6 @@ fn render_c11(
     // symbol identity the sourcemap keys off, before any analysis pass
     // clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
-    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
-    // dispatch (engine-free). The C11 token is the raw snake stem — the same
-    // one `build_c11_event_payload` names its types after — not the PascalCase
-    // machine name the hosted backends use.
-    let native =
-        crate::forge::native_action::render(&mut model_lowered, &model.name, Language::C11);
     // Suite symbol prefix: C has no namespace, so every emitted symbol is
     // `<name>_…`. When set, this is the ready-to-prepend `<prefix>_` string
     // (empty when unset) that nests every self/child symbol — including the
@@ -2937,12 +2942,50 @@ fn render_c11(
         Some(p) if !p.is_empty() => format!("{p}_"),
         _ => String::new(),
     };
-    let payload = crate::forge::generator::build_c11_event_payload(
-        model,
-        &native.payload_events,
-        &csym_prefix,
-    );
-    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.15: a `sce-static` document's every expression
+    // lowered to C — its variables as members of the policy — before the
+    // payload channel is built, as every backend that lowers one does. The
+    // walk is handed the symbol every name of the machine starts with, which
+    // the error it raises is spelled from.
+    //
+    // Before the native actions are rendered, unlike the hosted backends: this
+    // is where a construct C does not lower yet is refused by name, and a host
+    // action is one — rendering it first would ask the walk for the typed
+    // arguments of a call it is about to refuse
+    // ([`crate::forge::native_action`] reaches only what a backend lowers).
+    let static_lowering = crate::forge::static_lowering::lower_c11(
+        &mut model_lowered,
+        &format!("{csym_prefix}{}", model.name),
+    )?;
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
+    // dispatch (engine-free). The C11 token is the raw snake stem — the same
+    // one `build_c11_event_payload` names its types after — not the PascalCase
+    // machine name the hosted backends use.
+    let native =
+        crate::forge::native_action::render(&mut model_lowered, &model.name, Language::C11);
+    // The events whose typed payload a lowered expression reads are ones the
+    // payload channel must carry, besides those a native action reads.
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .iter()
+        .chain(static_lowering.payload_events.iter())
+        .cloned()
+        .collect();
+    let payload =
+        crate::forge::generator::build_c11_event_payload(model, &payload_events, &csym_prefix);
+    // Under `sce-static` the static lowering wrote every guard; the typed
+    // guards lowered here would be a second writer of the same slot.
+    if model.datamodel != crate::model::Datamodel::SceStatic {
+        crate::forge::generator::apply_native_guard_writes(
+            &mut model_lowered,
+            &payload.guard_writes,
+        );
+    }
+    let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
+        .fields
+        .iter()
+        .filter(|f| f.published)
+        .collect();
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
@@ -2979,6 +3022,8 @@ fn render_c11(
         csym_prefix => &csym_prefix,
         host_invocation_peak => crate::host_processor_analyzer::host_invocation_peak(model),
         host_invoker_decls => &host_invoker.decls,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
     };
     let source_ctx = minijinja::context! {
         model => &model_val,
@@ -2995,6 +3040,9 @@ fn render_c11(
         csym_prefix => &csym_prefix,
         host_invoker_defs => &host_invoker.defs,
         host_invoke_request_checks => &host_invoke_request_checks,
+        static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
@@ -4175,6 +4223,40 @@ mod tests {
         for site in &unknown {
             eprintln!("  ? {site}");
         }
+    }
+
+    const STATIC_DOCUMENT: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"/>
+</scxml>"#;
+
+    /// A backend not on the list refuses a `sce-static` document by name and by
+    /// the backends that do lower it, rather than hand its expressions to a
+    /// script engine. Every backend is on the list now, so the refusal is what
+    /// the next one to be added stands behind: asked of a shorter list.
+    #[test]
+    fn a_backend_that_does_not_lower_the_static_model_refuses_it() {
+        let model = SCXMLParser::new()
+            .parse_string(STATIC_DOCUMENT, "m")
+            .expect("parses");
+        let refusal = reject_static_datamodel_outside(
+            &model,
+            Language::C11,
+            &[Language::Kotlin, Language::Rust],
+        )
+        .expect_err("a backend outside the list refuses");
+        let text = refusal.to_string();
+        assert!(
+            text.contains("sce-static") && text.contains("kotlin, rust"),
+            "the refusal names the data model and who lowers it: {text}"
+        );
+        reject_static_datamodel_outside(
+            &model,
+            Language::Rust,
+            &[Language::Kotlin, Language::Rust],
+        )
+        .expect("a backend on the list lowers it");
     }
 
     #[test]

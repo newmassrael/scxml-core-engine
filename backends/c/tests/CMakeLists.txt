@@ -2273,6 +2273,48 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15: `datamodel="sce-static"` under generated C —
+    # the scalar variables of the three fixtures every engine replays the
+    # shared scenarios against. Linked without `sce_c_scripting` and `lua54`:
+    # the machines have no script engine, and the link is the proof. The
+    # checked integer operations their statements call are the forge runtime's
+    # header-only half, reached by its include directory.
+    foreach(_STATIC_SCALAR_MACHINE static_counter static_overflow static_block_ends)
+        sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SCALAR_MACHINE}.scxml"
+        )
+    endforeach()
+
+    add_executable(sce_c_integration_static_scalars
+        integration/test_static_scalars.c
+        ${INTEGRATION_C_TEST_static_counter_SOURCES}
+        ${INTEGRATION_C_TEST_static_overflow_SOURCES}
+        ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_scalars PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_scalars PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_scalars PRIVATE
+        SCE_STATIC_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios"
+    )
+    set_target_properties(sce_c_integration_static_scalars PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_scalars
+        COMMAND sce_c_integration_static_scalars
+    )
+    set_tests_properties(c11_integration_static_scalars PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.2: the resume seam — what `_init_at` accepts and what it
     # refuses. Not a fixture stem: it drives the two machines above rather than
     # adding a document of its own, because the claim is about a runtime door

@@ -238,26 +238,6 @@ fn the_same_id_is_admitted_under_ecmascript() {
 }
 
 #[test]
-fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
-    let document = doc(
-        "sce-static",
-        r#"<data id="count" sce:type="uint32" expr="0"/>"#,
-    );
-    // C11 is the one backend left that does not lower it.
-    let (ok, out) = run(&["check", "-l", "c11"], &document);
-    assert!(
-        !ok,
-        "--lang c11: a backend that does not lower sce-static must \
-         refuse, not evaluate forge expressions in a script engine:\n{out}"
-    );
-    assert!(
-        out.contains("generate/unsupported-feature") && out.contains("sce-static"),
-        "--lang c11: expected the unsupported-feature refusal naming \
-         the data model:\n{out}"
-    );
-}
-
-#[test]
 fn cpp_names_each_construct_it_does_not_lower_yet() {
     // C++ lowers scalar, enum, record and list variables, guards, `<assign>`,
     // `<if>`, `<foreach>`, `<log>`, `In()`, host actions, an event's typed
@@ -320,15 +300,135 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
-fn kotlin_rust_cpp_go_and_python_lower_the_model_with_no_script_engine() {
+fn c11_names_each_construct_it_does_not_lower_yet() {
+    // C lowers integer and bool variables, guards, `<assign>`, `<if>`, `<log>`,
+    // `<raise>` and `In()`. What is past that — a string, a real, a list, a
+    // record, an enum or bytes variable, a `<send>`, an `<invoke>`, a final's
+    // `<donedata>`, a host action, an event's typed payload — is refused by
+    // name where the document is read, not left as an undefined name in the
+    // generated code.
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let fixture = |name: &str| {
+        std::fs::read_to_string(fixtures.join(name)).unwrap_or_else(|_| panic!("fixture {name}"))
+    };
+    let variable = |data: &str| doc("sce-static", data);
+    let cases = [
+        (
+            "a string variable",
+            variable(r#"<data id="label" sce:type="string" expr="''"/>"#),
+            r#"<data id="label" sce:type="string">"#,
+        ),
+        (
+            "a real variable",
+            variable(r#"<data id="ratio" sce:type="float64" expr="0.5"/>"#),
+            r#"<data id="ratio" sce:type="float64">"#,
+        ),
+        (
+            "a bytes variable",
+            variable(r#"<data id="frame" sce:type="bytes" expr="''"/>"#),
+            r#"<data id="frame" sce:type="bytes">"#,
+        ),
+        (
+            "a list variable",
+            variable(r#"<data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>"#),
+            r#"<data id="picked" sce:type="list">"#,
+        ),
+        (
+            "an enum variable",
+            fixture("static_enum.scxml"),
+            r#"<data id="layout" sce:type="enum:ViewMode">"#,
+        ),
+        (
+            "a record variable",
+            fixture("static_record_fields.scxml"),
+            r#"<data id="shown" sce:type="record:Day">"#,
+        ),
+        (
+            "a call of an imported algorithm",
+            fixture("static_record.scxml"),
+            "an imported algorithm",
+        ),
+        (
+            "a <send>",
+            machine(r#"<state id="s"><onentry><send event="x"/></onentry></state>"#),
+            "<send>",
+        ),
+        (
+            "an <invoke>",
+            machine(
+                r#"<state id="s">
+    <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
+    <transition event="done.invoke.h" target="done"/>
+  </state>"#,
+            ),
+            "an <invoke>",
+        ),
+        (
+            "a <donedata>",
+            machine(
+                r#"<state id="s"><transition event="go" target="fin"/></state>
+  <final id="fin"><donedata><param name="n" expr="count"/></donedata></final>"#,
+            ),
+            "a <donedata>",
+        ),
+        (
+            "a host action",
+            fixture("static_host_call.scxml"),
+            "a <sce:action>",
+        ),
+        (
+            "a typed payload",
+            fixture("static_payload.scxml"),
+            "an event that carries a typed payload",
+        ),
+    ];
+    let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)
+        .expect("the fixture directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "scxml"))
+        .map(|path| {
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read_to_string(&path).expect("a fixture"),
+            )
+        })
+        .collect();
+    let siblings: Vec<(&str, &str)> = siblings
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
+    for (what, document, names) in &cases {
+        let (ok, out) = run_beside(&["check", "-l", "c11"], document, &siblings);
+        assert!(!ok, "{what}: C has no lowering for it yet:\n{out}");
+        assert!(
+            out.contains("generate/unsupported-feature") && out.contains("no C11 lowering yet"),
+            "{what}: expected the unsupported-feature refusal naming C11:\n{out}"
+        );
+        // The refusal quotes the construct inside a JSON string.
+        let quoted = names.replace('"', "\\\"");
+        assert!(
+            out.contains(&quoted) || out.contains(names),
+            "{what}: it names the construct `{names}`:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn every_backend_lowers_the_model_with_no_script_engine() {
     // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest
     // says so, and each integration suite (StaticDatamodelTest.kt,
     // backends/rust/tests/tests/static_datamodel.rs,
     // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp,
     // backends/go/tests/integration/static_datamodel,
-    // backends/python/tests/integration/static_datamodel) drives the machines.
-    for lang in ["kotlin", "rust", "cpp", "go", "python"] {
+    // backends/python/tests/integration/static_datamodel,
+    // backends/c/tests/integration/test_static_scalars.c) drives the machines.
+    //
+    // A backend that did not lower it would have to refuse instead — a
+    // document evaluated by a script engine in a language it never declared is
+    // what `datamodel` exists to prevent — and one added to the language list
+    // with neither fails here, not for a user.
+    for lang in ["kotlin", "rust", "cpp", "go", "python", "c11"] {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -2193,6 +2293,12 @@ const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
         "python",
         "backends/python/tests/integration/static_datamodel/test_static_scenarios.py",
         "replay(\"{s}\")",
+    ),
+    // Built by CMake from the fixtures, so there is no machine to commit.
+    (
+        "c11",
+        "backends/c/tests/integration/test_static_scalars.c",
+        "_scenario(\"{s}\"",
     ),
 ];
 

@@ -420,6 +420,12 @@ typedef struct {{ csym_prefix }}{{ model.name }}_policy {
     bool history_{{ hid }}_recorded;
     {% endfor %}
 {% endif %}
+{% for field in static_fields %}
+    {# SCE Accepted Subset §2.15: under `datamodel="sce-static"` a variable is a
+       member of this struct, read and written by the statements the build
+       lowered — no script engine holds it. #}
+    {{ field.ty }} {{ field.name }};
+{% endfor %}
 } {{ csym_prefix }}{{ model.name }}_policy_t;
 
 /* ── State machine instance ───────────────────────────────────────── */
@@ -1353,6 +1359,14 @@ bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.
 /* §scxml-3.7: whether the run has ended at a top-level <final> — the same
    answer as `_terminal_state` returning true. */
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% for field in static_published %}
+
+/* SCE Accepted Subset §2.15: the published variable `{{ field.id }}` (`sce:direction="out"`),
+   as the machine holds it now. The machine's other variables have no reader:
+   they are its own, and a host written against one would break when it is
+   renamed. */
+{{ field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% endfor %}
 
 /* §scxml-D-exitInterpreter: stop a run. Every active state's `<onexit>` runs,
    innermost first, and the configuration ends empty, as when a run ends at a
