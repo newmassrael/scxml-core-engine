@@ -18,7 +18,7 @@
 //! §7.1), the report shows each requirement's own review-table line, a
 //! kind that carries `sce:req` on no node says so at the top of its page,
 //! the record pins what the document imports and lapses when it moves,
-//! and a figure is refused by name.
+//! and a figure is the kind's own picture beside the table of its values.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -253,16 +253,29 @@ fn a_statechart_record_pins_the_schema_it_imports() {
     );
 }
 
-/// A figure is of a statechart; any other kind is told where it is
-/// reviewed instead of being refused as the wrong pipeline.
+/// A statechart is boxes and arrows; any other kind is drawn as its own
+/// picture and the table of every value it states (a transform: its inputs,
+/// its expression, its outputs), and is not refused as the wrong pipeline.
 #[test]
-fn a_figure_of_a_forge_document_is_refused_by_name() {
+fn a_figure_of_a_forge_document_is_its_picture_and_its_table() {
     let dir = scratch("any-kind-diagram");
     let doc = stage(&dir, "volts.scxml", TRANSFORM);
     let out = run(&["diagram", &doc, "-o", "figs"], &dir);
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("cli/diagram-unavailable"), "{stderr}");
-    assert!(stderr.contains("sce-codegen pseudo"), "{stderr}");
-    assert!(!dir.join("figs").exists(), "a refusal writes nothing");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let written = String::from_utf8_lossy(&out.stdout);
+    let names: Vec<&str> = written
+        .lines()
+        .filter_map(|l| std::path::Path::new(l).file_name()?.to_str())
+        .collect();
+    assert_eq!(names, ["dataflow.svg", "fields-1.svg"], "{written}");
+    for name in names {
+        let svg = std::fs::read_to_string(dir.join("figs").join(name)).expect("written");
+        assert!(svg.starts_with("<svg"), "{name}");
+        // Named by the file it came from, as every figure is.
+        assert!(svg.contains("volts"), "{name} names its document");
+    }
 }
