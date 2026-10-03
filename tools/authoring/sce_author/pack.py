@@ -222,8 +222,23 @@ class Model:
         failures on one corpus: the document had produced `REPEAT_COUNT` where
         the record said `1`, which are the same value, and the report blamed
         the document.
+
+        ⚠⚠⚠ The whole remainder after the owning address is tried before any
+        shorter tail. `owning` walks UP to a declared ancestor, so the loop
+        below, cutting at the last dot first, reached an entry through
+        `<address>.Offset` and asked it for the field `Stat` -- discarding
+        `Offset` -- and a record that declares both `Stat` and `Offset.Stat`
+        answered the second key with the first's value space (measured on a
+        real corpus: two enumerations of one record differed in their last
+        number, and a position was judged against the wrong one).
         """
         parts = key.split(".")
+        owner = self.owning(key)
+        if owner is not None:
+            rest = ".".join(parts[len(owner.address.split(".")):])
+            exact = owner.field(rest) if rest else None
+            if exact is not None:
+                return exact
         for cut in range(len(parts) - 1, 0, -1):
             entry = self.owning(".".join(parts[:cut]))
             if entry is None:
