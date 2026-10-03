@@ -820,11 +820,14 @@
         return {{ 'True' if model.binding == 'late' else 'False' }}
 
     def initialize_datamodel(self, engine) -> None:
+{# `datamodel="sce-static"`: the variables are attributes of the policy, set in
+   its constructor (SCE Accepted Subset §2.15), so no session is asked to
+   declare any of them. #}
 {% set ns_dm = namespace(any=false) %}
-{% if model.variables %}{% set ns_dm.any = true %}{% endif %}
+{% if model.variables and not static_fields %}{% set ns_dm.any = true %}{% endif %}
 {% if model.global_scripts %}{% set ns_dm.any = true %}{% endif %}
 {% for state_id, st in model.states | dictsort %}
-{% if st.datamodel and model.binding != 'late' %}{% set ns_dm.any = true %}{% endif %}
+{% if st.datamodel and model.binding != 'late' and not static_fields %}{% set ns_dm.any = true %}{% endif %}
 {% endfor %}
 {% if ns_dm.any %}
         # W3C SCXML 5.3 — declare every static `<data>` against the
@@ -968,7 +971,7 @@
     def init_state_datamodel(self, state, engine) -> None:
 {% set ns_local = namespace(any=false) %}
 {% for state_id, st in model.states | dictsort %}
-{% if st.datamodel %}{% set ns_local.any = true %}{% endif %}
+{% if st.datamodel and not static_fields %}{% set ns_local.any = true %}{% endif %}
 {% endfor %}
 {% if ns_local.any %}
 {% for state_id, st in model.states | dictsort %}

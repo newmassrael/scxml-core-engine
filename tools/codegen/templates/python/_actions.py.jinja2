@@ -36,7 +36,15 @@
 {%- from 'actions/native_action.py.jinja2' import emit as emit_native_action -%}
 
 {%- macro emit(action, indent, machine_name, model) -%}
-{%- if action.type == 'script' -%}{{ emit_script(action, indent, machine_name, model) }}
+{%- if action.native_code -%}
+{# `datamodel="sce-static"`: a statement the build lowered
+   (`Action::native_code`, SCE Accepted Subset §2.15) — one line, or the lines
+   of the block that receives a failing checked operation and leaves the action
+   block. Each line takes the caller's indent. #}
+{% for line in action.native_code.split('\n') -%}
+{{ indent }}{{ line }}
+{% endfor -%}
+{%- elif action.type == 'script' -%}{{ emit_script(action, indent, machine_name, model) }}
 {%- elif action.type == 'raise' -%}{{ emit_raise(action, indent, machine_name, model) }}
 {%- elif action.type == 'assign' -%}{{ emit_assign(action, indent, machine_name, model) }}
 {%- elif action.type == 'log' -%}{{ emit_log(action, indent, machine_name, model) }}
@@ -62,12 +70,22 @@
 {%- macro emit_if(action, indent, machine_name, model) -%}
 {% set failed = '_if_cond_failed_' ~ action.if_ordinal -%}
 {{ indent }}{{ failed }} = [False]
+{# `datamodel="sce-static"`: a cond the build lowered (`Action::native_cond`),
+   which records its own failure in the flag above when it can fail. #}
+{% if action.native_cond -%}
+{{ indent }}if {{ action.native_cond }}:
+{% else -%}
 {{ indent }}if self._if_guard(engine, {{ action.cond | to_lua_guard | py_string_literal }}, {{ failed }}):
+{% endif -%}
 {% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% if not action.then_actions %}{{ indent }}    pass
 {% endif %}
 {% for branch in action.elseif_branches %}
+{% if branch.native_cond -%}
+{{ indent }}elif {{ branch.native_cond }}:
+{% else -%}
 {{ indent }}elif self._if_guard(engine, {{ branch.cond | to_lua_guard | py_string_literal }}, {{ failed }}):
+{% endif -%}
 {% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% if not branch.actions %}{{ indent }}    pass
 {% endif %}
@@ -87,7 +105,16 @@
    datamodel each turn and raises `error.execution` + block-abort for
    illegal identifiers (test457). #}
 {%- macro emit_foreach(action, indent, machine_name, model) -%}
-{% if action.index %}
+{% if action.native_loop %}
+{# `datamodel="sce-static"`: a loop the build lowered (`Action::native_loop`) —
+   the whole head line, over a copy of the list as it was when the loop began
+   (§scxml-4.6). An error in the body leaves the action block through the
+   sentinel, so the loop stops with it. #}
+{{ indent }}{{ action.native_loop }}
+{% if action.native_loop_prologue %}
+{{ indent }}    {{ action.native_loop_prologue }}
+{% endif %}
+{% elif action.index %}
 {{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach(engine, {{ action.array | to_lua_expr | py_string_literal }}):
 {{ indent }}    self._assign_runtime(engine, {{ action.item | to_lua_location | py_string_literal }}, _item_)
 {{ indent }}    self._assign_runtime(engine, {{ action.index | to_lua_location | py_string_literal }}, {{ action.index }}_idx_)

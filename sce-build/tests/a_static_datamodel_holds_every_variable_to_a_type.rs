@@ -243,19 +243,18 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         "sce-static",
         r#"<data id="count" sce:type="uint32" expr="0"/>"#,
     );
-    for lang in ["c11", "python"] {
-        let (ok, out) = run(&["check", "-l", lang], &document);
-        assert!(
-            !ok,
-            "--lang {lang}: a backend that does not lower sce-static must \
-             refuse, not evaluate forge expressions in a script engine:\n{out}"
-        );
-        assert!(
-            out.contains("generate/unsupported-feature") && out.contains("sce-static"),
-            "--lang {lang}: expected the unsupported-feature refusal naming \
-             the data model:\n{out}"
-        );
-    }
+    // C11 is the one backend left that does not lower it.
+    let (ok, out) = run(&["check", "-l", "c11"], &document);
+    assert!(
+        !ok,
+        "--lang c11: a backend that does not lower sce-static must \
+         refuse, not evaluate forge expressions in a script engine:\n{out}"
+    );
+    assert!(
+        out.contains("generate/unsupported-feature") && out.contains("sce-static"),
+        "--lang c11: expected the unsupported-feature refusal naming \
+         the data model:\n{out}"
+    );
 }
 
 #[test]
@@ -321,15 +320,15 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
-fn kotlin_rust_cpp_and_go_lower_the_model_with_no_script_engine() {
+fn kotlin_rust_cpp_go_and_python_lower_the_model_with_no_script_engine() {
     // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest
     // says so, and each integration suite (StaticDatamodelTest.kt,
     // backends/rust/tests/tests/static_datamodel.rs,
     // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp,
-    // backends/go/tests/integration/static_datamodel) compiles and drives the
-    // machines.
-    for lang in ["kotlin", "rust", "cpp", "go"] {
+    // backends/go/tests/integration/static_datamodel,
+    // backends/python/tests/integration/static_datamodel) drives the machines.
+    for lang in ["kotlin", "rust", "cpp", "go", "python"] {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -1881,6 +1880,11 @@ const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
         "backends/go/tests/integration/static_datamodel/static_scenarios_test.go",
         "replay(t, \"{s}\"",
     ),
+    (
+        "python",
+        "backends/python/tests/integration/static_datamodel/test_static_scenarios.py",
+        "replay(\"{s}\")",
+    ),
 ];
 
 /// Where each backend's regen script commits a machine: the file that exists
@@ -1988,7 +1992,7 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
         .collect();
     scenarios.sort();
     assert!(!scenarios.is_empty(), "no scenario to judge");
-    let regen: Vec<String> = ["rust", "kotlin", "go"]
+    let regen: Vec<String> = ["rust", "kotlin", "go", "python"]
         .iter()
         .map(|lang| {
             std::fs::read_to_string(root.join(format!("scripts/regen_static_datamodel_{lang}.sh")))

@@ -89,6 +89,15 @@ from sce_runtime.scripting import (
 # session the script engine owns, rather than shadowing it on the policy.
 from sce_runtime import datamodel_read as _datamodel_read
 {% endif %}
+{% if static_fields %}
+# SCE Accepted Subset §2.15: a checked integer operation raises
+# `AlgorithmFailure` in place of a value, which the statement around it
+# receives as `error.execution`.
+import sce_forge_runtime.algorithm as sce_algorithm
+# A record variable is a frozen dataclass, changed a field at a time by
+# replacing it.
+import dataclasses as sce_dataclasses
+{% endif %}
 
 
 # ======================================================================
@@ -251,6 +260,23 @@ def _coerce_event_data_str(data: Any) -> str:
 
 {{ host_invoker_interface }}
 {% endif %}
+{% if static_fields %}
+# ======================================================================
+# SCE Accepted Subset §2.15: the types a `sce-static` datamodel holds
+# ======================================================================
+
+def _sce_log_name(value):
+    """What a `<log>` shows of `value`: the name the enum document declares for
+    an enum member, and any other value as it is."""
+    return value.sce_name if hasattr(value, "sce_name") else value
+
+
+{% if static_type_defs %}
+{{ static_type_defs }}
+
+
+{% endif %}
+{% endif %}
 # ======================================================================
 # Policy
 # ======================================================================
@@ -295,6 +321,17 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # for untyped events.
 {{ event_payload_init }}
 {% endif %}
+{% if static_fields %}
+        # SCE Accepted Subset §2.15: each variable of the document, at its
+        # declared initial value, in declaration order — an initial value reads
+        # the variables declared before it, by the name each is given here.
+{% for field in static_fields %}
+        {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endfor %}
+{% for field in static_fields %}
+        self.{{ field.name }} = {{ field.name }}
+{% endfor %}
+{% endif %}
 {# Looked up rather than spelled as a ternary chain: a chain's last arm is a
    fallback, so a host type added to the classifier and not to this map would
    be emitted as whatever the chain ended in. A missing key renders nothing and
@@ -325,6 +362,46 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
             "{{ var.id }}",
         )
 {% endfor %}
+{% for field in static_published %}
+{% if field.reader %}
+
+    def {{ field.reader }}(self) -> {{ field.ty }}:
+        """§scxml-5.2 — what the published `{{ field.id }}` datamodel variable
+        holds now. Only the machine writes it."""
+{% if field.saved_kind == 'list' %}
+        # A copy, so a host cannot write through the list into what the machine holds.
+        return list(self.{{ field.name }})
+{% else %}
+        return self.{{ field.name }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if static_fields %}
+
+    # ── SCE Accepted Subset §2.15: what a lowered statement calls ──────
+
+    def _sce_in(self, state_id: str) -> bool:
+        """§scxml-5.9.2 — `In(state_id)`, asked of the engine this policy runs
+        under, whose configuration it is."""
+        return self.is_state_active(state_id, self._engine_ref)
+
+    def _sce_condition(self, thunk, on_failure, failed) -> bool:
+        """§scxml-5.9.1 — a condition that cannot be evaluated is false, and
+        `error.execution` says why. `thunk` computes it; a checked operation
+        that failed raises `AlgorithmFailure`, which runs `on_failure` (what
+        raises the event, `None` when the document declares none) and records
+        the failure in `failed` — the list the enclosing `<if>` reads once its
+        chain has run, `None` for a transition's guard, which stands in no
+        block."""
+        try:
+            return bool(thunk())
+        except sce_algorithm.AlgorithmFailure:
+            if on_failure is not None:
+                on_failure()
+            if failed is not None:
+                failed[0] = True
+            return False
+{% endif %}
 
     # ── Structural metadata ────────────────────────────────────────
 
@@ -630,6 +707,11 @@ SCE_HOST_NAMES = {
     "readers": {
 {% for var in model.readable_variables %}
         "{{ var.id | escape_python }}": "{{ var.reader.python | escape_python }}",
+{% endfor %}
+{% for field in static_published %}
+{% if field.reader %}
+        "{{ field.id | escape_python }}": "{{ field.reader | escape_python }}",
+{% endif %}
 {% endfor %}
     },
 }

@@ -1560,6 +1560,7 @@ const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
     Language::Rust,
     Language::Cpp,
     Language::Go,
+    Language::Python,
 ];
 
 fn reject_static_datamodel_in_unsupported_lang(
@@ -3367,7 +3368,11 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     // is written back by `_resolve_send_id`. Only `<send target>`
     // values outside the supported transport set (`#_…`, the `!`
     // sentinel, `http(s)://…`) are reject-walled below.
-    fn check_actions(actions: &[crate::model::Action], context: &str) -> Result<(), GenerateError> {
+    fn check_actions(
+        actions: &[crate::model::Action],
+        context: &str,
+        static_model: bool,
+    ) -> Result<(), GenerateError> {
         // §scxml-G-7 `native_action` is on this list because the Python
         // backend now lowers `<sce:action>` to a direct call on the generated
         // `<Machine>Actions` Protocol — see `_actions.py.jinja2`'s dispatch
@@ -3386,8 +3391,16 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             "cancel",
             "native_action",
         ];
+        // SCE Accepted Subset §2.15: a list a `sce-static` document fills and
+        // empties is lowered to native statements by the static lowering
+        // (`static_lowering::PythonTarget`), which refuses by name what it
+        // does not spell; under any other data model the element is not
+        // lowered and stays refused here.
+        const STATIC_ACTIONS: &[&str] = &["sce_append", "sce_clear"];
         for action in actions {
-            if !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
+            let static_lowered =
+                static_model && STATIC_ACTIONS.contains(&action.action_type.as_str());
+            if !static_lowered && !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
                 return Err(GenerateError::InvalidConfig(format!(
                     "Python codegen does not yet support <{}> in {}; deferred to Atomic γ",
                     action.action_type, context
@@ -3459,22 +3472,24 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             // those are is `Action::nested_blocks`, which already lists
             // both shapes, so no `action_type` test is needed here.
             for block in action.nested_blocks() {
-                check_actions(block.actions, context)?;
+                check_actions(block.actions, context, static_model)?;
             }
         }
         Ok(())
     }
+    let static_model = model.datamodel == crate::model::Datamodel::SceStatic;
     for (state_id, state) in &model.states {
         for block in &state.on_entry_blocks {
-            check_actions(block, &format!("onentry of `{state_id}`"))?;
+            check_actions(block, &format!("onentry of `{state_id}`"), static_model)?;
         }
         for block in &state.on_exit_blocks {
-            check_actions(block, &format!("onexit of `{state_id}`"))?;
+            check_actions(block, &format!("onexit of `{state_id}`"), static_model)?;
         }
         for transition in &state.transitions {
             check_actions(
                 &transition.actions,
                 &format!("transition from `{state_id}`"),
+                static_model,
             )?;
         }
     }
@@ -3502,9 +3517,31 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // dispatch (engine-free) — same call every backend makes.
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Python);
-    let payload =
-        crate::forge::generator::build_python_event_payload(model, &native.payload_events);
-    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.15: a `sce-static` document's every expression
+    // lowered to Python — its variables as attributes of the policy — before
+    // the payload channel is built, as every backend that lowers one does.
+    let static_lowering =
+        crate::forge::static_lowering::lower_python(&mut model_lowered, &machine_name)?;
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .iter()
+        .chain(static_lowering.payload_events.iter())
+        .cloned()
+        .collect();
+    let payload = crate::forge::generator::build_python_event_payload(model, &payload_events);
+    // Under `sce-static` the static lowering wrote every guard; the typed
+    // guards lowered here would be a second writer of the same slot.
+    if model.datamodel != crate::model::Datamodel::SceStatic {
+        crate::forge::generator::apply_native_guard_writes(
+            &mut model_lowered,
+            &payload.guard_writes,
+        );
+    }
+    let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
+        .fields
+        .iter()
+        .filter(|f| f.published)
+        .collect();
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; both empty without one.
     let host_invoker_interface = crate::forge::host_invoker_interface::render_python(model);
@@ -3530,6 +3567,9 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
+        static_type_defs => static_lowering.type_defs.join("\n\n"),
     };
     tmpl.render(ctx).map_err(render_error)
 }

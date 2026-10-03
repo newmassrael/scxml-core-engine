@@ -3180,6 +3180,43 @@ variable the machine keeps to itself is read by reflection, which only reads),
 and drives `static_host_call` and `static_host_call_arguments` with a recording
 host.
 
+Python lowers the model through the same walk (`PythonTarget`), and refuses what
+it does not by name: scalar variables, an enum, a record, and a list of numbers,
+bools or records with `<sce:append>`, `<sce:clear>` and `<foreach>`; a
+transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, a
+`<send>` / `<cancel>` that carry no value of the data model, `In()` and an
+event's typed payload. A call of an imported algorithm, a `<donedata>`, an
+`<invoke>`, a `<send>` that carries a `<param>` or a `<content>`, a
+`<sce:action>` and `bytes` are not lowered yet. Each variable is an attribute of
+the generated policy, `v_<snake_case id>`, set in its constructor from the
+variables declared before it; a published one has a reader of the author's name
+(`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
+enum document's own values, with a `sce_name` that answers the name the document
+gives it; a record is a frozen dataclass of the schema's fields, spelled as the
+author wrote them, replaced whole when one field changes. Python's failure
+channel is an exception: a checked integer operation raises `AlgorithmFailure`
+in place of a value, so a statement that can fail is wrapped where it stands —
+the exception stops it before it writes anything, `error.execution` is raised in
+its place, and the sentinel every action block of the generated module already
+catches ends the block (W3C SCXML 4.9) — and a condition that can fail is
+computed through a helper that answers `false` and raises the same event
+(5.9.1). The machine carries no datamodel in a script engine: the runtime still
+hands every engine one session for its system variables, which is why a Python
+machine is constructed with a script engine, and no lowered expression is
+evaluated by it. Unlike the Rust, Kotlin and Go trees, the generated Python is
+not committed (`backends/python/tests/integration/*/*_sm.py` is ignored):
+`scripts/regen_static_datamodel_python.sh` derives the machines the generator
+lowers — asked of it, not listed — and `scripts/gates/w3c-python.sh` runs it
+before pytest, and
+`backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
+replays the scenarios `static_counter`, `static_counter_bound`,
+`static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
+`static_list`, `static_foreach`, `static_block_ends_list`,
+`static_record_fields`, `static_record_list` and `static_record_enum` against
+them (an event's `data` goes in as the JSON text every other producer fills; a
+variable the machine keeps to itself is read from its attribute, which only
+reads).
+
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active
 configuration (every active state, each `<parallel>` region included), the

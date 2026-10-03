@@ -2786,6 +2786,371 @@ pub fn lower_go(
     lower(model, machine, &GoTarget { import_root })
 }
 
+/// Python: a variable is an attribute of the machine's policy, set by the
+/// machine's own statements. Python's failure channel is an exception — a
+/// checked operation raises `AlgorithmFailure` in place of a value — so a
+/// statement that can fail is wrapped where it stands: the exception stops it
+/// before it writes anything, `error.execution` is raised in its place, and
+/// `_ActionAbort` ends the block (§scxml-4.9), the sentinel every action block
+/// of the generated module already catches. A statement of such a machine is
+/// therefore a block of lines, not an expression: the templates indent each.
+///
+/// Lowers scalar, enum, list and record variables, guards, `<assign>`, `<if>`,
+/// `<foreach>`, `<log>`, `<raise>`, `In()` and a typed payload; every construct
+/// past those is refused by name ([`StaticTarget::unsupported`]) until its
+/// spelling is written, rather than left as an undefined name in generated
+/// code.
+pub struct PythonTarget;
+
+impl PythonTarget {
+    /// `statement`, wrapped where a failing checked operation of it is
+    /// received: the lines of a block that leaves its action block on a failure.
+    fn guarded(statement: &str, failed: &str) -> String {
+        let mut lines = vec![
+            "try:".to_string(),
+            format!("    {statement}"),
+            "except sce_algorithm.AlgorithmFailure:".to_string(),
+        ];
+        if !failed.is_empty() {
+            lines.push(format!("    {failed}"));
+        }
+        lines.push("    raise _ActionAbort".to_string());
+        lines.join("\n")
+    }
+
+    /// The first action of `actions`, or of a block nested in one, that this
+    /// target has no lowering for yet.
+    fn unlowered_action(actions: &[Action]) -> Option<String> {
+        for action in actions {
+            match action.action_type.as_str() {
+                "assign" | "log" | "if" | "raise" | "cancel" => {}
+                // A list is filled, emptied and walked by native statements.
+                "sce_append" | "sce_clear" | "foreach" => {}
+                // A plain send carries no value of the data model; one that
+                // does needs the typed value crossed to the event.
+                "send" if action.params.is_empty() && action.content.is_empty() => {}
+                "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
+                "native_action" => return Some("a <sce:action>".to_string()),
+                other => return Some(format!("<{other}>")),
+            }
+            for block in action.nested_blocks() {
+                if let Some(found) = Self::unlowered_action(block.actions) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+}
+
+impl StaticTarget for PythonTarget {
+    fn name(&self) -> &'static str {
+        "Python"
+    }
+    fn callee(&self, _document_name: &str) -> Option<Callee> {
+        None
+    }
+    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // Every type a datamodel holds is spelled but bytes: a list admits only
+        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
+        if let Some(var) = scope.variables.iter().find(|v| {
+            !v.value_type
+                .as_ref()
+                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
+        }) {
+            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
+        }
+        // A record's field is named as the author wrote it, so one Python
+        // reserves cannot be a field.
+        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
+            schema
+                .fields
+                .iter()
+                .find(|f| crate::reader_names::is_reserved_word(Language::Python, &f.id))
+                .map(|f| (alias, f))
+        }) {
+            return Some(format!(
+                "record:{alias} with the field `{}`, a name Python reserves",
+                field.id
+            ));
+        }
+        for state in model.states.values() {
+            let blocks = state
+                .on_entry_blocks
+                .iter()
+                .chain(&state.on_exit_blocks)
+                .map(Vec::as_slice)
+                .chain([
+                    state.initial_transition_actions.as_slice(),
+                    state.initial_history_default_actions.as_slice(),
+                ])
+                .chain(state.transitions.iter().map(|t| t.actions.as_slice()));
+            for block in blocks {
+                if let Some(found) = Self::unlowered_action(block) {
+                    return Some(found);
+                }
+            }
+            if !state.invokes.is_empty() {
+                return Some("an <invoke>".to_string());
+            }
+            if state.donedata.is_some() {
+                return Some("a <donedata>".to_string());
+            }
+        }
+        None
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Python
+    }
+    // A prefix keeps a variable's attribute from meeting another member of the
+    // policy, which a bare name could (`state`, `engine`).
+    fn field_name(&self, id: &str) -> String {
+        format!("v_{}", filters::to_snake_case(id.to_string()))
+    }
+    // The author's spelling, as every typed reader of the language has it
+    // (`crate::reader_names`), and none for a name the language reserves.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        let spelled = id.replace(['.', '-'], "_");
+        (!crate::reader_names::is_reserved_word(Language::Python, &spelled)).then_some(spelled)
+    }
+    fn field_ref(&self, name: &str) -> String {
+        format!("self.{name}")
+    }
+    fn in_function(&self) -> &'static str {
+        "self._sce_in"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::python_type(ty).to_string()
+    }
+    fn scalar_view(&self, _ty: &SceType) -> Option<String> {
+        None
+    }
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
+    }
+    // A frozen dataclass of the schema's fields in the schema's order, spelled
+    // as the typed payload's are, because an expression reads a field by the
+    // name the author wrote. Frozen, so a copy a host was handed cannot be
+    // written through into what the machine holds: a field changes by replacing
+    // the record ([`Self::assign_field`]).
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let field_ty = match &field.sce_type {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::python_type(other).to_string(),
+                };
+                format!("    {}: {field_ty}\n", self.record_field(&field.id))
+            })
+            .collect();
+        format!(
+            "@sce_dataclasses.dataclass(frozen=True)\nclass {ty}:\n    \
+             \"\"\"SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\"\"\"\n\n{fields}"
+        )
+    }
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
+    }
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f}={v}")).collect();
+        format!("{ty}({})", args.join(", "))
+    }
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
+    }
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::Python, enum_name, variant)
+    }
+    // An `IntEnum` over the values the enum document declares, each member
+    // holding the value the document gives it. `sce_name` answers the name the
+    // document declares, which is what a `<log>` shows and what a host compares
+    // to a scenario: an `IntEnum` member's own text is its number.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    {} = {}\n",
+                    self.enum_variant(&model.name, &v.name),
+                    v.value
+                )
+            })
+            .collect();
+        let names: Vec<String> = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "{}: {}",
+                    v.value,
+                    filters::py_string_literal(v.name.clone())
+                )
+            })
+            .collect();
+        format!(
+            "class {ty}(IntEnum):\n    \
+             \"\"\"SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\"\"\"\n\n\
+             {variants}\n    @property\n    def sce_name(self) -> str:\n        \
+             \"\"\"The name the enum document declares for this value.\"\"\"\n        \
+             return {{{}}}[int(self)]\n",
+            names.join(", ")
+        )
+    }
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("List[{}]", crate::forge::generator::python_type(elem))
+    }
+    // The machine's own list is never lent: a reader answers a copy.
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        None
+    }
+    fn record_list_type(&self, record: &str) -> String {
+        format!("List[{record}]")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        None
+    }
+    fn list_empty(&self) -> String {
+        "[]".to_string()
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value}")
+    }
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target} = sce_dataclasses.replace({target}, {field}=({value}))")
+    }
+    // Through `_sce_log_name`, which an enum member answers with the name its
+    // document declares and every other value passes through unchanged, to the
+    // policy's `log_hook`, which a host overrides to redirect `<log>` output.
+    fn log(&self, label: &str, value: &str) -> String {
+        format!(
+            "self.log_hook({}, _sce_log_name({value}))",
+            filters::py_string_literal(label.to_string())
+        )
+    }
+    // The lines of a block that leaves its action block when the append failed:
+    // the list is full — `overflow` runs, and nothing is appended — or the value
+    // could not be computed, where `failed` runs. The room is checked first, so
+    // a full list computes nothing, and the value is computed before it is
+    // appended, so a failed one leaves the list as it was.
+    fn append(
+        &self,
+        target: &str,
+        capacity: u32,
+        value: &str,
+        value_can_fail: bool,
+        overflow: &str,
+        failed: &str,
+    ) -> String {
+        let mut lines = vec![format!("if len({target}) >= {capacity}:")];
+        if !overflow.is_empty() {
+            lines.push(format!("    {overflow}"));
+        }
+        lines.push("    raise _ActionAbort".to_string());
+        if value_can_fail {
+            lines.push(Self::guarded(&format!("sce_value = {value}"), failed));
+            lines.push(format!("{target}.append(sce_value)"));
+        } else {
+            lines.push(format!("{target}.append({value})"));
+        }
+        lines.join("\n")
+    }
+    fn clear(&self, target: &str) -> String {
+        format!("{target}.clear()")
+    }
+    // The loop walks the list as it was when it began (§scxml-4.6: a shallow
+    // copy), so a body that appends to the list does not move it. The head is
+    // the whole line, colon included, because Python's block opens with it.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        Some(match index {
+            None => (format!("for {item} in list({list}):"), String::new()),
+            Some(index) => (
+                format!("for {index}, {item} in enumerate(list({list})):"),
+                String::new(),
+            ),
+        })
+    }
+    // A call expression, so it is a statement where a block raises it and the
+    // body of a `lambda` where a condition does.
+    fn raise_execution_error(&self, _machine: &str, message: &str) -> String {
+        format!(
+            "self._raise_error_execution(engine, {})",
+            filters::py_string_literal(message.to_string())
+        )
+    }
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        Self::guarded(statement, failed)
+    }
+    fn receiving_call(&self, statement: &str, failed: &str) -> String {
+        Self::guarded(statement, failed)
+    }
+    // The condition is computed where a helper can catch the exception: a
+    // `lambda` is the only expression Python has that defers one. The helper
+    // runs `failed` and records the failure in `flag` (the list an `<if>`
+    // declares, or `None` for a guard, which stands in no block).
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        let on_failure = if failed.is_empty() {
+            "None".to_string()
+        } else {
+            format!("lambda: {failed}")
+        };
+        let flag = if flag.is_empty() { "None" } else { flag };
+        format!("self._sce_condition(lambda: ({value}), {on_failure}, {flag})")
+    }
+    // The list `emit_if` declares for the `<if>` numbered `if_ordinal`.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String {
+        format!("_if_cond_failed_{if_ordinal}")
+    }
+    // The attribute the payload channel fills when the engine dequeues an
+    // event of this name (`build_python_event_payload`).
+    fn payload_accessor(&self, event: &str) -> String {
+        format!(
+            "self._pending_{}_payload",
+            filters::to_snake_case(event.to_string())
+        )
+    }
+    // `None` between events and for an event that carried no typed payload, so
+    // a guard that reads this event's fields holds only for a delivery that
+    // carried them.
+    fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "{} is not None and ({lowered})",
+            self.payload_accessor(event)
+        )
+    }
+    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
+        unreachable!("refused by PythonTarget::unsupported")
+    }
+}
+
+/// Rewrite `model` — a clone the Python backend renders — so every expression
+/// of a `sce-static` document is native Python.
+pub fn lower_python(
+    model: &mut SCXMLModel,
+    machine: &str,
+) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, &PythonTarget)
+}
+
 /// The target that spells `lang`, when it lowers `sce-static` at all.
 pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
     match lang {
@@ -2794,7 +3159,8 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         Language::Cpp => Some(&CppTarget),
         // Only the call is spelled here, which the package's name alone fixes.
         Language::Go => Some(&GoTarget { import_root: None }),
-        Language::C11 | Language::Python => None,
+        Language::Python => Some(&PythonTarget),
+        Language::C11 => None,
     }
 }
 

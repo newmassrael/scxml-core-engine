@@ -108,6 +108,16 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_route_rests_on_a_question_python.sh" >/dev/null \
     || sce_gate_fail "Python route-rests-on-a-question generation"
 
+# The `datamodel="sce-static"` machines (SCE Accepted Subset §2.15), for the
+# reason the others give a sixth time: they live under the build tests' fixtures
+# and `tests/integration/` rather than `integration_resources/`, so
+# `generate-integration` never sees them, and the scenario driver that replays
+# them is tracked while their gitignored `_sm.py` modules would be modules
+# nothing produced. The machines are not listed here or in the script: the
+# script asks the generator which of the fixtures it lowers for Python.
+"$SCE_REPO_ROOT/scripts/regen_static_datamodel_python.sh" >/dev/null \
+    || sce_gate_fail "Python sce-static generation"
+
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
