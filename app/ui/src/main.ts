@@ -51,3 +51,12 @@ const app = new App(root, {
   browserLanguage: navigator.language,
 });
 void app.start();
+
+// A tab closed or reloaded while the editor holds text the core has not been
+// given loses it, so the browser is asked to confirm first. A desktop window has
+// no such event for its close button; that case is not covered yet.
+if (!insideTauri(window)) {
+  window.addEventListener("beforeunload", (event) => {
+    if (app.hasUnsavedChanges()) event.preventDefault();
+  });
+}

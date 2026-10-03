@@ -60,6 +60,21 @@ export class App {
   private viewing: SourceText | null = null;
   private notice: string | null = null;
   private loading = true;
+  /**
+   * Which editor the screen is showing, counted. Every answer that arrives for a
+   * request is applied only if this is still the number it was asked under, so a
+   * reply for a work (or an opening of it) the person has since left cannot touch
+   * the one they are in now. A rule over the editor, not over a pair of works.
+   */
+  private session = 0;
+  /** The newest request to open a work; an older one that answers later is dropped. */
+  private opening = 0;
+  /** The newest request to look at an older revision. */
+  private looking = 0;
+  /** A work the person asked for while the editor held text that is not saved. */
+  private pendingSwitch: Work | null = null;
+  /** What is typed in the new-work field, kept across redraws. */
+  private draftTitle = "";
   /** The server refused for want of a token, and the person can supply one. */
   private needsToken = false;
   /** A token has been supplied since, so a further refusal means it was wrong. */
@@ -105,26 +120,66 @@ export class App {
 
   // ---- actions ----------------------------------------------------------
 
+  /**
+   * The person asked for `work`. If the editor holds text that is not saved, or a
+   * save is still in flight, nothing is replaced: they are asked what to do with
+   * it first.
+   */
+  private async openWork(work: Work): Promise<void> {
+    const editor = this.editor;
+    if (editor !== null && (isDirty(editor) || editor.phase === "saving")) {
+      this.pendingSwitch = work;
+      this.render();
+      return;
+    }
+    await this.select(work);
+  }
+
+  /** Load `work` into the editor. Of several requests in flight, only the newest is applied. */
   private async select(work: Work): Promise<void> {
-    await this.guard(async () => {
+    const ticket = ++this.opening;
+    this.pendingSwitch = null;
+    this.notice = null;
+    try {
       const [source, entries] = await Promise.all([
         this.api.readSource(work.id),
         this.api.history(work.id),
       ]);
+      if (ticket !== this.opening) return;
+      this.session += 1;
       this.selected = work;
       this.editor = open(work.id, source);
       this.entries = entries;
       this.viewing = null;
-    });
+    } catch (error) {
+      if (ticket !== this.opening) return;
+      this.report(error);
+    }
     this.render();
   }
 
   private async create(title: string): Promise<void> {
     await this.guard(async () => {
       const work = await this.api.createWork(title);
+      this.draftTitle = "";
       this.listing = await this.api.listWorks();
-      await this.select(work);
+      await this.openWork(work);
     });
+    this.render();
+  }
+
+  private async saveAndSwitch(): Promise<void> {
+    const target = this.pendingSwitch;
+    await this.save();
+    // Only a save that took, with nothing typed since, lets the switch go on.
+    const editor = this.editor;
+    if (target !== null && editor !== null && editor.phase === "idle" && !isDirty(editor)) {
+      await this.select(target);
+    }
+  }
+
+  private cancelSwitch(): void {
+    this.pendingSwitch = null;
     this.render();
   }
 
@@ -132,27 +187,44 @@ export class App {
     const editor = this.editor;
     const request = editor === null ? null : saveRequest(editor);
     if (editor === null || request === null) return;
+    const session = this.session;
     this.editor = saving(editor);
     this.notice = null;
     this.render();
+
+    let outcome;
     try {
-      const outcome = await this.api.saveSource(request.id, request.text, request.base);
-      const entries = await this.api.history(request.id);
-      // The person may have opened another work while this was in flight; its
-      // editor is not this save's to touch.
-      if (this.editor?.workId === request.id) {
-        this.editor = saved(this.editor, request.text, outcome);
-        this.entries = entries;
-      }
+      outcome = await this.api.saveSource(request.id, request.text, request.base);
     } catch (error) {
-      if (this.askForToken(error)) {
-        // The text stays in the editor; the save is offered again once a token is given.
-        if (this.editor?.workId === request.id) this.editor = failed(this.editor, this.explain(error));
-      } else if (this.editor?.workId === request.id) {
+      // The editor the save was made from may be gone; if so it is not this
+      // answer's to touch.
+      if (session === this.session && this.editor !== null) {
         this.editor =
-          error instanceof CommandFailure && error.kind === "conflict"
+          !this.askForToken(error) && error instanceof CommandFailure && error.kind === "conflict"
             ? conflicted(this.editor, conflictRevisions(error.detail).current)
             : failed(this.editor, this.explain(error));
+      }
+      this.render();
+      return;
+    }
+
+    // The core has the text. From here on the save has succeeded whatever else
+    // goes wrong, so the editor's base moves at once: a retry built on the old
+    // base would conflict with this very save.
+    if (session === this.session && this.editor !== null) {
+      this.editor = saved(this.editor, request.text, outcome);
+    }
+    this.render();
+
+    // The history is a separate read, and its failure is its own: it says the
+    // list could not be read, not that the text was not saved.
+    try {
+      const entries = await this.api.history(request.id);
+      if (session === this.session) this.entries = entries;
+    } catch (error) {
+      // Not fatal: the text is saved, and only the list is stale.
+      if (session === this.session && !this.askForToken(error)) {
+        this.notice = this.explain(error);
       }
     }
     this.render();
@@ -161,14 +233,21 @@ export class App {
   private async takeTheirs(): Promise<void> {
     const editor = this.editor;
     if (editor === null) return;
-    await this.guard(async () => {
+    const session = this.session;
+    this.notice = null;
+    try {
       const [source, entries] = await Promise.all([
         this.api.readSource(editor.workId),
         this.api.history(editor.workId),
       ]);
-      this.editor = takeTheirs(editor, source);
+      // Only the editor that asked, still in the conflict it asked about.
+      if (session !== this.session || this.editor === null || this.editor.phase !== "conflict") return;
+      this.editor = takeTheirs(this.editor, source);
       this.entries = entries;
-    });
+    } catch (error) {
+      if (session !== this.session) return;
+      this.report(error);
+    }
     this.render();
   }
 
@@ -181,22 +260,44 @@ export class App {
   private async view(entry: HistoryEntry): Promise<void> {
     const work = this.selected;
     if (work === null) return;
-    await this.guard(async () => {
-      this.viewing = await this.api.readSource(work.id, entry.revision);
-    });
+    const session = this.session;
+    const ticket = ++this.looking;
+    this.notice = null;
+    try {
+      const source = await this.api.readSource(work.id, entry.revision);
+      if (session !== this.session || ticket !== this.looking) return;
+      this.viewing = source;
+    } catch (error) {
+      if (session !== this.session || ticket !== this.looking) return;
+      this.report(error);
+    }
     this.render();
   }
 
   private async restore(entry: HistoryEntry): Promise<void> {
     const work = this.selected;
-    if (work === null || this.editor === null || isDirty(this.editor)) return;
-    await this.guard(async () => {
+    const asked = this.editor;
+    if (work === null || asked === null || isDirty(asked) || asked.phase !== "idle") return;
+    const session = this.session;
+    this.notice = null;
+    try {
       const source = await this.api.readSource(work.id, entry.revision);
-      if (source !== null && this.editor !== null) {
-        this.editor = edit(this.editor, source.text);
+      if (session !== this.session) return;
+      const editor = this.editor;
+      if (source === null || editor === null) return;
+      // Loading replaces what is in the editor, so it is done only to the text it
+      // was asked about: anything typed or saved while the answer was on its way
+      // is the person's, and is not overwritten.
+      if (editor.text !== asked.text || editor.base !== asked.base || editor.phase !== "idle") {
+        this.notice = this.t("restoreSkipped");
+      } else {
+        this.editor = edit(editor, source.text);
         this.viewing = null;
       }
-    });
+    } catch (error) {
+      if (session !== this.session) return;
+      this.report(error);
+    }
     this.render();
   }
 
@@ -218,17 +319,22 @@ export class App {
     try {
       await work();
     } catch (error) {
-      const text = this.explain(error);
-      if (this.askForToken(error)) {
-        // The sign-in form is the whole answer; nothing else is shown with it.
-      } else if (
-        error instanceof CommandFailure &&
-        (error.kind === TRANSPORT || error.kind === UNAUTHORIZED)
-      ) {
-        this.fatal = text;
-      } else {
-        this.notice = text;
-      }
+      this.report(error);
+    }
+  }
+
+  /** Show a failure: the sign-in form, the fatal text, or the notice, whichever it calls for. */
+  private report(error: unknown): void {
+    const text = this.explain(error);
+    if (this.askForToken(error)) {
+      // The sign-in form is the whole answer; nothing else is shown with it.
+    } else if (
+      error instanceof CommandFailure &&
+      (error.kind === TRANSPORT || error.kind === UNAUTHORIZED)
+    ) {
+      this.fatal = text;
+    } else {
+      this.notice = text;
     }
   }
 
@@ -341,12 +447,46 @@ export class App {
       h(
         "main",
         { class: "work" },
+        this.switchBanner(),
         this.notice === null ? null : h("p", { class: "banner banner-error", role: "alert" }, this.notice),
         this.selected === null || this.editor === null
           ? h("p", { class: "muted" }, this.t("pickAWork"))
           : this.workPane(this.selected, this.editor),
       ),
     );
+  }
+
+  /** Shown while a work the person asked for waits on what to do with unsaved text. */
+  private switchBanner(): HTMLElement | null {
+    const target = this.pendingSwitch;
+    if (target === null) return null;
+    const saving = this.editor?.phase === "saving";
+    return h(
+      "section",
+      { class: "banner banner-warn", role: "alert" },
+      h("strong", {}, this.t("switchTitle")),
+      h("p", {}, this.t("switchBody", { title: target.title })),
+      h(
+        "div",
+        { class: "choices" },
+        h(
+          "button",
+          { type: "button", disabled: saving, onclick: () => void this.saveAndSwitch() },
+          this.t("saveAndSwitch"),
+        ),
+        h(
+          "button",
+          { type: "button", disabled: saving, onclick: () => void this.select(target) },
+          this.t("discardAndSwitch"),
+        ),
+        h("button", { type: "button", onclick: () => this.cancelSwitch() }, this.t("cancelSwitch")),
+      ),
+    );
+  }
+
+  /** Whether the editor holds text the core has not been given. */
+  hasUnsavedChanges(): boolean {
+    return this.editor !== null && (isDirty(this.editor) || this.editor.phase === "saving");
   }
 
   private sidebar(): HTMLElement {
@@ -358,7 +498,11 @@ export class App {
       required: true,
       "aria-label": this.t("newWorkTitle"),
       placeholder: this.t("newWorkTitle"),
+      oninput: (event) => {
+        this.draftTitle = (event.target as HTMLInputElement).value;
+      },
     });
+    titleInput.value = this.draftTitle;
     const form = h(
       "form",
       {
@@ -391,7 +535,7 @@ export class App {
                     class: "work-link",
                     type: "button",
                     "aria-current": this.selected?.id === work.id ? "true" : undefined,
-                    onclick: () => void this.select(work),
+                    onclick: () => void this.openWork(work),
                   },
                   work.title,
                 ),

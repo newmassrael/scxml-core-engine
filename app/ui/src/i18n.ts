@@ -32,12 +32,20 @@ const en = {
   backToCurrent: "Back to the current text",
   conflictTitle: "The text changed while you were editing",
   conflictBody:
-    "Another entrance saved revision {current} after you opened this work. Nothing of yours has been lost, and nothing of theirs has been overwritten.",
-  conflictTakeTheirs: "Load theirs (discard my edits)",
-  conflictKeepMine: "Keep mine and save on top of theirs",
-  conflictKeepMineHint: "Their text stays in the history as its own revision.",
+    "Another entrance saved revision {current} after you opened this work. Nothing of yours has been lost, and the version saved elsewhere has not been overwritten.",
+  conflictTakeTheirs: "Load the version saved elsewhere (discard my edits)",
+  conflictKeepMine: "Keep mine and save on top of it",
+  conflictKeepMineHint: "The version saved elsewhere stays in the history as its own revision.",
   failureTitle: "The save failed",
   retry: "Try again",
+  switchTitle: "The editor holds text that is not saved",
+  switchBody:
+    "Opening \"{title}\" would replace what is in the editor. Save it first, discard it, or stay here.",
+  saveAndSwitch: "Save, then open it",
+  discardAndSwitch: "Discard my changes and open it",
+  cancelSwitch: "Stay here",
+  restoreSkipped:
+    "The editor changed while the older text was being read, so it was not loaded.",
   language: "Language",
   versionMismatch:
     "This screen speaks command set {screen}, the application speaks {core}. Update the one that is older.",
@@ -85,12 +93,19 @@ const ko: Record<Key, string> = {
   backToCurrent: "현재 글로 돌아가기",
   conflictTitle: "편집하는 동안 글이 바뀌었습니다",
   conflictBody:
-    "이 작업을 연 뒤에 다른 곳에서 리비전 {current}을(를) 저장했습니다. 내 글은 잃지 않았고, 그쪽 글도 덮어쓰지 않았습니다.",
-  conflictTakeTheirs: "그쪽 글 불러오기 (내 수정 버리기)",
+    "이 작업을 연 뒤에 다른 곳에서 리비전 {current}을(를) 저장했습니다. 내 글은 잃지 않았고, 다른 곳에서 저장된 사양도 덮어쓰지 않았습니다.",
+  conflictTakeTheirs: "다른 곳에서 저장된 사양 불러오기 (내 수정 버리기)",
   conflictKeepMine: "내 글을 그 위에 저장",
-  conflictKeepMineHint: "그쪽 글은 이력에 별도 리비전으로 남습니다.",
+  conflictKeepMineHint: "다른 곳에서 저장된 사양은 이력에 별도 리비전으로 남습니다.",
   failureTitle: "저장하지 못했습니다",
   retry: "다시 시도",
+  switchTitle: "저장하지 않은 글이 있습니다",
+  switchBody:
+    "\"{title}\"을(를) 열면 지금 편집기의 글이 사라집니다. 먼저 저장하거나, 버리거나, 그대로 머물 수 있습니다.",
+  saveAndSwitch: "저장하고 열기",
+  discardAndSwitch: "내 수정을 버리고 열기",
+  cancelSwitch: "여기 머물기",
+  restoreSkipped: "옛 글을 읽는 동안 편집기가 바뀌어서 불러오지 않았습니다.",
   language: "언어",
   versionMismatch:
     "이 화면은 명령 집합 {screen}을(를), 애플리케이션은 {core}을(를) 씁니다. 더 오래된 쪽을 갱신하세요.",
