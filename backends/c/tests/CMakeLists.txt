@@ -2309,7 +2309,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             OUTPUT "${_HEADER}"
             COMMAND "${SCE_CODEGEN}" generate "sce:std/sync/${_ALGORITHM}.scxml"
                     -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_HEADER}.d"
             DEPENDS "${SCE_CODEGEN}"
+            DEPFILE "${_HEADER}.d"
             COMMENT "Generating C11 algorithm: ${_ALGORITHM}.h"
             VERBATIM
         )
