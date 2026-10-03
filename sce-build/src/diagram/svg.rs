@@ -351,6 +351,18 @@ pub fn render_sheet(sheet: &Sheet) -> String {
                     colour(*ink)
                 );
             }
+            Mark::Polygon { points, ink } => {
+                let pts: Vec<String> = points
+                    .iter()
+                    .map(|(x, y)| format!("{},{}", n(*x), n(*y)))
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    r#"<polygon points="{}" fill="{}"/>"#,
+                    pts.join(" "),
+                    colour(*ink)
+                );
+            }
         }
     }
     out.push_str("</svg>\n");

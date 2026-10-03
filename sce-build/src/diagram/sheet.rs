@@ -86,6 +86,8 @@ pub enum Mark {
         radius: f64,
         ink: Ink,
     },
+    /// A filled polygon: an arrowhead.
+    Polygon { points: Vec<(f64, f64)>, ink: Ink },
 }
 
 impl Mark {
@@ -104,7 +106,7 @@ impl Mark {
                 *from = (from.0 + dx, from.1 + dy);
                 *to = (to.0 + dx, to.1 + dy);
             }
-            Mark::Polyline { points, .. } => {
+            Mark::Polyline { points, .. } | Mark::Polygon { points, .. } => {
                 for p in points {
                     *p = (p.0 + dx, p.1 + dy);
                 }

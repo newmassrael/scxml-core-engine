@@ -36,8 +36,11 @@ use crate::forge::model::ForgeDocument;
 use crate::forge::page::Lexicon;
 
 pub mod codec;
+pub mod flow;
 pub mod interpolation;
+pub mod observer;
 pub mod slots;
+pub mod timer;
 
 /// One picture of a document: the file it is written to (without its
 /// extension) and the sheet.
@@ -61,21 +64,70 @@ pub fn pictures(
         ForgeDocument::BoundedCollection(m) => slots::bounded_collection(m, lexicon, page),
         ForgeDocument::Interpolation(m) => interpolation::interpolation(m, lexicon, page),
         ForgeDocument::Codec(m) => codec::codec(m, lexicon, page),
-        // Read from the field table alone, for now.
         ForgeDocument::Transform(_)
-        | ForgeDocument::Lookup(_)
         | ForgeDocument::Condition(_)
-        | ForgeDocument::Validator(_)
-        | ForgeDocument::Procedure(_)
         | ForgeDocument::Filter(_)
-        | ForgeDocument::Timer(_)
-        | ForgeDocument::Observer(_)
+        | ForgeDocument::Validator(_) => flow::dataflow(doc, lexicon, page),
+        ForgeDocument::Observer(m) => observer::observer(m, lexicon, page),
+        ForgeDocument::Timer(m) => timer::timer(m, lexicon, page),
+        // Read from the field table alone, for now.
+        ForgeDocument::Lookup(_)
+        | ForgeDocument::Procedure(_)
         | ForgeDocument::Algorithm(_)
         | ForgeDocument::Link(_)
         | ForgeDocument::Worker(_)
         | ForgeDocument::Enum(_)
         | ForgeDocument::EventSchema(_) => Ok(Vec::new()),
     }
+}
+
+/// A box of text, measured but not yet placed: what the dataflow and the
+/// hysteresis pictures are made of.
+#[derive(Debug, Clone)]
+pub(crate) struct Block {
+    pub lines: Vec<(String, Face)>,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Block {
+    /// The box that holds `lines`, a padding clear of its border.
+    pub fn new(c: &Canvas, lines: Vec<(String, Face)>) -> Result<Block, Refusal> {
+        let pad = c.style().padding;
+        let mut widest = 0.0f64;
+        for (text, face) in &lines {
+            widest = widest.max(c.width_of(*face, text, c.style().body_pt)?);
+        }
+        Ok(Block {
+            width: widest + 2.0 * pad,
+            height: lines.len() as f64 * c.line_height() + 2.0 * pad,
+            lines,
+        })
+    }
+
+    /// Draw it with its top left at `(x, y)`.
+    pub fn draw(&self, c: &mut Canvas, x: f64, y: f64, fill: Option<Ink>) -> Result<(), Refusal> {
+        c.frame((x, y, self.width, self.height), fill);
+        let pad = c.style().padding;
+        for (i, (text, face)) in self.lines.iter().enumerate() {
+            c.text(x + pad, y + pad + i as f64 * c.line_height(), text, *face)?;
+        }
+        Ok(())
+    }
+}
+
+/// `text` as mono lines no wider than `width_pt`.
+pub(crate) fn wrapped(
+    c: &Canvas,
+    text: &str,
+    width_pt: f64,
+) -> Result<Vec<(String, Face)>, Refusal> {
+    Ok(
+        super::table::wrap(Face::Mono, text, c.style().body_pt, width_pt)?
+            .into_iter()
+            .map(|l| (l, Face::Mono))
+            .collect(),
+    )
 }
 
 /// The word `p` in the page's language.
@@ -88,7 +140,8 @@ pub(crate) fn say(lexicon: &Lexicon, p: Phrase) -> Result<&'static str, Refusal>
 /// The scalar fields of `model` as `(name, value)`, in declaration order,
 /// without those named in `drawn` — what a picture says in words beside the
 /// part of the model it draws. A field that holds a list or a record is not
-/// here: it is in the field table.
+/// here, nor is one the document does not state (`null`): both are in the
+/// field table, which is the total reading.
 pub(crate) fn facts<T: serde::Serialize>(
     model: &T,
     drawn: &[&str],
@@ -101,7 +154,7 @@ pub(crate) fn facts<T: serde::Serialize>(
     };
     Ok(fields
         .iter()
-        .filter(|(k, v)| v.is_inline() && !drawn.contains(&k.as_str()))
+        .filter(|(k, v)| v.is_inline() && *v != Node::Null && !drawn.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), inline_text(v)))
         .collect())
 }

@@ -87,6 +87,19 @@ pub enum Phrase {
     Unstated,
     /// "after <field>" — the rows that follow a field of variable width.
     After,
+    /// What a flow of inputs to outputs is called, and the words on the
+    /// rules of a validator.
+    Dataflow,
+    Range,
+    MaxChange,
+    Every,
+    Plausibility,
+    /// What an observer is drawn as, and the two places a value is.
+    Thresholds,
+    OutsideZone,
+    InsideZone,
+    /// What a timer is drawn as.
+    Timeline,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -135,6 +148,15 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::Arms) => "arms",
         ("en", Phrase::Unstated) => "not stated",
         ("en", Phrase::After) => "after",
+        ("en", Phrase::Dataflow) => "dataflow",
+        ("en", Phrase::Range) => "range",
+        ("en", Phrase::MaxChange) => "max change",
+        ("en", Phrase::Every) => "every",
+        ("en", Phrase::Plausibility) => "plausibility",
+        ("en", Phrase::Thresholds) => "thresholds",
+        ("en", Phrase::OutsideZone) => "outside",
+        ("en", Phrase::InsideZone) => "inside",
+        ("en", Phrase::Timeline) => "timeline",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -176,6 +198,15 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::Arms) => "분기",
         ("ko", Phrase::Unstated) => "명시 없음",
         ("ko", Phrase::After) => "뒤",
+        ("ko", Phrase::Dataflow) => "데이터 흐름",
+        ("ko", Phrase::Range) => "범위",
+        ("ko", Phrase::MaxChange) => "최대 변화",
+        ("ko", Phrase::Every) => "마다",
+        ("ko", Phrase::Plausibility) => "타당성",
+        ("ko", Phrase::Thresholds) => "임계값",
+        ("ko", Phrase::OutsideZone) => "밖",
+        ("ko", Phrase::InsideZone) => "안",
+        ("ko", Phrase::Timeline) => "타임라인",
         _ => return None,
     })
 }
@@ -219,7 +250,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 41] = [
+    const ALL: [Phrase; 50] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -261,6 +292,15 @@ mod tests {
         Phrase::Arms,
         Phrase::Unstated,
         Phrase::After,
+        Phrase::Dataflow,
+        Phrase::Range,
+        Phrase::MaxChange,
+        Phrase::Every,
+        Phrase::Plausibility,
+        Phrase::Thresholds,
+        Phrase::OutsideZone,
+        Phrase::InsideZone,
+        Phrase::Timeline,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

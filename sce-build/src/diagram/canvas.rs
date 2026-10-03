@@ -159,6 +159,28 @@ impl Canvas {
         });
     }
 
+    /// A line from `from` to `to` ending in an arrowhead at `to`.
+    pub fn arrow(&mut self, from: (f64, f64), to: (f64, f64), ink: Ink) {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        let length = dx.hypot(dy);
+        if length < 1e-9 {
+            return;
+        }
+        let (ux, uy) = (dx / length, dy / length);
+        let head = (self.style.body_pt * 0.9).min(length);
+        let half = head * 0.35;
+        let base = (to.0 - ux * head, to.1 - uy * head);
+        self.stroke(from, base, ink, false);
+        self.marks.push(Mark::Polygon {
+            points: vec![
+                to,
+                (base.0 - uy * half, base.1 + ux * half),
+                (base.0 + uy * half, base.1 - ux * half),
+            ],
+            ink,
+        });
+    }
+
     pub fn dot(&mut self, x: f64, y: f64, ink: Ink) {
         self.marks.push(Mark::Dot {
             x,
@@ -216,6 +238,11 @@ impl Canvas {
                         cover(x - half, y - half, x + half, y + half);
                     }
                 }
+                Mark::Polygon { points, .. } => {
+                    for (x, y) in points {
+                        cover(*x, *y, *x, *y);
+                    }
+                }
                 Mark::Dot { x, y, radius, .. } => {
                     cover(x - radius, y - radius, x + radius, y + radius)
                 }
@@ -268,16 +295,39 @@ mod tests {
         c.stroke((0.0, 0.0), (300.0, 10.0), Ink::Muted, true);
         c.polyline(vec![(0.0, 0.0), (10.0, 80.0)], Ink::Black, false);
         c.dot(5.0, 5.0, Ink::Black);
+        c.arrow((-70.0, 10.0), (-20.0, 10.0), Ink::Black);
         let sheet = c.finish(page(), "test").unwrap();
         let margin = sheet.style.body_pt;
         let xs = sheet.marks.iter().map(|m| match m {
             Mark::Text { x, .. } | Mark::Rect { x, .. } | Mark::Dot { x, .. } => *x,
             Mark::Stroke { from, to, .. } => from.0.min(to.0),
-            Mark::Polyline { points, .. } => points.iter().map(|p| p.0).fold(f64::MAX, f64::min),
+            Mark::Polyline { points, .. } | Mark::Polygon { points, .. } => {
+                points.iter().map(|p| p.0).fold(f64::MAX, f64::min)
+            }
         });
         let least = xs.fold(f64::MAX, f64::min);
         assert!(least >= margin - 1e-9, "{least} < {margin}");
         assert!(sheet.width > 300.0 && sheet.height > 80.0, "{sheet:?}");
+    }
+
+    /// An arrow ends in a head whose tip is exactly where it was sent, and
+    /// a zero-length arrow draws nothing.
+    #[test]
+    fn an_arrow_ends_in_a_head_at_its_tip() {
+        let mut c = Canvas::new(page());
+        c.arrow((0.0, 0.0), (40.0, 30.0), Ink::Black);
+        let tips: Vec<(f64, f64)> = c
+            .marks
+            .iter()
+            .filter_map(|m| match m {
+                Mark::Polygon { points, .. } => Some(points[0]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tips, vec![(40.0, 30.0)]);
+        let mut empty = Canvas::new(page());
+        empty.arrow((5.0, 5.0), (5.0, 5.0), Ink::Black);
+        assert!(empty.marks.is_empty());
     }
 
     /// A picture larger than the page is refused with its measured size.
