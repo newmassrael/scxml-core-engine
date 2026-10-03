@@ -228,7 +228,23 @@
 {% else %}
 {# ── The payload ── W3C SCXML 5.10: evaluated once, by the helper every arm
    reads. #}
-{% if has_payload %}
+{% if action.params and (action.params | selectattr("native_value") | list | length > 0) %}
+{# `datamodel="sce-static"`: each param's value is native code
+   (`Param::native_value`) reading the policy's own attributes, so no script
+   engine is asked for it. A checked operation that fails raises
+   `AlgorithmFailure` out of the evaluation: it is reported, the pair is left out
+   and the message still goes (§scxml-5.7.1), as the helper below does for a
+   value the engine could not compute. The pairs are the helper's dict. #}
+{{ indent }}_data = {}
+{{ indent }}_data_repeats: dict = {}
+{% for param in action.params %}
+{{ indent }}try:
+{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    self._raise_error_execution(engine, "<send> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate")
+{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})
+{% endfor %}
+{% elif has_payload %}
 {{ indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ (param.expr if param.expr else param.location) | to_lua_expr | py_string_literal }}),

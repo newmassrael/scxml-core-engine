@@ -75,6 +75,16 @@
 {% if transition.source_location %}
                 {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true, symbol_state=transition.symbol_state_path, symbol_artifact=transition.symbol_artifact) | trim }}
 {% endif %}
+{# SCE Accepted Subset §2.15: content that reads the event's typed payload
+   cannot run for a delivery that did not carry one, and an error stops the
+   block it arose in (W3C SCXML 4.9) — so the check guards the whole content,
+   once, before any of it runs. It raises nothing: the lift already said
+   `error.execution` where it failed to read the delivery, and one unreadable
+   delivery is one error. #}
+{% if transition.content_reads_payload %}
+                if self._pending_{{ transition.event | to_snake_case }}_payload is None:
+                    return
+{% endif %}
                 try:
 {% for action in transition.actions %}
 {{ annot.annotation_block(action, "python", "                    ") }}{{ actions.emit(action, '                    ', machine_name, model) }}

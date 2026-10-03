@@ -196,6 +196,13 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
 
 
+# A `<send>` hands its event the pairs of its `<param>`s, each read from the
+# machine's fields when the send runs; a pair whose value failed is left out, the
+# message still goes, and the receiver finds the field missing.
+def test_a_send_hands_its_event_the_pairs_of_its_params() -> None:
+    replay("static_send_params")
+
+
 # A top-level final hands its done event the pairs of its `<donedata>`, each read
 # from the machine's fields when the state is entered; a pair whose value failed
 # is left out and the others cross.

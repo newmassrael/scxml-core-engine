@@ -3192,8 +3192,13 @@ and the machine imports the module by the line a forge kind importing it writes
 modules of one package. A final's `<donedata>` `<param>` is lowered too: each
 pair's value is native code reading the policy, written to the done event as the
 JSON the runtime's `to_json_literal` gives it, and a pair whose value failed is
-reported and left out while the others cross (5.7.1). An `<invoke>`, a `<send>`
-that carries a `<param>` or a `<content>`, a `<sce:action>` and `bytes` are not
+reported and left out while the others cross (5.7.1). A `<send>`'s `<param>` is
+the same: each value is native code, the pairs are the dict the engine-evaluated
+payload builds, a pair that failed is reported and left out and the message
+still goes (5.7.1, 6.2); and transition content that reads the event's payload
+opens with a check that the delivery carried one, which an unreadable delivery
+did not, so it raises nothing of its own (the lift already did). An `<invoke>`, a
+`<send>` that carries a `<content>`, a `<sce:action>` and `bytes` are not
 lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
@@ -3222,8 +3227,8 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record`, `sync_client` and `static_donedata` (the done event's pairs are
-read back from the engine's `done_data`) against
+`static_record`, `sync_client`, `static_send_params` and `static_donedata` (the
+done event's pairs are read back from the engine's `done_data`) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
 reads).

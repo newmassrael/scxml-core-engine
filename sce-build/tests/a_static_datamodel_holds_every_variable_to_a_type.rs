@@ -1256,6 +1256,54 @@ fn a_go_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
 }
 
 #[test]
+fn a_python_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
+    // Python refused a <send> carrying a <param> by name until its value was
+    // lowered as the other targets lower it. The generated module keeps the
+    // helper that evaluates a payload through the engine whatever the document
+    // is, and a host-run `<invoke>`'s helper calls it too, so what is looked for
+    // is the call a `<send>` makes: absent, the pair is built from the lowered
+    // value.
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" type="internal">
+      <send event="note"><param name="k" expr="count + 1"/></send>
+    </transition>
+  </state>"#,
+    );
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "python",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a sce-static machine's params are read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "py"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("self._put_param(_data, _data_repeats, \"k\", "),
+        "the pair is built from the lowered value"
+    );
+    assert!(
+        !source.contains("_data = self._eval_send_payload("),
+        "no script engine reads a send param"
+    );
+}
+
+#[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
     // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
     // would hand to an engine this data model does not have; they are refused,
