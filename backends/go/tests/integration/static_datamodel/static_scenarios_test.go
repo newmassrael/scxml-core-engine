@@ -36,6 +36,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
@@ -78,7 +79,10 @@ const scenarioDir = "../../../../../sce-build/tests/fixtures/static_datamodel/sc
 // machine is one generated machine as a scenario sees it: events by their
 // document name, and the published variables by theirs.
 type machine struct {
-	send      func(name, data string)
+	send func(name, data string)
+	// resolves is whether an event arriving under `name` reaches the machine at
+	// all, as the engine decides it (§scxml-3.12.1) — false is a name it drops.
+	resolves  func(name string) bool
 	state     func() string
 	ended     func() bool
 	donedata  func() string
@@ -96,6 +100,10 @@ func drive[S interface {
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
 			engine.Step()
+		},
+		resolves: func(name string) bool {
+			_, ok := engine.ResolveEventByName(name)
+			return ok
 		},
 		// The current state is the atomic one: a compound state is active for as
 		// long as one of its children is, and is no more where the machine is.
@@ -147,7 +155,9 @@ func asJSON(t *testing.T, value any) any {
 }
 
 // replay runs scenario `name` against `m`. Every step names an event (or none,
-// for the machine as started) and what it must hold afterwards.
+// for the machine as started) and what it must hold afterwards. A name no event
+// of the machine matches is a misspelt step unless the step says it expects the
+// drop (`"dropped": true`), which is then what is held.
 func replay(t *testing.T, name string, m machine) {
 	t.Helper()
 	text, err := os.ReadFile(filepath.Join(scenarioDir, name+".json"))
@@ -156,10 +166,11 @@ func replay(t *testing.T, name string, m machine) {
 	}
 	var scenario struct {
 		Steps []struct {
-			Note   string          `json:"note"`
-			Event  *string         `json:"event"`
-			Data   json.RawMessage `json:"data"`
-			Expect struct {
+			Note    string          `json:"note"`
+			Event   *string         `json:"event"`
+			Dropped bool            `json:"dropped"`
+			Data    json.RawMessage `json:"data"`
+			Expect  struct {
 				State     *string        `json:"state"`
 				Ended     bool           `json:"ended"`
 				Donedata  map[string]any `json:"donedata"`
@@ -174,14 +185,17 @@ func replay(t *testing.T, name string, m machine) {
 		t.Fatalf("scenario %s has no steps, which judges nothing", name)
 	}
 	for n, step := range scenario.Steps {
+		where := func() string { return fmt.Sprintf("%s step %d: %s", name, n, step.Note) }
 		if step.Event != nil {
+			if m.resolves(*step.Event) == step.Dropped {
+				t.Errorf("%s: the machine's events %s `%s`", where(), map[bool]string{true: "match", false: "do not match"}[step.Dropped], *step.Event)
+			}
 			data := ""
 			if len(step.Data) > 0 {
 				data = string(step.Data)
 			}
 			m.send(*step.Event, data)
 		}
-		where := func() string { return fmt.Sprintf("%s step %d: %s", name, n, step.Note) }
 		if step.Expect.Ended {
 			if !m.ended() {
 				t.Errorf("%s: the machine ended in a top-level <final>", where())
@@ -241,6 +255,19 @@ func TestTheCounterCountsToItsFlagAndLetsGo(t *testing.T) {
 
 func TestTheCounterStopsAtItsBoundAndRefusesGo(t *testing.T) {
 	replay(t, "static_counter_bound", counter())
+}
+
+// An event arrives by name from outside the document, so the names it can
+// arrive under are open (§scxml-3.12.1): a name the document never writes
+// reaches the transition whose descriptor is a token prefix of it, and one no
+// descriptor matches is dropped.
+func TestAnEventArrivesUnderANameTheDocumentDoesNotWrite(t *testing.T) {
+	policy := static_event_arrival.NewStaticEventArrivalPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_event_arrival", drive[static_event_arrival.StaticEventArrivalState, static_event_arrival.StaticEventArrivalEvent](&policy, map[string]func() any{
+		"requests": func() any { return policy.Requests() },
+		"specials": func() any { return policy.Specials() },
+	}))
 }
 
 // A checked integer operation that overflows is a failure, not a wrapped value
@@ -419,9 +446,9 @@ func TestASendCarriesItsParamsAsTheTypedValuesOfTheMachine(t *testing.T) {
 	policy := static_send_params.NewStaticSendParamsPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_send_params", drive[static_send_params.StaticSendParamsState, static_send_params.StaticSendParamsEvent](&policy, map[string]func() any{
-		"total":       func() any { return policy.Total() },
-		"ok":          func() any { return policy.Ok() },
-		"tag":         func() any { return policy.Tag() },
+		"total":        func() any { return policy.Total() },
+		"ok":           func() any { return policy.Ok() },
+		"tag":          func() any { return policy.Tag() },
 		"partialTotal": func() any { return policy.PartialTotal() },
 		"refusals":     func() any { return policy.Refusals() },
 	}))

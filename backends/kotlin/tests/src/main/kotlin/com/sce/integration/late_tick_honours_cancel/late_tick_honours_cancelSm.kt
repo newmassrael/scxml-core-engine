@@ -129,6 +129,22 @@ class LateTickHonoursCancelStateMachine(
         is LateTickHonoursCancelState.Waiting -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): LateTickHonoursCancelEvent? = when (name) {
+        "error.execution" -> LateTickHonoursCancelEvent.Error.Execution
+        "finish" -> LateTickHonoursCancelEvent.Finish
+        "poke" -> LateTickHonoursCancelEvent.Poke
+        "settle" -> LateTickHonoursCancelEvent.Settle
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: LateTickHonoursCancelEvent): String? = when (event) {
+        is LateTickHonoursCancelEvent.Error.Execution -> "error.execution"
+        is LateTickHonoursCancelEvent.Finish -> "finish"
+        is LateTickHonoursCancelEvent.Poke -> "poke"
+        is LateTickHonoursCancelEvent.Settle -> "settle"
+    }
 
 
 

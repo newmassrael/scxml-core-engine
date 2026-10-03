@@ -249,7 +249,7 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 		if reply.EventName == "" {
 			continue
 		}
-		if evt, known := e.policy.GetEventFromName(reply.EventName); known {
+		if evt, known := e.ResolveEventByName(reply.EventName); known {
 			meta := NewEventWithMetadata(evt)
 			meta.Metadata = ExternalMetadata("", "")
 			meta.Metadata.Data = reply.EventData

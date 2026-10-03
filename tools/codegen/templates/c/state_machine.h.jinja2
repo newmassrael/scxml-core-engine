@@ -1332,6 +1332,13 @@ void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.
 {{ event_payload_entry_decls }}
 {% endif %}
 
+/* §scxml-3.12.1: the event an event that arrives BY NAME is delivered as — the
+   name itself when this SM's enum holds it, else the longest token prefix of it
+   (`request` for `request.new`) that it does, and false when none of those is
+   one of its events, which is a name it drops. Every by-name door below
+   delivers through this. */
+bool {{ csym_prefix }}{{ model.name }}_resolve_event_by_name(const char *name, {{ csym_prefix }}{{ model.name }}_event_t *out);
+
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.4 (test192/253): String-keyed external raise — the
    invoking parent's `<send target="#_<invokeid>" event="X">` lower

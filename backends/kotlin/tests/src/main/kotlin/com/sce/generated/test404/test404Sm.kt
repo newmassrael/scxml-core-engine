@@ -239,6 +239,22 @@ class Test404StateMachine(
         is Test404State.S05 -> 7
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test404Event? = when (name) {
+        "event1" -> Test404Event.Event1
+        "event2" -> Test404Event.Event2
+        "event3" -> Test404Event.Event3
+        "event4" -> Test404Event.Event4
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test404Event): String? = when (event) {
+        is Test404Event.Event1 -> "event1"
+        is Test404Event.Event2 -> "event2"
+        is Test404Event.Event3 -> "event3"
+        is Test404Event.Event4 -> "event4"
+    }
 
 
 

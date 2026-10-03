@@ -1557,19 +1557,15 @@ class Engine(Generic[S, E]):
         )
         if self._refuses_host_invoke_completion(event_name, metadata):
             return
-        event = self._policy.get_event_from_name(event_name)
+        # W3C SCXML 3.13 / 6.3.1 — a wire name like `done.invoke._invoke_0`
+        # surfaces on a document that only declares the generic
+        # `done.invoke` descriptor: the policy resolves it through its
+        # dot-token prefixes, and token-prefix matching at the transition
+        # layer then catches both forms uniformly.
+        event = self._policy.resolve_event_by_name(event_name)
         if event is None:
-            # W3C SCXML 3.13 / 6.3.1 — fall back through dot-token
-            # prefixes so a wire name like `done.invoke._invoke_0`
-            # surfaces on a document that only declares the generic
-            # `done.invoke` descriptor. Token-prefix matching at the
-            # transition layer then catches both forms uniformly.
-            parts = event_name.split(".") if event_name else []
-            while event is None and len(parts) > 1:
-                parts.pop()
-                event = self._policy.get_event_from_name(".".join(parts))
-            if event is None:
-                return
+            return
+        if self._policy.get_event_from_name(event_name) is None:
             # §scxml-5.10: the machine is told the name the event arrived
             # under, not the shorter descriptor it was matched through.
             metadata.name = event_name

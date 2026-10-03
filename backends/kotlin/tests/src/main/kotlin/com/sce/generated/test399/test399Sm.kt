@@ -224,6 +224,26 @@ class Test399StateMachine(
         is Test399State.S06 -> 6
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test399Event? = when (name) {
+        "bar" -> Test399Event.Bar
+        "error.execution" -> Test399Event.Error.Execution
+        "foo" -> Test399Event.Foo.Self
+        "foo.zoo" -> Test399Event.Foo.Zoo
+        "foos" -> Test399Event.Foos
+        "timeout" -> Test399Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test399Event): String? = when (event) {
+        is Test399Event.Bar -> "bar"
+        is Test399Event.Error.Execution -> "error.execution"
+        is Test399Event.Foo.Self -> "foo"
+        is Test399Event.Foo.Zoo -> "foo.zoo"
+        is Test399Event.Foos -> "foos"
+        is Test399Event.Timeout -> "timeout"
+    }
 
 
 

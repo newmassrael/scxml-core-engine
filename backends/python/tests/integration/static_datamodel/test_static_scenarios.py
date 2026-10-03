@@ -80,7 +80,10 @@ def _as_json(value):
 def replay(name: str, machine: str | None = None) -> None:
     """Run scenario ``name`` against the machine it names. Every step names an
     event (or none, for the machine as started) and what it must hold
-    afterwards."""
+    afterwards. A name no event of the machine matches is a misspelt step unless
+    the step says it expects the drop (``"dropped": true``), which is then what
+    is held. A name matches an event of the machine as the policy resolves it
+    (``resolve_event_by_name``, §scxml-3.12.1): the document need not write it."""
     scenario = json.loads((_SCENARIOS / f"{name}.json").read_text())
     steps = scenario["steps"]
     assert steps, f"scenario {name} has no steps, which judges nothing"
@@ -95,10 +98,14 @@ def replay(name: str, machine: str | None = None) -> None:
         where = f"{name} step {n}: {step.get('note', '')}"
         event_name = step.get("event")
         if event_name is not None:
-            event = policy.get_event_from_name(event_name)
-            assert event is not None, f"{where}: the machine declares no event {event_name!r}"
-            data = json.dumps(step["data"]) if "data" in step else ""
-            engine.send_event(event, EventMetadata(data=data))
+            event = policy.resolve_event_by_name(event_name)
+            dropped = step.get("dropped", False)
+            assert (event is None) == dropped, (
+                f"{where}: the machine's events {'match' if dropped else 'do not match'} {event_name!r}"
+            )
+            if event is not None:
+                data = json.dumps(step["data"]) if "data" in step else ""
+                engine.send_event(event, EventMetadata(data=data))
         expect = step["expect"]
         if expect.get("ended"):
             assert engine.reached_final, f"{where}: the machine ended in a top-level <final>"
@@ -125,6 +132,14 @@ def test_the_counter_counts_to_its_flag_and_lets_go() -> None:
 
 def test_the_counter_stops_at_its_bound_and_refuses_go() -> None:
     replay("static_counter_bound")
+
+
+# An event arrives by name from outside the document, so the names it can arrive
+# under are open (§scxml-3.12.1): a name the document never writes reaches the
+# transition whose descriptor is a token prefix of it, and one no descriptor
+# matches is dropped.
+def test_an_event_arrives_under_a_name_the_document_does_not_write() -> None:
+    replay("static_event_arrival")
 
 
 # A checked integer operation that overflows fails instead of wrapping.

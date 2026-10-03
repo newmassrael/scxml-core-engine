@@ -125,6 +125,18 @@ class Test144StateMachine(
         is Test144State.S1 -> 1
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test144Event? = when (name) {
+        "bar" -> Test144Event.Bar
+        "foo" -> Test144Event.Foo
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test144Event): String? = when (event) {
+        is Test144Event.Bar -> "bar"
+        is Test144Event.Foo -> "foo"
+    }
 
 
 

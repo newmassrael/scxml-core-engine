@@ -75,6 +75,7 @@
 
 #include "common/SCXMLConstants.h"
 #include "common/Uuid.h"
+#include "core/EventNameResolver.h"
 #include "mesh/MeshEnvelope.h"
 
 #include <string>
@@ -245,7 +246,10 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
     // on the server-side engine (SCE_MESH.md §mesh-8.1 `field.get` / `field.set`).
     case PatternKind::FieldRead:
     case PatternKind::FieldWrite: {
-        auto ev = Policy::getEventFromName(env.type.c_str());
+        // A peer names the event, so the name is open (§scxml-3.12.1): it is delivered
+        // as the document's event it extends, when it is not one the document writes.
+        auto ev = ::SCE::Core::resolveArrivingEventName(
+            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact); });
         if (!ev) {
             return false;
         }
@@ -328,7 +332,8 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
             !detail::childSessionIsActive(*env.child_session_id, engine, detail::HasActiveChildSessionHook<Engine>{})) {
             return false;
         }
-        auto ev = Policy::getEventFromName(env.type.c_str());
+        auto ev = ::SCE::Core::resolveArrivingEventName(
+            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact); });
         if (!ev) {
             return false;
         }

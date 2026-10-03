@@ -191,6 +191,22 @@ class Test403aStateMachine(
         is Test403aState.S02 -> 2
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test403aEvent? = when (name) {
+        "error.execution" -> Test403aEvent.Error.Execution
+        "event1" -> Test403aEvent.Event1
+        "event2" -> Test403aEvent.Event2
+        "timeout" -> Test403aEvent.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test403aEvent): String? = when (event) {
+        is Test403aEvent.Error.Execution -> "error.execution"
+        is Test403aEvent.Event1 -> "event1"
+        is Test403aEvent.Event2 -> "event2"
+        is Test403aEvent.Timeout -> "timeout"
+    }
 
 
 

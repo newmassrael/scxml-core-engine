@@ -1,0 +1,39 @@
+# Mutation cases for "an event that arrives by name is delivered as the event
+# whose name it extends" (Rust engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/rust_event_arrival_name.cases`.
+#
+# An event arrives by name from outside the document — a child's autoforward, a
+# host, a host-served act's reply — so the names it can arrive under are open
+# (§scxml-3.12.1): `request` takes `request.new` though the document never writes
+# it, and a name no descriptor of the document matches is dropped.
+# `StatePolicy::resolve_event_by_name` is the one rule every by-name door of the
+# engine reaches the machine through, and
+# `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
+# states what it decides, replayed by `backends/rust/tests/tests/static_scenarios.rs`.
+#
+# Two things are easy to get wrong and read as success: a walk that never leaves
+# the whole name (every document that writes its names whole still passes), and a
+# cut at any character rather than at a `.` (`requesty` is then `request`'s, and
+# a machine that is sent a misspelling answers it). Only a name that extends a
+# descriptor past a `.` and one that merely begins like it tell them apart.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets backends/rust/runtime/src/policy.rs
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs
+
+mutation_case "the walk never leaves the whole name" <<'PY'
+edit("backends/rust/runtime/src/policy.rs",
+     "            candidate = &candidate[..candidate.rfind('.')?];",
+     "            candidate = &candidate[..candidate.rfind('.').filter(|_| false)?];")
+PY
+
+mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
+edit("backends/rust/runtime/src/policy.rs",
+     "            candidate = &candidate[..candidate.rfind('.')?];",
+     "            candidate = &candidate[..candidate.len().checked_sub(1)?];")
+PY

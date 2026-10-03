@@ -328,6 +328,22 @@ class Test364StateMachine(
         is Test364State.S32 -> 26
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test364Event? = when (name) {
+        "error.execution" -> Test364Event.Error.Execution
+        "In-s11p112" -> Test364Event.InS11p112
+        "In-s21p112" -> Test364Event.InS21p112
+        "timeout" -> Test364Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test364Event): String? = when (event) {
+        is Test364Event.Error.Execution -> "error.execution"
+        is Test364Event.InS11p112 -> "In-s11p112"
+        is Test364Event.InS21p112 -> "In-s21p112"
+        is Test364Event.Timeout -> "timeout"
+    }
 
 
 

@@ -1,0 +1,24 @@
+{
+  "machine": "static_event_arrival",
+  "about": "An event arrives by name from outside the document, so the names it can arrive under are open: a transition on `request` takes `request` and every name that extends it past a `.` (`request.new`, `request.new.more`) whether or not the document writes them, the longest descriptor the document writes decides which transition (`request.special.deep` is `request.special`'s, which comes first), and a name that merely begins with the same letters, or is a prefix of a descriptor, is taken by none. Expected values are derived from the document and from W3C SCXML 3.12.1, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has arrived",
+      "expect": { "state": "listening", "variables": { "requests": 0, "specials": 0 } } },
+
+    { "note": "a name the document writes",
+      "event": "request", "expect": { "variables": { "requests": 1, "specials": 0 } } },
+    { "note": "an extension the document never writes: `request` is a token prefix of `request.new`",
+      "event": "request.new", "expect": { "variables": { "requests": 2, "specials": 0 } } },
+    { "note": "and of a longer one",
+      "event": "request.new.more", "expect": { "variables": { "requests": 3, "specials": 0 } } },
+
+    { "note": "the other descriptor, written, and an extension of it that is not: it comes first in the document, so it takes both",
+      "event": "request.special", "expect": { "variables": { "requests": 3, "specials": 1 } } },
+    { "event": "request.special.deep", "expect": { "variables": { "requests": 3, "specials": 2 } } },
+
+    { "note": "`requesty` begins with the same letters but is another token: no descriptor of the document matches it, so it is dropped",
+      "event": "requesty", "dropped": true, "expect": { "variables": { "requests": 3, "specials": 2 } } },
+    { "note": "a prefix of a descriptor is no extension of it, and is dropped the same",
+      "event": "req", "dropped": true, "expect": { "variables": { "requests": 3, "specials": 2 } } }
+  ]
+}

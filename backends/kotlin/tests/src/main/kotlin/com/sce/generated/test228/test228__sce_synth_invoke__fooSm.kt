@@ -75,6 +75,20 @@ class Test228SceSynthInvokeFooStateMachine(
         is Test228SceSynthInvokeFooState.SubFinal -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test228SceSynthInvokeFooEvent? = when (name) {
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `Test228SceSynthInvokeFooEvent` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: Test228SceSynthInvokeFooEvent): String? = null
 
 
 

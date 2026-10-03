@@ -180,6 +180,18 @@ class ParallelRegionRootExternalDomainStateMachine(
         is ParallelRegionRootExternalDomainState.Working -> 2
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): ParallelRegionRootExternalDomainEvent? = when (name) {
+        "hold" -> ParallelRegionRootExternalDomainEvent.Hold
+        "restart" -> ParallelRegionRootExternalDomainEvent.Restart
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: ParallelRegionRootExternalDomainEvent): String? = when (event) {
+        is ParallelRegionRootExternalDomainEvent.Hold -> "hold"
+        is ParallelRegionRootExternalDomainEvent.Restart -> "restart"
+    }
 
 
 

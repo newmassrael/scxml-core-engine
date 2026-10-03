@@ -187,6 +187,22 @@ class EventDescriptorSpellingsAgreeStateMachine(
         is EventDescriptorSpellingsAgreeState.Universal -> 3
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): EventDescriptorSpellingsAgreeEvent? = when (name) {
+        "any.token.sequence" -> EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence
+        "dot" -> EventDescriptorSpellingsAgreeEvent.Dot
+        "wild" -> EventDescriptorSpellingsAgreeEvent.Wild
+        "wilder" -> EventDescriptorSpellingsAgreeEvent.Wilder
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: EventDescriptorSpellingsAgreeEvent): String? = when (event) {
+        is EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence -> "any.token.sequence"
+        is EventDescriptorSpellingsAgreeEvent.Dot -> "dot"
+        is EventDescriptorSpellingsAgreeEvent.Wild -> "wild"
+        is EventDescriptorSpellingsAgreeEvent.Wilder -> "wilder"
+    }
 
 
 

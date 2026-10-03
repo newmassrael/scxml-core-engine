@@ -2507,15 +2507,18 @@ impl<P: StatePolicy> Engine<P> {
 
     /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
     ///
-    /// Matches C++ `raiseExternal(const string&, const string&)`. If the name does
-    /// not match any known event, the call is silently ignored (the child may
-    /// simply not have that event declared).
+    /// Matches C++ `raiseExternal(const string&, const string&)`. The name is
+    /// delivered as the event [`StatePolicy::resolve_event_by_name`] answers —
+    /// the document's own name for it, or the longest of the document's names
+    /// that is a token prefix of it (§scxml-3.12.1). A name no transition could
+    /// match is silently ignored (the child may simply not have that event
+    /// declared).
     pub fn raise_external_by_name(&mut self, event_name: &str, event_data: &str) {
-        if let Some(event) = P::get_event_from_name(event_name) {
+        if let Some(event) = P::resolve_event_by_name(event_name) {
             self.raise_external(event, event_data, "");
         } else {
             sce_log_debug!(
-                "Engine::raise_external_by_name: event '{}' not in enum, ignoring",
+                "Engine::raise_external_by_name: event '{}' matches no event of the document, ignoring",
                 event_name
             );
         }
@@ -2553,9 +2556,9 @@ impl<P: StatePolicy> Engine<P> {
     /// with it — §6.4 mandates an exact copy. Unknown names degrade silently:
     /// a child is not required to declare every event its parent forwards.
     pub fn raise_external_by_name_with_meta(&mut self, event_name: &str, metadata: &EventMetadata) {
-        let Some(event) = P::get_event_from_name(event_name) else {
+        let Some(event) = P::resolve_event_by_name(event_name) else {
             sce_log_debug!(
-                "Engine::raise_external_by_name_with_meta: event '{}' not in enum, ignoring",
+                "Engine::raise_external_by_name_with_meta: event '{}' matches no event of the document, ignoring",
                 event_name
             );
             return;
@@ -3832,7 +3835,7 @@ impl<P: StatePolicy> Engine<P> {
         let handler = self.host_processors.handler_for(&processor_type)?;
         let replies = handler(request);
         for reply in &replies {
-            if let Some(evt) = P::get_event_from_name(&reply.event_name) {
+            if let Some(evt) = P::resolve_event_by_name(&reply.event_name) {
                 let mut meta = EventWithMetadata::new(evt);
                 // §scxml-C-1: a reply from outside the machine arrives on
                 // the external queue, like any event the host raises.

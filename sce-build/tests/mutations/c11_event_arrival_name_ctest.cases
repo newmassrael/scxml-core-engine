@@ -1,0 +1,42 @@
+# Mutation cases for "an event that arrives by name is delivered as the event
+# whose name it extends" (C11 generated machines).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/c11_event_arrival_name_ctest.cases`.
+#
+# An event arrives by name from outside the document — a parent's `<send>`, an
+# autoforward, a host — so the names it can arrive under are open (§scxml-3.12.1):
+# `request` takes `request.new` though the document never writes it, and a name no
+# descriptor of the document matches is dropped. `<machine>_resolve_event_by_name`
+# is the one rule every by-name door of a generated machine reaches it through,
+# and `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
+# states what it decides, replayed by
+# `backends/c/tests/integration/test_static_scalars.c`.
+#
+# Two things are easy to get wrong and read as success: a walk that never leaves
+# the whole name (every document that writes its names whole still passes), and a
+# cut at any character rather than at a `.` (`requesty` is then `request`'s, and
+# a machine that is sent a misspelling answers it). Only a name that extends a
+# descriptor past a `.` and one that merely begins like it tell them apart.
+#
+# The resolver is emitted by the template, which `cmake --build` reads at
+# generation time, so the template is the target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_scalars.c
+
+mutation_case "the walk never leaves the whole name" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (cut == NULL) {\n            return false;\n        }\n        *cut = '\\0';\n",
+     "        if (cut == NULL || length > 0u) {\n            return false;\n        }\n        *cut = '\\0';\n")
+PY
+
+mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        char *cut = strrchr(candidate, '.');\n",
+     "        char *cut = strlen(candidate) == 0u ? NULL : candidate + strlen(candidate) - 1;\n")
+PY

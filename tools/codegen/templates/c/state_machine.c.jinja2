@@ -3054,6 +3054,43 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
 {{ event_payload_lift_def }}
 {% endif %}
 
+/* §scxml-3.12.1: the event an event that arrives BY NAME is delivered as.
+
+   An event arrives by name from outside the document — a parent's `<send>`, an
+   autoforward — so the names it can arrive under are open, while the enum holds
+   only the names the document writes. A transition's descriptor matches an event
+   by whole tokens: `request` matches `request.new` whether or not the document
+   writes `request.new`. Every descriptor that matches an arriving name is a
+   token prefix of it, so is one of the document's names, so is a prefix of the
+   LONGEST of those — which therefore matches exactly what the arriving name
+   would. So the name is looked up whole, and then without its last token, and
+   so on: the first the document writes is the event, and a name none of whose
+   prefixes it writes matches no transition and is dropped. `name` is cut at a
+   `.` in a copy bounded by the buffer a forwarded name lives in, so a longer
+   one is refused rather than truncated into another name. Public, so a host
+   can ask whether a name reaches the machine before it sends one. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_resolve_event_by_name(const char *name, {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    char candidate[SCE_MAX_ID_LEN];
+    size_t length = (name == NULL) ? 0u : strlen(name);
+    if (length == 0u || length >= sizeof(candidate)) {
+        return false;
+    }
+    memcpy(candidate, name, length + 1u);
+    for (;;) {
+        {% for ev_name in model.events | sort %}
+        if (strcmp(candidate, "{{ ev_name }}") == 0) {
+            *out = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
+            return true;
+        }
+        {% endfor %}
+        char *cut = strrchr(candidate, '.');
+        if (cut == NULL) {
+            return false;
+        }
+        *cut = '\0';
+    }
+}
+
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.2: String-keyed counterpart for
    `<send target="#_<invokeid>" event="X">` from the invoking parent.
@@ -3071,13 +3108,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     }
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    {% for ev_name in model.events | sort %}
-    if (strcmp(event_name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
+    if ({{ csym_prefix }}{{ model.name }}_resolve_event_by_name(event_name, &evt.event)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
-        return;
     }
-    {% endfor %}
 }
 {% endif %}
 
@@ -3098,13 +3131,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     sce_copy_bounded_event_type(evt.type, fwd->type);
     sce_copy_bounded_id(evt.origin_type, fwd->origin_type);
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
-    {% for ev_name in model.events | sort %}
-    if (strcmp(fwd->name, "{{ ev_name }}") == 0) {
-        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }};
+    if ({{ csym_prefix }}{{ model.name }}_resolve_event_by_name(fwd->name, &evt.event)) {
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
-        return;
     }
-    {% endfor %}
 }
 
 {% if model.needs_event_scheduler %}

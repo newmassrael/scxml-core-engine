@@ -16,6 +16,10 @@
 //   * `static_counter`: a guard reading a variable and `In()`, `<assign>`,
 //     `<if>`/`<elseif>` and `<log>` are native, and `count` reaches the host as
 //     the `uint32` it is.
+//   * `static_event_arrival`: an event that arrives by name is delivered as the
+//     event the machine resolves the name to (§scxml-3.12.1) — the document's
+//     own name for it, or the longest of the document's names that is a token
+//     prefix of it — and a name no event matches is dropped.
 //   * `static_overflow`: a checked integer operation that overflows is a
 //     failure, not a wrapped value (SCE_FORGE.md §3.4.1) — the variable keeps
 //     what it held, `error.execution` is raised, and a guard over the
@@ -48,6 +52,7 @@
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_enum_sm.h"
+#include "static_event_arrival_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
 #include "sync_client_sm.h"
@@ -86,17 +91,18 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return (int64_t)M##_get_##VAR((const M##_t *)sm);                                                              \
     }
 
-// One machine as `sce_scenario_driver_t` asks for it: the event by its document
-// name, the state by its, the variable by its, and the replay of its scenario.
-#define STATIC_SCENARIO(M, EVENTS, STATES, VARIABLES, TEXT)                                                            \
+// One machine as `sce_scenario_driver_t` asks for it: the event by the name the
+// machine itself resolves (§scxml-3.12.1), the state by its document name, the
+// variable by its, and the replay of its scenario.
+#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT)                                                                    \
     static bool M##_raise_event(void *sm, const char *name, const char *data) {                                        \
-        int event = 0;                                                                                                 \
-        if (!find(EVENTS, COUNT_OF(EVENTS), name, &event)) {                                                           \
+        M##_event_t event;                                                                                             \
+        if (!M##_resolve_event_by_name(name, &event)) {                                                                \
             return false;                                                                                              \
         }                                                                                                              \
         M##_event_with_meta_t meta;                                                                                    \
         memset(&meta, 0, sizeof(meta));                                                                                \
-        meta.event = (M##_event_t)event;                                                                               \
+        meta.event = event;                                                                                            \
         if (data != NULL) {                                                                                            \
             if (strlen(data) >= sizeof(meta.data)) {                                                                   \
                 return false;                                                                                          \
@@ -147,10 +153,6 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // static_counter
 VARIABLE_READER(static_counter, count)
 VARIABLE_READER(static_counter, ready)
-static const name_value_t counter_events[] = {
-    {"tick", STATIC_COUNTER_EVENT_TICK},
-    {"go", STATIC_COUNTER_EVENT_GO},
-};
 static const name_value_t counter_states[] = {
     {"counting", STATIC_COUNTER_STATE_COUNTING},
     {"done", STATIC_COUNTER_STATE_DONE},
@@ -159,15 +161,25 @@ static const variable_t counter_variables[] = {
     {"count", static_counter_read_count},
     {"ready", static_counter_read_ready},
 };
-STATIC_SCENARIO(static_counter, counter_events, counter_states, counter_variables, NULL)
+STATIC_SCENARIO(static_counter, counter_states, counter_variables, NULL)
+
+// static_event_arrival: an event arrives by name from outside the document
+// (§scxml-3.12.1), so the machine delivers it as the event it resolves the name
+// to, and drops a name it resolves to none.
+VARIABLE_READER(static_event_arrival, requests)
+VARIABLE_READER(static_event_arrival, specials)
+static const name_value_t event_arrival_states[] = {
+    {"listening", STATIC_EVENT_ARRIVAL_STATE_LISTENING},
+};
+static const variable_t event_arrival_variables[] = {
+    {"requests", static_event_arrival_read_requests},
+    {"specials", static_event_arrival_read_specials},
+};
+STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL)
 
 // static_overflow
 VARIABLE_READER(static_overflow, level)
 VARIABLE_READER(static_overflow, refusals)
-static const name_value_t overflow_events[] = {
-    {"up", STATIC_OVERFLOW_EVENT_UP},
-    {"probe", STATIC_OVERFLOW_EVENT_PROBE},
-};
 static const name_value_t overflow_states[] = {
     {"waiting", STATIC_OVERFLOW_STATE_WAITING},
     {"probed", STATIC_OVERFLOW_STATE_PROBED},
@@ -176,7 +188,7 @@ static const variable_t overflow_variables[] = {
     {"level", static_overflow_read_level},
     {"refusals", static_overflow_read_refusals},
 };
-STATIC_SCENARIO(static_overflow, overflow_events, overflow_states, overflow_variables, NULL)
+STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL)
 
 // static_block_ends
 VARIABLE_READER(static_block_ends, a)
@@ -189,12 +201,6 @@ VARIABLE_READER(static_block_ends, inBranch)
 VARIABLE_READER(static_block_ends, afterBranch)
 VARIABLE_READER(static_block_ends, afterOk)
 VARIABLE_READER(static_block_ends, errors)
-static const name_value_t block_ends_events[] = {
-    {"fail.assign", STATIC_BLOCK_ENDS_EVENT_FAIL_ASSIGN},
-    {"fail.cond", STATIC_BLOCK_ENDS_EVENT_FAIL_COND},
-    {"fail.branch", STATIC_BLOCK_ENDS_EVENT_FAIL_BRANCH},
-    {"ok", STATIC_BLOCK_ENDS_EVENT_OK},
-};
 static const name_value_t block_ends_states[] = {
     {"waiting", STATIC_BLOCK_ENDS_STATE_WAITING},
 };
@@ -210,16 +216,13 @@ static const variable_t block_ends_variables[] = {
     {"afterOk", static_block_ends_read_afterOk},
     {"errors", static_block_ends_read_errors},
 };
-STATIC_SCENARIO(static_block_ends, block_ends_events, block_ends_states, block_ends_variables, NULL)
+STATIC_SCENARIO(static_block_ends, block_ends_states, block_ends_variables, NULL)
 
 // static_payload
 VARIABLE_READER(static_payload, day)
 VARIABLE_READER(static_payload, late)
 VARIABLE_READER(static_payload, sinceEpoch)
 VARIABLE_READER(static_payload, refusals)
-static const name_value_t payload_events[] = {
-    {"day.picked", STATIC_PAYLOAD_EVENT_DAY_PICKED},
-};
 static const name_value_t payload_states[] = {
     {"waiting", STATIC_PAYLOAD_STATE_WAITING},
 };
@@ -229,7 +232,7 @@ static const variable_t payload_variables[] = {
     {"sinceEpoch", static_payload_read_sinceEpoch},
     {"refusals", static_payload_read_refusals},
 };
-STATIC_SCENARIO(static_payload, payload_events, payload_states, payload_variables, NULL)
+STATIC_SCENARIO(static_payload, payload_states, payload_variables, NULL)
 
 // static_enum: the layout a calendar screen shows its days in. `layout` is
 // published; `previous` is the machine's own, so it is read from the policy the
@@ -258,12 +261,6 @@ static const char *static_enum_text(void *sm, const char *name) {
     return NULL;
 }
 
-static const name_value_t enum_events[] = {
-    {"zoom", STATIC_ENUM_EVENT_ZOOM},
-    {"back", STATIC_ENUM_EVENT_BACK},
-    {"swap", STATIC_ENUM_EVENT_SWAP},
-    {"agenda", STATIC_ENUM_EVENT_AGENDA},
-};
 static const name_value_t enum_states[] = {
     {"browsing", STATIC_ENUM_STATE_BROWSING},
 };
@@ -272,7 +269,7 @@ static const variable_t enum_variables[] = {
     {"layout", static_enum_read_layout},
     {"previous", static_enum_read_previous},
 };
-STATIC_SCENARIO(static_enum, enum_events, enum_states, enum_variables, static_enum_text)
+STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text)
 
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
@@ -287,12 +284,6 @@ VARIABLE_READER(sync_client, uploaded)
 VARIABLE_READER(sync_client, discarded)
 VARIABLE_READER(sync_client, pages)
 VARIABLE_READER(sync_client, refusals)
-static const name_value_t sync_events[] = {
-    {"sync.start", SYNC_CLIENT_EVENT_SYNC_START},
-    {"sync.response", SYNC_CLIENT_EVENT_SYNC_RESPONSE},
-    {"sync.page", SYNC_CLIENT_EVENT_SYNC_PAGE},
-    {"sync.phase.done", SYNC_CLIENT_EVENT_SYNC_PHASE_DONE},
-};
 static const name_value_t sync_states[] = {
     {"idle", SYNC_CLIENT_STATE_IDLE},
     {"deleting", SYNC_CLIENT_STATE_DELETING},
@@ -306,7 +297,7 @@ static const variable_t sync_variables[] = {
     {"discarded", sync_client_read_discarded}, {"pages", sync_client_read_pages},
     {"refusals", sync_client_read_refusals},
 };
-STATIC_SCENARIO(sync_client, sync_events, sync_states, sync_variables, NULL)
+STATIC_SCENARIO(sync_client, sync_states, sync_variables, NULL)
 
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
@@ -338,6 +329,7 @@ int main(void) {
     // Each scenario file by its name, and the steps it has at the least.
     bad |= static_counter_scenario("static_counter", 7);
     bad |= static_counter_scenario("static_counter_bound", 12);
+    bad |= static_event_arrival_scenario("static_event_arrival", 8);
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_payload_scenario("static_payload", 5);

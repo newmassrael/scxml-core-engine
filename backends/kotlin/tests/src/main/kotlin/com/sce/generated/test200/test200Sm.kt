@@ -106,6 +106,20 @@ class Test200StateMachine(
         is Test200State.S0 -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test200Event? = when (name) {
+        "error.execution" -> Test200Event.Error.Execution
+        "event1" -> Test200Event.Event1
+        "timeout" -> Test200Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test200Event): String? = when (event) {
+        is Test200Event.Error.Execution -> "error.execution"
+        is Test200Event.Event1 -> "event1"
+        is Test200Event.Timeout -> "timeout"
+    }
 
 
 

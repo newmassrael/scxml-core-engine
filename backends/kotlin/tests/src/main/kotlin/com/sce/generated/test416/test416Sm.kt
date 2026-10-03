@@ -165,6 +165,20 @@ class Test416StateMachine(
         is Test416State.S11final -> 3
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test416Event? = when (name) {
+        "done.state.s11" -> Test416Event.Done.State.S11
+        "error.execution" -> Test416Event.Error.Execution
+        "timeout" -> Test416Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test416Event): String? = when (event) {
+        is Test416Event.Done.State.S11 -> "done.state.s11"
+        is Test416Event.Error.Execution -> "error.execution"
+        is Test416Event.Timeout -> "timeout"
+    }
 
 
 

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the name an event
+  arrives under. W3C SCXML 3.12.1 matches a transition's `event` against an
+  event's name by tokens, and `request` is a prefix of `request.new` — whether
+  or not the document ever writes `request.new`. An event arrives by name from
+  outside the document (a child's autoforward, a host), so the names it can
+  arrive under are open.
+
+  The document writes two descriptors, `request.special` first and `request`
+  second, and the first one that matches takes the event (§3.13):
+
+    `request.special`  counts `request.special` and every name that extends it
+                       past a `.` (`request.special.deep`);
+    `request`          counts `request`, and every other name that extends it
+                       (`request.new`, `request.new.more`).
+
+  A name that merely begins with the same letters (`requesty`) extends neither,
+  and a name that is a prefix of a descriptor (`req`) is matched by neither: no
+  transition takes them, and no counter moves.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="listening" datamodel="sce-static" name="static_event_arrival">
+  <datamodel>
+    <data id="requests" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="specials" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="listening">
+    <transition event="request.special" type="internal">
+      <assign location="specials" expr="specials + 1"/>
+    </transition>
+    <transition event="request" type="internal">
+      <assign location="requests" expr="requests + 1"/>
+    </transition>
+  </state>
+</scxml>

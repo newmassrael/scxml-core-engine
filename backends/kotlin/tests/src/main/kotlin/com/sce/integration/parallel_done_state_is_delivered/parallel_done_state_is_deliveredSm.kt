@@ -182,6 +182,22 @@ class ParallelDoneStateIsDeliveredStateMachine(
         is ParallelDoneStateIsDeliveredState.Settled -> 7
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): ParallelDoneStateIsDeliveredEvent? = when (name) {
+        "done.state.a" -> ParallelDoneStateIsDeliveredEvent.Done.State.A
+        "done.state.b" -> ParallelDoneStateIsDeliveredEvent.Done.State.B
+        "done.state.run" -> ParallelDoneStateIsDeliveredEvent.Done.State.Run
+        "go" -> ParallelDoneStateIsDeliveredEvent.Go
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: ParallelDoneStateIsDeliveredEvent): String? = when (event) {
+        is ParallelDoneStateIsDeliveredEvent.Done.State.A -> "done.state.a"
+        is ParallelDoneStateIsDeliveredEvent.Done.State.B -> "done.state.b"
+        is ParallelDoneStateIsDeliveredEvent.Done.State.Run -> "done.state.run"
+        is ParallelDoneStateIsDeliveredEvent.Go -> "go"
+    }
 
 
 

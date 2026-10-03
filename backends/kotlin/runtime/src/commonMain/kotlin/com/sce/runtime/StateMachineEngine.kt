@@ -4125,7 +4125,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     ) {
         // §scxml-6.4: Set up child->parent event routing with metadata
         child.onSendToParent = { eventName, eventData ->
-            resolveEventByName(eventName)?.let {
+            resolveArrivingEvent(eventName)?.let {
                 send(it, EventMetadata(
                     type = "external",
                     invokeId = generatedInvokeId,
@@ -4232,7 +4232,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Internal: only used by parent SM's [sendToChild] for type-erased communication.
      */
     internal fun sendByName(name: String) {
-        resolveEventByName(name)?.let { send(it) }
+        resolveArrivingEvent(name)?.let { send(it) }
     }
 
     /**
@@ -4268,7 +4268,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * `<send>` does, and losing it would make the delivery arrive stripped.
      */
     internal fun sendByNameWithData(name: String, data: String) {
-        resolveEventByName(name)?.let {
+        resolveArrivingEvent(name)?.let {
             send(it, EventMetadata(type = "external", data = data))
         }
     }
@@ -4278,10 +4278,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Used by test harness (W3CHttpTestBase) to inject HTTP response events
      * back into the SM by string name. Resolves name to typed Event via
-     * [resolveEventByName] and dispatches with metadata.
+     * [resolveArrivingEvent] and dispatches with metadata.
      */
     fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.EMPTY) {
-        resolveEventByName(name)?.let { send(it, metadata) }
+        resolveArrivingEvent(name)?.let { send(it, metadata) }
     }
 
     // --- Event Data Helpers ---
@@ -4407,6 +4407,35 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Override in generated code for cross-SM event routing.
      */
     protected open fun resolveEventByName(name: String): E? = null
+
+    /**
+     * §scxml-3.12.1: the event an event that arrives BY NAME is delivered as.
+     *
+     * An event arrives by name from outside the document — a child's
+     * autoforward, a host — so the names it can arrive under are open, while
+     * the generated hierarchy holds only the names the document writes. A
+     * transition's descriptor matches an event by whole tokens: `request`
+     * matches `request.new` whether or not the document writes `request.new`.
+     * Every descriptor that matches an arriving name is a token prefix of it,
+     * so is one of the document's names, so is a prefix of the LONGEST of those
+     * — which therefore matches exactly what the arriving name would. That is
+     * the event this answers: the name itself when the document writes it, else
+     * the longest token prefix of it the document does, else `null` — no
+     * transition the document has could match it.
+     *
+     * [resolveEventByName] stays the exact table the generated code writes; the
+     * rule is written once, here, for every place a name crosses into the
+     * machine. The Rust twin is `StatePolicy::resolve_event_by_name`.
+     */
+    protected fun resolveArrivingEvent(name: String): E? {
+        var candidate = name
+        while (true) {
+            resolveEventByName(candidate)?.let { return it }
+            val at = candidate.lastIndexOf('.')
+            if (at < 0) return null
+            candidate = candidate.substring(0, at)
+        }
+    }
 
     /**
      * §scxml-6.4: Resolve Event object to event name string.

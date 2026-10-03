@@ -92,6 +92,18 @@ class Test237SceSynthInvokeInvoke0StateMachine(
         is Test237SceSynthInvokeInvoke0State.SubFinal -> 1
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test237SceSynthInvokeInvoke0Event? = when (name) {
+        "error.execution" -> Test237SceSynthInvokeInvoke0Event.Error.Execution
+        "timeout" -> Test237SceSynthInvokeInvoke0Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test237SceSynthInvokeInvoke0Event): String? = when (event) {
+        is Test237SceSynthInvokeInvoke0Event.Error.Execution -> "error.execution"
+        is Test237SceSynthInvokeInvoke0Event.Timeout -> "timeout"
+    }
 
 
 

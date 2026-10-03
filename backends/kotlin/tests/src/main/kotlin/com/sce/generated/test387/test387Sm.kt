@@ -303,6 +303,34 @@ class Test387StateMachine(
         is Test387State.S4 -> 15
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test387Event? = when (name) {
+        "enteringS011" -> Test387Event.EnteringS011
+        "enteringS012" -> Test387Event.EnteringS012
+        "enteringS021" -> Test387Event.EnteringS021
+        "enteringS022" -> Test387Event.EnteringS022
+        "enteringS111" -> Test387Event.EnteringS111
+        "enteringS112" -> Test387Event.EnteringS112
+        "enteringS121" -> Test387Event.EnteringS121
+        "enteringS122" -> Test387Event.EnteringS122
+        "error.execution" -> Test387Event.Error.Execution
+        "timeout" -> Test387Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test387Event): String? = when (event) {
+        is Test387Event.EnteringS011 -> "enteringS011"
+        is Test387Event.EnteringS012 -> "enteringS012"
+        is Test387Event.EnteringS021 -> "enteringS021"
+        is Test387Event.EnteringS022 -> "enteringS022"
+        is Test387Event.EnteringS111 -> "enteringS111"
+        is Test387Event.EnteringS112 -> "enteringS112"
+        is Test387Event.EnteringS121 -> "enteringS121"
+        is Test387Event.EnteringS122 -> "enteringS122"
+        is Test387Event.Error.Execution -> "error.execution"
+        is Test387Event.Timeout -> "timeout"
+    }
 
 
 

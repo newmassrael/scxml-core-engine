@@ -31,6 +31,7 @@
 #include "core/EntrySetHelper.h"
 #include "core/EventMatchingHelper.h"
 #include "core/EventMetadata.h"
+#include "core/EventNameResolver.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueManager.h"
 #include "core/ExternalEventBudget.h"
@@ -977,19 +978,32 @@ public:
      * @brief Raise external event by name (§scxml-6.4)
      *
      * Used for autoforward - converts event name string to Event enum and raises.
-     * If event name doesn't match any enum value, silently ignores (child may not have that event).
+     * The name is delivered as the event `resolveEventByName` answers (§scxml-3.12.1):
+     * the document's own name for it, or the longest of the document's names that is
+     * a token prefix of it. A name no transition could match is silently ignored
+     * (child may not have that event).
      *
      * @param eventName Event name string (e.g., "childToParent")
      * @param eventData Optional event data
      */
     void raiseExternal(const std::string &eventName, const std::string &eventData = "") {
-        // Convert event name to Event enum using Policy's getEventFromName() (O(n) if-chain)
-        // ARCHITECTURE.md: Generated code provides efficient event name lookup
-        if (auto event = policy_.getEventFromName(eventName)) {
+        if (auto event = resolveEventByName(eventName)) {
             raiseExternal(*event, eventData);
         } else {
-            SCE_LOG_DEBUG("AOT raiseExternal: Event '{}' not found in Event enum, ignoring", eventName);
+            SCE_LOG_DEBUG("AOT raiseExternal: Event '{}' matches no event of the document, ignoring", eventName);
         }
+    }
+
+    /**
+     * @brief The event an event that arrives by name is delivered as (§scxml-3.12.1)
+     *
+     * `Policy::getEventFromName` is the exact table (O(n) if-chain) the generated code
+     * writes; the rule that an arriving name is the longest of the document's names that
+     * is a token prefix of it is written once, in `SCE::Core::resolveArrivingEventName`.
+     */
+    [[nodiscard]] std::optional<Event> resolveEventByName(const std::string &name) const {
+        return ::SCE::Core::resolveArrivingEventName(
+            name, [this](const std::string &exact) { return policy_.getEventFromName(exact); });
     }
 
     /**
@@ -1006,9 +1020,10 @@ public:
      * @param forwarded Source event's name and `_event` fields
      */
     void raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) {
-        auto event = policy_.getEventFromName(forwarded.name);
+        auto event = resolveEventByName(forwarded.name);
         if (!event) {
-            SCE_LOG_DEBUG("AOT raiseExternal: Forwarded event '{}' not in Event enum, ignoring", forwarded.name);
+            SCE_LOG_DEBUG("AOT raiseExternal: Forwarded event '{}' matches no event of the document, ignoring",
+                          forwarded.name);
             return;
         }
         // `target` stays default-constructed: the forwarded copy is delivered

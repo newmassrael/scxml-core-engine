@@ -32,6 +32,9 @@ use sce_rust_tests::integration::static_datamodel::static_donedata_sm::{
 use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
     StaticEnumPersist, StaticEnumPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_event_arrival_sm::{
+    StaticEventArrivalPersist, StaticEventArrivalPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
     StaticForeachPersist, StaticForeachPolicy,
 };
@@ -65,9 +68,13 @@ use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
 use serde_json::Value;
 
 /// Replay `scenario` against `engine`, reading the machine back with
-/// `save` after every step. An event name the machine does not declare
+/// `save` after every step. An event name no event of the machine matches
 /// fails the replay: the engine drops one silently, which would otherwise
-/// pass a misspelt step without running it.
+/// pass a misspelt step without running it — unless the step says it expects
+/// the drop (`"dropped": true`), which is then what is held. A name matches an
+/// event of the machine as the engine delivers it
+/// ([`StatePolicy::resolve_event_by_name`], §scxml-3.12.1): the document need
+/// not write it.
 fn replay<P: StatePolicy>(
     mut engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
@@ -79,9 +86,12 @@ fn replay<P: StatePolicy>(
     engine.initialize();
     for (n, step) in steps.iter().enumerate() {
         if let Some(event) = step.get("event").and_then(Value::as_str) {
-            assert!(
-                P::get_event_from_name(event).is_some(),
-                "step {n}: the machine declares no event `{event}`"
+            let dropped = step.get("dropped").and_then(Value::as_bool) == Some(true);
+            assert_eq!(
+                P::resolve_event_by_name(event).is_none(),
+                dropped,
+                "step {n}: the machine's events {} `{event}`",
+                if dropped { "match" } else { "do not match" }
             );
             let data = step.get("data").map(Value::to_string).unwrap_or_default();
             engine.raise_external_by_name(event, &data);
@@ -154,6 +164,20 @@ fn sync_client_runs_its_scenario() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json"
+        ),
+    );
+}
+
+// An event arrives by name from outside the document, so the names it can
+// arrive under are open: a name the document never writes reaches the
+// transition whose descriptor is a token prefix of it.
+#[test]
+fn static_event_arrival_delivers_a_name_the_document_does_not_write() {
+    replay(
+        Engine::new(StaticEventArrivalPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json"
         ),
     );
 }

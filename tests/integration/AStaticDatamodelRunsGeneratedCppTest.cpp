@@ -30,6 +30,7 @@
 #include "static_counter_sm.h"
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
+#include "static_event_arrival_sm.h"
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
@@ -94,6 +95,12 @@ public:
         machine_.step();
     }
 
+    /// Whether an event arriving under `name` reaches the machine at all, as the
+    /// engine decides it (§scxml-3.12.1): false is a name it drops.
+    bool resolves(const std::string &name) const {
+        return machine_.resolveEventByName(name).has_value();
+    }
+
     std::string state() const {
         return Machine::PolicyType::getStateName(machine_.getCurrentState());
     }
@@ -120,7 +127,9 @@ private:
 };
 
 /// Replay `machine`'s scenario file against `driver`. Every step names an event
-/// (or none, for the machine as started) and what it must hold afterwards.
+/// (or none, for the machine as started) and what it must hold afterwards. A name
+/// no event of the machine matches is a misspelt step unless the step says it
+/// expects the drop (`"dropped": true`), which is then what is held.
 template <typename Machine> void replay(const std::string &machine, Driver<Machine> &driver) {
     const json scenario = readScenario(machine);
     ASSERT_TRUE(scenario.contains("steps")) << machine;
@@ -129,7 +138,11 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
     for (const auto &step : scenario["steps"]) {
         SCOPED_TRACE(machine + " step " + std::to_string(index++) + ": " + step.value("note", std::string{}));
         if (step.contains("event")) {
-            driver.send(step["event"].get<std::string>(), step.contains("data") ? step["data"].dump() : "");
+            const auto event = step["event"].get<std::string>();
+            const bool dropped = step.value("dropped", false);
+            EXPECT_EQ(driver.resolves(event), !dropped)
+                << "the machine's events " << (dropped ? "match" : "do not match") << " '" << event << "'";
+            driver.send(event, step.contains("data") ? step["data"].dump() : "");
         }
         const auto &expect = step["expect"];
         if (expect.value("ended", false)) {
@@ -188,6 +201,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, TheCounterCountsToItsFlagAndLetsGo) {
 TEST(AStaticDatamodelRunsGeneratedCppTest, TheCounterStopsAtItsBoundAndRefusesGo) {
     auto driver = counterDriver();
     replay("static_counter_bound", driver);
+}
+
+/// An event arrives by name from outside the document, so the names it can arrive
+/// under are open (§scxml-3.12.1): a name the document never writes reaches the
+/// transition whose descriptor is a token prefix of it, and one no descriptor
+/// matches is dropped.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventArrivesUnderANameTheDocumentDoesNotWrite) {
+    using Machine = G::static_event_arrival::static_event_arrival;
+    Driver<Machine> driver({
+        {"requests", [](const Machine &m) { return json(m.requests()); }},
+        {"specials", [](const Machine &m) { return json(m.specials()); }},
+    });
+    replay("static_event_arrival", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnOverflowingOperationFailsInsteadOfWrapping) {

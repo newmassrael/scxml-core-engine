@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -834,15 +835,47 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 	e.externalQueue.Raise(meta)
 }
 
+// ResolveEventByName is the event an event that arrives BY NAME is delivered as
+// (§scxml-3.12.1).
+//
+// An event arrives by name from outside the document — a child's autoforward, a
+// host — so the names it can arrive under are open, while the enum holds only
+// the names the document writes. A transition's descriptor matches an event by
+// whole tokens: `request` matches `request.new` whether or not the document
+// writes `request.new`. Every descriptor that matches an arriving name is a
+// token prefix of it, so is one of the document's names, so is a prefix of the
+// LONGEST of those — which therefore matches exactly what the arriving name
+// would. That is the event this answers: the name itself when the document
+// writes it, else the longest token prefix of it the document does, else
+// (_, false) — no transition the document has could match it.
+//
+// GetEventFromName stays the exact table; the rule is written once, here, and
+// the Rust twin is StatePolicy::resolve_event_by_name.
+func (e *Engine[S, E]) ResolveEventByName(name string) (E, bool) {
+	candidate := name
+	for {
+		if event, ok := e.policy.GetEventFromName(candidate); ok {
+			return event, true
+		}
+		at := strings.LastIndexByte(candidate, '.')
+		if at < 0 {
+			var none E
+			return none, false
+		}
+		candidate = candidate[:at]
+	}
+}
+
 // RaiseExternalByName raises an external event by name (§scxml-6.4.1, for
 // child autoforward).
 //
-// If the name does not match any known event, the call is silently ignored.
+// The name is delivered as the event ResolveEventByName answers. A name no
+// transition of the document could match is silently ignored.
 // Matches Rust Engine::raise_external_by_name.
 func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
-	event, ok := e.policy.GetEventFromName(eventName)
+	event, ok := e.ResolveEventByName(eventName)
 	if !ok {
-		log.Printf("[sce] Engine::RaiseExternalByName: event '%s' not in enum, ignoring", eventName)
+		log.Printf("[sce] Engine::RaiseExternalByName: event '%s' matches no event of the document, ignoring", eventName)
 		return
 	}
 	e.RaiseExternal(event, eventData, "")
@@ -855,9 +888,9 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 // so it crosses by name while the metadata travels with it. Unknown names
 // degrade silently: a child need not declare every event its parent forwards.
 func (e *Engine[S, E]) RaiseExternalByNameWithMeta(eventName string, metadata EventMetadata) {
-	event, ok := e.policy.GetEventFromName(eventName)
+	event, ok := e.ResolveEventByName(eventName)
 	if !ok {
-		log.Printf("[sce] Engine::RaiseExternalByNameWithMeta: event '%s' not in enum, ignoring", eventName)
+		log.Printf("[sce] Engine::RaiseExternalByNameWithMeta: event '%s' matches no event of the document, ignoring", eventName)
 		return
 	}
 	// Target stays empty: the copy is delivered to this machine, never

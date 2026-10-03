@@ -1067,6 +1067,54 @@
         {
           "file": "sce-build/src/design_surface.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ResolveEventByName",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "resolveArrivingEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/policy.py",
+          "symbol": "resolve_event_by_name",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "resolve_event_by_name",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_by_name",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "symbol": "dispatchEnvelope",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "resolveEventByName",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseExternal",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/EventNameResolver.h",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5352,6 +5400,10 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/event.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
         }
       ],
@@ -9835,6 +9887,10 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_drive_active_children",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11212,6 +11268,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "timeUntilNextScheduled",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -11769,6 +11829,10 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
         }
       ],
@@ -14430,6 +14494,10 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::isAddressedSessionReachable",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
         }
       ],
@@ -21269,6 +21337,12 @@
       "target_kind": "section",
       "target_id": "scxml-3.13",
       "reason": "The constant moved to core/ExternalEventBudget.h, shared with the Interpreter; the AOT engine no longer declares it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "the resolver attributes the doc comment above a template function to its namespace, so the symbol never matched"
     }
   ],
   "frames": {},

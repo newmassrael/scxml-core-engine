@@ -142,6 +142,18 @@ class NestedFinalNotTerminalStateMachine(
         is NestedFinalNotTerminalState.Running -> 1
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): NestedFinalNotTerminalEvent? = when (name) {
+        "done.state.phase" -> NestedFinalNotTerminalEvent.Done.State.Phase
+        "resume" -> NestedFinalNotTerminalEvent.Resume
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: NestedFinalNotTerminalEvent): String? = when (event) {
+        is NestedFinalNotTerminalEvent.Done.State.Phase -> "done.state.phase"
+        is NestedFinalNotTerminalEvent.Resume -> "resume"
+    }
 
 
 

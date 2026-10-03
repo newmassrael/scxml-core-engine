@@ -302,6 +302,36 @@ class StatePolicy(ABC, Generic[S, E]):
         `_EVENT_BY_NAME` dictionary."""
         return None
 
+    def resolve_event_by_name(self, event_name: str) -> Optional[E]:
+        """§scxml-3.12.1 — the event an event that arrives BY NAME is
+        delivered as.
+
+        An event arrives by name from outside the document — a child's
+        autoforward, a host — so the names it can arrive under are open,
+        while the enum holds only the names the document writes. A
+        transition's descriptor matches an event by whole tokens: `request`
+        matches `request.new` whether or not the document writes
+        `request.new`. Every descriptor that matches an arriving name is a
+        token prefix of it, so is one of the document's names, so is a prefix
+        of the LONGEST of those — which therefore matches exactly what the
+        arriving name would. That is the event this answers: `event_name`
+        itself when the document writes it, else the longest token prefix of
+        it the document does, else `None` — no transition the document has
+        could match it, and it is dropped.
+
+        Provided, not generated: the rule is one, and a generated copy per
+        document is a copy that can age. `get_event_from_name` stays the
+        exact table."""
+        candidate = event_name
+        while True:
+            event = self.get_event_from_name(candidate)
+            if event is not None:
+                return event
+            head, dot, _ = candidate.rpartition(".")
+            if not dot:
+                return None
+            candidate = head
+
     def host_invoke_ids(self) -> Tuple[str, ...]:
         """W3C SCXML 6.4.1 — the ids of the ``<invoke>``s this document hands
         to a host invoker. Their ``done.invoke.<id>`` is accepted only

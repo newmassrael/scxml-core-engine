@@ -183,6 +183,24 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         is ParallelCompletionRaisesDoneStateState.Stopped -> 7
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): ParallelCompletionRaisesDoneStateEvent? = when (name) {
+        "bail" -> ParallelCompletionRaisesDoneStateEvent.Bail
+        "done.state.a" -> ParallelCompletionRaisesDoneStateEvent.Done.State.A
+        "done.state.b" -> ParallelCompletionRaisesDoneStateEvent.Done.State.B
+        "done.state.run" -> ParallelCompletionRaisesDoneStateEvent.Done.State.Run
+        "go" -> ParallelCompletionRaisesDoneStateEvent.Go
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: ParallelCompletionRaisesDoneStateEvent): String? = when (event) {
+        is ParallelCompletionRaisesDoneStateEvent.Bail -> "bail"
+        is ParallelCompletionRaisesDoneStateEvent.Done.State.A -> "done.state.a"
+        is ParallelCompletionRaisesDoneStateEvent.Done.State.B -> "done.state.b"
+        is ParallelCompletionRaisesDoneStateEvent.Done.State.Run -> "done.state.run"
+        is ParallelCompletionRaisesDoneStateEvent.Go -> "go"
+    }
 
 
 

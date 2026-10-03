@@ -1,0 +1,40 @@
+# Mutation cases for "an event that arrives by name is delivered as the event
+# whose name it extends" (Kotlin engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_event_arrival_name.cases`.
+#
+# An event arrives by name from outside the document — a child's autoforward, a
+# host's `sendEventByName`, a host-served act's reply — so the names it can
+# arrive under are open (§scxml-3.12.1): `request` takes `request.new` though the
+# document never writes it, and a name no descriptor of the document matches is
+# dropped. `StateMachineEngine.resolveArrivingEvent` is the one rule every by-name
+# door of the engine reaches the machine through, and
+# `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
+# states what it decides, replayed by
+# `backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt`.
+#
+# Two things are easy to get wrong and read as success: a walk that never leaves
+# the whole name (every document that writes its names whole still passes), and a
+# cut at any character rather than at a `.` (`requesty` is then `request`'s, and
+# a machine that is sent a misspelling answers it). Only a name that extends a
+# descriptor past a `.` and one that merely begins like it tell them apart.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+
+mutation_case "the walk never leaves the whole name" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            if (at < 0) return null\n            candidate = candidate.substring(0, at)\n",
+     "            if (at < 0 || candidate.isNotEmpty()) return null\n            candidate = candidate.substring(0, at)\n")
+PY
+
+mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            val at = candidate.lastIndexOf('.')\n            if (at < 0) return null\n",
+     "            val at = candidate.length - 1\n            if (at < 0) return null\n")
+PY

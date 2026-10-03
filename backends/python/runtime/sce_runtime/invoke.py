@@ -168,13 +168,17 @@ class ScxmlInvoke(Invoke):
 
     def forward_event(self, event_name: str, metadata: Any) -> None:
         # The child policy's name→Event resolver lifts the string onto
-        # the child's Event enum. Unknown names silently drop, matching
-        # W3C 5.10.1 ("if no transition is enabled the event is lost").
-        event = self._child.policy.get_event_from_name(event_name)
+        # the child's Event enum, through the token prefix of the name the
+        # child does write when it does not write the name itself
+        # (§scxml-3.12.1). A name no transition of the child could match
+        # silently drops, matching W3C 5.10.1 ("if no transition is
+        # enabled the event is lost").
+        policy = self._child.policy
+        event = policy.resolve_event_by_name(event_name)
         if event is None:
             return
-        # W3C SCXML 6.4: the copy is exact, so every field the parent saw
-        # travels with it. W3C SCXML C.1: parent→child delivery rides the
+        # §scxml-6.4: the copy is exact, so every field the parent saw
+        # travels with it. §scxml-C-1: parent→child delivery rides the
         # SCXML Event I/O Processor, so `_event.origintype` is the SCXML
         # processor URI (test253) when the source event carried none of its
         # own. Imported lazily to avoid a cycle.
@@ -189,11 +193,14 @@ class ScxmlInvoke(Invoke):
                 origin=metadata.origin,
                 origin_type=metadata.origin_type or SCXML_EVENT_PROCESSOR_URI,
                 invoke_id=metadata.invoke_id,
+                # §scxml-5.10: the child is told the name the event arrived
+                # under, not the shorter descriptor it was matched through.
+                name=event_name if policy.get_event_from_name(event_name) is None else "",
             ),
         )
 
     def cancel(self) -> None:
-        # W3C SCXML 6.4.2 — terminate the child. Marking the engine
+        # §scxml-6.4.2 — terminate the child. Marking the engine
         # stopped is enough to keep its scheduler from delivering any
         # remaining `<send delay>` entries (advance_time gates on
         # `is_running and not reached_final`).
@@ -211,11 +218,11 @@ class ScxmlInvoke(Invoke):
         return self._child
 
 
-#: W3C SCXML 6.3.1 — what every ``done.invoke.<id>`` begins with, spelled
+#: §scxml-6.3.1 — what every ``done.invoke.<id>`` begins with, spelled
 #: once so building the name and recognising it cannot disagree.
 DONE_INVOKE_PREFIX = "done.invoke."
 
-#: W3C SCXML 3.12.1 — the generic completion descriptor. A document that
+#: §scxml-3.12.1 — the generic completion descriptor. A document that
 #: names no specific ``done.invoke.<id>`` matches every completion through it.
 DONE_INVOKE_EVENT = "done.invoke"
 

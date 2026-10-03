@@ -34,6 +34,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_block_end
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_donedata/static_donedata_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_enum/static_enum_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_event_arrival/static_event_arrival_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_foreach/static_foreach_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_history/static_history_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_host_call/static_host_call_sm.go

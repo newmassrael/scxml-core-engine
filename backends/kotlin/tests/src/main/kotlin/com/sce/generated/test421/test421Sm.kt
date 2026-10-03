@@ -157,6 +157,26 @@ class Test421StateMachine(
         is Test421State.S12 -> 2
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test421Event? = when (name) {
+        "error.execution" -> Test421Event.Error.Execution
+        "externalEvent" -> Test421Event.ExternalEvent
+        "internalEvent1" -> Test421Event.InternalEvent1
+        "internalEvent2" -> Test421Event.InternalEvent2
+        "internalEvent3" -> Test421Event.InternalEvent3
+        "internalEvent4" -> Test421Event.InternalEvent4
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test421Event): String? = when (event) {
+        is Test421Event.Error.Execution -> "error.execution"
+        is Test421Event.ExternalEvent -> "externalEvent"
+        is Test421Event.InternalEvent1 -> "internalEvent1"
+        is Test421Event.InternalEvent2 -> "internalEvent2"
+        is Test421Event.InternalEvent3 -> "internalEvent3"
+        is Test421Event.InternalEvent4 -> "internalEvent4"
+    }
 
 
 

@@ -12,9 +12,11 @@
 // the text every backend saves byte for byte, so one scenario judges every
 // backend by the same answer and needs no per-type glue.
 //
-// An event name the machine does not declare is refused by the Rust twin,
-// which reads the machine's own lookup; here that lookup is not public, and
-// a step whose event were dropped would fail on the state it expects.
+// An event name no event of the machine matches is refused by the Rust and Go
+// twins, which ask the machine's own lookup unless the step says
+// `"dropped": true`; here that lookup is not public, and a step whose event
+// were dropped would fail on the state it expects — or, for a step that expects
+// the drop, on the variables it says did not move.
 
 package com.sce.integration
 
@@ -23,6 +25,7 @@ import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachin
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
+import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
@@ -150,6 +153,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_counter"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // An event arrives by name from outside the document, so the names it can
+    // arrive under are open (§scxml-3.12.1): a name the document never writes
+    // reaches the transition whose descriptor is a token prefix of it, and one no
+    // descriptor matches is dropped.
+    @Test
+    fun staticEventArrivalDeliversANameTheDocumentDoesNotWrite() {
+        val sm = StaticEventArrivalStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_event_arrival"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

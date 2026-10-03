@@ -15,9 +15,9 @@
 // that read a shared table scan it for its keys, which would take a step's
 // `expect` for any other object that spelled `state`. It reads what a step
 // carries — `event`, an event's `data` as the compact JSON text every producer
-// fills it with, `expect.state`, `expect.ended`, `expect.variables` — and stops,
-// naming it, at what it does not (a real number), rather than passing a
-// scenario it did not replay.
+// fills it with, whether the step `dropped` it, `expect.state`, `expect.ended`,
+// `expect.variables` — and stops, naming it, at what it does not (a real
+// number), rather than passing a scenario it did not replay.
 
 #ifndef SCE_C_TESTS_STATIC_SCENARIO_H
 #define SCE_C_TESTS_STATIC_SCENARIO_H
@@ -36,8 +36,9 @@ typedef struct {
     void *sm;
     // The event goes in, and the macrostep it starts runs to its end. `data` is
     // the event's payload as the JSON text every producer fills `data` with, or
-    // NULL when the step carries none. False for a name the machine has no event
-    // of.
+    // NULL when the step carries none. False, with nothing raised, for a name no
+    // event of the machine matches (§scxml-3.12.1) — the name the machine's own
+    // `<m>_resolve_event_by_name` refuses, which the machine drops.
     bool (*raise)(void *sm, const char *event, const char *data);
     // 1 when the state is active, 0 when it is not, -1 for a name the machine
     // has no state of.
@@ -343,6 +344,10 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     char data[256];
     bool has_event = false;
     bool has_data = false;
+    // The step expects the machine to drop its event, so that no event of the
+    // machine matches the name. Without it, a name nothing matches is a misspelt
+    // step.
+    bool dropped = false;
     sce_scenario_cursor_t expect = {NULL};
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "a step is not an object");
@@ -357,6 +362,12 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
                     return sce_scenario_fail(d, step, "`event` is not a string");
                 }
                 has_event = true;
+            } else if (strcmp(key, "dropped") == 0) {
+                int64_t want = 0;
+                if (!sce_scenario_number(c, &want)) {
+                    return sce_scenario_fail(d, step, "`dropped` is not a bool");
+                }
+                dropped = want != 0;
             } else if (strcmp(key, "data") == 0) {
                 sce_scenario_space(c);
                 const char *from = c->at;
@@ -387,9 +398,10 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             }
         }
     }
-    if (has_event && !d->raise(d->sm, event, has_data ? data : NULL)) {
+    if (has_event && d->raise(d->sm, event, has_data ? data : NULL) == dropped) {
         char message[128];
-        (void)snprintf(message, sizeof(message), "the machine has no event `%s`", event);
+        (void)snprintf(message, sizeof(message), "the machine's events %s `%s`", dropped ? "match" : "do not match",
+                       event);
         return sce_scenario_fail(d, step, message);
     }
     return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step);

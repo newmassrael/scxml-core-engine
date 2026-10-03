@@ -145,6 +145,20 @@ class Test436StateMachine(
         is Test436State.S1 -> 3
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test436Event? = when (name) {
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `Test436Event` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: Test436Event): String? = null
 
 
 

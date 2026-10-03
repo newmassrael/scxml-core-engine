@@ -303,6 +303,33 @@ pub trait StatePolicy: Sized + 'static {
     /// Used by `raiseExternal(const std::string&)` overload and child invoke autoforward.
     fn get_event_from_name(name: &str) -> Option<Self::Event>;
 
+    /// The event an event that arrives BY NAME is delivered as (§scxml-3.12.1).
+    ///
+    /// An event arrives by name from outside the document — a child's
+    /// autoforward, a host — so the names it can arrive under are open, while
+    /// the enum holds only the names the document writes. A transition's
+    /// descriptor matches an event by whole tokens: `request` matches
+    /// `request.new` whether or not the document writes `request.new`. Every
+    /// descriptor that matches an arriving name is a token prefix of it, so is
+    /// one of the document's names, so is a prefix of the LONGEST of those —
+    /// which therefore matches exactly what the arriving name would. That is the
+    /// event this answers: `name` itself when the document writes it, else the
+    /// longest token prefix of `name` it does, else `None` — no transition the
+    /// document has could match it, and it is dropped.
+    ///
+    /// Provided, not generated: the rule is one, and a generated copy per
+    /// document is a copy that can age. [`get_event_from_name`](Self::get_event_from_name)
+    /// stays the exact table.
+    fn resolve_event_by_name(name: &str) -> Option<Self::Event> {
+        let mut candidate = name;
+        loop {
+            if let Some(event) = Self::get_event_from_name(candidate) {
+                return Some(event);
+            }
+            candidate = &candidate[..candidate.rfind('.')?];
+        }
+    }
+
     /// The ids of the `<invoke>`s this document hands to a host invoker
     /// (§scxml-6.4.1), emitted when the build declared one.
     ///

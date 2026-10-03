@@ -920,6 +920,58 @@ It sits beside its drivers rather than under
 engine has its driver; the Python one is
 `backends/python/tests/integration/external_chain_is_bounded/`.
 
+### Event Names at the Door (Single Source of Truth)
+
+An event that arrives BY NAME — a child's autoforward, a host's
+`sendEventByName`, a host-served act's reply, a Mesh peer — meets a machine
+whose generated `Event` type holds only the names its document writes. W3C SCXML
+3.12.1 matches a transition's `event` against an event's name by whole tokens, so
+`request` matches `request.new` whether or not the document ever writes
+`request.new`, and the names an event can arrive under are open. Every engine
+delivers an arriving name as:
+
+1. the document's own event of that name, when it writes it;
+2. else the event of the longest token prefix of the name that it does write
+   (the name cut at its last `.`, repeatedly);
+3. else none: no transition the document has could match the name, so it is
+   dropped.
+
+The longest prefix is the whole answer because every descriptor that matches
+an arriving name is a token prefix of it, so is one of the document's names, so
+is a prefix of the longest of those, which therefore matches exactly what the
+arriving name would. `requesty` is not an extension of `request` (the cut is at a
+`.`, never at a character), and `req` is a prefix of a descriptor, not an
+extension of one: both are dropped. The generated lookup stays the exact table;
+the rule is written once per engine and every by-name door goes through it:
+
+| Engine | Rule | Held by |
+|--------|------|---------|
+| C++ AOT and Mesh dispatch | `SCE::Core::resolveArrivingEventName` | `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` |
+| Rust | `StatePolicy::resolve_event_by_name` | `backends/rust/tests/tests/static_scenarios.rs` |
+| Go | `Engine.ResolveEventByName` | `backends/go/tests/integration/static_datamodel/static_scenarios_test.go` |
+| Kotlin | `StateMachineEngine.resolveArrivingEvent` | `backends/kotlin/tests/.../integration/StaticScenarioTest.kt` |
+| Python | `StatePolicy.resolve_event_by_name` | `backends/python/tests/integration/static_datamodel/test_static_scenarios.py` |
+| C11 | `<machine>_resolve_event_by_name`, emitted | `backends/c/tests/integration/test_static_scalars.c` |
+
+The Interpreter matches descriptors against the arriving name itself
+(`matchesEventDescriptor`) and needs no table. Measured 2026-10-04: every AOT
+door looked a name up exactly, so a machine that listened for `request` and was
+sent `request.new` dropped it in silence on every engine except Python, which
+walked the prefixes in one door only (`send_external_by_name`); the Kotlin
+generator emitted the lookup only for machines with an invoke, a parent, a script
+engine, an HTTP send, a host processor or a typed payload, and now emits it for
+every machine.
+
+`sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
+(over `static_event_arrival.scxml` beside it) holds the cases, and a step that
+expects the drop
+says `"dropped": true`; every harness but Kotlin's asks the engine's own rule
+whether the name reaches the machine (Kotlin's lookup is not public, so it holds
+the variables that did not move). Not yet: an arriving name no prefix of which the
+document writes is dropped even where the document listens with `event="*"`, and
+`_event.name` reads the descriptor's name, not the arrival name, on every engine
+but Python (`EventMetadata.name`).
+
 ### LuaDOMBinding
 
 Provides JavaScript-compatible DOM API over shared `XMLDOMWrapper`:

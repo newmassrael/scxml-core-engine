@@ -585,28 +585,18 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 {% endfor %}
     }
 
-{# W3C SCXML 6.2.5 is in this list for a reason the others are not: a
-   host-served act answers with event NAMES, chosen while the machine runs, so
-   this map is the only thing that can turn a handler's report into events —
-   and the §scxml-6.2 report for an act nobody performed is resolved the same
-   way. Without it a machine that serves a host processor and has no datamodel
-   drops every reply silently: measured on
-   `statechart_delayed_host_send.scxml`, whose handler ran at its deadline and
-   whose `turn.done` reached nothing, because `needs_script_engine` had been
-   standing in for "this machine resolves events by name" and that fixture is
-   the first host-served one without one. #}
-{# ⚠ `event_payload_active` is in this list for the reason the paragraph above
-   gives: a typed `_event.data` payload that does not read as its schema is
-   reported as `error.execution` (W3C SCXML 3.13), and THIS map is the only
-   thing that can turn that name into an event. Without it the engine's
-   `bindTypedPayload` resolved nothing and a refused payload was silent —
-   measured 2026-09-22 on `statechart_lifted.scxml`, a machine with no invoke,
-   no parent, no datamodel and no host processor, which is exactly the shape
-   every other condition here misses. #}
-{# `static_saved_shape`: a machine that saves its state writes its queued
-   events by name and reads them back by name (SCE Accepted Subset §2.15), so
-   both maps are its own need, whatever else the document does. #}
-{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types or event_payload_active or static_saved_shape %}
+{# Every machine resolves the names that cross into it, because a name crossing
+   in is not a property of what the document does: a child's autoforward, a
+   host's `sendEventByName`, a host-served act's reply, a refused typed payload's
+   `error.execution` and a saved queue read back are all names, and THIS map is
+   the only thing that turns one into an event. This used to be emitted when a
+   list of reasons held — an invoke, a parent, a script engine, an HTTP send, a
+   host processor, a typed payload, a saved shape — and each time a document
+   met none of them, the engine dropped every name in silence: measured on
+   `statechart_delayed_host_send.scxml` and on `statechart_lifted.scxml`, and
+   again on a plain machine driven by name (the probe of the arrival name,
+   2026-10-04). A list of reasons is a list that is one short; the map is the
+   document's own event table and costs a `when`. #}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}
@@ -631,7 +621,6 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     // `else` included — is dead code the compiler rejects under -Werror.
     // Returning the null directly is the honest expression of "unreachable".
     override fun eventNameOf(event: {{ machine_name }}Event): String? = null
-{% endif %}
 {% endif %}
 {% if model.host_invoker_types %}
 
