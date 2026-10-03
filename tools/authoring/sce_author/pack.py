@@ -380,6 +380,20 @@ class NameClass:
     role: str
 
 
+@dataclass(frozen=True)
+class HeldRule:
+    """Fields of an output that stay described while its gate is off (`held_when_off`).
+
+    The pack's CLAIM about the platform, read and said, never checked: the core knows
+    no platform, and a field it was told stays described is one it cannot test.
+    """
+
+    pattern: re.Pattern
+    gate: str
+    fields: tuple[str, ...]
+    measured: str = ""
+
+
 @dataclass
 class Conventions:
     name_classes: list[NameClass]
@@ -421,6 +435,16 @@ class Conventions:
     # What the host does with the document's outputs (`host.writes`), or
     # empty when the pack does not say. See the schema.
     host: dict = field(default_factory=dict)
+    # Fields that stay described while an output's gate is off, as the pack says it.
+    held_when_off: tuple[HeldRule, ...] = ()
+
+    def held_rule(self, address: str, field_name: str) -> HeldRule | None:
+        """The rule that says `field_name` of the output at `address` stays described
+        while its gate is off, or None. The first rule that names it decides."""
+        for rule in self.held_when_off:
+            if field_name in rule.fields and rule.pattern.search(address):
+                return rule
+        return None
 
     def classify(self, name: str) -> str | None:
         for nc in self.name_classes:
@@ -530,6 +554,7 @@ def load_conventions(paths: list[pathlib.Path],
     gate_off_note = ""
     protocols: dict[str, dict] = {}
     host: dict = {}
+    held: list[HeldRule] = []
     rules: dict[str, dict] = {}
     phrase_files: dict[str, pathlib.Path] = {}
 
@@ -638,6 +663,22 @@ def load_conventions(paths: list[pathlib.Path],
         time_inputs += doc.get("time_inputs") or []
         protocols.update(doc.get("protocols") or {})
         host.update(doc.get("host") or {})
+        for number, held_rule in enumerate(doc.get("held_when_off") or [], start=1):
+            where = f"held_when_off[{number}]"
+            # ⚠ A rule that holds its own gate says the field that switches the output
+            # off stays described while it is off, which is not a sentence about anything.
+            if held_rule["gate"] in held_rule["fields"]:
+                problems.refuse(PackError(
+                    f"{path}: {where} names its own gate {held_rule['gate']!r} among the "
+                    f"fields that stay described -- the gate is what switches the output "
+                    f"off, so it cannot be one of them"))
+                continue
+            compiled = _compiled(path, f"{where}.address_pattern",
+                                 held_rule["address_pattern"], problems)
+            if compiled is not None:
+                held.append(HeldRule(compiled, held_rule["gate"],
+                                     tuple(held_rule["fields"]),
+                                     held_rule.get("measured") or ""))
         if doc.get("duration_pattern"):
             compiled = _compiled(path, "duration_pattern", doc["duration_pattern"], problems)
             if compiled is not None:
@@ -690,6 +731,7 @@ def load_conventions(paths: list[pathlib.Path],
         protocols=protocols,
         precondition_rules=rules,
         host=host,
+        held_when_off=tuple(held),
     )
 
 

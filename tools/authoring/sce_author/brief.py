@@ -167,6 +167,19 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
                     f"precondition is false{note}. The specification does not "
                     f"say; confirm it against the platform."
                 )
+            # A field with no value space has nothing for the line above to propose,
+            # and the specification is silent on what it holds while the output is
+            # off -- so the pack may say it stays described, and that is said here,
+            # as the pack's claim with what it rests on, never as the specification's.
+            held = conv.held_rule(entry.address, fld.name)
+            if held is not None:
+                basis = f" ({held.measured})" if held.measured else ""
+                parts.append(
+                    f"    - the pack's convention says this field stays described while "
+                    f"`{held.gate}` is off: it is not emptied, zeroed or replaced by a "
+                    f"placeholder because the output is off{basis}. The specification "
+                    f"does not say; confirm it against the platform."
+                )
 
     parts += ["", "## 3. Outputs this specification is expected to decide", ""]
     for entry in model.outputs():

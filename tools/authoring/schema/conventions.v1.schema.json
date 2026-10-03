@@ -135,6 +135,38 @@
       "description": "What the pack knows about how often its own cascade is right, in one phrase (e.g. 'measured 87% over 174 value spaces'). Printed beside every proposal the cascade makes. A procedure with a measured hit rate is not an oracle, and a reader who is not told the difference will treat a proposal as a fact -- which is how a tool makes its reader wrong without ever raising an error."
     },
 
+    "held_when_off": {
+      "type": "array",
+      "description": "Fields of an output that keep what describes them while the output's gate is off. A specification shows what an output describes (an identifier, a label, a count) where it shows the output, and says nothing of what the same fields hold while it is off; a writer fills that silence with the emptiest value there is. `gate_off` cannot say this: it proposes a VALUE of the gate from its value space, and a text field has no value space to propose from. Each rule names the outputs it is about by address, the field whose off value is the gate, and the fields that stay described. The core reads the rule and says it beside each of those fields in the brief, as the pack's convention and not as a fact of the specification; it checks nothing against it.",
+      "items": {
+        "type": "object",
+        "required": ["address_pattern", "gate", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "address_pattern": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A regular expression searched in an output's address. The rule is about every output whose address it finds."
+          },
+          "gate": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The field whose off value switches the output off, as the brief names it (`Stat`)."
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "description": "The fields that stay described while the gate is off, by the name the interface model gives them. The gate itself is not one of them."
+          },
+          "measured": {
+            "type": "string",
+            "description": "What the pack knows about how often the rule holds, in one phrase (e.g. 'every one of 930 cases'). Printed with the sentence, for the reason `gate_off_note` is: a rule with a measured hit rate is not an oracle."
+          }
+        }
+      }
+    },
+
     "neutral_symbols": {
       "type": "array",
       "items": {"type": "string"},
