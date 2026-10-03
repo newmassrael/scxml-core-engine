@@ -32,7 +32,7 @@ use super::metrics::Face;
 use super::sheet::{Ink, Sheet};
 use super::tree::{self, Node};
 use super::words::{self, Phrase};
-use crate::forge::model::ForgeDocument;
+use crate::forge::model::{ForgeDocument, ParsedForge};
 use crate::forge::page::Lexicon;
 
 pub mod codec;
@@ -41,6 +41,7 @@ pub mod interpolation;
 pub mod mapping;
 pub mod observer;
 pub mod slots;
+pub mod structure;
 pub mod timer;
 
 /// One picture of a document: the file it is written to (without its
@@ -51,13 +52,16 @@ pub struct Picture {
     pub sheet: Sheet,
 }
 
-/// The pictures of `doc`, in the order they are written; none for a kind
-/// that is read from its field table alone.
+/// The pictures of `parsed`, in the order they are written; none for a kind
+/// that is read from its field table alone. It takes the whole parsed
+/// document, not only the model, because a link's picture is the documents
+/// it imports.
 pub fn pictures(
-    doc: &ForgeDocument,
+    parsed: &ParsedForge,
     lexicon: &Lexicon,
     page: Page,
 ) -> Result<Vec<Picture>, Refusal> {
+    let doc = &parsed.document;
     match doc {
         // Drawn as boxes and arrows by `fit::print`.
         ForgeDocument::Statechart(_) => Ok(Vec::new()),
@@ -74,11 +78,15 @@ pub fn pictures(
         ForgeDocument::Lookup(m) => mapping::lookup(m, lexicon, page),
         ForgeDocument::Enum(m) => mapping::enumeration(m, lexicon, page),
         ForgeDocument::EventSchema(m) => mapping::event_schema(m, lexicon, page),
-        // Read from the field table alone, for now.
-        ForgeDocument::Procedure(_)
-        | ForgeDocument::Algorithm(_)
-        | ForgeDocument::Link(_)
-        | ForgeDocument::Worker(_) => Ok(Vec::new()),
+        ForgeDocument::Link(_) | ForgeDocument::Worker(_) => {
+            structure::structure(parsed, lexicon, page)
+        }
+        // Read from the field table, and from the pseudocode page: a
+        // procedure is a graph of states whose attributes the statechart
+        // figure refuses to read, and an algorithm is steps in order; a
+        // layout for either is its own piece of work, not a reading of
+        // what the field table already says.
+        ForgeDocument::Procedure(_) | ForgeDocument::Algorithm(_) => Ok(Vec::new()),
     }
 }
 

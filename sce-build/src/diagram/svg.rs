@@ -263,6 +263,7 @@ pub fn render_sheet(sheet: &Sheet) -> String {
         Ink::Muted => BRIEF_INK,
         Ink::Hairline => RULE,
         Ink::Shade => ELSEWHERE_FILL,
+        Ink::Paper => PAPER,
         Ink::Level(l) => LEVEL_FILLS[usize::from(l).min(LEVEL_FILLS.len() - 1)],
     };
     let dash = |dashed: bool| {

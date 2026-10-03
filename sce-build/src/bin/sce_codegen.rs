@@ -9221,7 +9221,7 @@ fn cmd_diagram(
                     ),
                 });
             }
-            let pictures = sce_build::diagram::kinds::pictures(&parsed.document, lexicon, page)
+            let pictures = sce_build::diagram::kinds::pictures(&parsed, lexicon, page)
                 .unwrap_or_else(|r| refuse(r));
             let sheets = sce_build::diagram::fields::pages(&parsed, lexicon, page)
                 .unwrap_or_else(|r| refuse(r));

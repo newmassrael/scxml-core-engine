@@ -108,6 +108,9 @@ pub enum Phrase {
     Otherwise,
     Name,
     Type,
+    /// What a link or a worker is drawn as, and a name no import resolves.
+    Structure,
+    NotImported,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -171,6 +174,8 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::Otherwise) => "otherwise",
         ("en", Phrase::Name) => "name",
         ("en", Phrase::Type) => "type",
+        ("en", Phrase::Structure) => "structure",
+        ("en", Phrase::NotImported) => "not imported",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -227,6 +232,8 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::Otherwise) => "그 외",
         ("ko", Phrase::Name) => "이름",
         ("ko", Phrase::Type) => "형식",
+        ("ko", Phrase::Structure) => "구조",
+        ("ko", Phrase::NotImported) => "가져오지 않음",
         _ => return None,
     })
 }
@@ -270,7 +277,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 56] = [
+    const ALL: [Phrase; 58] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -327,6 +334,8 @@ mod tests {
         Phrase::Otherwise,
         Phrase::Name,
         Phrase::Type,
+        Phrase::Structure,
+        Phrase::NotImported,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

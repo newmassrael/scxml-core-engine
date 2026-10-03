@@ -99,6 +99,31 @@ impl Canvas {
         self.text(cx - width / 2.0, top, text, face).map(|_| ())
     }
 
+    /// A label centred on `cx`, on a patch of paper the size of its line,
+    /// so a line drawn under it does not run through its letters. Draw the
+    /// lines first.
+    pub fn label_centered(
+        &mut self,
+        cx: f64,
+        top: f64,
+        text: &str,
+        face: Face,
+    ) -> Result<(), Refusal> {
+        let width = measure(face, text, self.style.body_pt)?;
+        let pad = self.style.body_pt * 0.2;
+        self.rect(
+            (
+                cx - width / 2.0 - pad,
+                top,
+                width + 2.0 * pad,
+                self.line_height(),
+            ),
+            Some(Ink::Paper),
+            None,
+        );
+        self.text_centered(cx, top, text, face)
+    }
+
     /// One line of body text ending at `right`.
     pub fn text_right(
         &mut self,
@@ -308,6 +333,30 @@ mod tests {
         let least = xs.fold(f64::MAX, f64::min);
         assert!(least >= margin - 1e-9, "{least} < {margin}");
         assert!(sheet.width > 300.0 && sheet.height > 80.0, "{sheet:?}");
+    }
+
+    /// A label is backed by a paper patch drawn before its text, centred on
+    /// the text and at least as wide.
+    #[test]
+    fn a_label_is_backed_by_paper_under_its_text() {
+        let mut c = Canvas::new(page());
+        c.label_centered(50.0, 10.0, "framer", Face::Mono).unwrap();
+        let w = metrics::width_pt(Face::Mono, "framer", 7.0).unwrap();
+        match (&c.marks[0], &c.marks[1]) {
+            (
+                Mark::Rect {
+                    x,
+                    width,
+                    fill: Some(Ink::Paper),
+                    ..
+                },
+                Mark::Text { x: tx, .. },
+            ) => {
+                assert!(*x < *tx && x + width > tx + w, "{x} {width} {tx} {w}");
+                assert!(((x + width / 2.0) - 50.0).abs() < 1e-9, "centred on the cx");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     /// An arrow ends in a head whose tip is exactly where it was sent, and

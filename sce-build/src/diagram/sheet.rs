@@ -33,6 +33,9 @@ pub enum Ink {
     Hairline,
     /// A light fill: the band a table's heading stands on, a box's body.
     Shade,
+    /// The colour of the page itself: what a label is backed with so a
+    /// line passing under it does not run through its letters.
+    Paper,
     /// One of [`LEVELS`] light greys, 0 the lightest: how large a value is,
     /// shown as a shade under its number. Light, so the number stays
     /// legible on the darkest.
