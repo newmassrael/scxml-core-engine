@@ -162,6 +162,7 @@ jobs:
   citations:
     name: Validate spec citations (per workspace)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 

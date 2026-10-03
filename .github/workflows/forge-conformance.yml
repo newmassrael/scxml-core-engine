@@ -139,6 +139,7 @@ jobs:
   build-codegen:
     name: Build sce-codegen
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository
@@ -197,6 +198,7 @@ jobs:
   conformance-rust:
     name: Rust Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository
@@ -260,6 +262,7 @@ jobs:
   conformance-python:
     name: Python Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: build-codegen
 
     steps:
@@ -315,6 +318,7 @@ jobs:
   conformance-go:
     name: Go Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build-codegen
 
     steps:
@@ -394,6 +398,7 @@ jobs:
   conformance-kotlin:
     name: Kotlin Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build-codegen
 
     steps:
@@ -473,6 +478,7 @@ jobs:
   conformance-cpp:
     name: C++ Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build-codegen
 
     steps:
@@ -535,6 +541,7 @@ jobs:
   conformance-c:
     name: C11 Forge Conformance
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build-codegen
 
     steps:

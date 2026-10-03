@@ -97,6 +97,7 @@ jobs:
   ecma262-lowered-cpp:
     name: A Lua-lowered C++ artifact, compiled and run
     runs-on: ubuntu-latest
+    timeout-minutes: 80
 
     steps:
     - name: Checkout Repository

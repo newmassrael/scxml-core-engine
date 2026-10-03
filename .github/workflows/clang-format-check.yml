@@ -50,6 +50,7 @@ jobs:
   clang-format-check:
     name: clang-format --dry-run --Werror
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

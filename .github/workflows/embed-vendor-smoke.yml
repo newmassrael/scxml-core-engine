@@ -59,6 +59,7 @@ jobs:
   embed-smoke:
     name: Embed vendor smoke build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
     - name: Checkout Repository
@@ -162,6 +163,7 @@ jobs:
   emit-fail-fast:
     name: emit_embed_manifest fail-fast case
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
     - name: Checkout Repository

@@ -89,6 +89,7 @@ jobs:
   ecma262-lowered-kotlin:
     name: A Lua-lowered Kotlin artifact, compiled and run
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout Repository

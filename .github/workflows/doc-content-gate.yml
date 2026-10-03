@@ -82,6 +82,7 @@ jobs:
   doc-content:
     name: cargo test -p sce-build --features cli --lib
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout Repository

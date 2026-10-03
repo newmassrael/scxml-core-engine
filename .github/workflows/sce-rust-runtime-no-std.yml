@@ -57,6 +57,7 @@ jobs:
   no-std-thumbv7em:
     name: Build sce-rust-runtime --features=no_std --target=thumbv7em-none-eabihf
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

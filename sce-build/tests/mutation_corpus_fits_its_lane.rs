@@ -84,9 +84,14 @@ fn repo_root() -> PathBuf {
 /// this repository's workflow tests are: what is asserted is that a particular
 /// line says a particular thing, and a parser would happily answer from a
 /// default the file does not contain.
+///
+/// From the `rounds:` job on, and not from the top of the file: the selection
+/// job above it declares a ceiling of its own, and the first one in the file is
+/// that one.
 fn lane_timeout_minutes(workflow: &str) -> u32 {
     workflow
         .lines()
+        .skip_while(|line| *line != "  rounds:")
         .filter_map(|line| line.trim().strip_prefix("timeout-minutes:"))
         .filter_map(|value| value.trim().parse().ok())
         .next()

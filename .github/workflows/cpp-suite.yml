@@ -205,6 +205,7 @@ jobs:
   cpp-suite:
     name: C++ ctest Suite (engine + mesh)
     runs-on: ubuntu-latest
+    timeout-minutes: 140
 
     steps:
     - name: Checkout Repository

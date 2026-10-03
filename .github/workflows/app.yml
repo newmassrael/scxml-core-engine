@@ -38,6 +38,7 @@ jobs:
   app:
     name: Screen, browser shell and desktop shell
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - name: Install the libraries Tauri links on Linux

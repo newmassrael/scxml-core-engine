@@ -59,6 +59,7 @@ jobs:
   example-codegen:
     name: Example codegen smoke + authored-document lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

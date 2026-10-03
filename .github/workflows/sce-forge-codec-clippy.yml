@@ -51,6 +51,7 @@ jobs:
   codec-clippy:
     name: Clippy generated codecs (alloc on)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

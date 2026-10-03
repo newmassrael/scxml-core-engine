@@ -193,6 +193,7 @@ jobs:
   test:
     name: cargo test --workspace --features cli,sce-rust-mesh/wss
     runs-on: ubuntu-latest
+    timeout-minutes: 170
     # This lane exhausted the runner disk while running the workspace suite.
     # Omit DWARF from test artifacts, including linked standard-library
     # objects. Keep function symbols, panic locations, and the normal test

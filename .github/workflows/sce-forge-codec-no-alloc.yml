@@ -51,6 +51,7 @@ jobs:
   codec-no-alloc:
     name: Compile scalar + list codecs --no-default-features
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

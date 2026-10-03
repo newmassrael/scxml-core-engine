@@ -82,6 +82,7 @@ jobs:
   hygiene:
     name: tree-wide gates
     runs-on: ubuntu-latest
+    timeout-minutes: 55
 
     steps:
     # No `submodules: recursive`: the gate skips third_party/ and vendor/,

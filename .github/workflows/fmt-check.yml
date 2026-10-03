@@ -47,6 +47,7 @@ jobs:
   fmt-check:
     name: cargo fmt --all -- --check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout Repository

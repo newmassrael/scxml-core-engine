@@ -176,6 +176,7 @@ jobs:
   select:
     name: Which casefiles does this change reach
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     # `actions: read` lists this workflow's earlier runs to find the last one
     # that reached a verdict; `contents: read` is what checkout needs.
@@ -388,6 +389,22 @@ jobs:
       # failure. The gate makes the same choice inside a job, and for the same
       # reason: a lane that stops early has not measured the rest.
       fail-fast: false
+      # At most this many rounds run at once, because the runners are not this
+      # lane's: a GitHub Free account has 20 concurrent hosted jobs in all, for
+      # every repository it owns, and a matrix with no ceiling takes whatever is
+      # free. Measured on the run of 2026-10-02T16:42Z: a wide selection was 100
+      # jobs and 7,939 job-minutes, against 285 for every other lane of the same
+      # push together. It held the pool for eight hours; a C++ ctest job queued
+      # 6h09m for a runner and another repository's CI waited one to two hours
+      # for its own, with nothing wrong in either.
+      #
+      # 8 leaves the other 12 for everything else, and the price is stated: a
+      # wide selection now answers later. That is the right side of the trade,
+      # since a lane that cannot finish is not made faster by starving the lanes
+      # beside it, and the remedy for a selection too wide to answer in a day is
+      # narrowing the selection, not raising this. `ci_supersession_policy.rs`
+      # holds the ceiling, and the measurement behind it.
+      max-parallel: 8
       # The whole matrix from the selection, in the shape the runner documents
       # for a generated one: an object carrying `include`, one entry per job.
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}

@@ -1174,3 +1174,302 @@ fn every_long_lane_states_its_measured_numbers_in_its_own_workflow() {
          nothing"
     );
 }
+
+// ── The runners are shared, so a lane has a budget ──────────────────────────
+//
+// Everything above is about what a push does to a RUN. Three reversals of the
+// cancel flag (09-15, 10-01, and the two before them) never touched the thing
+// that kept producing the queue, because the queue was never made by the flag.
+//
+// The account is a GitHub Free user account, and that plan allows 20 hosted
+// jobs to run at once -- in all, for every repository it owns, and the repos
+// here share it. A job beyond the twentieth waits for a runner, and neither
+// `cancel-in-progress` nor a per-ref group has any say in how long.
+//
+// Measured 2026-10-02 / 10-03, when the lane below went quiet for nine hours:
+//
+// - One `mutation-rounds.yml` run, selected wide by a template edit, was 100
+//   jobs and 7,939 job-minutes (132 job-hours), the longest job 304 minutes.
+//   Every other lane of the same push, together, is about 39 jobs and 285
+//   job-minutes. One lane was 28 times the rest of the repository.
+// - Nothing capped it, so it took every runner that came free for about eight
+//   hours. A `cpp-suite.yml` job was created at 18:44Z and started at 00:53Z,
+//   6h09m in the queue for 47 minutes of work, and a run of another repository
+//   (`watching-zenoh`, 21 jobs) waited one to two hours for its own first job.
+//   Nothing was wrong with either of them.
+// - One of the round jobs then hung until its ceiling. It held the lane's
+//   concurrency group, which `cancel-in-progress: false` makes a hold on EVERY
+//   later run of the lane: 30 consecutive runs of `mutation-rounds.yml` ended
+//   `cancelled` with no job in them, and the lane answered nothing for nine
+//   hours.
+// - The same shape had been measured and not named twice: 2026-09-02, fourteen
+//   of twenty-five runs of this lane unstarted, the oldest for 5.7 hours; and
+//   2026-09-15, 36 runs queued across the account with the oldest at 8.4 hours.
+//   Both were answered by changing the flag.
+//
+// So two things bound a lane's claim on the pool, and each is held here:
+//
+// 1. A job declares how long it may run. A job with no ceiling inherits the
+//    platform's 360 minutes, and a hung one keeps its runner -- and, under
+//    `false`, its group -- for all of them. The ceilings are measured: twice
+//    the longest success in the last eight runs of the lane for a job of 20
+//    minutes or more, three times for a shorter one, never under ten.
+// 2. A matrix declares how many of its jobs run at once. A generated matrix is
+//    as wide as the change that selected it, so without a ceiling its width is
+//    the author of the edit's to decide, and a template edit decides 100.
+//
+// What this does not do, stated rather than left to be discovered: it makes a
+// wide selection of mutation rounds ANSWER LATER. At 8 at a time, 100 jobs of
+// an hour's work is most of a day. That is the right side of the trade -- a
+// lane that cannot finish is not made faster by starving the lanes beside it --
+// and the remedy for a selection too wide to answer in a day is narrowing the
+// selection, never raising the ceiling.
+
+/// The longest a job may declare. The platform's own is 360; this is the 30
+/// minutes of margin `mutation-rounds.yml` already made explicit, so that a
+/// timeout arrives with this lane's name on it and not as the platform's.
+const JOB_CEILING_MINUTES: u32 = 330;
+
+/// The most of the account's 20-job pool one matrix may take at once: half of
+/// it. The other half is what every other lane of every repository shares.
+const MATRIX_CEILING: u32 = 10;
+
+/// One job of a workflow: its key, and the lines of its own block.
+struct JobBlock<'a> {
+    key: &'a str,
+    lines: Vec<&'a str>,
+}
+
+/// The jobs under the top-level `jobs:` of a workflow, read as text for the
+/// reason [`top_level_cancel_in_progress`] gives. A job key is a line indented by
+/// exactly two spaces and ending in a colon; its block runs to the next one.
+fn job_blocks(workflow: &str) -> Vec<JobBlock<'_>> {
+    let mut blocks: Vec<JobBlock<'_>> = Vec::new();
+    let mut in_jobs = false;
+    for line in workflow.lines() {
+        if !in_jobs {
+            in_jobs = line.trim_end() == "jobs:";
+            continue;
+        }
+        let blank_or_comment = line.trim().is_empty() || line.trim_start().starts_with('#');
+        // A line at column zero that is not a comment ends the `jobs:` block.
+        if !blank_or_comment && !line.starts_with(' ') {
+            break;
+        }
+        let key = line
+            .strip_prefix("  ")
+            .filter(|rest| !rest.starts_with(' '))
+            .and_then(|rest| rest.strip_suffix(':'));
+        match key {
+            Some(key) if !key.is_empty() && !key.contains(' ') => {
+                blocks.push(JobBlock {
+                    key,
+                    lines: Vec::new(),
+                });
+            }
+            _ => {
+                if let Some(block) = blocks.last_mut() {
+                    block.lines.push(line);
+                }
+            }
+        }
+    }
+    blocks
+}
+
+impl JobBlock<'_> {
+    /// The value of `key` declared on the job itself -- four spaces in, so a
+    /// step's own `timeout-minutes:` cannot answer for the job.
+    fn own(&self, key: &str) -> Option<&str> {
+        let prefix = format!("    {key}:");
+        self.lines
+            .iter()
+            .find_map(|line| line.strip_prefix(prefix.as_str()))
+            .map(str::trim)
+    }
+
+    /// The value of `key` inside the job's `strategy:` block -- six spaces in.
+    fn strategy(&self, key: &str) -> Option<&str> {
+        let prefix = format!("      {key}:");
+        let mut inside = false;
+        for line in &self.lines {
+            if line.trim_end() == "    strategy:" {
+                inside = true;
+                continue;
+            }
+            if !inside {
+                continue;
+            }
+            // Out of the block at the next key of the job.
+            if !line.trim().is_empty()
+                && !line.trim_start().starts_with('#')
+                && !line.starts_with("      ")
+            {
+                return None;
+            }
+            if let Some(value) = line.strip_prefix(prefix.as_str()) {
+                return Some(value.trim());
+            }
+        }
+        None
+    }
+
+    /// A job that calls a reusable workflow runs no steps of its own, and the
+    /// ceiling is the called workflow's to declare.
+    fn calls_a_workflow(&self) -> bool {
+        self.own("uses").is_some()
+    }
+}
+
+/// Every workflow's text, with its file name.
+fn workflow_texts() -> Vec<(String, String)> {
+    workflows_on_disk()
+        .into_iter()
+        .map(|name| {
+            let text = read_workflow(&name);
+            (name, text)
+        })
+        .collect()
+}
+
+#[test]
+fn every_job_declares_how_long_it_may_run() {
+    let mut examined = 0;
+    let mut faults = Vec::new();
+    for (file, text) in workflow_texts() {
+        for job in job_blocks(&text) {
+            if job.calls_a_workflow() {
+                continue;
+            }
+            examined += 1;
+            match job.own("timeout-minutes").map(str::parse::<u32>) {
+                Some(Ok(minutes)) if (1..=JOB_CEILING_MINUTES).contains(&minutes) => {}
+                Some(Ok(minutes)) => faults.push(format!(
+                    "  {file}: `{}` declares {minutes} minutes, outside 1..={JOB_CEILING_MINUTES}",
+                    job.key
+                )),
+                _ => faults.push(format!(
+                    "  {file}: `{}` declares no `timeout-minutes:` of its own (or not a \
+                     number), so it inherits the platform's 360",
+                    job.key
+                )),
+            }
+        }
+    }
+    assert!(
+        examined >= 40,
+        "only {examined} job(s) read -- the workflow directory moved or the reader \
+         lost the `jobs:` block, and this case cannot judge what it did not see"
+    );
+    assert!(
+        faults.is_empty(),
+        "job(s) with no ceiling the platform's would not outlast:\n{}\n\
+         A hung job keeps its runner, and under `cancel-in-progress: false` its \
+         workflow's group, for the whole of that time. Declare what the lane \
+         measures: twice its longest success for a job of 20 minutes or more, three \
+         times for a shorter one, never under ten.",
+        faults.join("\n")
+    );
+}
+
+#[test]
+fn every_matrix_declares_how_many_of_its_jobs_run_at_once() {
+    let mut matrices = 0;
+    let mut faults = Vec::new();
+    for (file, text) in workflow_texts() {
+        for job in job_blocks(&text) {
+            if job.strategy("matrix").is_none() {
+                continue;
+            }
+            matrices += 1;
+            match job.strategy("max-parallel").map(str::parse::<u32>) {
+                Some(Ok(width)) if (1..=MATRIX_CEILING).contains(&width) => {}
+                Some(Ok(width)) => faults.push(format!(
+                    "  {file}: `{}` runs {width} at once, outside 1..={MATRIX_CEILING}",
+                    job.key
+                )),
+                _ => faults.push(format!(
+                    "  {file}: `{}` is a matrix with no `max-parallel:` of its own (or not \
+                     a number), so it takes every runner that comes free",
+                    job.key
+                )),
+            }
+        }
+    }
+    // A generated matrix is a `strategy.matrix` whose value is an expression, so
+    // the one this account has is in this count; none would mean the reader
+    // stopped seeing it.
+    assert!(
+        matrices >= 1,
+        "no matrix read -- `mutation-rounds.yml` declares one, so the reader lost it"
+    );
+    assert!(
+        faults.is_empty(),
+        "matrix(es) with no share of the pool:\n{}\n\
+         The account's 20 hosted jobs are shared by every repository it owns, and a \
+         generated matrix is as wide as the change that selected it: one run of \
+         `mutation-rounds.yml` was 100 jobs and held the pool for eight hours.",
+        faults.join("\n")
+    );
+}
+
+#[test]
+fn the_job_readers_tell_their_cases_apart() {
+    let workflow = "\
+name: x
+on: push
+jobs:
+  bare:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+        timeout-minutes: 5
+
+  bounded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: true
+
+  called:
+    uses: ./.github/workflows/other.yml
+
+  fanned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # a comment inside the block
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.x.outputs.m) }}
+    steps:
+      - run: true
+
+  unbounded-fan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [a, b]
+    steps:
+      - run: true
+";
+    let jobs = job_blocks(workflow);
+    let keys: Vec<&str> = jobs.iter().map(|j| j.key).collect();
+    assert_eq!(
+        keys,
+        ["bare", "bounded", "called", "fanned", "unbounded-fan"]
+    );
+    let by = |key: &str| jobs.iter().find(|j| j.key == key).expect("a job");
+
+    // A step's own ceiling is not the job's.
+    assert_eq!(by("bare").own("timeout-minutes"), None);
+    assert_eq!(by("bounded").own("timeout-minutes"), Some("15"));
+    assert!(by("called").calls_a_workflow());
+    assert!(!by("bounded").calls_a_workflow());
+
+    assert_eq!(by("fanned").strategy("max-parallel"), Some("8"));
+    assert!(by("fanned").strategy("matrix").is_some());
+    assert!(by("unbounded-fan").strategy("matrix").is_some());
+    assert_eq!(by("unbounded-fan").strategy("max-parallel"), None);
+    assert!(by("bounded").strategy("matrix").is_none());
+}

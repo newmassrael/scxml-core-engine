@@ -65,6 +65,7 @@ jobs:
   test-cpp:
     name: C++ W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       checks: write
       pull-requests: write
@@ -318,6 +319,7 @@ jobs:
   test-rust:
     name: Rust W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 65
 
     steps:
     - name: Checkout Repository
@@ -428,6 +430,7 @@ jobs:
   test-kotlin:
     name: Kotlin W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The junit reporter below creates a check run, which needs `checks: write`.
     # Without it the step fails with "Resource not accessible by integration"
     # and the Kotlin results have no check of their own — the sibling C++ job
@@ -568,6 +571,7 @@ jobs:
   test-python-bindings:
     name: Python Bindings (pybind) W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Repository
@@ -690,6 +694,7 @@ jobs:
   test-python:
     name: Python W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - name: Checkout Repository
@@ -787,6 +792,7 @@ jobs:
   test-go:
     name: Go W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - name: Checkout Repository
@@ -896,6 +902,7 @@ jobs:
   test-c11:
     name: C11 W3C Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
     - name: Checkout Repository
@@ -1022,6 +1029,7 @@ jobs:
   report:
     name: Unified Report
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test-cpp, test-rust, test-kotlin, test-python-bindings, test-python, test-go, test-c11]
     if: always()
     permissions:
