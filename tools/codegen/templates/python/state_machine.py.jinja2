@@ -283,6 +283,30 @@ def _sce_log_name(value):
 
 
 {% endif %}
+{# A parent's `<param>` and `namelist` hand values to a child's top-level
+   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
+   are not seeded; the static judge refuses a value handed to one. #}
+{% set ns_seed = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% set ns_seed.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_seed.any %}
+@sce_dataclasses.dataclass
+class {{ machine_name }}InvokeParams:
+    """The values a parent's `<param>` and `namelist` give this machine's
+    variables before it starts (§scxml-6.4.1). A variable left `None` keeps the
+    value its `<data>` gave it."""
+
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+    {{ field.name }}: Optional[{{ field.ty }}] = None
+{% endif %}
+{% endfor %}
+
+
+{% endif %}
 {% endif %}
 # ======================================================================
 # Policy
@@ -383,6 +407,18 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% endif %}
 {% endif %}
 {% endfor %}
+{% if static_fields and ns_seed.any %}
+
+    def accept_params(self, params: {{ machine_name }}InvokeParams) -> None:
+        """Give this machine the values `params` carries, in place of the ones
+        its `<data>` gave. Called before it initializes (§scxml-6.4.1)."""
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+        if params.{{ field.name }} is not None:
+            self.{{ field.name }} = params.{{ field.name }}
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if static_fields %}
 
     # ── SCE Accepted Subset §2.15: what a lowered statement calls ──────
@@ -703,6 +739,9 @@ def create_engine({% if has_native_actions %}actions: {{ native_actions_interfac
 State = {{ machine_name }}State
 Event = {{ machine_name }}Event
 Policy = {{ machine_name }}Policy
+{% if static_fields and ns_seed.any %}
+InvokeParams = {{ machine_name }}InvokeParams
+{% endif %}
 
 # W3C SCXML 5.3: the policy method that reads each typed `<data>`, keyed by
 # the id the document wrote — the spelling `sce-build/src/reader_names.rs`

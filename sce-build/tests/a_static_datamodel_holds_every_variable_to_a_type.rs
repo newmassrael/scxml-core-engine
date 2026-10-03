@@ -294,8 +294,8 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
         ("a bytes variable", bytes_variable, "of a bytes type"),
         ("a host-run <invoke>", host_invoke, "a host-run <invoke>"),
     ];
-    // C++ and Go start a scxml child and refuse the rest by name.
-    for (lang, name) in [("cpp", "C++"), ("go", "Go")] {
+    // C++, Go and Python start a scxml child and refuse the rest by name.
+    for (lang, name) in [("cpp", "C++"), ("go", "Go"), ("python", "Python")] {
         for (what, document, names) in &cases {
             let (ok, out) = run_beside(
                 &["check", "-l", lang, "--go-module-prefix", "x/y"],

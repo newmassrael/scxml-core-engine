@@ -3197,7 +3197,13 @@ the same: each value is native code, the pairs are the dict the engine-evaluated
 payload builds, a pair that failed is reported and left out and the message
 still goes (5.7.1, 6.2); and transition content that reads the event's payload
 opens with a check that the delivery carried one, which an unreadable delivery
-did not, so it raises nothing of its own (the lift already did). An `<invoke>`, a
+did not, so it raises nothing of its own (the lift already did). An
+`<invoke type="scxml">` is started by the machine's own invoke code and handed
+its values by the build: each `<param>` and `namelist` name is native code read
+when the invoke executes, put in a `<Machine>InvokeParams` and given to the
+child's `accept_params` before it initializes (6.4.1), a value that failed is
+reported and the child starts one value short (5.7.1), and the child is imported
+as a module beside its parent. A host-run, a hybrid and a mesh `<invoke>`, a
 `<send>` that carries a `<content>`, a `<sce:action>` and `bytes` are not
 lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
@@ -3231,7 +3237,8 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 done event's pairs are read back from the engine's `done_data`) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
-reads).
+reads), and `test_a_static_child_is_handed_its_params.py` drives
+`static_invoke_params`, whose children are handed values once, when they start.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

@@ -2892,8 +2892,8 @@ impl StaticTarget for PythonTarget {
                     return Some(found);
                 }
             }
-            if !state.invokes.is_empty() {
-                return Some("an <invoke>".to_string());
+            if let Some(other) = unlowered_invoke(&state.invokes) {
+                return Some(other);
             }
         }
         None

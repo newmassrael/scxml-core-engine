@@ -154,9 +154,10 @@
                 # child. A value naming none of them is the failure the
                 # Interpreter reports when a document will not load — before
                 # any argument is read, as there.
+                import importlib as _importlib
                 _child_module_{{ inv.invoke_id | to_python_const }} = {
 {% for candidate in inv.candidates %}
-                    {{ candidate.stem | py_string_literal }}: __import__({{ (candidate.stem ~ "_sm") | py_string_literal }}),
+                    {{ candidate.stem | py_string_literal }}: _importlib.import_module(("." if __package__ else "") + {{ (candidate.stem ~ "_sm") | py_string_literal }}, __package__ or None),
 {% endfor %}
                 }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
                 if _child_module_{{ inv.invoke_id | to_python_const }} is None:
@@ -199,14 +200,44 @@
 {% if inv.candidates %}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
 {% else %}
-                import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
+{# A child is a sibling of its parent: a module of the parent's own package when
+   it has one (a machine that calls an algorithm is one of a package, and its
+   child is imported beside it), a top-level module beside it otherwise. #}
+                import importlib as _importlib
+                _child_module_{{ inv.invoke_id | to_python_const }} = _importlib.import_module(
+                    ("." if __package__ else "") + {{ (inv.child_name ~ "_sm") | py_string_literal }},
+                    __package__ or None,
+                )
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
 {% endif %}
                 # Engine DI Parity RFC (Path B+): forward the parent's
                 # script engine so the child shares the same Lua VM /
                 # session manager, mirroring Rust + Kotlin invoke parity.
                 _child_engine = Engine(_child_policy, script_engine=engine._script_engine)
-{% if inv.namelist or inv.params %}
+{# `datamodel="sce-static"`: each argument is native code
+   (`Param::native_seed`), read from the machine's own fields when the invoke
+   executes, and handed to the child's variable of the same name through its
+   `accept_params` — the child runs no script engine and keeps no value of its
+   own to receive them in. #}
+{% set native_seeded = inv.params | selectattr("native_seed") | list | length > 0 %}
+{% if native_seeded %}
+                # W3C SCXML 6.4.1: hand the child its values before it initializes
+                _seed = _child_module_{{ inv.invoke_id | to_python_const }}.InvokeParams()
+{% for param in inv.params %}
+{% if param.native_seed %}
+                try:
+                    _seed.v_{{ param.name | to_snake_case }} = {{ param.native_seed }}
+                except sce_algorithm.AlgorithmFailure:
+                    # §scxml-5.7.1: a value that failed is reported and the
+                    # child still starts, one value short.
+                    self._raise_error_execution(
+                        engine,
+                        {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                    )
+{% endif %}
+{% endfor %}
+                _child_policy.accept_params(_seed)
+{% elif inv.namelist or inv.params %}
                 # W3C SCXML 6.4.1: Stage namelist + `<param>` values for
                 # the child's datamodel. The dict is applied by the
                 # child's `initialize_datamodel` as a final overlay so

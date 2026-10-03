@@ -30,8 +30,8 @@
 
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_regen scripts/regen_static_datamodel_python.sh
-mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
-mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py
+mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py
 
 # ── A failed statement ends its block ──────────────────────────────
 
@@ -87,6 +87,14 @@ mutation_case "content reads a payload no delivery carried" <<'PY'
 edit("tools/codegen/templates/python/process_transition.py.jinja2",
      "{% if transition.content_reads_payload %}\n                if self._pending_{{ transition.event | to_snake_case }}_payload is None:\n                    return\n{% endif %}\n",
      "")
+PY
+
+# ── A child is handed the values its invoke names ──────────────────
+
+mutation_case "a child is handed none of the values its invoke names" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                _child_policy.accept_params(_seed)\n{% elif inv.namelist or inv.params %}",
+     "                _child_policy.accept_params(_seed.__class__())\n{% elif inv.namelist or inv.params %}")
 PY
 
 # ── A send param that failed is left out and the message goes ─────
