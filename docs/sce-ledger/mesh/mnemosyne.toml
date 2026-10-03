@@ -197,6 +197,10 @@ scan_exclusions = [
     "backends/",
     "sce-build/",
     "tests/",
+    # The specification workbench (`app-core/` and `app/`): no Mesh code and, measured
+    # 2026-10-03 over its 23 Rust sources, no `§` citation of any ledger.
+    "app-core/",
+    "app/",
 ]
 severity_missing = "reject"
 # Path B curated: every §mesh-<n> cite is bound to a ratified

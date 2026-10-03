@@ -138,6 +138,10 @@ scan_exclusions = [
     "backends/rust/tests/",
     "sce-build/examples/",
     "tests/forge/expected/",
+    # The specification workbench (`app-core/` and `app/`). Measured 2026-10-03
+    # over its 23 Rust sources: no `§` citation of any ledger.
+    "app-core/",
+    "app/",
 ]
 severity_missing = "reject"
 # Path B curated: every §bytesguard- cite is bound to a Section.implementations

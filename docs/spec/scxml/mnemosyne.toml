@@ -193,6 +193,16 @@ scan_exclusions = [
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",
+    # The specification workbench: the works folder and its command layer
+    # (`app-core/`), and the application and its browser shell (`app/`). It
+    # stores whatever specification text a person writes and implements no clause
+    # of the W3C SCXML Recommendation. Measured 2026-10-03 over all 23 Rust
+    # sources (12 and 11): not one carries a `§` citation, in this workspace's
+    # namespace or any other, so excluding them swallows no section from this
+    # gate. If one ever cites a clause it has to leave this list and be enrolled
+    # in `paths`, which is what the existence axis would force anyway.
+    "app-core/",
+    "app/",
 ]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified

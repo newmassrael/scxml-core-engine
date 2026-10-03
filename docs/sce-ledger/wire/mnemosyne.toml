@@ -88,6 +88,10 @@ scan_exclusions = [
     "backends/",
     "sce-build/examples/",
     "tests/",
+    # The specification workbench (`app-core/` and `app/`). Measured 2026-10-03
+    # over its 23 Rust sources: no `§` citation of any ledger.
+    "app-core/",
+    "app/",
 ]
 severity_missing = "reject"
 # Path B curated: every `§wire-W<n>` cite is bound to a Section.implementations
