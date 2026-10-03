@@ -425,6 +425,53 @@ func (p *SyncClientPolicy) Refusals() uint32 {
 	return p.vRefusals
 }
 
+// SyncClientInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type SyncClientInvokeParams struct {
+	VByToken *bool
+	VFullListing *bool
+	VOutcome *uint8
+	VRetryAt *int64
+	VDeleted *uint32
+	VUploaded *uint32
+	VDiscarded *uint32
+	VPages *uint32
+	VRefusals *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *SyncClientPolicy) AcceptParams(params SyncClientInvokeParams) {
+	if params.VByToken != nil {
+		p.vByToken = *params.VByToken
+	}
+	if params.VFullListing != nil {
+		p.vFullListing = *params.VFullListing
+	}
+	if params.VOutcome != nil {
+		p.vOutcome = *params.VOutcome
+	}
+	if params.VRetryAt != nil {
+		p.vRetryAt = *params.VRetryAt
+	}
+	if params.VDeleted != nil {
+		p.vDeleted = *params.VDeleted
+	}
+	if params.VUploaded != nil {
+		p.vUploaded = *params.VUploaded
+	}
+	if params.VDiscarded != nil {
+		p.vDiscarded = *params.VDiscarded
+	}
+	if params.VPages != nil {
+		p.vPages = *params.VPages
+	}
+	if params.VRefusals != nil {
+		p.vRefusals = *params.VRefusals
+	}
+}
+
 
 
 // No script engine needed for this state machine.

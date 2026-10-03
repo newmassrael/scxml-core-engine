@@ -271,6 +271,25 @@ func (p *StaticRecordEnumPolicy) Flips() uint32 {
 	return p.vFlips
 }
 
+// StaticRecordEnumInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticRecordEnumInvokeParams struct {
+	VWeeks *uint32
+	VFlips *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticRecordEnumPolicy) AcceptParams(params StaticRecordEnumInvokeParams) {
+	if params.VWeeks != nil {
+		p.vWeeks = *params.VWeeks
+	}
+	if params.VFlips != nil {
+		p.vFlips = *params.VFlips
+	}
+}
+
 
 
 // No script engine needed for this state machine.

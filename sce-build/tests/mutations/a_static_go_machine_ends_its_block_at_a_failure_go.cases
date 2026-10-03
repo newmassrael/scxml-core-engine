@@ -28,7 +28,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_go backends/go/tests ./integration/static_datamodel/
-mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/invoke_methods.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
@@ -38,6 +38,12 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_foreach/s
 mutation_targets backends/go/tests/integration/static_datamodel/static_history/static_history_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_host_call/static_host_call_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_host_call_arguments/static_host_call_arguments_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke__sce_synth_invoke__worker_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__control_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__watcher_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__worker_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_list/static_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_overflow/static_overflow_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_payload/static_payload_sm.go
@@ -113,6 +119,14 @@ mutation_case "a send param that failed is carried as the zero" <<'PY'
 edit("tools/codegen/templates/go/actions/send.go.jinja2",
      "{% if param.native_fails %}\n\t\t\tif !sceFailure.Failed() {\n\t\t\t\tparts = append(",
      "{% if param.native_fails %}\n\t\t\tif true || !sceFailure.Failed() {\n\t\t\t\tparts = append(")
+PY
+
+# ── A child is handed the values its invoke names ──────────────────
+
+mutation_case "a child is started without the values its invoke names" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "\t\t\t\tchildPolicy.AcceptParams(seed)\n",
+     "\t\t\t\t_ = seed\n")
 PY
 
 # ── A list holds no more than its bound ────────────────────────────

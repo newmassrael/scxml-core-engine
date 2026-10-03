@@ -274,6 +274,21 @@ func (p *StaticRecordPolicy) Refusals() uint32 {
 	return p.vRefusals
 }
 
+// StaticRecordInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticRecordInvokeParams struct {
+	VRefusals *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticRecordPolicy) AcceptParams(params StaticRecordInvokeParams) {
+	if params.VRefusals != nil {
+		p.vRefusals = *params.VRefusals
+	}
+}
+
 
 
 // No script engine needed for this state machine.

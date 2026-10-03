@@ -365,6 +365,21 @@ func (p *StaticHistoryPolicy) Resumed() uint8 {
 	return p.vResumed
 }
 
+// StaticHistoryInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticHistoryInvokeParams struct {
+	VResumed *uint8
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticHistoryPolicy) AcceptParams(params StaticHistoryInvokeParams) {
+	if params.VResumed != nil {
+		p.vResumed = *params.VResumed
+	}
+}
+
 
 
 // IsStateActive checks if a state is active by name (W3C SCXML 5.9.2: In() predicate).

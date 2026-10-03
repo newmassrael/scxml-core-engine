@@ -3121,9 +3121,11 @@ and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
 `<foreach>`; a transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`,
 `<raise>`, a `<send>` / `<cancel>`, the `<param>`s of a `<send>` (a `<content>`
 is not lowered yet), `In()`, an event's typed payload, a call of an imported
-algorithm, the `<param>`s of a `<final>`'s `<donedata>`, and a `<sce:action>`
-whose arguments are typed expressions of the machine's variables. Bytes and an
-`<invoke>` are not lowered yet. Each variable is
+algorithm, the `<param>`s of a `<final>`'s `<donedata>`, an `<invoke
+type="scxml">` and the values it hands its child, and a `<sce:action>` whose
+arguments are typed expressions of the machine's variables. Bytes, and an
+`<invoke>` the host runs, a hybrid one and a mesh one, are not lowered yet. Each
+variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
 (`Count()`), which answers a copy of a list. An enum is a named integer over the
@@ -3153,7 +3155,12 @@ importing another is. A donedata `<param>` is computed into a local with the
 same failure flag, and a pair whose value failed is left out of the done event's
 JSON (5.7.1) while `error.execution` is raised in its place; the value crosses as
 `ScriptValueToJSON` writes it (a narrow integer widened to `int64`, a real to
-`float64`). A `<send>` `<param>` is the same value on the same wire, appended
+`float64`). A child's variable of a scalar type takes the value its parent's
+`<param>` or `namelist` names through `<Machine>InvokeParams` and `AcceptParams`
+(a pointer per variable, nil when nothing is handed), called before the child
+initializes, so a value is read when the invoke executes and a variable nothing
+hands a value to keeps the one its `<data>` gave it; a value that failed is
+reported and the child still starts one value short (5.7.1). A `<send>` `<param>` is the same value on the same wire, appended
 to the typed list `BuildJSONFromTypedParams` writes: a pair that failed is left
 out and reported, and the message still goes (6.2) — so a receiver reading the
 event through its schema finds the field missing, which is an `error.execution`

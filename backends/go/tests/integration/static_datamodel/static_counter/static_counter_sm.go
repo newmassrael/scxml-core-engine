@@ -210,6 +210,29 @@ func (p *StaticCounterPolicy) Ready() bool {
 	return p.vReady
 }
 
+// StaticCounterInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticCounterInvokeParams struct {
+	VCount *uint32
+	VReady *bool
+	VStep *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticCounterPolicy) AcceptParams(params StaticCounterInvokeParams) {
+	if params.VCount != nil {
+		p.vCount = *params.VCount
+	}
+	if params.VReady != nil {
+		p.vReady = *params.VReady
+	}
+	if params.VStep != nil {
+		p.vStep = *params.VStep
+	}
+}
+
 
 
 // IsStateActive checks if a state is active by name (W3C SCXML 5.9.2: In() predicate).

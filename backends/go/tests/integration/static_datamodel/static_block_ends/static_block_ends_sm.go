@@ -276,6 +276,57 @@ func (p *StaticBlockEndsPolicy) Errors() uint8 {
 	return p.vErrors
 }
 
+// StaticBlockEndsInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticBlockEndsInvokeParams struct {
+	VA *uint8
+	VB *uint8
+	VAfterAssign *uint8
+	VThenRan *uint8
+	VElseRan *uint8
+	VAfterIf *uint8
+	VInBranch *uint8
+	VAfterBranch *uint8
+	VAfterOk *uint8
+	VErrors *uint8
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticBlockEndsPolicy) AcceptParams(params StaticBlockEndsInvokeParams) {
+	if params.VA != nil {
+		p.vA = *params.VA
+	}
+	if params.VB != nil {
+		p.vB = *params.VB
+	}
+	if params.VAfterAssign != nil {
+		p.vAfterAssign = *params.VAfterAssign
+	}
+	if params.VThenRan != nil {
+		p.vThenRan = *params.VThenRan
+	}
+	if params.VElseRan != nil {
+		p.vElseRan = *params.VElseRan
+	}
+	if params.VAfterIf != nil {
+		p.vAfterIf = *params.VAfterIf
+	}
+	if params.VInBranch != nil {
+		p.vInBranch = *params.VInBranch
+	}
+	if params.VAfterBranch != nil {
+		p.vAfterBranch = *params.VAfterBranch
+	}
+	if params.VAfterOk != nil {
+		p.vAfterOk = *params.VAfterOk
+	}
+	if params.VErrors != nil {
+		p.vErrors = *params.VErrors
+	}
+}
+
 
 
 // No script engine needed for this state machine.

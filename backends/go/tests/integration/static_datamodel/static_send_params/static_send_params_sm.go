@@ -321,6 +321,49 @@ func (p *StaticSendParamsPolicy) Refusals() uint32 {
 	return p.vRefusals
 }
 
+// StaticSendParamsInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticSendParamsInvokeParams struct {
+	VCount *uint32
+	VSmall *uint8
+	VLabel *string
+	VTotal *uint32
+	VOk *bool
+	VTag *string
+	VPartialTotal *uint32
+	VRefusals *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticSendParamsPolicy) AcceptParams(params StaticSendParamsInvokeParams) {
+	if params.VCount != nil {
+		p.vCount = *params.VCount
+	}
+	if params.VSmall != nil {
+		p.vSmall = *params.VSmall
+	}
+	if params.VLabel != nil {
+		p.vLabel = *params.VLabel
+	}
+	if params.VTotal != nil {
+		p.vTotal = *params.VTotal
+	}
+	if params.VOk != nil {
+		p.vOk = *params.VOk
+	}
+	if params.VTag != nil {
+		p.vTag = *params.VTag
+	}
+	if params.VPartialTotal != nil {
+		p.vPartialTotal = *params.VPartialTotal
+	}
+	if params.VRefusals != nil {
+		p.vRefusals = *params.VRefusals
+	}
+}
+
 
 
 // No script engine needed for this state machine.

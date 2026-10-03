@@ -2016,21 +2016,8 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            // A scxml child is started by the machine's own invoke code; one
-            // the host runs, a hybrid one and a mesh one are not lowered yet.
-            if let Some(other) = state
-                .invokes
-                .iter()
-                .find(|i| !matches!(i, crate::model::Invoke::Scxml(_)))
-            {
-                return Some(
-                    match other {
-                        crate::model::Invoke::Hybrid(_) => "a hybrid <invoke>",
-                        crate::model::Invoke::MeshRpc(_) => "a mesh <invoke>",
-                        _ => "a host-run <invoke>",
-                    }
-                    .to_string(),
-                );
+            if let Some(other) = unlowered_invoke(&state.invokes) {
+                return Some(other);
             }
         }
         None
@@ -2329,6 +2316,24 @@ impl StaticTarget for CppTarget {
     }
 }
 
+/// The first of `invokes` a target that lowers a `<invoke type="scxml">` has no
+/// lowering for yet, described for a refusal. A scxml child is started by the
+/// machine's own invoke code and handed its values by the build; one the host
+/// runs, a hybrid one and a mesh one are not lowered yet.
+fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
+    invokes
+        .iter()
+        .find(|i| !matches!(i, crate::model::Invoke::Scxml(_)))
+        .map(|other| {
+            match other {
+                crate::model::Invoke::Hybrid(_) => "a hybrid <invoke>",
+                crate::model::Invoke::MeshRpc(_) => "a mesh <invoke>",
+                _ => "a host-run <invoke>",
+            }
+            .to_string()
+        })
+}
+
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of
 /// a `sce-static` document is native C++.
 pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
@@ -2442,8 +2447,8 @@ impl StaticTarget for GoTarget<'_> {
                     return Some(found);
                 }
             }
-            if !state.invokes.is_empty() {
-                return Some("an <invoke>".to_string());
+            if let Some(other) = unlowered_invoke(&state.invokes) {
+                return Some(other);
             }
         }
         None

@@ -58,7 +58,42 @@
 {% endfor %}
 			}
 {% endif %}
-{% if invoke_info.params and model.needs_script_engine %}
+{# `datamodel="sce-static"`: each argument is native code
+   (`Param::native_seed`), read from the machine's own fields when the invoke
+   executes, and handed to the child's variable of the same name through its
+   `AcceptParams` — the child runs no script engine and keeps no value of its own
+   to receive them in. #}
+{% set native_seeded = invoke_info.params | selectattr("native_seed") | list | length > 0 %}
+{% if native_seeded %}
+			// W3C SCXML 6.4.1: hand the child its values before it initializes
+			{
+				var seed {{ invoke_info.child_name | to_machine_name }}InvokeParams
+{% for param in invoke_info.params %}
+{% if param.native_seed %}
+				{
+{% if param.native_fails %}
+					var sceFailure scealgorithm.Failure
+{% endif %}
+					sceValue := {{ param.native_seed }}
+{% if param.native_fails %}
+					if !sceFailure.Failed() {
+						seed.V{{ param.name | to_pascal_case }} = &sceValue
+					} else {
+						// §scxml-5.7.1: a value that failed is reported and the
+						// child still starts, one value short.
+{% if 'error.execution' in model.events %}
+						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+{% endif %}
+					}
+{% else %}
+					seed.V{{ param.name | to_pascal_case }} = &sceValue
+{% endif %}
+				}
+{% endif %}
+{% endfor %}
+				childPolicy.AcceptParams(seed)
+			}
+{% elif invoke_info.params and model.needs_script_engine %}
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
 			{
 				p.ensureScriptEngine()

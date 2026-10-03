@@ -205,6 +205,25 @@ func (p *StaticBlockEndsListPolicy) Errors() uint8 {
 	return p.vErrors
 }
 
+// StaticBlockEndsListInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticBlockEndsListInvokeParams struct {
+	VAfterAppend *uint8
+	VErrors *uint8
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticBlockEndsListPolicy) AcceptParams(params StaticBlockEndsListInvokeParams) {
+	if params.VAfterAppend != nil {
+		p.vAfterAppend = *params.VAfterAppend
+	}
+	if params.VErrors != nil {
+		p.vErrors = *params.VErrors
+	}
+}
+
 
 
 // No script engine needed for this state machine.

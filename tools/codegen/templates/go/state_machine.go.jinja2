@@ -423,6 +423,40 @@ func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
 }
 {% endif %}
 {% endfor %}
+{# A parent's `<param>` and `namelist` hand values to a child's top-level
+   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
+   are not seeded; the static judge refuses a value handed to one. #}
+{% set ns_seed = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% set ns_seed.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_seed.any %}
+
+// {{ machine_name }}InvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type {{ machine_name }}InvokeParams struct {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+	V{{ field.id | to_pascal_case }} *{{ field.ty }}
+{% endif %}
+{% endfor %}
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *{{ machine_name }}Policy) AcceptParams(params {{ machine_name }}InvokeParams) {
+{% for field in static_fields %}
+{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+	if params.V{{ field.id | to_pascal_case }} != nil {
+		p.{{ field.name }} = *params.V{{ field.id | to_pascal_case }}
+	}
+{% endif %}
+{% endfor %}
+}
+{% endif %}
 
 {% include 'utility_methods.go.jinja2' %}
 {% include 'scriptengine_helpers.go.jinja2' %}

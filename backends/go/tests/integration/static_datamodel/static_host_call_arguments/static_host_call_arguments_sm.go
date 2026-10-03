@@ -212,6 +212,25 @@ func (p *StaticHostCallArgumentsPolicy) Errors() uint8 {
 	return p.vErrors
 }
 
+// StaticHostCallArgumentsInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticHostCallArgumentsInvokeParams struct {
+	VLevel *uint8
+	VErrors *uint8
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticHostCallArgumentsPolicy) AcceptParams(params StaticHostCallArgumentsInvokeParams) {
+	if params.VLevel != nil {
+		p.vLevel = *params.VLevel
+	}
+	if params.VErrors != nil {
+		p.vErrors = *params.VErrors
+	}
+}
+
 
 
 // No script engine needed for this state machine.

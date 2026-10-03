@@ -295,17 +295,28 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
         ("a bytes variable", bytes_variable, "of a bytes type"),
         ("a host-run <invoke>", host_invoke, "a host-run <invoke>"),
     ];
-    for (what, document, names) in cases {
-        let (ok, out) = run_beside(&["check", "-l", "cpp"], &document, &siblings);
-        assert!(!ok, "{what}: C++ has no lowering for it yet:\n{out}");
-        assert!(
-            out.contains("generate/unsupported-feature") && out.contains("no C++ lowering yet"),
-            "{what}: expected the unsupported-feature refusal naming C++:\n{out}"
-        );
-        assert!(
-            out.contains(names),
-            "{what}: it names the construct:\n{out}"
-        );
+    // C++ and Go start a scxml child and refuse the rest by name.
+    for (lang, name) in [("cpp", "C++"), ("go", "Go")] {
+        for (what, document, names) in &cases {
+            let (ok, out) = run_beside(
+                &["check", "-l", lang, "--go-module-prefix", "x/y"],
+                document,
+                &siblings,
+            );
+            assert!(
+                !ok,
+                "{lang}, {what}: {name} has no lowering for it yet:\n{out}"
+            );
+            assert!(
+                out.contains("generate/unsupported-feature")
+                    && out.contains(&format!("no {name} lowering yet")),
+                "{lang}, {what}: expected the unsupported-feature refusal naming {name}:\n{out}"
+            );
+            assert!(
+                out.contains(names),
+                "{lang}, {what}: it names the construct:\n{out}"
+            );
+        }
     }
 }
 
@@ -1894,10 +1905,14 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
 /// them, and it cannot derive that list. A machine the script commits and the
 /// casefile does not name is one the round would regenerate and never restore.
 ///
-/// A directory the script commits holds a machine (`<m>_sm.go`) or an imported
-/// algorithm's package (`<m>.go`). Only the machines are targets: a mutated
-/// template or spelling here is the statechart's, and an algorithm's generation
-/// reads neither, so it comes back from the regeneration as it was.
+/// A directory the script commits holds a machine (`<m>_sm.go`, with one
+/// `<m>__sce_synth_invoke__<id>_sm.go` beside it for each child an `<invoke>`
+/// declares in place) or an imported algorithm's package (`<m>.go`). Every
+/// `*_sm.go` is a target, the children included: a child is generated from the
+/// same templates as its parent, and one the casefile left out is one the round
+/// would regenerate and never restore. An algorithm's package is not: its
+/// generation reads neither a statechart template nor a lowering spelling, so it
+/// comes back from the regeneration as it was.
 #[test]
 fn the_go_mutation_casefile_names_every_committed_go_machine() {
     let root = repo_root();
@@ -1916,23 +1931,37 @@ fn the_go_mutation_casefile_names_every_committed_go_machine() {
     assert!(!directories.is_empty(), "no committed Go machine to judge");
     let mut machines = 0;
     for directory in directories {
-        let machine_file = committed
-            .join(&directory)
-            .join(format!("{directory}_sm.go"));
-        let algorithm_file = committed.join(&directory).join(format!("{directory}.go"));
-        if machine_file.exists() {
-            machines += 1;
-            let generated = format!(
-                "backends/go/tests/integration/static_datamodel/{directory}/{directory}_sm.go"
-            );
-            assert!(
-                casefile.contains(&generated),
-                "the Go casefile does not declare {generated} as a mutation target"
-            );
-        } else {
+        let mut generated: Vec<String> = std::fs::read_dir(committed.join(&directory))
+            .expect("a committed Go directory")
+            .map(|entry| {
+                entry
+                    .expect("an entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| name.ends_with("_sm.go"))
+            .collect();
+        generated.sort();
+        if generated.is_empty() {
+            let algorithm_file = committed.join(&directory).join(format!("{directory}.go"));
             assert!(
                 algorithm_file.exists(),
                 "{directory} holds neither a machine nor an algorithm's package"
+            );
+            continue;
+        }
+        assert!(
+            generated.contains(&format!("{directory}_sm.go")),
+            "{directory} holds machine files {generated:?} and not the machine it is named for"
+        );
+        for file in generated {
+            machines += 1;
+            let target =
+                format!("backends/go/tests/integration/static_datamodel/{directory}/{file}");
+            assert!(
+                casefile.contains(&target),
+                "the Go casefile does not declare {target} as a mutation target"
             );
         }
     }

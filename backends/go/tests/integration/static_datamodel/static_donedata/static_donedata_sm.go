@@ -204,6 +204,29 @@ func (p *StaticDonedataPolicy) Count() uint32 {
 	return p.vCount
 }
 
+// StaticDonedataInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticDonedataInvokeParams struct {
+	VCount *uint32
+	VSmall *uint8
+	VLabel *string
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticDonedataPolicy) AcceptParams(params StaticDonedataInvokeParams) {
+	if params.VCount != nil {
+		p.vCount = *params.VCount
+	}
+	if params.VSmall != nil {
+		p.vSmall = *params.VSmall
+	}
+	if params.VLabel != nil {
+		p.vLabel = *params.VLabel
+	}
+}
+
 
 
 // No script engine needed for this state machine.

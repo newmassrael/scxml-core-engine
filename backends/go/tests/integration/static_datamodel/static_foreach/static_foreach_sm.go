@@ -277,6 +277,45 @@ func (p *StaticForeachPolicy) Errors() uint32 {
 	return p.vErrors
 }
 
+// StaticForeachInvokeParams holds the values a parent's `<param>` and
+// `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
+// variable left nil keeps the value its `<data>` gave it.
+type StaticForeachInvokeParams struct {
+	VTotal *uint32
+	VWeighted *uint32
+	VSmall *uint8
+	VCrossings *uint32
+	VVisited *uint32
+	VFinished *uint32
+	VErrors *uint32
+}
+
+// AcceptParams gives this machine the values params carries, in place of the
+// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
+func (p *StaticForeachPolicy) AcceptParams(params StaticForeachInvokeParams) {
+	if params.VTotal != nil {
+		p.vTotal = *params.VTotal
+	}
+	if params.VWeighted != nil {
+		p.vWeighted = *params.VWeighted
+	}
+	if params.VSmall != nil {
+		p.vSmall = *params.VSmall
+	}
+	if params.VCrossings != nil {
+		p.vCrossings = *params.VCrossings
+	}
+	if params.VVisited != nil {
+		p.vVisited = *params.VVisited
+	}
+	if params.VFinished != nil {
+		p.vFinished = *params.VFinished
+	}
+	if params.VErrors != nil {
+		p.vErrors = *params.VErrors
+	}
+}
+
 
 
 // No script engine needed for this state machine.
