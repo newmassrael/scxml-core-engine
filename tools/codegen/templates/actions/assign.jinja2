@@ -24,7 +24,7 @@
     - 2025-10-30: Conditional block scope based on context (foreach vs standalone)
 #}
 {% if action.native_code %}
-// W3C SCXML 5.3: <assign location="{{ action.location | escape_cpp }}">, a sce-static statement lowered to C++
+// W3C SCXML 5.3: <assign location="{{ action.location }}">, a sce-static statement lowered to C++
 {% include 'actions/_native_statement.jinja2' %}
 {% else %}
 {% if not in_foreach %}{{ '{' }}{% endif %}
