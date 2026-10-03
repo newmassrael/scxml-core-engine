@@ -85,6 +85,25 @@ func (f *Failure) Err() error {
 	return f.err
 }
 
+// Choose is `cond ? ifTrue : ifFalse` for two values whose type Go infers from
+// the values themselves — a named constant, which carries its type, or a read of
+// a field. Both are evaluated, so the emitter uses it only where each branch is
+// one of those: a read cannot fail, so a branch not taken costs nothing, and a
+// conditional of anything else is a function literal that evaluates only the one
+// chosen.
+func Choose[T any](cond bool, ifTrue, ifFalse T) T {
+	if cond {
+		return ifTrue
+	}
+	return ifFalse
+}
+
+// ElementOf is `value` as an element of `list`. A local declared from a
+// constant (`next := 5`) is an `int`, which no list of `uint8` takes; this gives
+// the value the list's own element type, whatever it is, without the emitter
+// spelling it.
+func ElementOf[T any](_ []T, value T) T { return value }
+
 // Take passes a call to another may-fail algorithm through the calling
 // body's f: `Take[uint32](&sceFailure)(tick(n))` is the call's value, or 0
 // with its failure recorded in f, which the statement around it returns.

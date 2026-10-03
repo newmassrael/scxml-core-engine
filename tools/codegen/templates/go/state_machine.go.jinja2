@@ -229,6 +229,11 @@ func (e {{ machine_name }}Event) String() string {
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
 {% endif %}
+{% if static_type_defs %}
+// ── SCE Accepted Subset §2.15: the types the static variables are held in ──
+{{ static_type_defs }}
+
+{% endif %}
 {% if has_native_actions %}
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}
@@ -406,7 +411,12 @@ func (p *{{ machine_name }}Policy) {{ var.reader.go }}() ({{ GO_READ_TYPE[var.ty
 // {{ field.reader }} reports what the published `{{ field.id }}` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
+{% if field.saved_kind == 'list' %}
+	// A copy, so a host cannot write through the slice into what the machine holds.
+	return append({{ field.ty }}{}, p.{{ field.name }}...)
+{% else %}
 	return p.{{ field.name }}
+{% endif %}
 }
 {% endif %}
 {% endfor %}

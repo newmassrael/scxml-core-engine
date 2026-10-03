@@ -1,0 +1,8 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# SCE Accepted Subset §2.15: empty a sce-static list. The statement is lowered
+   ahead of the template by `forge::static_lowering` and stored on
+   `action.native_code`; emptying cannot fail. #}
+	// SCE Accepted Subset §2.15: <sce:clear target="{{ action.location }}">
+{% include 'actions/_native_statement.go.jinja2' %}

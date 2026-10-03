@@ -65,6 +65,32 @@ func TestTakePassesACalleeFailureOn(t *testing.T) {
 	}
 }
 
+// A conditional of two typed values answers the one its condition names, and its
+// type is the values' own.
+func TestChooseAnswersTheBranchTheConditionNames(t *testing.T) {
+	type mode uint8
+	const (
+		month mode = 0
+		week  mode = 1
+	)
+	if got := Choose(true, month, week); got != month {
+		t.Errorf("Choose(true) = %v, want %v", got, month)
+	}
+	if got := Choose(false, month, week); got != week {
+		t.Errorf("Choose(false) = %v, want %v", got, week)
+	}
+}
+
+// A constant takes the type of the list it is meant for.
+func TestElementOfGivesAConstantItsListsElementType(t *testing.T) {
+	days := []uint8{1, 2}
+	next := ElementOf(days, 250)
+	days = append(days, next)
+	if len(days) != 3 || days[2] != 250 {
+		t.Errorf("days = %v, want [1 2 250]", days)
+	}
+}
+
 // The first failure is the one the caller learns of.
 func TestTheFirstFailureIsKept(t *testing.T) {
 	var f Failure

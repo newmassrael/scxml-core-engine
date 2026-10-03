@@ -3115,16 +3115,27 @@ event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
 
-Go lowers the scalar core through the same walk (`GoTarget`), and refuses the
-rest by name: scalar variables of a number, a bool or a string, a transition's
-guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, a `<send>` /
-`<cancel>` that carry no value of the data model, `In()`, and a `<sce:action>`
-whose arguments are typed expressions of the machine's variables. An enum, a
-record, a list, bytes, an event's typed payload, a call of an imported
-algorithm, a `<donedata>` and an `<invoke>` are not lowered yet. Each variable is
+Go lowers the model through the same walk (`GoTarget`), and refuses what it does
+not by name: scalar variables of a number, a bool or a string, an enum, a record,
+and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
+`<foreach>`; a transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`,
+`<raise>`, a `<send>` / `<cancel>` that carry no value of the data model, `In()`,
+an event's typed payload, and a `<sce:action>` whose arguments are typed
+expressions of the machine's variables. Bytes, a call of an imported algorithm, a
+`<donedata>` and an `<invoke>` are not lowered yet. Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
-(`Count()`). The machine carries no script engine, and its package imports the
+(`Count()`), which answers a copy of a list. An enum is a named integer over the
+enum document's own carrier, one constant per variant, with a `String` that
+answers the name the document gives it; a record is a struct of the schema's
+fields spelled as the author wrote them (an expression reads them so), each with
+an exported reader (`Year()`) for a host. A list is a slice the machine alone
+grows: an append checks the room first and computes its value into a local, so a
+full list or a failed value leaves it as it was and ends the block, and a
+`<foreach>` walks a copy made when the loop began. A conditional of two enum
+variants or two reads is `scealgorithm.Choose`, which Go types from the values;
+any other is a function literal, which has to name its result type. The machine
+carries no script engine, and its package imports the
 forge runtime's `algorithm` package for the checked operations. A failing
 integer operation records its failure in a `sceFailure` and answers a zero, as
 in C++, so a statement that can fail is a function literal called where it
@@ -3136,8 +3147,13 @@ into locals the same way, and `error.execution` is raised in the call's place.
 generator lowers for Go — asked of it, not listed — and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
-`static_overflow` and `static_block_ends` against them and drives
-`static_host_call` and `static_host_call_arguments` with a recording host.
+`static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
+`static_list`, `static_foreach`, `static_block_ends_list`,
+`static_record_fields`, `static_record_list` and `static_record_enum` against
+them (an event's `data` goes in as the JSON text every other producer fills; a
+variable the machine keeps to itself is read by reflection, which only reads),
+and drives `static_host_call` and `static_host_call_arguments` with a recording
+host.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

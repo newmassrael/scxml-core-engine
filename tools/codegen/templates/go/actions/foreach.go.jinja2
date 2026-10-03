@@ -10,7 +10,23 @@
    name, a collection it cannot walk, a loop variable it cannot set — are
    raised here, and they end the block the same way. #}
 {% set foreach_exit = 'return' if in_action_block is defined and in_action_block else '' %}
-{% if model.needs_script_engine %}
+{% if action.native_loop %}
+{# A sce-static document's <foreach> over a list variable (SCE Accepted Subset
+   §2.15): a native `for` over a copy of the typed elements, lowered ahead of
+   the template by `forge::static_lowering`. A body element that raised its own
+   error leaves the enclosing block from inside the loop with `return`, which
+   ends the block that holds the <foreach> as W3C SCXML 4.9 asks. #}
+	// W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}">, a native loop over a sce-static list
+	{{ action.native_loop }} {
+{% if action.native_loop_prologue %}
+		{{ action.native_loop_prologue }}
+{% endif %}
+{% for body_action in action.actions %}
+		{% with action=body_action %}{% include 'actions/' ~ body_action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+	}
+{% elif model.needs_script_engine %}
 	// W3C SCXML 4.6: foreach over {{ action.array }}
 	{
 		{# W3C SCXML 4.6: `item` is a location expression, lowered by the

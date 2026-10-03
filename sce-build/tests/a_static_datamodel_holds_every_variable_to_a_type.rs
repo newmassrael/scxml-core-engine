@@ -1755,6 +1755,36 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
     ),
 ];
 
+/// The Go mutation casefile declares the machines `scripts/regen_static_datamodel_go.sh`
+/// commits as targets, because a mutated template reaches the tests only through
+/// them, and it cannot derive that list. A machine the script commits and the
+/// casefile does not name is one the round would regenerate and never restore.
+#[test]
+fn the_go_mutation_casefile_names_every_committed_go_machine() {
+    let root = repo_root();
+    let casefile = std::fs::read_to_string(root.join(
+        "sce-build/tests/mutations/a_static_go_machine_ends_its_block_at_a_failure_go.cases",
+    ))
+    .expect("the Go casefile");
+    let committed = root.join("backends/go/tests/integration/static_datamodel");
+    let mut machines: Vec<String> = std::fs::read_dir(&committed)
+        .expect("the committed Go machines")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.is_dir())
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    machines.sort();
+    assert!(!machines.is_empty(), "no committed Go machine to judge");
+    for machine in machines {
+        let generated =
+            format!("backends/go/tests/integration/static_datamodel/{machine}/{machine}_sm.go");
+        assert!(
+            casefile.contains(&generated),
+            "the Go casefile does not declare {generated} as a mutation target"
+        );
+    }
+}
+
 /// A scenario (`fixtures/static_datamodel/scenarios/<name>.json`) is the
 /// behaviour of a sce-static machine, stated once and replayed by every
 /// backend that lowers the model. Which backends those are is ASKED of the

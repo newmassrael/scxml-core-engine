@@ -2340,9 +2340,8 @@ impl GoTarget {
                 // does needs the typed value crossed to the event.
                 "send" if action.params.is_empty() && action.content.is_empty() => {}
                 "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
-                "sce_append" | "sce_clear" | "foreach" => {
-                    return Some("a list".to_string());
-                }
+                // A list is filled, emptied and walked by native statements.
+                "sce_append" | "sce_clear" | "foreach" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -2363,21 +2362,28 @@ impl StaticTarget for GoTarget {
         None
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // A scalar of a number, a bool or a string; an enum, a record, a list
-        // and bytes are not spelled yet.
+        // Every type a datamodel holds is spelled but bytes: a list admits only
+        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
         if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type.as_ref().is_some_and(|t| {
-                t.scalar()
-                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
-            })
+            !v.value_type
+                .as_ref()
+                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
+        }) {
+            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
+        }
+        // A record's field is named as the author wrote it, so one Go reserves
+        // cannot be a field.
+        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
+            schema
+                .fields
+                .iter()
+                .find(|f| crate::reader_names::is_reserved_word(Language::Go, &f.id))
+                .map(|f| (alias, f))
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of an enum, record, list or bytes type",
-                var.id
+                "record:{alias} with the field `{}`, a name Go reserves",
+                field.id
             ));
-        }
-        if !model.imported_event_schemas.is_empty() {
-            return Some("an imported event schema".to_string());
         }
         for state in model.states.values() {
             let blocks = state
@@ -2430,44 +2436,136 @@ impl StaticTarget for GoTarget {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
-    fn record_type(&self, _machine: &str, _alias: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
     }
+    // A struct of the schema's fields in the schema's order, spelled as the
+    // typed payload's are, because an expression reads a field by the name the
+    // author wrote. The fields are unexported, so each has an exported reader
+    // of its own — a host reads a record through those.
     fn record_def(
         &self,
-        _ty: &str,
-        _alias: &str,
-        _schema: &EventSchemaModel,
-        _enum_types: &std::collections::BTreeMap<String, String>,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+        let go_field_type = |field: &crate::forge::model::ForgeField| match &field.sce_type {
+            SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+            other => crate::forge::generator::go_type(other).to_string(),
+        };
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "\t{} {}\n",
+                    self.record_field(&field.id),
+                    go_field_type(field)
+                )
+            })
+            .collect();
+        let readers: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "\n// {reader} reports the `{id}` field.\nfunc (r {ty}) {reader}() {} {{\n\treturn r.{}\n}}\n",
+                    go_field_type(field),
+                    self.record_field(&field.id),
+                    reader = filters::to_pascal_case(field.id.clone()),
+                    id = field.id,
+                )
+            })
+            .collect();
+        format!(
+            "// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
+             type {ty} struct {{\n{fields}}}\n{readers}"
+        )
     }
-    fn record_field(&self, _id: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    // The author's spelling, which is what an expression's member access writes
+    // (`shown.year` is `p.vShown.year`); `unsupported` has refused a name Go
+    // reserves.
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
     }
-    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f}: {v}")).collect();
+        format!("{ty}{{{}}}", args.join(", "))
     }
-    fn list_type(&self, _elem: &SceType) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
     }
+    // A constant is a package-level identifier in Go, prefixed by the enum's
+    // own name, and the machine is a package of its own.
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ident(Language::Go, enum_name, variant)
+    }
+    // A named integer over the enum document's own carrier, each variant
+    // holding the value the document declares for it. `String` answers the name
+    // the document gives a value — what a `<log>` shows and what a host
+    // compares to a scenario.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let constants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "\t{} {ty} = {}\n",
+                    self.enum_variant(&model.name, &v.name),
+                    v.value
+                )
+            })
+            .collect();
+        let names: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "\tcase {}:\n\t\treturn \"{}\"\n",
+                    self.enum_variant(&model.name, &v.name),
+                    filters::escape_go(v.name.clone())
+                )
+            })
+            .collect();
+        format!(
+            "// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
+             type {ty} {}\n\n\
+             const (\n{constants})\n\n\
+             // String is the name the enum document declares for the value.\n\
+             func (v {ty}) String() string {{\n\tswitch v {{\n{names}\t}}\n\treturn \"\"\n}}",
+            crate::forge::generator::go_type(&model.underlying_type)
+        )
+    }
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("[]{}", crate::forge::generator::go_type(elem))
+    }
+    // The reader answers a copy of the slice (the template's own), so a host
+    // cannot write through it into what the machine holds.
     fn list_view(&self, _elem: &SceType) -> Option<String> {
-        unreachable!("refused by GoTarget::unsupported")
+        None
     }
-    fn record_list_type(&self, _record: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn record_list_type(&self, record: &str) -> String {
+        format!("[]{record}")
     }
     fn record_list_view(&self, _record: &str) -> Option<String> {
-        unreachable!("refused by GoTarget::unsupported")
+        None
     }
+    // A list starts empty, and an empty slice is `nil`.
     fn list_empty(&self) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+        "nil".to_string()
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
-    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target}.{field} = {value}")
     }
     // The label is an argument of `Printf`, never part of its format, as the
     // script-engine arm's is.
@@ -2477,19 +2575,54 @@ impl StaticTarget for GoTarget {
             filters::escape_go(label.to_string())
         )
     }
+    // An expression that is `true` when the append failed: the list is full, or
+    // the value could not be computed. The room is checked first, so a full
+    // list computes nothing, and the value is computed into a local before it
+    // is appended, so a failed one leaves the list as it was.
     fn append(
         &self,
-        _target: &str,
-        _capacity: u32,
-        _value: &str,
+        target: &str,
+        capacity: u32,
+        value: &str,
         _value_can_fail: bool,
-        _overflow: &str,
-        _failed: &str,
+        overflow: &str,
+        failed: &str,
     ) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+        format!(
+            "func() bool {{ var sceFailure scealgorithm.Failure; \
+             if len({target}) >= {capacity} {{ {} }}; \
+             sceValue := scealgorithm.ElementOf({target}, {value}); \
+             if sceFailure.Failed() {{ {} }}; \
+             {target} = append({target}, sceValue); return false }}()",
+            Self::then(&[overflow, "return true"]),
+            Self::then(&[failed, "return true"]),
+        )
     }
-    fn clear(&self, _target: &str) -> String {
-        unreachable!("refused by GoTarget::unsupported")
+    fn clear(&self, target: &str) -> String {
+        format!("{target} = {target}[:0]")
+    }
+    // The loop walks the list as it was when it began (§scxml-4.6: a shallow
+    // copy), so a body that appends to or empties the list does not move it —
+    // `append(list[:0:0], list...)` is the copy, whatever the element type. The
+    // position is a `uint32`, as `len` is, and a name the body never reads is
+    // still used.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        let copy = format!("append({list}[:0:0], {list}...)");
+        Some(match index {
+            None => (
+                format!("for _, {item} := range {copy}"),
+                format!("_ = {item}"),
+            ),
+            Some(index) => (
+                format!("for sceIndex, {item} := range {copy}"),
+                format!("{index} := uint32(sceIndex); _ = {index}; _ = {item}"),
+            ),
+        })
     }
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
         format!(

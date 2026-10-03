@@ -32,11 +32,41 @@ import (
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 )
+
+// dayRecord is a `record:Day` as a host reads it: each field through the reader
+// the record gives it.
+type dayRecord interface {
+	Year() uint16
+	Month() uint8
+	DayOfMonth() uint8
+}
+
+// dayJSON is a day as a scenario states it: its fields by the schema's ids.
+func dayJSON(day dayRecord) any {
+	return map[string]any{"year": day.Year(), "month": day.Month(), "dayOfMonth": day.DayOfMonth()}
+}
+
+// daysJSON is a list of such days, in order.
+func daysJSON[R dayRecord](days []R) any {
+	out := make([]any, len(days))
+	for i, day := range days {
+		out[i] = dayJSON(day)
+	}
+	return out
+}
 
 // scenarioDir is where the scenarios live, from this package's directory.
 const scenarioDir = "../../../../../sce-build/tests/fixtures/static_datamodel/scenarios"
@@ -74,11 +104,25 @@ func drive[S interface {
 	}
 }
 
+// elements is a slice as the list of its elements — a `[]uint8` is a list of
+// numbers here, not the byte string JSON would write it as.
+func elements(value any) any {
+	v := reflect.ValueOf(value)
+	if v.Kind() != reflect.Slice {
+		return value
+	}
+	out := make([]any, v.Len())
+	for i := range out {
+		out[i] = elements(v.Index(i).Interface())
+	}
+	return out
+}
+
 // asJSON is `value` as the scenario writes it: a JSON value, so a `uint32` and
 // the number a scenario states compare equal whatever their Go types.
 func asJSON(t *testing.T, value any) any {
 	t.Helper()
-	text, err := json.Marshal(value)
+	text, err := json.Marshal(elements(value))
 	if err != nil {
 		t.Fatalf("a variable is not JSON: %v", err)
 	}
@@ -148,6 +192,14 @@ func replay(t *testing.T, name string, m machine) {
 	}
 }
 
+// unexportedUint reads an integer field a machine keeps to itself — a variable
+// not declared published has no reader, so that renaming it never changes what
+// a host was written against — as the scenario names it. Reading is all the
+// reflection does.
+func unexportedUint(policy any, field string) uint64 {
+	return reflect.ValueOf(policy).Elem().FieldByName(field).Uint()
+}
+
 func counter() machine {
 	policy := static_counter.NewStaticCounterPolicy()
 	policy.SessionID = sce.GenerateSessionID()
@@ -176,6 +228,152 @@ func TestAnOverflowingOperationFailsInsteadOfWrapping(t *testing.T) {
 	replay(t, "static_overflow", drive[static_overflow.StaticOverflowState, static_overflow.StaticOverflowEvent](&policy, map[string]func() any{
 		"level":    func() any { return policy.Level() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// An event's typed payload is read in a guard and in assignments, and a
+// computation that does not fit skips its assignment and says so. The payload
+// goes in as the JSON text every other producer fills, and the machine lifts the
+// typed fields out of it.
+func TestAnEventsTypedPayloadIsReadInAGuardAndInContent(t *testing.T) {
+	policy := static_payload.NewStaticPayloadPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_payload", drive[static_payload.StaticPayloadState, static_payload.StaticPayloadEvent](&policy, map[string]func() any{
+		"day":        func() any { return policy.Day() },
+		"late":       func() any { return policy.Late() },
+		"sinceEpoch": func() any { return policy.SinceEpoch() },
+		"refusals":   func() any { return policy.Refusals() },
+	}))
+}
+
+// W3C SCXML 3.12.2 / 4.9: content that reads a payload a delivery did not carry
+// is an execution error, which stops the block before any of it runs. A day was
+// picked first, so what the content would have written from a payload that is
+// not there — `late` false, `day` the field's zero — is told from what the
+// machine already held.
+func TestADeliveryWithoutThePayloadRunsNoneOfTheContent(t *testing.T) {
+	policy := static_payload.NewStaticPayloadPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	engine := sce.NewEngine[static_payload.StaticPayloadState, static_payload.StaticPayloadEvent](&policy)
+	engine.Initialize()
+
+	engine.RaiseExternalByName("day.picked", `{"year": 2026, "month": 9, "dayOfMonth": 20}`)
+	engine.Step()
+	if policy.Day() != 20 || !policy.Late() {
+		t.Fatalf("a day after the fifteenth was picked: day = %d, late = %v", policy.Day(), policy.Late())
+	}
+
+	engine.RaiseExternalByName("day.picked", "")
+	engine.Step()
+	if policy.Day() != 20 || !policy.Late() {
+		t.Errorf("no field was assigned: day = %d, late = %v, want 20 and true", policy.Day(), policy.Late())
+	}
+}
+
+// An enum variable holds a variant of its enum, is compared with `===` and `!==`
+// to a variant or to another variable of the same enum, and takes a conditional
+// of two variants. The scenario names a value as the enum document does, so the
+// machine's own type is read back through its `String`.
+func TestAnEnumVariableHoldsAVariantOfItsEnum(t *testing.T) {
+	policy := static_enum.NewStaticEnumPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_enum", drive[static_enum.StaticEnumState, static_enum.StaticEnumEvent](&policy, map[string]func() any{
+		"layout": func() any { return policy.Layout().String() },
+		// `previous` is the machine's own, which the scenario states anyway.
+		"previous": func() any {
+			return static_enum.StaticEnumViewModeEnum(unexportedUint(&policy, "vPrevious")).String()
+		},
+		"changes": func() any { return policy.Changes() },
+	}))
+}
+
+// A list is filled to its bound and emptied: an append to a full one appends
+// nothing and raises error.execution, and what a host reads of a list is a copy.
+func TestAListIsFilledToItsBoundAndEmptied(t *testing.T) {
+	policy := static_list.NewStaticListPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_list", drive[static_list.StaticListState, static_list.StaticListEvent](&policy, map[string]func() any{
+		"picked":   func() any { return policy.Picked() },
+		"refusals": func() any { return policy.Refusals() },
+		"count":    func() any { return policy.Count() },
+	}))
+}
+
+// A `<foreach>` walks the list as it was when the loop began, binds its item and
+// index, and an error in its body ends the block that holds it.
+func TestAForeachWalksAListVariable(t *testing.T) {
+	policy := static_foreach.NewStaticForeachPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_foreach", drive[static_foreach.StaticForeachState, static_foreach.StaticForeachEvent](&policy, map[string]func() any{
+		"picked":    func() any { return policy.Picked() },
+		"total":     func() any { return policy.Total() },
+		"weighted":  func() any { return policy.Weighted() },
+		"small":     func() any { return policy.Small() },
+		"crossings": func() any { return policy.Crossings() },
+		"visited":   func() any { return policy.Visited() },
+		"finished":  func() any { return policy.Finished() },
+		"errors":    func() any { return policy.Errors() },
+	}))
+}
+
+func TestAnAppendThatFailsEndsItsBlock(t *testing.T) {
+	policy := static_block_ends_list.NewStaticBlockEndsListPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_block_ends_list", drive[static_block_ends_list.StaticBlockEndsListState, static_block_ends_list.StaticBlockEndsListEvent](&policy, map[string]func() any{
+		"picked":      func() any { return policy.Picked() },
+		"afterAppend": func() any { return policy.AfterAppend() },
+		"errors":      func() any { return policy.Errors() },
+	}))
+}
+
+// A record variable is built whole from its `<sce:set>`s, read field by field,
+// and updated a field at a time — from the machine's own value and from a typed
+// event payload. A field assignment that does not fit is skipped, and the one
+// after it in the same block is not processed.
+func TestARecordIsBuiltWholeAndUpdatedAFieldAtATime(t *testing.T) {
+	policy := static_record_fields.NewStaticRecordFieldsPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_fields", drive[static_record_fields.StaticRecordFieldsState, static_record_fields.StaticRecordFieldsEvent](&policy, map[string]func() any{
+		"shown":    func() any { return dayJSON(policy.Shown()) },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A list of records is filled by name from a record variable or a loop's item,
+// walked by a `<foreach>`, and a record is taken whole.
+func TestAListHoldsRecordsAndAForeachWalksThem(t *testing.T) {
+	policy := static_record_list.NewStaticRecordListPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_list", drive[static_record_list.StaticRecordListState, static_record_list.StaticRecordListEvent](&policy, map[string]func() any{
+		"days":   func() any { return daysJSON(policy.Days()) },
+		"copies": func() any { return daysJSON(policy.Copies()) },
+		"draft":  func() any { return dayJSON(policy.Draft()) },
+		"last":   func() any { return dayJSON(policy.Last()) },
+		"total":  func() any { return policy.Total() },
+		"errors": func() any { return policy.Errors() },
+	}))
+}
+
+// A record may hold an enum: its field is read back by the name the enum
+// document declares.
+func TestARecordHoldsAnEnumField(t *testing.T) {
+	policy := static_record_enum.NewStaticRecordEnumPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	viewJSON := func(view static_record_enum.StaticRecordEnumViewRecord) any {
+		return map[string]any{"layout": view.Layout().String(), "zoom": view.Zoom()}
+	}
+	replay(t, "static_record_enum", drive[static_record_enum.StaticRecordEnumState, static_record_enum.StaticRecordEnumEvent](&policy, map[string]func() any{
+		"shown": func() any { return viewJSON(policy.Shown()) },
+		"seen": func() any {
+			seen := policy.Seen()
+			out := make([]any, len(seen))
+			for i, view := range seen {
+				out[i] = viewJSON(view)
+			}
+			return out
+		},
+		"weeks": func() any { return policy.Weeks() },
+		"flips": func() any { return policy.Flips() },
 	}))
 }
 

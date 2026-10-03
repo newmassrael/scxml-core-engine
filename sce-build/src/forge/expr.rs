@@ -6436,16 +6436,45 @@ fn go_conditional(
     alternate: &TypedExpr,
     expected: InferredType,
 ) -> Result<String, Refusal> {
-    let (result, type_name) = [expected, conditional.ty]
+    let Some((result, type_name)) = [expected, conditional.ty]
         .into_iter()
         .find_map(|ty| go_nameable_type(ty).map(|name| (ty, name)))
-        .ok_or_else(|| ExprError::GoTernary.at(conditional.span.clone()))?;
+    else {
+        // No type to spell, and two branches that are each a pre-rendered
+        // reference — a variant of an enum, which carries its type as a named
+        // constant, or a read of a field. Go infers the type from the values,
+        // and evaluating both costs nothing: neither can fail.
+        if is_pure_reference(consequent) && is_pure_reference(alternate) {
+            return Ok(format!(
+                "scealgorithm.Choose({}, {}, {})",
+                emit_go(condition, InferredType::Bool)?,
+                emit_go(consequent, InferredType::Unknown)?,
+                emit_go(alternate, InferredType::Unknown)?,
+            ));
+        }
+        return Err(ExprError::GoTernary.at(conditional.span.clone()));
+    };
     Ok(format!(
         "func() {type_name} {{ if {} {{ return {} }}; return {} }}()",
         emit_go(condition, InferredType::Bool)?,
         emit_go(consequent, result)?,
         emit_go(alternate, result)?,
     ))
+}
+
+/// Whether `expr` is a pre-rendered reference — a name, an enum variant — or a
+/// conditional of nothing else: a value read, never computed, so evaluating it
+/// when its branch is not taken can neither fail nor be seen.
+fn is_pure_reference(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Raw(_) => true,
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => is_pure_reference(consequent) && is_pure_reference(alternate),
+        _ => false,
+    }
 }
 
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
