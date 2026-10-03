@@ -452,12 +452,15 @@ pub trait StaticTarget {
     ///
     /// The default is the statement, which is right where a failing argument
     /// leaves before the call is made. A target whose failed argument is still
-    /// a value computes every argument first and calls only when none failed.
+    /// a value computes every argument first and calls only when none failed;
+    /// one that has to name the type it holds each in meanwhile — C has no
+    /// `auto` — reads `arg_types`, the declared type of each argument.
     fn receiving_host_call(
         &self,
         statement: &str,
         _callee: &str,
         _args: &[String],
+        _arg_types: &[SceType],
         failed: &str,
     ) -> String {
         self.receiving_call(statement, failed)
@@ -2329,6 +2332,7 @@ impl StaticTarget for CppTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
+        _arg_types: &[SceType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -2785,6 +2789,7 @@ impl StaticTarget for GoTarget<'_> {
         _statement: &str,
         callee: &str,
         args: &[String],
+        _arg_types: &[SceType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -3190,6 +3195,7 @@ impl StaticTarget for PythonTarget {
         statement: &str,
         _callee: &str,
         _args: &[String],
+        _arg_types: &[SceType],
         failed: &str,
     ) -> String {
         let on_failure = if failed.is_empty() { "pass" } else { failed };
@@ -3276,14 +3282,26 @@ pub struct CTarget {
     /// How many conditions that can fail the walk has lowered. Each leaves its
     /// verdict in a local of its own, named by this, so that no two share a
     /// scope: an `<if>` in a branch of another would otherwise shadow it.
-    conditions: std::cell::Cell<u32>,
+    conditions: std::sync::atomic::AtomicU32,
 }
+
+/// What lowers the arguments of a host action ([`target_for`]): the one thing a
+/// caller outside the walk asks of C, and it asks no condition and no payload
+/// guard, so there is nothing for it to count or to name a machine for.
+static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
     fn new(stem: &str) -> Self {
         Self {
             stem: stem.to_string(),
-            conditions: std::cell::Cell::new(0),
+            conditions: std::sync::atomic::AtomicU32::new(0),
+        }
+    }
+
+    const fn arguments() -> Self {
+        Self {
+            stem: String::new(),
+            conditions: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -3292,8 +3310,10 @@ impl CTarget {
     fn unlowered_action(actions: &[Action]) -> Option<String> {
         for action in actions {
             match action.action_type.as_str() {
-                "assign" | "log" | "if" | "raise" => {}
-                "native_action" => return Some("a <sce:action>".to_string()),
+                // A host action's arguments are typed expressions of the
+                // machine's variables, lowered where the call is rendered
+                // ([`crate::forge::native_action`]).
+                "assign" | "log" | "if" | "raise" | "native_action" => {}
                 "sce_append" => return Some("an <sce:append>".to_string()),
                 "sce_clear" => return Some("an <sce:clear>".to_string()),
                 other => return Some(format!("<{other}>")),
@@ -3561,14 +3581,50 @@ impl StaticTarget for CTarget {
             write("sce_value")
         )
     }
+    // Only a host call's arguments reach here, and its one spelling is
+    // [`Self::receiving_host_call`].
     fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
-        unreachable!("a C11 document with a host action is refused by `unsupported`")
+        unreachable!("a C host call is received through receiving_host_call")
+    }
+    // A failed checked operation is a value, so the call could not be stopped
+    // after its arguments were evaluated: each is computed into a local of its
+    // declared type first, and the host is called only when none of them
+    // failed. A block of its own, so two calls in one scope do not declare the
+    // same locals. The block does not end: a host action's failed argument
+    // costs the call and not the statements after it, as on every backend.
+    // `callee` is the vtable member, which is handed the host's own state first.
+    fn receiving_host_call(
+        &self,
+        _statement: &str,
+        callee: &str,
+        args: &[String],
+        arg_types: &[SceType],
+        failed: &str,
+    ) -> String {
+        let locals: String = args
+            .iter()
+            .zip(arg_types)
+            .enumerate()
+            .map(|(i, (arg, ty))| {
+                format!(
+                    "{} sce_arg{i} = {arg}; ",
+                    crate::forge::generator::c_type(ty)
+                )
+            })
+            .collect();
+        let names: String = (0..args.len()).map(|i| format!(", sce_arg{i}")).collect();
+        format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {locals}\
+             if (sce_failure_.failed) {{ {failed} }} else {{ {callee}(sm->actions.user_data{names}); }} }}"
+        )
     }
     // The head of the `if`: the verdict is `false` when the condition failed,
     // and its local is the walk's own, never declared twice in one scope.
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
-        let n = self.conditions.get() + 1;
-        self.conditions.set(n);
+        let n = self
+            .conditions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         format!(
             "bool sce_cond_{n}_ = false; \
              {{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; bool sce_value = {value}; \
@@ -3631,9 +3687,10 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         Language::Go => Some(&GoTarget { import_root: None }),
         Language::Python => Some(&PythonTarget),
         // A C machine's lowering counts the conditions it lowers ([`CTarget`]),
-        // so it is a value of its own per document ([`lower_c11`]), and a C
-        // machine hands a host action no lowered argument yet.
-        Language::C11 => None,
+        // so it is a value of its own per document ([`lower_c11`]). What is
+        // asked of it from outside the walk is a host action's arguments, which
+        // count and name nothing.
+        Language::C11 => Some(&C_ARGUMENTS),
     }
 }
 
@@ -3693,13 +3750,14 @@ pub(crate) fn lower_static_argument(
 
 /// `statement` — a host call whose arguments can fail — run where the failure
 /// is received, with `error.execution` naming `construct` in its place when
-/// the document declares that event (E12 D5). `None` for a backend that does
-/// not lower the model.
+/// the document declares that event (E12 D5). `args` is each argument's lowered
+/// text with the type it is held in. `None` for a backend that does not lower
+/// the model.
 pub(crate) fn receive_static_statement(
     lang: Language,
     statement: &str,
     callee: &str,
-    args: &[String],
+    args: &[(String, SceType)],
     machine: &str,
     raises_error: bool,
     construct: &str,
@@ -3713,7 +3771,8 @@ pub(crate) fn receive_static_statement(
     } else {
         String::new()
     };
-    Some(target.receiving_host_call(statement, callee, args, &failed))
+    let (texts, types): (Vec<String>, Vec<SceType>) = args.iter().cloned().unzip();
+    Some(target.receiving_host_call(statement, callee, &texts, &types, &failed))
 }
 
 /// The nullable field the Kotlin payload channel binds `event`'s typed

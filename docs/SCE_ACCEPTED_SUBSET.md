@@ -3262,13 +3262,19 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types and `bool`, a transition's guard, `<assign>`,
-`<if>` / `<elseif>`, `<log>`, `<raise>`, `In()` and an event's typed payload of
-numbers and bools. A string, a real, bytes, a list, a record and an enum
-variable, a `<send>` / `<cancel>`, a `<foreach>`, a `<sce:action>`, an
-`<invoke>`, a final's `<donedata>`, a call of an imported algorithm and a
-transition on an event whose payload carries a string, bytes or enum field are
-refused until their spellings are written: a string and bytes need a capacity
-the C11 contract does not carry yet, and a real is not yet held to a scenario.
+`<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's typed payload of
+numbers and bools, and a `<sce:action>` whose arguments are typed expressions of
+them. A string, a real, bytes, a list, a record and an enum variable, a
+`<send>` / `<cancel>`, a `<foreach>`, an `<invoke>`, a final's `<donedata>`, a
+call of an imported algorithm and a transition on an event whose payload carries
+a string, bytes or enum field are refused until their spellings are written: a
+string and bytes need a capacity the C11 contract does not carry yet, and a real
+is not yet held to a scenario. A host action is a call through the vtable the
+machine is initialised with (`sm->actions.<op>(sm->actions.user_data, …)`), each
+argument read when the call is made; an argument that can fail is computed into a
+local of its declared type first, and the host is called only when none of them
+failed — otherwise `error.execution` is raised in the call's place and the block
+goes on, as on every backend.
 A typed payload is read through the channel the machine already declares for
 it (`sm->pending_payload.as.<event>.<field>`, lifted from the `data` the event
 carries): a guard that reads it is held to `pending_payload.tag` naming that
@@ -3299,7 +3305,12 @@ from the call, as it does for a guard that is only `In()`.
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,
 an event's `data` included) rather than writing the expected values out a second
 time, and states the one thing no scenario can — a delivery that carried no
-payload.
+payload. `test_static_host_call.c` drives `static_host_call` and
+`static_host_call_arguments` with a recording vtable, to the calls the C++ suite
+states. A `--c-symbol-prefix` build carries the prefix to every symbol a lowered
+expression or a host action names — the machine's `_in_state` and
+`_raise_platform_error` and their enumerators — while the payload channel's own
+tag constants stay `<MACHINE>_PAYLOAD_<EVENT>`.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

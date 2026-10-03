@@ -1905,7 +1905,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    state is touched — this is the one action that runs on a machine with no
    `lua_State` at all, which is the point of the construct on an MCU. #}
         /* W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}"> */
-        {{ action.native_action_rendered }}
+        {{ action.native_action_rendered | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}
 {% endif %}
 {% endmacro %}
 

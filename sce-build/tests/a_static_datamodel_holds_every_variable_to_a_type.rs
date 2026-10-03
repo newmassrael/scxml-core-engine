@@ -302,10 +302,11 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
     // C lowers integer and bool variables, guards, `<assign>`, `<if>`, `<log>`,
-    // `<raise>`, `In()` and an event's typed payload of numbers and bools. What
-    // is past that — a string, a real, a list, a record, an enum or bytes
-    // variable, a `<send>`, an `<invoke>`, a final's `<donedata>`, a host
-    // action, a payload field that is not a number or a bool — is refused by
+    // `<raise>`, `In()`, an event's typed payload of numbers and bools, and a
+    // host action whose arguments are typed expressions of them. What is past
+    // that — a string, a real, a list, a record, an enum or bytes variable, a
+    // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
+    // not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -371,11 +372,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
   <final id="fin"><donedata><param name="n" expr="count"/></donedata></final>"#,
             ),
             "a <donedata>",
-        ),
-        (
-            "a host action",
-            fixture("static_host_call.scxml"),
-            "a <sce:action>",
         ),
         (
             "a typed payload with a string field",

@@ -2960,8 +2960,12 @@ fn render_c11(
     // dispatch (engine-free). The C11 token is the raw snake stem — the same
     // one `build_c11_event_payload` names its types after — not the PascalCase
     // machine name the hosted backends use.
-    let native =
-        crate::forge::native_action::render(&mut model_lowered, &model.name, Language::C11);
+    let native = crate::forge::native_action::render_with_symbol_prefix(
+        &mut model_lowered,
+        &model.name,
+        Language::C11,
+        &csym_prefix,
+    );
     // The events whose typed payload a lowered expression reads are ones the
     // payload channel must carry, besides those a native action reads.
     let payload_events: std::collections::BTreeSet<String> = native

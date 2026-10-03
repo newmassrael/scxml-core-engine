@@ -633,6 +633,58 @@ fn smoke_c_symbol_prefix_reaches_an_in_predicate() {
     );
 }
 
+/// A native action that reads a typed payload raises `error.execution` through
+/// the machine's own `<prefix>_<machine>_raise_platform_error` and its
+/// `<PREFIX>_<MACHINE>_EVENT_ERROR_EXECUTION`, while the payload channel's tag
+/// constant stays `<MACHINE>_PAYLOAD_<EVENT>`. The call site took the machine
+/// name alone for all three, so under `--c-symbol-prefix` it named a function
+/// and an enumerator that do not exist and the unit did not compile.
+#[test]
+fn smoke_c_symbol_prefix_reaches_a_native_action() {
+    const PREFIX: &str = "ScePrefixTest";
+
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped("smoke_c_symbol_prefix_reaches_a_native_action: gcc/cc not on PATH");
+        return;
+    };
+    let scratch = reset_scratch("c_sym_prefix_native");
+    let from = repo_root().join("sce-build/tests/fixtures/event_schema");
+    // The schema the action's arguments are typed from is imported by name, so
+    // it is written beside the document.
+    for name in ["statechart_native_action.scxml", "schema_fragment.scxml"] {
+        std::fs::copy(from.join(name), scratch.join(name)).expect("stage the fixture");
+    }
+    let out_dir = scratch.join("prefixed");
+    std::fs::create_dir_all(&out_dir).expect("create out dir");
+    let output = Command::new(sce_codegen_bin())
+        .args(["generate", "-l", "c11", "-o"])
+        .arg(&out_dir)
+        .args(["--c-symbol-prefix", PREFIX])
+        .arg(scratch.join("statechart_native_action.scxml"))
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        output.status.success(),
+        "sce-codegen generate -l c11 failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let source = out_dir.join("statechart_native_action_sm.c");
+    let compiled = Command::new(&gcc)
+        .args(["-std=c11", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(repo_root().join("backends/c/runtime/include"))
+        .arg("-I")
+        .arg(&out_dir)
+        .arg(&source)
+        .output()
+        .expect("run gcc");
+    assert!(
+        compiled.status.success(),
+        "a prefixed native action does not compile: {}",
+        String::from_utf8_lossy(&compiled.stderr),
+    );
+}
+
 #[test]
 fn smoke_rust() {
     // `syn::parse_file` runs in-process — no external toolchain, so

@@ -742,6 +742,21 @@ pub fn interface_name(lang: Language, machine_name: &str) -> String {
 /// stem for the five hosted backends (matching what their
 /// `build_*_event_payload` twins already use), the raw snake stem for C11.
 pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> NativeActions {
+    render_with_symbol_prefix(model, machine_name, lang, "")
+}
+
+/// [`render`] for a backend whose machine symbols carry a suite prefix that its
+/// payload channel's types do not — C11's `--c-symbol-prefix`, which nests
+/// `<prefix>_<machine>_raise_platform_error` and the `<PREFIX>_<MACHINE>_EVENT_*`
+/// constants, while the channel's tag constants stay `<MACHINE>_PAYLOAD_*`. A
+/// call site that raises `error.execution` names the first; `machine_name`
+/// names the second. `""` for a backend with no such prefix.
+pub fn render_with_symbol_prefix(
+    model: &mut SCXMLModel,
+    machine_name: &str,
+    lang: Language,
+    symbol_prefix: &str,
+) -> NativeActions {
     let schemas = model.imported_event_schemas.clone();
     // Under `datamodel="sce-static"` an argument is a typed expression over the
     // document's scope, lowered by the static lowering (SCE Accepted
@@ -757,6 +772,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
     let mut calls = CallRendering {
         lang,
         machine_name,
+        symbol_prefix,
         raises_error,
         static_scope: static_scope.as_ref(),
         sigs: BTreeMap::new(),
@@ -836,6 +852,9 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
 struct CallRendering<'r> {
     lang: Language,
     machine_name: &'r str,
+    /// The prefix the machine's own symbols carry beyond [`Self::machine_name`]
+    /// ([`render_with_symbol_prefix`]); empty for every backend but C11's.
+    symbol_prefix: &'r str,
     /// Reaches [`guard_payload`] unchanged — it decides whether the arm an
     /// untyped delivery takes says so with `error.execution` or stays empty.
     raises_error: bool,
@@ -903,6 +922,13 @@ impl CallRendering<'_> {
                 call_args.push(lowered.text);
                 params.push((pname, lowered.ty));
             }
+            // The signature keeps the first call site's; the types the arguments
+            // are held in while a failing one is received are this site's own.
+            let typed_args: Vec<(String, SceType)> = call_args
+                .iter()
+                .cloned()
+                .zip(params.iter().map(|(_, ty)| ty.clone()))
+                .collect();
             self.sigs.entry(name.clone()).or_insert(params);
             let stmt = call(lang, &name, &call_args);
             // E12 D5: an argument that can fail stops the call before it is
@@ -912,8 +938,8 @@ impl CallRendering<'_> {
                     lang,
                     &stmt,
                     &format!("{}{}", receiver(lang), method_name(lang, &name)),
-                    &call_args,
-                    self.machine_name,
+                    &typed_args,
+                    &format!("{}{}", self.symbol_prefix, self.machine_name),
                     self.raises_error,
                     &format!("<sce:action name='{name}'>"),
                 )
@@ -927,6 +953,7 @@ impl CallRendering<'_> {
                     guard_payload(
                         lang,
                         self.machine_name,
+                        self.symbol_prefix,
                         binding.event,
                         &name,
                         &stmt,
@@ -972,6 +999,7 @@ impl CallRendering<'_> {
         action.native_action_rendered = guard_payload(
             lang,
             self.machine_name,
+            self.symbol_prefix,
             binding.event,
             &name,
             &stmt,
@@ -1032,6 +1060,7 @@ fn payload_accessor(lang: Language, event: &str) -> String {
 fn guard_payload(
     lang: Language,
     machine_name: &str,
+    symbol_prefix: &str,
     event: &str,
     action_name: &str,
     stmt: &str,
@@ -1154,10 +1183,14 @@ fn guard_payload(
             // generated code raises a platform error" — hand-rolling the
             // carrier here is exactly the drift it exists to absorb, and would
             // leave `_event.type` and `_event.data` empty.
+            //
+            // The machine's own symbols carry the suite prefix (the function
+            // and the event constant), the payload channel's tag does not.
             let otherwise = if raises_error {
+                let symbol_upper = symbol_prefix.to_uppercase();
                 format!(
-                    " else {{\n    {machine_name}_raise_platform_error(\
-                     sm, {upper}_EVENT_ERROR_EXECUTION, \"{msg}\");\n}}"
+                    " else {{\n    {symbol_prefix}{machine_name}_raise_platform_error(\
+                     sm, {symbol_upper}{upper}_EVENT_ERROR_EXECUTION, \"{msg}\");\n}}"
                 )
             } else {
                 String::new()

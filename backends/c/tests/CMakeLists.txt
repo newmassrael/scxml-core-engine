@@ -2323,6 +2323,44 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # A host action whose arguments are typed expressions of the machine's own
+    # variables, from the two documents the C++ suite drives. The second sits
+    # beside that suite, for the reason `test_thermostat.scxml` sits beside its
+    # test: the recorder is the interface the generator emits.
+    sce_generate_static_integration_c_test(static_host_call
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
+    )
+    sce_generate_static_integration_c_test(static_host_call_arguments
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/static_host_call_arguments.scxml"
+    )
+
+    add_executable(sce_c_integration_static_host_call
+        integration/test_static_host_call.c
+        ${INTEGRATION_C_TEST_static_host_call_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_call_arguments_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_call PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_call PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_host_call PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_call
+        COMMAND sce_c_integration_static_host_call
+    )
+    set_tests_properties(c11_integration_static_host_call PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.2: the resume seam — what `_init_at` accepts and what it
     # refuses. Not a fixture stem: it drives the two machines above rather than
     # adding a document of its own, because the claim is about a runtime door

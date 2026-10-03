@@ -28,9 +28,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_ctest --test-dir build -R '^c11_integration_static_(scalars|host_call)$'
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs
-mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h
+mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h backends/c/tests/integration/test_static_host_call.c
 
 # ── A failed statement writes nothing and ends its block ───────────
 
@@ -70,6 +70,18 @@ mutation_case "a lowered statement is not placed" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "        {{ action.native_code | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}\n{% elif action.type == 'raise' %}",
      "        /* dropped */\n{% elif action.type == 'raise' %}")
+PY
+
+# ── A host is not called with an argument that failed ──────────────
+#
+# `static_host_call_arguments`: `level + 10` does not fit a `uint8`, so the host
+# is not called with the 4 a wrapped sum would hand it, and `error.execution`
+# is raised in the call's place.
+
+mutation_case "a host action is called with the argument that failed" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "if (sce_failure_.failed) {{ {failed} }} else {{ {callee}(sm->actions.user_data{names}); }} }}\"",
+     "if (sce_failure_.failed) {{ {failed} }} {{ {callee}(sm->actions.user_data{names}); }} }}\"")
 PY
 
 # ── Content that reads a payload runs for a payload ────────────────
