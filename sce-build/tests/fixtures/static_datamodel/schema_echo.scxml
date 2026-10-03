@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The payload `static_send_params.scxml` sends itself: an integer, a bool and
+  a string, the three kinds of value a `<param>` crosses as (SCE Accepted
+  Subset §2.15). camelCase-free on purpose: the ids are the names the `<param>`s
+  of the send carry, which is how the receiving event finds each field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_echo"
+       sce:event-name="echo">
+  <datamodel>
+    <data id="total" sce:type="uint32" sce:direction="in"/>
+    <data id="ok" sce:type="bool" sce:direction="in"/>
+    <data id="tag" sce:type="string" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -3119,11 +3119,11 @@ Go lowers the model through the same walk (`GoTarget`), and refuses what it does
 not by name: scalar variables of a number, a bool or a string, an enum, a record,
 and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
 `<foreach>`; a transition's guard, `<assign>`, `<if>` / `<elseif>`, `<log>`,
-`<raise>`, a `<send>` / `<cancel>` that carry no value of the data model, `In()`,
-an event's typed payload, a call of an imported algorithm, the `<param>`s of a
-`<final>`'s `<donedata>`, and a `<sce:action>` whose arguments are typed
-expressions of the machine's variables. Bytes and an `<invoke>` are not lowered
-yet. Each variable is
+`<raise>`, a `<send>` / `<cancel>`, the `<param>`s of a `<send>` (a `<content>`
+is not lowered yet), `In()`, an event's typed payload, a call of an imported
+algorithm, the `<param>`s of a `<final>`'s `<donedata>`, and a `<sce:action>`
+whose arguments are typed expressions of the machine's variables. Bytes and an
+`<invoke>` are not lowered yet. Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
 (`Count()`), which answers a copy of a list. An enum is a named integer over the
@@ -3153,7 +3153,11 @@ importing another is. A donedata `<param>` is computed into a local with the
 same failure flag, and a pair whose value failed is left out of the done event's
 JSON (5.7.1) while `error.execution` is raised in its place; the value crosses as
 `ScriptValueToJSON` writes it (a narrow integer widened to `int64`, a real to
-`float64`).
+`float64`). A `<send>` `<param>` is the same value on the same wire, appended
+to the typed list `BuildJSONFromTypedParams` writes: a pair that failed is left
+out and reported, and the message still goes (6.2) — so a receiver reading the
+event through its schema finds the field missing, which is an `error.execution`
+of its own.
 `scripts/regen_static_datamodel_go.sh` commits one package per machine the
 generator lowers for Go — asked of it, not listed — and one per algorithm those
 machines import, read from their `<sce:import kind="algorithm">`, and
@@ -3162,8 +3166,8 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record`, `sync_client` and `static_donedata` (the done event's pairs are
-read back from `DonedataAtFinal`) against them (an event's `data` goes in as the
+`static_record`, `sync_client`, `static_donedata` (the done event's pairs are
+read back from `DonedataAtFinal`) and `static_send_params` against them (an event's `data` goes in as the
 JSON text every other producer fills; a
 variable the machine keeps to itself is read by reflection, which only reads),
 and drives `static_host_call` and `static_host_call_arguments` with a recording

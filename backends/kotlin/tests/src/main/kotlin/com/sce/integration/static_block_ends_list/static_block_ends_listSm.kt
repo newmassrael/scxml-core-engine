@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ff793059512d611113fe68c7c0ecdbb0839d41cdd02adf5ac824e52a9522a837
+// source-hash: bb633bbbdecc71c6b07ac83305623a7eec983dc08eacf75481685c42e676347e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends_list.scxml

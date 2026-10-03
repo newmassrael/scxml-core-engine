@@ -355,14 +355,20 @@
 		// and its pair left out, and the message still goes; the error ends
 		// the block once it has. Read at the end of this element.
 		paramFailed := false
+{# `datamodel="sce-static"`: a param's value is native code
+   (`Param::native_value`), read from the machine's own fields, so no script
+   engine is asked for it. Only a send with a param that still needs the
+   engine builds one. #}
+{% if action.params | rejectattr("is_static_literal") | rejectattr("native_value") | list | length > 0 %}
 		p.ensureScriptEngine()
+{% endif %}
 {% endif %}
 {# Bound only when something is read through it: a send whose one dynamic
    `<param>` is an empty `location=""` evaluates nothing, and Go refuses a
    variable nobody reads. #}
 {% set reads_ns = namespace(any=false) %}
 {% for param in action.params %}
-{% if not param.is_static_literal and (param.expr or param.location) %}
+{% if not param.is_static_literal and not param.native_value and (param.expr or param.location) %}
 {% set reads_ns.any = true %}
 {% endif %}
 {% endfor %}
@@ -378,6 +384,29 @@
 {% for param in action.params %}
 {% if param.is_static_literal %}
 		parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
+{% elif param.native_value %}
+{# The value is what `ScriptValueToJSON` writes as the pair's JSON value. A
+   checked operation that overflows records its failure and answers a zero: the
+   evaluation that failed, reported, and the pair left out (§scxml-5.7.1) while
+   the message still goes. #}
+		{
+{% if param.native_fails %}
+			var sceFailure scealgorithm.Failure
+{% endif %}
+			sceValue := {{ param.native_value }}
+{% if param.native_fails %}
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})
+			} else {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
+{% endif %}
+				paramFailed = true
+			}
+{% else %}
+			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})
+{% endif %}
+		}
 {% elif param.expr %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})

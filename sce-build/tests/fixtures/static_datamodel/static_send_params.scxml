@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the <param>s of a
+  <send>. Each is read from the machine's own fields when the <send> runs and
+  travels as the event's data, JSON by name: an integer, a bool, and a string
+  read through a `location`. The machine sends itself the event and reads the
+  fields back through the schema, so what crossed is what the variables hold.
+
+  A param whose value does not fit its type (`small + small` overflows a
+  uint8) is not carried: error.execution is raised, that pair is left out and
+  the message still goes with the others (§scxml-5.7.1, §scxml-6.2). The
+  receiver reads the event through its schema, finds a field missing, and that
+  is an error.execution of its own and no transition: so `bad` ends with two
+  refusals and `partialTotal` still 0. A pair carried as a zero would have been
+  one refusal and `partialTotal` 6; a message not sent, one refusal and
+  `partialTotal` 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_params">
+  <sce:import kind="event-schema" src="schema_echo.scxml" as="Echo"/>
+  <sce:import kind="event-schema" src="schema_partial.scxml" as="Partial"/>
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="3"/>
+    <data id="small" sce:type="uint8" expr="250"/>
+    <data id="label" sce:type="string" expr="'tally'"/>
+    <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="ok" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="tag" sce:type="string" expr="''" sce:direction="out"/>
+    <data id="partialTotal" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" type="internal">
+      <send event="echo">
+        <param name="total" expr="count * 2"/>
+        <param name="ok" expr="count &gt; 2"/>
+        <param name="tag" location="label"/>
+      </send>
+    </transition>
+    <transition event="bad" type="internal">
+      <send event="partial">
+        <param name="total" expr="count * 2"/>
+        <param name="part" expr="small + small"/>
+      </send>
+    </transition>
+    <transition event="echo" type="internal">
+      <assign location="total" expr="_event.data.total"/>
+      <assign location="ok" expr="_event.data.ok"/>
+      <assign location="tag" expr="_event.data.tag"/>
+    </transition>
+    <transition event="partial" type="internal">
+      <assign location="partialTotal" expr="_event.data.total"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

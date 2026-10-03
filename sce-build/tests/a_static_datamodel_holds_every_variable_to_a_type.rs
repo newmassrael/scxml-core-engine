@@ -1191,6 +1191,52 @@ fn a_donedata_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
 }
 
 #[test]
+fn a_go_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
+    // Go refused a <send> carrying a <param> by name until its value was lowered
+    // as the other targets lower it. The manifest says `needs_script_engine:false`
+    // either way, so what is read is the generated machine: the value is computed
+    // into a local from the machine's own fields and no engine evaluates it.
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" type="internal">
+      <send event="note"><param name="k" expr="count + 1"/></send>
+    </transition>
+  </state>"#,
+    );
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a sce-static machine's params are read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("sce.EventDataParam{Name: \"k\", Value: sceValue}"),
+        "the pair is built from the lowered value"
+    );
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no script engine reads a send param"
+    );
+}
+
+#[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
     // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
     // would hand to an engine this data model does not have; they are refused,

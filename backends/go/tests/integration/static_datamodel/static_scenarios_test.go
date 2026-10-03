@@ -46,6 +46,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
@@ -408,6 +409,21 @@ func TestAFinalHandsItsDoneEventItsParams(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata", drive[static_donedata.StaticDonedataState, static_donedata.StaticDonedataEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// A <send> hands its event the pairs of its <param>s, read from the machine's
+// fields when it runs; a pair whose value does not fit its type is left out, the
+// message still goes, and the receiver refuses it for the field it finds missing.
+func TestASendCarriesItsParamsAsTheTypedValuesOfTheMachine(t *testing.T) {
+	policy := static_send_params.NewStaticSendParamsPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_params", drive[static_send_params.StaticSendParamsState, static_send_params.StaticSendParamsEvent](&policy, map[string]func() any{
+		"total":       func() any { return policy.Total() },
+		"ok":          func() any { return policy.Ok() },
+		"tag":         func() any { return policy.Tag() },
+		"partialTotal": func() any { return policy.PartialTotal() },
+		"refusals":     func() any { return policy.Refusals() },
 	}))
 }
 

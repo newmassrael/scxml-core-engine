@@ -56,6 +56,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
+    StaticSendParamsPersist, StaticSendParamsPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -296,6 +299,21 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// A <send> hands its event the pairs of its <param>s, read from the machine's
+// fields when it runs; the pair whose value does not fit is left out, the
+// message still goes, and the receiver refuses it for the field it finds
+// missing.
+#[test]
+fn static_send_params_cross_as_the_typed_values_of_the_machine() {
+    replay(
+        Engine::new(StaticSendParamsPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_params.json"
         ),
     );
 }

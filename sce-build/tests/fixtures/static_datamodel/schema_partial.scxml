@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The second payload `static_send_params.scxml` sends itself: a total and a
+  `part` the send computes in a uint8 that overflows. The send leaves that
+  pair out, so a receiver reading the schema finds a field missing, which every
+  backend gives as error.execution (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_partial"
+       sce:event-name="partial">
+  <datamodel>
+    <data id="total" sce:type="uint32" sce:direction="in"/>
+    <data id="part" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

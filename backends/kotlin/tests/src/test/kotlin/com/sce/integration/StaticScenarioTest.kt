@@ -31,6 +31,7 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
+import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -356,6 +357,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A <send> hands its event the pairs of its <param>s, read from the machine's
+    // fields when it runs; the pair whose value does not fit is left out, the
+    // message still goes, and the receiver refuses it for the field it finds
+    // missing.
+    @Test
+    fun staticSendParamsCrossAsTheTypedValuesOfTheMachine() {
+        val sm = StaticSendParamsStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_params"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

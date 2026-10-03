@@ -28,7 +28,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_go backends/go/tests ./integration/static_datamodel/
-mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
@@ -45,6 +45,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_record/st
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_enum/static_record_enum_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_fields/static_record_fields_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_list/static_record_list_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_send_params/static_send_params_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/sync_client/sync_client_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
@@ -104,6 +105,14 @@ mutation_case "a donedata pair that failed is carried as the zero" <<'PY'
 edit("tools/codegen/templates/go/entry_exit_actions.go.jinja2",
      "{% if param.native_fails %}\n\t\t\t\t\tif !sceFailure.Failed() {\n",
      "{% if param.native_fails %}\n\t\t\t\t\tif true || !sceFailure.Failed() {\n")
+PY
+
+# ── A send param that failed is left out ───────────────────────────
+
+mutation_case "a send param that failed is carried as the zero" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% if param.native_fails %}\n\t\t\tif !sceFailure.Failed() {\n\t\t\t\tparts = append(",
+     "{% if param.native_fails %}\n\t\t\tif true || !sceFailure.Failed() {\n\t\t\t\tparts = append(")
 PY
 
 # ── A list holds no more than its bound ────────────────────────────

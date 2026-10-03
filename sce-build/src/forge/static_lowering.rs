@@ -2373,10 +2373,10 @@ impl GoTarget<'_> {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
-                // A plain send carries no value of the data model; one that
-                // does needs the typed value crossed to the event.
-                "send" if action.params.is_empty() && action.content.is_empty() => {}
-                "send" => return Some("a <send> carrying a <param> or <content>".to_string()),
+                // A param is the typed value of the data model crossed to the
+                // event's JSON; a `<content>` is not lowered yet.
+                "send" if action.content.is_empty() => {}
+                "send" => return Some("a <send> carrying a <content>".to_string()),
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
                 other => return Some(format!("<{other}>")),
