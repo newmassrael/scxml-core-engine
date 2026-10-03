@@ -36,8 +36,8 @@ mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/S
 
 mutation_case "the loop never takes the event of a due plain send" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "            externalEventQueue.removeFirstOrNull()?.let { return it }\n",
-     "            if (externalEventQueue.size < 0) externalEventQueue.removeFirstOrNull()?.let { return it }\n")
+     "                if (ended) null else externalEventQueue.removeFirstOrNull()\n",
+     "                if (ended || externalEventQueue.size >= 0) null else externalEventQueue.removeFirstOrNull()\n")
 PY
 
 # ── A cancel reaches a plain send ───────────────────────────────────
