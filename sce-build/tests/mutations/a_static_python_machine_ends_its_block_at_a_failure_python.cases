@@ -30,8 +30,8 @@
 
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_regen scripts/regen_static_datamodel_python.sh
-mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
-mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py
+mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/native_action.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py backends/python/tests/integration/static_datamodel/test_a_static_host_action.py
 
 # ── A failed statement ends its block ──────────────────────────────
 
@@ -95,6 +95,31 @@ mutation_case "a child is handed none of the values its invoke names" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
      "                _child_policy.accept_params(_seed)\n{% elif inv.namelist or inv.params %}",
      "                _child_policy.accept_params(_seed.__class__())\n{% elif inv.namelist or inv.params %}")
+PY
+
+# ── A host call whose argument failed is not made ───────────────────
+#
+# `static_host_call_arguments`: `level + 10` does not fit a uint8, so the host is
+# not called with 4 and `error.execution` is raised in the call's place, which
+# the machine counts. A call not received lets the exception out of the block; a
+# call received and not reported is the host unheard and `errors` still 0.
+
+mutation_case "a host call is not received where its argument failed" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        format!(\"try:\\n    {statement}\\nexcept sce_algorithm.AlgorithmFailure:\\n    {on_failure}\")\n",
+     "        let _ = on_failure;\n        statement.to_string()\n")
+PY
+
+mutation_case "a host call whose argument failed raises nothing" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        let on_failure = if failed.is_empty() { \"pass\" } else { failed };\n",
+     "        let on_failure = {\n            let _ = failed;\n            \"pass\"\n        };\n")
+PY
+
+mutation_case "a multi-line host call is placed on one line" <<'PY'
+edit("tools/codegen/templates/python/actions/native_action.py.jinja2",
+     "{% if '\\n' in action.native_action_rendered -%}\n",
+     "{% if false and '\\n' in action.native_action_rendered -%}\n")
 PY
 
 # ── A send param that failed is left out and the message goes ─────

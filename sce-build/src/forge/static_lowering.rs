@@ -2838,7 +2838,9 @@ impl PythonTarget {
                 // A param is the typed value of the data model crossed to the
                 // event's data, and a literal `<content>` is the text it spells.
                 "send" => {}
-                "native_action" => return Some("a <sce:action>".to_string()),
+                // A host action whose arguments are typed expressions of the
+                // machine's variables, called on the machine's `Protocol`.
+                "native_action" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -3107,6 +3109,20 @@ impl StaticTarget for PythonTarget {
     }
     fn receiving_call(&self, statement: &str, failed: &str) -> String {
         Self::guarded(statement, failed)
+    }
+    // A host call whose argument failed is not made — the exception leaves the
+    // statement before the call — and `error.execution` is raised in its place.
+    // The block does not end, as on Kotlin, Rust, Go and C++: a host action's
+    // failed argument costs the call and not the statements after it.
+    fn receiving_host_call(
+        &self,
+        statement: &str,
+        _callee: &str,
+        _args: &[String],
+        failed: &str,
+    ) -> String {
+        let on_failure = if failed.is_empty() { "pass" } else { failed };
+        format!("try:\n    {statement}\nexcept sce_algorithm.AlgorithmFailure:\n    {on_failure}")
     }
     // The condition is computed where a helper can catch the exception: a
     // `lambda` is the only expression Python has that defers one. The helper

@@ -6,13 +6,20 @@
    The call site is lowered ahead of the template by
    `forge::native_action::render` and stored on
    `action.native_action_rendered`, so this macro only places it at the
-   caller's indent. It is deliberately ONE line: this backend's dispatcher
-   hands each action the literal whitespace prefix its context needs, and a
-   multi-line body would carry that prefix only on its first line. The
-   arg-bearing form therefore binds the typed payload with `:=` inside the
-   `if` that checks it is there — the same tag check the other five spell as
-   a block. #}
+   caller's indent. This backend's dispatcher hands each action the literal
+   whitespace prefix its context needs, which a multi-line body would carry only
+   on its first line, so the arg-bearing form outside `sce-static` is ONE line:
+   it binds the typed payload with `:=` inside the `if` that checks it is there
+   — the same tag check the other five spell as a block. A `sce-static` call
+   whose argument can fail is the lines of the `try` block that receives it, and
+   each of them takes the indent here. #}
 {%- macro emit(action, indent, machine_name, model) -%}
 {{ indent }}# W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
+{% if '\n' in action.native_action_rendered -%}
+{% for line in action.native_action_rendered.split('\n') -%}
+{{ indent }}{{ line }}
+{% endfor -%}
+{%- else -%}
 {{ indent }}{{ action.native_action_rendered }}
+{%- endif -%}
 {%- endmacro -%}

@@ -1375,6 +1375,77 @@ fn a_basic_http_send_carrying_a_param_is_refused_by_name_in_cpp() {
 }
 
 #[test]
+fn a_python_host_action_argument_that_can_fail_is_received_where_the_call_stands() {
+    // Python refused a `<sce:action>` by name. A failing argument is an
+    // exception, so the call stands in a `try`: the exception leaves it before the
+    // host is called and `error.execution` is raised in its place, without ending
+    // the block (as on the other backends). A call that reads the event's payload
+    // is more than one line, and sits in a block that checks the delivery
+    // carried one — the shape no scenario runs, so what is read here is the
+    // machine, and Python itself reads it as source.
+    let (ok, out_dir) = {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run_record(
+            &[
+                "generate",
+                "-l",
+                "python",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &record(
+                EVERY_FIELD,
+                r#"<state id="s">
+    <transition event="day.picked" type="internal">
+      <sce:action name="show"><sce:arg name="d" expr="_event.data.dayOfMonth + 1"/></sce:action>
+    </transition>
+  </state>"#,
+            ),
+        );
+        assert!(ok, "the machine generates:\n{out}");
+        (ok, out_dir)
+    };
+    assert!(ok);
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "py"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    let lines: Vec<&str> = source.lines().map(str::trim).collect();
+    let call = lines
+        .iter()
+        .position(|line| line.starts_with("self._actions.show("))
+        .expect("the host action is called");
+    assert_eq!(lines[call - 1], "try:", "the call stands in a try");
+    assert!(
+        lines[call + 1].starts_with("except sce_algorithm.AlgorithmFailure:"),
+        "a failed argument is received where the call stands: {}",
+        lines[call + 1]
+    );
+    assert!(
+        lines[..call]
+            .iter()
+            .rev()
+            .take(3)
+            .any(|line| line.starts_with("if self._pending_day_picked_payload is not None:")),
+        "the call reads the payload only for a delivery that carried one"
+    );
+    let parsed = Command::new("python3")
+        .arg("-c")
+        .arg("import ast, sys; ast.parse(open(sys.argv[1]).read())")
+        .arg(&generated[0])
+        .output()
+        .expect("run python3");
+    assert!(
+        parsed.status.success(),
+        "the generated machine is not Python:\n{}",
+        String::from_utf8_lossy(&parsed.stderr)
+    );
+}
+
+#[test]
 fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
     // Measured 2026-10-03: Go, Python and C++ refused a literal `<content>` by
     // name, and Kotlin accepted it and generated

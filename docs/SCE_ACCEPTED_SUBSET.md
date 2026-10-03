@@ -3214,9 +3214,15 @@ as a module beside its parent. A `<send>`'s literal `<content>` is the text it
 spells: the build finishes the event's data (the XML as written, or the string,
 whitespace-normalised, that Go and Rust already wrote when no engine was there),
 so a `<content>123</content>` is the string `"123"` on every backend rather than
-a number on the ones that happened to carry an engine. A host-run, a hybrid and a
-mesh `<invoke>`, a `<sce:action>` and `bytes` are not lowered yet. Each variable
-is an attribute of
+a number on the ones that happened to carry an engine. A `<sce:action>` whose
+arguments are typed expressions of the machine's variables is a call on the
+machine's `<Machine>Actions` `Protocol`, each argument read when the call is made;
+an argument whose computation failed (an exception, as every checked operation
+is) costs the call and not the block: the call stands in a `try`, the host is not
+called, and `error.execution` is raised in its place, as on Kotlin, Rust, Go and
+C++. A call that reads the event's payload sits in a block that checks the
+delivery carried one. A host-run, a hybrid and a mesh `<invoke>` and `bytes` are
+not lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
@@ -3249,7 +3255,9 @@ done event's pairs are read back from the engine's `done_data`) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
 reads), and `test_a_static_child_is_handed_its_params.py` drives
-`static_invoke_params`, whose children are handed values once, when they start.
+`static_invoke_params`, whose children are handed values once, when they start,
+and `test_a_static_host_action.py` drives `static_host_call` and
+`static_host_call_arguments` with a recording host.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

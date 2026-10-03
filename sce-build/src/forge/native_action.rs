@@ -1111,6 +1111,24 @@ fn guard_payload(
         }
         Language::Python => {
             let snake = filters::to_snake_case(event.to_string());
+            // A statement of more than one line — the `try` block that receives
+            // a failing argument of a `sce-static` machine's call — cannot sit
+            // in the one-line forms below, so it is a block of its own. Its
+            // arguments read the payload through the attribute the machine's
+            // lowering named, not through the walrus binding, so none is made.
+            if stmt.contains('\n') {
+                let body = stmt
+                    .lines()
+                    .map(|line| format!("    {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let otherwise = if raises_error {
+                    format!("\nelse:\n    self._raise_error_execution(engine, \"{msg}\")")
+                } else {
+                    String::new()
+                };
+                return format!("if self._pending_{snake}_payload is not None:\n{body}{otherwise}");
+            }
             // ONE line, because this backend's dispatcher hands the call site a
             // literal indent prefix that only reaches the first one. The
             // conditional EXPRESSION keeps both arms on it, and evaluates its
