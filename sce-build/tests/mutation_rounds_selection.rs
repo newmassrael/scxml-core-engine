@@ -663,9 +663,120 @@ fn a_casefile_too_large_for_one_job_is_expanded_into_all_of_them() {
     );
 }
 
+/// A push's round holds a bounded number of jobs, and names what it left out.
+///
+/// The group lets one round run and one wait, and the round in flight is not
+/// cancelled, so how long a push's round lasts is how long every later push goes
+/// without a verdict. Measured 2026-10-03: a push whose range reached back to
+/// the last verdict selected 147 of 203 casefiles, 207 jobs, about a day at
+/// eight at a time, and forty consecutive push rounds on `main` ended
+/// `cancelled` behind it. So a push runs at most `SCE_PUSH_ROUND_JOBS` jobs.
+///
+/// What it must not do is lose the rest. Every selected casefile is either in
+/// the matrix or in `deferred`, which is what the annotation and the summary
+/// are written from — a deferred casefile that nothing mentions is an absent
+/// verdict that reads as green. And the cap is for a PUSH: a dispatch and the
+/// weekly clock run what they are asked in groups no push waits behind, and a
+/// pull request has a group of its own, so none of the three is cut.
+///
+/// The whole corpus is named explicitly to make a selection past the ceiling,
+/// since the cap keys on the event and not on how the selection was reached.
+#[test]
+fn a_push_runs_a_bounded_number_of_jobs_and_names_what_it_left_out() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let script = run_body(&workflow, "select");
+    let env = step_env(&workflow, "Which casefiles does this change reach");
+    let ceiling: usize = env
+        .get("SCE_PUSH_ROUND_JOBS")
+        .unwrap_or_else(|| {
+            panic!(
+                "⚠ the selection step sets no `SCE_PUSH_ROUND_JOBS`, so a push's round is \
+                 bounded by nothing but what its range happened to reach"
+            )
+        })
+        .trim_matches('\'')
+        .parse()
+        .expect("⚠ `SCE_PUSH_ROUND_JOBS` is a whole number of jobs");
+    assert!(ceiling > 0, "⚠ a ceiling of zero is no ceiling");
+    let ceiling_text = ceiling.to_string();
+    let everything: BTreeSet<String> = casefiles().into_iter().collect();
+
+    let push = [
+        ("SCE_ROUND_EVENT", "push"),
+        ("SCE_PUSH_ROUND_JOBS", ceiling_text.as_str()),
+        ("SCE_MUTATION_ROUNDS", "all"),
+    ];
+    let (outputs, log) = lane_selection_with(&script, "", &push);
+    let matrix = matrix_of(&outputs, &log);
+    assert!(
+        matrix.len() <= ceiling,
+        "⚠ a push's round runs {} job(s), past its ceiling of {ceiling}:\n{log}",
+        matrix.len()
+    );
+    let ran: BTreeSet<String> = matrix
+        .iter()
+        .map(|(casefile, _)| casefile.clone())
+        .collect();
+    let deferred: BTreeSet<String> = outputs
+        .get("deferred")
+        .unwrap_or_else(|| panic!("⚠ the step recorded no `deferred` output:\n{log}"))
+        .split(',')
+        .filter(|casefile| !casefile.is_empty())
+        .map(str::to_string)
+        .collect();
+    assert!(
+        !deferred.is_empty(),
+        "⚠ the whole corpus fits in {ceiling} job(s), so this test no longer forces a \
+         selection past the ceiling and asserts nothing about it:\n{log}"
+    );
+    assert!(
+        ran.is_disjoint(&deferred),
+        "⚠ a casefile is both run and deferred:\n{log}"
+    );
+    assert_eq!(
+        ran.union(&deferred).cloned().collect::<BTreeSet<_>>(),
+        everything,
+        "⚠ a selected casefile is neither in the matrix nor named as deferred — an absent \
+         verdict that reads as green:\n{log}"
+    );
+    assert!(
+        log.contains("deferred:"),
+        "⚠ the step does not say in its log which casefiles it left out:\n{log}"
+    );
+
+    for event in ["schedule", "workflow_dispatch", "pull_request"] {
+        let uncapped = [
+            ("SCE_ROUND_EVENT", event),
+            ("SCE_PUSH_ROUND_JOBS", ceiling_text.as_str()),
+            ("SCE_MUTATION_ROUNDS", "all"),
+        ];
+        let (outputs, log) = lane_selection_with(&script, "", &uncapped);
+        assert_eq!(
+            outputs.get("deferred").map(String::as_str),
+            Some(""),
+            "⚠ a `{event}` run is capped, and nothing else would run what it left out:\n{log}"
+        );
+        assert!(
+            matrix_of(&outputs, &log).len() > ceiling,
+            "⚠ a `{event}` run holds no more than a push's {ceiling} job(s):\n{log}"
+        );
+    }
+}
+
 /// Run the workflow's selection step over a change set and return the outputs
 /// it recorded, plus its combined log.
 fn lane_selection(script: &str, changed: &str) -> (BTreeMap<String, String>, String) {
+    lane_selection_with(script, changed, &[])
+}
+
+/// [`lane_selection`] with more of the step's `env:` supplied: the settings the
+/// step reads that are not the change set, the event and the ceiling among them.
+fn lane_selection_with(
+    script: &str,
+    changed: &str,
+    extra_env: &[(&str, &str)],
+) -> (BTreeMap<String, String>, String) {
     let dir = tempdir().expect("tempdir");
     let changed_file = dir.path().join("changed.txt");
     fs::write(&changed_file, format!("{changed}\n")).expect("write change set");
@@ -691,6 +802,7 @@ fn lane_selection(script: &str, changed: &str) -> (BTreeMap<String, String>, Str
         .env("SCE_GATE_CHANGED_FILE", &changed_file)
         .env("GITHUB_OUTPUT", &github_output)
         .env("RUNNER_TEMP", &runner_temp)
+        .envs(extra_env.iter().copied())
         .output()
         .expect("run the workflow's selection step");
 

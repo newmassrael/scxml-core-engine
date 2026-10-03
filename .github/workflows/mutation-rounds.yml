@@ -263,6 +263,43 @@ jobs:
       id: select
       env:
         SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
+        # ## How many jobs one push's round may hold the group for
+        #
+        # The group above lets one round run and one wait, and the round in
+        # flight is never cancelled. So the length of a PUSH's round is the
+        # time every later push goes without a verdict, and that length is
+        # decided by the selection, which has no bound of its own: it is every
+        # casefile whose declared target the range touched, and the range
+        # starts at the last round that reached a verdict.
+        #
+        # Measured 2026-10-03: forty consecutive push rounds on `main` ended
+        # `cancelled`, none a verdict, because the one in flight (19d3bc49e5)
+        # had selected 147 of 203 casefiles, 207 jobs, 8 at a time. At the 68
+        # minutes a job averaged that is about a day, during which every newer
+        # push replaced the pending round and was cancelled in its turn; and the
+        # round after it, starting from the same last verdict, would have
+        # selected as many again. The per-job `timeout-minutes` bounds a job,
+        # not a round, and `max-parallel` bounds the pool the round takes, not
+        # how long it takes it.
+        #
+        # So a PUSH runs at most this many jobs, whole casefiles at a time and
+        # always at least the first one, and the rest is not dropped: it is
+        # named in the log, in an annotation and in the job summary, and it is
+        # what the weekly clock above and a dispatch with those casefiles
+        # exist to run, in a group of their own that no push waits behind. A
+        # pull request has a group of its own per ref, a dispatch and the clock
+        # run what they are asked, and none of the three is capped.
+        #
+        # 16 is two waves of the `max-parallel` below: a push's verdict then
+        # arrives within about the longest two jobs, instead of within however
+        # long the author's last edit happened to reach. `SCE_ROUND_EVENT` is
+        # the event, handed in because the step body cannot read `github.*`.
+        #
+        # Above `SCE_MUTATION_ROUNDS`, and not below it: a casefile of
+        # `mutation_rounds_selection.cases` anchors on that line being the last
+        # of the mapping, directly above `run: |`.
+        SCE_PUSH_ROUND_JOBS: '16'
+        SCE_ROUND_EVENT: ${{ github.event_name }}
         # The dispatch's subset, read by the gate ahead of any change set. In
         # the step's `env:` rather than its body: a `${{ }}` inside the body is
         # a string bash never expands, and the test that executes this step
@@ -319,7 +356,6 @@ jobs:
         selected="${RUNNER_TEMP:?}/selected.txt"
         SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > "$selected"
         cat "$selected"
-        echo "count=$(grep -c . "$selected" || true)" >> "$GITHUB_OUTPUT"
         # The same three columns, as the matrix the rounds job expands. Built
         # here rather than in a second scan of the corpus, so a casefile can
         # only be run by a job the selection above actually named.
@@ -339,9 +375,28 @@ jobs:
         # arithmetic that picks N is `mutation_rounds_cases_per_job` in
         # `scripts/gates/mutation-rounds.sh`, in one place; this expands what
         # it printed and derives nothing of its own.
-        matrix="$(awk -F'\t' '
+        #
+        # A push is capped (`SCE_PUSH_ROUND_JOBS`, above): casefiles are taken in
+        # the order the gate printed them until the next one would pass the
+        # ceiling, the first always, and the rest are written to `deferred.txt`
+        # for the announcement below. Whole casefiles, because the shards of one
+        # are judged together or not at all. A step that never set the ceiling
+        # caps nothing, which is what a test that executes this body without the
+        # step's `env:` gets.
+        capped=0
+        if [ "${SCE_ROUND_EVENT:-}" = "push" ] && [ "${SCE_PUSH_ROUND_JOBS:-0}" -gt 0 ]; then
+          capped=1
+        fi
+        deferred_file="${RUNNER_TEMP:?}/deferred.txt"
+        : > "$deferred_file"
+        matrix="$(awk -F'\t' -v capped="$capped" -v ceiling="${SCE_PUSH_ROUND_JOBS:-0}" -v deferred_file="$deferred_file" '
           BEGIN { printf "{\"include\":[" }
           NF >= 3 {
+            if (capped && jobs > 0 && jobs + $3 > ceiling) {
+              print $1 > deferred_file
+              next
+            }
+            jobs += $3
             for (shard = 1; shard <= $3; shard++) {
               printf "%s{\"casefile\":\"%s\",\"runner\":\"%s\",\"shard\":\"%d/%d\"}", \
                 sep, $1, $2, shard, $3
@@ -352,6 +407,33 @@ jobs:
         ' "$selected")"
         echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
         echo "matrix: $matrix"
+        # `count` is the casefiles THIS run runs: the matrix and the count answer
+        # for one set, and a push the ceiling cut still has something to run
+        # whenever the gate selected anything, so `count == 0` keeps meaning
+        # "nothing was reached".
+        left_out="$(grep -c . "$deferred_file" || true)"
+        echo "count=$(( $(grep -c . "$selected" || true) - left_out ))" >> "$GITHUB_OUTPUT"
+        # What the ceiling left out is said three times, because a casefile
+        # that is deferred and not mentioned is an absent verdict that reads as
+        # green: here, as an annotation on the run, and in its summary with the
+        # command that runs them now.
+        deferred="$(paste -sd, "$deferred_file")"
+        echo "deferred=$deferred" >> "$GITHUB_OUTPUT"
+        if [ -n "$deferred" ]; then
+          echo "::warning title=Mutation rounds deferred::$left_out casefile(s) are past this push's ceiling of ${SCE_PUSH_ROUND_JOBS} jobs and are left to the weekly sweep or a dispatch"
+          {
+            echo "### $left_out casefile(s) deferred past this push's ceiling of ${SCE_PUSH_ROUND_JOBS} jobs"
+            echo
+            echo "A push's round holds the group every later push waits behind, so it runs a bounded number of jobs. These were reached by the change set and are not judged by this run. Run them now, in a group of their own:"
+            echo
+            echo '```'
+            echo "gh workflow run mutation-rounds.yml -f casefiles=$deferred"
+            echo '```'
+            echo
+            sed 's/^/- /' "$deferred_file"
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "deferred: $deferred"
+        fi
 
     - name: Nothing to run
       if: steps.select.outputs.count == '0'
