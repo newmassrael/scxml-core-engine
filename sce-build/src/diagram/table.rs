@@ -368,7 +368,8 @@ pub fn set(
             y: flow.y,
             width,
             height,
-            fill: Ink::Shade,
+            fill: Some(Ink::Shade),
+            outline: None,
         });
         text_at(&mut flow.marks, 0.0, flow.y, heading, l.table.heading.face);
         flow.y += height;
@@ -382,6 +383,7 @@ pub fn set(
             to: (width, flow.y),
             ink: Ink::Black,
             width_pt: style.body_pt * 0.1,
+            dashed: false,
         });
     };
     let put_row = |flow: &mut Flow, l: &Laid, r: usize| {
@@ -397,6 +399,7 @@ pub fn set(
             to: (width, flow.y),
             ink: Ink::Hairline,
             width_pt: style.body_pt * 0.05,
+            dashed: false,
         });
     };
     let new_flow = || {

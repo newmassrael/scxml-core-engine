@@ -257,8 +257,16 @@ pub fn render_sheet(sheet: &Sheet) -> String {
     );
     let colour = |ink: Ink| match ink {
         Ink::Black => INK,
+        Ink::Muted => BRIEF_INK,
         Ink::Hairline => RULE,
         Ink::Shade => ELSEWHERE_FILL,
+    };
+    let dash = |dashed: bool| {
+        if dashed {
+            r#" stroke-dasharray="4 2""#
+        } else {
+            ""
+        }
     };
     for mark in &sheet.marks {
         match mark {
@@ -271,15 +279,24 @@ pub fn render_sheet(sheet: &Sheet) -> String {
                 width,
                 height,
                 fill,
+                outline,
             } => {
+                let stroke = match outline {
+                    Some(o) => format!(
+                        r#" stroke="{}" stroke-width="{}""#,
+                        colour(o.ink),
+                        n(o.width_pt)
+                    ),
+                    None => String::new(),
+                };
                 let _ = writeln!(
                     out,
-                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"/>"#,
+                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"{stroke}/>"#,
                     n(*x),
                     n(*y),
                     n(*width),
                     n(*height),
-                    colour(*fill)
+                    fill.map_or("none", colour)
                 );
             }
             Mark::Stroke {
@@ -287,16 +304,47 @@ pub fn render_sheet(sheet: &Sheet) -> String {
                 to,
                 ink,
                 width_pt,
+                dashed,
             } => {
                 let _ = writeln!(
                     out,
-                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"/>"#,
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"{}/>"#,
                     n(from.0),
                     n(from.1),
                     n(to.0),
                     n(to.1),
                     colour(*ink),
-                    n(*width_pt)
+                    n(*width_pt),
+                    dash(*dashed)
+                );
+            }
+            Mark::Polyline {
+                points,
+                ink,
+                width_pt,
+                dashed,
+            } => {
+                let pts: Vec<String> = points
+                    .iter()
+                    .map(|(x, y)| format!("{},{}", n(*x), n(*y)))
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="{}"{}/>"#,
+                    pts.join(" "),
+                    colour(*ink),
+                    n(*width_pt),
+                    dash(*dashed)
+                );
+            }
+            Mark::Dot { x, y, radius, ink } => {
+                let _ = writeln!(
+                    out,
+                    r#"<circle cx="{}" cy="{}" r="{}" fill="{}"/>"#,
+                    n(*x),
+                    n(*y),
+                    n(*radius),
+                    colour(*ink)
                 );
             }
         }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! A printed sheet as marks on a page: the words, bands and rules a figure
-//! of a non-statechart kind is made of, already placed.
+//! A printed sheet as marks on a page: the words, boxes, strokes and dots a
+//! figure of a non-statechart kind is made of, already placed.
 //!
 //! This is the print diagram's second drawing surface. The statechart
 //! figure is boxes joined by arrows ([`super::fit::Printed`]); a table, a
@@ -24,12 +24,22 @@ use super::boxes::{Line, Style};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Ink {
-    /// Text and the rule that closes a table's head.
+    /// Text, outlines and the rule that closes a table's head.
     Black,
+    /// What is stated without being drawn from the document's values: an
+    /// axis, a reference line, a stretch the document leaves open.
+    Muted,
     /// The hairline between two rows.
     Hairline,
-    /// The band a table's heading stands on.
+    /// A light fill: the band a table's heading stands on, a box's body.
     Shade,
+}
+
+/// An outline: its ink and its width in points.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Outline {
+    pub ink: Ink,
+    pub width_pt: f64,
 }
 
 /// One thing drawn on a sheet.
@@ -38,13 +48,14 @@ pub enum Ink {
 pub enum Mark {
     /// One line of text whose line box starts at `top`.
     Text { x: f64, top: f64, line: Line },
-    /// A filled rectangle with no outline.
+    /// A rectangle, filled, outlined, or both.
     Rect {
         x: f64,
         y: f64,
         width: f64,
         height: f64,
-        fill: Ink,
+        fill: Option<Ink>,
+        outline: Option<Outline>,
     },
     /// A straight stroke.
     Stroke {
@@ -52,7 +63,48 @@ pub enum Mark {
         to: (f64, f64),
         ink: Ink,
         width_pt: f64,
+        dashed: bool,
     },
+    /// A stroke through several points, in order.
+    Polyline {
+        points: Vec<(f64, f64)>,
+        ink: Ink,
+        width_pt: f64,
+        dashed: bool,
+    },
+    /// A filled dot.
+    Dot {
+        x: f64,
+        y: f64,
+        radius: f64,
+        ink: Ink,
+    },
+}
+
+impl Mark {
+    /// This mark moved by `(dx, dy)`.
+    pub fn shifted(mut self, dx: f64, dy: f64) -> Mark {
+        match &mut self {
+            Mark::Text { x, top, .. } => {
+                *x += dx;
+                *top += dy;
+            }
+            Mark::Rect { x, y, .. } | Mark::Dot { x, y, .. } => {
+                *x += dx;
+                *y += dy;
+            }
+            Mark::Stroke { from, to, .. } => {
+                *from = (from.0 + dx, from.1 + dy);
+                *to = (to.0 + dx, to.1 + dy);
+            }
+            Mark::Polyline { points, .. } => {
+                for p in points {
+                    *p = (p.0 + dx, p.1 + dy);
+                }
+            }
+        }
+        self
+    }
 }
 
 /// One printed page of a sheet.

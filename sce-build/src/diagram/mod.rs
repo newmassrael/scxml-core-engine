@@ -33,15 +33,19 @@
 //! A statechart is drawn as boxes and arrows; a table, a formula or a
 //! byte layout is not, so a document of any other kind is typeset instead:
 //! [`fields`] reads every value it states into tables ([`table`]) set on
-//! [`sheet::Sheet`]s, which [`svg::render_sheet`] writes out. The kinds'
-//! own pictures are built from the same tables and marks.
+//! [`sheet::Sheet`]s, which [`svg::render_sheet`] writes out. A kind's own
+//! picture ([`kinds`]) is drawn on a [`canvas::Canvas`] from the same
+//! typed model, and is an aid beside that table, never a replacement for
+//! it.
 
 use crate::model::SCXMLModel;
 
 pub mod boxes;
+pub mod canvas;
 pub mod checklist;
 pub mod fields;
 pub mod fit;
+pub mod kinds;
 pub mod layout;
 pub mod metrics;
 pub mod route;

@@ -354,3 +354,36 @@ fn a_table_that_does_not_fit_is_refused_and_nothing_is_written() {
     assert!(!out.exists(), "a refusal writes nothing");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A kind that has a picture gets it beside the table, written first and
+/// named for what it shows; the table is still there.
+#[test]
+fn a_kind_with_a_picture_gets_it_beside_its_field_table() {
+    let dir = scratch("diagram-picture");
+    let out = dir.join("sheets");
+    let run = diagram(&kind_example("buffer-pool"), &out, &[]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let printed: Vec<PathBuf> = String::from_utf8(run.stdout)
+        .expect("utf-8")
+        .lines()
+        .map(PathBuf::from)
+        .collect();
+    assert_eq!(
+        printed,
+        vec![out.join("slots.svg"), out.join("fields-1.svg")]
+    );
+    let words = svg_words(&printed[0]);
+    for expected in ["8 slots", "256 bytes", "2048 bytes"] {
+        assert!(words.iter().any(|w| w == expected), "{expected}: {words:?}");
+    }
+    let table = svg_words(&printed[1]);
+    assert!(
+        table.iter().any(|w| w == "slot_size") && table.iter().any(|w| w == "256"),
+        "the table still holds what the picture draws: {table:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

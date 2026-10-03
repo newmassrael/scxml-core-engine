@@ -2370,7 +2370,9 @@ enum Commands {
     /// not boxes and arrows, so it is set as the table of every value it
     /// states, field by field, in `<out>/fields-<n>.svg`: nothing the
     /// document says is left off a sheet except where each node was written
-    /// in its file.
+    /// in its file. A kind that has a picture (a buffer pool's slots, ...)
+    /// also gets it, as `<out>/<picture>.svg` beside the table: the picture
+    /// is an aid to reading, the table is the reading.
     ///
     /// ⚠ Exits with `cli/diagram-does-not-fit` when a figure or a table is
     /// larger than the page at `--min-pt`. It is never shrunk below that
@@ -9221,18 +9223,25 @@ fn cmd_diagram(
                     ),
                 });
             }
+            let pictures = sce_build::diagram::kinds::pictures(&parsed.document, lexicon, page)
+                .unwrap_or_else(|r| refuse(r));
             let sheets = sce_build::diagram::fields::pages(&parsed, lexicon, page)
                 .unwrap_or_else(|r| refuse(r));
-            let files: Vec<(String, String)> = sheets
+            let mut files: Vec<(String, String)> = pictures
                 .iter()
-                .enumerate()
-                .map(|(n, sheet)| {
+                .map(|p| {
                     (
-                        format!("fields-{}.svg", n + 1),
-                        sce_build::diagram::svg::render_sheet(sheet),
+                        format!("{}.svg", p.stem),
+                        sce_build::diagram::svg::render_sheet(&p.sheet),
                     )
                 })
                 .collect();
+            files.extend(sheets.iter().enumerate().map(|(n, sheet)| {
+                (
+                    format!("fields-{}.svg", n + 1),
+                    sce_build::diagram::svg::render_sheet(sheet),
+                )
+            }));
             write_diagram_files(out, &files);
             return;
         }

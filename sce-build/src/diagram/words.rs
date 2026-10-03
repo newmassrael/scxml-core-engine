@@ -54,6 +54,11 @@ pub enum Phrase {
     Value,
     /// A table's heading on the page after the one it began on.
     Continued,
+    /// What a row of slots counts, and what each one is measured in.
+    Slots,
+    Bytes,
+    /// What a collection's capacity counts.
+    Entries,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -79,6 +84,9 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::Field) => "field",
         ("en", Phrase::Value) => "value",
         ("en", Phrase::Continued) => "continued",
+        ("en", Phrase::Slots) => "slots",
+        ("en", Phrase::Bytes) => "bytes",
+        ("en", Phrase::Entries) => "entries",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -97,6 +105,9 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::Field) => "항목",
         ("ko", Phrase::Value) => "값",
         ("ko", Phrase::Continued) => "이어서",
+        ("ko", Phrase::Slots) => "슬롯",
+        ("ko", Phrase::Bytes) => "바이트",
+        ("ko", Phrase::Entries) => "원소",
         _ => return None,
     })
 }
@@ -128,7 +139,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 18] = [
+    const ALL: [Phrase; 21] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -147,6 +158,9 @@ mod tests {
         Phrase::Field,
         Phrase::Value,
         Phrase::Continued,
+        Phrase::Slots,
+        Phrase::Bytes,
+        Phrase::Entries,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered
