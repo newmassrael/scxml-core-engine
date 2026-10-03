@@ -766,32 +766,43 @@ export class App {
         ),
       ),
       this.removing ? this.removeBanner(work, editor) : null,
-      viewing !== null
-        ? h(
-            "p",
-            { class: "banner" },
-            this.t("viewingOld", { rev: viewing.revision.slice(0, 12) }),
-            " ",
-            h("button", { type: "button", onclick: () => this.back() }, this.t("backToCurrent")),
-          )
-        : null,
-      editor.base === null && viewing === null ? h("p", { class: "muted" }, this.t("noTextYet")) : null,
-      this.conflictBanner(editor),
-      editor.phase === "failed" ? this.failureBanner(editor) : null,
-      textarea,
+      // Two columns where the screen is wide enough: the text on one side and what
+      // SCE says of its model on the other, because the page is read AGAINST the
+      // text. Narrow, they stack in the same order.
       h(
         "div",
-        { class: "bar" },
-        h("button", { id: "save", type: "button", onclick: () => void this.save() }, this.t("save")),
-        h("span", { id: "status", class: "status", role: "status", "aria-live": "polite" }),
+        { class: "columns" },
         h(
-          "span",
-          { class: "muted rev" },
-          `${this.t("revision")}: ${editor.base === null ? this.t("noRevision") : editor.base.slice(0, 12)}`,
+          "div",
+          { class: "text-column" },
+          viewing !== null
+            ? h(
+                "p",
+                { class: "banner" },
+                this.t("viewingOld", { rev: viewing.revision.slice(0, 12) }),
+                " ",
+                h("button", { type: "button", onclick: () => this.back() }, this.t("backToCurrent")),
+              )
+            : null,
+          editor.base === null && viewing === null ? h("p", { class: "muted" }, this.t("noTextYet")) : null,
+          this.conflictBanner(editor),
+          editor.phase === "failed" ? this.failureBanner(editor) : null,
+          textarea,
+          h(
+            "div",
+            { class: "bar" },
+            h("button", { id: "save", type: "button", onclick: () => void this.save() }, this.t("save")),
+            h("span", { id: "status", class: "status", role: "status", "aria-live": "polite" }),
+            h(
+              "span",
+              { class: "muted rev" },
+              `${this.t("revision")}: ${editor.base === null ? this.t("noRevision") : editor.base.slice(0, 12)}`,
+            ),
+          ),
+          this.historyPanel(editor),
         ),
+        h("div", { class: "model-column" }, this.modelPanel(work)),
       ),
-      this.historyPanel(editor),
-      this.modelPanel(work),
     );
   }
 

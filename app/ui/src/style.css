@@ -164,6 +164,28 @@ body {
   margin-left: auto;
 }
 
+/* The text and what SCE says of its model, side by side where there is room: the
+   pseudocode page is read against the text, so the two want to be in view
+   together. Narrow, the model follows the text in the same order. */
+.columns {
+  display: block;
+}
+
+@media (min-width: 1100px) {
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .model-column .model {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
 .source {
   width: 100%;
   min-height: 46vh;
