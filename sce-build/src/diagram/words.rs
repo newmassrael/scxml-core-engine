@@ -65,6 +65,28 @@ pub enum Phrase {
     Grid,
     Rows,
     Columns,
+    /// What a codec is drawn as, and the words a layout's legend uses: a
+    /// size in bits, a byte order, where a length or a count is read from,
+    /// what a field takes when it has no stated end, a condition on its
+    /// presence, what follows the fields when the codec dispatches on a
+    /// variant, and bits the document does not account for.
+    Layout,
+    Bits,
+    Bit,
+    BigEndian,
+    LittleEndian,
+    NativeEndian,
+    LengthIn,
+    UpTo,
+    RestOfMessage,
+    Repeated,
+    CountIn,
+    UntilEnd,
+    PresentIf,
+    Arms,
+    Unstated,
+    /// "after <field>" — the rows that follow a field of variable width.
+    After,
 }
 
 /// The phrase in `lexicon`, or `None` for a lexicon this table does not
@@ -97,6 +119,22 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("en", Phrase::Grid) => "grid",
         ("en", Phrase::Rows) => "rows",
         ("en", Phrase::Columns) => "columns",
+        ("en", Phrase::Layout) => "layout",
+        ("en", Phrase::Bits) => "bits",
+        ("en", Phrase::Bit) => "bit",
+        ("en", Phrase::BigEndian) => "big-endian",
+        ("en", Phrase::LittleEndian) => "little-endian",
+        ("en", Phrase::NativeEndian) => "native byte order",
+        ("en", Phrase::LengthIn) => "length in",
+        ("en", Phrase::UpTo) => "up to",
+        ("en", Phrase::RestOfMessage) => "rest of the message",
+        ("en", Phrase::Repeated) => "repeated",
+        ("en", Phrase::CountIn) => "count in",
+        ("en", Phrase::UntilEnd) => "until the end",
+        ("en", Phrase::PresentIf) => "present if",
+        ("en", Phrase::Arms) => "arms",
+        ("en", Phrase::Unstated) => "not stated",
+        ("en", Phrase::After) => "after",
         ("ko", Phrase::WholeDocument) => "문서 전체",
         ("ko", Phrase::Inside) => "안쪽",
         ("ko", Phrase::OpensIn) => "펼친 그림:",
@@ -122,6 +160,22 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
         ("ko", Phrase::Grid) => "격자",
         ("ko", Phrase::Rows) => "행",
         ("ko", Phrase::Columns) => "열",
+        ("ko", Phrase::Layout) => "배치",
+        ("ko", Phrase::Bits) => "비트",
+        ("ko", Phrase::Bit) => "비트",
+        ("ko", Phrase::BigEndian) => "빅 엔디언",
+        ("ko", Phrase::LittleEndian) => "리틀 엔디언",
+        ("ko", Phrase::NativeEndian) => "기계 고유 순서",
+        ("ko", Phrase::LengthIn) => "길이:",
+        ("ko", Phrase::UpTo) => "최대",
+        ("ko", Phrase::RestOfMessage) => "메시지의 나머지",
+        ("ko", Phrase::Repeated) => "반복",
+        ("ko", Phrase::CountIn) => "개수:",
+        ("ko", Phrase::UntilEnd) => "끝까지",
+        ("ko", Phrase::PresentIf) => "조건:",
+        ("ko", Phrase::Arms) => "분기",
+        ("ko", Phrase::Unstated) => "명시 없음",
+        ("ko", Phrase::After) => "뒤",
         _ => return None,
     })
 }
@@ -139,6 +193,18 @@ pub fn figure_title(lexicon: &Lexicon, name: &FigureName) -> Option<String> {
     })
 }
 
+/// "after <field>" in the lexicon's word order: the head of the rows that
+/// follow a field of variable width. The arms of a variant, which follow no
+/// named field, are headed by the bare word.
+pub fn after_field(lexicon: &Lexicon, field: &str) -> Option<String> {
+    let after = phrase(lexicon, Phrase::After)?;
+    Some(match (lexicon.name, field.is_empty()) {
+        (_, true) => after.to_string(),
+        ("ko", false) => format!("{field} {after}"),
+        (_, false) => format!("{after} {field}"),
+    })
+}
+
 /// "from <state>" in the lexicon's word order.
 pub fn from_state(lexicon: &Lexicon, state: &str) -> Option<String> {
     let from = phrase(lexicon, Phrase::From)?;
@@ -153,7 +219,7 @@ mod tests {
     use super::*;
     use crate::forge::page::{lexicon_named, lexicon_names};
 
-    const ALL: [Phrase; 25] = [
+    const ALL: [Phrase; 41] = [
         Phrase::WholeDocument,
         Phrase::Inside,
         Phrase::OpensIn,
@@ -179,6 +245,22 @@ mod tests {
         Phrase::Grid,
         Phrase::Rows,
         Phrase::Columns,
+        Phrase::Layout,
+        Phrase::Bits,
+        Phrase::Bit,
+        Phrase::BigEndian,
+        Phrase::LittleEndian,
+        Phrase::NativeEndian,
+        Phrase::LengthIn,
+        Phrase::UpTo,
+        Phrase::RestOfMessage,
+        Phrase::Repeated,
+        Phrase::CountIn,
+        Phrase::UntilEnd,
+        Phrase::PresentIf,
+        Phrase::Arms,
+        Phrase::Unstated,
+        Phrase::After,
     ];
 
     /// The page's registry is the list of languages; a lexicon registered

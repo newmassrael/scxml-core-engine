@@ -35,6 +35,7 @@ use super::words::{self, Phrase};
 use crate::forge::model::ForgeDocument;
 use crate::forge::page::Lexicon;
 
+pub mod codec;
 pub mod interpolation;
 pub mod slots;
 
@@ -59,11 +60,11 @@ pub fn pictures(
         ForgeDocument::BufferPool(m) => slots::buffer_pool(m, lexicon, page),
         ForgeDocument::BoundedCollection(m) => slots::bounded_collection(m, lexicon, page),
         ForgeDocument::Interpolation(m) => interpolation::interpolation(m, lexicon, page),
+        ForgeDocument::Codec(m) => codec::codec(m, lexicon, page),
         // Read from the field table alone, for now.
         ForgeDocument::Transform(_)
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Condition(_)
-        | ForgeDocument::Codec(_)
         | ForgeDocument::Validator(_)
         | ForgeDocument::Procedure(_)
         | ForgeDocument::Filter(_)
