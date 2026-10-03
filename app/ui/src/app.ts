@@ -30,6 +30,7 @@ import {
   type Unresolved,
   type Work,
 } from "./contract";
+import type { Desktop } from "./desktop";
 import { h, type Child } from "./dom";
 import {
   conflicted,
@@ -65,6 +66,8 @@ export interface Environment {
   readonly transport: Transport;
   /** Present when the server wants a token the person can be asked for. */
   readonly credentials?: Credentials | undefined;
+  /** Present inside a desktop window: told what is unsaved, and asked to close it. */
+  readonly desktop?: Desktop | undefined;
   readonly storage: Pick<Storage, "getItem" | "setItem"> | null;
   readonly browserLanguage: string | undefined;
 }
@@ -117,6 +120,10 @@ export class App {
   private answersTicket = 0;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
+  /** The window was asked to close while something was not saved, and the person has not yet said what to do. */
+  private closing = false;
+  /** What the desktop shell was last told is unsaved, so it is told only what changed. */
+  private reportedUnsaved: boolean | null = null;
   /** What is typed in the new-work field, kept across redraws. */
   private draftTitle = "";
   /** The server refused for want of a token, and the person can supply one. */
@@ -312,6 +319,7 @@ export class App {
           : model.base === null
             ? ""
             : this.t("answersSaved");
+    this.reportUnsaved();
   }
 
   /**
@@ -448,7 +456,44 @@ export class App {
 
   private cancelSwitch(): void {
     this.pendingSwitch = null;
+    this.closing = false;
     this.render();
+  }
+
+  /**
+   * The desktop shell was asked to close the window and held the close because this
+   * screen said it holds something unsaved. With nothing unsaved after all it closes
+   * at once; otherwise the person is asked, and the shell is told again that the
+   * question is open, which is how it knows this screen is answering.
+   */
+  askToClose(): void {
+    if (!this.hasUnsavedChanges()) {
+      void this.env.desktop?.close();
+      return;
+    }
+    this.closing = true;
+    this.render();
+    this.reportUnsaved(true);
+  }
+
+  private async saveAndClose(): Promise<void> {
+    await this.save();
+    await this.saveAnswers();
+    // Only saves that took, with nothing typed since, let the window go.
+    if (this.closing && !this.hasUnsavedChanges()) await this.env.desktop?.close();
+  }
+
+  /**
+   * Tell the desktop shell whether this screen holds anything unsaved, when that has
+   * changed (`force` says it again: the shell counts that as an answer).
+   */
+  private reportUnsaved(force = false): void {
+    const desktop = this.env.desktop;
+    if (desktop === undefined) return;
+    const unsaved = this.hasUnsavedChanges();
+    if (!force && unsaved === this.reportedUnsaved) return;
+    this.reportedUnsaved = unsaved;
+    desktop.unsaved(unsaved);
   }
 
   private async save(): Promise<void> {
@@ -672,6 +717,10 @@ export class App {
     this.restoreEditorFocus(keep);
     this.refreshAnswersChrome();
     this.restoreAnswerFocus(keepAnswer);
+    // Whatever moved what is unsaved (a save, a removal, another work) is told to
+    // the desktop shell here too: the two chrome refreshes above return early when
+    // there is no editor or no answers on screen.
+    this.reportUnsaved();
   }
 
   /**
@@ -769,28 +818,40 @@ export class App {
     );
   }
 
-  /** Shown while a work the person asked for waits on what to do with unsaved text. */
+  /**
+   * Shown while the person waits on what to do with what is not saved: before another
+   * work replaces it (`pendingSwitch`), or before the window closes over it (`closing`).
+   */
   private switchBanner(): HTMLElement | null {
     const target = this.pendingSwitch;
-    if (target === null) return null;
+    if (target === null && !this.closing) return null;
     const saving = this.somethingIsSaving();
+    const closing = target === null;
     return h(
       "section",
       { class: "banner banner-warn", role: "alert" },
-      h("strong", {}, this.t("switchTitle")),
-      h("p", {}, this.t("switchBody", { title: target.title })),
+      h("strong", {}, this.t(closing ? "closeTitle" : "switchTitle")),
+      h("p", {}, closing ? this.t("closeBody") : this.t("switchBody", { title: target.title })),
       h(
         "div",
         { class: "choices" },
         h(
           "button",
-          { type: "button", disabled: saving, onclick: () => void this.saveAndSwitch() },
-          this.t("saveAndSwitch"),
+          {
+            type: "button",
+            disabled: saving,
+            onclick: () => void (closing ? this.saveAndClose() : this.saveAndSwitch()),
+          },
+          this.t(closing ? "saveAndClose" : "saveAndSwitch"),
         ),
         h(
           "button",
-          { type: "button", disabled: saving, onclick: () => void this.select(target) },
-          this.t("discardAndSwitch"),
+          {
+            type: "button",
+            disabled: saving,
+            onclick: () => void (closing ? this.env.desktop?.close() : this.select(target)),
+          },
+          this.t(closing ? "discardAndClose" : "discardAndSwitch"),
         ),
         h("button", { type: "button", onclick: () => this.cancelSwitch() }, this.t("cancelSwitch")),
       ),
@@ -1387,6 +1448,7 @@ export class App {
           : editor.base === null
             ? ""
             : this.t("saved");
+    this.reportUnsaved();
   }
 
   private captureEditorFocus(): { focused: boolean; start: number; end: number } | null {

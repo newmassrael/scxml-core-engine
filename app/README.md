@@ -37,8 +37,6 @@ What does not exist yet, so that nothing below is read as done:
   model leaves open; it does not edit the model (an AI client writes it).
 - A model of several documents. `figures` draws ONE document: a link that
   imports a codec is refused by SCE for the import it cannot find, in SCE's words.
-- A desktop window asks nothing when it is closed with text not yet saved. A
-  browser tab does (the browser's own prompt); the window has no such event wired.
 - Windows has not been run; the Linux desktop build and the browser have.
 
 ## How the parts fit
@@ -130,6 +128,27 @@ the verdict is kept and the page's own refusal is shown beside it.
 ⚠ "Accepted" is the product's verdict on the document. The screen says once, next
 to it, that it does not say the model agrees with your text, and nothing on it
 claims that: you compare the page with your own words.
+
+### Closing the desktop window
+
+A browser tab is asked "leave this page?" by the browser; a window is not. So the
+screen tells the shell whether it holds anything the core has not been given (the
+editor's text, or answers typed and not saved), and when the window is asked to
+close with something unsaved the shell (`src-tauri/src/close_gate.rs`) holds the
+close and runs a fixed script that has the SCREEN ask: save and close, discard and
+close, or stay. Only the person's choice lets the window go (`sce_close`); a window
+with nothing unsaved closes at once. The commands the window may call are
+`sce_call`, `sce_unsaved` and `sce_close`, and nothing else.
+
+⚠ A window that cannot be closed is its own failure. If the screen was asked and says
+nothing for three seconds (it crashed, or never loaded), the next close request goes
+through: a screen that does not answer protects nothing. That is decided from the
+times in `close_gate.rs`, and its tests say so.
+
+Checked on a real window (Linux, under a virtual display, with the close request
+sent the way a window manager's close button sends it): held with unsaved text;
+"discard and close" closes; "save, then close" saves the text and closes; a window
+with nothing unsaved closes at once.
 
 ### Your answers to what the model leaves open
 

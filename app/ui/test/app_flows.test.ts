@@ -1006,6 +1006,146 @@ describe("the owner's answers", () => {
   });
 });
 
+// ---- a desktop window being closed ----------------------------------------
+
+/** What the shell of a desktop window hears from the screen, and is told to do. */
+class FakeDesktop {
+  readonly reports: boolean[] = [];
+  closed = 0;
+  unsaved(unsaved: boolean): void {
+    this.reports.push(unsaved);
+  }
+  async close(): Promise<void> {
+    this.closed += 1;
+  }
+}
+
+describe("a desktop window asked to close", () => {
+  let desktop: FakeDesktop;
+
+  beforeEach(async () => {
+    desktop = new FakeDesktop();
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    core.addWork("beta", "Beta", ["beta one"]);
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", desktop });
+    await app.start();
+    await settle();
+  });
+
+  it("is told what is unsaved when it changes, and only then", async () => {
+    await click("Alpha");
+    expect(desktop.reports.at(-1)).toBe(false);
+    const before = desktop.reports.length;
+
+    await type("alpha changed");
+    expect(desktop.reports.at(-1)).toBe(true);
+    await type("alpha changed again");
+    expect(desktop.reports.length).toBe(before + 1);
+
+    await click("Save");
+    expect(desktop.reports.at(-1)).toBe(false);
+  });
+
+  it("is told about typed answers the same way", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card.");
+    expect(desktop.reports.at(-1)).toBe(true);
+    await click("Save answers");
+    expect(desktop.reports.at(-1)).toBe(false);
+  });
+
+  it("closes at once when nothing is unsaved after all", async () => {
+    await click("Alpha");
+    app.askToClose();
+    await settle();
+
+    expect(desktop.closed).toBe(1);
+    expect(root.textContent).not.toContain("Closing the window would lose");
+  });
+
+  it("asks first when the editor holds text the core has not been given, and stays when the person says so", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    app.askToClose();
+    await settle();
+
+    expect(root.textContent).toContain("Closing the window would lose");
+    expect(desktop.closed).toBe(0);
+    await click("Stay here");
+    expect(root.textContent).not.toContain("Closing the window would lose");
+    expect(desktop.closed).toBe(0);
+    expect(editor().value).toBe("alpha changed");
+  });
+
+  it("says again that something is unsaved while the question is open: that is how the shell knows it is answered", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    const before = desktop.reports.length;
+    app.askToClose();
+    await settle();
+
+    expect(desktop.reports.length).toBeGreaterThan(before);
+    expect(desktop.reports.at(-1)).toBe(true);
+  });
+
+  it("closes without saving only when the person says to discard", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    app.askToClose();
+    await settle();
+    await click("Discard my changes and close");
+
+    expect(desktop.closed).toBe(1);
+    expect(core.headText("alpha")).toBe("alpha two");
+  });
+
+  it("saves the text and the answers first when the person says to, and then closes", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    await answer("open-guard", "Any card.");
+    app.askToClose();
+    await settle();
+    await click("Save, then close");
+
+    expect(core.headText("alpha")).toBe("alpha changed");
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card." });
+    expect(desktop.closed).toBe(1);
+  });
+
+  it("stays open when the save before closing does not take", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    core.failNext("save_source", new CommandFailure("io", "the disk is full"));
+    app.askToClose();
+    await settle();
+    await click("Save, then close");
+
+    expect(desktop.closed).toBe(0);
+    expect(root.textContent).toContain("the disk is full");
+    expect(app.hasUnsavedChanges()).toBe(true);
+  });
+
+  it("is not closed under a save that is still on its way", async () => {
+    await click("Alpha");
+    await type("alpha changed");
+    const held = core.hold("save_source");
+    app.askToClose();
+    await settle();
+    void click("Save, then close");
+    await settle();
+    expect(desktop.closed).toBe(0);
+    expect(buttons("Discard my changes and close")[0]?.disabled).toBe(true);
+
+    held.release();
+    await settle();
+    expect(desktop.closed).toBe(1);
+  });
+});
+
 // ---- removing a work ------------------------------------------------------
 
 const workLinks = (): string[] => [...root.querySelectorAll(".work-link")].map((b) => b.textContent ?? "");

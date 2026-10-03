@@ -6,7 +6,23 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import type { Desktop } from "./desktop";
 import { failureFromInvoke, type Transport } from "./ipc";
+
+/**
+ * The window's own commands: whether the screen holds unsaved changes, and that the
+ * person decided it may close. A report that cannot be delivered is dropped: the
+ * shell then believes the last one it heard, and a window it cannot hear from is
+ * closed after a wait rather than held for ever (`close_gate.rs`).
+ */
+export const tauriDesktop: Desktop = {
+  unsaved(unsaved) {
+    invoke("sce_unsaved", { unsaved }).catch(() => undefined);
+  },
+  async close() {
+    await invoke("sce_close");
+  },
+};
 
 export const tauriTransport: Transport = {
   async call(name, args = {}) {

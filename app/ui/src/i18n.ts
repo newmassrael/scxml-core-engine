@@ -84,7 +84,12 @@ const en = {
   removeTitle: "Remove \"{title}\" from the list?",
   removeBody:
     "The work leaves the list and cannot be opened here. Its files stay in the works folder, so it can be brought back by deleting the file removed.json in its folder.",
-  removeBodyUnsaved: "Text in the editor that is not saved is lost with it.",
+  removeBodyUnsaved: "Anything that is not saved is lost with it: the editor's text, and answers you typed.",
+  closeTitle: "There are changes that are not saved",
+  closeBody:
+    "Closing the window would lose what is on screen that is not saved: the text in the editor, or the answers you typed. Save them first, discard them, or stay here.",
+  saveAndClose: "Save, then close",
+  discardAndClose: "Discard my changes and close",
   removeConfirm: "Remove",
   removeCancel: "Keep the work",
   removedNotice: "\"{title}\" was removed from the list.",
@@ -204,7 +209,12 @@ const ko: Record<Key, string> = {
   removeTitle: "\"{title}\"을(를) 목록에서 지울까요?",
   removeBody:
     "작업이 목록에서 사라지고 여기서는 열 수 없습니다. 파일은 작업 폴더에 그대로 있으므로, 그 폴더의 removed.json 파일을 지우면 되살릴 수 있습니다.",
-  removeBodyUnsaved: "편집기에 저장하지 않은 글은 함께 사라집니다.",
+  removeBodyUnsaved: "저장하지 않은 것(편집기의 글, 적어 둔 답)은 함께 사라집니다.",
+  closeTitle: "저장하지 않은 변경이 있습니다",
+  closeBody:
+    "창을 닫으면 저장하지 않은 편집기의 글과 적어 둔 답이 사라집니다. 먼저 저장하거나, 버리거나, 그대로 머물 수 있습니다.",
+  saveAndClose: "저장하고 닫기",
+  discardAndClose: "내 변경을 버리고 닫기",
   removeConfirm: "지우기",
   removeCancel: "그대로 두기",
   removedNotice: "\"{title}\"을(를) 목록에서 지웠습니다.",

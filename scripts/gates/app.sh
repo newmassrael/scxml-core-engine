@@ -60,3 +60,8 @@ cargo clippy --manifest-path app/Cargo.toml --workspace --all-targets --locked -
 
 cargo test --manifest-path app/Cargo.toml -p sce-web-shell --locked \
     || sce_gate_fail "app: the browser shell's tests"
+
+# The desktop shell's own logic, which has no window in it: when a close request is
+# held and when it is let through (`close_gate.rs`).
+cargo test --manifest-path app/Cargo.toml -p sce-workbench --lib --locked \
+    || sce_gate_fail "app: the desktop shell's close gate"

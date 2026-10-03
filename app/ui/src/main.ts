@@ -4,6 +4,7 @@
 import "./style.css";
 
 import { App } from "./app";
+import type { Desktop } from "./desktop";
 import { httpTransport, insideTauri, type Transport } from "./ipc";
 import { credentials, takeToken, type Credentials } from "./token";
 
@@ -11,11 +12,14 @@ interface Connection {
   readonly transport: Transport;
   /** Present when the screen talks to a server that wants a token. */
   readonly credentials?: Credentials;
+  /** Present inside a desktop window, which has to be asked about closing by the shell. */
+  readonly desktop?: Desktop;
 }
 
 async function connect(): Promise<Connection> {
   if (insideTauri(window)) {
-    return { transport: (await import("./tauri_transport")).tauriTransport };
+    const tauri = await import("./tauri_transport");
+    return { transport: tauri.tauriTransport, desktop: tauri.tauriDesktop };
   }
   let storage: Storage | null = null;
   try {
@@ -54,8 +58,11 @@ void app.start();
 
 // A tab closed or reloaded while the editor holds text the core has not been
 // given loses it, so the browser is asked to confirm first. A desktop window has
-// no such event for its close button; that case is not covered yet.
-if (!insideTauri(window)) {
+// no such event for its close button: the shell holds the close and runs this,
+// and the screen puts the question to the person itself.
+if (insideTauri(window)) {
+  (window as unknown as { sceCloseRequested?: () => void }).sceCloseRequested = () => app.askToClose();
+} else {
   window.addEventListener("beforeunload", (event) => {
     if (app.hasUnsavedChanges()) event.preventDefault();
   });
