@@ -87,6 +87,17 @@ with `conflict` if that is no longer current. The text, the model, the answers,
 the requirement list and the acceptances are five chains kept by one
 implementation (one lock, one compare-and-swap).
 
+A folder an older build wrote has pointers that are the digest alone, and nothing in it
+says which of several saves of one digest the pointer meant: a save that failed leaves
+the same log line a save that worked does. This build reads such a folder as it always
+read, with one exception. When two saves of a model disagree about the text it was
+written for, the model's text is left unstated (the screen's word for it is
+`behind`, never `current`) rather than taken from the last of them, and the first save
+that works settles it and writes the pointer in the form above. A save into an older
+folder names the place first, so a save that fails leaves nothing in the log. What an
+older folder cannot give back is the history of two such disagreeing saves: it may list
+the one that failed.
+
 ### Removing a work
 
 `remove_work` (the screen's "Remove this work", after it asks) takes a work out

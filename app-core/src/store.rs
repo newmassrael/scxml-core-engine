@@ -44,6 +44,17 @@
 //! read (the history, the source a model was written for) starts from that line and
 //! follows each save's `parent_at`, and a line off that path was never current.
 //!
+//! A pointer from before places were kept names no save, and a save that failed leaves the
+//! same line a save that worked does, so nothing in such a folder says which of several
+//! saves of one digest it meant. A read takes the last line of the digest, as it always
+//! did, UNLESS those saves disagree about the text they were written for: then the claim is
+//! nobody's to vouch for and is left unstated (a model reads as `behind`, never `current`).
+//! A save into such a folder writes the place first and logs afterwards, so a failure of that
+//! write stops it before the log holds a line, and the first save that works leaves the
+//! folder in the form this build writes. A read takes the pointer, the log, and the pointer
+//! again, and starts over if it moved, so a save landing between the two reads is not read
+//! against the pointer it replaced.
+//!
 //! The text, the model, the owner's answers, the requirement list and the acceptances are
 //! five chains kept by ONE implementation
 //! ([`Artifact`] says where each lives and how large it may be), because two
@@ -609,9 +620,13 @@ impl<C: Clock> WorkStore<C> {
     /// revision current; a revision no save on the chain names (one a failed save
     /// left behind) says nothing.
     ///
-    /// The pointer is read ONCE, and both the text and the chain come from it. Read
-    /// twice, a save landing between the two reads would hand over the text of one
-    /// pointer with the claim of the next.
+    /// The pointer and the chain come from ONE snapshot (`read_chain`), and the text is the
+    /// one that pointer names. Read separately, a save landing between the reads would hand
+    /// over the text of one pointer with the claim of the next.
+    ///
+    /// The current revision's claim is the chain's (`Chain::claim`), which says nothing when
+    /// an older folder cannot show which of two saves of it took effect; an earlier
+    /// revision's is what the chain's save of it says.
     fn read_claimed(
         &self,
         artifact: Artifact,
@@ -619,7 +634,7 @@ impl<C: Clock> WorkStore<C> {
         revision: Option<&Revision>,
     ) -> Result<Option<(Revision, Option<Revision>, String)>, StoreError> {
         let dir = self.existing(id)?;
-        let pointer = read_pointer(&dir, artifact)?;
+        let Snapshot { pointer, chain } = read_chain(&dir, artifact, || {})?;
         let wanted = match (revision, pointer.as_ref()) {
             (Some(named), _) => named.clone(),
             (None, Some(pointer)) => pointer.revision.clone(),
@@ -627,12 +642,16 @@ impl<C: Clock> WorkStore<C> {
         };
         let (revision, text) =
             self.read_revision(&dir, artifact, id, wanted, revision.is_some())?;
-        let chain = chain_to(&dir, artifact, pointer.as_ref())?;
-        let written_for = chain
-            .iter()
-            .rev()
-            .find(|entry| entry.revision == revision)
-            .and_then(|entry| entry.written_for.clone());
+        let written_for = if pointer.as_ref().is_some_and(|p| p.revision == revision) {
+            chain.claim()
+        } else {
+            chain
+                .entries
+                .iter()
+                .rev()
+                .find(|entry| entry.revision == revision)
+                .and_then(|entry| entry.written_for.clone())
+        };
         Ok(Some((revision, written_for, text)))
     }
 
@@ -859,7 +878,7 @@ impl<C: Clock> WorkStore<C> {
                 });
             }
         }
-        let pointer = read_pointer(&dir, artifact)?;
+        let mut pointer = read_pointer(&dir, artifact)?;
         let current = pointer.as_ref().map(|p| p.revision.clone());
         if current.as_ref() != base {
             return Err(StoreError::Conflict {
@@ -871,15 +890,25 @@ impl<C: Clock> WorkStore<C> {
         if current.as_ref() == Some(&revision) {
             // A text is unchanged when it is the current one. A model is too
             // only if it is also written for the same text: the same model for
-            // another text is the writer's news (see `save_model`).
+            // another text is the writer's news (see `save_model`). A claim an
+            // older folder cannot vouch for is no claim, so it is never "the same".
             let same_claim = !artifact.is_written_for_a_source()
-                || chain_to(&dir, artifact, pointer.as_ref())?
-                    .pop()
-                    .and_then(|entry| entry.written_for)
-                    .as_ref()
-                    == written_for;
+                || chain_to(&dir, artifact, pointer.as_ref())?.claim().as_ref() == written_for;
             if same_claim {
                 return Ok(Saved::Unchanged { revision });
+            }
+        }
+
+        // An older folder's pointer is the digest alone. Before this save is logged,
+        // say which save of that digest the pointer meant -- so a save that then fails
+        // leaves a line the pointer visibly does not name, and a failure of THIS write
+        // stops the save before anything is logged. Left unsaid when the log cannot
+        // say it either (two saves that disagree, or none): a guess pinned into the
+        // pointer would turn a save that failed into the one that took effect.
+        if let Some(older) = pointer.as_ref().filter(|p| p.entry.is_none()) {
+            let pinned = chain_to(&dir, artifact, Some(older)).is_ok_and(|chain| !chain.doubtful);
+            if pinned {
+                pointer = Some(name_the_place(&dir, artifact, older)?);
             }
         }
 
@@ -914,7 +943,7 @@ impl<C: Clock> WorkStore<C> {
         // The pointer and the place of the save it makes current move together.
         atomic_write(
             &dir.join(artifact.head_file()),
-            format!("{revision}\n{POINTER_ENTRY_PREFIX}{place}\n").as_bytes(),
+            pointer_file_text(&revision, place).as_bytes(),
         )?;
         Ok(Saved::Saved {
             revision,
@@ -970,21 +999,71 @@ fn removed_work(id: &WorkId) -> StoreError {
 
 /// The history of `artifact` in the work's folder `dir`.
 fn history_in(dir: &Path, artifact: Artifact) -> Result<Vec<HistoryEntry>, StoreError> {
-    let pointer = read_pointer(dir, artifact)?;
-    chain_to(dir, artifact, pointer.as_ref())
+    Ok(read_chain(dir, artifact, || {})?.chain.entries)
 }
 
-/// The saves that took effect up to the one `pointer` names, oldest first.
+/// How many times a read starts over because the pointer moved under it. A pointer that
+/// keeps moving is a folder under constant writing; the last read stands.
+const READ_TRIES: usize = 5;
+
+/// A pointer and the chain it names, read so that they belong together.
+struct Snapshot {
+    pointer: Option<Pointer>,
+    chain: Chain,
+}
+
+/// Read the pointer, then the log, then the pointer again, and start over if the pointer
+/// moved: what is returned is the chain of a pointer that was still the pointer after the
+/// log was read. Without the second look, a save that landed between the two reads
+/// (or one that logged and failed) is read against a pointer that has already been
+/// replaced -- and for a pointer that names no place (an older folder's) nothing in the
+/// log says which of several saves of one digest it meant.
 ///
-/// `pointer` is the one the caller read, and the answer is the chain AS OF that
-/// pointer: the log only grows, and a line it gained after the pointer was read (a
-/// save that landed, or one that logged and failed) is not part of it, because the
-/// walk starts at the line the pointer names and goes back from there.
-fn chain_to(
+/// `between_reads` runs after the first pointer and before the log: a seam for the test that
+/// makes a writer land exactly there, which cannot be arranged from outside the process.
+fn read_chain(
     dir: &Path,
     artifact: Artifact,
-    pointer: Option<&Pointer>,
-) -> Result<Vec<HistoryEntry>, StoreError> {
+    mut between_reads: impl FnMut(),
+) -> Result<Snapshot, StoreError> {
+    let mut tries = 0;
+    loop {
+        let pointer = read_pointer(dir, artifact)?;
+        between_reads();
+        let chain = chain_to(dir, artifact, pointer.as_ref())?;
+        let after = read_pointer(dir, artifact)?;
+        tries += 1;
+        if after == pointer || tries >= READ_TRIES {
+            return Ok(Snapshot { pointer, chain });
+        }
+    }
+}
+
+/// The saves that took effect up to the one a pointer names, oldest first.
+struct Chain {
+    entries: Vec<HistoryEntry>,
+    /// The pointer names no place, and the saves of its revision in the log disagree about
+    /// the text it was written for. Which of them took effect cannot be told -- a save that
+    /// failed leaves the same line a save that worked does -- so what the last one says is
+    /// a claim nobody can vouch for, and `claim` does not give it.
+    doubtful: bool,
+}
+
+impl Chain {
+    /// The source revision the save the chain ends at was written for, or `None` when it
+    /// says none or when it cannot be vouched for.
+    fn claim(&self) -> Option<Revision> {
+        if self.doubtful {
+            return None;
+        }
+        self.entries
+            .last()
+            .and_then(|entry| entry.written_for.clone())
+    }
+}
+
+/// The log's saves in the order they were appended. A final line cut short is left out.
+fn read_log(dir: &Path, artifact: Artifact) -> Result<Vec<LogLine>, StoreError> {
     let path = dir.join(artifact.log_file());
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
@@ -1009,10 +1088,29 @@ fn chain_to(
             }
         }
     }
+    Ok(lines)
+}
+
+/// The saves that took effect up to the one `pointer` names, oldest first.
+///
+/// `pointer` is the one the caller read, and the answer is the chain AS OF that
+/// pointer: the log only grows, and a line it gained after the pointer was read (a
+/// save that landed, or one that logged and failed) is not part of it, because the
+/// walk starts at the line the pointer names and goes back from there.
+fn chain_to(
+    dir: &Path,
+    artifact: Artifact,
+    pointer: Option<&Pointer>,
+) -> Result<Chain, StoreError> {
+    let path = dir.join(artifact.log_file());
+    let lines = read_log(dir, artifact)?;
 
     // Nothing has taken effect until the pointer exists, whatever the log holds.
     let Some(pointer) = pointer else {
-        return Ok(Vec::new());
+        return Ok(Chain {
+            entries: Vec::new(),
+            doubtful: false,
+        });
     };
     let missing = |revision: &Revision| {
         StoreError::corrupt(
@@ -1024,19 +1122,33 @@ fn chain_to(
         )
     };
     // The save the pointer names, by its place; a pointer without one (or one that
-    // does not lead to its own revision) is read as before, by the last line of it.
-    let mut at = match pointer.entry {
+    // does not lead to its own revision) is read as before, by the last line of it --
+    // and then every other save of that revision is a candidate for the one it meant.
+    let named_by_place = match pointer.entry {
         Some(place)
             if lines
                 .get(place)
                 .is_some_and(|l| l.entry.revision == pointer.revision) =>
         {
-            place
+            Some(place)
         }
-        _ => lines
+        _ => None,
+    };
+    let mut at = match named_by_place {
+        Some(place) => place,
+        None => lines
             .iter()
             .rposition(|l| l.entry.revision == pointer.revision)
             .ok_or_else(|| missing(&pointer.revision))?,
+    };
+    let doubtful = named_by_place.is_none() && {
+        let mut claims = lines
+            .iter()
+            .filter(|l| l.entry.revision == pointer.revision)
+            .map(|l| &l.entry.written_for);
+        claims
+            .next()
+            .is_some_and(|first| claims.any(|other| other != first))
     };
     let mut chain = Vec::new();
     loop {
@@ -1056,7 +1168,10 @@ fn chain_to(
         };
     }
     chain.reverse();
-    Ok(chain)
+    Ok(Chain {
+        entries: chain,
+        doubtful,
+    })
 }
 
 /// Where the default works folder is: `SCE_WORKS_DIR` when set, otherwise the
@@ -1206,6 +1321,34 @@ fn read_pointer(dir: &Path, artifact: Artifact) -> Result<Option<Pointer>, Store
     Ok(Some(Pointer { revision, entry }))
 }
 
+/// What a pointer file holds: the revision, and the place of the save that made it current.
+fn pointer_file_text(revision: &Revision, place: usize) -> String {
+    format!("{revision}\n{POINTER_ENTRY_PREFIX}{place}\n")
+}
+
+/// An older folder's pointer written again with the place of the save it meant: the last
+/// line the log holds for its revision, which is the line it has always been read as.
+///
+/// Only for a pointer whose revision the log leaves no doubt about (`Chain::doubtful`):
+/// a place pinned for a line that may be a save which failed would make that save the one
+/// that took effect.
+fn name_the_place(dir: &Path, artifact: Artifact, older: &Pointer) -> Result<Pointer, StoreError> {
+    let Some(place) = read_log(dir, artifact)?
+        .iter()
+        .rposition(|line| line.entry.revision == older.revision)
+    else {
+        return Ok(older.clone());
+    };
+    atomic_write(
+        &dir.join(artifact.head_file()),
+        pointer_file_text(&older.revision, place).as_bytes(),
+    )?;
+    Ok(Pointer {
+        revision: older.revision.clone(),
+        entry: Some(place),
+    })
+}
+
 fn read_head(dir: &Path, artifact: Artifact) -> Result<Option<Revision>, StoreError> {
     Ok(read_pointer(dir, artifact)?.map(|pointer| pointer.revision))
 }
@@ -1308,4 +1451,112 @@ fn drop_torn_tail(path: &Path) -> io::Result<()> {
     let file = OpenOptions::new().write(true).open(path)?;
     file.set_len(keep as u64)?;
     file.sync_all()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A store in a folder of its own, removed when the test ends.
+    struct Scratch {
+        root: PathBuf,
+    }
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "sce-store-{label}-{}-{}",
+                std::process::id(),
+                TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).expect("create the scratch folder");
+            Self { root }
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// An older build's pointer is the digest alone.
+    fn as_the_digest_alone(dir: &Path, revision: &Revision) {
+        fs::write(
+            dir.join(Artifact::Source.head_file()),
+            format!("{revision}\n"),
+        )
+        .unwrap();
+    }
+
+    /// A save that landed between the reader's look at the pointer and its read of the log,
+    /// and a save after it that logged and never took effect. The pointer the reader holds is
+    /// an older folder's: the digest, with no place, so the log alone would be asked which of
+    /// the lines of that digest it meant -- and the last one is the save that failed.
+    /// Starting over when the pointer has moved reads the chain of the pointer that stood.
+    #[test]
+    fn a_read_that_a_save_landed_in_the_middle_of_starts_over() {
+        let scratch = Scratch::new("seam");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let dir = store.existing(&id).unwrap();
+        let a = Revision::of(b"A");
+        let b = Revision::of(b"B");
+        store.save_source(&id, "A", None).unwrap();
+        as_the_digest_alone(&dir, &a);
+
+        let mut landed = false;
+        let snapshot = read_chain(&dir, Artifact::Source, || {
+            if std::mem::replace(&mut landed, true) {
+                return;
+            }
+            store.save_source(&id, "B", Some(&a)).unwrap();
+            // The revert to A that logged and could not move the pointer.
+            let failed = LogLine {
+                entry: HistoryEntry {
+                    revision: a.clone(),
+                    parent: Some(b.clone()),
+                    saved_at: store.now(),
+                    written_for: None,
+                },
+                parent_at: Some(1),
+            };
+            append_log(&dir.join(Artifact::Source.log_file()), &failed).unwrap();
+        })
+        .unwrap();
+
+        assert_eq!(snapshot.pointer.map(|p| p.revision), Some(b.clone()));
+        let chain: Vec<Revision> = snapshot
+            .chain
+            .entries
+            .into_iter()
+            .map(|e| e.revision)
+            .collect();
+        assert_eq!(chain, vec![a, b], "the save that failed was listed");
+    }
+
+    /// A pointer that moves on every look is a folder under constant writing; a read of it
+    /// ends, with the last look.
+    #[test]
+    fn a_read_of_a_pointer_that_never_holds_still_ends() {
+        let scratch = Scratch::new("seam-bound");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let dir = store.existing(&id).unwrap();
+        store.save_source(&id, "T0", None).unwrap();
+
+        let mut looks = 0;
+        let snapshot = read_chain(&dir, Artifact::Source, || {
+            looks += 1;
+            let base = read_head(&dir, Artifact::Source).unwrap();
+            store
+                .save_source(&id, &format!("T{looks}"), base.as_ref())
+                .unwrap();
+        })
+        .unwrap();
+
+        assert_eq!(looks, READ_TRIES);
+        assert!(snapshot.pointer.is_some());
+    }
 }

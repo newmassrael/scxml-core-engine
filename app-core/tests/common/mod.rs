@@ -313,6 +313,31 @@ pub fn while_the_pointer_cannot_move<T>(
     Some(outcome)
 }
 
+/// Make a work's folder read as an OLDER BUILD left it: each pointer is its digest alone,
+/// one line, and no log line names the place of the save it followed. That is the whole
+/// of the difference (`store.rs` documents the format), so a build that reads this reads
+/// what a build from before places were kept wrote -- without keeping a second binary.
+pub fn as_an_older_build_wrote_it(work_dir: &std::path::Path) {
+    for stem in ["source", "model", "answers", "requirements", "acceptances"] {
+        let head = work_dir.join(format!("{stem}.head"));
+        if let Ok(text) = std::fs::read_to_string(&head) {
+            let digest = text.lines().next().expect("a digest").trim();
+            std::fs::write(&head, format!("{digest}\n")).unwrap();
+        }
+        let log = work_dir.join(format!("{stem}.log"));
+        if let Ok(text) = std::fs::read_to_string(&log) {
+            let mut older = String::new();
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
+                record.as_object_mut().unwrap().remove("parent_at");
+                older.push_str(&record.to_string());
+                older.push('\n');
+            }
+            std::fs::write(&log, older).unwrap();
+        }
+    }
+}
+
 /// A fresh, empty folder under the build's temporary directory, named for the
 /// test that asked and unique to this run.
 pub fn scratch(label: &str) -> PathBuf {
