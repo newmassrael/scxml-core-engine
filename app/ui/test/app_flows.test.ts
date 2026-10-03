@@ -41,6 +41,27 @@ class FakeCore implements Transport {
   private readonly gates: Gate[] = [];
   private readonly failures: Array<{ name: string; error: CommandFailure }> = [];
   private readonly models = new Map<string, { text: string; writtenFor: string | null }>();
+  private readonly answersOf = new Map<
+    string,
+    { revision: string; entries: Record<string, { answer: string; answered_at: string }> }
+  >();
+  private answerSaves = 0;
+
+  /** The owner's answers as saved, from another entrance or an earlier session. */
+  setAnswers(id: string, entries: Record<string, string>): void {
+    this.answerSaves += 1;
+    this.answersOf.set(id, {
+      revision: this.revision(`answers:${this.answerSaves}`),
+      entries: Object.fromEntries(
+        Object.entries(entries).map(([question, answer]) => [question, { answer, answered_at: "2026-10-03T09:00:00Z" }]),
+      ),
+    });
+  }
+
+  /** What the core holds of the owner's answers, as words by question. */
+  answersHeld(id: string): Record<string, string> {
+    return Object.fromEntries(Object.entries(this.answersOf.get(id)?.entries ?? {}).map(([q, e]) => [q, e.answer]));
+  }
 
   addWork(id: string, title: string, texts: string[]): void {
     this.works.set(id, { title, revisions: texts.map((text) => ({ revision: this.revision(text), text })) });
@@ -100,7 +121,31 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 4, commands: [], root: "/fake/works" };
+        return { command_set_version: 5, commands: [], root: "/fake/works" };
+      case "read_answers": {
+        const held = typeof args["id"] === "string" ? this.answersOf.get(args["id"]) : undefined;
+        return { answers: held ?? null };
+      }
+      case "save_answers": {
+        const id = String(args["id"]);
+        const held = this.answersOf.get(id);
+        if ((args["base"] ?? null) !== (held?.revision ?? null)) {
+          throw new CommandFailure("conflict", "the answers moved", { base: args["base"] ?? null, current: held?.revision ?? null });
+        }
+        const wanted = args["answers"] as Record<string, string>;
+        const entries: Record<string, { answer: string; answered_at: string }> = {};
+        for (const [question, words] of Object.entries(wanted)) {
+          const before = held?.entries[question];
+          entries[question] =
+            before !== undefined && before.answer === words
+              ? before
+              : { answer: words, answered_at: "2026-10-03T09:00:30Z" };
+        }
+        this.answerSaves += 1;
+        const revision = this.revision(`answers:${this.answerSaves}`);
+        this.answersOf.set(id, { revision, entries });
+        return { outcome: "saved", revision, parent: held?.revision ?? null };
+      }
       case "review": {
         const model = typeof args["id"] === "string" ? this.models.get(args["id"]) : undefined;
         if (model === undefined) throw new CommandFailure("not-found", "no model");
@@ -132,7 +177,10 @@ class FakeCore implements Transport {
             verdict: "accepted",
             kind: "statechart",
             open: ["1 question(s) the specification leaves open (open-guard)"],
-            unresolved: [{ id: "open-guard", node_path: "states.closed.transitions[0]", line: 3 }],
+            unresolved: [
+              { id: "open-guard", node_path: "states.closed.transitions[0]", line: 3, reason: "Which cards open the door?" },
+              { id: "close-delay", node_path: "states.opened.transitions[0]", line: 4, reason: null },
+            ],
             records: [],
           },
           // Indented, with a run of spaces and a final newline: the screen keeps them.
@@ -770,6 +818,191 @@ describe("what SCE says of the model", () => {
     // Where the model stands has moved, and the screen says so.
     expect(modelText()).toContain("earlier text");
     expect(pseudo()).not.toBeNull();
+  });
+});
+
+// ---- the owner's answers --------------------------------------------------
+
+const fields = (): HTMLTextAreaElement[] => [...root.querySelectorAll<HTMLTextAreaElement>("textarea[data-qid]")];
+const fieldOf = (id: string): HTMLTextAreaElement => {
+  const found = fields().find((f) => f.dataset["qid"] === id);
+  if (found === undefined) throw new Error(`no answer field for ${id} in: ${root.textContent}`);
+  return found;
+};
+const saveAnswersButton = (): HTMLButtonElement => root.querySelector("#save-answers") as HTMLButtonElement;
+const answersStatus = (): string => root.querySelector("#answers-status")?.textContent ?? "";
+
+async function answer(id: string, text: string): Promise<void> {
+  const field = fieldOf(id);
+  field.value = text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  await settle();
+}
+
+describe("the owner's answers", () => {
+  beforeEach(() => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+  });
+
+  it("are asked for, one field to each question the model marks, in the model's own words", async () => {
+    await click("Alpha");
+
+    expect(fields().map((f) => f.dataset["qid"])).toEqual(["open-guard", "close-delay"]);
+    expect(root.querySelector(".answers")?.textContent).toContain("Which cards open the door?");
+    expect(root.querySelector(".answers")?.textContent).toContain("The model gave no wording for this question.");
+    expect(root.querySelector(".answers")?.textContent).toContain("Nothing here changes the model.");
+    expect(saveAnswersButton().disabled).toBe(true);
+  });
+
+  it("are saved as typed, and the screen then shows what the core holds", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+    expect(saveAnswersButton().disabled).toBe(false);
+    expect(answersStatus()).toBe("Unsaved answers");
+    expect(app.hasUnsavedChanges()).toBe(true);
+
+    await click("Save answers");
+
+    expect(core.callsOf("save_answers")).toEqual([
+      { id: "alpha", answers: { "open-guard": "Any card on the list opens it." }, base: null },
+    ]);
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card on the list opens it." });
+    expect(answersStatus()).toBe("Answers saved");
+    expect(fieldOf("open-guard").value).toBe("Any card on the list opens it.");
+    expect(root.querySelector(".answered-at")?.textContent).toContain("Said");
+    expect(saveAnswersButton().disabled).toBe(true);
+    expect(app.hasUnsavedChanges()).toBe(false);
+  });
+
+  it("are shown when they were given before, and carried when another question is answered", async () => {
+    core.setAnswers("alpha", { "open-guard": "Any card on the list opens it." });
+    await click("Alpha");
+    expect(fieldOf("open-guard").value).toBe("Any card on the list opens it.");
+
+    await answer("close-delay", "Ten seconds.");
+    await click("Save answers");
+
+    const sent = core.callsOf("save_answers")[0];
+    expect(sent?.["answers"]).toEqual({
+      "close-delay": "Ten seconds.",
+      "open-guard": "Any card on the list opens it.",
+    });
+    expect(sent?.["base"]).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("are taken back when their field is cleared", async () => {
+    core.setAnswers("alpha", { "open-guard": "Any card.", "close-delay": "Ten seconds." });
+    await click("Alpha");
+    await answer("close-delay", "");
+    await click("Save answers");
+
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card." });
+    expect(fieldOf("close-delay").value).toBe("");
+  });
+
+  it("are not offered for saving when nothing differs from what is saved", async () => {
+    core.setAnswers("alpha", { "open-guard": "Any card." });
+    await click("Alpha");
+    await answer("open-guard", "Any card, always.");
+    expect(saveAnswersButton().disabled).toBe(false);
+    await answer("open-guard", "Any card.");
+    expect(saveAnswersButton().disabled).toBe(true);
+    expect(app.hasUnsavedChanges()).toBe(false);
+  });
+
+  it("keep what was typed, and say so, when they were saved elsewhere meanwhile", async () => {
+    core.setAnswers("alpha", { "open-guard": "yes" });
+    await click("Alpha");
+    await answer("open-guard", "mine");
+    // Another entrance saves on top while the person is typing.
+    core.setAnswers("alpha", { "open-guard": "theirs" });
+    await click("Save answers");
+
+    expect(root.querySelector(".answers")?.textContent).toContain("saved elsewhere while you were typing");
+    expect(fieldOf("open-guard").value).toBe("mine");
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "theirs" });
+
+    // Saved again, on top of the revision that turned up.
+    await click("Save answers");
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "mine" });
+    expect(root.querySelector(".answers")?.textContent).not.toContain("saved elsewhere");
+  });
+
+  it("say why they were not saved, and keep what was typed", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card.");
+    core.failNext("save_answers", new CommandFailure("io", "the disk is full"));
+    await click("Save answers");
+
+    expect(root.querySelector(".answers")?.textContent).toContain("The answers were not saved: the disk is full");
+    expect(fieldOf("open-guard").value).toBe("Any card.");
+    expect(app.hasUnsavedChanges()).toBe(true);
+  });
+
+  it("to questions the model no longer asks are kept apart, and can be taken back", async () => {
+    core.setAnswers("alpha", { "old-question": "It stays the same." });
+    await click("Alpha");
+
+    expect(root.querySelector(".orphans")?.textContent).toContain("Answers to questions this model does not ask");
+    expect(fieldOf("old-question").value).toBe("It stays the same.");
+    await answer("old-question", "");
+    await click("Save answers");
+    expect(core.answersHeld("alpha")).toEqual({});
+  });
+
+  it("are asked about before another work replaces them, and saved when the person says so", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card.");
+    await click("Beta");
+
+    expect(root.textContent).toContain("not saved");
+    expect(heading()).toBe("Alpha");
+    expect(core.callsOf("read_source").filter((a) => a["id"] === "beta")).toHaveLength(0);
+
+    await click("Save, then open it");
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card." });
+    expect(heading()).toBe("Beta");
+  });
+
+  it("stay under the cursor when SCE's drawing arrives and the screen is redrawn", async () => {
+    const drawing = core.hold("figures");
+    await click("Alpha");
+    const field = fieldOf("open-guard");
+    field.focus();
+    field.value = "Any car";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.setSelectionRange(3, 5);
+
+    drawing.release();
+    await settle();
+
+    const after = fieldOf("open-guard");
+    expect(document.activeElement).toBe(after);
+    expect(after.value).toBe("Any car");
+    expect([after.selectionStart, after.selectionEnd]).toEqual([3, 5]);
+  });
+
+  it("that cannot be read are said so in words, and the model's review still shows", async () => {
+    core.failNext("read_answers", new CommandFailure("corrupt", "the saved answers are not what the store wrote"));
+    await click("Alpha");
+
+    expect(reviewText()).toContain("Your answers could not be read");
+    expect(reviewText()).toContain("not what the store wrote");
+    expect(pseudo()).not.toBeNull();
+    expect(fields()).toHaveLength(0);
+  });
+
+  it("of one work are not put under another when they arrive late", async () => {
+    core.setAnswers("alpha", { "open-guard": "Any card." });
+    const held = core.hold("read_answers", (args) => args["id"] === "alpha");
+    await click("Alpha");
+    await click("Beta");
+    held.release();
+    await settle();
+
+    expect(heading()).toBe("Beta");
+    expect(fields()).toHaveLength(0);
+    expect(app.hasUnsavedChanges()).toBe(false);
   });
 });
 

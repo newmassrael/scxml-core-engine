@@ -38,9 +38,9 @@ const en = {
   conflictKeepMineHint: "The version saved elsewhere stays in the history as its own revision.",
   failureTitle: "The save failed",
   retry: "Try again",
-  switchTitle: "The editor holds text that is not saved",
+  switchTitle: "There are changes that are not saved",
   switchBody:
-    "Opening \"{title}\" would replace what is in the editor. Save it first, discard it, or stay here.",
+    "Opening \"{title}\" would replace what is on screen: the text in the editor, or the answers you typed. Save them first, discard them, or stay here.",
   saveAndSwitch: "Save, then open it",
   discardAndSwitch: "Discard my changes and open it",
   cancelSwitch: "Stay here",
@@ -104,6 +104,23 @@ const en = {
   reviewRecordLine: "line {line}",
   reviewPageTitle: "Pseudocode: read it against your text",
   reviewPageRefused: "SCE accepted the model and did not write its pseudocode page: {detail}",
+  answersTitle: "Your answers",
+  answersHint:
+    "Each question is something your text does not say. Your answer goes to the authoring client the next time it reads this work, and it applies it in the model. Nothing here changes the model.",
+  answersReading: "Reading your answers...",
+  answersFailed: "Your answers could not be read: {detail}",
+  answerLabel: "Your answer to {id}",
+  answerNoWording: "The model gave no wording for this question.",
+  answerAt: "Said {time}",
+  answersSave: "Save answers",
+  answersSaved: "Answers saved",
+  answersUnsaved: "Unsaved answers",
+  answersSaveFailed: "The answers were not saved: {detail}",
+  answersConflict:
+    "The answers were saved elsewhere while you were typing. What is saved now is loaded and what you typed is kept: look, and save again to put yours on top.",
+  answersOrphanTitle: "Answers to questions this model does not ask",
+  answersOrphanNote:
+    "The model no longer asks these, and they stay for the next draft, which may ask them again. Clear a field and save to take its answer back.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -142,9 +159,9 @@ const ko: Record<Key, string> = {
   conflictKeepMineHint: "다른 곳에서 저장된 사양은 이력에 별도 리비전으로 남습니다.",
   failureTitle: "저장하지 못했습니다",
   retry: "다시 시도",
-  switchTitle: "저장하지 않은 글이 있습니다",
+  switchTitle: "저장하지 않은 변경이 있습니다",
   switchBody:
-    "\"{title}\"을(를) 열면 지금 편집기의 글이 사라집니다. 먼저 저장하거나, 버리거나, 그대로 머물 수 있습니다.",
+    "\"{title}\"을(를) 열면 지금 화면의 편집기 글과 적어 둔 답이 사라집니다. 먼저 저장하거나, 버리거나, 그대로 머물 수 있습니다.",
   saveAndSwitch: "저장하고 열기",
   discardAndSwitch: "내 수정을 버리고 열기",
   cancelSwitch: "여기 머물기",
@@ -207,6 +224,23 @@ const ko: Record<Key, string> = {
   reviewRecordLine: "{line}행",
   reviewPageTitle: "의사코드: 내 글과 대조해 읽으세요",
   reviewPageRefused: "SCE가 모델을 받아들였지만 의사코드 페이지는 쓰지 않았습니다: {detail}",
+  answersTitle: "내 답",
+  answersHint:
+    "각 질문은 내 글이 말하지 않은 것입니다. 내 답은 AI 클라이언트가 이 작업을 다음에 읽을 때 전달되고, 클라이언트가 모델에 반영합니다. 여기서 모델이 바뀌지는 않습니다.",
+  answersReading: "내 답을 읽는 중...",
+  answersFailed: "내 답을 읽지 못했습니다: {detail}",
+  answerLabel: "{id}에 대한 내 답",
+  answerNoWording: "모델이 이 질문의 문장을 적지 않았습니다.",
+  answerAt: "답한 때 {time}",
+  answersSave: "답 저장",
+  answersSaved: "답 저장됨",
+  answersUnsaved: "저장하지 않은 답",
+  answersSaveFailed: "답을 저장하지 못했습니다: {detail}",
+  answersConflict:
+    "답을 적는 동안 다른 곳에서 답이 저장되었습니다. 지금 저장된 답을 불러왔고 내가 적은 것은 그대로 두었습니다. 살펴보고, 다시 저장하면 내 답이 그 위에 저장됩니다.",
+  answersOrphanTitle: "이 모델이 묻지 않는 질문의 답",
+  answersOrphanNote:
+    "모델이 더 이상 묻지 않는 질문의 답입니다. 다음 초안이 다시 물을 수 있어서 남겨 둡니다. 칸을 비우고 저장하면 그 답을 거둡니다.",
 };
 
 export type Locale = "en" | "ko";

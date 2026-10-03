@@ -927,17 +927,33 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
 - `works_read` gives the text with its `revision` and the model with its
   `revision`, the text revision it was `written_for`, and its `standing`
   (`current`, `behind` or `unstated`: the command layer's own word, which the
-  application shows the same way).
+  application shows the same way). It also gives `answers`, what the owner
+  answered in the application to the questions the model left open (each
+  question's id, their words, and when the words last changed), and
+  `decisions_text`, **the decision record those answers make**
+  (`decisions.compose_record`): every `sce:unresolved` question of the model in
+  the model's own words, answered where the owner has answered, and every answer
+  the owner gave to a question the current model no longer asks, because the
+  next draft may cite it. The workbench keeps a plain map of ids to words, and
+  this package writes the record from it, so the format of that record stays where
+  it is read (`decisions.v1.schema.json`).
 - `works_save_model` runs the product's check first, exactly as `validate_scxml`
   does (and takes the owner's `profile` the same way): a model it refuses is not
   saved and comes back with the product's records, so a work's model chain holds
-  documents SCE accepts. A save from a `base` that is no longer the current
-  model is a `conflict` and writes nothing. The client says which text it wrote
-  the model from (`source_revision`); without it the application can only say
-  that nobody recorded it.
-- The owner's text is the owner's: no tool writes it, and none removes a work.
-  The works tools are refused to a remote caller, like a path: the folder is
-  the machine this server runs on.
+  documents SCE accepts. When the owner has answered anything, the draft is also
+  held to those answers by the product's own `decisions` check, as the tool of
+  that name runs it: a draft that leaves an answered question `sce:unresolved`
+  (`answered-left-open`) or guesses with `sce:assumed` where no answer licenses it
+  is not saved either, and what the check only REPORTS (a question nobody had
+  asked, `new-question`) comes back as `decisions` for the client to put to the
+  owner. A work the owner has answered nothing of is not held to a record that
+  does not exist. A save from a `base` that is no longer the current model is a
+  `conflict` and writes nothing. The client says which text it wrote the model
+  from (`source_revision`); without it the application can only say that nobody
+  recorded it.
+- The owner's text and answers are the owner's: no tool writes either, and none
+  removes a work. The works tools are refused to a remote caller, like a path:
+  the folder is the machine this server runs on.
 
 `tests/test_the_works_folder_is_reached_through_the_applications_own_command.py`
 drives them against the real `sce-work` and generator, including a text of

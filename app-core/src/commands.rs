@@ -16,6 +16,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use std::collections::BTreeMap;
+
+use crate::answers::{Answers, AnswersError};
 use crate::clock::Clock;
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
@@ -38,6 +41,8 @@ pub const COMMANDS: &[&str] = &[
     "figures",
     "remove_work",
     "review",
+    "read_answers",
+    "save_answers",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -52,7 +57,10 @@ pub const COMMANDS: &[&str] = &[
 /// apart before the person presses the button.
 ///
 /// 4: SCE's check and pseudocode page of a model can be read (`review`).
-pub const COMMAND_SET_VERSION: u32 = 4;
+///
+/// 5: the owner's answers to the questions a model leaves open are kept
+/// (`read_answers`, `save_answers`).
+pub const COMMAND_SET_VERSION: u32 = 5;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -93,6 +101,20 @@ impl From<RenderError> for CommandError {
             kind: error.kind().to_string(),
             message: error.to_string(),
             detail,
+        }
+    }
+}
+
+impl From<AnswersError> for CommandError {
+    fn from(error: AnswersError) -> Self {
+        CommandError {
+            kind: match error {
+                AnswersError::Invalid(_) => "invalid-answers",
+                AnswersError::Corrupt(_) => "corrupt",
+            }
+            .to_string(),
+            message: error.to_string(),
+            detail: Value::Null,
         }
     }
 }
@@ -166,6 +188,18 @@ struct Figures {
     lexicon: Option<String>,
     #[serde(default)]
     min_pt: Option<f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAnswers {
+    id: String,
+    /// The answers as the owner now has them: question id to words. A question
+    /// that is not here is not answered.
+    answers: BTreeMap<String, String>,
+    /// Absent or `null` means "this is the work's first set of answers".
+    #[serde(default)]
+    base: Option<Revision>,
 }
 
 #[derive(Deserialize)]
@@ -330,6 +364,36 @@ pub fn call<C: Clock>(
                 "page": read.page,
                 "page_refusal": read.page_refusal,
             }))
+        }
+        "read_answers" => {
+            let ReadSource { id, revision } = arguments(args)?;
+            let id = work_id(&id)?;
+            let read = store.read_answers(&id, revision.as_ref())?;
+            let answers = match read {
+                None => Value::Null,
+                Some(saved) => json!({
+                    "revision": saved.revision,
+                    "entries": Answers::parse(&saved.text)?.entries(),
+                }),
+            };
+            Ok(json!({ "answers": answers }))
+        }
+        "save_answers" => {
+            let SaveAnswers { id, answers, base } = arguments(args)?;
+            let id = work_id(&id)?;
+            // What is held at `base` is what the new words are compared with, to
+            // keep the stamp of an answer that did not change. A `base` that is not
+            // current is refused by the save below, so the comparison is never made
+            // against a revision somebody has since replaced.
+            let held = match base.as_ref() {
+                None => Answers::default(),
+                Some(base) => match store.read_answers(&id, Some(base))? {
+                    Some(saved) => Answers::parse(&saved.text)?,
+                    None => Answers::default(),
+                },
+            };
+            let next = held.amended(&answers, &store.now())?;
+            answer(&store.save_answers(&id, &next.text(), base.as_ref())?)
         }
         "remove_work" => {
             let OneWork { id } = arguments(args)?;

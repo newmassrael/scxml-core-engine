@@ -115,18 +115,27 @@ def list_works() -> dict:
 
 
 def read_work(work: str) -> dict:
-    """A work as an authoring client needs it: who it is, its text now, and its
-    model with where that stands to the text.
+    """A work as an authoring client needs it: who it is, its text now, its model
+    with where that stands to the text, and the owner's answers to what the model
+    left open.
 
-    Three reads of the command layer, so a text saved between them is possible.
-    That is not hidden: every revision in the answer is the one that was read, and
-    the model's `standing` is the command layer's own comparison of its
-    `written_for` with the text's head at the moment of the model read.
+    Four reads of the command layer, so a save between them is possible. That is
+    not hidden: every revision in the answer is the one that was read, and the
+    model's `standing` is the command layer's own comparison of its `written_for`
+    with the text's head at the moment of the model read.
     """
     head = call_work("read_work", {"id": work})
     source = call_work("read_source", {"id": work})["source"]
     model = call_work("read_model", {"id": work})
-    return {"work": head["work"], "source": source, "model": _model_of(model)}
+    return {"work": head["work"], "source": source, "model": _model_of(model),
+            "answers": read_answers(work)}
+
+
+def read_answers(work: str) -> dict | None:
+    """The owner's answers to the questions the model left open, `{"revision",
+    "entries": {question id: {"answer", "answered_at"}}}`, or None when they have
+    answered nothing. The owner writes them in the application; nothing here does."""
+    return call_work("read_answers", {"id": work})["answers"]
 
 
 def _model_of(answer: dict) -> dict | None:

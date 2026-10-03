@@ -7,7 +7,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 4,
+      "command_set_version": 5,
       "commands": [
         "describe",
         "list_works",
@@ -21,7 +21,9 @@
         "model_history",
         "figures",
         "remove_work",
-        "review"
+        "review",
+        "read_answers",
+        "save_answers"
       ],
       "root": "<root>"
     },
@@ -98,6 +100,20 @@
         }
       ]
     },
+    "read_answers": {
+      "answers": {
+        "entries": {
+          "open-guard": {
+            "answer": "Any card on the list opens it.",
+            "answered_at": "2026-10-03T09:00:00Z"
+          }
+        },
+        "revision": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745"
+      }
+    },
+    "read_answers_none": {
+      "answers": null
+    },
     "read_model": {
       "model": {
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
@@ -170,7 +186,8 @@
           {
             "id": "open-guard",
             "line": 3,
-            "node_path": "states.closed.transitions[0]"
+            "node_path": "states.closed.transitions[0]",
+            "reason": "Which card values open the door?"
           }
         ],
         "verdict": "accepted"
@@ -196,7 +213,8 @@
           {
             "id": "open-guard",
             "line": 3,
-            "node_path": "states.closed.transitions[0]"
+            "node_path": "states.closed.transitions[0]",
+            "reason": "Which card values open the door?"
           }
         ],
         "verdict": "accepted"
@@ -240,6 +258,15 @@
       "source_head": null,
       "standing": "unstated"
     },
+    "save_answers_first": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745"
+    },
+    "save_answers_unchanged": {
+      "outcome": "unchanged",
+      "revision": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745"
+    },
     "save_model_first": {
       "outcome": "saved",
       "parent": null,
@@ -269,7 +296,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 4,
+  "command_set_version": 5,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -282,6 +309,10 @@
       },
       "kind": "conflict",
       "message": "the text was saved from 06e8bce08f5a, and the work is now at 7dc2f2d866df: nothing was written. Read the current text, decide what the two become, and save again from it"
+    },
+    "invalid-answers": {
+      "kind": "invalid-answers",
+      "message": "these are not answers: the answer to `open-guard` is empty; leave the question out to leave it unanswered"
     },
     "invalid-id": {
       "kind": "invalid-id",
@@ -324,7 +355,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers"
     }
   }
 }

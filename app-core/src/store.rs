@@ -13,6 +13,9 @@
 //!     model/<digest>.scxml  the same, for the SCXML model written from the text
 //!     model.head         the digest of the current model, one line
 //!     model.log          one JSON line per save, and the source revision it was written for
+//!     answers/<digest>.json  the owner's answers to the model's open questions, the same way
+//!     answers.head       the digest of the current answers
+//!     answers.log        one JSON line per save
 //!     .lock              what a save holds while it checks and moves a pointer
 //!     removed.json       present only for a removed work (see [`WorkStore::remove_work`])
 //! ```
@@ -25,7 +28,7 @@
 //! says which revision its text was written from (`base`), and the store refuses
 //! a base that is no longer current rather than overwrite what it has not seen.
 //!
-//! The text and the model are two chains kept by ONE implementation
+//! The text, the model and the owner's answers are three chains kept by ONE implementation
 //! ([`Artifact`] says where each lives and how large it may be), because two
 //! implementations of "what a save is" would be two chances to disagree about
 //! it. A model's save also records the source revision the writer read
@@ -52,6 +55,9 @@ pub const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 
 /// The most a single model may hold.
 pub const MAX_MODEL_BYTES: usize = 8 * 1024 * 1024;
+
+/// The most one set of answers may hold.
+pub const MAX_ANSWERS_BYTES: usize = 1024 * 1024;
 
 /// How long a save waits for another save of the same work.
 pub const LOCK_WAIT: Duration = Duration::from_secs(30);
@@ -139,6 +145,8 @@ enum Artifact {
     Source,
     /// The SCXML model an authoring client wrote from it.
     Model,
+    /// What the owner answered to the questions the model leaves open.
+    Answers,
 }
 
 impl Artifact {
@@ -147,6 +155,7 @@ impl Artifact {
         match self {
             Artifact::Source => "source",
             Artifact::Model => "model",
+            Artifact::Answers => "answers",
         }
     }
 
@@ -154,6 +163,7 @@ impl Artifact {
         match self {
             Artifact::Source => "txt",
             Artifact::Model => "scxml",
+            Artifact::Answers => "json",
         }
     }
 
@@ -162,6 +172,7 @@ impl Artifact {
         match self {
             Artifact::Source => "source.head",
             Artifact::Model => "model.head",
+            Artifact::Answers => "answers.head",
         }
     }
 
@@ -170,6 +181,7 @@ impl Artifact {
         match self {
             Artifact::Source => "source.log",
             Artifact::Model => "model.log",
+            Artifact::Answers => "answers.log",
         }
     }
 
@@ -177,6 +189,7 @@ impl Artifact {
         match self {
             Artifact::Source => MAX_SOURCE_BYTES,
             Artifact::Model => MAX_MODEL_BYTES,
+            Artifact::Answers => MAX_ANSWERS_BYTES,
         }
     }
 
@@ -185,6 +198,7 @@ impl Artifact {
         match self {
             Artifact::Source => "source",
             Artifact::Model => "model",
+            Artifact::Answers => "answers",
         }
     }
 }
@@ -248,6 +262,13 @@ pub struct ModelText {
     pub revision: Revision,
     /// The source revision the writer said it read, when it said.
     pub written_for: Option<Revision>,
+    pub text: String,
+}
+
+/// The owner's answers as saved, and the revision they are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AnswersText {
+    pub revision: Revision,
     pub text: String,
 }
 
@@ -614,6 +635,36 @@ impl<C: Clock> WorkStore<C> {
         self.save_text(Artifact::Model, id, model, base, written_for)
     }
 
+    /// The answers `revision`, or the current ones when none is named. `None` only
+    /// for a work the owner has answered nothing of. Read as a source is.
+    pub fn read_answers(
+        &self,
+        id: &WorkId,
+        revision: Option<&Revision>,
+    ) -> Result<Option<AnswersText>, StoreError> {
+        Ok(self
+            .read_text(Artifact::Answers, id, revision)?
+            .map(|(revision, text)| AnswersText { revision, text }))
+    }
+
+    /// Save `answers` as the work's next answers, from `base`, which means what it
+    /// means for a source. What the text says (a question's id and the owner's
+    /// words) is [`crate::answers`]'s to define; the store keeps text.
+    pub fn save_answers(
+        &self,
+        id: &WorkId,
+        answers: &str,
+        base: Option<&Revision>,
+    ) -> Result<Saved, StoreError> {
+        self.save_text(Artifact::Answers, id, answers, base, None)
+    }
+
+    /// The time the store would stamp a save with, so a caller that stamps what it
+    /// keeps inside a text uses the same clock the log does.
+    pub fn now(&self) -> String {
+        self.clock.now()
+    }
+
     fn save_text(
         &self,
         artifact: Artifact,
@@ -663,7 +714,7 @@ impl<C: Clock> WorkStore<C> {
             // only if it is also written for the same text: the same model for
             // another text is the writer's news (see `save_model`).
             let same_claim = match artifact {
-                Artifact::Source => true,
+                Artifact::Source | Artifact::Answers => true,
                 Artifact::Model => {
                     history_in(&dir, artifact)?
                         .pop()

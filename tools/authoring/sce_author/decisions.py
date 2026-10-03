@@ -370,6 +370,48 @@ def hold(document: pathlib.Path, record_path: pathlib.Path,
     return ("", text) if refuses else (text, "")
 
 
+def compose_record(doc_id: str, markers: list[dict], answers: dict,
+                   rev: str | None = None) -> dict:
+    """The decision record the owner's answers make, for a draft to be held to.
+
+    `markers` are the product's `unresolved` records of the model, `answers` maps a
+    question's id to the owner's `{"answer", "answered_at"}` as the workbench keeps
+    them. What this decides is only how the two meet:
+
+    - a question the model marks `sce:unresolved` is a decision of the record, in
+      the words the model asked it in (its `reason`), answered when the owner has
+      said; the model's own order is the record's order;
+    - an answer to a question the model does not mark is kept all the same, because
+      the NEXT draft may cite it, and says it was asked of an earlier model;
+    - an `sce:assumed` marker names a decision and asks nothing, so it adds none.
+
+    ⚠ The format is this package's (`decisions.v1.schema.json`), which the product's
+    checks read through `load_record`; the workbench keeps a plain map of ids to
+    words precisely so that nothing outside this package writes that record.
+    """
+    decisions: dict[str, dict] = {}
+    for marker in markers:
+        ident = marker.get("id")
+        if not ident or marker.get("kind") != "unresolved" or ident in decisions:
+            continue
+        question = marker.get("reason") or (
+            f"Open question {ident} (at {marker.get('node_path') or 'the document'})")
+        decisions[ident] = {"id": ident, "question": question}
+    for ident, held in answers.items():
+        entry = decisions.setdefault(ident, {
+            "id": ident,
+            "question": "Asked of an earlier model of this work; the current one does not ask it",
+        })
+        entry["answer"] = held["answer"]
+        # The schema's `answered` is a date, and the workbench stamps a moment.
+        entry["answered"] = str(held["answered_at"])[:10]
+    specification = {"doc_id": doc_id}
+    if rev:
+        specification["rev"] = rev
+    return {"record": "sce-decision-record", "v": 1, "specification": specification,
+            "decisions": list(decisions.values())}
+
+
 def summary(report: dict) -> str:
     """The report for a reader, one line per finding."""
     lines = [f"decisions: {report['verdict']} -- {report['document']} against "

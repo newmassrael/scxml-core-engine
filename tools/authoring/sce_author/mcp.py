@@ -70,6 +70,7 @@ from .compare import compare as compare_drafts
 from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
+from .decisions import compose_record
 from .decisions import hold as hold_decisions
 from .decisions import load_record as load_decision_record
 from .errors import AuthoringError, describe_path
@@ -225,7 +226,13 @@ SERVER_INSTRUCTIONS = (
     "as source_revision, so the owner sees the figures SCE draws of it beside "
     "their text. The text is the owner's: nothing here writes it, and a work "
     "whose text moved after your model was written reads as `behind` until "
-    "you read it again and save the model again."
+    "you read it again and save the model again. The owner answers the "
+    "questions the model leaves open in the application: works_read gives "
+    "their answers and `decisions_text`, the decision record they make. "
+    "Apply each answer in the model and cite it as sce:assumed=\"<id>\", "
+    "never leave an answered question sce:unresolved, never answer one for "
+    "the owner, and put every new question works_save_model reports to them. "
+    "works_save_model refuses a draft that does not keep to their answers."
 )
 
 _PACK_ARG = {
@@ -1250,6 +1257,13 @@ TOOLS = [
             "the text moved on after that model was written: read the text "
             "again and write the model again from it. A work that has no text "
             "yet has `source` null: tell the owner, and write nothing. "
+            "`answers` is what the owner has answered to the questions the model "
+            "left open (each question's id, their words, and when they said it), "
+            "and `decisions_text` is the decision record those answers make, to "
+            "hand to validate_scxml and decisions unchanged: the owner's answers "
+            "are the specification's missing sentences, so apply each in the model "
+            "and cite it as sce:assumed=\"<id>\" instead of leaving the question "
+            "sce:unresolved, and never answer one yourself. "
             "Local servers only."
         ),
         "inputSchema": {
@@ -1271,7 +1285,12 @@ TOOLS = [
             "`model.revision` works_read returned (omit it for a work with no "
             "model yet). The product's own check runs first, exactly as "
             "validate_scxml runs it: a model it REFUSES is not saved, and the "
-            "answer is its refusal, to fix in the draft. A save from a `base` "
+            "answer is its refusal, to fix in the draft. When the owner has "
+            "answered questions, the draft is also held to those answers exactly "
+            "as the decisions tool holds it: one that leaves an answered "
+            "question open, or guesses where no answer licenses it, is not saved "
+            "either, and what it only reports (a question nobody asked yet) comes "
+            "back as `decisions`, to put to the owner. A save from a `base` "
             "that is no longer the current model is refused as a conflict and "
             "writes nothing: read the work again, and decide what your model "
             "becomes now. An accepted model that leaves something open comes "
@@ -2664,6 +2683,15 @@ def _works_list_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps({"version": 1, **listing}, indent=2, ensure_ascii=False) + "\n")
 
 
+def _markers_of(document: pathlib.Path, staging: _Staging) -> tuple[list[dict], str]:
+    """The `sce:unresolved` and `sce:assumed` markers of a staged document, as the
+    product reads them, and its refusal when it will not."""
+    report, refusal = unresolved_markers(document, cwd=staging.dir)
+    if refusal:
+        return [], refusal
+    return json.loads(report)["markers"] or [], ""
+
+
 def _works_read_tool(args: dict, staging: _Staging) -> dict:
     staging.refuse_works("works_read")
     work = _name_arg(args, "work", "a work's id", required=True)
@@ -2671,6 +2699,21 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
         read = works.read_work(work)
     except works.WorksError as exc:
         return _works_refused(exc)
+    answers = (read["answers"] or {}).get("entries") or {}
+    markers: list[dict] = []
+    if read["model"] is not None:
+        document = staging.write("model.scxml", read["model"]["text"], "model")
+        markers, refusal = _markers_of(document, staging)
+        if refusal:
+            read["decisions_refusal"] = json.loads(refusal)
+    if answers or markers:
+        # The record the owner's answers make, for validate_scxml and decisions to
+        # hold a draft to. Written here, by this package, from the plain map the
+        # application keeps: the application never writes a decision record.
+        source = read["source"]
+        record = compose_record(work, markers, answers,
+                                rev=source["revision"][:12] if source else None)
+        read["decisions_text"] = json.dumps(record, indent=2, ensure_ascii=False) + "\n"
     if read["source"] is None:
         read["next"] = "this work has no text yet: tell the owner, and write no model"
     else:
@@ -2678,6 +2721,13 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
             "write the model from `source.text`, check it with validate_scxml, then "
             "save it with works_save_model giving source_revision = source.revision"
             + (" and base = model.revision" if read["model"] is not None else ""))
+        if answers:
+            read["next"] += (
+                "; the owner has answered " + str(len(answers)) + " question(s) (`answers`): "
+                "apply each answer in the model and cite it as sce:assumed=\"<id>\", never "
+                "leave an answered question sce:unresolved, and hand `decisions_text` to "
+                "validate_scxml and decisions as the decision record. works_save_model "
+                "holds the draft to these answers")
     return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -2705,16 +2755,58 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         return _failure("not saved: the product's check refuses this model, so the work "
                         "keeps the model it has. Fix the draft and save again.\n" + refusal)
     try:
+        held, refused = _held_to_the_answers(work, document, source_revision, args, staging)
+        if refused:
+            return _failure(refused)
         saved = works.save_model(work, text, base, source_revision)
     except works.WorksError as exc:
         return _works_refused(exc)
     answer = {"version": 1, "work": work, **saved}
+    if held is not None:
+        answer["decisions"] = held
     matters = json.loads(report).get("open")
     if matters:
         answer["open"] = matters
         answer["next"] = ("saved is not finished: tell the owner each line of `open` -- "
                           "the model leaves them to a person")
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str | None,
+                         args: dict, staging: _Staging) -> tuple[dict | None, str]:
+    """What the owner has answered, held against the draft about to be saved.
+
+    `(None, "")` when the owner has answered nothing: there is no record to hold a
+    draft to, and a draft is not refused for a record that does not exist. Otherwise
+    the product's own `decisions` check, exactly as the tool of that name runs it, on
+    the record the answers make: a draft that leaves an answered question open, or
+    guesses where no answer licenses it, is NOT saved, so a work's model keeps to
+    what its owner said. What the check only reports (a question nobody had asked)
+    comes back as `decisions`, for the client to put to the owner.
+    """
+    answers = (works.read_answers(work) or {}).get("entries") or {}
+    if not answers:
+        return None, ""
+    markers, refusal = _markers_of(document, staging)
+    if refusal:
+        return None, "not saved: the product could not read the draft's markers.\n" + refusal
+    # Only the answered questions' markers lend their words to the record: a question
+    # the owner has not answered is not in it, so the check reports it as a NEW
+    # question (for the client to put to the owner), which is what it is to them.
+    record = compose_record(work, [m for m in markers if m.get("id") in answers], answers,
+                            rev=source_revision[:12] if source_revision else None)
+    record_file = staging.write("decisions.json",
+                                json.dumps(record, indent=2, ensure_ascii=False) + "\n",
+                                "decisions")
+    report, refusal = hold_decisions(document, record_file,
+                                     profile=_profile_file(args, staging), cwd=staging.dir)
+    if refusal:
+        return None, ("not saved: the draft does not keep to the owner's answers, so the work "
+                      "keeps the model it has. Apply each refused finding and save again.\n"
+                      + refusal)
+    held = json.loads(report)
+    return {key: held[key] for key in ("verdict", "counts", "findings", "next")
+            if key in held}, ""
 
 
 # The tools that need no pack: each takes its files by path or as text.

@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 4;
+export const SUPPORTED_COMMAND_SET_VERSION = 5;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -91,6 +91,20 @@ export interface Unresolved {
   readonly id: string;
   readonly node_path: string;
   readonly line: number | null;
+  /** The question in the words the model asked it; `null` when it gave none. */
+  readonly reason: string | null;
+}
+
+/** One answer of the owner's: their words, and when those words last changed. */
+export interface AnswerEntry {
+  readonly answer: string;
+  readonly answered_at: string;
+}
+
+/** The owner's answers to the questions a model leaves open, by the id of each question. */
+export interface Answers {
+  readonly revision: Revision;
+  readonly entries: Readonly<Record<string, AnswerEntry>>;
 }
 
 /** One record SCE wrote about the document, in its words. */
@@ -346,6 +360,7 @@ function parseCheck(value: unknown): Check {
         id: text(entry, "id", at),
         node_path: text(entry, "node_path", at),
         line: nullableNumber(entry, "line", at),
+        reason: nullableText(entry, "reason", at),
       };
     }),
     records: list(r, "records", where).map((rec, i) => {
@@ -388,6 +403,23 @@ export function parseReview(value: unknown): Review {
     page: nullableText(r, "page", "review"),
     page_refusal,
   };
+}
+
+/** `read_answers`: the owner's answers, or `null` when they have answered nothing. */
+export function parseReadAnswers(value: unknown): Answers | null {
+  const r = record(value, "read_answers");
+  const answers = r["answers"];
+  if (answers === null) return null;
+  const where = "read_answers.answers";
+  const a = record(answers, where);
+  const entries = record(a["entries"], `${where}.entries`);
+  const parsed: Record<string, AnswerEntry> = {};
+  for (const [id, entry] of Object.entries(entries)) {
+    const at = `${where}.entries.${id}`;
+    const e = record(entry, at);
+    parsed[id] = { answer: text(e, "answer", at), answered_at: text(e, "answered_at", at) };
+  }
+  return { revision: revision(a["revision"], `${where}.revision`), entries: parsed };
 }
 
 export function parseDescribed(value: unknown): Described {

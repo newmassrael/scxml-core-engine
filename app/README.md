@@ -21,20 +21,20 @@ a design comes next, on top of the same folder.
 
 An authoring client reaches the same folder through the MCP (`works_list`,
 `works_read`, `works_save_model`, in `tools/authoring`): it reads the text you
-saved, writes the model, and saves it back after the product's own check accepts
-it. They run `sce-work`, so the application and the MCP cannot disagree about the
-folder because only one thing writes it. The text is yours: no MCP tool writes
-it, and none removes a work.
+saved and your answers, writes the model, and saves it back after the product's
+own check accepts it and your answers are kept to. They run `sce-work`, so the
+application and the MCP cannot disagree about the folder because only one thing
+writes it. The text and the answers are yours: no MCP tool writes either, and
+none removes a work.
 
 What does not exist yet, so that nothing below is read as done:
 
 - Nothing starts the AI client. You ask it in its own window ("model the work
   Door lock") and the application shows what it saved when you read again.
-- The screens for answering the open questions, the examples' results and the
-  acceptance. They are designs, not code. The model screen shows what SCE drew,
-  what SCE says of the model (the questions it leaves open are LISTED, read-only)
-  and where it stands to the text; you cannot answer a question there yet, and it
-  does not edit the model (an AI client writes it).
+- The screens for the examples' results and the acceptance. They are designs, not
+  code. The model screen shows what SCE drew, what SCE says of the model, where
+  it stands to the text, and a field for your answer under each question the
+  model leaves open; it does not edit the model (an AI client writes it).
 - A model of several documents. `figures` draws ONE document: a link that
   imports a codec is refused by SCE for the import it cannot find, in SCE's words.
 - A desktop window asks nothing when it is closed with text not yet saved. A
@@ -69,14 +69,17 @@ The works folder is plain files:
                  model.head           the current model
                  model.log            one line per save, and the source revision
                                       the writer said it read (`written_for`)
+                 answers/<sha256>.json  your answers to the model's open questions
+                 answers.head         the current answers
+                 answers.log          one line per save
                  removed.json         only for a removed work (see below)
 ```
 
 `<root>` is `SCE_WORKS_DIR` if set, else the per-user data directory
 (`~/.local/share/sce-workbench/works` on Linux). A revision is the SHA-256 of
 its exact bytes; a save names the revision it was written from and is refused
-with `conflict` if that is no longer current. The text and the model are two
-chains kept by one implementation (one lock, one compare-and-swap).
+with `conflict` if that is no longer current. The text, the model and the answers
+are three chains kept by one implementation (one lock, one compare-and-swap).
 
 ### Removing a work
 
@@ -128,6 +131,29 @@ the verdict is kept and the page's own refusal is shown beside it.
 to it, that it does not say the model agrees with your text, and nothing on it
 claims that: you compare the page with your own words.
 
+### Your answers to what the model leaves open
+
+A model marks what your text did not say (`sce:unresolved="open-guard"`, with the
+question in its own words as `sce:unresolved-reason`). The screen puts a field
+under each such question; what you write is saved by `save_answers` as ONE map
+(the question's id to your words) on top of the revision it was read as, and the
+core refuses a revision that is no longer current, so answers saved from another
+window are never overwritten unseen. The screen then keeps what you typed and
+loads what turned up.
+
+- An answer is stamped with the time its words last CHANGED, not the time of the
+  save that carried it; saving what is already saved is no change at all.
+- An answer to a question the model no longer asks is kept apart and kept: the
+  next draft may ask it again. Clear a field and save to take an answer back.
+- The map is the application's own. The decision record the product's checks
+  read is made by the authoring package from it (`works_read` hands the client
+  `decisions_text`), so the format of THAT record stays where it is read.
+  `works_save_model` holds a draft to the answers with the product's own
+  `decisions` check: one that leaves an answered question open, or guesses where
+  no answer licenses it, is not saved.
+- Nothing here changes the model. Your answers reach the authoring client the next
+  time it reads the work, and it applies them.
+
 ## Seeing the screen
 
 ### In a browser, on a machine with no display (and from a phone)
@@ -174,6 +200,7 @@ else: it has no file-system, shell or network permission.
 | Works folder and command layer | `cargo test -p sce-app-core --features cli` |
 | The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
 | Removing a work, and a save racing it | `--test removal` of the same package |
+| The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
 | What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |
 | The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |
 | The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |

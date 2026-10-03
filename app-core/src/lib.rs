@@ -21,6 +21,7 @@
 //! Nothing in this crate knows what a specification is about. It stores text and
 //! the history of that text; what the text means is the authoring tools' business.
 
+pub mod answers;
 pub mod clock;
 pub mod commands;
 pub mod error;
@@ -30,6 +31,7 @@ pub mod review;
 pub mod revision;
 pub mod store;
 
+pub use answers::{Answers, AnswersError};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
 pub use error::StoreError;
@@ -42,6 +44,6 @@ pub use review::{
 };
 pub use revision::Revision;
 pub use store::{
-    default_root, HistoryEntry, Listing, ModelText, Saved, SourceText, Unreadable, Work, WorkId,
-    WorkStore, MAX_MODEL_BYTES, MAX_SOURCE_BYTES,
+    default_root, AnswersText, HistoryEntry, Listing, ModelText, Saved, SourceText, Unreadable,
+    Work, WorkId, WorkStore, MAX_ANSWERS_BYTES, MAX_MODEL_BYTES, MAX_SOURCE_BYTES,
 };

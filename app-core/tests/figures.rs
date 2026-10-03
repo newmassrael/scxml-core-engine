@@ -43,7 +43,7 @@ case "$3" in
       *HANG*) sleep 30; exit 0;;
       *NOMANIFEST*) exit 0;;
     esac
-    printf '{"v":1,"kind":"check","document_kind":{"name":"statechart","declared":true},"unresolved":[{"id":"q1","node_path":"states.a","location":{"line":4}}],"open":[{"kind":"question","message":"1 question open (q1)"}],"args":"%s"}\n' "$*"
+    printf '{"v":1,"kind":"check","document_kind":{"name":"statechart","declared":true},"unresolved":[{"id":"q1","node_path":"states.a","reason":"Which card values open the door?","location":{"line":4}}],"open":[{"kind":"question","message":"1 question open (q1)"}],"args":"%s"}\n' "$*"
     exit 0;;
   pseudo)
     case "$model" in
@@ -271,6 +271,10 @@ fn an_accepted_model_comes_back_with_its_open_matters_and_its_page() {
     assert_eq!(read.check.unresolved.len(), 1);
     assert_eq!(read.check.unresolved[0].id, "q1");
     assert_eq!(read.check.unresolved[0].line, Some(4));
+    assert_eq!(
+        read.check.unresolved[0].reason.as_deref(),
+        Some("Which card values open the door?")
+    );
     assert!(read.check.records.is_empty());
     assert_eq!(
         read.generator.as_deref(),
@@ -483,7 +487,10 @@ fn the_real_generator_reads_a_model_and_says_why_it_refuses_one() {
         )
     };
 
-    let open = door("opened", " sce:unresolved=\"open-guard\"");
+    let open = door(
+        "opened",
+        " sce:unresolved=\"open-guard\" sce:unresolved-reason=\"Which card values open the door?\"",
+    );
     let read = real
         .review(&ReviewRequest {
             model: &open,
@@ -495,6 +502,10 @@ fn the_real_generator_reads_a_model_and_says_why_it_refuses_one() {
     assert_eq!(read.check.kind.as_deref(), Some("statechart"));
     assert_eq!(read.check.unresolved.len(), 1);
     assert_eq!(read.check.unresolved[0].id, "open-guard");
+    assert_eq!(
+        read.check.unresolved[0].reason.as_deref(),
+        Some("Which card values open the door?")
+    );
     assert!(
         read.check.open.iter().any(|m| m.contains("open-guard")),
         "{:?}",

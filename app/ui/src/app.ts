@@ -8,6 +8,18 @@
 
 import { apiOver, type Api } from "./api";
 import {
+  answersConflicted,
+  answersFailed,
+  answersRequest,
+  answersSaved,
+  answersSaving,
+  editAnswer,
+  isAnswersDirty,
+  openAnswers,
+  wordsOf,
+  type AnswersModel,
+} from "./answers_model";
+import {
   conflictRevisions,
   ContractError,
   SUPPORTED_COMMAND_SET_VERSION,
@@ -15,6 +27,7 @@ import {
   type HistoryEntry,
   type Listing,
   type SourceText,
+  type Unresolved,
   type Work,
 } from "./contract";
 import { h, type Child } from "./dom";
@@ -96,6 +109,12 @@ export class App {
   private review: ReviewPanel | null = null;
   /** The newest request for the review; an older one that answers later is dropped. */
   private reviewTicket = 0;
+  /** The owner's answers to the model's open questions, and what is typed into them. */
+  private answers: AnswersModel | null = null;
+  /** Why the answers could not be read, when they could not. */
+  private answersUnreadable: string | null = null;
+  /** The newest request for the answers; an older one that answers later is dropped. */
+  private answersTicket = 0;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
   /** What is typed in the new-work field, kept across redraws. */
@@ -152,8 +171,7 @@ export class App {
    * it first.
    */
   private async openWork(work: Work): Promise<void> {
-    const editor = this.editor;
-    if (editor !== null && (isDirty(editor) || editor.phase === "saving")) {
+    if (this.hasUnsavedChanges()) {
       this.pendingSwitch = work;
       this.render();
       return;
@@ -186,13 +204,114 @@ export class App {
       this.model = { phase: "reading" };
       this.reviewTicket += 1;
       this.review = null;
+      this.answersTicket += 1;
+      this.answers = null;
+      this.answersUnreadable = null;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
       this.report(error);
     }
     this.render();
-    if (opened) void this.loadModel(work.id, true);
+    if (opened) {
+      void this.loadModel(work.id, true);
+      void this.loadAnswers(work.id);
+    }
+  }
+
+  /**
+   * Read the owner's answers to the model's open questions. They are the work's, not
+   * the model's: they are read when the work opens and kept across models, because
+   * a question the next draft still asks is answered already.
+   */
+  private async loadAnswers(id: string): Promise<void> {
+    const session = this.session;
+    const ticket = ++this.answersTicket;
+    const current = (): boolean => session === this.session && ticket === this.answersTicket;
+    try {
+      const read = await this.api.readAnswers(id);
+      if (!current()) return;
+      this.answers = openAnswers(read);
+      this.answersUnreadable = null;
+    } catch (error) {
+      if (!current()) return;
+      if (this.askForToken(error)) return;
+      this.answersUnreadable = this.explain(error);
+    }
+    this.render();
+  }
+
+  /** The person typed into the field of question `id`. Nothing is redrawn under their cursor. */
+  private typeAnswer(id: string, text: string): void {
+    if (this.answers === null) return;
+    this.answers = editAnswer(this.answers, id, text);
+    this.refreshAnswersChrome();
+  }
+
+  /** Save the answers as the owner now has them, on top of the revision they were read as. */
+  private async saveAnswers(): Promise<void> {
+    const model = this.answers;
+    const work = this.selected;
+    const request = model === null ? null : answersRequest(model);
+    if (model === null || work === null || request === null) return;
+    const session = this.session;
+    this.answers = answersSaving(model);
+    this.render();
+    try {
+      await this.api.saveAnswers(work.id, request.answers, request.base);
+    } catch (error) {
+      if (session !== this.session || this.answers === null) return;
+      if (this.askForToken(error)) return;
+      if (error instanceof CommandFailure && error.kind === "conflict") {
+        // What is saved now is loaded and what was typed is kept: the person looks,
+        // and saves again on top of it.
+        try {
+          const current = await this.api.readAnswers(work.id);
+          if (session !== this.session || this.answers === null) return;
+          this.answers = answersConflicted(this.answers, current);
+        } catch (again) {
+          if (session !== this.session || this.answers === null) return;
+          this.answers = answersFailed(this.answers, this.explain(again));
+        }
+      } else {
+        this.answers = answersFailed(this.answers, this.explain(error));
+      }
+      this.render();
+      return;
+    }
+
+    // The core has the answers. What it holds is what is shown, because it stamps
+    // each answer and the stamp is its to say; if that read fails the save still
+    // took, and the panel says the answers cannot be read rather than that it failed.
+    try {
+      const read = await this.api.readAnswers(work.id);
+      if (session !== this.session || this.answers === null) return;
+      this.answers = answersSaved(this.answers, read, request.answers);
+    } catch (error) {
+      if (session !== this.session) return;
+      if (this.askForToken(error)) return;
+      this.answers = null;
+      this.answersUnreadable = this.explain(error);
+    }
+    this.render();
+  }
+
+  /** The save button and its words follow every keystroke, without redrawing the field being typed in. */
+  private refreshAnswersChrome(): void {
+    const model = this.answers;
+    const button = this.root.querySelector<HTMLButtonElement>("#save-answers");
+    const status = this.root.querySelector<HTMLElement>("#answers-status");
+    if (model === null || button === null || status === null) return;
+    const dirty = isAnswersDirty(model);
+    button.disabled = !dirty || model.phase === "saving";
+    status.textContent =
+      model.phase === "saving"
+        ? this.t("saving")
+        : dirty
+          ? this.t("answersUnsaved")
+          : model.base === null
+            ? ""
+            : this.t("answersSaved");
   }
 
   /**
@@ -290,7 +409,7 @@ export class App {
     const work = this.selected;
     const editor = this.editor;
     // A save still on its way would write into a work the person is told is gone.
-    if (work === null || editor === null || editor.phase === "saving") return;
+    if (work === null || editor === null || this.somethingIsSaving()) return;
     this.removing = false;
     await this.guard(async () => {
       const removed = await this.api.removeWork(work.id);
@@ -300,8 +419,11 @@ export class App {
       this.opening += 1;
       this.modelTicket += 1;
       this.reviewTicket += 1;
+      this.answersTicket += 1;
       this.looking += 1;
       this.review = null;
+      this.answers = null;
+      this.answersUnreadable = null;
       this.selected = null;
       this.editor = null;
       this.entries = [];
@@ -317,9 +439,9 @@ export class App {
   private async saveAndSwitch(): Promise<void> {
     const target = this.pendingSwitch;
     await this.save();
-    // Only a save that took, with nothing typed since, lets the switch go on.
-    const editor = this.editor;
-    if (target !== null && editor !== null && editor.phase === "idle" && !isDirty(editor)) {
+    await this.saveAnswers();
+    // Only saves that took, with nothing typed since, let the switch go on.
+    if (target !== null && !this.hasUnsavedChanges()) {
       await this.select(target);
     }
   }
@@ -531,6 +653,7 @@ export class App {
 
   private render(): void {
     const keep = this.captureEditorFocus();
+    const keepAnswer = this.captureAnswerFocus();
     this.root.ownerDocument.documentElement.lang = this.locale;
     this.root.replaceChildren(
       h(
@@ -547,6 +670,30 @@ export class App {
       ),
     );
     this.restoreEditorFocus(keep);
+    this.refreshAnswersChrome();
+    this.restoreAnswerFocus(keepAnswer);
+  }
+
+  /**
+   * The answer field the person is typing in and where their cursor is, so a redraw
+   * that is not theirs (SCE's page arriving, a drawing finishing) does not take the
+   * field from under them.
+   */
+  private captureAnswerFocus(): { qid: string; start: number; end: number } | null {
+    const active = this.root.ownerDocument.activeElement;
+    if (!(active instanceof HTMLTextAreaElement) || !this.root.contains(active)) return null;
+    const qid = active.dataset["qid"];
+    return qid === undefined ? null : { qid, start: active.selectionStart, end: active.selectionEnd };
+  }
+
+  private restoreAnswerFocus(keep: { qid: string; start: number; end: number } | null): void {
+    if (keep === null) return;
+    const field = [...this.root.querySelectorAll<HTMLTextAreaElement>("textarea[data-qid]")].find(
+      (f) => f.dataset["qid"] === keep.qid,
+    );
+    if (field === undefined) return;
+    field.focus();
+    field.setSelectionRange(keep.start, keep.end);
   }
 
   /** Asked for when the address carried no token (a link handler may have cut it off). */
@@ -626,7 +773,7 @@ export class App {
   private switchBanner(): HTMLElement | null {
     const target = this.pendingSwitch;
     if (target === null) return null;
-    const saving = this.editor?.phase === "saving";
+    const saving = this.somethingIsSaving();
     return h(
       "section",
       { class: "banner banner-warn", role: "alert" },
@@ -650,9 +797,16 @@ export class App {
     );
   }
 
-  /** Whether the editor holds text the core has not been given. */
+  /** Whether a save of the text or of the answers is on its way: a work cannot be removed under it. */
+  private somethingIsSaving(): boolean {
+    return this.editor?.phase === "saving" || this.answers?.phase === "saving";
+  }
+
+  /** Whether the editor holds text, or the answers hold words, the core has not been given. */
   hasUnsavedChanges(): boolean {
-    return this.editor !== null && (isDirty(this.editor) || this.editor.phase === "saving");
+    const text = this.editor !== null && (isDirty(this.editor) || this.editor.phase === "saving");
+    const answers = this.answers !== null && (isAnswersDirty(this.answers) || this.answers.phase === "saving");
+    return text || answers;
   }
 
   private sidebar(): HTMLElement {
@@ -756,7 +910,7 @@ export class App {
           {
             type: "button",
             class: "quiet",
-            disabled: editor.phase === "saving",
+            disabled: this.somethingIsSaving(),
             onclick: () => {
               this.removing = true;
               this.render();
@@ -765,7 +919,7 @@ export class App {
           this.t("workRemove"),
         ),
       ),
-      this.removing ? this.removeBanner(work, editor) : null,
+      this.removing ? this.removeBanner(work) : null,
       // Two columns where the screen is wide enough: the text on one side and what
       // SCE says of its model on the other, because the page is read AGAINST the
       // text. Narrow, they stack in the same order.
@@ -807,19 +961,19 @@ export class App {
   }
 
   /** Asked before a work leaves the list; said in terms of what stays and how to bring it back. */
-  private removeBanner(work: Work, editor: EditorModel): HTMLElement {
+  private removeBanner(work: Work): HTMLElement {
     return h(
       "section",
       { class: "banner banner-warn", role: "alert" },
       h("strong", {}, this.t("removeTitle", { title: work.title })),
       h("p", {}, this.t("removeBody")),
-      isDirty(editor) ? h("p", {}, this.t("removeBodyUnsaved")) : null,
+      this.hasUnsavedChanges() ? h("p", {}, this.t("removeBodyUnsaved")) : null,
       h(
         "div",
         { class: "choices" },
         h(
           "button",
-          { type: "button", disabled: editor.phase === "saving", onclick: () => void this.remove() },
+          { type: "button", disabled: this.somethingIsSaving(), onclick: () => void this.remove() },
           this.t("removeConfirm"),
         ),
         h(
@@ -912,7 +1066,8 @@ export class App {
             ? this.t("reviewAcceptedUnknownKind")
             : this.t("reviewAccepted", { kind: check.kind }),
       ),
-      accepted ? this.openMatters(check.open, check.unresolved) : null,
+      accepted ? this.openMatters(check.open, check.unresolved.length) : null,
+      accepted ? this.questions(check.unresolved) : null,
       accepted ? null : this.records(check.records),
       accepted ? h("p", { class: "muted" }, this.t("reviewNote")) : null,
       page === null
@@ -933,28 +1088,108 @@ export class App {
     );
   }
 
-  /** What an accepted model leaves to a person: SCE's sentences, and the questions the model marks. */
-  private openMatters(open: readonly string[], unresolved: readonly { id: string; line: number | null }[]): HTMLElement {
-    if (open.length === 0 && unresolved.length === 0) {
-      return h("p", { class: "muted" }, this.t("reviewNothingOpen"));
+  /** What an accepted model leaves to a person, in SCE's own sentences. */
+  private openMatters(open: readonly string[], questions: number): HTMLElement | null {
+    if (open.length === 0) {
+      // Nothing in SCE's words, and no question to answer either: say so once.
+      return questions === 0 ? h("p", { class: "muted" }, this.t("reviewNothingOpen")) : null;
     }
     return h(
       "div",
       { class: "open-matters" },
       h("h5", {}, this.t("reviewOpenTitle")),
-      h(
-        "ul",
-        {},
-        ...open.map((sentence) => h("li", {}, sentence)),
-        ...unresolved.map((u) =>
+      h("ul", {}, ...open.map((sentence) => h("li", {}, sentence))),
+    );
+  }
+
+  /**
+   * The questions the model marks as not decided, each with a field for the owner's
+   * answer, and the answers to questions the model no longer asks. The answers go
+   * to the authoring client the next time it reads the work (`works_read`), which
+   * applies them; nothing here writes into the model.
+   */
+  private questions(unresolved: readonly Unresolved[]): HTMLElement | null {
+    const model = this.answers;
+    const asked = [...new Map(unresolved.map((u) => [u.id, u])).values()];
+    if (model === null) {
+      return asked.length === 0 && this.answersUnreadable === null
+        ? null
+        : h(
+            "p",
+            { class: this.answersUnreadable === null ? "muted" : "banner banner-error" },
+            this.answersUnreadable === null
+              ? this.t("answersReading")
+              : this.t("answersFailed", { detail: this.answersUnreadable }),
+          );
+    }
+    const askedIds = new Set(asked.map((u) => u.id));
+    const orphans = Object.keys(model.saved)
+      .filter((id) => !askedIds.has(id))
+      .sort();
+    if (asked.length === 0 && orphans.length === 0) return null;
+
+    const field = (id: string, label: Child[]): HTMLElement => {
+      const input = h("textarea", {
+        class: "answer-input",
+        "data-qid": id,
+        rows: "2",
+        spellcheck: "false",
+        "aria-label": this.t("answerLabel", { id }),
+        oninput: (event) => this.typeAnswer(id, (event.target as HTMLTextAreaElement).value),
+      });
+      input.value = wordsOf(model, id);
+      const entry = model.saved[id];
+      return h(
+        "div",
+        { class: "question" },
+        h("div", { class: "question-text" }, ...label),
+        input,
+        entry === undefined
+          ? null
+          : h(
+              "span",
+              { class: "muted answered-at" },
+              this.t("answerAt", { time: formatTime(entry.answered_at, this.locale) }),
+            ),
+      );
+    };
+
+    return h(
+      "section",
+      { class: "answers" },
+      h("h5", {}, this.t("answersTitle")),
+      h("p", { class: "muted" }, this.t("answersHint")),
+      ...asked.map((u) =>
+        field(u.id, [
+          h("strong", {}, u.reason ?? this.t("answerNoWording")),
+          " ",
           h(
-            "li",
+            "span",
             { class: "muted" },
             u.line === null
               ? this.t("reviewUnresolvedNoLine", { id: u.id })
               : this.t("reviewUnresolvedAt", { id: u.id, line: String(u.line) }),
           ),
-        ),
+        ]),
+      ),
+      orphans.length === 0
+        ? null
+        : h(
+            "div",
+            { class: "orphans" },
+            h("h5", {}, this.t("answersOrphanTitle")),
+            h("p", { class: "muted" }, this.t("answersOrphanNote")),
+            ...orphans.map((id) => field(id, [h("code", {}, id)])),
+          ),
+      model.phase === "conflict" ? h("p", { class: "banner banner-warn", role: "alert" }, this.t("answersConflict")) : null,
+      model.phase === "failed"
+        ? h("p", { class: "banner banner-error", role: "alert" }, this.t("answersSaveFailed", { detail: model.failure ?? "" }))
+        : null,
+      h(
+        "div",
+        { class: "bar" },
+        h("button", { id: "save-answers", type: "button", onclick: () => void this.saveAnswers() }, this.t("answersSave")),
+        h("span", { id: "answers-status", class: "status", role: "status", "aria-live": "polite" }),
       ),
     );
   }

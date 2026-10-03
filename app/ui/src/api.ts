@@ -9,6 +9,7 @@ import {
   parseFigures,
   parseHistory,
   parseListing,
+  parseReadAnswers,
   parseReadModel,
   parseReadSource,
   parseRemoved,
@@ -16,6 +17,7 @@ import {
   parseSaved,
   parseWork,
   parseWorkAndHead,
+  type Answers,
   type Described,
   type Figures,
   type HistoryEntry,
@@ -55,6 +57,14 @@ export interface Api {
    * refusal with a `sce-*` kind.
    */
   review(id: string, revision?: Revision, lexicon?: string): Promise<Review>;
+  /** The owner's answers to the model's open questions; `null` when they have answered nothing. */
+  readAnswers(id: string): Promise<Answers | null>;
+  /**
+   * Save the answers as the owner now has them (question id to words; a question
+   * left out is not answered) on top of `base` (`null` for a work's first answers).
+   * Refused with `conflict` if `base` is no longer current.
+   */
+  saveAnswers(id: string, answers: Readonly<Record<string, string>>, base: Revision | null): Promise<Saved>;
   /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
@@ -105,6 +115,12 @@ export function apiOver(transport: Transport): Api {
         ...(lexicon === undefined ? {} : { lexicon }),
       };
       return parseReview(await transport.call("review", args));
+    },
+    async readAnswers(id) {
+      return parseReadAnswers(await transport.call("read_answers", { id }));
+    },
+    async saveAnswers(id, answers, base) {
+      return parseSaved(await transport.call("save_answers", { id, answers, base }));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

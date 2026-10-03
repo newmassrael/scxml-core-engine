@@ -377,6 +377,41 @@ textarea:focus-visible {
   padding-left: 20px;
 }
 
+/* The owner's answers to what the model leaves open: a question in the model's own
+   words, and a field for the answer under it. */
+.answers {
+  margin: 12px 0;
+}
+
+.question {
+  margin: 8px 0 12px;
+}
+
+.question-text {
+  margin-bottom: 4px;
+}
+
+.answer-input {
+  display: block;
+  width: 100%;
+  min-height: 3.4em;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.answered-at {
+  font-size: 0.8rem;
+}
+
+.answers .orphans {
+  margin-top: 16px;
+}
+
 .review .page > summary {
   cursor: pointer;
   font-weight: 600;

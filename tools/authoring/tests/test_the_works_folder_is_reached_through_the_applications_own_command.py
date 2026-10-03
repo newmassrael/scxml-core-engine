@@ -45,6 +45,23 @@ DOOR = ('<?xml version="1.0" encoding="UTF-8"?>\n'
 
 REFUSED = DOOR.replace('target="opened"', 'target="nowhere"')
 
+# The same door, asking the owner what the specification does not say.
+ASKS = DOOR.replace(
+    '<transition event="open" target="opened"/>',
+    '<transition event="open" target="opened" sce:unresolved="open-guard" '
+    'sce:unresolved-reason="Which cards open the door?"/>')
+
+# ... and the same door, having applied the owner's answer to that question.
+APPLIES = DOOR.replace(
+    '<transition event="open" target="opened"/>',
+    '<transition event="open" target="opened" sce:assumed="open-guard"/>')
+
+# ... and asking a question nobody had asked yet, beside the one that was answered.
+ASKS_MORE = APPLIES.replace(
+    '<transition event="close" target="closed"/>',
+    '<transition event="close" target="closed" sce:unresolved="close-delay" '
+    'sce:unresolved-reason="How long before it closes again?"/>')
+
 
 def call(name: str, remote: bool = False, **arguments) -> dict:
     return mcp.call_tool(name, arguments, remote=remote)
@@ -169,8 +186,109 @@ class TheWorksFolder(unittest.TestCase):
     def test_there_is_no_tool_that_writes_the_owners_text_or_removes_a_work(self):
         names = {t["name"] for t in mcp.TOOLS}
         for forbidden in ("works_save_source", "works_write", "works_remove",
-                          "works_delete", "works_create"):
+                          "works_delete", "works_create", "works_save_answers",
+                          "works_answer"):
             self.assertNotIn(forbidden, names)
+
+
+@BUILT
+class TheOwnersAnswers(unittest.TestCase):
+    """What the owner answered in the application reaches the next draft, and a
+    draft is held to it before it is saved."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        patch = unittest.mock.patch.dict(
+            os.environ, {"SCE_WORKS_DIR": str(pathlib.Path(self._tmp.name) / "works")})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.work = works.call_work("create_work", {"title": "Door lock"})["id"]
+        self.revision = works.call_work(
+            "save_source", {"id": self.work, "text": SPEC})["revision"]
+
+    def answer(self, **entries):
+        """The owner's side: what the application saves when they answer."""
+        held = works.call_work("read_answers", {"id": self.work})["answers"]
+        works.call_work("save_answers", {
+            "id": self.work, "answers": entries,
+            "base": held["revision"] if held else None})
+
+    def record_of(self, read: dict):
+        """The decision record `works_read` handed back, read by the package that
+        owns its format: a record that does not load is a bug here."""
+        path = pathlib.Path(self._tmp.name) / "decisions.json"
+        path.write_text(read["decisions_text"], encoding="utf-8")
+        from sce_author.decisions import load_record
+        return load_record(path)
+
+    def test_a_work_nobody_answered_hands_back_no_answers_and_no_record(self):
+        read = data(call("works_read", work=self.work))
+        self.assertIsNone(read["answers"])
+        self.assertNotIn("decisions_text", read)
+
+    def test_the_owners_answer_is_handed_back_as_the_decision_record_it_makes(self):
+        call("works_save_model", work=self.work, model_text=ASKS,
+             source_revision=self.revision)
+        # The model asks; the owner has not answered: the record lists the question.
+        open_read = data(call("works_read", work=self.work))
+        record = self.record_of(open_read)
+        self.assertEqual(["open-guard"], list(record.decisions))
+        self.assertEqual("Which cards open the door?", record.decisions["open-guard"].question)
+        self.assertFalse(record.decisions["open-guard"].answered)
+
+        self.answer(**{"open-guard": "Any card on the list opens it."})
+        read = data(call("works_read", work=self.work))
+        self.assertEqual("Any card on the list opens it.",
+                         read["answers"]["entries"]["open-guard"]["answer"])
+        decision = self.record_of(read).decisions["open-guard"]
+        self.assertEqual("Any card on the list opens it.", decision.answer)
+        self.assertEqual("Which cards open the door?", decision.question)
+        self.assertIn("never leave an answered question sce:unresolved", read["next"])
+
+    def test_an_answer_to_a_question_the_model_no_longer_asks_is_kept_for_the_next_draft(self):
+        call("works_save_model", work=self.work, model_text=DOOR,
+             source_revision=self.revision)
+        self.answer(**{"open-guard": "Any card on the list opens it."})
+        decision = self.record_of(data(call("works_read", work=self.work))).decisions["open-guard"]
+        self.assertTrue(decision.answered)
+        self.assertIn("earlier model", decision.question)
+
+    def test_a_draft_that_leaves_an_answered_question_open_is_not_saved(self):
+        self.answer(**{"open-guard": "Any card on the list opens it."})
+        refused = call("works_save_model", work=self.work, model_text=ASKS,
+                       source_revision=self.revision)
+        self.assertTrue(refused.get("isError"), body(refused))
+        self.assertIn("does not keep to the owner's answers", body(refused))
+        self.assertIn("answered-left-open", body(refused))
+        self.assertIsNone(data(call("works_read", work=self.work))["model"])
+
+    def test_a_draft_that_applies_the_answer_is_saved(self):
+        self.answer(**{"open-guard": "Any card on the list opens it."})
+        saved = call("works_save_model", work=self.work, model_text=APPLIES,
+                     source_revision=self.revision)
+        self.assertFalse(saved.get("isError"), body(saved))
+        held = data(saved)["decisions"]
+        self.assertEqual("holds", held["verdict"])
+        self.assertEqual(1, held["counts"]["applied"])
+
+    def test_a_question_nobody_asked_yet_is_saved_and_reported_for_the_owner(self):
+        self.answer(**{"open-guard": "Any card on the list opens it."})
+        saved = call("works_save_model", work=self.work, model_text=ASKS_MORE,
+                     source_revision=self.revision)
+        self.assertFalse(saved.get("isError"), body(saved))
+        held = data(saved)["decisions"]
+        self.assertEqual(1, held["counts"]["new-question"])
+        self.assertIn("ask the owner each new question", held["next"])
+        # The model is saved, and what it asks is now in the record for the owner to answer.
+        record = self.record_of(data(call("works_read", work=self.work)))
+        self.assertEqual({"open-guard", "close-delay"}, set(record.decisions))
+
+    def test_a_work_with_no_answers_is_not_held_to_a_record_it_does_not_have(self):
+        saved = call("works_save_model", work=self.work, model_text=APPLIES,
+                     source_revision=self.revision)
+        self.assertFalse(saved.get("isError"), body(saved))
+        self.assertNotIn("decisions", data(saved))
 
 
 class TheWorksFolderIsThisMachinesOwn(unittest.TestCase):

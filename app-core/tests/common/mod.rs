@@ -53,6 +53,7 @@ fn review_of(request: &ReviewRequest<'_>) -> Review {
                 id: "open-guard".to_string(),
                 node_path: "states.closed.transitions[0]".to_string(),
                 line: Some(3),
+                reason: Some("Which card values open the door?".to_string()),
             }],
             records: Vec::new(),
         },

@@ -20,6 +20,7 @@ import {
   parseFigures,
   parseHistory,
   parseListing,
+  parseReadAnswers,
   parseReadModel,
   parseReadSource,
   parseRemoved,
@@ -54,6 +55,8 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   figures: parseFigures,
   remove_work: parseRemoved,
   review: parseReview,
+  read_answers: parseReadAnswers,
+  save_answers: parseSaved,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -116,6 +119,7 @@ describe("the replies the core gives", () => {
       id: "open-guard",
       node_path: "states.closed.transitions[0]",
       line: 3,
+      reason: "Which card values open the door?",
     });
     expect(accepted.page).toContain("machine");
     expect(accepted.page_refusal).toBeNull();
@@ -132,6 +136,20 @@ describe("the replies the core gives", () => {
     expect(noPage.check.verdict).toBe("accepted");
     expect(noPage.page).toBeNull();
     expect(noPage.page_refusal?.code).toBe("cli/pseudo-unsupported");
+  });
+
+  it("carry the owner's answers by question, each with its words and when they changed", () => {
+    expect(parseReadAnswers(replies.answers["read_answers_none"])).toBeNull();
+    const held = parseReadAnswers(replies.answers["read_answers"]);
+    expect(held?.revision).toMatch(/^[0-9a-f]{64}$/);
+    expect(held?.entries["open-guard"]?.answer).toBe("Any card on the list opens it.");
+    expect(held?.entries["open-guard"]?.answered_at).toBe("2026-10-03T09:00:00Z");
+    expect(parseSaved(replies.answers["save_answers_first"]).outcome).toBe("saved");
+    expect(parseSaved(replies.answers["save_answers_unchanged"]).outcome).toBe("unchanged");
+    expect(asCommandError(replies.refusals["invalid-answers"])?.message).toContain("is empty");
+    // The question's own words are what the screen shows the owner.
+    const review = parseReview(replies.answers["review"]);
+    expect(review.check.unresolved[0]?.reason).toBe("Which card values open the door?");
   });
 
   it("say which work was removed, and that it is no longer listed or readable", () => {
@@ -201,6 +219,11 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
     expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
+    expect(() => parseReadAnswers({})).toThrow(/read_answers/);
+    expect(() => parseReadAnswers({ answers: { revision: "abc", entries: {} } })).toThrow(/revision/);
+    expect(() =>
+      parseReadAnswers({ answers: { revision: "a".repeat(64), entries: { q: { answer: 3, answered_at: "t" } } } }),
+    ).toThrow(/entries\.q\.answer/);
   });
 
   it("is refused when a review's verdict is not a word the screen knows, or a record has no code", () => {

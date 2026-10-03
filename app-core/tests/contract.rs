@@ -194,6 +194,40 @@ fn replies() -> Value {
         answer(&store, "model_history", json!({"id": id})),
     );
 
+    // The owner's answers: none yet, then saved, then read, then said again.
+    answers.insert(
+        "read_answers_none".into(),
+        answer(&store, "read_answers", json!({"id": id})),
+    );
+    let answered = answer(
+        &store,
+        "save_answers",
+        json!({"id": id, "answers": {"open-guard": "Any card on the list opens it."}}),
+    );
+    let answers_revision = answered["revision"].as_str().unwrap().to_string();
+    answers.insert("save_answers_first".into(), answered);
+    answers.insert(
+        "save_answers_unchanged".into(),
+        answer(
+            &store,
+            "save_answers",
+            json!({"id": id, "answers": {"open-guard": "Any card on the list opens it."},
+                   "base": answers_revision}),
+        ),
+    );
+    answers.insert(
+        "read_answers".into(),
+        answer(&store, "read_answers", json!({"id": id})),
+    );
+    refusals.insert(
+        "invalid-answers".into(),
+        refusal(
+            &store,
+            "save_answers",
+            json!({"id": id, "answers": {"open-guard": "  "}, "base": answers_revision}),
+        ),
+    );
+
     // A removal, on a work of its own so the one above keeps its place in every
     // reply that follows.
     let other = answer(&store, "create_work", json!({"title": "Window blind"}));

@@ -60,6 +60,9 @@ pub struct Unresolved {
     /// Where in the document it sits, in the product's own path syntax.
     pub node_path: String,
     pub line: Option<u64>,
+    /// The question, in the words the model gave it (`sce:unresolved-reason`), when
+    /// it gave any: what the owner is asked to answer.
+    pub reason: Option<String>,
 }
 
 /// One record the product wrote about the document, in its words.
@@ -191,6 +194,7 @@ impl SceCodegen {
                         id: u.get("id")?.as_str()?.to_string(),
                         node_path: u.get("node_path")?.as_str()?.to_string(),
                         line: u.pointer("/location/line").and_then(Value::as_u64),
+                        reason: u.get("reason").and_then(Value::as_str).map(str::to_string),
                     })
                 })
                 .collect(),
