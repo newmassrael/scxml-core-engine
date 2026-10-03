@@ -3263,11 +3263,12 @@ C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types, `bool` and an enum, a transition's guard,
 `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's typed
-payload of numbers and bools, and a `<sce:action>` whose arguments are typed
-expressions of them. A string, a real, bytes, a list and a record variable, a
-`<send>` / `<cancel>`, a `<foreach>`, an `<invoke>`, a final's `<donedata>`, a
-call of an imported algorithm and a transition on an event whose payload carries
-a string, bytes or enum field are refused until their spellings are written: a
+payload of numbers and bools, a call of an imported algorithm, and a
+`<sce:action>` whose arguments are typed expressions of them. A string, a real,
+bytes, a list and a record variable, a `<send>` / `<cancel>`, a `<foreach>`, an
+`<invoke>`, a final's `<donedata>` and a transition on an event whose payload
+carries a string, bytes or enum field are refused until their spellings are
+written: a
 string and bytes need a capacity the C11 contract does not carry yet, and a real
 is not yet held to a scenario. An enum is a C `enum` of the enum document's own
 values, declared in the machine's header under a guard named for the document, so
@@ -3276,7 +3277,12 @@ constants carry the document's name (`<DOC>_<VARIANT>`, as the enum kind's own C
 artifact spells them) and `<doc>_declared_name(value)` answers the name the
 document declares, or NULL for a value no variant names. A value is compared and
 assigned as any other; a `<log>` shows its value, because C has no overloading to
-choose its name by. A host action is a call through the vtable the
+choose its name by. An algorithm's C artifact is a header of `static inline`
+functions the machine includes (`sce-codegen generate` writes it beside the
+machine's and does not include it for the machine), the function named by the
+bare symbol the algorithm declares, and a call that can fail is received through
+the `<name>_take` the header declares — the one spelling a forge kind calling the
+same algorithm uses (`algorithm_qualified_call`). A host action is a call through the vtable the
 machine is initialised with (`sm->actions.<op>(sm->actions.user_data, …)`), each
 argument read when the call is made; an argument that can fail is computed into a
 local of its declared type first, and the host is called only when none of them
@@ -3308,8 +3314,9 @@ machine's own `<machine>_in_state(sm, <ENUMERATOR>)`, which the template writes
 from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
 `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_payload` and `static_enum` (a value stated as the
-name its document declares) against machines generated from the
+`static_block_ends`, `static_payload`, `static_enum` (a value stated as the
+name its document declares) and `sync_client` (four standard sync algorithms
+called over the payload of each answer) against machines generated from the
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,
 an event's `data` included) rather than writing the expected values out a second
 time, and states the one thing no scenario can — a delivery that carried no

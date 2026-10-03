@@ -303,8 +303,9 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 fn c11_names_each_construct_it_does_not_lower_yet() {
     // C lowers integer, bool and enum variables, guards, `<assign>`, `<if>`,
     // `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and bools,
-    // and a host action whose arguments are typed expressions of them. What is
-    // past that — a string, a real, a list, a record or a bytes variable, a
+    // a call of an imported algorithm, and a host action whose arguments are
+    // typed expressions of them. What is past that — a string, a real, a list,
+    // a record or a bytes variable, a
     // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
     // not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
@@ -339,11 +340,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a record variable",
             fixture("static_record_fields.scxml"),
             r#"<data id="shown" sce:type="record:Day">"#,
-        ),
-        (
-            "a call of an imported algorithm",
-            fixture("static_record.scxml"),
-            "an imported algorithm",
         ),
         (
             "a <send>",

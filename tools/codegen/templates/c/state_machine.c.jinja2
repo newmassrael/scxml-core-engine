@@ -288,6 +288,11 @@
    Header-only and freestanding, like the rest of the tier a machine with no
    script engine is built from. */
 #include <sce/forge/algorithm.h>
+{% for line in static_imports %}
+{# An algorithm the document calls: its generated header, which `sce-codegen
+   generate` writes beside the machine's own and does not include for it. #}
+{{ line }}
+{% endfor %}
 {% endif %}
 {% if event_payload_active %}
 /* NL→IR Item C1 Path A: reading a typed `_event.data` view out of the wire

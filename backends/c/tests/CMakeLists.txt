@@ -2298,6 +2298,28 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum.scxml"
         STAGE_ALSO enum_view_mode.scxml
     )
+    # A machine that calls imported algorithms includes their headers, and does
+    # not generate them: an algorithm is a document of its own kind, generated
+    # once however many machines call it. The four sync rules `sync_client`
+    # calls are the standard library's, named by the generator.
+    set(_STATIC_SYNC_ALGORITHM_HEADERS "")
+    foreach(_ALGORITHM sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
+        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_ALGORITHM}.h")
+        add_custom_command(
+            OUTPUT "${_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "sce:std/sync/${_ALGORITHM}.scxml"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            DEPENDS "${SCE_CODEGEN}"
+            COMMENT "Generating C11 algorithm: ${_ALGORITHM}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_SYNC_ALGORITHM_HEADERS "${_HEADER}")
+    endforeach()
+    # Its events carry the standard sync schemas, imported by library name.
+    sce_generate_static_integration_c_test(sync_client
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sync_client.scxml"
+    )
 
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
@@ -2306,6 +2328,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
+        ${INTEGRATION_C_TEST_sync_client_SOURCES}
+        ${_STATIC_SYNC_ALGORITHM_HEADERS}
     )
     target_link_libraries(sce_c_integration_static_scalars PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

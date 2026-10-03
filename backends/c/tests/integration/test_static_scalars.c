@@ -27,6 +27,10 @@
 //     assignments through the channel the machine declares for it, lifted from
 //     the `data` the event carries; an operation over it that overflows is a
 //     failure like any other, and the statements before it have run.
+//   * `sync_client`: a call of an imported algorithm — a header of `static inline`
+//     functions the machine includes — in a guard and in an assignment, over the
+//     payload of each answer, and a call that refuses its arguments is a failure
+//     like any other.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -46,6 +50,7 @@
 #include "static_enum_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "sync_client_sm.h"
 
 #include "static_scenario.h"
 
@@ -269,6 +274,40 @@ static const variable_t enum_variables[] = {
 };
 STATIC_SCENARIO(static_enum, enum_events, enum_states, enum_variables, static_enum_text)
 
+// sync_client: one collection's sync run, which calls the standard sync rules —
+// algorithms the machine includes — over the payload of each answer the host
+// reports. `retryAt` is an int64, and a rule it calls refuses a status outside
+// its domain, which the document counts in `refusals`.
+VARIABLE_READER(sync_client, byToken)
+VARIABLE_READER(sync_client, fullListing)
+VARIABLE_READER(sync_client, outcome)
+VARIABLE_READER(sync_client, retryAt)
+VARIABLE_READER(sync_client, deleted)
+VARIABLE_READER(sync_client, uploaded)
+VARIABLE_READER(sync_client, discarded)
+VARIABLE_READER(sync_client, pages)
+VARIABLE_READER(sync_client, refusals)
+static const name_value_t sync_events[] = {
+    {"sync.start", SYNC_CLIENT_EVENT_SYNC_START},
+    {"sync.response", SYNC_CLIENT_EVENT_SYNC_RESPONSE},
+    {"sync.page", SYNC_CLIENT_EVENT_SYNC_PAGE},
+    {"sync.phase.done", SYNC_CLIENT_EVENT_SYNC_PHASE_DONE},
+};
+static const name_value_t sync_states[] = {
+    {"idle", SYNC_CLIENT_STATE_IDLE},
+    {"deleting", SYNC_CLIENT_STATE_DELETING},
+    {"uploading", SYNC_CLIENT_STATE_UPLOADING},
+    {"listing", SYNC_CLIENT_STATE_LISTING},
+};
+static const variable_t sync_variables[] = {
+    {"byToken", sync_client_read_byToken},     {"fullListing", sync_client_read_fullListing},
+    {"outcome", sync_client_read_outcome},     {"retryAt", sync_client_read_retryAt},
+    {"deleted", sync_client_read_deleted},     {"uploaded", sync_client_read_uploaded},
+    {"discarded", sync_client_read_discarded}, {"pages", sync_client_read_pages},
+    {"refusals", sync_client_read_refusals},
+};
+STATIC_SCENARIO(sync_client, sync_events, sync_states, sync_variables, NULL)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -303,6 +342,7 @@ int main(void) {
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
+    bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     if (bad != 0) {
         return 1;

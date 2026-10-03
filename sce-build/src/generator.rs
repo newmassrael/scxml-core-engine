@@ -3047,6 +3047,7 @@ fn render_c11(
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
+        static_imports => &static_lowering.imports,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

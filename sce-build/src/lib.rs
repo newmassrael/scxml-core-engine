@@ -6191,9 +6191,22 @@ fn forge_qualified_call(
     namespace: &str,
     language: &generator::Language,
 ) -> String {
-    if matches!(doc, forge::model::ForgeDocument::Algorithm(_))
-        && matches!(language, generator::Language::C11)
-    {
+    if matches!(doc, forge::model::ForgeDocument::Algorithm(_)) {
+        return algorithm_qualified_call(func_name, namespace, language);
+    }
+    build_qualified_call(func_name, namespace, language)
+}
+
+/// [`forge_qualified_call`] for a document known to be an `algorithm` — what a
+/// `sce-static` statechart calls, which has the imported document's name and
+/// not the document. The one place the `algorithm` exception lives, so a
+/// forge kind and a statechart calling the same function spell it alike.
+pub(crate) fn algorithm_qualified_call(
+    func_name: &str,
+    namespace: &str,
+    language: &generator::Language,
+) -> String {
+    if matches!(language, generator::Language::C11) {
         return func_name.to_string();
     }
     build_qualified_call(func_name, namespace, language)

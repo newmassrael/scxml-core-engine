@@ -226,14 +226,14 @@ fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Optio
     if matches!(lang, Language::Go) && go_module_prefix.is_none() {
         let package = filters::to_snake_case(document_name.to_string());
         return Callee {
-            call: crate::build_qualified_call(&symbol, &package, &lang),
+            call: crate::algorithm_qualified_call(&symbol, &package, &lang),
             import: None,
         };
     }
     let identity =
         crate::forge::generator::forge_import_identity(document_name, &lang, false, &options);
     Callee {
-        call: crate::build_qualified_call(&symbol, &identity.namespace, &lang),
+        call: crate::algorithm_qualified_call(&symbol, &identity.namespace, &lang),
         import: Some(identity.include_stmt),
     }
 }
@@ -3366,10 +3366,12 @@ impl StaticTarget for CTarget {
     fn name(&self) -> &'static str {
         "C11"
     }
-    // No algorithm is called from a C machine yet: a call is refused where the
-    // document is read ([`lower`]), not left an undefined name.
-    fn callee(&self, _document_name: &str) -> Option<Callee> {
-        None
+    // An algorithm's C artifact is a header of `static inline` functions, which
+    // the machine includes by the line a forge kind importing it writes; a call
+    // that can fail is received through the `<name>_take` the header declares
+    // (the expression lowerer spells it).
+    fn callee(&self, document_name: &str) -> Option<Callee> {
+        Some(generated_callee(Language::C11, document_name, None))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // The integers, the bool and an enum: a `bool`, a number and an
