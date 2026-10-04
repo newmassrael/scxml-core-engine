@@ -1,0 +1,24 @@
+{
+  "machine": "static_send_content",
+  "about": "The `<content expr>` of a <send> that names a record carries the record as the pairs of its fields, each read when the send runs: `send.record` sends the record variable `shown` (an enum field crossing as the name its enum declares, an integer as its number) as `view.relayed`, which the machine reads back through the schema. `bump` changes the record, and the next send carries what it holds now. `view.shown` sends the payload it arrived with, taken whole as `_event.data`, and `agenda_list` is spelled with an underscore: the wire carries the name the document wrote. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the record starts at the values its sets give it; nothing has been sent",
+      "expect": { "state": "viewing", "variables": { "shown": { "layout": "day", "zoom": 2 }, "received": "month", "level": 0, "relays": 0 } } },
+
+    { "note": "a record variable crosses as the pairs of its fields",
+      "event": "send.record",
+      "expect": { "variables": { "received": "day", "level": 2, "relays": 1 } } },
+
+    { "note": "the record changes; nothing is sent",
+      "event": "bump",
+      "expect": { "variables": { "shown": { "layout": "week", "zoom": 3 }, "received": "day", "level": 2, "relays": 1 } } },
+
+    { "note": "the fields are read when the send runs: the record as it is now",
+      "event": "send.record",
+      "expect": { "variables": { "received": "week", "level": 3, "relays": 2 } } },
+
+    { "note": "the payload of the event the transition is on is carried on whole",
+      "event": "view.shown", "data": { "layout": "agenda_list", "zoom": 5 },
+      "expect": { "variables": { "received": "agenda_list", "level": 5, "relays": 3 } } }
+  ]
+}

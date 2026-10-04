@@ -53,6 +53,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
@@ -574,6 +575,23 @@ func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata_content", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// The `<content expr>` of a <send> names a record, which crosses as the pairs of
+// its fields: a record variable and the payload of the event the transition is
+// on, taken whole.
+func TestASendCarriesTheRecordItsContentNames(t *testing.T) {
+	policy := static_send_content.NewStaticSendContentPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_content", drive[static_send_content.StaticSendContentState, static_send_content.StaticSendContentEvent](&policy, map[string]func() any{
+		"shown": func() any {
+			shown := policy.Shown()
+			return map[string]any{"layout": shown.Layout().String(), "zoom": shown.Zoom()}
+		},
+		"received": func() any { return policy.Received().String() },
+		"level":    func() any { return policy.Level() },
+		"relays":   func() any { return policy.Relays() },
 	}))
 }
 

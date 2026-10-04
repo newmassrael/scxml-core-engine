@@ -106,6 +106,7 @@
 #include "static_record_list_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_send_content_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -1000,6 +1001,37 @@ static const variable_t send_namelist_variables[] = {
 STATIC_SCENARIO(static_send_namelist, send_namelist_states, send_namelist_variables, static_send_namelist_text,
                 no_lists, no_records)
 
+// static_send_content: the `<content expr>` of a `<send>` names a record, which
+// crosses as the pairs of its fields — a record variable and the payload of the
+// event the transition is on, taken whole — and is read back through the schema.
+VARIABLE_READER(static_send_content, level)
+VARIABLE_READER(static_send_content, relays)
+RECORD_READER(static_send_content, shown, static_send_content_record_view_t, VIEW_FIELDS)
+
+static int64_t static_send_content_read_received(const void *sm) {
+    return (int64_t)static_send_content_get_received((const static_send_content_t *)sm);
+}
+
+static const char *static_send_content_text(void *sm, const char *name) {
+    if (strcmp(name, "received") == 0) {
+        return enum_view_mode_declared_name(static_send_content_get_received((const static_send_content_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t send_content_states[] = {
+    {"viewing", STATIC_SEND_CONTENT_STATE_VIEWING},
+};
+static const variable_t send_content_variables[] = {
+    {"received", static_send_content_read_received},
+    {"level", static_send_content_read_level},
+    {"relays", static_send_content_read_relays},
+};
+static const record_variable_t send_content_records[] = {RECORD_ROW(static_send_content, shown),
+                                                         {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_send_content, send_content_states, send_content_variables, static_send_content_text, no_lists,
+                send_content_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -1129,6 +1161,7 @@ int main(void) {
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
+    bad |= static_send_content_scenario("static_send_content", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `<content
+  expr>` of a <send> that names a record. The record crosses as the pairs of its
+  fields, each the `<param name="f" expr="record.f"/>` it abbreviates: read from
+  the machine's fields when the <send> runs, an enum field as the name its enum
+  declares. `send.record` sends the record variable `shown` and `view.shown`
+  sends the payload it arrived with, taken whole as `_event.data`; the machine
+  reads each back through the schema, so what arrived is what the record held.
+
+  `bump` changes the record between two sends of it: the value is read when the
+  send runs, not when the document was read.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="viewing" datamodel="sce-static" name="static_send_content">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="event-schema" src="schema_view_relayed.scxml" as="Relayed"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="shown" sce:type="record:View" sce:direction="out">
+      <sce:set name="layout" expr="ViewMode.day"/>
+      <sce:set name="zoom" expr="2"/>
+    </data>
+    <data id="received" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="level" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="relays" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="viewing">
+    <transition event="bump" type="internal">
+      <assign location="shown.zoom" expr="shown.zoom + 1"/>
+      <assign location="shown.layout" expr="ViewMode.week"/>
+    </transition>
+    <transition event="send.record" type="internal">
+      <send event="view.relayed">
+        <content expr="shown"/>
+      </send>
+    </transition>
+    <transition event="view.shown" type="internal">
+      <send event="view.relayed">
+        <content expr="_event.data"/>
+      </send>
+    </transition>
+    <transition event="view.relayed" type="internal">
+      <assign location="received" expr="_event.data.layout"/>
+      <assign location="level" expr="_event.data.zoom"/>
+      <assign location="relays" expr="relays + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -532,9 +532,6 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // declares the item and the index; only its body's expressions are
         // lowered, typed by what the loop variables are.
         "assign" | "if" | "log" | "raise" | "cancel" | "foreach" => None,
-        "send" if !action.contentexpr.is_empty() => {
-            Some("a <send> that carries <content expr>".to_string())
-        }
         // An inline text is finished to the string it spells at the place it is
         // written; one that holds an element has no text to finish, and an
         // engine reads it as a document where the generated backends carry it
@@ -544,7 +541,9 @@ fn unsupported_action(action: &Action) -> Option<String> {
         }
         // The pairs of its `<param>`s are expressions the walk lowers, in the
         // attribute each is written in, and the Interpreter's own `<send>` reads
-        // them once, when it runs.
+        // them once, when it runs. A `<content expr>` the judge let through names
+        // a record, which that `<send>` reads as the object it holds: the fields
+        // the generated backends carry as pairs.
         "send" => None,
         "sce_append" | "sce_clear" => None,
         // A host operation: the Interpreter performs it through its host, and

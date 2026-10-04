@@ -150,6 +150,19 @@ edit("sce-build/src/forge/static_lowering.rs",
      "")
 PY
 
+# ── A send's content record is the pairs of its fields ─────────────
+#
+# `static_send_content`: `<content expr="shown"/>` carries the record variable as
+# the pairs of its fields, and `<content expr="_event.data"/>` the payload of the
+# event the transition is on. A walk that leaves the record in the `contentexpr`
+# hands the templates a send with no pairs and an expression only an engine reads.
+
+mutation_case "a send's content record is not folded into its pairs" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                action.fold_content_record_into_params(&content, &fields);\n",
+     "                let _ = &fields;\n")
+PY
+
 # ── A send param that failed is left out and the message goes ─────
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'

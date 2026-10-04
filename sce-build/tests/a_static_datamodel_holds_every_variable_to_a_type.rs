@@ -1596,6 +1596,113 @@ fn a_send_namelist_name_is_held_to_the_rule_a_param_is() {
     assert!(out.contains("64-bit"), "it says why:\n{out}");
 }
 
+// ── A `<send>`'s `<content expr>` names a record ────────────────────────
+
+/// A `sce-static` machine holding the record variable `shown` whose `states`
+/// are on line 12.
+fn sending_content(states: &str) -> String {
+    record(EVERY_FIELD, states)
+}
+
+#[test]
+fn a_send_content_that_names_a_record_is_accepted() {
+    // A record variable, and the payload of the event the transition is on,
+    // each the pairs of its fields.
+    for states in [
+        r#"<state id="s"><onentry><send event="out"><content expr="shown"/></send></onentry></state>"#,
+        r#"<state id="s"><transition event="day.picked" type="internal"><send event="out"><content expr="_event.data"/></send></transition></state>"#,
+    ] {
+        let (ok, out) = run_record(&["check"], &sending_content(states));
+        assert!(ok, "a record crosses as the pairs of its fields:\n{out}");
+    }
+}
+
+#[test]
+fn a_send_content_that_names_no_record_is_refused_on_its_line() {
+    for (what, states) in [
+        (
+            "an expression that is no record",
+            r#"<state id="s"><onentry><send event="out"><content expr="shown.year + 1"/></send></onentry></state>"#,
+        ),
+        (
+            "the payload of an entry, where none is in scope",
+            r#"<state id="s"><onentry><send event="out"><content expr="_event.data"/></send></onentry></state>"#,
+        ),
+        (
+            "a record beside a param",
+            r#"<state id="s"><onentry><send event="out"><content expr="shown"/><param name="k" expr="1"/></send></onentry></state>"#,
+        ),
+    ] {
+        let (ok, out) = run_record(&["check"], &sending_content(states));
+        assert!(!ok, "{what}: no record is named alone:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
+    }
+}
+
+#[test]
+fn a_send_content_record_is_lowered_to_the_pairs_of_its_fields_and_needs_no_engine() {
+    // The record is read from the machine's fields when the send runs, as a
+    // `<param>`'s value is, so no engine evaluates it and the manifest says so.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run_record(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &sending_content(
+            r#"<state id="s"><onentry><send event="out"><content expr="shown"/></send></onentry></state>"#,
+        ),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a record named by a content needs no script engine:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    for field in ["year", "month", "dayOfMonth"] {
+        assert!(
+            source.contains(&format!("Name: \"{field}\"")),
+            "`{field}` is carried as a pair of the event's data"
+        );
+    }
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no pair is read by an engine"
+    );
+}
+
+#[test]
+fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
+    // C11 writes the event's data as one JSON object, in which a name is carried
+    // once, so a `namelist` name that a `<param>` of the same send already names
+    // is refused by name, as two `<param>`s of one name are.
+    let document = machine(
+        r#"<state id="s"><onentry><send event="out" namelist="count"><param name="count" expr="1"/></send></onentry></state>"#,
+    );
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
+    assert!(out.contains("twice"), "it says why:\n{out}");
+}
+
 // ── A `<donedata>` param is the same value on the same wire ─────────────
 
 /// A `sce-static` machine whose `<final>` (line 9) carries a `<donedata>`

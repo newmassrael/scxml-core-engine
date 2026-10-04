@@ -383,7 +383,13 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     }
     collect_global_script_causes(model, &mut causes);
     for (state_id, state) in &model.states {
-        collect_state_causes(state_id, state, &model.imported_event_schemas, &mut causes);
+        collect_state_causes(
+            state_id,
+            state,
+            &model.imported_event_schemas,
+            model.datamodel == crate::model::Datamodel::SceStatic,
+            &mut causes,
+        );
     }
     if model.datamodel == crate::model::Datamodel::SceStatic {
         causes.retain(|cause| !cause.kind.is_typed_under_static());
@@ -438,6 +444,7 @@ fn collect_state_causes(
     state_id: &str,
     state: &State,
     schemas: &BTreeMap<String, EventSchemaModel>,
+    static_model: bool,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
     for trans in &state.transitions {
@@ -450,7 +457,7 @@ fn collect_state_causes(
             ));
         }
         for action in &trans.actions {
-            collect_action_causes(state_id, action, out);
+            collect_action_causes(state_id, action, static_model, out);
         }
     }
     for block in state
@@ -459,14 +466,14 @@ fn collect_state_causes(
         .chain(state.on_exit_blocks.iter())
     {
         for action in block {
-            collect_action_causes(state_id, action, out);
+            collect_action_causes(state_id, action, static_model, out);
         }
     }
     for action in &state.initial_transition_actions {
-        collect_action_causes(state_id, action, out);
+        collect_action_causes(state_id, action, static_model, out);
     }
     for action in &state.initial_history_default_actions {
-        collect_action_causes(state_id, action, out);
+        collect_action_causes(state_id, action, static_model, out);
     }
     for invoke in &state.invokes {
         collect_invoke_causes(invoke, out);
@@ -508,7 +515,12 @@ fn transition_guard_needs_engine(
     true
 }
 
-fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScriptEngineCause>) {
+fn collect_action_causes(
+    state_id: &str,
+    action: &Action,
+    static_model: bool,
+    out: &mut Vec<NeedsScriptEngineCause>,
+) {
     match action.action_type.as_str() {
         "send" => {
             if !action.namelist.is_empty() {
@@ -536,7 +548,7 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                     ));
                 }
             }
-            if send_has_dynamic_attr(action) {
+            if send_has_dynamic_attr(action, static_model) {
                 out.push(NeedsScriptEngineCause::new(
                     ScriptEngineCauseKind::SendDynamicAttr {
                         state_id: state_id.to_string(),
@@ -568,7 +580,7 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                     ));
                 }
                 for nested in block.actions {
-                    collect_action_causes(state_id, nested, out);
+                    collect_action_causes(state_id, nested, static_model, out);
                 }
             }
         }
@@ -624,7 +636,7 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                 action.source_location.as_ref(),
             ));
             for nested in &action.actions {
-                collect_action_causes(state_id, nested, out);
+                collect_action_causes(state_id, nested, static_model, out);
             }
         }
         "native_action" => {
@@ -642,12 +654,16 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
     }
 }
 
-fn send_has_dynamic_attr(action: &Action) -> bool {
+/// Whether a `<send>` carries an attribute whose value is evaluated at run
+/// time. Under `sce-static` a `<content expr>` is not one: the model admits it
+/// only where it names a record, which is lowered as the pairs of its fields
+/// ([`crate::forge::static_datamodel`]), so it costs no engine.
+fn send_has_dynamic_attr(action: &Action, static_model: bool) -> bool {
     !action.eventexpr.is_empty()
         || !action.targetexpr.is_empty()
         || !action.delayexpr.is_empty()
         || !action.typeexpr.is_empty()
-        || !action.contentexpr.is_empty()
+        || (!static_model && !action.contentexpr.is_empty())
         || !action.idlocation.is_empty()
 }
 

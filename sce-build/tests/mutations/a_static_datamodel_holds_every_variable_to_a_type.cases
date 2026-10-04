@@ -126,8 +126,8 @@ PY
 # C stops lowering the text and refuses the send by name again.
 mutation_case "C refuses a send content again" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                    if !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());",
-     "                    if !action.content.is_empty() || !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());")
+     "                \"send\" => {\n                    let scxml_processor = action.send_type.is_empty()",
+     "                \"send\" => {\n                    if !action.content.is_empty() {\n                        return Some(\"a <send> with a <content>\".to_string());\n                    }\n                    let scxml_processor = action.send_type.is_empty()")
 PY
 
 # A `<donedata>`'s inline `<content>` is finished at build time the way a `<send>`'s
@@ -234,4 +234,34 @@ mutation_case "a namelist needs a script engine again" <<'PY'
 edit("sce-build/src/script_engine_analyzer.rs",
      "            | C::StaticInvokeNamelist { .. }\n            // A `<send>`'s `namelist` names variables the machine holds, and\n            // is lowered as the `<param>`s it abbreviates\n            // (`Action::fold_namelist_into_params`).\n            | C::SendNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n",
      "            | C::StaticInvokeNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n            | C::SendNamelist { .. }\n")
+PY
+
+# A `<send>`'s `<content expr>` that names a record is the pairs of its fields.
+# The first mutant admits an expression that names none (an empty record), the
+# second a `<param>` beside the content, and the third counts the content as an
+# engine need again, which the manifest of a pure-static machine would deny; the
+# fourth lets a `namelist` name repeat a `<param>` of the same send into C11,
+# which carries a name once.
+mutation_case "a content that names no record is admitted" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        let Some(fields) = self.content_fields(written) else {",
+     "        let Some(fields) = self.content_fields(written).or(Some(Vec::new())) else {")
+PY
+
+mutation_case "a content is admitted beside a param" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.params.is_empty() || !action.namelist.trim().is_empty() {",
+     "        if false && (!action.params.is_empty() || !action.namelist.trim().is_empty()) {")
+PY
+
+mutation_case "a content record needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "        || (!static_model && !action.contentexpr.is_empty())",
+     "        || (static_model && !action.contentexpr.is_empty())\n        || (!static_model && !action.contentexpr.is_empty())")
+PY
+
+mutation_case "a namelist name that repeats a param reaches C" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                            .map(|p| p.name.as_str())\n                            .chain(action.namelist.split_whitespace()),\n",
+     "                            .map(|p| p.name.as_str()),\n")
 PY

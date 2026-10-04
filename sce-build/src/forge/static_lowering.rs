@@ -1457,6 +1457,8 @@ pub fn lower(
         schemas: records.clone(),
         enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &records),
         payload_enum_paths: Default::default(),
+        payload_fields: Default::default(),
+        loop_records: Default::default(),
         lists: list_vars,
         strings: string_vars,
         machine,
@@ -2311,6 +2313,12 @@ struct Rewrites<'m> {
     /// holds, by `_event.data.<field>` path — [`Self::open_payload`]. Written
     /// through a shared reference for the reason [`Self::sites`] is.
     payload_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
+    /// The fields of the payload of the transition the walk is in, which
+    /// `_event.data` taken whole is a record of — [`Self::open_payload`].
+    payload_fields: std::cell::RefCell<Option<Vec<String>>>,
+    /// The record items of the `<foreach>`es the walk is inside, each with the
+    /// alias of the schema it holds.
+    loop_records: std::cell::RefCell<Vec<(String, String)>>,
     lists: ListVars,
     strings: StringVars,
     machine: &'m str,
@@ -2328,7 +2336,8 @@ struct Rewrites<'m> {
 impl Rewrites<'_> {
     /// Opens the walk of a transition whose event's payload `schema` is
     /// declared (`None` for a walk that has none in scope): the enum fields it
-    /// holds are values of the enums the schema names.
+    /// holds are values of the enums the schema names, and the payload taken
+    /// whole is a record of its fields.
     fn open_payload(&self, schema: Option<&EventSchemaModel>) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| {
@@ -2338,6 +2347,32 @@ impl Rewrites<'_> {
                 )
             })
             .unwrap_or_default();
+        *self.payload_fields.borrow_mut() =
+            schema.map(|schema| schema.fields.iter().map(|f| f.id.clone()).collect());
+    }
+
+    /// The ids of the fields of the record a `<send>`'s `<content expr>` names:
+    /// a record variable, a loop's record item, or the payload of the
+    /// transition's event. The judge accepted only these
+    /// ([`crate::forge::static_datamodel`]), so `None` is a lowering this walk
+    /// lacks and not a mistake in the document.
+    fn content_fields(&self, written: &str) -> Option<Vec<String>> {
+        let ids = |schema: &EventSchemaModel| schema.fields.iter().map(|f| f.id.clone()).collect();
+        if let Some((_, schema)) = self.records.get(written) {
+            return Some(ids(schema));
+        }
+        if let Some((_, alias)) = self
+            .loop_records
+            .borrow()
+            .iter()
+            .find(|(item, _)| item == written)
+        {
+            return self.schemas.get(alias).map(ids);
+        }
+        if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+            return self.payload_fields.borrow().clone();
+        }
+        None
     }
 
     /// The alias of the enum the variable, record field or payload field at
@@ -3786,21 +3821,24 @@ impl CTarget {
                 // as the text of the request's `params`, from the same value.
                 // Its literal `<content>` is the text it spells, finished at
                 // build time ([`crate::filters::static_content_wire`]) and
-                // copied into the event's data; an evaluated one is text the
-                // script engine reads, which no `sce-static` document has. A
-                // processor that no one is declared to serve is refused by name.
+                // copied into the event's data; an evaluated one names a record,
+                // which crosses as the pairs of its fields, as a `namelist`'s
+                // names do. A processor that no one is declared to serve is
+                // refused by name.
                 "send" => {
-                    if !action.contentexpr.is_empty() {
-                        return Some("a <send> with a <content expr>".to_string());
-                    }
                     let scxml_processor = action.send_type.is_empty()
                         || action.send_type == "scxml"
                         || action.send_type.ends_with("#SCXMLEventProcessor");
                     if !scxml_processor && !action.send_type_host_served {
                         return Some(format!("a <send> of type `{}`", action.send_type));
                     }
-                    if let Some(name) = repeated_name(action.params.iter().map(|p| p.name.as_str()))
-                    {
+                    if let Some(name) = repeated_name(
+                        action
+                            .params
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .chain(action.namelist.split_whitespace()),
+                    ) {
                         return Some(format!("a <send> that names <param name=\"{name}\"> twice"));
                     }
                 }
@@ -5059,7 +5097,22 @@ fn lower_action(
                 action.native_loop = head;
                 action.native_loop_prologue = prologue;
             }
-            return lower_actions(&mut action.actions, &inner, renames, rewrites);
+            // A record item is a record a `<send>` of the body may take whole.
+            let holds_a_record = match elem {
+                crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
+                crate::forge::model::ListElemType::Scalar(_) => None,
+            };
+            if let Some(alias) = &holds_a_record {
+                rewrites
+                    .loop_records
+                    .borrow_mut()
+                    .push((item.to_string(), alias.clone()));
+            }
+            let lowered = lower_actions(&mut action.actions, &inner, renames, rewrites);
+            if holds_a_record.is_some() {
+                rewrites.loop_records.borrow_mut().pop();
+            }
+            return lowered;
         }
         // A host operation whose arguments the Interpreter's engine computes
         // when the action runs: each is lowered as any expression is, to the
@@ -5074,16 +5127,34 @@ fn lower_action(
         // What a `<send>` carries is read from the machine's fields now, when
         // it runs (§scxml-6.2.3 evaluates its arguments once, at the send).
         "send" => {
-            // The names of a `namelist` are params like any other: one list of
-            // pairs is read from here on, each value as the machine holds it
+            // A record named by `<content expr>` is the pairs of its fields,
+            // and the names of a `namelist` are params like any other: one list
+            // of pairs is read from here on, each value as the machine holds it
             // when the send runs.
+            let content = action.contentexpr.trim().to_string();
+            if !content.is_empty() {
+                let fields = rewrites.content_fields(&content).ok_or_else(|| {
+                    GenerateError::unsupported(format!(
+                        "`<content expr=\"{content}\">` names no record this {lang} lowering reads"
+                    ))
+                })?;
+                action.fold_content_record_into_params(&content, &fields);
+            }
             action.fold_namelist_into_params();
+            let noted = rewrites.sites.borrow().len();
             for param in &mut action.params {
                 lower_wire_param(param, ctx, renames, rewrites)?;
                 // A value read from the payload runs only for a delivery that
                 // carried one, as the rest of the transition's content does.
                 reads_payload |=
                     reads(crate::forge::static_datamodel::WireParam::of_param(param).written);
+            }
+            // The pairs of a record are the fields of the one value `<content
+            // expr>` names, which a backend that runs the document's own
+            // element reads as the object it is: they have no attribute of
+            // their own to be rewritten at.
+            if !content.is_empty() {
+                rewrites.sites.borrow_mut().truncate(noted);
             }
             // A literal `<content>` is the event's data as written, finished
             // here ([`crate::filters::static_content_wire`]): the machine has

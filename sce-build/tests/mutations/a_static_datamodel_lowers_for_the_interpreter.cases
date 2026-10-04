@@ -32,8 +32,8 @@ mutation_oracles sce-build/tests/a_static_datamodel_lowers_for_the_interpreter.r
 # pairs were lowered: both fixtures leave the replay.
 mutation_case "a send's params are refused" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "        \"send\" if !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <content expr>\".to_string())\n        }\n",
-     "        \"send\" if !action.params.is_empty() || !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <param> or <content expr>\".to_string())\n        }\n")
+     "        \"send\" => None,\n",
+     "        \"send\" if !action.params.is_empty() => {\n            Some(\"a <send> that carries <param>\".to_string())\n        }\n        \"send\" => None,\n")
 PY
 
 # An enum value has no name to cross as: a `<param>` that holds one is refused by
@@ -51,6 +51,23 @@ mutation_case "a payload's enum field has no wire name" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "            let schema = schemas.get(&transition.event);\n            rewrites.open_payload(schema);\n",
      "            let schema = schemas.get(&transition.event);\n")
+PY
+
+# The pairs of a record named by a `<content expr>` are noted as rewrites of
+# attributes they do not have: the document's own element reads the record as the
+# object it is, and the lowering that tries to rewrite what the pairs say fails.
+mutation_case "a content record's pairs are noted as rewrites" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            if !content.is_empty() {\n                rewrites.sites.borrow_mut().truncate(noted);\n            }\n",
+     "            let _ = (&content, noted);\n")
+PY
+
+# The `<content expr>` of a `<send>` is refused again, as it was before a record
+# was carried as its fields: the fixture that sends one leaves the replay.
+mutation_case "a send's content expr is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        // The pairs of its `<param>`s are expressions the walk lowers, in the\n        // attribute each is written in, and the Interpreter's own `<send>` reads\n        // them once, when it runs. A `<content expr>` the judge let through names\n        // a record, which that `<send>` reads as the object it holds: the fields\n        // the generated backends carry as pairs.\n        \"send\" => None,\n",
+     "        \"send\" if !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <content expr>\".to_string())\n        }\n        \"send\" => None,\n")
 PY
 
 # A `<final>` that carries a `<donedata>` is refused again, as it was before its

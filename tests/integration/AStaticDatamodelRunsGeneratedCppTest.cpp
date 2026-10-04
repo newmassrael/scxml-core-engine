@@ -49,6 +49,7 @@
 #include "static_record_list_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_send_content_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -415,6 +416,24 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTex
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata_content", driver);
+}
+
+// The `<content expr>` of a `<send>` names a record, which crosses as the pairs of
+// its fields: a record variable and the payload of the event the transition is
+// on, taken whole.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendCarriesTheRecordItsContentNames) {
+    namespace E = G::static_send_content;
+    using Machine = E::static_send_content;
+    Driver<Machine> driver({
+        {"shown",
+         [](const Machine &m) {
+             return json{{"layout", std::string(E::sceLogName(m.shown().layout))}, {"zoom", m.shown().zoom}};
+         }},
+        {"received", [](const Machine &m) { return json(std::string(E::sceLogName(m.received()))); }},
+        {"level", [](const Machine &m) { return json(m.level()); }},
+        {"relays", [](const Machine &m) { return json(m.relays()); }},
+    });
+    replay("static_send_content", driver);
 }
 
 // The `namelist` of a `<send>` names variables the machine holds, each carried as

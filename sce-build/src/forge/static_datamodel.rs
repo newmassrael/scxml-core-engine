@@ -773,6 +773,93 @@ impl<'a> Judge<'a> {
         )
     }
 
+    /// A `<send>`'s `<content expr>`: the one value this model has that is an
+    /// object, a record, taken whole by name — a record variable, the item of a
+    /// `<foreach>` over a list of records, or the payload of the event the
+    /// transition is on (`_event.data`). It crosses as the pairs of its fields,
+    /// each the `<param name="f" expr="record.f"/>` it abbreviates
+    /// ([`crate::model::Action::fold_content_record_into_params`]) and held to
+    /// the rule a param is. The element carries its data one way, as content or
+    /// as pairs, so a `<param>` or a `namelist` beside it is refused.
+    fn content_record(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let written = action.contentexpr.trim();
+        let spelling = action.contentexpr_spelling.as_ref();
+        let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
+        let construct = format!("<content expr=\"{written}\">");
+        if !action.params.is_empty() || !action.namelist.trim().is_empty() {
+            return Err(self.rule_at(
+                construct,
+                "a <send> carries its data as <content> or as <param>s and a namelist, \
+                 and never as both",
+                line,
+                col,
+                state,
+                written,
+            ));
+        }
+        let Some(fields) = self.content_fields(written) else {
+            return Err(self.rule_at(
+                construct,
+                "a <content expr> of this data model names a record, which crosses as the pairs \
+                 of its fields: a record variable, the item of a <foreach> over a list of \
+                 records, or the payload of an event whose schema it is (`_event.data`)",
+                line,
+                col,
+                state,
+                written,
+            ));
+        };
+        for field in &fields {
+            let path = format!("{written}.{field}");
+            let pair = WireParam {
+                name: field,
+                is_static_literal: false,
+                written: &path,
+                spelling,
+                source_location: None,
+            };
+            self.wire_param(ctx, &pair, "<send>", state)?;
+        }
+        Ok(())
+    }
+
+    /// The ids of the fields of the record `written` names, or `None` when it
+    /// names no record: a record variable, a loop's record item, or the payload
+    /// of the transition's event when that event declares a schema.
+    fn content_fields(&self, written: &str) -> Option<Vec<String>> {
+        let ids = |schema: &crate::forge::model::EventSchemaModel| {
+            schema.fields.iter().map(|f| f.id.clone()).collect()
+        };
+        let by_alias = |alias: &str| self.schemas.get(alias).map(ids);
+        if let Some(alias) = self
+            .scope
+            .variables
+            .iter()
+            .find(|v| v.id == written)
+            .and_then(|v| v.value_type.as_ref())
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+        {
+            return by_alias(alias);
+        }
+        if let Some((_, alias)) = self
+            .loop_records
+            .borrow()
+            .iter()
+            .find(|(item, _)| item == written)
+        {
+            return by_alias(alias);
+        }
+        if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+            return self.payload_schema.borrow().as_ref().map(ids);
+        }
+        None
+    }
+
     /// A `<param>` of a `<send>`, of an `<invoke>` the host runs or of a
     /// `<donedata>`, judged as the value that crosses as data (SCE Accepted
     /// Subset §2.15): to the host, or on the event a `<final>` raises.
@@ -1012,12 +1099,7 @@ impl<'a> Judge<'a> {
                     self.wire_param(ctx, &namelist, "<send>", state)?;
                 }
                 if !action.contentexpr.is_empty() {
-                    return Err(self.untyped(
-                        format!("<content expr=\"{}\">", action.contentexpr),
-                        action.contentexpr_spelling.as_ref(),
-                        state,
-                        &action.contentexpr,
-                    ));
+                    self.content_record(ctx, action, state)?;
                 }
             }
             // SCE Accepted Subset §2.15: the value appended is judged

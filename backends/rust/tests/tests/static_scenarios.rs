@@ -77,6 +77,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_real_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_content_sm::{
+    StaticSendContentPersist, StaticSendContentPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
     StaticSendNamelistPersist, StaticSendNamelistPolicy,
 };
@@ -414,6 +417,20 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// The `<content expr>` of a <send> names a record, which crosses as the pairs
+// of its fields: a record variable and the payload of the event the transition
+// is on, taken whole.
+#[test]
+fn static_send_content_carries_the_record_it_names() {
+    replay(
+        Engine::new(StaticSendContentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_content.json"
         ),
     );
 }

@@ -40,6 +40,7 @@ import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
+import com.sce.integration.static_send_content.StaticSendContentStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -503,6 +504,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `<content expr>` of a <send> names a record, which crosses as the pairs
+    // of its fields: a record variable and the payload of the event the
+    // transition is on, taken whole.
+    @Test
+    fun staticSendContentCarriesTheRecordItNames() {
+        val sm = StaticSendContentStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_content"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

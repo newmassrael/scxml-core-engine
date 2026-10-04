@@ -273,6 +273,13 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
 
 
+# The `<content expr>` of a `<send>` names a record, which crosses as the pairs of
+# its fields: a record variable and the payload of the event the transition is
+# on, taken whole.
+def test_a_send_carries_the_record_its_content_names() -> None:
+    replay("static_send_content")
+
+
 # The `namelist` of a `<send>` names variables the machine holds, each carried as
 # the pair `<param name="x" expr="x"/>` it abbreviates, an enum value among them
 # as the name its enum declares.

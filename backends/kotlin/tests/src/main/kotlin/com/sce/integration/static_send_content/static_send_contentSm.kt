@@ -2,33 +2,33 @@
 // source-hash: dd1a6b6c55ab533e307bc7e47f7d1f334126ccba017dba6d270609c22c55e26e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_send_namelist.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_send_content.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_send_namelist.scxml:13 :: _machine
+// SCE-MAP: static_send_content.scxml:14 :: _machine
 
-package com.sce.integration.static_send_namelist
+package com.sce.integration.static_send_content
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticSendNamelistState : State {
-    data object Viewing : StaticSendNamelistState
+sealed interface StaticSendContentState : State {
+    data object Viewing : StaticSendContentState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticSendNamelistEvent : Event {
-    sealed interface Error : StaticSendNamelistEvent {
+sealed interface StaticSendContentEvent : Event {
+    data object Bump : StaticSendContentEvent
+    sealed interface Error : StaticSendContentEvent {
         data object Execution : Error
     }
-    data object Pick : StaticSendNamelistEvent
-    sealed interface Send : StaticSendNamelistEvent {
-        data object Mixed : Send
-        data object Names : Send
+    sealed interface Send : StaticSendContentEvent {
+        data object Record : Send
     }
-    sealed interface View : StaticSendNamelistEvent {
+    sealed interface View : StaticSendContentEvent {
+        data object Relayed : View
         data object Shown : View
     }
 }
@@ -36,18 +36,23 @@ sealed interface StaticSendNamelistEvent : Event {
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StaticSendNamelistPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StaticSendContentPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StaticSendNamelistViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
+// StaticSendContentViewRelayedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `view.relayed`. Consumers inject it via the `raiseViewRelayed` seam
+// on the machine — they never name this class directly.
+data class StaticSendContentViewRelayedPayload(val layout: StaticSendContentViewModeEnum, val zoom: UByte)
+
+// StaticSendContentViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `view.shown`. Consumers inject it via the `raiseViewShown` seam
 // on the machine — they never name this class directly.
-data class StaticSendNamelistViewShownPayload(val layout: StaticSendNamelistViewModeEnum, val zoom: UByte)
+data class StaticSendContentViewShownPayload(val layout: StaticSendContentViewModeEnum, val zoom: UByte)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
 /** SCE Accepted Subset §2.15: an `enum:ViewMode` datamodel value. */
-enum class StaticSendNamelistViewModeEnum(val declaredName: String) {
+enum class StaticSendContentViewModeEnum(val declaredName: String) {
     MONTH("month"),
     WEEK("week"),
     DAY("day"),
@@ -58,33 +63,40 @@ enum class StaticSendNamelistViewModeEnum(val declaredName: String) {
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): StaticSendNamelistViewModeEnum {
+        fun fromSaved(value: Any?, what: String): StaticSendContentViewModeEnum {
             val declared = SavedValues.string(value, what)
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of ViewMode")
         }
     }
 }
+/** SCE Accepted Subset §2.15: a `record:View` datamodel value. */
+data class StaticSendContentViewRecord(val layout: StaticSendContentViewModeEnum, val zoom: UByte) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("layout" to layout.toSaved(), "zoom" to SavedValues.of(zoom))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticSendContentViewRecord = StaticSendContentViewRecord(layout = StaticSendContentViewModeEnum.fromSaved(SavedValues.field(value, what, "layout"), "$what.layout"), zoom = SavedValues.uint8(SavedValues.field(value, what, "zoom"), "$what.zoom"))
+    }
+}
 // --- State Machine (W3C SCXML) ---
 
-class StaticSendNamelistStateMachine(
-) : StateMachineEngine<StaticSendNamelistState, StaticSendNamelistEvent>() {
+class StaticSendContentStateMachine(
+) : StateMachineEngine<StaticSendContentState, StaticSendContentEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.WEEK
-        private set
-    /** W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`). */
-    var zoom: UByte = 3.toUByte()
+    /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
+    var shown: StaticSendContentViewRecord = StaticSendContentViewRecord(layout = StaticSendContentViewModeEnum.DAY, zoom = 2.toUByte())
         private set
     /** W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`). */
-    var received: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.MONTH
+    var received: StaticSendContentViewModeEnum = StaticSendContentViewModeEnum.MONTH
         private set
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
     var level: UByte = 0.toUByte()
         private set
-    /** W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`). */
-    var deliveries: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`). */
+    var relays: UInt = 0.toUInt()
         private set
 
     /**
@@ -93,25 +105,22 @@ class StaticSendNamelistStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
-        var zoom: UByte? = null
         var level: UByte? = null
-        var deliveries: UInt? = null
+        var relays: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.zoom?.let { zoom = it }
         params.level?.let { level = it }
-        params.deliveries?.let { deliveries = it }
+        params.relays?.let { relays = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
-        val layout: StaticSendNamelistViewModeEnum,
-        val zoom: UByte,
-        val received: StaticSendNamelistViewModeEnum,
+        val shown: StaticSendContentViewRecord,
+        val received: StaticSendContentViewModeEnum,
         val level: UByte,
-        val deliveries: UInt,
+        val relays: UInt,
     )
 
     /**
@@ -122,17 +131,16 @@ class StaticSendNamelistStateMachine(
      * configuration is not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticSendNamelistState>,
+        val configuration: Set<StaticSendContentState>,
         val data: Data,
         val truncated: Boolean,
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        zoom = zoom,
+        shown = shown,
         received = received,
         level = level,
-        deliveries = deliveries,
+        relays = relays,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -159,7 +167,7 @@ class StaticSendNamelistStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "4c5fcd09ccb548a79be78a0a5ea36c3c9f17a5dfb4706bc3b43fd85462ba40d9"
+    val savedShape: String = "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -175,11 +183,10 @@ class StaticSendNamelistStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "zoom" to SavedValues.of(zoom),
+            "shown" to shown.toSaved(),
             "received" to received.toSaved(),
             "level" to SavedValues.of(level),
-            "deliveries" to SavedValues.of(deliveries),
+            "relays" to SavedValues.of(relays),
         ),
         wallNowMs,
     )
@@ -205,16 +212,14 @@ class StaticSendNamelistStateMachine(
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
-        val saved1 = StaticSendNamelistViewModeEnum.fromSaved(saved.variable("layout"), "layout")
-        val saved2 = SavedValues.uint8(saved.variable("zoom"), "zoom")
-        val saved3 = StaticSendNamelistViewModeEnum.fromSaved(saved.variable("received"), "received")
-        val saved4 = SavedValues.uint8(saved.variable("level"), "level")
-        val saved5 = SavedValues.uint32(saved.variable("deliveries"), "deliveries")
-        layout = saved1
-        zoom = saved2
-        received = saved3
-        level = saved4
-        deliveries = saved5
+        val saved1 = StaticSendContentViewRecord.fromSaved(saved.variable("shown"), "shown")
+        val saved2 = StaticSendContentViewModeEnum.fromSaved(saved.variable("received"), "received")
+        val saved3 = SavedValues.uint8(saved.variable("level"), "level")
+        val saved4 = SavedValues.uint32(saved.variable("relays"), "relays")
+        shown = saved1
+        received = saved2
+        level = saved3
+        relays = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -224,7 +229,8 @@ class StaticSendNamelistStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingViewShownPayload: StaticSendNamelistViewShownPayload? = null
+    private var pendingViewRelayedPayload: StaticSendContentViewRelayedPayload? = null
+    private var pendingViewShownPayload: StaticSendContentViewShownPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -234,16 +240,21 @@ class StaticSendNamelistStateMachine(
     // EventPayload.Refusal, which the engine reports as error.execution. Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(event: StaticSendNamelistEvent, metadata: EventMetadata) {
+    override fun populateTypedPayload(event: StaticSendContentEvent, metadata: EventMetadata) {
+        pendingViewRelayedPayload = null
         pendingViewShownPayload = null
         when (val tp = metadata.typedPayload) {
-            is StaticSendNamelistViewShownPayload -> pendingViewShownPayload = tp
+            is StaticSendContentViewRelayedPayload -> pendingViewRelayedPayload = tp
+            is StaticSendContentViewShownPayload -> pendingViewShownPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == StaticSendNamelistEvent.View.Shown) {
+                if (event == StaticSendContentEvent.View.Relayed) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewShownPayload = StaticSendNamelistViewShownPayload(fields.string("layout").let { name -> StaticSendNamelistViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewRelayedPayload = StaticSendContentViewRelayedPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                } else if (event == StaticSendContentEvent.View.Shown) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingViewShownPayload = StaticSendContentViewShownPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
                 }
             }
         }
@@ -251,13 +262,29 @@ class StaticSendNamelistStateMachine(
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `view.shown` — binds the event name and the payload field values in one call.
-    fun raiseViewShown(layout: StaticSendNamelistViewModeEnum, zoom: UByte) {
+    // `view.relayed` — binds the event name and the payload field values in one call.
+    fun raiseViewRelayed(layout: StaticSendContentViewModeEnum, zoom: UByte) {
         send(
-            StaticSendNamelistEvent.View.Shown,
+            StaticSendContentEvent.View.Relayed,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticSendNamelistViewShownPayload(layout, zoom),
+                typedPayload = StaticSendContentViewRelayedPayload(layout, zoom),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("layout" to layout.declaredName, "zoom" to zoom))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `view.shown` — binds the event name and the payload field values in one call.
+    fun raiseViewShown(layout: StaticSendContentViewModeEnum, zoom: UByte) {
+        send(
+            StaticSendContentEvent.View.Shown,
+            EventMetadata(
+                type = "external",
+                typedPayload = StaticSendContentViewShownPayload(layout, zoom),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
@@ -268,7 +295,7 @@ class StaticSendNamelistStateMachine(
     }
 
 
-    override val initialState: StaticSendNamelistState = StaticSendNamelistState.Viewing
+    override val initialState: StaticSendContentState = StaticSendContentState.Viewing
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -287,16 +314,16 @@ class StaticSendNamelistStateMachine(
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<StaticSendNamelistState, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<StaticSendContentState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<StaticSendNamelistState, HistoryId>> =
-            listOf(StateTarget(StaticSendNamelistState.Viewing))
+        val documentInitialTargetList: List<EntryTarget<StaticSendContentState, HistoryId>> =
+            listOf(StateTarget(StaticSendContentState.Viewing))
 
         // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
-        val transitionViewingAt0 = EnabledTransition<StaticSendNamelistState, HistoryId>(
-            StaticSendNamelistState.Viewing,
+        val transitionViewingAt0 = EnabledTransition<StaticSendContentState, HistoryId>(
+            StaticSendContentState.Viewing,
             emptyList(),
             0,
             hasActions = true,
@@ -304,8 +331,8 @@ class StaticSendNamelistStateMachine(
         )
 
         // W3C SCXML 3.13: viewing's transition 1, as the microstep reads it.
-        val transitionViewingAt1 = EnabledTransition<StaticSendNamelistState, HistoryId>(
-            StaticSendNamelistState.Viewing,
+        val transitionViewingAt1 = EnabledTransition<StaticSendContentState, HistoryId>(
+            StaticSendContentState.Viewing,
             emptyList(),
             1,
             hasActions = true,
@@ -313,8 +340,8 @@ class StaticSendNamelistStateMachine(
         )
 
         // W3C SCXML 3.13: viewing's transition 2, as the microstep reads it.
-        val transitionViewingAt2 = EnabledTransition<StaticSendNamelistState, HistoryId>(
-            StaticSendNamelistState.Viewing,
+        val transitionViewingAt2 = EnabledTransition<StaticSendContentState, HistoryId>(
+            StaticSendContentState.Viewing,
             emptyList(),
             2,
             hasActions = true,
@@ -322,8 +349,8 @@ class StaticSendNamelistStateMachine(
         )
 
         // W3C SCXML 3.13: viewing's transition 3, as the microstep reads it.
-        val transitionViewingAt3 = EnabledTransition<StaticSendNamelistState, HistoryId>(
-            StaticSendNamelistState.Viewing,
+        val transitionViewingAt3 = EnabledTransition<StaticSendContentState, HistoryId>(
+            StaticSendContentState.Viewing,
             emptyList(),
             3,
             hasActions = true,
@@ -332,38 +359,38 @@ class StaticSendNamelistStateMachine(
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticSendNamelistState? = when (stateId) {
-        "viewing" -> StaticSendNamelistState.Viewing
+    override fun resolveState(stateId: String): StaticSendContentState? = when (stateId) {
+        "viewing" -> StaticSendContentState.Viewing
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticSendNamelistState): String = when (state) {
-        is StaticSendNamelistState.Viewing -> "viewing"
+    override fun stateIdOf(state: StaticSendContentState): String = when (state) {
+        is StaticSendContentState.Viewing -> "viewing"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: StaticSendNamelistState): Int = when (state) {
-        is StaticSendNamelistState.Viewing -> 0
+    override fun documentOrderOf(state: StaticSendContentState): Int = when (state) {
+        is StaticSendContentState.Viewing -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticSendNamelistEvent? = when (name) {
-        "error.execution" -> StaticSendNamelistEvent.Error.Execution
-        "pick" -> StaticSendNamelistEvent.Pick
-        "send.mixed" -> StaticSendNamelistEvent.Send.Mixed
-        "send.names" -> StaticSendNamelistEvent.Send.Names
-        "view.shown" -> StaticSendNamelistEvent.View.Shown
+    override fun resolveEventByName(name: String): StaticSendContentEvent? = when (name) {
+        "bump" -> StaticSendContentEvent.Bump
+        "error.execution" -> StaticSendContentEvent.Error.Execution
+        "send.record" -> StaticSendContentEvent.Send.Record
+        "view.relayed" -> StaticSendContentEvent.View.Relayed
+        "view.shown" -> StaticSendContentEvent.View.Shown
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticSendNamelistEvent): String? = when (event) {
-        is StaticSendNamelistEvent.Error.Execution -> "error.execution"
-        is StaticSendNamelistEvent.Pick -> "pick"
-        is StaticSendNamelistEvent.Send.Mixed -> "send.mixed"
-        is StaticSendNamelistEvent.Send.Names -> "send.names"
-        is StaticSendNamelistEvent.View.Shown -> "view.shown"
+    override fun eventNameOf(event: StaticSendContentEvent): String? = when (event) {
+        is StaticSendContentEvent.Bump -> "bump"
+        is StaticSendContentEvent.Error.Execution -> "error.execution"
+        is StaticSendContentEvent.Send.Record -> "send.record"
+        is StaticSendContentEvent.View.Relayed -> "view.relayed"
+        is StaticSendContentEvent.View.Shown -> "view.shown"
     }
 
 
@@ -376,65 +403,67 @@ class StaticSendNamelistStateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: StaticSendNamelistState,
-        event: StaticSendNamelistEvent?
-    ): EnabledTransition<StaticSendNamelistState, HistoryId>? = when (state) {
-        is StaticSendNamelistState.Viewing -> when {
-            event is StaticSendNamelistEvent.Pick -> transitionViewingAt0
-            event is StaticSendNamelistEvent.Send.Names -> transitionViewingAt1
-            event is StaticSendNamelistEvent.Send.Mixed -> transitionViewingAt2
-            event is StaticSendNamelistEvent.View.Shown -> transitionViewingAt3
+        state: StaticSendContentState,
+        event: StaticSendContentEvent?
+    ): EnabledTransition<StaticSendContentState, HistoryId>? = when (state) {
+        is StaticSendContentState.Viewing -> when {
+            event is StaticSendContentEvent.Bump -> transitionViewingAt0
+            event is StaticSendContentEvent.Send.Record -> transitionViewingAt1
+            event is StaticSendContentEvent.View.Shown -> transitionViewingAt2
+            event is StaticSendContentEvent.View.Relayed -> transitionViewingAt3
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
-    override fun onEntry(state: StaticSendNamelistState, isDefaultEntry: Boolean) {
+    // SCE-MAP: static_send_content.scxml:14 :: _machine
+    override fun onEntry(state: StaticSendContentState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticSendNamelistState.Viewing -> {
-                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
+            is StaticSendContentState.Viewing -> {
+                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
-    override fun onExit(state: StaticSendNamelistState) {
+    // SCE-MAP: static_send_content.scxml:14 :: _machine
+    override fun onExit(state: StaticSendContentState) {
         when (state) {
-            is StaticSendNamelistState.Viewing -> {
-                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
+            is StaticSendContentState.Viewing -> {
+                // SCE-MAP: static_send_content.scxml:28 :: viewing :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
-    override fun executeTransitionContent(source: StaticSendNamelistState, transitionIndex: Int) {
+    // SCE-MAP: static_send_content.scxml:14 :: _machine
+    override fun executeTransitionContent(source: StaticSendContentState, transitionIndex: Int) {
         when (source) {
-        is StaticSendNamelistState.Viewing -> when (transitionIndex) {
+        is StaticSendContentState.Viewing -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_send_namelist.scxml:25 :: viewing :: _transition_0
+                // SCE-MAP: static_send_content.scxml:29 :: viewing :: _transition_0
 
-            layout = StaticSendNamelistViewModeEnum.AGENDA_LIST
+            if (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.add(shown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
 
-            zoom = 9.toUByte()
+            shown = shown.copy(layout = StaticSendContentViewModeEnum.WEEK)
             }
             1 -> {
-                // SCE-MAP: static_send_namelist.scxml:29 :: viewing :: _transition_1
+                // SCE-MAP: static_send_content.scxml:33 :: viewing :: _transition_1
 
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (layout).declaredName)
+            putParam(sendPayload, "layout", (shown.layout).declaredName)
 
-            putParam(sendPayload, "zoom", (zoom).toLong())
+            putParam(sendPayload, "zoom", (shown.zoom).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(StaticSendContentEvent.View.Relayed, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -443,25 +472,22 @@ class StaticSendNamelistStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: static_send_namelist.scxml:32 :: viewing :: _transition_2
+                // SCE-MAP: static_send_content.scxml:38 :: viewing :: _transition_2
+                if (pendingViewShownPayload == null) {
+                    return
+                }
 
 
             if (run send@{
-            var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
-            try {
-                putParam(sendPayload, "zoom", (com.sce.forge.runtime.SceChecked.add(zoom, 1.toUByte())).toLong())
-            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<send> <param name='zoom'> could not be read")
-                paramFailed = true
-            }
+            putParam(sendPayload, "layout", (pendingViewShownPayload!!.layout).declaredName)
 
-            putParam(sendPayload, "layout", (layout).declaredName)
+            putParam(sendPayload, "zoom", (pendingViewShownPayload!!.zoom).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
-            paramFailed
+            send(StaticSendContentEvent.View.Relayed, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
@@ -469,16 +495,16 @@ class StaticSendNamelistStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             3 -> {
-                // SCE-MAP: static_send_namelist.scxml:37 :: viewing :: _transition_3
-                if (pendingViewShownPayload == null) {
+                // SCE-MAP: static_send_content.scxml:43 :: viewing :: _transition_3
+                if (pendingViewRelayedPayload == null) {
                     return
                 }
 
-            received = pendingViewShownPayload!!.layout
+            received = pendingViewRelayedPayload!!.layout
 
-            level = pendingViewShownPayload!!.zoom
+            level = pendingViewRelayedPayload!!.zoom
 
-            if (try { deliveries = com.sce.forge.runtime.SceChecked.add(deliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

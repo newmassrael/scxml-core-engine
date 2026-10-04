@@ -747,6 +747,20 @@ impl Action {
             }));
     }
 
+    /// §scxml-6.2.4: a `<send>`'s `<content expr>` that names a record `holder`,
+    /// each of the record's `fields` as the `<param name="f" expr="holder.f"/>`
+    /// that carries it, and the `contentexpr` itself cleared — a record is the
+    /// object of its fields, which is what the event's data is made of for the
+    /// same pairs written as params. A pair carries no position of its own.
+    pub fn fold_content_record_into_params(&mut self, holder: &str, fields: &[String]) {
+        self.contentexpr.clear();
+        self.params.extend(fields.iter().map(|field| Param {
+            name: field.clone(),
+            expr: format!("{holder}.{field}"),
+            ..Param::default()
+        }));
+    }
+
     /// Which of this struct's fields each `action_type` actually uses.
     ///
     /// ⭐ Why this table exists. [`Action`] carries nine kinds of

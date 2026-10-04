@@ -33,6 +33,7 @@ pub mod static_record_fields_sm;
 pub mod static_record_list_sm;
 pub mod static_record_real_sm;
 pub mod static_record_sm;
+pub mod static_send_content_sm;
 pub mod static_send_namelist_sm;
 pub mod static_send_params_sm;
 pub mod static_string_capacity_sm;
