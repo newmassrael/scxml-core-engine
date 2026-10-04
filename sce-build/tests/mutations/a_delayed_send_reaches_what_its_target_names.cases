@@ -36,8 +36,8 @@ PY
 
 mutation_case "the C++ AOT delivers a delayed #_internal to the external queue" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "            raise(EventWithMetadata(event, eventData, origin, sendId));\n            return true;",
-     "            raiseExternal(EventWithMetadata(event, eventData, origin, sendId));\n            return true;")
+     "            raise(std::move(meta));\n            return true;",
+     "            raiseExternal(std::move(meta));\n            return true;")
 PY
 
 # ── C++ AOT: an ended child still reads as running ─────────────────

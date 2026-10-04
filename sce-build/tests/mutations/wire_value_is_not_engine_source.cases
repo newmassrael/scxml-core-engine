@@ -39,12 +39,9 @@ PY
 
 mutation_case "the wire gives an integral number a decimal tail again" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_data.rs",
-     """            } else if f.fract() == 0.0 && f.abs() < 1e15 {
-                // ECMAScript `String(5)` is "5". A `.0` tail is the Rust
-                // spelling of the number, not the document's.
-                format!("{}", *f as i64)""",
-     """            } else if f.fract() == 0.0 && f.abs() < 1e15 {
-                format!("{:.1}", f)""")
+     """        ScriptValue::Double(f) => crate::json::number_text(*f),""",
+     """        ScriptValue::Double(f) if f.fract() == 0.0 && f.abs() < 1e15 => format!("{:.1}", f),
+        ScriptValue::Double(f) => crate::json::number_text(*f),""")
 PY
 
 mutation_case "the wire quotes a string that was already text again" <<'PY'
