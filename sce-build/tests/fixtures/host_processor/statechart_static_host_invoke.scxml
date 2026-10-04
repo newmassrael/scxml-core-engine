@@ -44,7 +44,7 @@
        name="statechart_static_host_invoke">
   <datamodel>
     <data id="job" sce:type="uint32" expr="7"/>
-    <data id="label" sce:type="string" expr="'report'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'report'"/>
     <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
 

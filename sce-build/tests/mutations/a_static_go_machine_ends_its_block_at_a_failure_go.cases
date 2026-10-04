@@ -53,6 +53,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_record_en
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_fields/static_record_fields_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_list/static_record_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_params/static_send_params_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/sync_client/sync_client_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
@@ -141,4 +142,16 @@ mutation_case "an append past the capacity is not refused" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "             if len({target}) >= {capacity} {{ {} }}; \\\n",
      "             if false && len({target}) >= {capacity} {{ {} }}; \\\n")
+PY
+
+# ── A string holds no more than its bound ──────────────────────────
+#
+# `static_string_capacity`: `copy` assigns a sixteen-byte `body` to a four-byte
+# `title`, and the refused copy must leave `title` and `copied` as they were. A
+# value written without the bound is a string the variable never declared.
+
+mutation_case "a string is assigned past its capacity" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"scealgorithm.Bounded(&sceFailure, {value}, {capacity})\")",
+     "format!(\"scealgorithm.Bounded(&sceFailure, {value}, {capacity} + 1000000)\")")
 PY

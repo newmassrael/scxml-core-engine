@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ecc6d42d81653265ca980b00216bb26b66b52b70894494c267d218dd752b9941
+// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata.scxml
@@ -105,7 +105,7 @@ class StaticDonedataStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "483c043393c66ea43c97029129b55b7a4c604094b26129337e7a2a139e5f7db0"
+    val savedShape: String = "5f3737b6ec01e0331816c956925d2ba13b10520f6da24eb6070985daba27904d"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -151,7 +151,7 @@ class StaticDonedataStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.uint8(saved.variable("small"), "small")
-        val saved3 = SavedValues.string(saved.variable("label"), "label")
+        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
         count = saved1
         small = saved2
         label = saved3

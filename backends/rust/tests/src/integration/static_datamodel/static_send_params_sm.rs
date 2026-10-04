@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ecc6d42d81653265ca980b00216bb26b66b52b70894494c267d218dd752b9941
+// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -322,7 +322,7 @@ pub trait StaticSendParamsPersist: Sized {
 impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
     type Policy = StaticSendParamsPolicy;
 
-    const SHAPE: &'static str = "b0b3308c475fe7fd97fa51936f7b330bf2e43768f1ab79725d16f1b0ece41682";
+    const SHAPE: &'static str = "665b75402cd2fe9606265886540f864b992f01be2f8146d33be2d03a0a9e3168";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -400,10 +400,8 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("label")?,
-            "label",
-        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("total")?,
             "total",
@@ -411,7 +409,7 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
         policy.ok =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ok")?, "ok")?;
         policy.tag =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("tag")?, "tag")?;
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("tag")?, "tag", 16)?;
         policy.partial_total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("partialTotal")?,
             "partialTotal",
@@ -1110,7 +1108,19 @@ impl StatePolicy for StaticSendParamsPolicy {
                             self.ok = ev.ok;
 
                             // W3C SCXML 5.3: <assign location="tag">
-                            self.tag = ev.tag.to_string();
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.tag = sce_forge_runtime::algorithm::bounded(ev.tag.to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendParamsEvent::ErrorExecution, "<assign location='tag'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
                         }
                     }
                     3 => {

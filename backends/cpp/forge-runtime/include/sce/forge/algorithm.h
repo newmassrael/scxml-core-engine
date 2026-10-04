@@ -30,9 +30,10 @@ enum class AlgorithmError : std::uint8_t {
     Overflow,
     /// An integer `/` or `%` by zero.
     DivideByZero,
-    /// A buffer append past its declared capacity. This backend's buffers
-    /// grow past their capacity (SCE_FORGE.md §4.12), so it never reports
-    /// one; the case exists because the failure has one name everywhere.
+    /// A buffer append past its declared capacity, or a string past the bound
+    /// its variable declares (`Checked::bounded`). This backend's buffers grow
+    /// past their capacity (SCE_FORGE.md §4.12), so a buffer never reports one;
+    /// the failure has one name everywhere.
     CapacityExceeded,
     /// A `<sce:require>` precondition that does not hold: an input outside
     /// the algorithm's domain.
@@ -146,6 +147,19 @@ template <typename T> T take(AlgorithmFailure &f, const AlgorithmResult<T> &resu
         return T{};
     }
     return result.value();
+}
+
+/// `value` when it holds no more than `capacity` UTF-8 bytes — the bound a
+/// string variable of a `sce-static` machine declares — and an empty `S` with a
+/// capacity failure recorded in `f` otherwise, which the statement around it
+/// never uses. `S` is a string whose `size()` counts bytes, as `std::string`'s
+/// does, so a machine holds the same value wherever it runs.
+template <typename S> S bounded(AlgorithmFailure &f, S value, std::uint32_t capacity) {
+    if (value.size() > capacity) {
+        f.fail(AlgorithmError::CapacityExceeded);
+        return S{};
+    }
+    return value;
 }
 
 template <typename T> constexpr T add(AlgorithmFailure &f, T a, T b) noexcept {

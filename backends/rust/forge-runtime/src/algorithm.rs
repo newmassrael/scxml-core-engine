@@ -131,6 +131,17 @@ pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, Algo
     T::try_from(v).map_err(|_| AlgorithmError::Overflow)
 }
 
+/// `value`, handed back, when it holds no more than `capacity` UTF-8 bytes —
+/// the bound a string variable of a `sce-static` machine declares — and a
+/// capacity failure otherwise. Counted in bytes, not characters, as every
+/// backend counts them, so a machine holds the same value wherever it runs.
+pub fn bounded<S: AsRef<str>>(value: S, capacity: u32) -> Result<S, AlgorithmError> {
+    if value.as_ref().len() > capacity as usize {
+        return Err(AlgorithmError::CapacityExceeded);
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +174,24 @@ mod tests {
         assert_eq!(at(&[1u8, 2, 3], -1i32), Err(AlgorithmError::OutOfRange));
         assert_eq!(at::<u8, u8>(&[], 0), Err(AlgorithmError::OutOfRange));
         assert_eq!(at(&[7u16; 256], 255u16), Ok(7));
+    }
+
+    #[test]
+    fn a_string_is_held_to_its_bytes_not_its_characters() {
+        assert_eq!(bounded("abcd", 4), Ok("abcd"));
+        assert_eq!(bounded("abcde", 4), Err(AlgorithmError::CapacityExceeded));
+        // Two characters, four bytes: it fits a bound of four and not of three.
+        assert_eq!(bounded("\u{e9}\u{e9}", 4), Ok("\u{e9}\u{e9}"));
+        assert_eq!(
+            bounded("\u{e9}\u{e9}", 3),
+            Err(AlgorithmError::CapacityExceeded)
+        );
+        // Two characters, five bytes: a count of characters would let it pass.
+        assert_eq!(
+            bounded("\u{e9}\u{20ac}", 4),
+            Err(AlgorithmError::CapacityExceeded)
+        );
+        assert_eq!(bounded("", 1), Ok(""));
     }
 
     #[test]

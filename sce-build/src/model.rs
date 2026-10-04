@@ -1097,9 +1097,10 @@ pub struct Variable {
     /// record local is (SCE_FORGE.md §4.12). Empty for any other variable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub record_fields: Vec<crate::forge::model::RecordFieldInit>,
-    /// A `list<T>` variable's declared bound, `sce:capacity`: the most
-    /// elements it ever holds, on every backend. An append past it is an
-    /// execution error, not growth. `None` for any other variable.
+    /// A `list<T>` or `string` variable's declared bound, `sce:capacity`: the
+    /// most elements, or UTF-8 bytes, it ever holds, on every backend. An append
+    /// or an assignment past it is an execution error, not growth. `None` for
+    /// any other variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<u32>,
     /// `sce:direction` under `datamodel="sce-static"`: `out` publishes the

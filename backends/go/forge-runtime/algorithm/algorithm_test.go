@@ -100,3 +100,33 @@ func TestTheFirstFailureIsKept(t *testing.T) {
 		t.Errorf("kept %v, want divide-by-zero", f.Err())
 	}
 }
+
+// A string is held to its UTF-8 bytes, which is what a Go string is made of: two
+// characters of four bytes fit a bound of four and not of three, and two of five
+// bytes fit neither, so a count of characters would be told apart from one of
+// bytes.
+func TestAStringIsHeldToItsBytes(t *testing.T) {
+	cases := []struct {
+		value    string
+		capacity uint32
+		want     string
+		fail     bool
+	}{
+		{"abcd", 4, "abcd", false},
+		{"abcde", 4, "", true},
+		{"éé", 4, "éé", false},
+		{"éé", 3, "", true},
+		{"é€", 4, "", true},
+		{"", 1, "", false},
+	}
+	for _, c := range cases {
+		var f Failure
+		got := Bounded(&f, c.value, c.capacity)
+		if f.Failed() != c.fail || got != c.want {
+			t.Errorf("Bounded(%q, %d) = %q, failed %v; want %q, failed %v", c.value, c.capacity, got, f.Failed(), c.want, c.fail)
+		}
+		if c.fail && f.Err().Error() != "capacity-exceeded" {
+			t.Errorf("Bounded(%q, %d) failed with %v, want capacity-exceeded", c.value, c.capacity, f.Err())
+		}
+	}
+}

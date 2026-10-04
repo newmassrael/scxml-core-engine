@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ecc6d42d81653265ca980b00216bb26b66b52b70894494c267d218dd752b9941
+// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -885,7 +885,9 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 
 
 
-	p.vTag = p.pendingEchoPayload.tag
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingEchoPayload.tag, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendParamsEventErrorExecution, "<assign location='tag'>: an integer operation overflowed or failed")); return true }; p.vTag = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
 
 			}()
 		case 3:

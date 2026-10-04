@@ -16,7 +16,7 @@
   <datamodel>
     <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="small" sce:type="uint8" expr="250"/>
-    <data id="label" sce:type="string" expr="'tally'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'tally'"/>
   </datamodel>
   <state id="counting">
     <transition event="tick" type="internal">

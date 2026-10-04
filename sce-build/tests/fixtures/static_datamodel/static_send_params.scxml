@@ -22,10 +22,10 @@
   <datamodel>
     <data id="count" sce:type="uint32" expr="3"/>
     <data id="small" sce:type="uint8" expr="250"/>
-    <data id="label" sce:type="string" expr="'tally'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'tally'"/>
     <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="ok" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="tag" sce:type="string" expr="''" sce:direction="out"/>
+    <data id="tag" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
     <data id="partialTotal" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

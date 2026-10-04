@@ -218,6 +218,13 @@ def test_a_send_hands_its_event_the_pairs_of_its_params() -> None:
     replay("static_send_params")
 
 
+# A string variable is held to the UTF-8 bytes it declares, not to the characters
+# a Python string counts: an assignment past the bound writes nothing, raises
+# error.execution and ends its block.
+def test_a_string_is_held_to_its_bytes() -> None:
+    replay("static_string_capacity")
+
+
 # A top-level final hands its done event the pairs of its `<donedata>`, each read
 # from the machine's fields when the state is entered; a pair whose value failed
 # is left out and the others cross.

@@ -4593,6 +4593,14 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

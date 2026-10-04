@@ -323,6 +323,12 @@ impl StaticTarget for JsTarget {
     fn list_empty(&self) -> String {
         "[]".to_string()
     }
+    // The library throws past the bound, which the Interpreter answers as it
+    // does any assignment that fails: nothing is written, `error.execution` is
+    // raised, and the block ends (§scxml-4.9).
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("{RUNTIME_GLOBAL}.bounded({value}, {capacity})")
+    }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }

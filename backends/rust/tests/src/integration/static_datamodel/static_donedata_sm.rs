@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ecc6d42d81653265ca980b00216bb26b66b52b70894494c267d218dd752b9941
+// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -244,7 +244,7 @@ pub trait StaticDonedataPersist: Sized {
 impl StaticDonedataPersist for Engine<StaticDonedataPolicy> {
     type Policy = StaticDonedataPolicy;
 
-    const SHAPE: &'static str = "483c043393c66ea43c97029129b55b7a4c604094b26129337e7a2a139e5f7db0";
+    const SHAPE: &'static str = "5f3737b6ec01e0331816c956925d2ba13b10520f6da24eb6070985daba27904d";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -302,10 +302,8 @@ impl StaticDonedataPersist for Engine<StaticDonedataPolicy> {
             saved.variable("small")?,
             "small",
         )?;
-        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("label")?,
-            "label",
-        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }

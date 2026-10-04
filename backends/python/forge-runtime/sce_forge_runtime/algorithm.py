@@ -25,9 +25,10 @@ class AlgorithmError(enum.Enum):
 
     OVERFLOW = "overflow"
     DIVIDE_BY_ZERO = "divide-by-zero"
-    # A buffer append past its declared capacity. This backend's buffers grow
-    # past their capacity (SCE_FORGE.md §4.12), so it never reports one; the
-    # case exists because the failure has one name on every backend.
+    # A buffer append past its declared capacity, or a string past the bound its
+    # variable declares (``bounded``). This backend's buffers grow past their
+    # capacity (SCE_FORGE.md §4.12), so a buffer never reports one; the failure
+    # has one name on every backend.
     CAPACITY_EXCEEDED = "capacity-exceeded"
     # A `<sce:require>` precondition that does not hold: an input outside the
     # algorithm's domain.
@@ -111,3 +112,13 @@ def at(xs, i: int):
     if i < 0 or i >= len(xs):
         raise AlgorithmFailure(AlgorithmError.OUT_OF_RANGE)
     return xs[i]
+
+
+def bounded(value: str, capacity: int) -> str:
+    """``value`` when it holds no more than ``capacity`` UTF-8 bytes — the bound
+    a string variable of a ``sce-static`` machine declares — and a capacity
+    failure otherwise. A Python string is counted in characters, which no other
+    backend counts, so it is encoded to be counted in bytes as they count it."""
+    if len(value.encode("utf-8")) > capacity:
+        raise AlgorithmFailure(AlgorithmError.CAPACITY_EXCEEDED)
+    return value

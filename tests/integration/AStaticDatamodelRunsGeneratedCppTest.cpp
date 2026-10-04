@@ -43,6 +43,7 @@
 #include "static_record_list_sm.h"
 #include "static_record_sm.h"
 #include "static_send_params_sm.h"
+#include "static_string_capacity_sm.h"
 #include "sync_client_sm.h"
 
 #include <filesystem>
@@ -338,6 +339,20 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASendHandsItsEventThePairsOfItsParams
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_send_params", driver);
+}
+
+// A string variable is held to the UTF-8 bytes it declares: an assignment past the
+// bound writes nothing, raises `error.execution` and ends its block, and the bound
+// is a count of bytes — a `std::string` is made of them — not of characters.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStringIsHeldToItsBytes) {
+    using Machine = G::static_string_capacity::static_string_capacity;
+    Driver<Machine> driver({
+        {"title", [](const Machine &m) { return json(m.title()); }},
+        {"body", [](const Machine &m) { return json(m.body()); }},
+        {"copied", [](const Machine &m) { return json(m.copied()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_string_capacity", driver);
 }
 
 // An `<invoke type="scxml">` hands its child the values its `<param>`s and

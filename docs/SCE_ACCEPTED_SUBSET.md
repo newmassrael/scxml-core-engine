@@ -2910,12 +2910,32 @@ lowering holds an enum value as the variant's declared name, a string
 (`ViewMode.month` lowers to `'month'`), so it compares, stores and logs as
 the generated backends do and replays the same scenario.
 
+**String variables.** `sce:type="string"` holds text, and declares the most
+UTF-8 **bytes** it ever holds with `sce:capacity`, a whole number of at least one
+that fits 32 bits. The bound is required — a machine holds the same value
+wherever it runs, and an engine with no heap holds it at all — and it counts
+bytes, not characters: a character is one to four of them, and no backend's own
+string measures that alike (a Kotlin string is UTF-16 units, a Python one is code
+points), so each counts the bytes of the text it holds. A string starts at a
+string literal that fits its bound, written in `expr`: the machine is built with
+no error to raise, so a value that could fail to fit is refused where it is
+written and not copied from another variable at run time. An `<assign>` whose
+value holds more bytes than the variable's bound fails as an integer operation
+that overflows does — nothing is written, `error.execution` is raised and the
+block ends (W3C SCXML 4.9) — whatever the value came from: a literal, another
+string variable, or a field of the event's payload.
+`scenarios/static_string_capacity.json` holds this on every engine that lowers
+the model: `copy` assigns a sixteen-byte `body` to a four-byte `title`, and an `é`
+and a `€` (five bytes in two characters) are refused where two `é` (four bytes)
+are not. The refusal is the checked helpers' own (`capacity-exceeded`), so each
+backend reports it as it reports any checked failure.
+
 **List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
 sequence of `T`, a fixed-width number or `bool` — the element an algorithm's
 list admits (SCE_FORGE.md §4.12). It starts empty and takes no `expr`; it
 declares the most elements it ever holds with `sce:capacity`, which is
-required on a list and refused on any other variable. Two statements write
-it, both naming it by `target` as E8's does:
+required on a list and on a string, and refused on any other variable. Two
+statements write it, both naming it by `target` as E8's does:
 
 ```xml
 <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>

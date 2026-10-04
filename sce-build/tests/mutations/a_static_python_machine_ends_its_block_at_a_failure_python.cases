@@ -151,3 +151,15 @@ edit("sce-build/src/forge/static_lowering.rs",
      "        let mut lines = vec![format!(\"if len({target}) >= {capacity}:\")];\n",
      "        let mut lines = vec![format!(\"if False and len({target}) >= {capacity}:\")];\n")
 PY
+
+# ── A string holds no more than its bound ──────────────────────────
+#
+# `static_string_capacity`: `copy` assigns a sixteen-byte `body` to a four-byte
+# `title`, and the refused copy must leave `title` and `copied` as they were. A
+# value written without the bound is a string the variable never declared.
+
+mutation_case "a string is assigned past its capacity" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"sce_algorithm.bounded({value}, {capacity})\")",
+     "format!(\"sce_algorithm.bounded({value}, {capacity} + 1000000)\")")
+PY

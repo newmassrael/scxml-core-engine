@@ -230,6 +230,29 @@
       }
       return list.concat([value]);
     },
+    bounded: function (value, capacity) {
+      if (typeof value !== 'string') {
+        fail('expected a string, read ' + String(value));
+      }
+      var bytes = 0;
+      for (var i = 0; i < value.length; i++) {
+        var unit = value.charCodeAt(i);
+        if (unit < 0x80) {
+          bytes += 1;
+        } else if (unit < 0x800) {
+          bytes += 2;
+        } else if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xDC00 && value.charCodeAt(i + 1) <= 0xDFFF) {
+          bytes += 4;
+          i++;
+        } else {
+          bytes += 3;
+        }
+      }
+      if (bytes > capacity) {
+        fail('the string holds ' + String(bytes) + ' UTF-8 bytes, past its capacity of ' + String(capacity), 'capacity-exceeded');
+      }
+      return value;
+    },
     extend: function (list, capacity, values) {
       if (!Array.isArray(list) || !Array.isArray(values)) {
         fail('expected two lists, read ' + String(list) + ' and ' + String(values));

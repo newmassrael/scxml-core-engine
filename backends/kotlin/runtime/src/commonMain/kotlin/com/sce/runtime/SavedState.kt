@@ -610,6 +610,20 @@ object SavedValues {
     fun string(value: Any?, what: String): String = value as? String ?: throw StateRefusal("'$what' is not a text")
 
     /**
+     * A text read back only if it holds no more than the [capacity] UTF-8 bytes
+     * the machine bounds it by — a machine never holds more, and a restored one
+     * must not be the first to.
+     */
+    fun string(value: Any?, what: String, capacity: Int): String {
+        val text = string(value, what)
+        val bytes = text.encodeToByteArray().size
+        if (bytes > capacity) {
+            throw StateRefusal("'$what' holds $bytes UTF-8 bytes, past the $capacity it is bounded by")
+        }
+        return text
+    }
+
+    /**
      * A list read back element by element, only if it holds no more than the
      * [capacity] the machine bounds it by — a machine never holds more, and a
      * restored one must not be the first to.

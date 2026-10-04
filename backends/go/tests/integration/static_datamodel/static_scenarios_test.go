@@ -48,6 +48,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
@@ -451,6 +452,20 @@ func TestASendCarriesItsParamsAsTheTypedValuesOfTheMachine(t *testing.T) {
 		"tag":          func() any { return policy.Tag() },
 		"partialTotal": func() any { return policy.PartialTotal() },
 		"refusals":     func() any { return policy.Refusals() },
+	}))
+}
+
+// A string variable is held to the UTF-8 bytes it declares, which is what a Go
+// string is made of: an assignment past the bound writes nothing, raises
+// error.execution and ends its block.
+func TestAStringIsHeldToItsBytes(t *testing.T) {
+	policy := static_string_capacity.NewStaticStringCapacityPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_string_capacity", drive[static_string_capacity.StaticStringCapacityState, static_string_capacity.StaticStringCapacityEvent](&policy, map[string]func() any{
+		"title":    func() any { return policy.Title() },
+		"body":     func() any { return policy.Body() },
+		"copied":   func() any { return policy.Copied() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

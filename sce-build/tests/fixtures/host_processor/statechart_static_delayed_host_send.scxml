@@ -40,7 +40,7 @@
        name="statechart_static_delayed_host_send">
   <datamodel>
     <data id="job" sce:type="uint32" expr="7"/>
-    <data id="label" sce:type="string" expr="'report'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'report'"/>
   </datamodel>
 
   <state id="idle">

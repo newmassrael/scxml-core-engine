@@ -62,6 +62,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
     StaticSendParamsPersist, StaticSendParamsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
+    StaticStringCapacityPersist, StaticStringCapacityPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -338,6 +341,20 @@ fn static_send_params_cross_as_the_typed_values_of_the_machine() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_params.json"
+        ),
+    );
+}
+
+// A string variable is held to the UTF-8 bytes it declares, not its
+// characters: an assignment past the bound writes nothing, raises
+// `error.execution` and ends its block.
+#[test]
+fn static_string_capacity_holds_a_string_to_its_bytes() {
+    replay(
+        Engine::new(StaticStringCapacityPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_string_capacity.json"
         ),
     );
 }

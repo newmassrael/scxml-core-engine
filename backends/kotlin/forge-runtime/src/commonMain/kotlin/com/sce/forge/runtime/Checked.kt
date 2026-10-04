@@ -33,9 +33,10 @@ public enum class AlgorithmError(
     DivideByZero("divide-by-zero"),
 
     /**
-     * A buffer append past its declared capacity. This backend's buffers grow
-     * past their capacity (SCE_FORGE.md Section 4.12), so it never reports
-     * one; the case exists because the failure has one name on every backend.
+     * A buffer append past its declared capacity, or a string past the bound
+     * its variable declares ([SceChecked.bounded]). This backend's buffers grow
+     * past their capacity (SCE_FORGE.md Section 4.12), so a buffer never
+     * reports one; the failure has one name on every backend.
      */
     CapacityExceeded("capacity-exceeded"),
 
@@ -76,6 +77,33 @@ public object SceChecked {
             is AlgorithmResult.Ok -> result.value
             is AlgorithmResult.Failed -> fail(result.error)
         }
+
+    /**
+     * [value] when it holds no more than [capacity] UTF-8 bytes — the bound a
+     * string variable of a `sce-static` machine declares — and a capacity
+     * failure otherwise. Counted in bytes, as every backend counts them, and not
+     * in the UTF-16 units this platform's strings are made of, so a machine holds
+     * the same value wherever it runs.
+     */
+    public fun bounded(value: String, capacity: Int): String {
+        var bytes = 0L
+        var i = 0
+        while (i < value.length) {
+            val unit = value[i].code
+            when {
+                unit < 0x80 -> bytes += 1
+                unit < 0x800 -> bytes += 2
+                unit in 0xD800..0xDBFF && i + 1 < value.length && value[i + 1].code in 0xDC00..0xDFFF -> {
+                    bytes += 4
+                    i++
+                }
+                else -> bytes += 3
+            }
+            i++
+        }
+        if (bytes > capacity) fail(AlgorithmError.CapacityExceeded)
+        return value
+    }
 
     /** `v` when it lies in `[lo, hi]`; an overflow otherwise. */
     private fun fit(v: Long, lo: Long, hi: Long): Long =

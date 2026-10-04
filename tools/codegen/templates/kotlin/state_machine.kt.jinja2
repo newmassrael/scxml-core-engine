@@ -207,6 +207,8 @@ SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ 
 SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> {{ type }}.fromSaved(e, w) }
 {%- elif type == "bytes" -%}
 SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "Int.MAX_VALUE" }})
+{%- elif type == "string" and bound is not none -%}
+SavedValues.string({{ value }}, {{ what }}, {{ bound }})
 {%- else -%}
 SavedValues.{{ type }}({{ value }}, {{ what }})
 {%- endif -%}

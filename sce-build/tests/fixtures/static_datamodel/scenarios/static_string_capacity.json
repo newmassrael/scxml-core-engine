@@ -1,0 +1,38 @@
+{
+  "machine": "static_string_capacity",
+  "about": "A string variable is held to the UTF-8 bytes its sce:capacity declares, on every backend. `copy` assigns `body` (sixteen) to `title` (four) and then counts itself: a copy that does not fit is skipped, raises error.execution and ends its block, so `title` and `copied` keep what they held. The bound is bytes, not characters: two characters of two bytes fit, and an `é` and a `€` (two and three bytes) do not. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the strings start at their declared values",
+      "expect": { "state": "idle", "variables": { "title": "ab", "body": "hello", "copied": 0, "refusals": 0 } } },
+
+    { "note": "`hello` is five bytes and `title` holds four: the copy is refused and its block ends before `copied` counts it",
+      "event": "copy",
+      "expect": { "variables": { "title": "ab", "body": "hello", "copied": 0, "refusals": 1 } } },
+
+    { "note": "a literal of exactly four bytes fits the bound",
+      "event": "fill",
+      "expect": { "variables": { "title": "abcd", "refusals": 1 } } },
+
+    { "note": "two characters of two bytes each are four bytes, and fit",
+      "event": "body_exact",
+      "expect": { "variables": { "body": "éé", "refusals": 1 } } },
+    { "event": "copy",
+      "expect": { "variables": { "title": "éé", "body": "éé", "copied": 1, "refusals": 1 } } },
+
+    { "note": "two characters, five bytes: a count of characters would let it pass, a count of bytes does not",
+      "event": "body_wide",
+      "expect": { "variables": { "body": "é€", "title": "éé", "refusals": 1 } } },
+    { "event": "copy",
+      "expect": { "variables": { "title": "éé", "body": "é€", "copied": 1, "refusals": 2 } } },
+
+    { "note": "a copy of what fits goes through again once `body` holds less",
+      "event": "body_ascii",
+      "expect": { "variables": { "body": "hello", "refusals": 2 } } },
+    { "event": "reset",
+      "expect": { "variables": { "title": "ab", "refusals": 2 } } },
+    { "event": "body_exact",
+      "expect": { "variables": { "body": "éé" } } },
+    { "event": "copy",
+      "expect": { "variables": { "title": "éé", "copied": 2, "refusals": 2 } } }
+  ]
+}

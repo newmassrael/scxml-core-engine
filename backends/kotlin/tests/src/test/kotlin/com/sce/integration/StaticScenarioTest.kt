@@ -35,6 +35,7 @@ import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
+import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -402,6 +403,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_send_params"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A string variable is held to the UTF-8 bytes it declares, not to the
+    // UTF-16 units this platform's strings are made of: an assignment past the
+    // bound writes nothing, raises error.execution and ends its block.
+    @Test
+    fun staticStringCapacityHoldsAStringToItsBytes() {
+        val sm = StaticStringCapacityStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_string_capacity"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

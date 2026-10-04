@@ -49,7 +49,7 @@
   <datamodel>
     <data id="count" sce:type="uint32" expr="3"/>
     <data id="ready" sce:type="bool" expr="false"/>
-    <data id="label" sce:type="string" expr="'idle'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'idle'"/>
     <data id="delta" sce:type="int16" expr="-5"/>
     <data id="ratio" sce:type="float64" expr="1.5"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>

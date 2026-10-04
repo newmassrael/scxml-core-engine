@@ -924,11 +924,49 @@ fn enforce_static_datamodel(
                 stack.extend(node.children().filter(|n| n.is_element()));
                 continue;
             }
-            if let Some((written, pos)) = capacity {
+            // A string is bounded the way a list is: it declares the most
+            // UTF-8 bytes it ever holds, on every backend, so that a machine
+            // holds the same value wherever it runs and an engine with no
+            // heap holds it at all. An assignment past the bound is an
+            // execution error (§scxml-4.9), not growth.
+            let is_string =
+                crate::sce_attr::read(&node, "type").is_some_and(|t| t.trim() == "string");
+            if is_string {
+                match capacity {
+                    None => {
+                        return Err(refused(
+                            element_row(&node),
+                            format!("<data id=\"{id}\">"),
+                            "a string variable declares the most UTF-8 bytes it holds with \
+                             sce:capacity",
+                            &node,
+                            Some(name.to_string()),
+                        ))
+                    }
+                    Some((written, pos))
+                        if written
+                            .trim()
+                            .parse::<u32>()
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .is_none() =>
+                    {
+                        return Err(refused(
+                            pos,
+                            format!("sce:capacity=\"{written}\""),
+                            "sce:capacity is a whole number of UTF-8 bytes, at least one, that \
+                             fits 32 bits",
+                            &node,
+                            Some(written.to_string()),
+                        ))
+                    }
+                    Some(_) => {}
+                }
+            } else if let Some((written, pos)) = capacity {
                 return Err(refused(
                     pos,
                     format!("sce:capacity=\"{written}\""),
-                    "only a list variable has a capacity",
+                    "only a list or a string variable has a capacity",
                     &node,
                     Some(written.to_string()),
                 ));

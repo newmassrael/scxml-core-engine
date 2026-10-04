@@ -49,8 +49,9 @@ pub struct StaticField {
     /// value itself — a Rust list as a slice of its elements. `None` where
     /// the field is read as it is.
     pub view: Option<String>,
-    /// The bound of a list or a byte string: the machine never holds more,
-    /// so neither may a restored value.
+    /// The bound of a list, a byte string or a string — elements, bytes or
+    /// UTF-8 bytes: the machine never holds more, so neither may a restored
+    /// value.
     pub bound: Option<u32>,
     /// How a saved state holds the value: `scalar`, `list` or `record`.
     pub saved_kind: &'static str,
@@ -399,6 +400,12 @@ pub trait StaticTarget {
     ) -> Option<(String, String)> {
         self.foreach_loop(list, item, index)
     }
+    /// `value`, an owned string, as an expression that fails — as a checked
+    /// operation does, so it is received as one is — when it is longer than
+    /// `capacity` UTF-8 bytes, and is `value` itself otherwise: the bound a
+    /// string variable keeps on every backend, so that a machine holds the same
+    /// value wherever it runs.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String;
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
     /// Replace field `field` of the record at `target` with `value`.
@@ -741,6 +748,11 @@ impl StaticTarget for KotlinTarget {
     fn list_empty(&self) -> String {
         "emptyList()".to_string()
     }
+    // Throws `AlgorithmFailure` past the bound, which is received where the
+    // statement stands, as an overflow is.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("com.sce.forge.runtime.SceChecked.bounded({value}, {capacity})")
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
@@ -1003,6 +1015,11 @@ impl StaticTarget for RustTarget {
     }
     fn list_empty(&self) -> String {
         "Vec::new()".to_string()
+    }
+    // Answers through `?`, like every checked helper: the statement runs in a
+    // closure that returns the failure before it writes.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("sce_forge_runtime::algorithm::bounded({value}, {capacity})?")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -1300,10 +1317,25 @@ pub fn lower(
             Some((v.id.clone(), (elem, v.capacity?)))
         })
         .collect();
+    // The string variables, each with its bound — what an `<assign>` to one is
+    // held to.
+    let string_vars: StringVars = variables
+        .iter()
+        .filter(|v| {
+            matches!(
+                v.value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::scalar),
+                Some(SceType::String)
+            )
+        })
+        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+        .collect();
     let rewrites = Rewrites {
         records: record_vars,
         schemas: records.clone(),
         lists: list_vars,
+        strings: string_vars,
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
@@ -1495,7 +1527,7 @@ pub fn lower(
                 init,
                 published,
                 view: target.scalar_view(ty),
-                bound: matches!(ty, SceType::Bytes)
+                bound: matches!(ty, SceType::Bytes | SceType::String)
                     .then_some(var.capacity)
                     .flatten(),
                 saved_kind: "scalar",
@@ -2039,6 +2071,10 @@ type RecordVars = std::collections::BTreeMap<String, EventSchemaModel>;
 /// its declared capacity.
 type ListVars = std::collections::BTreeMap<String, (crate::forge::model::ListElemType, u32)>;
 
+/// A `sce-static` document's string variables, each with its declared capacity
+/// in UTF-8 bytes.
+type StringVars = std::collections::BTreeMap<String, u32>;
+
 /// What rewriting an action needs beyond its expressions: the record and
 /// list variables a write to one is rewritten against, the machine name the
 /// generated event type is spelled from, whether the document declares
@@ -2050,6 +2086,7 @@ struct Rewrites<'m> {
     /// record a loop walks are read from.
     schemas: std::collections::BTreeMap<String, EventSchemaModel>,
     lists: ListVars,
+    strings: StringVars,
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
@@ -2307,6 +2344,13 @@ impl StaticTarget for CppTarget {
     }
     fn list_empty(&self) -> String {
         "{}".to_string()
+    }
+    // Records the failure and answers an empty string, as a checked operation
+    // answers zero. A literal is a `const char *`, which holds no size, so the
+    // value is made the owned `std::string` a variable holds before it is
+    // counted.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("SCE::Forge::Checked::bounded(sce_failure_, std::string({value}), {capacity}u)")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -2764,6 +2808,9 @@ impl StaticTarget for GoTarget<'_> {
     fn list_empty(&self) -> String {
         "nil".to_string()
     }
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("scealgorithm.Bounded(&sceFailure, {value}, {capacity})")
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
@@ -3193,6 +3240,11 @@ impl StaticTarget for PythonTarget {
     }
     fn list_empty(&self) -> String {
         "[]".to_string()
+    }
+    // Raises `AlgorithmFailure` past the bound, which the statement catches
+    // where it stands.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("sce_algorithm.bounded({value}, {capacity})")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -3821,6 +3873,9 @@ impl StaticTarget for CTarget {
         }
         Some((head, prologue))
     }
+    fn bounded_string(&self, _value: &str, _capacity: u32) -> String {
+        unreachable!("a C11 document with a string variable is refused by `unsupported`")
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
@@ -4223,8 +4278,17 @@ fn lower_action(
             reads_payload = reads(&action.expr);
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
-            let value = lower(&action.expr, slot)?;
+            let mut value = lower(&action.expr, slot)?;
             let location = action.location.trim();
+            // A string variable holds at most what it declared, whatever the
+            // value came from: past it the assignment fails as any other does,
+            // writing nothing and ending its block (§scxml-4.9).
+            if let Some(capacity) = rewrites.strings.get(location) {
+                value = Receiving {
+                    text: target.bounded_string(&value.text, *capacity),
+                    can_fail: true,
+                };
+            }
             let construct = format!("<assign location='{location}'>");
             let record_field = location
                 .split_once('.')
@@ -4941,8 +5005,8 @@ mod tests {
     const WITH_STRING: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static" name="m">
   <datamodel>
-    <data id="label" sce:type="string" expr="'idle'"/>
-    <data id="other" sce:type="string" expr="'x'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'idle'"/>
+    <data id="other" sce:type="string" sce:capacity="16" expr="'x'"/>
   </datamodel>
   <state id="s">
     <transition event="go" target="done">
@@ -4999,7 +5063,7 @@ mod tests {
        version="1.0" initial="s" datamodel="sce-static" name="m">
   <datamodel>
     <data id="flag" sce:type="bool" expr="true"/>
-    <data id="label" sce:type="string" expr="'x'"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'x'"/>
     <data id="small" sce:type="uint8" expr="1"/>
     <data id="signed" sce:type="int16" expr="-2"/>
     <data id="real" sce:type="float64" expr="0.5"/>

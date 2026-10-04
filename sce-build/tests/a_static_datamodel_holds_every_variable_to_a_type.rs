@@ -317,7 +317,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     let cases = [
         (
             "a string variable",
-            variable(r#"<data id="label" sce:type="string" expr="''"/>"#),
+            variable(r#"<data id="label" sce:type="string" sce:capacity="8" expr="''"/>"#),
             r#"<data id="label" sce:type="string">"#,
         ),
         (
@@ -1827,8 +1827,105 @@ fn a_capacity_on_a_variable_that_is_not_a_list_is_refused() {
             r#"<state id="s"/>"#,
         ),
     );
-    assert!(!ok, "only a list has a capacity:\n{out}");
+    assert!(!ok, "only a list or a string has a capacity:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+// ── A string is bounded as a list is ─────────────────────────────────────
+
+#[test]
+fn a_string_without_a_capacity_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="label" sce:type="string" expr="'ab'"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a string declares its bound:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+    assert!(
+        out.contains("UTF-8 bytes"),
+        "the refusal says what the bound counts:\n{out}"
+    );
+}
+
+#[test]
+fn a_string_capacity_that_is_not_a_positive_count_is_refused() {
+    for written in ["0", "many", "-1"] {
+        let (ok, out) = run(
+            &["check"],
+            &list_doc(
+                "sce-static",
+                &format!(
+                    r#"<data id="label" sce:type="string" sce:capacity="{written}" expr="''"/>"#
+                ),
+                r#"<state id="s"/>"#,
+            ),
+        );
+        assert!(!ok, "sce:capacity=\"{written}\" is no count:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+    }
+}
+
+#[test]
+fn a_string_that_fits_its_capacity_in_bytes_is_accepted() {
+    // `é` is two bytes and `€` three: the bound counts bytes, so two characters
+    // of two bytes fit four, and a literal as long as the bound fits it.
+    for (written, capacity) in [("abcd", 4), ("\u{e9}\u{e9}", 4), ("", 1)] {
+        let (ok, out) = run(
+            &["check"],
+            &list_doc(
+                "sce-static",
+                &format!(
+                    r#"<data id="label" sce:type="string" sce:capacity="{capacity}" expr="'{written}'"/>"#
+                ),
+                r#"<state id="s"/>"#,
+            ),
+        );
+        assert!(ok, "'{written}' fits {capacity} bytes:\n{out}");
+    }
+}
+
+#[test]
+fn a_string_that_starts_past_its_capacity_is_refused_in_bytes() {
+    // Two characters, five bytes: a count of characters would accept it.
+    for (written, capacity) in [("abcde", 4), ("\u{e9}\u{20ac}", 4)] {
+        let (ok, out) = run(
+            &["check"],
+            &list_doc(
+                "sce-static",
+                &format!(
+                    r#"<data id="label" sce:type="string" sce:capacity="{capacity}" expr="'{written}'"/>"#
+                ),
+                r#"<state id="s"/>"#,
+            ),
+        );
+        assert!(!ok, "'{written}' is past {capacity} bytes:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+        assert!(
+            out.contains("past the sce:capacity"),
+            "the refusal names the bound:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn a_string_starts_at_a_literal_and_not_at_another_variable() {
+    // The machine is built with no error to raise, so a value that could fail
+    // to fit is refused where it is written rather than copied at run time.
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="first" sce:type="string" sce:capacity="8" expr="'ab'"/>
+    <data id="second" sce:type="string" sce:capacity="4" expr="first"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a string starts at a literal:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
 }
 
 #[test]

@@ -154,6 +154,7 @@ pub fn check(
             var.expr_spelling.as_ref(),
             Expected::Slot(slot),
         )?;
+        judge.string_start(var)?;
     }
     judge.actions(&plain, &model.global_scripts, "")?;
 
@@ -469,6 +470,50 @@ impl<'a> Judge<'a> {
         if let Ok(names) = crate::forge::expr::read_identifiers(expr) {
             self.read.borrow_mut().extend(names);
         }
+    }
+
+    /// A string variable starts at a string literal that fits its bound. The
+    /// machine is built with no error to raise (§scxml-4.9: there is no block
+    /// to end yet), so a value that could fail to fit is refused where it is
+    /// written, not carried over from another variable at run time.
+    fn string_start(&self, var: &Variable) -> Result<(), Located<ForgeError>> {
+        let (Some(capacity), Some(crate::forge::model::SceType::String)) = (
+            var.capacity,
+            var.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::scalar),
+        ) else {
+            return Ok(());
+        };
+        let literal = match crate::forge::expr::parse_to_ast(&var.expr).map(|ast| ast.kind) {
+            Ok(crate::forge::expr::ExprKind::StringLit { value, .. }) => value,
+            _ => {
+                return Err(self.rule_at(
+                    format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
+                    "a string variable starts at a string literal: the machine is built with \
+                     no error to raise for a value that does not fit its sce:capacity",
+                    var.expr_spelling.as_ref().map(|s| s.row()),
+                    var.expr_spelling.as_ref().map(|s| s.col()),
+                    "",
+                    &var.expr,
+                ));
+            }
+        };
+        if literal.len() > capacity as usize {
+            return Err(self.rule_at(
+                format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
+                &format!(
+                    "the initial value is {} UTF-8 bytes, past the sce:capacity of {capacity} \
+                     the variable declares",
+                    literal.len()
+                ),
+                var.expr_spelling.as_ref().map(|s| s.row()),
+                var.expr_spelling.as_ref().map(|s| s.col()),
+                "",
+                &var.expr,
+            ));
+        }
+        Ok(())
     }
 
     /// The `list<T>` variable `name` names, if it names one.

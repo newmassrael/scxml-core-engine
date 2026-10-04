@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ecc6d42d81653265ca980b00216bb26b66b52b70894494c267d218dd752b9941
+// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml
@@ -156,7 +156,7 @@ class StaticSendParamsStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "b0b3308c475fe7fd97fa51936f7b330bf2e43768f1ab79725d16f1b0ece41682"
+    val savedShape: String = "665b75402cd2fe9606265886540f864b992f01be2f8146d33be2d03a0a9e3168"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -207,10 +207,10 @@ class StaticSendParamsStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.uint8(saved.variable("small"), "small")
-        val saved3 = SavedValues.string(saved.variable("label"), "label")
+        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
         val saved4 = SavedValues.uint32(saved.variable("total"), "total")
         val saved5 = SavedValues.bool(saved.variable("ok"), "ok")
-        val saved6 = SavedValues.string(saved.variable("tag"), "tag")
+        val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
         val saved7 = SavedValues.uint32(saved.variable("partialTotal"), "partialTotal")
         val saved8 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         count = saved1
@@ -522,7 +522,9 @@ class StaticSendParamsStateMachine(
 
             ok = pendingEchoPayload!!.ok
 
-            tag = pendingEchoPayload!!.tag
+            if (try { tag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
             }
             3 -> {
                 // SCE-MAP: static_send_params.scxml:51 :: idle :: _transition_3

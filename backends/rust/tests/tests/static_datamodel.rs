@@ -40,6 +40,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordDayPickedPayload, StaticRecordDayRecord, StaticRecordInject, StaticRecordObserve,
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
+    StaticStringCapacityPersist, StaticStringCapacityPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
     StaticTimersPersist, StaticTimersPolicy,
 };
@@ -730,6 +733,35 @@ fn a_list_longer_than_its_bound_is_refused() {
         &SavedState::from_json(&json).expect("reads"),
     ));
     assert!(refusal.reason().contains("bounded by"), "{refusal}");
+}
+
+#[test]
+fn a_string_longer_than_its_bound_is_refused_in_bytes() {
+    // A machine never holds more than sce:capacity="4" UTF-8 bytes in `title`,
+    // so a saved state that claims it did is not one this machine wrote. The
+    // bound counts bytes: two characters of two bytes fit it, and an `é` and a
+    // `€` (five bytes) do not.
+    let mut engine = Engine::new(StaticStringCapacityPolicy::new());
+    engine.initialize();
+    let json = engine.save().expect("saves").to_json();
+    for (claimed, fits) in [
+        ("abcd", true),
+        ("éé", true),
+        ("abcde", false),
+        ("é€", false),
+    ] {
+        let json = json.replace(r#""title":"ab""#, &format!(r#""title":"{claimed}""#));
+        let restored = Engine::<StaticStringCapacityPolicy>::restore(
+            StaticStringCapacityPolicy::new(),
+            &SavedState::from_json(&json).expect("reads"),
+        );
+        if fits {
+            assert!(restored.is_ok(), "{claimed:?} fits four bytes");
+        } else {
+            let refusal = refused(restored);
+            assert!(refusal.reason().contains("bounded by"), "{refusal}");
+        }
+    }
 }
 
 #[test]

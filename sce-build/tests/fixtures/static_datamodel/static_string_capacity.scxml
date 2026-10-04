@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a string variable
+  declares the most UTF-8 bytes it holds with `sce:capacity`, and holds it on
+  every backend. An assignment past it is skipped and raises error.execution,
+  and ends the block it stands in (§scxml-4.9) — as an integer operation that
+  overflows does — so a machine holds the same value wherever it runs.
+
+  `title` holds four bytes at most and `body` sixteen. The bound is counted in
+  UTF-8 bytes, not characters, which is what tells the backends apart: two
+  characters of two bytes each fit `title`, and two characters of two and three
+  bytes (`é` and `€`) do not, though a count of characters would let both pass.
+
+  `copy` assigns `body` to `title` and then counts itself in `copied`, so a copy
+  that did not fit leaves both where they were.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_string_capacity">
+  <datamodel>
+    <data id="title" sce:type="string" sce:capacity="4" expr="'ab'" sce:direction="out"/>
+    <data id="body" sce:type="string" sce:capacity="16" expr="'hello'" sce:direction="out"/>
+    <data id="copied" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <!-- A literal as long as the bound holds it. -->
+    <transition event="fill" type="internal">
+      <assign location="title" expr="'abcd'"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <assign location="title" expr="'ab'"/>
+    </transition>
+    <transition event="body_ascii" type="internal">
+      <assign location="body" expr="'hello'"/>
+    </transition>
+    <!-- Two characters of two bytes: four bytes. -->
+    <transition event="body_exact" type="internal">
+      <assign location="body" expr="'éé'"/>
+    </transition>
+    <!-- Two characters of two and three bytes: five bytes. -->
+    <transition event="body_wide" type="internal">
+      <assign location="body" expr="'é€'"/>
+    </transition>
+    <transition event="copy" type="internal">
+      <assign location="title" expr="body"/>
+      <assign location="copied" expr="copied + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

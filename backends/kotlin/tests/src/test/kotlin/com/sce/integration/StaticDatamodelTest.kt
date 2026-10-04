@@ -35,6 +35,7 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
+import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.runtime.ManualClock
@@ -745,6 +746,37 @@ class StaticDatamodelTest {
             assertEquals(0u, sm.count)
         } finally {
             sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aStringLongerThanItsBoundIsRefusedInBytesAndTheMachineIsLeftAsItWas() {
+        // A machine never holds more than sce:capacity="4" UTF-8 bytes in `title`,
+        // so a saved state that claims it did is not one this machine wrote. The
+        // bound counts bytes, not the UTF-16 units a Kotlin string is made of: two
+        // characters of two bytes fit it, and an `é` and a `€` (five bytes) do not.
+        val source = StaticStringCapacityStateMachine()
+        source.initialize()
+        val json = try {
+            source.save().toJson()
+        } finally {
+            source.cleanup()
+        }
+        for ((claimed, fits) in listOf("abcd" to true, "éé" to true, "abcde" to false, "é€" to false)) {
+            val text = json.replace("\"title\":\"ab\"", "\"title\":\"$claimed\"")
+            val sm = StaticStringCapacityStateMachine()
+            try {
+                if (fits) {
+                    sm.restore(SavedState.fromJson(text))
+                    assertEquals(claimed, sm.title)
+                } else {
+                    val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+                    assertTrue(refusal.message!!.contains("bounded by"), refusal.message)
+                    assertEquals("ab", sm.title)
+                }
+            } finally {
+                sm.cleanup()
+            }
         }
     }
 

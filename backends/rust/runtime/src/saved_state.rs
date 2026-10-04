@@ -883,6 +883,20 @@ pub fn bounded<T: SavedValue>(
     Ok(items)
 }
 
+/// A saved string `value`, read back only if it holds no more than the
+/// `capacity` UTF-8 bytes the machine bounds it by — a machine never holds more,
+/// and a restored one must not be the first to.
+pub fn bounded_string(value: &Value, what: &str, capacity: usize) -> Result<String, StateRefusal> {
+    let text = String::from_saved(value, what)?;
+    if text.len() > capacity {
+        return Err(StateRefusal::new(format!(
+            "'{what}' holds {} UTF-8 bytes, past the {capacity} it is bounded by",
+            text.len()
+        )));
+    }
+    Ok(text)
+}
+
 /// The wall clock now, in milliseconds since the Unix epoch: what a host that
 /// has no clock of its own to give [`save`] and [`enter`] gives them.
 pub fn wall_clock_ms() -> u64 {
