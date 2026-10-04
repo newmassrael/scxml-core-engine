@@ -5803,7 +5803,9 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym
 
 /* SCE Accepted Subset §2.15: the published variable `{{ field.id }}`, declared in the header. */
 SCE_SM_FN {{ field.view or field.ty }} {{ csym_prefix }}{{ model.name }}_{{ field.reader }}(const {{ csym_prefix }}{{ model.name }}_t *sm) {
-{% if field.view %}
+{% if field.read %}
+    return {{ field.read }};
+{% elif field.view %}
     return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len };
 {% else %}
     return sm->policy.{{ field.name }};

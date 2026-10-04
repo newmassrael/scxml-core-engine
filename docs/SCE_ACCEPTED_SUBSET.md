@@ -3281,19 +3281,27 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
-variables of the integer types, `bool` and an enum, a transition's guard,
-`<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's typed
-payload of numbers and bools, a call of an imported algorithm, a
+variables of the integer types, `bool`, an enum and a string, a transition's
+guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's
+typed payload of numbers and bools, a call of an imported algorithm, a
 `<sce:action>` whose arguments are typed expressions of them, a record whose
 fields are numbers, bools and enums, and a list of integers, bools or such
 records with its `<sce:append>`, `<sce:clear>` and `<foreach>`. A
-string, a real, bytes and a record with a string field, a list of
+real, bytes and a record with a string field, a list of
 reals, a `<send>` / `<cancel>`, an
 `<invoke>`, a final's `<donedata>` and a transition on an event whose payload
 carries a string, bytes or enum field are refused until their spellings are
-written: a
-string and bytes need a capacity the C11 contract does not carry yet, and a real
-is not yet held to a scenario. A list is a struct of its bound,
+written: bytes need a capacity the C11 contract does not carry yet, and a real
+is not yet held to a scenario. A string is a struct of the buffer its bound
+declares, `sce_static_string_<capacity>_t { char data[<capacity> + 1]; }`,
+declared once in the machine's header per bound and held by value in the policy:
+an expression reads its `data`, so a comparison is `strcmp` over it, and an
+`<assign>` is `sce_forge_bounded_string` — the value, or the empty string with a
+capacity failure recorded, counted in bytes by `strlen` as every backend counts
+them — received as any failing value is and then moved, terminator included, into
+the buffer by `memmove`, which the value may overlap (`title = title`). A
+published string's reader answers the text of its buffer, a `const char *` the
+host reads and does not write. A list is a struct of its bound,
 `sce_static_list_<element>_<capacity>_t { size_t len; T data[<capacity>]; }`,
 declared once in the machine's header per element type and capacity and held by
 value in the policy: an append writes the element into the slot at `len` and
@@ -3361,7 +3369,7 @@ from the call, as it does for a guard that is only `In()`.
 `static_block_ends`, `static_list`, `static_foreach`, `static_block_ends_list`,
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
-`static_payload`, `static_enum` (a value stated as the
+`static_string_capacity`, `static_payload`, `static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms
 called over the payload of each answer) against machines generated from the
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,

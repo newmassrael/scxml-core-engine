@@ -49,6 +49,10 @@ pub struct StaticField {
     /// value itself — a Rust list as a slice of its elements. `None` where
     /// the field is read as it is.
     pub view: Option<String>,
+    /// The expression a host's reader answers, when the field is not read as it
+    /// is — a string a target holds in a buffer, answered as the buffer's text.
+    /// `None` where the reader answers the field.
+    pub read: Option<String>,
     /// The bound of a list, a byte string or a string — elements, bytes or
     /// UTF-8 bytes: the machine never holds more, so neither may a restored
     /// value.
@@ -203,6 +207,21 @@ pub struct BoundedList {
     pub def: Option<String>,
     /// The empty list, as an initial value of [`Self::ty`].
     pub empty: String,
+}
+
+/// How a string variable is held by a target whose own string type has no room
+/// to hold one bounded by its capacity ([`StaticTarget::string_storage`]).
+#[derive(Debug, Clone)]
+pub struct StringStorage {
+    /// The type a variable of the string is held in.
+    pub ty: String,
+    /// The declaration of [`Self::ty`], made once however many variables name
+    /// the type.
+    pub def: String,
+    /// The initial value, built from the literal the variable starts at.
+    pub init: String,
+    /// The type a host reads the string through.
+    pub view: String,
 }
 
 /// An imported algorithm as a target reaches it: the name a call is written
@@ -406,6 +425,24 @@ pub trait StaticTarget {
     /// string variable keeps on every backend, so that a machine holds the same
     /// value wherever it runs.
     fn bounded_string(&self, value: &str, capacity: u32) -> String;
+    /// How a string variable bounded by `capacity` UTF-8 bytes is held, starting
+    /// at the literal `init` — for a target whose own string type holds no such
+    /// bound, as a C buffer does not. `None` for a target whose strings own
+    /// their storage, which is every other.
+    fn string_storage(&self, _capacity: u32, _init: &str) -> Option<StringStorage> {
+        None
+    }
+    /// What an expression reads variable `var` as, given `field_ref`, the
+    /// reference to the field that holds it. The reference itself for a value the
+    /// field is; a string a target holds in a buffer is read through the buffer.
+    fn variable_ref(&self, _var: &crate::model::Variable, field_ref: String) -> String {
+        field_ref
+    }
+    /// `target = value` for a string variable, `target` being what
+    /// [`Self::variable_ref`] gave. The assignment of any other value by default.
+    fn assign_string(&self, target: &str, value: &str) -> String {
+        self.assign(target, value)
+    }
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
     /// Replace field `field` of the record at `target` with `value`.
@@ -1207,7 +1244,12 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
     scope
         .variables
         .iter()
-        .map(|v| (v.id.clone(), target.field_ref(&target.field_name(&v.id))))
+        .map(|v| {
+            (
+                v.id.clone(),
+                target.variable_ref(v, target.field_ref(&target.field_name(&v.id))),
+            )
+        })
         // A callee the target cannot reach is left out: `lower` has already
         // refused a document that calls one.
         .chain(scope.callees.iter().filter_map(|c| {
@@ -1420,6 +1462,7 @@ pub fn lower(
                     ty,
                     published,
                     view: None,
+                    read: None,
                     bound: None,
                     saved_kind: "record",
                     reader: None,
@@ -1470,6 +1513,7 @@ pub fn lower(
                     init: empty,
                     published,
                     view,
+                    read: None,
                     bound: var.capacity,
                     saved_kind,
                     saved_type,
@@ -1510,6 +1554,7 @@ pub fn lower(
                     ty: enum_ty,
                     published,
                     view: None,
+                    read: None,
                     bound: None,
                     saved_kind: "enum",
                     reader: None,
@@ -1520,13 +1565,30 @@ pub fn lower(
             let init = initial_value(&var.expr, target, &ctx, &renames, slot)
                 .map_err(|r| refused("the initial value", &var.expr, r))?;
             rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+            // A string a target holds in a buffer of its bound is declared once
+            // however many variables share the bound, and read through the buffer.
+            let storage = match (ty, var.capacity) {
+                (SceType::String, Some(capacity)) => target.string_storage(capacity, &init),
+                _ => None,
+            };
+            let read = storage
+                .as_ref()
+                .map(|_| target.variable_ref(var, target.field_ref(&name)));
+            if let Some(storage) = &storage {
+                declarations.string_storage(storage);
+            }
             fields.push(StaticField {
                 id: var.id.clone(),
                 name,
-                ty: target.scalar_type(ty),
-                init,
+                ty: storage
+                    .as_ref()
+                    .map_or_else(|| target.scalar_type(ty), |s| s.ty.clone()),
+                init: storage.as_ref().map_or(init, |s| s.init.clone()),
                 published,
-                view: target.scalar_view(ty),
+                view: storage
+                    .as_ref()
+                    .map_or_else(|| target.scalar_view(ty), |s| Some(s.view.clone())),
+                read,
                 bound: matches!(ty, SceType::Bytes | SceType::String)
                     .then_some(var.capacity)
                     .flatten(),
@@ -1787,6 +1849,14 @@ impl<'t> TypeDeclarations<'t> {
             });
         }
         Ok(ty)
+    }
+
+    /// The type a string variable is held in ([`StaticTarget::string_storage`]),
+    /// declared the first time any variable names it.
+    fn string_storage(&mut self, storage: &StringStorage) {
+        if self.declared.insert(storage.ty.clone()) {
+            self.type_defs.push(storage.def.clone());
+        }
     }
 
     /// How a list of the scalar `elem`, bounded by `capacity`, is held
@@ -3519,9 +3589,11 @@ impl StaticTarget for CTarget {
         // enumerated type are the values the checked helpers and the policy
         // hold without a length. A list of integers or bools too: it is a
         // buffer of its bound, which every list declares ([`Self::bounded_list`]).
-        // A string or a bytes value needs a capacity the C11 contract does not
-        // carry yet, and a real is not yet held to a scenario. A record is a
-        // struct the machine's own header declares, of fields held as those are.
+        // A string is a buffer of the bound its variable declares, which the
+        // document requires of every one ([`Self::string_storage`]). A bytes
+        // value needs a capacity the C11 contract does not carry yet, and a real
+        // is not yet held to a scenario. A record is a struct the machine's own
+        // header declares, of fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -3554,7 +3626,9 @@ impl StaticTarget for CTarget {
             }
             !matches!(
                 value_type.scalar(),
-                Some(ty) if held_scalar(ty) || matches!(ty, SceType::Enum(_))
+                Some(ty) if held_scalar(ty)
+                    || matches!(ty, SceType::Enum(_))
+                    || (matches!(ty, SceType::String) && v.capacity.is_some())
             )
         }) {
             let ty = match &var.value_type {
@@ -3873,8 +3947,46 @@ impl StaticTarget for CTarget {
         }
         Some((head, prologue))
     }
-    fn bounded_string(&self, _value: &str, _capacity: u32) -> String {
-        unreachable!("a C11 document with a string variable is refused by `unsupported`")
+    // A C string is a pointer to bytes, so the bound is `strlen`'s: the runtime's
+    // helper answers the value, or "" with the failure recorded, which the
+    // statement around it receives as it does a checked operation.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u)")
+    }
+    // A buffer of the bound and its terminator, named by the bound so that two
+    // variables of one bound share a type, and declared under a guard so that
+    // two machines in one program do. The text is the buffer's `data`, which is
+    // what an expression reads and a reader answers ([`Self::variable_ref`]).
+    fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        let ty = format!("sce_static_string_{capacity}_t");
+        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+        let def = format!(
+            "#ifndef {guard}\n#define {guard}\n\
+             /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
+             typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n#endif"
+        );
+        Some(StringStorage {
+            init: format!("({ty}){{ {init} }}"),
+            ty,
+            def,
+            view: "const char *".to_string(),
+        })
+    }
+    fn variable_ref(&self, var: &crate::model::Variable, field_ref: String) -> String {
+        let held = var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::scalar);
+        if matches!(held, Some(SceType::String)) {
+            format!("{field_ref}.data")
+        } else {
+            field_ref
+        }
+    }
+    // The text and its terminator move together into the buffer, which the value
+    // may overlap (`title = title`), and the bound was judged before this runs.
+    fn assign_string(&self, target: &str, value: &str) -> String {
+        format!("memmove({target}, {value}, strlen({value}) + 1u);")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -4320,7 +4432,19 @@ fn lower_action(
                 }
                 None => {
                     let name = renames.get(location).copied().unwrap_or(location);
-                    statement(&value, slot, &|v| target.assign(name, v), construct)
+                    let is_string = rewrites.strings.contains_key(location);
+                    statement(
+                        &value,
+                        slot,
+                        &|v| {
+                            if is_string {
+                                target.assign_string(name, v)
+                            } else {
+                                target.assign(name, v)
+                            }
+                        },
+                        construct,
+                    )
                 }
             };
         }

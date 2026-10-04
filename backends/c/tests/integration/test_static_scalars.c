@@ -81,6 +81,7 @@
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_sm.h"
+#include "static_string_capacity_sm.h"
 #include "sync_client_sm.h"
 
 #include "static_scenario.h"
@@ -442,6 +443,34 @@ static const variable_t enum_variables[] = {
 };
 STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists, no_records)
 
+// static_string_capacity: a string is a buffer of the UTF-8 bytes its variable
+// declares, assigned from a literal or another string, and refused past its
+// bound — by bytes, not characters. A published string is read as the text of its
+// buffer.
+VARIABLE_READER(static_string_capacity, copied)
+VARIABLE_READER(static_string_capacity, refusals)
+
+static const char *static_string_capacity_text(void *sm, const char *name) {
+    const static_string_capacity_t *machine = (const static_string_capacity_t *)sm;
+    if (strcmp(name, "title") == 0) {
+        return static_string_capacity_get_title(machine);
+    }
+    if (strcmp(name, "body") == 0) {
+        return static_string_capacity_get_body(machine);
+    }
+    return NULL;
+}
+
+static const name_value_t string_capacity_states[] = {
+    {"idle", STATIC_STRING_CAPACITY_STATE_IDLE},
+};
+static const variable_t string_capacity_variables[] = {
+    {"copied", static_string_capacity_read_copied},
+    {"refusals", static_string_capacity_read_refusals},
+};
+STATIC_SCENARIO(static_string_capacity, string_capacity_states, string_capacity_variables, static_string_capacity_text,
+                no_lists, no_records)
+
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
 // reports. `retryAt` is an int64, and a rule it calls refuses a status outside
@@ -645,6 +674,7 @@ int main(void) {
     bad |= static_record_enum_scenario("static_record_enum", 13);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
+    bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     if (bad != 0) {

@@ -176,6 +176,31 @@ edit("sce-build/src/forge/static_lowering.rs",
      "        let inits: Vec<String> = fields.iter().map(|(f, _)| format!(\".{f} = 0\")).collect();")
 PY
 
+# ── A string holds no more than its bound, and holds what it was given ──
+#
+# `static_string_capacity`: `copy` assigns a sixteen-byte `body` to a four-byte
+# `title` and the refused copy leaves both as they were; `reset` writes the two
+# bytes `ab` over the four `abcd`, which a copy that leaves out the terminator
+# leaves reading `abcd`.
+
+mutation_case "a string is assigned past its capacity" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u)\")",
+     "format!(\"sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u + 1000000u)\")")
+PY
+
+mutation_case "a string is copied without its terminator" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"memmove({target}, {value}, strlen({value}) + 1u);\")",
+     "format!(\"memmove({target}, {value}, strlen({value}));\")")
+PY
+
+mutation_case "a published string reads as nothing" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    return {{ field.read }};",
+     "    return \"\";")
+PY
+
 # ── A published list is its elements and their count ───────────────
 
 mutation_case "a published list's view says one element too few" <<'PY'

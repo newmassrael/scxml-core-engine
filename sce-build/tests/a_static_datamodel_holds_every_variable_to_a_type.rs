@@ -301,12 +301,12 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
-    // C lowers integer, bool and enum variables, records of numbers, bools and
-    // enums, lists of integers, bools and such records with `<sce:append>`,
-    // `<sce:clear>` and `<foreach>`, guards, `<assign>`,
+    // C lowers integer, bool, enum and bounded string variables, records of
+    // numbers, bools and enums, lists of integers, bools and such records with
+    // `<sce:append>`, `<sce:clear>` and `<foreach>`, guards, `<assign>`,
     // `<if>`, `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and
     // bools, a call of an imported algorithm, and a host action whose arguments
-    // are typed expressions of them. What is past that — a string, a real, a list
+    // are typed expressions of them. What is past that — a real, a list
     // of reals, a record with a string field, a bytes variable, a
     // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
     // not a number or a bool — is refused by
@@ -315,11 +315,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
     let variable = |data: &str| doc("sce-static", data);
     let cases = [
-        (
-            "a string variable",
-            variable(r#"<data id="label" sce:type="string" sce:capacity="8" expr="''"/>"#),
-            r#"<data id="label" sce:type="string">"#,
-        ),
         (
             "a real variable",
             variable(r#"<data id="ratio" sce:type="float64" expr="0.5"/>"#),

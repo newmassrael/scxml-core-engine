@@ -22,6 +22,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 /* Why a `may-fail` algorithm has no value to return. */
 typedef enum {
@@ -70,6 +71,22 @@ static inline void sce_forge_algorithm_fail(sce_forge_algorithm_failure_t *f, sc
         f->failed = true;
         f->error = error;
     }
+}
+
+/*
+ * `value`, handed back, when it holds no more than `capacity` UTF-8 bytes — the
+ * bound a string variable of a `sce-static` machine declares — and "" with a
+ * capacity failure recorded in `f` otherwise, which the statement around it
+ * never uses. A C string is its bytes, so the count is `strlen`, which is what
+ * every backend counts: a machine holds the same value wherever it runs.
+ */
+static inline const char *sce_forge_bounded_string(sce_forge_algorithm_failure_t *f, const char *value,
+                                                   uint32_t capacity) {
+    if (strlen(value) > (size_t)capacity) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);
+        return "";
+    }
+    return value;
 }
 
 /*

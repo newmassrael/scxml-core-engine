@@ -32,10 +32,11 @@
 #include <stddef.h>
 
 #include "sce/types.h"
-{% if static_published | selectattr('view') | list %}
+{% if static_published | selectattr('view') | rejectattr('read') | list %}
 {# SCE Accepted Subset §2.15: a published list is read through the library's
    borrowed view of its elements, `{data, len}`, which the host cannot grow past
-   the bound the machine keeps. #}
+   the bound the machine keeps. A string is read as the text of its buffer,
+   which is no such view. #}
 #include "sce/forge/list_view.h"
 {% endif %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
