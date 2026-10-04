@@ -298,7 +298,7 @@ pub(crate) fn enum_variables(
 
 /// Each enum field of a record of `schema` held under the name `holder`, by
 /// its `<holder>.<field>` path and the alias of the enum it holds.
-fn enum_fields(
+pub(crate) fn enum_fields(
     holder: &str,
     schema: &crate::forge::model::EventSchemaModel,
 ) -> Vec<(String, String)> {
@@ -419,6 +419,19 @@ impl<'a> Judge<'a> {
             .cloned()
             .or_else(|| held_at(&self.loop_enum_paths))
             .or_else(|| held_at(&self.payload_enum_paths))
+    }
+
+    /// The alias of the enum the variable, record field or payload field at
+    /// `path` holds, for a value that crosses as data: [`Self::enum_of`] but
+    /// for a record item of a loop, which has no wire spelling yet.
+    fn enum_of_wire_value(&self, path: &str) -> Option<String> {
+        self.enum_vars.get(path).cloned().or_else(|| {
+            self.payload_enum_paths
+                .borrow()
+                .iter()
+                .find(|(held, _)| held == path)
+                .map(|(_, alias)| alias.clone())
+        })
     }
 
     /// Opens the walk of a transition, whose event's payload `schema` is
@@ -758,9 +771,12 @@ impl<'a> Judge<'a> {
     /// the values every backend spells alike
     /// ([`InferredType::wire_param_slot`]); any other is refused where it is
     /// written rather than dropped, or carried differently by two backends. A
-    /// value read from the triggering event's payload is refused too: reading
-    /// it needs the payload channel's guard around the whole element, which the
-    /// lowering of a `<param>` does not yet put there.
+    /// value read from the triggering event's payload is carried on as any
+    /// other, where the walk is in a transition on an event that declares the
+    /// schema the payload is read through: the transition's content then runs
+    /// only for a delivery that carried one, as an `<assign>` that reads it
+    /// does. Anywhere else (an entry, an exit, an invoke, a `<final>`, an event
+    /// with no schema) no payload is in scope, and the read is refused.
     ///
     /// `element` names the element a refusal places the param in. A `location`
     /// is read as an expression naming a variable, which is what it is.
@@ -778,32 +794,36 @@ impl<'a> Judge<'a> {
         if written.trim().is_empty() {
             return Ok(());
         }
-        let ty = self.expr(
-            ctx,
-            written,
-            spelling,
-            Expected::Hint(InferredType::Unknown),
-        )?;
         let at = param.source_location;
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
         let construct = format!("<param name=\"{}\"> of {element}", param.name);
-        if crate::forge::expr::references_event_data_lexically(written) {
+        if crate::forge::expr::references_event_data_lexically(written)
+            && self.payload_schema.borrow().is_none()
+        {
             return Err(self.rule_at(
                 construct,
                 "a <param> of this data model is read from the machine's fields when its \
-                 element runs; one that reads the triggering event's payload has no \
-                 lowering yet, so copy the value into a variable first",
+                 element runs; the triggering event's payload is read only in a transition \
+                 on an event that declares a schema, so copy the value into a variable \
+                 there first",
                 line,
                 col,
                 state,
                 written,
             ));
         }
+        let ty = self.expr(
+            ctx,
+            written,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
         // An enum value crosses as the name its enum declares for it, a string
         // as a saved state holds one, so every backend spells it alike. Only a
-        // variable or a field of a record variable is read that way: a value of
-        // a loop's record item has no lowering here yet.
-        let held_by_a_variable = |name: &str| self.enum_vars.get(name).cloned();
+        // variable, a field of a record variable or a field of the payload is
+        // read that way: a value of a loop's record item has no lowering here
+        // yet.
+        let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);
         match crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable) {
             Ok(Some(_)) => return Ok(()),
             Ok(None) => {}

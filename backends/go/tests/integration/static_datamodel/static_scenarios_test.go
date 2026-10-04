@@ -46,6 +46,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_relay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
@@ -339,6 +340,20 @@ func TestAnEventsPayloadCarriesAnEnumField(t *testing.T) {
 		"zoom":   func() any { return policy.Zoom() },
 		"agenda": func() any { return policy.Agenda() },
 		"shown":  func() any { return policy.Shown() },
+	}))
+}
+
+// The payload of the event a transition is on is carried on as the <param>s of
+// a <send>: an enum field as the name its enum declares and an integer, read
+// where the send runs.
+func TestThePayloadOfAnEventIsCarriedOnAsParams(t *testing.T) {
+	policy := static_payload_relay.NewStaticPayloadRelayPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_payload_relay", drive[static_payload_relay.StaticPayloadRelayState, static_payload_relay.StaticPayloadRelayEvent](&policy, map[string]func() any{
+		"layout":   func() any { return policy.Layout().String() },
+		"zoom":     func() any { return policy.Zoom() },
+		"relays":   func() any { return policy.Relays() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

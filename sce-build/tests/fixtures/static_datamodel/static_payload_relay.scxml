@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the payload of the
+  event a transition is on, carried on as the <param>s of a <send>. `view.shown`
+  is read where the <send> runs, through its schema: `layout` is an enum value
+  and crosses as the name its enum declares, `zoom + 1` is an integer. The
+  machine sends the pair to itself as `view.relayed` and reads it back, so what
+  arrived is what the first event carried.
+
+  A zoom of 255 does not fit a uint8 once it is increased: that pair is not
+  carried, error.execution is raised and the message still goes (§scxml-5.7.1,
+  §scxml-6.2). The receiver reads the missing `zoom` first, so what it writes
+  is the same for every engine: nothing, the delivery is refused (a generated
+  machine lifts the whole payload at the dequeue, the Interpreter fails the
+  expression that reads the field, and a block that fails writes nothing after
+  it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="relaying" datamodel="sce-static" name="static_payload_relay">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="event-schema" src="schema_view_relayed.scxml" as="Relayed"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="zoom" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="relays" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="relaying">
+    <transition event="view.shown" type="internal">
+      <send event="view.relayed">
+        <param name="layout" expr="_event.data.layout"/>
+        <param name="zoom" expr="_event.data.zoom + 1"/>
+      </send>
+    </transition>
+    <transition event="view.relayed" type="internal">
+      <assign location="zoom" expr="_event.data.zoom"/>
+      <assign location="layout" expr="_event.data.layout"/>
+      <assign location="relays" expr="relays + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

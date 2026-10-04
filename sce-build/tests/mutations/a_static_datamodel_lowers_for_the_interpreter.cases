@@ -8,10 +8,11 @@
 # documents `sce-codegen lower` makes of the fixtures, and what it cannot lower it
 # refuses by name and leaves out of the replay. A refusal that grows back therefore
 # leaves the replay green with a fixture silently missing from it, so the scan this
-# test makes of every fixture holds, by name, the two that send themselves their
-# `<param>`s (`static_send_params`, `static_wire_enum`) and the two whose final
-# hands its done event its `<donedata>` (`static_donedata`,
-# `static_donedata_content`), and two tests hold what a `<donedata>` is lowered to.
+# test makes of every fixture holds, by name, the three that send themselves their
+# `<param>`s (`static_send_params`, `static_wire_enum`, `static_payload_relay`)
+# and the two whose final hands its done event its `<donedata>`
+# (`static_donedata`, `static_donedata_content`), and two tests hold what a
+# `<donedata>` is lowered to.
 #
 # Each case below puts one of those refusals back, or takes one of those
 # rewrites away, and must make a test red.
@@ -41,6 +42,15 @@ mutation_case "an enum value has no wire name" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
      "    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {\n        Some(value.to_string())\n    }\n",
      "    fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {\n        None\n    }\n")
+PY
+
+# The payload of the event a transition is on is opened to the walk without the
+# enums its fields hold: a `<param>` that carries an enum field on has no alias to
+# name it by, and the fixture that relays one leaves the replay.
+mutation_case "a payload's enum field has no wire name" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            let schema = schemas.get(&transition.event);\n            rewrites.open_payload(schema);\n",
+     "            let schema = schemas.get(&transition.event);\n")
 PY
 
 # A `<final>` that carries a `<donedata>` is refused again, as it was before its

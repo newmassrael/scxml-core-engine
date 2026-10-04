@@ -171,6 +171,31 @@ def test_an_events_payload_carries_an_enum_field() -> None:
     replay("static_payload_enum")
 
 
+# The payload of the event a transition is on is carried on as the <param>s of a
+# <send>: an enum field as the name its enum declares and an integer, read where
+# the send runs.
+def test_the_payload_of_an_event_is_carried_on_as_params() -> None:
+    replay("static_payload_relay")
+
+
+# A delivery that carried no payload runs none of the content that reads it: the
+# machine sends nothing, so nothing is relayed. The scenarios cannot say so for
+# every engine -- the Interpreter fails the expression that reads the field,
+# where a generated machine does not run the block at all -- so it is stated here.
+def test_a_delivery_without_the_payload_sends_nothing() -> None:
+    module = importlib.import_module("integration.static_datamodel.static_payload_relay_sm")
+    engine = module.create_engine()
+    engine.initialize()
+    policy = engine.policy
+    engine.send_event(policy.resolve_event_by_name("view.shown"), EventMetadata(data=""))
+    assert policy.v_relays == 0, "no payload was read, so nothing was carried on"
+    engine.send_event(
+        policy.resolve_event_by_name("view.shown"),
+        EventMetadata(data=json.dumps({"layout": "week", "zoom": 2})),
+    )
+    assert policy.v_relays == 1, "a delivery that carried the payload is relayed as any other"
+
+
 # An enum variable holds a variant of its enum, read back by the name the enum
 # document declares.
 def test_an_enum_variable_holds_a_variant_of_its_enum() -> None:

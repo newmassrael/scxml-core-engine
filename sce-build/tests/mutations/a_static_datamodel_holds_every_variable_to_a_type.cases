@@ -202,3 +202,20 @@ edit("sce-build/src/forge/static_lowering.rs",
      "                    crate::model::DoneDataContent::None\n                        | crate::model::DoneDataContent::InlineText(_)\n",
      "                    crate::model::DoneDataContent::None\n")
 PY
+
+# A `<param>` reads the payload of the event its transition is on, and only
+# there. The first mutant refuses every read again, as the rule did before the
+# lowering put the payload channel's guard around a `<send>`; the second admits
+# a read where no event's payload is in scope (an entry, an event with no
+# schema, a `<final>`), which would reach a backend as a name nothing declares.
+mutation_case "a param that reads the payload is refused everywhere again" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if crate::forge::expr::references_event_data_lexically(written)\n            && self.payload_schema.borrow().is_none()\n        {",
+     "        if crate::forge::expr::references_event_data_lexically(written) {")
+PY
+
+mutation_case "a param reads a payload that is not in scope" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if crate::forge::expr::references_event_data_lexically(written)\n            && self.payload_schema.borrow().is_none()\n        {",
+     "        if false {")
+PY

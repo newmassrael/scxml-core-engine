@@ -1466,19 +1466,61 @@ fn a_param_whose_value_has_no_wire_spelling_is_refused_on_its_line() {
 }
 
 #[test]
-fn a_param_reading_the_events_payload_is_refused_on_its_line() {
-    // Reading it needs the payload channel's guard around the whole element,
-    // which the lowering of a `<param>` does not yet put there.
-    let (ok, out) = run_record(
-        &["check"],
-        &record(
-            EVERY_FIELD,
-            r#"<state id="s"><transition event="day.picked" type="internal"><send type="x-sce-host" event="forward"><param name="d" expr="_event.data.dayOfMonth"/></send></transition></state>"#,
+fn a_param_reading_the_events_payload_is_accepted_in_a_transition_on_that_event() {
+    // The transition's content runs only for a delivery that carried the
+    // payload, as an `<assign>` that reads it does, so a `<send>` of it is
+    // carried on like any other value.
+    for expr in ["_event.data.dayOfMonth", "_event.data.month + 1"] {
+        let (ok, out) = run_record(
+            &["check"],
+            &record(
+                EVERY_FIELD,
+                &format!(
+                    r#"<state id="s"><transition event="day.picked" type="internal"><send type="x-sce-host" event="forward"><param name="d" expr="{expr}"/></send></transition></state>"#
+                ),
+            ),
+        );
+        assert!(
+            ok,
+            "`{expr}` is read from the payload of the event the transition is on:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn a_param_reading_a_payload_that_is_not_in_scope_is_refused_on_its_line() {
+    // An entry runs when no event's payload is in scope, a transition on an
+    // event that declares no schema has no typed payload to read, and what a
+    // `<final>` hands its done event is read as the state is entered.
+    let param = r#"<param name="d" expr="_event.data.dayOfMonth"/>"#;
+    for (what, states) in [
+        (
+            "an entry",
+            format!(
+                r#"<state id="s"><onentry><send type="x-sce-host" event="forward">{param}</send></onentry></state>"#
+            ),
         ),
-    );
-    assert!(!ok, "a payload read in a param has no lowering yet:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
-    assert!(out.contains("payload"), "it says why:\n{out}");
+        (
+            "a transition on an event with no schema",
+            format!(
+                r#"<state id="s"><transition event="other" type="internal"><send type="x-sce-host" event="forward">{param}</send></transition></state>"#
+            ),
+        ),
+        (
+            "a donedata",
+            format!(
+                r#"<state id="s"><transition event="go" target="d"/></state><final id="d"><donedata>{param}</donedata></final>"#
+            ),
+        ),
+    ] {
+        let (ok, out) = run_record(&["check"], &record(EVERY_FIELD, &states));
+        assert!(!ok, "{what}: no payload is in scope to read:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
+        assert!(
+            out.contains("declares a schema"),
+            "{what}: it says where the payload is read:\n{out}"
+        );
+    }
 }
 
 // ── A `<donedata>` param is the same value on the same wire ─────────────

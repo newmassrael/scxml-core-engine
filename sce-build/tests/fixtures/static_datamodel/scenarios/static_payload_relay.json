@@ -1,0 +1,24 @@
+{
+  "machine": "static_payload_relay",
+  "about": "The payload of the event a transition is on is carried on as the <param>s of a <send>: `view.shown` is read where the send runs, its enum field crosses as the name its enum declares and its zoom increased by one as an integer, and the machine sends the pair to itself as `view.relayed` and reads it back. `agenda_list` is spelled with an underscore: the wire carries the name the document wrote. A zoom of 255 does not fit a uint8 once it is increased: that pair is left out, error.execution is raised, the message still goes and the receiver, reading `zoom` first, finds it missing and writes nothing -- a second refusal. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been relayed yet",
+      "expect": { "state": "relaying", "variables": { "layout": "month", "zoom": 0, "relays": 0, "refusals": 0 } } },
+
+    { "note": "the enum value and the increased zoom arrive as the event carried them",
+      "event": "view.shown", "data": { "layout": "week", "zoom": 2 },
+      "expect": { "variables": { "layout": "week", "zoom": 3, "relays": 1, "refusals": 0 } } },
+
+    { "note": "the underscore name crosses as written",
+      "event": "view.shown", "data": { "layout": "agenda_list", "zoom": 5 },
+      "expect": { "variables": { "layout": "agenda_list", "zoom": 6, "relays": 2, "refusals": 0 } } },
+
+    { "note": "255 + 1 does not fit: the pair is left out, the message goes and its receiver refuses it",
+      "event": "view.shown", "data": { "layout": "day", "zoom": 255 },
+      "expect": { "variables": { "layout": "agenda_list", "zoom": 6, "relays": 2, "refusals": 2 } } },
+
+    { "note": "a good delivery after the refused one is carried on as any other",
+      "event": "view.shown", "data": { "layout": "month", "zoom": 0 },
+      "expect": { "variables": { "layout": "month", "zoom": 1, "relays": 3, "refusals": 2 } } }
+  ]
+}

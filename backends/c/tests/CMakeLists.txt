@@ -2400,6 +2400,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # The payload of the event a transition is on, carried on as the `<param>`s
+    # of a `<send>`: both schemas of the pair and the enum they name travel
+    # beside it.
+    sce_generate_static_integration_c_test(static_payload_relay
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_relay.scxml"
+        STAGE_ALSO schema_view.scxml schema_view_relayed.scxml enum_view_mode.scxml
+    )
     # A `<send>` hands its event the pairs of its `<param>`s, which the machine
     # reads back through the two schemas it imports.
     sce_generate_static_integration_c_test(static_send_params
@@ -2526,6 +2534,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_DAYS_IN_MONTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
+        ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}

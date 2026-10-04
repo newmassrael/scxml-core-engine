@@ -33,6 +33,7 @@ import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_payload_enum.StaticPayloadEnumStateMachine
+import com.sce.integration.static_payload_relay.StaticPayloadRelayStateMachine
 import com.sce.integration.static_real.StaticRealStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
@@ -562,6 +563,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_payload_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The payload of the event a transition is on is carried on as the <param>s
+    // of a <send>: an enum field as the name its enum declares and an integer,
+    // read where the send runs.
+    @Test
+    fun staticPayloadRelayCarriesOnWhatItsEventCarried() {
+        val sm = StaticPayloadRelayStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_payload_relay"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

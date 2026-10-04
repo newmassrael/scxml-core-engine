@@ -1456,6 +1456,7 @@ pub fn lower(
         records: record_vars,
         schemas: records.clone(),
         enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &records),
+        payload_enum_paths: Default::default(),
         lists: list_vars,
         strings: string_vars,
         machine,
@@ -1744,6 +1745,7 @@ pub fn lower(
         }
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
+            rewrites.open_payload(schema);
             let paths = scope.paths(schema);
             let ctx = scope.ctx(&paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
@@ -1829,6 +1831,7 @@ pub fn lower(
                 transition.content_reads_payload = true;
             }
         }
+        rewrites.open_payload(None);
     }
     for script in &mut model.global_scripts {
         let ctx = scope.ctx(&no_payload, &enums);
@@ -2304,6 +2307,10 @@ struct Rewrites<'m> {
     /// of a record variable by its `<id>.<field>` path — what tells an enum
     /// value from a number where a `<param>` is spelled for the wire.
     enum_vars: std::collections::BTreeMap<String, String>,
+    /// The enum each enum field of the payload of the transition the walk is in
+    /// holds, by `_event.data.<field>` path — [`Self::open_payload`]. Written
+    /// through a shared reference for the reason [`Self::sites`] is.
+    payload_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
     lists: ListVars,
     strings: StringVars,
     machine: &'m str,
@@ -2319,6 +2326,34 @@ struct Rewrites<'m> {
 }
 
 impl Rewrites<'_> {
+    /// Opens the walk of a transition whose event's payload `schema` is
+    /// declared (`None` for a walk that has none in scope): the enum fields it
+    /// holds are values of the enums the schema names.
+    fn open_payload(&self, schema: Option<&EventSchemaModel>) {
+        *self.payload_enum_paths.borrow_mut() = schema
+            .map(|schema| {
+                crate::forge::static_datamodel::enum_fields(
+                    crate::forge::event_schema_check::EVENT_DATA_PATH,
+                    schema,
+                )
+            })
+            .unwrap_or_default();
+    }
+
+    /// The alias of the enum the variable, record field or payload field at
+    /// `path` holds — what tells an enum value from a number where a `<param>`
+    /// is spelled for the wire. The judge's answer
+    /// ([`crate::forge::static_datamodel`]) for the same question.
+    fn enum_of_wire_value(&self, path: &str) -> Option<String> {
+        self.enum_vars.get(path).cloned().or_else(|| {
+            self.payload_enum_paths
+                .borrow()
+                .iter()
+                .find(|(held, _)| held == path)
+                .map(|(_, alias)| alias.clone())
+        })
+    }
+
     /// Note that `source`, written in the attribute `spelling`, lowered to
     /// `text`.
     fn note(
@@ -5041,6 +5076,10 @@ fn lower_action(
         "send" => {
             for param in &mut action.params {
                 lower_wire_param(param, ctx, renames, rewrites)?;
+                // A value read from the payload runs only for a delivery that
+                // carried one, as the rest of the transition's content does.
+                reads_payload |=
+                    reads(crate::forge::static_datamodel::WireParam::of_param(param).written);
             }
             // A literal `<content>` is the event's data as written, finished
             // here ([`crate::filters::static_content_wire`]): the machine has
@@ -5102,7 +5141,7 @@ fn lower_wire_value(
     // is lowered as the enum value it is, and the backend names the variant it
     // holds. The judge accepted only a variable or a field of a record variable
     // as one, which is what `enum_vars` holds.
-    let held_by_a_variable = |name: &str| rewrites.enum_vars.get(name).cloned();
+    let held_by_a_variable = |name: &str| rewrites.enum_of_wire_value(name);
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable)
         .map_err(|r| refused(r.error.to_string()))?
     {

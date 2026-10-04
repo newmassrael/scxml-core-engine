@@ -37,6 +37,10 @@
 //     enum, lifted from the variant's declared name the data carries, compared and
 //     assigned as a variable of the enum is; a name the enum does not declare, or
 //     a value that is no text, is a payload that does not fit, and writes nothing.
+//   * `static_payload_relay`: the payload a transition's event carried is read
+//     where a `<send>` runs and carried on as its `<param>`s — an enum field as
+//     the name its enum declares, an integer as its number — and a value that
+//     does not fit its type is left out with an `error.execution`.
 //   * `sync_client`: a call of an imported algorithm — a header of `static inline`
 //     functions the machine includes — in a guard and in an assignment, over the
 //     payload of each answer, and a call that refuses its arguments is a failure
@@ -94,6 +98,7 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_enum_sm.h"
+#include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
@@ -527,6 +532,37 @@ static const variable_t payload_enum_variables[] = {
 };
 STATIC_SCENARIO(static_payload_enum, payload_enum_states, payload_enum_variables, static_payload_enum_text, no_lists,
                 no_records)
+
+// static_payload_relay: the payload of the event a transition is on is carried
+// on as the `<param>`s of a `<send>` — an enum field as the name its enum
+// declares and an integer — read where the send runs, from the payload the
+// delivery carried.
+VARIABLE_READER(static_payload_relay, zoom)
+VARIABLE_READER(static_payload_relay, relays)
+VARIABLE_READER(static_payload_relay, refusals)
+
+static int64_t static_payload_relay_read_layout(const void *sm) {
+    return (int64_t)static_payload_relay_get_layout((const static_payload_relay_t *)sm);
+}
+
+static const char *static_payload_relay_text(void *sm, const char *name) {
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(static_payload_relay_get_layout((const static_payload_relay_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t payload_relay_states[] = {
+    {"relaying", STATIC_PAYLOAD_RELAY_STATE_RELAYING},
+};
+static const variable_t payload_relay_variables[] = {
+    {"layout", static_payload_relay_read_layout},
+    {"zoom", static_payload_relay_read_zoom},
+    {"relays", static_payload_relay_read_relays},
+    {"refusals", static_payload_relay_read_refusals},
+};
+STATIC_SCENARIO(static_payload_relay, payload_relay_states, payload_relay_variables, static_payload_relay_text,
+                no_lists, no_records)
 
 // static_string_capacity: a string is a buffer of the UTF-8 bytes its variable
 // declares, assigned from a literal or another string, and refused past its
@@ -1048,6 +1084,7 @@ int main(void) {
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
+    bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);

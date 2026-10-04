@@ -53,6 +53,9 @@ use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
 use sce_rust_tests::integration::static_datamodel::static_payload_enum_sm::{
     StaticPayloadEnumPersist, StaticPayloadEnumPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_payload_relay_sm::{
+    StaticPayloadRelayPersist, StaticPayloadRelayPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
 };
@@ -450,6 +453,20 @@ fn static_payload_enum_reads_a_variant_the_event_names() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_enum.json"
+        ),
+    );
+}
+
+// The payload of the event a transition is on is carried on as the <param>s of
+// a <send>: an enum field as the name its enum declares and an integer, read
+// where the send runs.
+#[test]
+fn static_payload_relay_carries_on_what_its_event_carried() {
+    replay(
+        Engine::new(StaticPayloadRelayPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_relay.json"
         ),
     );
 }

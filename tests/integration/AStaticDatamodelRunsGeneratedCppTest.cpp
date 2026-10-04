@@ -41,6 +41,7 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_enum_sm.h"
+#include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
@@ -300,6 +301,21 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventsPayloadCarriesAnEnumField) {
         {"shown", [](const Machine &m) { return json(m.shown()); }},
     });
     replay("static_payload_enum", driver);
+}
+
+// The payload of the event a transition is on is carried on as the `<param>`s
+// of a `<send>`: an enum field as the name its enum declares and an integer,
+// read where the send runs.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ThePayloadOfAnEventIsCarriedOnAsParams) {
+    namespace E = G::static_payload_relay;
+    using Machine = E::static_payload_relay;
+    Driver<Machine> driver({
+        {"layout", [](const Machine &m) { return json(std::string(E::sceLogName(m.layout()))); }},
+        {"zoom", [](const Machine &m) { return json(m.zoom()); }},
+        {"relays", [](const Machine &m) { return json(m.relays()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_payload_relay", driver);
 }
 
 // A list is a bounded `std::vector`: appended to while it has room, and a full

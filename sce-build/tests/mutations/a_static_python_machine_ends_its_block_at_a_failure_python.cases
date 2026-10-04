@@ -123,6 +123,19 @@ edit("tools/codegen/templates/python/actions/native_action.py.jinja2",
      "{% if false and '\\n' in action.native_action_rendered -%}\n")
 PY
 
+# ── A send reads the payload its transition's event carried ─────────
+#
+# `static_payload_relay`: a `<param>` of the `<send>` is the only thing that reads
+# the payload of `view.shown`, so the walk that does not count it a read leaves
+# the event without its typed channel, and the machine names a field it never
+# lifted. The payload-less delivery is held by a test of its own.
+
+mutation_case "a send's params do not count as a payload read" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                reads_payload |=\n                    reads(crate::forge::static_datamodel::WireParam::of_param(param).written);\n",
+     "")
+PY
+
 # ── A send param that failed is left out and the message goes ─────
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'

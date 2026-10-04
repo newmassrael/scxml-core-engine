@@ -2786,7 +2786,7 @@ line of the element or attribute that breaks it:
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable or a field of a record variable, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -2866,12 +2866,19 @@ Go's `String()`, Python's `sce_name`, C++'s `sceLogName` and C11's
 `<enum>_declared_name`), so the wire carries `agenda_list` and not an
 identifier a backend made of it. One read from a loop's record item has no
 lowering yet and is refused with the values that have no spelling. A value read
-from the triggering event's payload is refused too, an enum field of it
-included: reading it needs the payload channel's guard around the whole
-element, which a `<param>` does not yet get. `scenarios/static_wire_enum.json`
-holds a `<send>` to it on the six generated backends and the Interpreter, whose
-lowering leaves the name its enum declares as the variant lowered it, and
-`static_donedata` a `<donedata>` the same way. The Interpreter's lowering
+from the payload of the event the transition is on is carried on as any other,
+an enum field of it as the name its enum declares: the transition's content then
+runs only for a delivery that carried the payload, as an `<assign>` that reads
+it does. It is read there and nowhere else: an entry, an exit, a host-run
+`<invoke>` and a `<final>`'s `<donedata>` run when no event's payload is in
+scope, and a transition on an event that declares no schema has no typed
+payload to read, so a read in any of them is refused, saying where the payload
+is read. `scenarios/static_payload_relay.json` carries a payload on as the
+params of a `<send>` on the six generated backends and the Interpreter.
+`scenarios/static_wire_enum.json`
+holds an enum value in the params of a `<send>` on the six generated backends and
+the Interpreter, whose lowering leaves the name its enum declares as the variant
+lowered it, and `static_donedata` one in a `<donedata>` the same way. The Interpreter's lowering
 rewrites the pairs of a `<donedata>` where each is written, and finishes an
 inline `<content>` to the string it spells at the place it is written —
 `<content>42</content>` becomes `<content>&quot;42&quot;</content>`, which an
