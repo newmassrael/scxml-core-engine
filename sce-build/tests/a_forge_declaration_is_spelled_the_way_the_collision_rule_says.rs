@@ -485,8 +485,8 @@ fn measure_the_spelling_of_every_declaring_attribute() {
         for (ns, element, attr) in CANDIDATES {
             let row = Row {
                 ns: *ns,
-                element: *element,
-                attr: *attr,
+                element,
+                attr,
             };
             let kind = kind_of(&text);
             for name in declared_by(&row, None, &text) {
