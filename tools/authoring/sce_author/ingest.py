@@ -98,6 +98,36 @@ def _docx_paragraph(node) -> str:
     return "".join(t.text or "" for t in node.iter(f"{_W}t"))
 
 
+_O = "{urn:schemas-microsoft-com:office:office}"
+_DOC_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+
+def _docx_text(node, attached: dict[str, str]) -> str:
+    """A paragraph's text, and where an enclosed file was attached in it.
+
+    ⚠ The text of a paragraph that carries an embedded object says nothing about
+    the object: the body keeps a placeholder picture and a reference, so the
+    sentence "the limits are in the attached sheet" and the sheet it means were
+    separated, and the sheet's rows were carried to the END of the document.
+    Whoever then reads a clause has no way to tell which of several enclosed
+    files it hands its requirement to. The mark says it where the object sits,
+    by the name the file is carried under below.
+
+    `attached` maps a relationship id to the enclosed file it names. An object
+    whose reference is not in it -- a picture of an equation, a link that leaves
+    the document -- is not marked: there is no file to point at.
+    """
+    text = _docx_paragraph(node)
+    marks: list[str] = []
+    for ole in node.iter(f"{_O}OLEObject"):
+        name = attached.get(ole.get(f"{_DOC_R}id") or "")
+        if name is None:
+            continue
+        kind = ole.get("ProgID")
+        marks.append(f"[enclosed object: {name}" + (f" ({kind})" if kind else "") + "]")
+    return " ".join(part for part in (text, *marks) if part)
+
+
 # A clause heading is a SHORT line that opens with its number. Long numbered
 # lines are list items, and counting them as headings only makes the clauses
 # finer -- which makes the report below fire more easily, not less, so the
@@ -518,6 +548,11 @@ def _read_docx(path: pathlib.Path) -> Ingested:
             pictures = sorted(n for n in names if n.startswith("word/media/"))
             enclosed = {n: zf.read(n) for n in embedded
                         if n.lower().endswith((".xlsx", ".pptx"))}
+            # Which enclosed file each object in the body refers to, by the name
+            # the file is carried under below.
+            attached = {rid: posixpath.basename(part)
+                        for rid, (_kind, part) in _related(zf, "word/document.xml").items()
+                        if part in embedded}
     except zipfile.BadZipFile as exc:
         raise IngestError(f"{path}: not a readable document ({exc})") from exc
 
@@ -525,11 +560,11 @@ def _read_docx(path: pathlib.Path) -> Ingested:
     for node in body.iter():
         if node.tag == f"{_W}p":
             # A paragraph inside a table cell is emitted by the table branch.
-            lines.append(_docx_paragraph(node))
+            lines.append(_docx_text(node, attached))
         elif node.tag == f"{_W}tbl":
             for tr in node.iter(f"{_W}tr"):
                 cells = [
-                    " ".join(_docx_paragraph(p) for p in tc.iter(f"{_W}p")).strip()
+                    " ".join(_docx_text(p, attached) for p in tc.iter(f"{_W}p")).strip()
                     for tc in tr.iter(f"{_W}tc")
                 ]
                 lines.append("| " + " | ".join(cells) + " |")

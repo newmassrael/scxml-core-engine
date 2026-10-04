@@ -1431,6 +1431,16 @@ and belongs to its pack or its owner, not here. What cannot be placed is counted
 and said, never dropped: a floating or grouped picture, a chart or a shape, a
 rich value that is not a picture, a drawing that cannot be parsed.
 
+**An enclosed file is marked where it was attached.** The rows of an enclosed file
+are carried below the body, under its name, which used to leave "the limits are in
+the attached sheet" and the sheet it means apart: with several enclosed files
+nothing said which one a clause handed its requirement to. Where an object sits
+in the text the paragraph now says `[enclosed object: <name> (<kind>)]`, in a
+table cell inside its row, by the name the file is carried under below -- so a
+reader taking one slice of a long specification can tell which enclosed files
+belong to it. An object that names no enclosed file (a picture of an equation, a
+reference the document does not declare) is not marked.
+
 **A picture is not read, and the report says where the unread ones sit.** This
 core makes no model calls, so it cannot say what an image shows. But the count
 alone -- "71 pictures were not read" -- leaves two piles a person cannot tell
