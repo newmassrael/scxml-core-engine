@@ -362,7 +362,70 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             _host_inv_params[_host_inv_param_count].value = _host_inv_nl_value_{{ loop.index0 }};
             _host_inv_param_count++;
 {% endfor %}
-{% if invoke_info.invoke_id in host_invoke_request_checks %}
+{% if static_datamodel %}
+            /* SCE Accepted Subset §2.15 + §scxml-6.4.1: under `sce-static` each
+               `<param>`'s value is native code (`Param::native_value`) read from
+               the machine's own fields when the invocation starts, with no script
+               engine to ask. It crosses twice, as the text a host's `params`
+               carries and as a JSON value of the request's event data, and both
+               are rendered from the one typed value. §scxml-5.7.1: a value that
+               cannot be computed is reported and its pair left out, and the
+               invocation still starts with the others. */
+            char _host_inv_event_data[SCE_MAX_DATA_LEN];
+            _host_inv_event_data[0] = '\0';
+{% if payload_params %}
+            char _host_inv_texts[{{ invoke_info.params | length }}][SCE_MAX_DATA_LEN];
+            sce_forge_wire_t _host_inv_wire;
+            sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(_host_inv_event_data));
+{% endif %}
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+            _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
+            _host_inv_params[_host_inv_param_count].value = "{{ param.static_value | escape_c }}";
+            _host_inv_param_count++;
+{% if not param.envelope_metadata %}
+            sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"",
+                                sce_forge_wire_string("{{ param.static_value | escape_c }}"));
+{% endif %}
+{% elif param.native_value %}
+            {
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                const sce_forge_wire_value_t sce_value = {{ param.native_value }};
+                if (!sce_failure_.failed
+                    && sce_forge_wire_text(sce_value, _host_inv_texts[{{ loop.index0 }}], sizeof(_host_inv_texts[{{ loop.index0 }}]))) {
+                    _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
+                    _host_inv_params[_host_inv_param_count].value = _host_inv_texts[{{ loop.index0 }}];
+                    _host_inv_param_count++;
+{% if not param.envelope_metadata %}
+                    sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
+{% endif %}
+                } else {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+{% endif %}
+                }
+            }
+{% else %}
+{% if 'error.execution' in model.events %}
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> <param name='{{ param.name | escape_c }}'> names no location");
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if payload_params %}
+            if (!sce_forge_wire_end(&_host_inv_wire)) {
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke>'s request does not fit the event's data, so nothing was started");
+{% endif %}
+                continue;
+            }
+{% endif %}
+{% elif invoke_info.invoke_id in host_invoke_request_checks %}
 {% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] %}
             /* SCE Accepted Subset 2.12: `sce:request` makes the params a
                record, so each value is held to its field here, where the
@@ -395,7 +458,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% else %}
 {{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ', '', record_pairs) -}}
 {% endif %}
-{% if record_pairs %}
+{% if static_datamodel %}
+{# The event data was written with the params above. #}
+{% elif record_pairs %}
             char _host_inv_event_data[SCE_MAX_DATA_LEN];
             _host_inv_event_data[0] = '\0';
             if (luaL_dostring(sm->L,

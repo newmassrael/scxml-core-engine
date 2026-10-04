@@ -2671,6 +2671,50 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15: the `<param>`s of an `<invoke>` the host serves,
+    # in a `datamodel="sce-static"` machine — typed expressions read from the
+    # machine's own fields when the invocation starts. The invoke-only document
+    # the saved-state suites use, generated with the same `--host-invoker`
+    # declaration the Rust and Kotlin channels pass. Linked WITHOUT
+    # `sce_c_scripting` and `lua54`: the machine has no script engine, so the link
+    # is the proof.
+    sce_generate_static_integration_c_test(statechart_static_host_invoke
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"
+        HOST_INVOKER x-sce-host
+    )
+    # A value that cannot be computed is left out and reported (W3C SCXML 5.7.1):
+    # a document of this channel alone, beside the C tests.
+    sce_generate_static_integration_c_test(static_host_invoke_overflow
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/static_host_invoke_overflow/static_host_invoke_overflow.scxml"
+        HOST_INVOKER x-sce-host
+    )
+    add_executable(sce_c_integration_static_host_invoke
+        integration/test_static_host_invoke.c
+        ${INTEGRATION_C_TEST_statechart_static_host_invoke_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_invoke_overflow_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_invoke PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_invoke PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_host_invoke PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_invoke
+        COMMAND sce_c_integration_static_host_invoke
+    )
+    set_tests_properties(c11_integration_static_host_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.2.4 + §scxml-6.3: the delay side of the same surface. A separate
     # document rather than a `delay` added to the one above, because that one is
     # driven with `_step` and this one can only be driven with `_tick`: folding

@@ -165,6 +165,36 @@ static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce
     }
 }
 
+/* The text a value crosses as where a request carries it as text — a host's
+ * `params` — written into `buf` of `cap` bytes: `true` / `false` for a bool, the
+ * decimal digits of an integer, and a string as itself. False when it did not
+ * fit, and `buf` then holds the empty string, never a truncated value. */
+static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, size_t cap) {
+    int written = 0;
+    if (cap == 0u) {
+        return false;
+    }
+    switch (value.kind) {
+    case SCE_FORGE_WIRE_BOOL:
+        written = snprintf(buf, cap, "%s", value.as.b ? "true" : "false");
+        break;
+    case SCE_FORGE_WIRE_INT:
+        written = snprintf(buf, cap, "%lld", (long long)value.as.i);
+        break;
+    case SCE_FORGE_WIRE_UINT:
+        written = snprintf(buf, cap, "%llu", (unsigned long long)value.as.u);
+        break;
+    case SCE_FORGE_WIRE_STRING:
+        written = snprintf(buf, cap, "%s", value.as.s);
+        break;
+    }
+    if (written < 0 || (size_t)written >= cap) {
+        buf[0] = '\0';
+        return false;
+    }
+    return true;
+}
+
 /* Finish the object. False when it did not fit the buffer, which then holds `{}`. */
 static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {
     if (!w->overflow) {

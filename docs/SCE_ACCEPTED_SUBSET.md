@@ -3314,10 +3314,12 @@ algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools and enums, a list of integers, bools or
 such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
-processor with its `<param>`s, and an `<invoke type="scxml">` of a child that
-declares no `<sce:action>`, handed numbers, bools and strings. A real, bytes and a record
+processor with its `<param>`s, an `<invoke type="scxml">` of a child that
+declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
+the host serves (`--host-invoker`) with its `<param>`s. A real, bytes and a record
 with a string field, a list of reals, a `<send>` with a `<content>` or to
-another processor, an `<invoke>` the host runs, a hybrid or a mesh one, a final's
+another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` of a type the
+host was not declared to serve, a final's
 `<donedata>` with a `<content>` and a
 transition on an event whose payload carries a bytes or enum field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
@@ -3450,7 +3452,22 @@ parent that invokes one is refused by name. `test_static_invoke.c` drives
 counterpart, since a C machine is not saved) and `static_invoke_entry`, which
 sits beside the C++ suite's own fixtures and whose child reads in its `<onentry>`
 what it was handed, sends its parent from there, and is handed a value that
-overflows; the string fixture `static_invoke_string` is driven there too. A
+overflows; the string fixture `static_invoke_string` is driven there too. An
+`<invoke>` the host serves is written into the request when the invocation
+starts, each `<param>` computed from the machine's fields into a typed local with
+the failure flag every operation has: the value crosses as the text of the
+request's `params` (`sce_forge_wire_text` — `true` / `false`, decimal digits, a
+string as itself) and as a pair of the JSON object the request's `event_data` is
+(`sce_forge_wire_pair`, which the `<donedata>` and the `<send>` use), so the
+host's own copy of the pairs and the one it forwards are one value rendered twice.
+A value that failed is reported and left out of both, and the invocation still
+starts with the others (5.7.1); a request whose event data does not fit its buffer
+starts nothing. `test_static_host_invoke.c` drives `statechart_static_host_invoke`
+for the value on the wire and `static_host_invoke_overflow`, a document of this
+channel kept beside its tests, for the pair a failed computation leaves out. The
+`<send>` the host serves is not lowered here yet, and
+`statechart_static_host_params`, which has both, is the document the other five
+channels drive. A
 `--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own

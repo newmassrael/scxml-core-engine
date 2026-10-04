@@ -3593,9 +3593,11 @@ impl CTarget {
     /// hands a static child its parent's values between the two steps its
     /// start takes (§scxml-6.4.1). What the child cannot be started without is
     /// refused here, by name: the host's act table of a child that declares
-    /// `<sce:action>`s, which the parent has none to give it.
+    /// `<sce:action>`s, which the parent has none to give it. An `<invoke>` the
+    /// host serves is lowered: its `<param>`s are written into the request from
+    /// the machine's own fields (`sce/forge/wire.h`), as a final's are.
     fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
-        if let Some(other) = unlowered_invoke(invokes, false) {
+        if let Some(other) = unlowered_invoke(invokes, true) {
             return Some(other);
         }
         invokes.iter().find_map(|invoke| match invoke {

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `<param>` of an
+  `<invoke>` the host serves whose value cannot be computed is the evaluation that
+  failed (W3C SCXML 5.7.1): `error.execution` is raised, that one pair is left out
+  of the request, and the invocation still starts with the others.
+
+  `ok` is `count + 1` and crosses as 4, and `flag` is `count > 2` and crosses as
+  `true`: the text of a bool is the word, in lower case, as on every backend.
+  `boom` is `count * 2000000000`, which a
+  32-bit field cannot hold: the checked multiplication fails. `errors` counts the
+  `error.execution` the document took, so a pair dropped in silence is told from
+  one reported, and a failed value written anyway (a zero) from one left out.
+
+  A document of the C channel alone: the Rust, Kotlin, Go, C++ and Python
+  channels hold the same two rules in `statechart_static_host_params.scxml`, which
+  also sends to the host, and C11 serves the invoke and not yet that send. Kept
+  beside the C tests so that no regeneration script that reads another input root
+  restamps the trees generated from it.
+
+  Generated with the invoker declaration naming the type x-sce-host
+  (backends/c/tests/CMakeLists.txt names the flag).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="static_host_invoke_overflow">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="3"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="start" target="working"/>
+  </state>
+
+  <state id="working">
+    <invoke type="x-sce-host" id="h">
+      <param name="ok" expr="count + 1"/>
+      <param name="flag" expr="count &gt; 2"/>
+      <param name="boom" expr="count * 2000000000"/>
+    </invoke>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

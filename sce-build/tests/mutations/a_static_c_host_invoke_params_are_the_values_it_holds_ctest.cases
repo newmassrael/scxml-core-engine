@@ -1,0 +1,61 @@
+# Mutation cases for the `<param>`s of an `<invoke>` the host serves, in a
+# `datamodel="sce-static"` machine generated as C (docs/SCE_ACCEPTED_SUBSET.md
+# §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_host_invoke_params_are_the_values_it_holds_ctest.cases`.
+#
+# A `<param expr>` of such a machine is C the lowering wrote, read from the
+# machine's own fields when the invocation starts, and the template only places it:
+# the value goes into the request twice, as the text a host's `params` carries
+# (`sce_forge_wire_text`) and as a pair of the JSON object the request's event data
+# is (`sce_forge_wire_pair`). A value that cannot be computed — a checked
+# multiplication that overflows — is the evaluation that failed (W3C SCXML 5.7.1):
+# the pair is left out of both and `error.execution` is raised, while the
+# invocation still starts. The values those decide are the ones
+# `backends/c/tests/integration/test_static_host_invoke.c` states.
+#
+# What is easy to get wrong and reads as success: the params a host reads are
+# right while the event data it forwards is `{}`, a pair written with the zero of a
+# failed value is a request that still looks complete, and a pair dropped without a
+# word is one that does too. The test reads the event data and the params
+# separately, and `errors` counts the reports the document took.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_host_invoke$'
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/integration/test_static_host_invoke.c backends/c/tests/integration_resources/static_host_invoke_overflow/static_host_invoke_overflow.scxml sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
+
+# ── The request carries the value twice ────────────────────────────
+
+mutation_case "a param reaches the host's event data not at all" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "                    sce_forge_wire_pair(&_host_inv_wire, \"\\\"{{ param.name | escape_json_string | escape_c }}\\\"\", sce_value);",
+     "                    (void)sce_value;")
+PY
+
+# ── A value that cannot be computed is left out ────────────────────
+
+mutation_case "a value that failed is written into the request anyway" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "                if (!sce_failure_.failed\n                    && sce_forge_wire_text(",
+     "                if (true\n                    && sce_forge_wire_text(")
+PY
+
+# ── ... and reported ───────────────────────────────────────────────
+
+mutation_case "a value that failed is left out without a word" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "{% if 'error.execution' in model.events %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate\");",
+     "{% if false %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate\");")
+PY
+
+# ── The text is the value, in full ─────────────────────────────────
+
+mutation_case "a bool crosses as text with a capital" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"true\" : \"false\");",
+     "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"True\" : \"False\");")
+PY
