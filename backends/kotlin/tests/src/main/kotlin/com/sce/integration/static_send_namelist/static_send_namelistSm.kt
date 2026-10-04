@@ -2,25 +2,33 @@
 // source-hash: 847498b6cf4f451a9956bbd692f6e458084038666b5c0a7574591270ba642957
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_send_namelist.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_payload_enum.scxml:15 :: _machine
+// SCE-MAP: static_send_namelist.scxml:13 :: _machine
 
-package com.sce.integration.static_payload_enum
+package com.sce.integration.static_send_namelist
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticPayloadEnumState : State {
-    data object Browsing : StaticPayloadEnumState
+sealed interface StaticSendNamelistState : State {
+    data object Viewing : StaticSendNamelistState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticPayloadEnumEvent : Event {
-    sealed interface View : StaticPayloadEnumEvent {
+sealed interface StaticSendNamelistEvent : Event {
+    sealed interface Error : StaticSendNamelistEvent {
+        data object Execution : Error
+    }
+    data object Pick : StaticSendNamelistEvent
+    sealed interface Send : StaticSendNamelistEvent {
+        data object Mixed : Send
+        data object Names : Send
+    }
+    sealed interface View : StaticSendNamelistEvent {
         data object Shown : View
     }
 }
@@ -28,18 +36,18 @@ sealed interface StaticPayloadEnumEvent : Event {
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StaticPayloadEnumPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StaticSendNamelistPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StaticPayloadEnumViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
+// StaticSendNamelistViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `view.shown`. Consumers inject it via the `raiseViewShown` seam
 // on the machine — they never name this class directly.
-data class StaticPayloadEnumViewShownPayload(val layout: StaticPayloadEnumViewModeEnum, val zoom: UByte)
+data class StaticSendNamelistViewShownPayload(val layout: StaticSendNamelistViewModeEnum, val zoom: UByte)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
 /** SCE Accepted Subset §2.15: an `enum:ViewMode` datamodel value. */
-enum class StaticPayloadEnumViewModeEnum(val declaredName: String) {
+enum class StaticSendNamelistViewModeEnum(val declaredName: String) {
     MONTH("month"),
     WEEK("week"),
     DAY("day"),
@@ -50,7 +58,7 @@ enum class StaticPayloadEnumViewModeEnum(val declaredName: String) {
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): StaticPayloadEnumViewModeEnum {
+        fun fromSaved(value: Any?, what: String): StaticSendNamelistViewModeEnum {
             val declared = SavedValues.string(value, what)
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of ViewMode")
@@ -59,21 +67,24 @@ enum class StaticPayloadEnumViewModeEnum(val declaredName: String) {
 }
 // --- State Machine (W3C SCXML) ---
 
-class StaticPayloadEnumStateMachine(
-) : StateMachineEngine<StaticPayloadEnumState, StaticPayloadEnumEvent>() {
+class StaticSendNamelistStateMachine(
+) : StateMachineEngine<StaticSendNamelistState, StaticSendNamelistEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.MONTH
+    var layout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.WEEK
         private set
     /** W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`). */
-    var zoom: UByte = 0.toUByte()
+    var zoom: UByte = 3.toUByte()
         private set
-    /** W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`). */
-    var agenda: Boolean = false
+    /** W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`). */
+    var received: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.MONTH
         private set
-    /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
+    var level: UByte = 0.toUByte()
+        private set
+    /** W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`). */
+    var deliveries: UInt = 0.toUInt()
         private set
 
     /**
@@ -83,23 +94,24 @@ class StaticPayloadEnumStateMachine(
      */
     class InvokeParams {
         var zoom: UByte? = null
-        var agenda: Boolean? = null
-        var shown: UInt? = null
+        var level: UByte? = null
+        var deliveries: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
         params.zoom?.let { zoom = it }
-        params.agenda?.let { agenda = it }
-        params.shown?.let { shown = it }
+        params.level?.let { level = it }
+        params.deliveries?.let { deliveries = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
-        val layout: StaticPayloadEnumViewModeEnum,
+        val layout: StaticSendNamelistViewModeEnum,
         val zoom: UByte,
-        val agenda: Boolean,
-        val shown: UInt,
+        val received: StaticSendNamelistViewModeEnum,
+        val level: UByte,
+        val deliveries: UInt,
     )
 
     /**
@@ -110,7 +122,7 @@ class StaticPayloadEnumStateMachine(
      * configuration is not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticPayloadEnumState>,
+        val configuration: Set<StaticSendNamelistState>,
         val data: Data,
         val truncated: Boolean,
     )
@@ -118,8 +130,9 @@ class StaticPayloadEnumStateMachine(
     private fun currentData(): Data = Data(
         layout = layout,
         zoom = zoom,
-        agenda = agenda,
-        shown = shown,
+        received = received,
+        level = level,
+        deliveries = deliveries,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -146,7 +159,7 @@ class StaticPayloadEnumStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f"
+    val savedShape: String = "4c5fcd09ccb548a79be78a0a5ea36c3c9f17a5dfb4706bc3b43fd85462ba40d9"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -164,8 +177,9 @@ class StaticPayloadEnumStateMachine(
         linkedMapOf(
             "layout" to layout.toSaved(),
             "zoom" to SavedValues.of(zoom),
-            "agenda" to SavedValues.of(agenda),
-            "shown" to SavedValues.of(shown),
+            "received" to received.toSaved(),
+            "level" to SavedValues.of(level),
+            "deliveries" to SavedValues.of(deliveries),
         ),
         wallNowMs,
     )
@@ -191,14 +205,16 @@ class StaticPayloadEnumStateMachine(
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
-        val saved1 = StaticPayloadEnumViewModeEnum.fromSaved(saved.variable("layout"), "layout")
+        val saved1 = StaticSendNamelistViewModeEnum.fromSaved(saved.variable("layout"), "layout")
         val saved2 = SavedValues.uint8(saved.variable("zoom"), "zoom")
-        val saved3 = SavedValues.bool(saved.variable("agenda"), "agenda")
-        val saved4 = SavedValues.uint32(saved.variable("shown"), "shown")
+        val saved3 = StaticSendNamelistViewModeEnum.fromSaved(saved.variable("received"), "received")
+        val saved4 = SavedValues.uint8(saved.variable("level"), "level")
+        val saved5 = SavedValues.uint32(saved.variable("deliveries"), "deliveries")
         layout = saved1
         zoom = saved2
-        agenda = saved3
-        shown = saved4
+        received = saved3
+        level = saved4
+        deliveries = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -208,7 +224,7 @@ class StaticPayloadEnumStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingViewShownPayload: StaticPayloadEnumViewShownPayload? = null
+    private var pendingViewShownPayload: StaticSendNamelistViewShownPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -218,16 +234,16 @@ class StaticPayloadEnumStateMachine(
     // EventPayload.Refusal, which the engine reports as error.execution. Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(event: StaticPayloadEnumEvent, metadata: EventMetadata) {
+    override fun populateTypedPayload(event: StaticSendNamelistEvent, metadata: EventMetadata) {
         pendingViewShownPayload = null
         when (val tp = metadata.typedPayload) {
-            is StaticPayloadEnumViewShownPayload -> pendingViewShownPayload = tp
+            is StaticSendNamelistViewShownPayload -> pendingViewShownPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == StaticPayloadEnumEvent.View.Shown) {
+                if (event == StaticSendNamelistEvent.View.Shown) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewShownPayload = StaticPayloadEnumViewShownPayload(fields.string("layout").let { name -> StaticPayloadEnumViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewShownPayload = StaticSendNamelistViewShownPayload(fields.string("layout").let { name -> StaticSendNamelistViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
                 }
             }
         }
@@ -236,12 +252,12 @@ class StaticPayloadEnumStateMachine(
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `view.shown` — binds the event name and the payload field values in one call.
-    fun raiseViewShown(layout: StaticPayloadEnumViewModeEnum, zoom: UByte) {
+    fun raiseViewShown(layout: StaticSendNamelistViewModeEnum, zoom: UByte) {
         send(
-            StaticPayloadEnumEvent.View.Shown,
+            StaticSendNamelistEvent.View.Shown,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticPayloadEnumViewShownPayload(layout, zoom),
+                typedPayload = StaticSendNamelistViewShownPayload(layout, zoom),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
@@ -252,7 +268,7 @@ class StaticPayloadEnumStateMachine(
     }
 
 
-    override val initialState: StaticPayloadEnumState = StaticPayloadEnumState.Browsing
+    override val initialState: StaticSendNamelistState = StaticSendNamelistState.Viewing
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -271,57 +287,83 @@ class StaticPayloadEnumStateMachine(
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<StaticPayloadEnumState, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<StaticSendNamelistState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<StaticPayloadEnumState, HistoryId>> =
-            listOf(StateTarget(StaticPayloadEnumState.Browsing))
+        val documentInitialTargetList: List<EntryTarget<StaticSendNamelistState, HistoryId>> =
+            listOf(StateTarget(StaticSendNamelistState.Viewing))
 
-        // W3C SCXML 3.13: browsing's transition 0, as the microstep reads it.
-        val transitionBrowsingAt0 = EnabledTransition<StaticPayloadEnumState, HistoryId>(
-            StaticPayloadEnumState.Browsing,
+        // W3C SCXML 3.13: viewing's transition 0, as the microstep reads it.
+        val transitionViewingAt0 = EnabledTransition<StaticSendNamelistState, HistoryId>(
+            StaticSendNamelistState.Viewing,
             emptyList(),
             0,
             hasActions = true,
             isInternal = true,
         )
 
-        // W3C SCXML 3.13: browsing's transition 1, as the microstep reads it.
-        val transitionBrowsingAt1 = EnabledTransition<StaticPayloadEnumState, HistoryId>(
-            StaticPayloadEnumState.Browsing,
+        // W3C SCXML 3.13: viewing's transition 1, as the microstep reads it.
+        val transitionViewingAt1 = EnabledTransition<StaticSendNamelistState, HistoryId>(
+            StaticSendNamelistState.Viewing,
             emptyList(),
             1,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: viewing's transition 2, as the microstep reads it.
+        val transitionViewingAt2 = EnabledTransition<StaticSendNamelistState, HistoryId>(
+            StaticSendNamelistState.Viewing,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: viewing's transition 3, as the microstep reads it.
+        val transitionViewingAt3 = EnabledTransition<StaticSendNamelistState, HistoryId>(
+            StaticSendNamelistState.Viewing,
+            emptyList(),
+            3,
             hasActions = true,
             isInternal = true,
         )
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticPayloadEnumState? = when (stateId) {
-        "browsing" -> StaticPayloadEnumState.Browsing
+    override fun resolveState(stateId: String): StaticSendNamelistState? = when (stateId) {
+        "viewing" -> StaticSendNamelistState.Viewing
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticPayloadEnumState): String = when (state) {
-        is StaticPayloadEnumState.Browsing -> "browsing"
+    override fun stateIdOf(state: StaticSendNamelistState): String = when (state) {
+        is StaticSendNamelistState.Viewing -> "viewing"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: StaticPayloadEnumState): Int = when (state) {
-        is StaticPayloadEnumState.Browsing -> 0
+    override fun documentOrderOf(state: StaticSendNamelistState): Int = when (state) {
+        is StaticSendNamelistState.Viewing -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticPayloadEnumEvent? = when (name) {
-        "view.shown" -> StaticPayloadEnumEvent.View.Shown
+    override fun resolveEventByName(name: String): StaticSendNamelistEvent? = when (name) {
+        "error.execution" -> StaticSendNamelistEvent.Error.Execution
+        "pick" -> StaticSendNamelistEvent.Pick
+        "send.mixed" -> StaticSendNamelistEvent.Send.Mixed
+        "send.names" -> StaticSendNamelistEvent.Send.Names
+        "view.shown" -> StaticSendNamelistEvent.View.Shown
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticPayloadEnumEvent): String? = when (event) {
-        is StaticPayloadEnumEvent.View.Shown -> "view.shown"
+    override fun eventNameOf(event: StaticSendNamelistEvent): String? = when (event) {
+        is StaticSendNamelistEvent.Error.Execution -> "error.execution"
+        is StaticSendNamelistEvent.Pick -> "pick"
+        is StaticSendNamelistEvent.Send.Mixed -> "send.mixed"
+        is StaticSendNamelistEvent.Send.Names -> "send.names"
+        is StaticSendNamelistEvent.View.Shown -> "view.shown"
     }
 
 
@@ -334,72 +376,109 @@ class StaticPayloadEnumStateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: StaticPayloadEnumState,
-        event: StaticPayloadEnumEvent?
-    ): EnabledTransition<StaticPayloadEnumState, HistoryId>? = when (state) {
-        is StaticPayloadEnumState.Browsing -> when {
-            event is StaticPayloadEnumEvent.View.Shown && pendingViewShownPayload != null && (pendingViewShownPayload!!.layout == StaticPayloadEnumViewModeEnum.AGENDA_LIST) -> transitionBrowsingAt0
-            event is StaticPayloadEnumEvent.View.Shown -> transitionBrowsingAt1
+        state: StaticSendNamelistState,
+        event: StaticSendNamelistEvent?
+    ): EnabledTransition<StaticSendNamelistState, HistoryId>? = when (state) {
+        is StaticSendNamelistState.Viewing -> when {
+            event is StaticSendNamelistEvent.Pick -> transitionViewingAt0
+            event is StaticSendNamelistEvent.Send.Names -> transitionViewingAt1
+            event is StaticSendNamelistEvent.Send.Mixed -> transitionViewingAt2
+            event is StaticSendNamelistEvent.View.Shown -> transitionViewingAt3
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_payload_enum.scxml:15 :: _machine
-    override fun onEntry(state: StaticPayloadEnumState, isDefaultEntry: Boolean) {
+    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
+    override fun onEntry(state: StaticSendNamelistState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticPayloadEnumState.Browsing -> {
-                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
+            is StaticSendNamelistState.Viewing -> {
+                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_payload_enum.scxml:15 :: _machine
-    override fun onExit(state: StaticPayloadEnumState) {
+    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
+    override fun onExit(state: StaticSendNamelistState) {
         when (state) {
-            is StaticPayloadEnumState.Browsing -> {
-                // SCE-MAP: static_payload_enum.scxml:25 :: browsing :: _state_body
+            is StaticSendNamelistState.Viewing -> {
+                // SCE-MAP: static_send_namelist.scxml:24 :: viewing :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_payload_enum.scxml:15 :: _machine
-    override fun executeTransitionContent(source: StaticPayloadEnumState, transitionIndex: Int) {
+    // SCE-MAP: static_send_namelist.scxml:13 :: _machine
+    override fun executeTransitionContent(source: StaticSendNamelistState, transitionIndex: Int) {
         when (source) {
-        is StaticPayloadEnumState.Browsing -> when (transitionIndex) {
+        is StaticSendNamelistState.Viewing -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_payload_enum.scxml:26 :: browsing :: _transition_0
-                if (pendingViewShownPayload == null) {
-                    return
-                }
+                // SCE-MAP: static_send_namelist.scxml:25 :: viewing :: _transition_0
 
-            agenda = true
+            layout = StaticSendNamelistViewModeEnum.AGENDA_LIST
 
-            layout = pendingViewShownPayload!!.layout
-
-            zoom = pendingViewShownPayload!!.zoom
-
-            if (try { shown = com.sce.forge.runtime.SceChecked.add(shown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
+            zoom = 9.toUByte()
             }
             1 -> {
-                // SCE-MAP: static_payload_enum.scxml:32 :: browsing :: _transition_1
+                // SCE-MAP: static_send_namelist.scxml:29 :: viewing :: _transition_1
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "layout", (layout).declaredName)
+
+            putParam(sendPayload, "zoom", (zoom).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            2 -> {
+                // SCE-MAP: static_send_namelist.scxml:32 :: viewing :: _transition_2
+
+
+            if (run send@{
+            var paramFailed = false
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "zoom", (com.sce.forge.runtime.SceChecked.add(zoom, 1.toUByte())).toLong())
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<send> <param name='zoom'> could not be read")
+                paramFailed = true
+            }
+
+            putParam(sendPayload, "layout", (layout).declaredName)
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2: send to this session's external queue
+            send(StaticSendNamelistEvent.View.Shown, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            3 -> {
+                // SCE-MAP: static_send_namelist.scxml:37 :: viewing :: _transition_3
                 if (pendingViewShownPayload == null) {
                     return
                 }
 
-            agenda = false
+            received = pendingViewShownPayload!!.layout
 
-            layout = pendingViewShownPayload!!.layout
+            level = pendingViewShownPayload!!.zoom
 
-            zoom = pendingViewShownPayload!!.zoom
-
-            if (try { shown = com.sce.forge.runtime.SceChecked.add(shown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { deliveries = com.sce.forge.runtime.SceChecked.add(deliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

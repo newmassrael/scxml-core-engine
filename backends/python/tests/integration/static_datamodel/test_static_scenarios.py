@@ -273,6 +273,13 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
 
 
+# The `namelist` of a `<send>` names variables the machine holds, each carried as
+# the pair `<param name="x" expr="x"/>` it abbreviates, an enum value among them
+# as the name its enum declares.
+def test_a_send_carries_the_variables_its_namelist_names() -> None:
+    replay("static_send_namelist")
+
+
 # A `<send>` hands its event the pairs of its `<param>`s, each read from the
 # machine's fields when the send runs; a pair whose value failed is left out, the
 # message still goes, and the receiver finds the field missing.

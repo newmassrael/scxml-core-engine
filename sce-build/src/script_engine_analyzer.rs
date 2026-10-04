@@ -179,10 +179,13 @@ impl ScriptEngineCauseKind {
             // A child session's `namelist` the model admits names variables
             // the child declares, and is lowered with its `<param>`s to values
             // read from the machine's fields (`static_lowering::lower_child_arguments`).
-            | C::StaticInvokeNamelist { .. } => true,
+            | C::StaticInvokeNamelist { .. }
+            // A `<send>`'s `namelist` names variables the machine holds, and
+            // is lowered as the `<param>`s it abbreviates
+            // (`Action::fold_namelist_into_params`).
+            | C::SendNamelist { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
-            | C::SendNamelist { .. }
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
             | C::CancelExpr { .. }

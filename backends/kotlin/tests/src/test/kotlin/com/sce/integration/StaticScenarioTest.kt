@@ -40,6 +40,7 @@ import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
+import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
@@ -502,6 +503,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `namelist` of a <send> names variables the machine holds, each carried
+    // as the pair `<param name="x" expr="x"/>` it abbreviates, an enum value
+    // among them as the name its enum declares.
+    @Test
+    fun staticSendNamelistCarriesTheVariablesItNames() {
+        val sm = StaticSendNamelistStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_namelist"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

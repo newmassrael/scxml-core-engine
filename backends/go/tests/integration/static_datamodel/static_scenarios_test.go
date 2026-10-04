@@ -53,6 +53,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
@@ -573,6 +574,21 @@ func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata_content", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// The `namelist` of a <send> names variables the machine holds, each carried as
+// the pair `<param name="x" expr="x"/>` it abbreviates, an enum value among
+// them as the name its enum declares.
+func TestASendCarriesTheVariablesItsNamelistNames(t *testing.T) {
+	policy := static_send_namelist.NewStaticSendNamelistPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_namelist", drive[static_send_namelist.StaticSendNamelistState, static_send_namelist.StaticSendNamelistEvent](&policy, map[string]func() any{
+		"layout":     func() any { return policy.Layout().String() },
+		"zoom":       func() any { return policy.Zoom() },
+		"received":   func() any { return policy.Received().String() },
+		"level":      func() any { return policy.Level() },
+		"deliveries": func() any { return policy.Deliveries() },
 	}))
 }
 

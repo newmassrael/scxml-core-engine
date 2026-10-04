@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -218,4 +218,20 @@ mutation_case "a param reads a payload that is not in scope" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        if crate::forge::expr::references_event_data_lexically(written)\n            && self.payload_schema.borrow().is_none()\n        {",
      "        if false {")
+PY
+
+# A `<send>`'s `namelist` is the params it abbreviates, held to the rule a param
+# is. The first mutant admits any name, so a variable with no wire spelling (or
+# none at all) reaches a backend; the second counts the `namelist` as an engine
+# need again, which the manifest of a pure-static machine would then deny.
+mutation_case "a namelist name is not judged" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                    self.wire_param(ctx, &namelist, \"<send>\", state)?;\n",
+     "                    let _ = (&namelist, ctx, state);\n")
+PY
+
+mutation_case "a namelist needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            | C::StaticInvokeNamelist { .. }\n            // A `<send>`'s `namelist` names variables the machine holds, and\n            // is lowered as the `<param>`s it abbreviates\n            // (`Action::fold_namelist_into_params`).\n            | C::SendNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n",
+     "            | C::StaticInvokeNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n            | C::SendNamelist { .. }\n")
 PY

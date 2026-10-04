@@ -106,6 +106,7 @@
 #include "static_record_list_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
@@ -961,6 +962,44 @@ static const record_variable_t wire_enum_records[] = {RECORD_ROW(static_wire_enu
 STATIC_SCENARIO(static_wire_enum, wire_enum_states, wire_enum_variables, static_wire_enum_text, no_lists,
                 wire_enum_records)
 
+// static_send_namelist: the `namelist` of a `<send>` names variables the machine
+// holds, each carried as the pair `<param name="x" expr="x"/>` it abbreviates —
+// an enum value as the name its enum declares, an integer as its number — and
+// read back through the schema.
+VARIABLE_READER(static_send_namelist, zoom)
+VARIABLE_READER(static_send_namelist, level)
+VARIABLE_READER(static_send_namelist, deliveries)
+
+static int64_t static_send_namelist_read_layout(const void *sm) {
+    return (int64_t)static_send_namelist_get_layout((const static_send_namelist_t *)sm);
+}
+
+static int64_t static_send_namelist_read_received(const void *sm) {
+    return (int64_t)static_send_namelist_get_received((const static_send_namelist_t *)sm);
+}
+
+static const char *static_send_namelist_text(void *sm, const char *name) {
+    const static_send_namelist_t *machine = (const static_send_namelist_t *)sm;
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(static_send_namelist_get_layout(machine));
+    }
+    if (strcmp(name, "received") == 0) {
+        return enum_view_mode_declared_name(static_send_namelist_get_received(machine));
+    }
+    return NULL;
+}
+
+static const name_value_t send_namelist_states[] = {
+    {"viewing", STATIC_SEND_NAMELIST_STATE_VIEWING},
+};
+static const variable_t send_namelist_variables[] = {
+    {"layout", static_send_namelist_read_layout},         {"zoom", static_send_namelist_read_zoom},
+    {"received", static_send_namelist_read_received},     {"level", static_send_namelist_read_level},
+    {"deliveries", static_send_namelist_read_deliveries},
+};
+STATIC_SCENARIO(static_send_namelist, send_namelist_states, send_namelist_variables, static_send_namelist_text,
+                no_lists, no_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -1089,6 +1128,7 @@ int main(void) {
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
+    bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

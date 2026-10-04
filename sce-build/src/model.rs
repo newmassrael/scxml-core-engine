@@ -731,6 +731,22 @@ impl Action {
         self.is_cpp_condition || self.is_kt_condition || !self.native_cond.is_empty()
     }
 
+    /// §scxml-6.2.4: a `<send>`'s `namelist`, each name as the
+    /// `<param name="x" expr="x"/>` it abbreviates, after the `<param>`s the
+    /// element writes, and the `namelist` itself cleared — so a backend that
+    /// reads one list of pairs reads them all, as it does for an
+    /// `<invoke>`'s ([`ScxmlInvokeInfo::arguments`]). A name carries no
+    /// position of its own: the attribute is the only place the model records.
+    pub fn fold_namelist_into_params(&mut self) {
+        let names = std::mem::take(&mut self.namelist);
+        self.params
+            .extend(names.split_whitespace().map(|name| Param {
+                name: name.to_string(),
+                expr: name.to_string(),
+                ..Param::default()
+            }));
+    }
+
     /// Which of this struct's fields each `action_type` actually uses.
     ///
     /// ⭐ Why this table exists. [`Action`] carries nine kinds of

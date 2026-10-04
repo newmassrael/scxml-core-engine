@@ -1,0 +1,24 @@
+{
+  "machine": "static_send_namelist",
+  "about": "The `namelist` of a <send> names variables the machine holds, each carried as the pair `<param name=\"x\" expr=\"x\"/>` it abbreviates and read when the send runs: `send.names` sends `view.shown` with `layout` (an enum value, crossing as the name its enum declares) and `zoom` (an integer), and the machine reads them back through the schema. `agenda_list` is spelled with an underscore: the wire carries the name the document wrote. `send.mixed` writes `layout` in the namelist and `zoom + 1` in a <param>: the pairs of both go in the one event. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been sent yet",
+      "expect": { "state": "viewing", "variables": { "layout": "week", "zoom": 3, "received": "month", "level": 0, "deliveries": 0 } } },
+
+    { "note": "the names cross as the values the variables hold",
+      "event": "send.names",
+      "expect": { "variables": { "received": "week", "level": 3, "deliveries": 1 } } },
+
+    { "note": "the variables change; nothing is sent",
+      "event": "pick",
+      "expect": { "variables": { "layout": "agenda_list", "zoom": 9, "received": "week", "level": 3, "deliveries": 1 } } },
+
+    { "note": "the values are read when the send runs: the underscore name crosses as written",
+      "event": "send.names",
+      "expect": { "variables": { "received": "agenda_list", "level": 9, "deliveries": 2 } } },
+
+    { "note": "a name of the namelist and a computed param make one event",
+      "event": "send.mixed",
+      "expect": { "variables": { "received": "agenda_list", "level": 10, "deliveries": 3 } } }
+  ]
+}

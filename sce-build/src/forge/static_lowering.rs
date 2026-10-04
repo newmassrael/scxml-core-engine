@@ -5074,6 +5074,10 @@ fn lower_action(
         // What a `<send>` carries is read from the machine's fields now, when
         // it runs (§scxml-6.2.3 evaluates its arguments once, at the send).
         "send" => {
+            // The names of a `namelist` are params like any other: one list of
+            // pairs is read from here on, each value as the machine holds it
+            // when the send runs.
+            action.fold_namelist_into_params();
             for param in &mut action.params {
                 lower_wire_param(param, ctx, renames, rewrites)?;
                 // A value read from the payload runs only for a delivery that

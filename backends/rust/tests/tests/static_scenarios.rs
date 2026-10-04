@@ -77,6 +77,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_real_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
+    StaticSendNamelistPersist, StaticSendNamelistPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
     StaticSendParamsPersist, StaticSendParamsPolicy,
 };
@@ -411,6 +414,20 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// The `namelist` of a <send> names variables the machine holds, each carried as
+// the pair `<param name="x" expr="x"/>` it abbreviates, an enum value among
+// them as the name its enum declares.
+#[test]
+fn static_send_namelist_carries_the_variables_it_names() {
+    replay(
+        Engine::new(StaticSendNamelistPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_namelist.json"
         ),
     );
 }

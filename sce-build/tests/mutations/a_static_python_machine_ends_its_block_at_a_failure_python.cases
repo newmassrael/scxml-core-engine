@@ -136,6 +136,20 @@ edit("sce-build/src/forge/static_lowering.rs",
      "")
 PY
 
+# ── A send's namelist is the params it abbreviates ─────────────────
+#
+# `static_send_namelist`: `namelist="layout zoom"` carries the two variables as
+# the pairs `<param name="layout" expr="layout"/>` and
+# `<param name="zoom" expr="zoom"/>`. A walk that leaves the names in the
+# `namelist` hands the templates a list of pairs with none of them in it, and the
+# receiver finds nothing of what was sent.
+
+mutation_case "a send's namelist is not folded into its params" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            action.fold_namelist_into_params();\n",
+     "")
+PY
+
 # ── A send param that failed is left out and the message goes ─────
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'

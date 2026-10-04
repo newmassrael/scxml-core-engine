@@ -1523,6 +1523,79 @@ fn a_param_reading_a_payload_that_is_not_in_scope_is_refused_on_its_line() {
     }
 }
 
+/// A `sce-static` machine whose entry (line 8) sends with `namelist`.
+fn sending_by_namelist(namelist: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry><send event="notify" namelist="{namelist}"/></onentry></state>"#
+    ))
+}
+
+#[test]
+fn a_send_namelist_names_variables_the_machine_holds() {
+    // Each name is the `<param name="x" expr="x"/>` it abbreviates, so a bool
+    // and a narrow integer cross as they do in a param.
+    let (ok, out) = run(&["check"], &sending_by_namelist("count ready"));
+    assert!(ok, "a namelist of variables is typed values:\n{out}");
+}
+
+#[test]
+fn a_send_namelist_is_lowered_to_the_pairs_it_abbreviates_and_needs_no_engine() {
+    // The names are read from the machine's fields when the send runs, as a
+    // `<param>`'s value is, so no engine evaluates them and the manifest says so.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &sending_by_namelist("count ready"),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a namelist of variables needs no script engine:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    for name in ["count", "ready"] {
+        assert!(
+            source.contains(&format!("Name: \"{name}\"")),
+            "`{name}` is carried as a pair of the event's data"
+        );
+    }
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no pair is read by an engine"
+    );
+}
+
+#[test]
+fn a_send_namelist_name_is_held_to_the_rule_a_param_is() {
+    // A name nothing declares reads no variable.
+    let (ok, out) = run(&["check"], &sending_by_namelist("count missing"));
+    assert!(!ok, "a name that is no variable is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+
+    // A 64-bit variable has no wire spelling every backend shares, and the
+    // refusal is placed at the attribute, which is where the name is written.
+    let document = sending_by_namelist("big").replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="big" sce:type="int64" expr="0"/>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+}
+
 // ── A `<donedata>` param is the same value on the same wire ─────────────
 
 /// A `sce-static` machine whose `<final>` (line 9) carries a `<donedata>`

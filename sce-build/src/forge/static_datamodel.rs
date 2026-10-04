@@ -58,6 +58,19 @@ impl<'a> WireParam<'a> {
         }
     }
 
+    /// A name of a `<send>`'s `namelist`: the variable it names, read as the
+    /// expression it is. The model records no position for a name, so a
+    /// refusal is placed at the attribute.
+    pub(crate) fn of_namelist_name(name: &'a str, action: &'a Action) -> Self {
+        Self {
+            name,
+            is_static_literal: false,
+            written: name,
+            spelling: action.spellings.get("namelist"),
+            source_location: None,
+        }
+    }
+
     /// §scxml-5.7 admits exactly one of `expr` and `location` on a donedata
     /// `<param>`; an `expr` that is empty is no expression, and falls to the
     /// `location` the same way [`Self::of_param`] does.
@@ -87,7 +100,6 @@ const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[
     ("send", "delayexpr"),
     ("send", "typeexpr"),
     ("send", "idlocation"),
-    ("send", "namelist"),
     ("cancel", "sendidexpr"),
 ];
 
@@ -794,8 +806,13 @@ impl<'a> Judge<'a> {
         if written.trim().is_empty() {
             return Ok(());
         }
-        let at = param.source_location;
-        let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
+        // A param is placed at its own element, a `namelist` name (which has
+        // none) at the attribute it is written in.
+        let (line, col) = match (param.source_location, spelling) {
+            (Some(at), _) => (at.line, at.col),
+            (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
+            (None, None) => (None, None),
+        };
         let construct = format!("<param name=\"{}\"> of {element}", param.name);
         if crate::forge::expr::references_event_data_lexically(written)
             && self.payload_schema.borrow().is_none()
@@ -986,6 +1003,13 @@ impl<'a> Judge<'a> {
             "send" => {
                 for param in &action.params {
                     self.wire_param(ctx, &WireParam::of_param(param), "<send>", state)?;
+                }
+                // A `namelist` name is the `<param name="x" expr="x"/>` it
+                // abbreviates ([`Action::fold_namelist_into_params`]), held to
+                // the rule a param is, and placed at the attribute.
+                for name in action.namelist.split_whitespace() {
+                    let namelist = WireParam::of_namelist_name(name, action);
+                    self.wire_param(ctx, &namelist, "<send>", state)?;
                 }
                 if !action.contentexpr.is_empty() {
                     return Err(self.untyped(

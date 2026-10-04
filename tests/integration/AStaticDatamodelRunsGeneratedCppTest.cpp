@@ -49,6 +49,7 @@
 #include "static_record_list_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
@@ -414,6 +415,22 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTex
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata_content", driver);
+}
+
+// The `namelist` of a `<send>` names variables the machine holds, each carried as
+// the pair `<param name="x" expr="x"/>` it abbreviates, an enum value among them
+// as the name its enum declares.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendCarriesTheVariablesItsNamelistNames) {
+    namespace E = G::static_send_namelist;
+    using Machine = E::static_send_namelist;
+    Driver<Machine> driver({
+        {"layout", [](const Machine &m) { return json(std::string(E::sceLogName(m.layout()))); }},
+        {"zoom", [](const Machine &m) { return json(m.zoom()); }},
+        {"received", [](const Machine &m) { return json(std::string(E::sceLogName(m.received()))); }},
+        {"level", [](const Machine &m) { return json(m.level()); }},
+        {"deliveries", [](const Machine &m) { return json(m.deliveries()); }},
+    });
+    replay("static_send_namelist", driver);
 }
 
 // A `<send>` hands its event the pairs of its `<param>`s, each computed from the
