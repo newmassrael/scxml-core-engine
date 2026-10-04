@@ -318,8 +318,15 @@ class _Drawn:
     unreadable: int = 0
 
 
-def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str) -> _Drawn:
+def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str, root) -> _Drawn:
     """Where the pictures of a sheet sit, as the cells they are anchored on.
+
+    `root` is the sheet's own XML. What the SHEET says it refers to is checked against what its
+    relationships list: the links are walked below, and a walk of the links alone cannot see a
+    drawing the sheet names and the links do not -- the relationship file is missing, or it is
+    there and has no entry for that id. Those read as a sheet with no pictures, and the cells
+    that held them as empty, with no word said (found by a review, 2026-10-05). A sheet that
+    names no drawing and has no links file is a plain sheet and says nothing.
 
     ⚠ A GRID CELL CAN BE A PICTURE. In a table of marks, whether a cell holds
     one is the datum: the text of the cell says '-' or 'O' and the picture
@@ -337,6 +344,13 @@ def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str) -> _Drawn:
     if not related.readable:
         # Whether the sheet has a drawing is not known, which is not the same as having none.
         drawn.unreadable += 1
+    else:
+        for reference in root.iter(f"{_XL}drawing"):
+            listed = related.get(reference.get(f"{_R}id") or "")
+            if listed is None or listed[0] != "drawing":
+                # The sheet names a drawing its links do not list (or list as something else):
+                # the pictures it held cannot be found.
+                drawn.unreadable += 1
     for kind, part in related.values():
         if kind != "drawing":
             continue
@@ -498,7 +512,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                         text = value.text or ""
                     if text.strip():
                         cells[_column(cell.get("r") or "")] = text.strip()
-            drawn = _drawn_on(book, inner, sheet)
+            drawn = _drawn_on(book, inner, sheet, root)
             loose += drawn.loose
             other += drawn.other
             unreadable += drawn.unreadable

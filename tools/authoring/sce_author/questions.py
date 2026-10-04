@@ -140,10 +140,9 @@ def _name_words(name: str) -> list[str]:
 
 def mentions(prose: Prose, names) -> bool:
     """Does this text name this thing, by identifier or in words?"""
-    body = prose.text
-    if any(n in body for n in names):
+    if prose.writes(names):
         return True
-    plain = [_IDENTIFIER.sub(" ", line).lower() for line in body.splitlines()]
+    plain = [_IDENTIFIER.sub(" ", line).lower() for line in prose.text.splitlines()]
     for name in names:
         words = _name_words(name)
         if not words:

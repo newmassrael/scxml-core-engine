@@ -12,7 +12,10 @@ from __future__ import annotations
 import pathlib
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
+
+# What `token` calls part of a name: a letter, a digit, an underscore.
+_IDENTIFIER_RUN = re.compile(r"[A-Za-z0-9_]+")
 
 
 @lru_cache(maxsize=None)
@@ -67,6 +70,37 @@ class Prose:
     @property
     def text(self) -> str:
         return "\n".join(s.text for s in self.sources)
+
+    @cached_property
+    def _identifiers(self) -> frozenset[str]:
+        """Every maximal run of identifier characters in the text, once."""
+        return frozenset(_IDENTIFIER_RUN.findall(self.text))
+
+    def writes(self, names) -> bool:
+        """Does this prose WRITE any of these names, as a whole identifier?
+
+        ⚠ Not `name in text`. A name that begins a longer one -- `In_SupplyMode` in
+        `In_SupplyModeExtended` -- is not written by the longer one's use. Three readers asked
+        the question as a substring and each was wrong in its own direction: `check` refused a
+        correct document for an input the specification never used, `brief` listed an address
+        as touched, and `questions` called an output mentioned and so did not ask about it.
+        This is the one place they ask it now.
+
+        A name made only of identifier characters is written exactly when it is one of the text's
+        maximal identifier runs, which is what `token` says and is a set lookup: the same question
+        over a specification with a million-character attachment would otherwise be a regular
+        expression over the whole text for every name of every address. A name with any other
+        character in it (a dot, a space) is asked of `token` itself.
+        """
+        found = self._identifiers
+        for name in names:
+            name = str(name)
+            if _IDENTIFIER_RUN.fullmatch(name):
+                if name in found:
+                    return True
+            elif token(name).search(self.text):
+                return True
+        return False
 
     def locate(self, needle: str) -> tuple[pathlib.Path, int] | None:
         """Which file and line first writes this, so a question can point at it."""

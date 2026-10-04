@@ -1086,18 +1086,20 @@ def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Findi
     driven = pack.examples.driven
     if not driven:
         return []
-    body = prose.text
     read: set = set()
     for rule in declared_inputs.values():
         if isinstance(rule, dict):
             read |= addresses_of(rule)
     plumbing = pack.conventions.infrastructure
+    # ⚠ "Names it" is a WHOLE identifier (`Prose.writes`), never a substring: a short name that
+    # begins a longer one the specification does use is not named by that use, and asking for
+    # its input refused a correct document (found by a review, 2026-10-05).
     missing = [entry for entry in pack.model.entries
                if entry.role == "input"
                and entry.address in driven
                and entry.address not in read
                and not any(entry.address.startswith(p) for p in plumbing)
-               and any(name in body for name in entry.names)]
+               and prose.writes(entry.names)]
     if not missing:
         return []
     listed = "; ".join(f"{e.address} (named {e.names[0]!r})" for e in missing[:_UNREAD_LISTED])

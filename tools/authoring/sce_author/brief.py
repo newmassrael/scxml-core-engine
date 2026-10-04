@@ -123,8 +123,7 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
     # untouched while the question class, which reads the text, correctly
     # said otherwise. A brief that contradicts the questions beside it is
     # worse than one that says less.
-    body = prose.text
-    touched = [e for e in model.entries if any(n in body for n in e.names)]
+    touched = [e for e in model.entries if prose.writes(e.names)]
 
     parts: list[str] = HEADER + [
         "## 1. Specification",
