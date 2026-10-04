@@ -5789,6 +5789,50 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
 {% endif %}
 }
 {% endif %}
+{% if static_datamodel and not has_native_actions %}
+
+/* §scxml-6.4.1: the two steps a parent starts this machine in when it is a
+   `datamodel="sce-static"` child (see the header). `_init_with_parent` cannot
+   serve: it zeroes the struct and enters at once, and it does not give the
+   variables their declared values — a script engine's datamodel seeds those,
+   and this machine has none. Construction is the one `_init` runs, with no
+   host wiring to install: the host started the parent, not this child. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       void *parent_sm,
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *invoke_id,
+                                       sce_clock_t clock) {
+{% if not model.needs_event_scheduler %}
+    (void)clock;
+{% endif %}
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+{% if model.may_address_parent %}
+    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
+       walk, for the reason `_init_with_parent` gives. */
+    sm->parent_sm = parent_sm;
+    sm->parent_dispatch = dispatch;
+    sce_copy_bounded_id(sm->invoke_id, invoke_id);
+{% else %}
+    (void)parent_sm;
+    (void)dispatch;
+    (void)invoke_id;
+{% endif %}
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm) {
+{% if model.needs_event_scheduler %}
+    /* §scxml-3.13: the entry walk is one turn, as `_init`'s is. */
+    bool _turn_opened = begin_turn(sm);
+{% endif %}
+    /* §scxml-D-interpret: the initial configuration is the entry set of the
+       document's initial transition, entered by §scxml-D-enterStates. The
+       macrostep that follows is the parent's to drive. */
+    enter_initial_configuration(sm);
+{% if model.needs_event_scheduler %}
+    end_turn(sm, _turn_opened);
+{% endif %}
+}
+{% endif %}
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {
     {% if model.invokes | scxml_family %}

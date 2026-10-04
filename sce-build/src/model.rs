@@ -1048,6 +1048,14 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_seed: String,
+    /// Codegen-internal: the backend's spelling of the type of the child
+    /// variable [`Self::native_seed`] lands in, for a backend that must name
+    /// the type of a value it holds while it learns whether it could be
+    /// computed — C11, which cannot ask an expression for its type. Empty
+    /// wherever [`Self::native_seed`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_seed_type: String,
     /// Codegen-internal: whether [`Self::native_value`] or
     /// [`Self::native_seed`] can fail — a checked integer operation. Then it
     /// is not an expression but one that must run where its failure is
@@ -1596,6 +1604,22 @@ pub struct InvokeSessionCommon {
     /// `child_needs_script_engine` is populated.
     #[serde(default)]
     pub child_needs_event_scheduler: bool,
+    /// Codegen-internal: the child is a `datamodel="sce-static"` document this
+    /// build read. A backend whose child is a value the parent holds, with no
+    /// constructor to give it the parent's `<param>`s, starts such a child in
+    /// two steps and hands the values over between them (§scxml-6.4.1) — C11.
+    /// Derived beside [`Self::child_static_variables`], from the same child
+    /// model, and outside the IR contract for the reason
+    /// [`Param::native_seed`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_is_static: bool,
+    /// Codegen-internal: the child declares `<sce:action>`s, which only a host
+    /// that supplies them can start. Not serialized: only the lowering that
+    /// refuses such a child reads it.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_declares_host_acts: bool,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {

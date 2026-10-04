@@ -2144,8 +2144,8 @@ fn page_lines(
 /// stated rather than silent: `field_suffix` and `state_name` on
 /// [`InvokeBase`](crate::model::InvokeBase), and `child_name`,
 /// `use_specific_event`, `child_needs_script_engine`,
-/// `child_has_send_to_parent`, `child_needs_event_scheduler` and
-/// `child_datamodel_vars` on
+/// `child_has_send_to_parent`, `child_needs_event_scheduler`,
+/// `child_is_static` and `child_datamodel_vars` on
 /// [`InvokeSessionCommon`](crate::model::InvokeSessionCommon). Every one
 /// is a codegen-facing conclusion SCE draws about the child — symbol
 /// naming, whether the child needs an engine — and not a thing the

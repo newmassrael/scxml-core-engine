@@ -2519,6 +2519,50 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # An `<invoke type="scxml">` of a `datamodel="sce-static"` machine: the
+    # child session starts, is handed the values of the invoke's `<param>`s
+    # before it enters its initial configuration, and its end reaches the parent
+    # as `done.invoke`. The first two documents are the ones the Rust, Kotlin
+    # and Go suites drive (and save and restore); the third sits beside the C++
+    # suite's own, for the reason `static_host_call_arguments` does. Each
+    # `<invoke>`'s child is a document the parent's generation writes beside it,
+    # which the staging declares from the generator's own plan.
+    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_params)
+        sce_generate_static_integration_c_test(${_STATIC_INVOKE_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_INVOKE_MACHINE}.scxml"
+        )
+    endforeach()
+    sce_generate_static_integration_c_test(static_invoke_entry
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/static_invoke_entry.scxml"
+    )
+    add_executable(sce_c_integration_static_invoke
+        integration/test_static_invoke.c
+        ${INTEGRATION_C_TEST_static_invoke_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_entry_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_invoke PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_invoke PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_invoke PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_invoke
+        COMMAND sce_c_integration_static_invoke
+    )
+    set_tests_properties(c11_integration_static_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.2: the resume seam — what `_init_at` accepts and what it
     # refuses. Not a fixture stem: it drives the two machines above rather than
     # adding a document of its own, because the claim is about a runtime door

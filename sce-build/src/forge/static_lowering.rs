@@ -3582,6 +3582,47 @@ impl CTarget {
         None
     }
 
+    /// The first of `invokes` that C11 has no lowering for yet. A child session
+    /// of `type="scxml"` is started by the machine's own invoke code, which
+    /// hands a static child its parent's values between the two steps its
+    /// start takes (§scxml-6.4.1). What the child cannot be started without is
+    /// refused here, by name: the host's act table of a child that declares
+    /// `<sce:action>`s, which the parent has none to give it, and a string handed
+    /// to a child's variable, whose bound the child's buffer would have to be
+    /// held to.
+    fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
+        if let Some(other) = unlowered_invoke(invokes) {
+            return Some(other);
+        }
+        for invoke in invokes {
+            let crate::model::Invoke::Scxml(info) = invoke else {
+                continue;
+            };
+            if info.common.child_declares_host_acts {
+                return Some(format!(
+                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
+                    info.common.base.invoke_id
+                ));
+            }
+            let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
+            for param in info.arguments() {
+                let held = declared
+                    .iter()
+                    .find(|v| v.id == param.name)
+                    .and_then(|v| v.value_type.as_ref())
+                    .and_then(|t| t.scalar());
+                if matches!(held, Some(SceType::String)) {
+                    return Some(format!(
+                        "a <param name=\"{}\"> handed to a string variable of the child of \
+                         <invoke id=\"{}\">",
+                        param.name, info.common.base.invoke_id
+                    ));
+                }
+            }
+        }
+        None
+    }
+
     /// The C type a value of `ty` is held in while it is computed. An enum's
     /// value has no inferred type of its own, and is held in an `int` — which
     /// the enumerated type takes back by assignment.
@@ -3735,8 +3776,8 @@ impl StaticTarget for CTarget {
                     ));
                 }
             }
-            if !state.invokes.is_empty() {
-                return Some("an <invoke>".to_string());
+            if let Some(other) = Self::unlowered_invoke(&state.invokes) {
+                return Some(other);
             }
             // The pairs of a `<donedata>` are written as the JSON object of the
             // done event's data from the machine's own fields; its `<content>` is
@@ -4795,15 +4836,22 @@ fn lower_child_arguments(
                 param.name
             ))
         };
-        let slot = declared
-            .iter()
-            .find(|v| v.id == param.name)
-            .and_then(crate::forge::static_datamodel::seed_slot)
-            .ok_or_else(|| refused("the child declares no variable it can be handed to".into()))?;
+        let variable = declared.iter().find(|v| v.id == param.name);
+        let (Some(slot), Some(held)) = (
+            variable.and_then(crate::forge::static_datamodel::seed_slot),
+            variable
+                .and_then(|v| v.value_type.as_ref())
+                .and_then(|t| t.scalar()),
+        ) else {
+            return Err(refused(
+                "the child declares no variable it can be handed to".into(),
+            ));
+        };
         let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
             .map_err(|r| refused(r.error.to_string()))?;
         rewrites.note(&written, spelling.as_ref(), &value.text);
         param.native_seed = value.text;
+        param.native_seed_type = target.scalar_type(held);
         param.native_fails = value.can_fail;
     }
     info.common.base.params = arguments;

@@ -1,0 +1,69 @@
+# Mutation cases for the child session of a `datamodel="sce-static"` machine
+# generated as C (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_child_is_handed_its_values_before_it_enters_ctest.cases`.
+#
+# A child is a struct its parent holds, so it has no constructor to be handed
+# the values of the parent's `<param>`s, and `_init` enters its initial
+# configuration at once. The parent starts a static child in two steps instead:
+# `_invoked_begin` (each variable at its declared value, the clock, the routing
+# to the parent), then the writes of the values the invoke hands over, then
+# `_invoked_enter` (the entry walk). The values those decide are the ones
+# `backends/c/tests/integration/test_static_invoke.c` states, over machines
+# generated from `static_invoke`, `static_invoke_params` and
+# `tests/integration/static_invoke_entry.scxml`.
+#
+# What is easy to get wrong and reads as success: a child entered BEFORE it is
+# handed its values still ends in `static_invoke_params`, whose child reads them
+# in a transition, after the parent has written them — only a child that reads
+# a handed value in its `<onentry>` tells the two apart, which is what
+# `static_invoke_entry` is for. And a value that failed written anyway is a
+# zero over the value the child's `<data>` gave it: the child still starts, and
+# only one that reads that value as it was declared notices.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_invoke$'
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integration/static_invoke_entry.scxml
+
+# ── The child's entry walk runs after it was handed its values ─────
+
+mutation_case "a child is entered before it is handed its values" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "            {% for param in invoke_info.params if param.native_seed %}\n            {\n                {% if param.native_fails %}",
+     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% for param in invoke_info.params if param.native_seed %}\n            {\n                {% if param.native_fails %}")
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "            {% endfor %}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% endif %}",
+     "            {% endfor %}\n            {% endif %}")
+PY
+
+# ── A value that cannot be computed is left out and reported ───────
+
+mutation_case "a value that failed is written over the child's own" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "                } else {\n                    sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;\n                }",
+     "                }\n                sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;")
+PY
+
+mutation_case "a value that failed is not reported" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "                if (sce_failure_.failed) {\n                    {% if 'error.execution' in model.events %}",
+     "                if (sce_failure_.failed) {\n                    {% if false %}")
+PY
+
+# ── A child begins as `_init` would, up to its entry walk ──────────
+
+mutation_case "a child begins with none of its variables at their declared values" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry",
+     "    memset(sm, 0, sizeof(*sm));\n    sm->is_running = true;\n{% if model.needs_event_scheduler %}\n    sm->clock = clock;\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry")
+PY
+
+mutation_case "a child that addresses its parent is not given the way to it" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sm->parent_sm = parent_sm;\n    sm->parent_dispatch = dispatch;\n    sce_copy_bounded_id(sm->invoke_id, invoke_id);\n{% else %}\n    (void)parent_sm;",
+     "    (void)parent_sm;\n    (void)dispatch;\n    (void)invoke_id;\n{% else %}\n    (void)parent_sm;")
+PY

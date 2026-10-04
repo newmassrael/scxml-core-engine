@@ -2768,8 +2768,12 @@ Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
 `accept_params`, C++ a nested `InvokeParams` (a `std::optional` per variable) and
 `acceptParams`, each variable `null` / `None` / empty when nothing is handed it and
-keeping the value its `<data>` gave it. The invoking machine builds one from its
-fields and gives it to the child before the child starts. A value that cannot be
+keeping the value its `<data>` gave it; C11 has no such object, and the invoking
+machine writes the values into the child's own variables between the two steps its
+start takes (`<machine>_invoked_begin`, `<machine>_invoked_enter`, described with C11
+below).
+The invoking machine builds one from its fields and gives it to the child before
+the child starts. A value that cannot be
 computed — a checked integer operation that overflows — is the evaluation that
 failed (W3C SCXML 5.7.1): `error.execution` is raised when the document declares
 it, that one value is left out, and the child still starts. The witness is
@@ -3287,16 +3291,16 @@ event's typed payload of numbers, bools and strings, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools and enums, a list of integers, bools or
 such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
-`<param>`s of a final's `<donedata>`, and a `<send>` to the machine's own event
-processor with its `<param>`s. A
-real, bytes and a record with a string field, a list of
-reals, a `<send>` with a `<content>` or to another processor, an
-`<invoke>`, a final's `<donedata>` with a `<content>` and a transition on an
-event whose payload
-carries a bytes or enum field are refused until their spellings are
-written: bytes need a capacity the C11 contract does not carry yet, and a real
-is not yet held to a scenario — a `<param>` whose value is one is refused with
-it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
+`<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
+processor with its `<param>`s, and an `<invoke type="scxml">` of a child that
+declares no `<sce:action>`, handed numbers and bools. A real, bytes and a record
+with a string field, a list of reals, a `<send>` with a `<content>` or to
+another processor, an `<invoke>` the host runs, a hybrid or a mesh one, a string
+handed to a child's variable, a final's `<donedata>` with a `<content>` and a
+transition on an event whose payload carries a bytes or enum field are refused
+until their spellings are written: bytes need a capacity the C11 contract does
+not carry yet, and a real is not yet held to a scenario — a `<param>` whose
+value is one is refused with it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
 an event carries as its data, by the header-only wire writer of the forge runtime
 (`sce/forge/wire.h`). A `<donedata>`'s go into the `done_data` buffer the machine
 holds, which a host reads through `<machine>_done_data(sm)` and a compound
@@ -3403,7 +3407,25 @@ time, and states the two things no scenario can — a delivery that carried no
 payload, and the wire writer's own escaping and its refusal of a full buffer.
 `test_static_host_call.c` drives `static_host_call` and
 `static_host_call_arguments` with a recording vtable, to the calls the C++ suite
-states. A `--c-symbol-prefix` build carries the prefix to every symbol a lowered
+states. A child session an `<invoke type="scxml">` starts is a struct the parent
+holds (`sm->child_<id>`), which has no constructor to be handed values, and
+`_init` enters its initial configuration at once; a `sce-static` child is started
+in two steps instead — `<machine>_invoked_begin`, which gives each variable its
+declared value, installs the parent's clock and, for a child that sends to its
+parent, the routing `_init_with_parent` stamps, and `<machine>_invoked_enter`,
+the entry walk — and the parent writes between them each value a `<param>` or
+`namelist` name hands over, into the child's variable of that name, read from the
+parent's fields when the invoke executes (the lowering the other backends share,
+spelled as a typed local that is written only when it was computed). A value that
+cannot be computed raises `error.execution` and is left out, and the child still
+starts holding the value its `<data>` gave it (5.7.1). A child that declares
+`<sce:action>`s has no such door, for the acts are a host's to supply, and a
+parent that invokes one is refused by name. `test_static_invoke.c` drives
+`static_invoke` and `static_invoke_params` live (their saved halves have no C
+counterpart, since a C machine is not saved) and `static_invoke_entry`, which
+sits beside the C++ suite's own fixtures and whose child reads in its `<onentry>`
+what it was handed, sends its parent from there, and is handed a value that
+overflows. A `--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own
 tag constants stay `<MACHINE>_PAYLOAD_<EVENT>`.

@@ -307,9 +307,10 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
     // numbers, bools and strings, a call of an imported algorithm, a host action
     // whose arguments are typed expressions of them, the `<param>`s of a final's
-    // `<donedata>` and of a `<send>` to the machine's own processor. What is past
-    // that — a real, a list of reals, a record with a string field, a bytes
-    // variable, a `<send>` with a `<content>` or to another processor, an
+    // `<donedata>` and of a `<send>` to the machine's own processor, and an
+    // `<invoke type="scxml">` handing numbers and bools. What is past that — a
+    // real, a list of reals, a record with a string field, a bytes variable, a
+    // `<send>` with a `<content>` or to another processor, a host-run
     // `<invoke>`, a final's `<donedata>` with a `<content>`, a payload field that
     // is bytes or an enum — is refused by
     // name where the document is read, not left as an undefined name in the
@@ -359,14 +360,14 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a <send> with a <content>",
         ),
         (
-            "an <invoke>",
+            "a host-run <invoke>",
             machine(
                 r#"<state id="s">
     <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
     <transition event="done.invoke.h" target="done"/>
   </state>"#,
             ),
-            "an <invoke>",
+            "a host-run <invoke>",
         ),
         (
             "a <donedata> with a <content>",
@@ -906,6 +907,76 @@ fn a_namelist_name_is_handed_as_the_param_it_abbreviates() {
     );
     assert!(!ok, "the child declares no `count`:\n{out}");
     assert!(out.contains("count"), "it names what was written:\n{out}");
+}
+
+#[test]
+fn c11_starts_a_static_child_and_hands_it_a_number() {
+    // C holds a child in the parent's own struct and starts it in two steps,
+    // handing it what the invoke's `<param>`s name between them
+    // (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
+    let (ok, out) = run(
+        &["check", "-l", "c11"],
+        &invoking(r#"<param name="start" expr="count + 1"/>"#),
+    );
+    assert!(ok, "c11: the child declares `start`, a uint32:\n{out}");
+}
+
+#[test]
+fn c11_refuses_a_string_handed_to_a_child_and_names_it() {
+    // A string in a child is a buffer of the bound its variable declares, which
+    // a value arriving from another machine would have to be held to: refused by
+    // name until it is, not written past the end of the buffer.
+    let document = invoking_with(
+        "",
+        r#"<param name="title" expr="'x'"/>"#,
+        r#"<data id="title" sce:type="string" sce:capacity="8" expr="''"/>"#,
+    );
+    let (ok, out) = run(&["check", "-l", "c11"], &document);
+    assert!(!ok, "c11 has no lowering for it yet:\n{out}");
+    assert!(
+        out.contains("generate/unsupported-feature") && out.contains("no C11 lowering yet"),
+        "expected the unsupported-feature refusal naming C11:\n{out}"
+    );
+    assert!(
+        out.contains(r#"a <param name=\"title\"> handed to a string variable of the child"#),
+        "it names the param and the invoke:\n{out}"
+    );
+}
+
+#[test]
+fn c11_refuses_a_child_that_needs_a_host_to_perform_its_actions() {
+    // The child is a value its parent holds and starts: it has no host to give
+    // its act table to, and only a host that supplies the acts can start it.
+    let document = machine(
+        r#"<state id="s">
+    <invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="busy" datamodel="sce-static">
+          <datamodel><data id="start" sce:type="uint32" expr="0"/></datamodel>
+          <state id="busy">
+            <onentry>
+              <sce:action name="announce"><sce:arg name="seen" expr="start"/></sce:action>
+            </onentry>
+            <transition event="finish" target="end"/>
+          </state>
+          <final id="end"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.child" target="done"/>
+  </state>"#,
+    );
+    let (ok, out) = run(&["check", "-l", "c11"], &document);
+    assert!(!ok, "c11 has no lowering for it yet:\n{out}");
+    assert!(
+        out.contains("generate/unsupported-feature") && out.contains("no C11 lowering yet"),
+        "expected the unsupported-feature refusal naming C11:\n{out}"
+    );
+    assert!(
+        out.contains(r#"an <invoke id=\"child\"> of a child that declares <sce:action>s"#),
+        "it names the invoke:\n{out}"
+    );
 }
 
 /// A child written beside the document, declaring `start: uint32`.

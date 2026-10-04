@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"):
+  the values an <invoke type="scxml"> hands its child are in the child's
+  variables BEFORE the child enters its initial configuration, so an <onentry>
+  there reads them (W3C SCXML 6.4.1 and 6.4.3). A child handed its values after
+  its entry walk would run that <onentry> against the value its <data> declared.
+
+  `running` invokes `first`, handed `start = base + 1` (8). The child raises
+  `ready` from its <onentry> only when it reads 8, and ends on `ready`, so it
+  ends only if the value was there at entry; handed it afterwards, it would stay
+  in `entering` and `completed` would stay 0.
+
+  `done.invoke.first` moves the machine on to `overflowing`, which invokes
+  `second` handed `start = big + 1`, which overflows: `big` is the largest
+  uint32. A value that cannot be computed is the evaluation that failed (W3C
+  SCXML 5.7.1): `error.execution` is raised, that one value is left out, and
+  the child still starts holding the 5 its <data> gave it. It raises `ready`
+  only when it reads 5, so it ends only if nothing was written over that 5.
+  `errors` counts the `error.execution` the failed value raised, `completed`
+  each child that ended: 2 and 1 when the run is over.
+
+  `first` also sends `hello` to its parent from the same <onentry>, before it
+  reads `start`. The routing to the parent is in place before that entry walk
+  (W3C SCXML 6.4), so the send reaches the parent, which counts it in
+  `greetings`: 1 when the run is over.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="static_invoke_entry">
+  <datamodel>
+    <data id="base" sce:type="uint32" expr="7"/>
+    <data id="big" sce:type="uint32" expr="4294967295"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="greetings" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="first">
+      <param name="start" expr="base + 1"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="entering" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="0"/>
+          </datamodel>
+          <state id="entering">
+            <onentry>
+              <send target="#_parent" event="hello"/>
+              <if cond="start === 8">
+                <raise event="ready"/>
+              </if>
+            </onentry>
+            <transition event="ready" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="hello">
+      <assign location="greetings" expr="greetings + 1"/>
+    </transition>
+    <transition event="done.invoke.first" target="overflowing">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+  </state>
+  <state id="overflowing">
+    <invoke type="scxml" id="second">
+      <param name="start" expr="big + 1"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="entering" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="5"/>
+          </datamodel>
+          <state id="entering">
+            <onentry>
+              <if cond="start === 5">
+                <raise event="ready"/>
+              </if>
+            </onentry>
+            <transition event="ready" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="done.invoke.second">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+  </state>
+</scxml>

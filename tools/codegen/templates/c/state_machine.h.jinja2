@@ -1011,6 +1011,25 @@ void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ mode
                                        const char *invoke_id,
                                        sce_clock_t clock);
 {% endif %}
+{% if static_datamodel and not has_native_actions %}
+/* §scxml-6.4.1: the two steps a parent starts a `datamodel="sce-static"` child
+   in. A child here is a value its parent holds, so there is no constructor to
+   hand it the values of the parent's `<param>`s, and `_init` enters the
+   initial configuration at once — an `<onentry>` that reads one would meet the
+   value its `<data>` declared. `_invoked_begin` does what `_init` does up to
+   the entry walk (each variable at its declared value, the session identity,
+   the parent's clock and, for a child that addresses its parent, the routing
+   `_init_with_parent` stamps); the parent then writes the values it was asked
+   to hand over, and `_invoked_enter` runs the entry walk. A child that
+   declares `<sce:action>`s has no such door: only a host that supplies the
+   acts can start it. */
+void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       void *parent_sm,
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
+                                       const char *invoke_id,
+                                       sce_clock_t clock);
+void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 
 /* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —
    safe to call once per _init or zero times if the caller treats the

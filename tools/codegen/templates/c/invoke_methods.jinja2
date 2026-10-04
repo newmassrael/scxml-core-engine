@@ -464,7 +464,19 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
             /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
                (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
-            {% if invoke_info.child_has_send_to_parent %}
+            {% if invoke_info.child_is_static %}
+            /* §scxml-6.4.1: a `sce-static` child is begun, handed the values
+               of the `<param>`s and the `namelist`, and only then entered, so
+               an `<onentry>` of its initial configuration reads what it was
+               handed. Its parent routing is stamped by the same call. */
+            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
+                &sm->child_{{ invoke_info.field_suffix }},
+                {% if invoke_info.child_has_send_to_parent %}sm,
+                {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
+                NULL{% endif %},
+                p->invoke_id,
+                {{ child_clock_c }});
+            {% elif invoke_info.child_has_send_to_parent %}
             /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
                BEFORE the configuration entry walk by passing them
                through `_init_with_parent`. `<onentry><send target="#_parent">`
@@ -497,6 +509,37 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                no `<send target="#_parent">`). */
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
 {{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
+            {% if invoke_info.child_is_static %}
+            {# §scxml-6.4.1 + §scxml-6.4.3: each value was lowered at build time
+               to an expression of the type of the child variable it lands in,
+               read from this machine's fields now — when the invoke executes,
+               not when its state was entered. §scxml-5.7.1: one that cannot be
+               computed raises error.execution and is left out; the child
+               still starts, one value short, holding what its `<data>` gave
+               it. #}
+            {% for param in invoke_info.params if param.native_seed %}
+            {
+                {% if param.native_fails %}
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                {% endif %}
+                {{ param.native_seed_type }} sce_value = {{ param.native_seed }};
+                {% if param.native_fails %}
+                if (sce_failure_.failed) {
+                    {% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
+                    {% endif %}
+                } else {
+                    sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;
+                }
+                {% else %}
+                sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;
+                {% endif %}
+            }
+            {% endfor %}
+            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});
+            {% endif %}
             /* W3C SCXML 6.4: drive the child's deferred main event loop
                now that param/namelist have been applied and parent
                routing is live. At least one pass, even for a child whose
