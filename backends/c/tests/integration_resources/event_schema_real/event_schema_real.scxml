@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A typed payload carrying a 64-bit real, injected through the per-event seam
+  `..._raise_reading_taken_typed`, which writes the payload as the JSON text of
+  the event's `data`. The text is what is held here (see
+  integration/test_event_schema_real.c): a real is written as ECMAScript spells
+  it on every engine (ARCHITECTURE.md, "JSON Number Text"), so `0.1` is `0.1`
+  and not the seventeen digits `printf` writes.
+
+  The statechart only has to take the event: a guard reads `_event.data.value`
+  natively, so the target links no runtime library, as the integer twin
+  (event_schema_native) does.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="event_schema_real"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_reading.scxml" kind="event-schema" as="ReadingSchema"/>
+  <state id="waiting">
+    <transition event="reading.taken" cond="_event.data.value &gt; 0" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

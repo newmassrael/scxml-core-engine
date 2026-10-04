@@ -162,7 +162,7 @@ static int check_real_written(const char *name, double value, const char *text) 
     int failures = 0;
     char written[64];
     char expected_pair[80];
-    if (sce_forge_wire_number_text(value, written, sizeof(written)) == 0u || strcmp(written, text) != 0) {
+    if (sce_number_text(value, written, sizeof(written)) == 0u || strcmp(written, text) != 0) {
         fprintf(stderr, "FAIL: %s: the number text is %s, the table says %s\n", name, written, text);
         failures++;
     }

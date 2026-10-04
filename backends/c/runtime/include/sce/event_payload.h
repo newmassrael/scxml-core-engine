@@ -52,6 +52,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sce/number_text.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus

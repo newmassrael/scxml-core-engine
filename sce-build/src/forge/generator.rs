@@ -2776,7 +2776,25 @@ return false;\n    }}\n"
                 format.push_str(&format!("\\\"{id}\\\":%s"));
                 args.push_str(&format!(", {receiver}->{id} ? \"true\" : \"false\""));
             }
-            SceType::Float32 | SceType::Float64 => {
+            // A 64-bit real is written as ECMAScript spells it on every engine
+            // (ARCHITECTURE.md, "JSON Number Text"), into a bounded local like a
+            // text field; JSON has no spelling for a value that is not finite,
+            // so the writer refuses it. `sce_number_text` is in the runtime's own
+            // include directory, which a machine with no `sce-static` datamodel
+            // has and a forge header would not be.
+            SceType::Float64 => {
+                locals.push_str(&format!(
+                    "    char _wire_{id}[32];\n    \
+if (!isfinite({receiver}->{id}) ||\n        \
+sce_number_text({receiver}->{id}, _wire_{id}, sizeof(_wire_{id})) == 0u) {{\n        \
+return false;\n    }}\n"
+                ));
+                format.push_str(&format!("\\\"{id}\\\":%s"));
+                args.push_str(&format!(", _wire_{id}"));
+            }
+            // A 32-bit real is written as its platform spells it: the contract
+            // fixes only the 64-bit form.
+            SceType::Float32 => {
                 locals.push_str(&format!(
                     "    if (!isfinite((double){receiver}->{id})) {{ return false; }}\n"
                 ));

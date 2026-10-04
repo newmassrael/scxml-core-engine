@@ -3310,6 +3310,52 @@ set_tests_properties(c11_integration_event_schema_native PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# A 64-bit real in a typed payload, written into the event's `data` as
+# ECMAScript spells it (ARCHITECTURE.md, "JSON Number Text"). The numeric twin
+# above holds that a guard reads the payload; this holds the text the inject seam
+# writes, which the machine reads back by `strtod` and so cannot tell from
+# seventeen digits. Same MCU-clean contract: no runtime library is linked, and
+# only the runtime's own include directory is on the path, so a writer that
+# needed a header outside it would not build.
+set(_ESR_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_real")
+set(_ESR_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_real_sm.c")
+set(_ESR_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_real_sm.h")
+add_custom_command(
+    OUTPUT "${_ESR_PARENT_HEADER}" "${_ESR_PARENT_SOURCE}"
+    COMMAND "${SCE_CODEGEN}" generate
+            "${_ESR_FIXTURE_ROOT}/event_schema_real.scxml"
+            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_ESR_PARENT_SOURCE}.d"
+    DEPENDS "${_ESR_FIXTURE_ROOT}/event_schema_real.scxml"
+            "${_ESR_FIXTURE_ROOT}/schema_reading.scxml"
+            "${SCE_CODEGEN}"
+    DEPFILE "${_ESR_PARENT_SOURCE}.d"
+    COMMENT "Generating C11 typed-payload real fixture: event_schema_real_sm.{h,c}"
+    VERBATIM
+)
+
+add_executable(sce_c_integration_event_schema_real
+    integration/test_event_schema_real.c
+    "${_ESR_PARENT_SOURCE}"
+    "${_ESR_PARENT_HEADER}"
+)
+target_include_directories(sce_c_integration_event_schema_real PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+set_target_properties(sce_c_integration_event_schema_real PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_event_schema_real
+    COMMAND sce_c_integration_event_schema_real
+)
+set_tests_properties(c11_integration_event_schema_real PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # RFC rfc-eventschema-bytes-guard.md §6 — bytes-field twin of the numeric
 # gate above. Same MCU-clean contract: the no-alloc bounded-buffer + memcmp
 # value path links NO runtime library, so a successful link is the
