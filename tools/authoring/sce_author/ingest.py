@@ -180,9 +180,12 @@ def _related(archive: zipfile.ZipFile, part: str) -> dict[str, tuple[str, str]]:
         if rel.get("TargetMode") == "External" or not rel.get("Id"):
             continue
         target = rel.get("Target") or ""
-        resolved = (target.lstrip("/") if target.startswith("/")
+        # A target written from the package root names its part from the root; any
+        # other is relative to the folder of the part that declared it.
+        resolved = (target[1:] if posixpath.isabs(target)
                     else posixpath.normpath(posixpath.join(folder, target)))
-        out[rel.get("Id")] = ((rel.get("Type") or "").rsplit("/", 1)[-1], resolved)
+        # The kind is the last part of the relationship's type name, which is a URL.
+        out[rel.get("Id")] = (posixpath.basename(rel.get("Type") or ""), resolved)
     return out
 
 
@@ -229,6 +232,123 @@ def _column(reference: str) -> int:
     return index
 
 
+_XDR = "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}"
+
+# What else a sheet's drawing can hold besides a picture: a shape, a chart, a
+# group of them, a connector. None of them is read here.
+_DRAWN_ELSE = (f"{_XDR}sp", f"{_XDR}graphicFrame", f"{_XDR}grpSp", f"{_XDR}cxnSp")
+
+
+@dataclass
+class _Drawn:
+    """What one sheet's drawings hold."""
+
+    # (row, column), both from 1, -> how many pictures are anchored on that cell.
+    placed: dict[tuple[int, int], int] = field(default_factory=dict)
+    # Pictures not anchored on a cell: floating at a page position, or inside a group.
+    loose: int = 0
+    # Shapes and charts, which are not read at all.
+    other: int = 0
+    # Drawing parts that were named and could not be parsed.
+    unreadable: int = 0
+
+
+def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str) -> _Drawn:
+    """Where the pictures of a sheet sit, as the cells they are anchored on.
+
+    ⚠ A GRID CELL CAN BE A PICTURE. In a table of marks, whether a cell holds
+    one is the datum: the text of the cell says '-' or 'O' and the picture
+    beside it says which row has an image. A reader that opens the cells and
+    skips the drawing reports the table as complete -- on one specification the
+    workbook it opened held 2,188 pictures on its cells, and the reader said
+    "4 enclosed files WERE opened and their contents carried".
+
+    Only WHERE is read. What a picture shows is for whoever can read it, and so
+    is the meaning of the column it sits in; this says which cell holds one and
+    leaves the rest alone.
+    """
+    drawn = _Drawn()
+    for kind, part in _related(book, sheet).values():
+        if kind != "drawing" or part not in inner:
+            continue
+        try:
+            root = ET.parse(io.BytesIO(book.read(part))).getroot()
+        except ET.ParseError:
+            drawn.unreadable += 1
+            continue
+        for anchor in root:
+            cell = anchor.find(f"{_XDR}from") if anchor.tag in (
+                f"{_XDR}oneCellAnchor", f"{_XDR}twoCellAnchor") else None
+            at = None
+            if cell is not None:
+                try:
+                    at = (int(cell.findtext(f"{_XDR}row")) + 1,
+                          int(cell.findtext(f"{_XDR}col")) + 1)
+                except (TypeError, ValueError):
+                    at = None
+            for item in anchor:
+                if item.tag == f"{_XDR}pic":
+                    if at is None:
+                        drawn.loose += 1
+                    else:
+                        drawn.placed[at] = drawn.placed.get(at, 0) + 1
+                elif item.tag in _DRAWN_ELSE:
+                    drawn.other += 1
+                    if item.tag == f"{_XDR}grpSp":
+                        drawn.loose += sum(1 for _ in item.iter(f"{_XDR}pic"))
+    return drawn
+
+
+_RD = "{http://schemas.microsoft.com/office/spreadsheetml/2017/richdata}"
+
+
+def _picture_values(book: zipfile.ZipFile, inner: set[str]) -> set[int]:
+    """The `vm` values of a workbook that stand for a picture held IN a cell.
+
+    A spreadsheet stores a picture two ways. Laid over the grid it is a drawing
+    anchored on a cell, which `_drawn_on` reads. Held in the cell -- the "place
+    in cell" picture -- it is a rich value: the cell names it by `vm`, counted
+    from 1, an index into the workbook's value metadata, which names a rich
+    value, whose structure names its type. The cell's own text is only a
+    placeholder, so a reader that takes the cell at its word reads an error.
+
+    Anything that cannot be followed answers nothing, and the cell is then
+    counted as holding a rich value that was not read -- never as plain text.
+    """
+    parts = ("xl/metadata.xml", "xl/richData/rdrichvalue.xml", "xl/richData/rdrichvaluestructure.xml")
+    if not all(part in inner for part in parts):
+        return set()
+    try:
+        metadata, values, structures = (ET.parse(io.BytesIO(book.read(p))).getroot() for p in parts)
+        types = [(s.get("t") or "").lower() for s in structures.iter(f"{_RD}s")]
+        value_types = [int(v.get("s")) for v in values.iter(f"{_RD}rv")]
+        kinds = [m.get("name") for m in metadata.iter(f"{_XL}metadataType")]
+        futures: list[int] = []
+        for future in metadata.iter(f"{_XL}futureMetadata"):
+            if future.get("name") != "XLRICHVALUE":
+                continue
+            for bk in future.iter(f"{_XL}bk"):
+                rvb = next(bk.iter(f"{_RD}rvb"), None)
+                futures.append(int(rvb.get("i")) if rvb is not None else -1)
+        pictures: set[int] = set()
+        for held in metadata.iter(f"{_XL}valueMetadata"):
+            for vm, bk in enumerate(held.iter(f"{_XL}bk"), start=1):
+                # ⚠ One entry whose chain breaks is that cell's problem, not the
+                # workbook's: the cells that can be followed stay pictures.
+                try:
+                    rc = next(bk.iter(f"{_XL}rc"), None)
+                    if rc is None or kinds[int(rc.get("t")) - 1] != "XLRICHVALUE":
+                        continue
+                    value = futures[int(rc.get("v"))]
+                    if value >= 0 and "image" in types[value_types[value]]:
+                        pictures.add(vm)
+                except (ValueError, TypeError, IndexError):
+                    continue
+        return pictures
+    except (ET.ParseError, ValueError, TypeError, IndexError, KeyError):
+        return set()
+
+
 def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
     """An embedded workbook as rows, keeping the grid.
 
@@ -249,9 +369,12 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             shared = ["".join(t.text or "" for t in si.iter(f"{_XL}t"))
                       for si in root.iter(f"{_XL}si")]
         lines: list[str] = []
+        pictures = cells_with_pictures = loose = other = unreadable = rich = 0
+        in_cell = _picture_values(book, inner)
         for name, sheet, hidden in _sheets_in_order(book, inner):
             root = ET.parse(io.BytesIO(book.read(sheet))).getroot()
             rows: list[str] = []
+            grid: dict[int, dict[int, str]] = {}
             # ⚠ A merged cell holds its value in the top-left of the range and
             # leaves the rest empty, so the columns a reader sees are not the
             # columns a person saw. Counted rather than un-merged: guessing
@@ -263,11 +386,32 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                              f"sheet \"{name}\""
                              " were left as the file stores them -- the value"
                              " sits in the first cell and the rest are empty")
+            held: dict[tuple[int, int], int] = {}
+            number = 0
             for row in root.iter(f"{_XL}row"):
-                cells: dict[int, str] = {}
+                # A row names its own number; one that does not follows the row
+                # before it. The number is what a picture is placed by.
+                try:
+                    number = int(row.get("r"))
+                except (TypeError, ValueError):
+                    number += 1
+                cells = grid.setdefault(number, {})
                 for cell in row.iter(f"{_XL}c"):
                     value = cell.find(f"{_XL}v")
                     text = ""
+                    if cell.get("vm"):
+                        # A rich value. A picture held in the cell is the cell's content
+                        # and its stored text is a placeholder; any other rich value
+                        # keeps the text the file stores, and is counted.
+                        try:
+                            is_picture = int(cell.get("vm")) in in_cell
+                        except ValueError:
+                            is_picture = False
+                        if is_picture:
+                            at = (number, _column(cell.get("r") or ""))
+                            held[at] = held.get(at, 0) + 1
+                            continue
+                        rich += 1
                     if cell.get("t") == "s" and value is not None:
                         try:
                             text = shared[int(value.text)]
@@ -279,6 +423,21 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                         text = value.text or ""
                     if text.strip():
                         cells[_column(cell.get("r") or "")] = text.strip()
+            drawn = _drawn_on(book, inner, sheet)
+            loose += drawn.loose
+            other += drawn.other
+            unreadable += drawn.unreadable
+            placed = dict(drawn.placed)
+            for at, count in held.items():
+                placed[at] = placed.get(at, 0) + count
+            for (at_row, at_column), count in placed.items():
+                pictures += count
+                cells_with_pictures += 1
+                mark = "[picture]" if count == 1 else f"[{count} pictures]"
+                there = grid.setdefault(at_row, {})
+                there[at_column] = f"{there[at_column]} {mark}" if at_column in there else mark
+            for at_row in sorted(grid):
+                cells = grid[at_row]
                 if cells:
                     width = max(cells)
                     rows.append("| " + " | ".join(cells.get(i + 1, "")
@@ -289,6 +448,28 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                 # is the one a person is likelier to have meant to leave out.
                 lines.append(f"--- sheet: {name}" + (" (hidden)" if hidden else ""))
                 lines.extend(rows)
+        # ⚠ Said once per workbook, and said even when nothing else is: this is
+        # the part of an opened workbook a reader would take for read.
+        if pictures:
+            notes.append(
+                f"{pictures} picture(s) sit on {cells_with_pictures} cell(s) of this "
+                f"workbook (anchored on the cell, or held in it) and are marked "
+                f"[picture] there. Which cell holds one is carried; what a picture "
+                f"shows is not read, and in a grid a picture can be the whole content "
+                f"of its cell")
+        if rich:
+            notes.append(f"{rich} cell(s) in this workbook hold a rich value that is not "
+                         f"a picture (a data type or an object) and keep only the text the "
+                         f"file stores for them")
+        if loose:
+            notes.append(
+                f"{loose} picture(s) in this workbook are not anchored on a cell "
+                f"(floating, or inside a group) and were not placed")
+        if other:
+            notes.append(f"{other} drawn object(s) in this workbook other than pictures "
+                         f"(shapes, charts) were not read")
+        if unreadable:
+            notes.append(f"{unreadable} drawing part(s) of this workbook could not be read")
         return lines, notes
     except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
         return [], [f"an enclosed workbook could not be opened ({exc})"]

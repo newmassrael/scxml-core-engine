@@ -1417,6 +1417,20 @@ lists them (not the order of the file names it is stored under), a hidden one is
 carried and said to be hidden: which sheet applies to a product is a question for
 a person, and a sheet can only be asked about by its name.
 
+**A picture on a cell is placed on its cell.** In a table of marks, whether a
+cell holds a picture can be the whole datum -- the text says `-` or `O` and the
+picture beside it says which row has an image -- so a reader that opened the cells
+and skipped the drawing reported the table complete. A picture is placed
+wherever a spreadsheet can put one: anchored on a cell (a drawing laid over the
+grid) or held in it (the "place in cell" picture, whose stored text is only a
+placeholder error). The cell reads `[picture]`, beside its text if it has any,
+and `[N pictures]` when several sit there; the count and the cell count are said
+once per workbook. Only WHERE is read. What a picture shows, and what the column
+it sits in means, is for whoever can read it -- that is a fact about a product
+and belongs to its pack or its owner, not here. What cannot be placed is counted
+and said, never dropped: a floating or grouped picture, a chart or a shape, a
+rich value that is not a picture, a drawing that cannot be parsed.
+
 **A picture is not read, and the report says where the unread ones sit.** This
 core makes no model calls, so it cannot say what an image shows. But the count
 alone -- "71 pictures were not read" -- leaves two piles a person cannot tell
