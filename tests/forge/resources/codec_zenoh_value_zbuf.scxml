@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: the body of a ZBuf extension whose layout depends on
+     whether the extension before it was a shared memory marker.
+
+     Upstream zenoh writes a query's value as a ZBuf extension (`ValueType`). Its
+     body starts with a length, and what follows depends on a marker extension
+     (unit, id 4) that may have come just before:
+
+       no marker : the length is true and the value is that many bytes.
+       marker    : the length is the LOGICAL length of the buffer — a number of
+                   bytes that are not on the wire — and the body is not a run of
+                   bytes but an encoding and a list of slices
+                   (`Zenoh080Sliced`), each of which says how long it is. The
+                   reader does not use the declared length, so it is not
+                   consistent with what follows it.
+
+     The two layouts are the two arms of one flag-input, `after_shm`, which is 1
+     exactly when the previous extension was the marker. The entry codec hands it
+     down from its own flag-input; the chain supplies it
+     (`codec_zenoh_query_value`). `value_len` is on the wire in both layouts and
+     is used in one.
+
+     Wire shape:
+       byte 0+ : value_len    (VLE u64)
+       !after_shm : value       (length=value_len, max 32)
+       after_shm  : encoding    (VLE u64), slice_count (VLE u64), slices -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_value_zbuf">
+  <sce:import src="codec_zenoh_value_slice.scxml" kind="codec" as="codec_zenoh_value_slice"/>
+  <sce:flag-inputs>
+    <sce:flag-input name="after_shm" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="value_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="value" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="value_len" sce:max-size="32"
+               sce:present-if="!after_shm"/>
+    <sce:field id="encoding" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+               sce:present-if="after_shm"/>
+    <sce:field id="slice_count" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
+               sce:present-if="after_shm"/>
+    <sce:repeat id="slices" type="codec_zenoh_value_slice" sce:byte="4"
+                count="slice_count" max-count="4"
+                sce:present-if="after_shm"/>
+  </datamodel>
+</scxml>

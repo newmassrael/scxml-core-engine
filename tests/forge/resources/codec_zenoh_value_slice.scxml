@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: one slice of a ZBuf written in upstream zenoh's sliced
+     form (`Zenoh080Sliced`).
+
+     A shared memory buffer is not written as its bytes but as a list of slices,
+     each a kind, a length and what the length says: for kind 1 the descriptor of
+     a buffer another process owns. Used as the element of the slice list in
+     `codec_zenoh_value_zbuf`.
+
+     Wire shape:
+       byte 0  : kind  (uint8; 0 bytes, 1 shared memory descriptor)
+       byte 1+ : len   (VLE u64)
+       bytes   : data  (length=len, max 16) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_value_slice">
+  <datamodel>
+    <sce:field id="kind" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="len" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="data" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="len" sce:max-size="16"/>
+  </datamodel>
+</scxml>

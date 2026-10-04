@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: the extensions of an upstream zenoh Query, whose value
+     is a ZBuf extension that is read differently after a shared memory marker.
+
+     A Query carries its value in a ZBuf extension (id 3). When the value lives in
+     shared memory, a unit extension (id 4, the marker) comes first and the ZBuf
+     that follows is written in sliced form; its declared length is the logical
+     length of the buffer and does not describe the bytes after it. A decoder
+     that trusts the length reads past the frame.
+
+     The chain supplies `after_shm` to its entries itself: 1 for an entry whose
+     immediately preceding entry has the identifier 4 (`entry-id` names the
+     4-bit `ext_id` of the header, so the marker is recognised whatever its M or
+     Z bits are), 0 for every other entry, the first included.
+
+     The bytes held in the behaviour test are the tail upstream's `z_get_shm`
+     put on the wire:
+
+         84 43 82 08 | 00 | 01 01 07 80 08 ae cf 01 00 00
+
+     the marker (0x84: id 4, unit, continuation set), then a ZBuf (0x43: id 3,
+     last) whose declared length, the VLE `82 08`, is 1026 and not the 11 bytes
+     that follow it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_query_value">
+  <sce:import src="codec_zenoh_value_entry.scxml" kind="codec" as="codec_zenoh_value_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="exts" type="codec_zenoh_value_entry" sce:byte="0"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_shm" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+  </datamodel>
+</scxml>

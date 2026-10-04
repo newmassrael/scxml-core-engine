@@ -3488,6 +3488,173 @@ fn forge_c11_codec_chain_prev_tail_gated() {
     );
 }
 
+/// The extensions of an upstream zenoh Query, read the way a consumer would
+/// write them: a variant entry whose ZBuf arm takes `after_shm`, and a chain that
+/// supplies it from the identifier of the entry before. The unit and z64 arms
+/// are the ones `codec_zenoh_ext_entry` already has; they come first because a
+/// document is generated after what it imports.
+const QUERY_VALUE_SET: &[&str] = &[
+    "codec_zenoh_ext_unit.scxml",
+    "codec_zenoh_ext_zint.scxml",
+    "codec_zenoh_value_slice.scxml",
+    "codec_zenoh_value_zbuf.scxml",
+    "codec_zenoh_value_entry.scxml",
+    "codec_zenoh_query_value.scxml",
+];
+
+/// The same bar as `a_chain_that_tells_its_entries_what_came_before_them_compiles_
+/// on_every_backend`, for the consumer's shape: the flag-input crosses a variant
+/// arm (the entry hands `after_shm` to its ZBuf arm), a repeat gated on it, and a
+/// chain that supplies it.
+#[test]
+fn a_query_value_chain_compiles_on_every_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = rustc_compile_codec_set(&dir, QUERY_VALUE_SET, "query_value_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(&dir, QUERY_VALUE_SET, "query_value_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(&dir, QUERY_VALUE_SET, "query_value_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(&dir, QUERY_VALUE_SET, "query_value_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(&dir, QUERY_VALUE_SET, "query_value_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(&dir, QUERY_VALUE_SET, "query_value_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a query value chain must compile on every backend. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_value_slice_cpp() {
+    assert_standalone_forge("codec_zenoh_value_slice", "codec_zenoh_value_slice.h");
+}
+
+#[test]
+fn forge_codec_zenoh_value_slice_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_value_slice", "CodecZenohValueSlice.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_value_slice_rust() {
+    assert_standalone_forge_rust("codec_zenoh_value_slice", "codec_zenoh_value_slice.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_value_slice_go() {
+    assert_standalone_forge_go("codec_zenoh_value_slice", "codec_zenoh_value_slice.go");
+}
+
+#[test]
+fn forge_codec_zenoh_value_slice_python() {
+    assert_standalone_forge_python("codec_zenoh_value_slice", "codec_zenoh_value_slice.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_value_slice() {
+    assert_standalone_forge_c("codec_zenoh_value_slice", "codec_zenoh_value_slice.c.h");
+}
+
+#[test]
+fn forge_codec_zenoh_value_zbuf_cpp() {
+    assert_standalone_forge("codec_zenoh_value_zbuf", "codec_zenoh_value_zbuf.h");
+}
+
+#[test]
+fn forge_codec_zenoh_value_zbuf_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_value_zbuf", "CodecZenohValueZbuf.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_value_zbuf_rust() {
+    assert_standalone_forge_rust("codec_zenoh_value_zbuf", "codec_zenoh_value_zbuf.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_value_zbuf_go() {
+    assert_standalone_forge_go("codec_zenoh_value_zbuf", "codec_zenoh_value_zbuf.go");
+}
+
+#[test]
+fn forge_codec_zenoh_value_zbuf_python() {
+    assert_standalone_forge_python("codec_zenoh_value_zbuf", "codec_zenoh_value_zbuf.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_value_zbuf() {
+    assert_standalone_forge_c("codec_zenoh_value_zbuf", "codec_zenoh_value_zbuf.c.h");
+}
+
+#[test]
+fn forge_codec_zenoh_value_entry_cpp() {
+    assert_standalone_forge("codec_zenoh_value_entry", "codec_zenoh_value_entry.h");
+}
+
+#[test]
+fn forge_codec_zenoh_value_entry_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_value_entry", "CodecZenohValueEntry.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_value_entry_rust() {
+    assert_standalone_forge_rust("codec_zenoh_value_entry", "codec_zenoh_value_entry.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_value_entry_go() {
+    assert_standalone_forge_go("codec_zenoh_value_entry", "codec_zenoh_value_entry.go");
+}
+
+#[test]
+fn forge_codec_zenoh_value_entry_python() {
+    assert_standalone_forge_python("codec_zenoh_value_entry", "codec_zenoh_value_entry.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_value_entry() {
+    assert_standalone_forge_c("codec_zenoh_value_entry", "codec_zenoh_value_entry.c.h");
+}
+
+#[test]
+fn forge_codec_zenoh_query_value_cpp() {
+    assert_standalone_forge("codec_zenoh_query_value", "codec_zenoh_query_value.h");
+}
+
+#[test]
+fn forge_codec_zenoh_query_value_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_query_value", "CodecZenohQueryValue.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_query_value_rust() {
+    assert_standalone_forge_rust("codec_zenoh_query_value", "codec_zenoh_query_value.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_query_value_go() {
+    assert_standalone_forge_go("codec_zenoh_query_value", "codec_zenoh_query_value.go");
+}
+
+#[test]
+fn forge_codec_zenoh_query_value_python() {
+    assert_standalone_forge_python("codec_zenoh_query_value", "codec_zenoh_query_value.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_query_value() {
+    assert_standalone_forge_c("codec_zenoh_query_value", "codec_zenoh_query_value.c.h");
+}
+
 /// Every way a chain-membership predicate or its `entry-id` can be wrong is
 /// a refusal that names what is wrong and where, and none of them reaches the
 /// host compiler. Each case is a document differing from a valid one in one
@@ -16617,6 +16784,172 @@ mod tests {
         "chain_prev_behaviour",
     )
     .expect("a chain must tell its entries what came before them");
+}
+
+// ── An upstream zenoh Query's value: the consumer's shape, on the real bytes ──
+//
+// `codec_zenoh_query_value` is a chain over `codec_zenoh_value_entry`, whose ZBuf
+// arm lays its body out by `after_shm`, which the chain sets from the entry
+// before. The bytes below are the tail upstream's `z_get_shm` wrote, captured on
+// the wire: the marker (0x84), then a ZBuf (0x43) whose declared length, the VLE
+// `82 08`, is 1026 and not the 11 bytes after it. Read as an ordinary ZBuf, a
+// decoder asks for 1026 bytes of a frame that has 11 and stops.
+
+/// The captured tail: marker, then a ZBuf in sliced form.
+const QUERY_SHM: &[u8] = &[
+    0x84, 0x43, 0x82, 0x08, 0x00, 0x01, 0x01, 0x07, 0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00,
+];
+/// No marker: a ZBuf whose length is true and whose value is that many bytes.
+const QUERY_PLAIN: &[u8] = &[0x43, 0x04, 0xDE, 0xAD, 0xBE, 0xEF];
+/// An extension that is not the marker between the marker and the ZBuf: the ZBuf
+/// is not right after the marker, so it is the plain layout.
+const QUERY_NOT_ADJACENT: &[u8] = &[0x84, 0x85, 0x43, 0x04, 0xDE, 0xAD, 0xBE, 0xEF];
+
+fn query_value_python_program() -> String {
+    flag_hex_frames(
+        r#"from qv_pkg.codec_zenoh_query_value import CodecZenohQueryValue
+from sce_forge_runtime.codec import SceCursor
+
+SHM = bytes([@SHM@])
+PLAIN = bytes([@PLAIN@])
+NOT_ADJACENT = bytes([@NOT_ADJACENT@])
+
+def read(frame, label):
+    v = CodecZenohQueryValue.decode(SceCursor(frame))
+    assert v is not None, label + " decode"
+    return v
+
+# The captured bytes: the marker, then the ZBuf in sliced form.
+v = read(SHM, "shm")
+assert [e.header for e in v.exts] == [0x84, 0x43], "shm headers"
+assert v.exts[0].body.kind == "CodecZenohExtUnit", "the marker is a unit extension"
+z = v.exts[1].body.codec_zenoh_value_zbuf
+assert z.value_len == 1026, "the declared length is read, not trusted"
+assert z.value is None, "no plain value after the marker"
+assert z.encoding == 0 and z.slice_count == 1, "encoding and slice count"
+assert [(s.kind, s.len, s.data) for s in z.slices] == [
+    (1, 7, bytes([0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]))
+], "the slice"
+assert v.encode_to_bytes() == SHM, "shm round trip"
+
+# No marker: the same ZBuf header, an ordinary body.
+v = read(PLAIN, "plain")
+z = v.exts[0].body.codec_zenoh_value_zbuf
+assert z.value_len == 4 and z.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]), "plain value"
+assert z.slices is None and z.encoding is None, "no sliced body without the marker"
+assert v.encode_to_bytes() == PLAIN, "plain round trip"
+
+# An extension between the marker and the ZBuf: adjacency, so the plain layout.
+v = read(NOT_ADJACENT, "not adjacent")
+z = v.exts[2].body.codec_zenoh_value_zbuf
+assert z.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]) and z.slices is None, "not adjacent"
+assert v.encode_to_bytes() == NOT_ADJACENT, "not adjacent round trip"
+"#,
+    )
+}
+
+/// `program` with each `@NAME@` of the Query frames replaced by its bytes.
+fn flag_hex_frames(program: &str) -> String {
+    program
+        .replace("@SHM@", &flag_hex(QUERY_SHM))
+        .replace("@PLAIN@", &flag_hex(QUERY_PLAIN))
+        .replace("@NOT_ADJACENT@", &flag_hex(QUERY_NOT_ADJACENT))
+}
+
+/// A Query's value in shared memory is read, on the bytes upstream wrote. Python
+/// runs the generated codec; Rust (the language a consumer of this shape uses) is
+/// run by `a_query_value_in_shared_memory_is_read_in_rust`, and every other
+/// backend is held to the compile gate above, which is where a flag-input that
+/// crosses a variant arm, a gated repeat and a chain can fail to type.
+#[test]
+fn a_query_value_in_shared_memory_is_read_in_python() {
+    run_python_program(
+        &resource_dir(),
+        QUERY_VALUE_SET,
+        "qv_pkg",
+        query_value_python_program(),
+    )
+    .expect("a query value in shared memory must be read");
+}
+
+/// The Rust half of the test above, as `cargo test` over the generated crate.
+#[test]
+fn a_query_value_in_shared_memory_is_read_in_rust() {
+    const HARNESS: &str = r#"// Injected by a_query_value_in_shared_memory_is_read_in_rust.
+#[cfg(test)]
+mod tests {
+    use crate::codec_zenoh_query_value::CodecZenohQueryValue;
+    use crate::codec_zenoh_value_entry::CodecZenohValueEntryVariant;
+    use crate::codec_zenoh_value_zbuf::CodecZenohValueZbuf;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    const SHM: [u8; 15] = [@SHM@];
+    const PLAIN: [u8; 6] = [@PLAIN@];
+    const NOT_ADJACENT: [u8; 8] = [@NOT_ADJACENT@];
+
+    fn decode(frame: &[u8]) -> CodecZenohQueryValue<'_> {
+        CodecZenohQueryValue::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn zbuf<'a, 'b>(v: &'b CodecZenohQueryValue<'a>, at: usize) -> &'b CodecZenohValueZbuf<'a> {
+        match &v.exts[at].body {
+            CodecZenohValueEntryVariant::CodecZenohValueZbuf(z) => z,
+            _ => panic!("extension {at} is not a ZBuf"),
+        }
+    }
+
+    #[test]
+    fn the_zbuf_after_the_marker_is_read_in_sliced_form() {
+        let v = decode(&SHM);
+        assert_eq!(v.exts.len(), 2);
+        assert_eq!(v.exts[0].header, 0x84);
+        assert!(matches!(
+            v.exts[0].body,
+            CodecZenohValueEntryVariant::CodecZenohExtUnit(_)
+        ));
+        assert_eq!(v.exts[1].header, 0x43);
+        let z = zbuf(&v, 1);
+        // The declared length is read and carried; it is not what bounds the body.
+        assert_eq!(z.value_len, 1026);
+        assert!(z.value.is_none());
+        assert_eq!(z.encoding, Some(0));
+        assert_eq!(z.slice_count, Some(1));
+        let slices = z.slices.as_ref().expect("slices");
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].kind, 1);
+        assert_eq!(slices[0].len, 7);
+        assert_eq!(slices[0].data, &[0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]);
+        assert_eq!(v.encode_to_vec(), SHM.to_vec());
+    }
+
+    #[test]
+    fn without_a_marker_the_zbuf_is_an_ordinary_value() {
+        let v = decode(&PLAIN);
+        let z = zbuf(&v, 0);
+        assert_eq!(z.value_len, 4);
+        assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
+        assert!(z.slices.is_none() && z.encoding.is_none());
+        assert_eq!(v.encode_to_vec(), PLAIN.to_vec());
+    }
+
+    #[test]
+    fn a_zbuf_that_is_not_right_after_the_marker_is_an_ordinary_value() {
+        let v = decode(&NOT_ADJACENT);
+        assert_eq!(v.exts.len(), 3);
+        let z = zbuf(&v, 2);
+        assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
+        assert!(z.slices.is_none());
+        assert_eq!(v.encode_to_vec(), NOT_ADJACENT.to_vec());
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        QUERY_VALUE_SET,
+        &[("query_value_behaviour.rs", &flag_hex_frames(HARNESS))],
+        "query_value_behaviour",
+    )
+    .expect("a query value in shared memory must be read");
 }
 
 /// What to tell a developer whose tree has no Kotlin forge-runtime jar.

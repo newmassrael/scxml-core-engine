@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a zenoh extension entry whose ZBuf body depends on
+     the extension before it.
+
+     `codec_zenoh_ext_entry` with one change: the ZBuf arm is
+     `codec_zenoh_value_zbuf`, which takes `after_shm`, and this entry takes the
+     same flag-input and hands it down. The entry does not know where the value
+     comes from — it is 1 exactly when the extension before this one was the
+     shared memory marker, which only the chain that reads the entries can say
+     (`codec_zenoh_query_value`).
+
+     The header packs the same four named bit-ranges as `codec_zenoh_ext_entry`
+     (ext_id 0..3, M 4, enc 5..6, Z 7); the unit and z64 arms are shared with it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_value_entry">
+  <sce:import src="codec_zenoh_ext_unit.scxml" kind="codec" as="codec_zenoh_ext_unit"/>
+  <sce:import src="codec_zenoh_ext_zint.scxml" kind="codec" as="codec_zenoh_ext_zint"/>
+  <sce:import src="codec_zenoh_value_zbuf.scxml" kind="codec" as="codec_zenoh_value_zbuf">
+    <sce:flag-bind input="after_shm" source="after_shm"/>
+  </sce:import>
+  <sce:flag-inputs>
+    <sce:flag-input name="after_shm" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="ext_id" bit="0" width="4"/>
+      <sce:flag name="M"      bit="4"/>
+      <sce:flag name="enc"    bit="5" width="2"/>
+      <sce:flag name="Z"      bit="7"/>
+    </sce:flags>
+    <sce:variant tag="header.enc">
+      <sce:arm value="0x00" type="codec_zenoh_ext_unit" default="true"/>
+      <sce:arm value="0x01" type="codec_zenoh_ext_zint"/>
+      <sce:arm value="0x02" type="codec_zenoh_value_zbuf"/>
+      <sce:default type="codec_zenoh_ext_unit"/>
+    </sce:variant>
+  </datamodel>
+</scxml>
