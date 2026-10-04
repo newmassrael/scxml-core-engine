@@ -2358,6 +2358,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record.scxml"
         STAGE_ALSO schema_day.scxml algorithm_days_in_month.scxml
     )
+    # A record's enum field is held in the machine's type for the enum the schema
+    # imports, so the staging carries both beside the machine.
+    sce_generate_static_integration_c_test(static_record_enum
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_enum.scxml"
+        STAGE_ALSO schema_view.scxml enum_view_mode.scxml
+    )
     # An enum variable's variants are the enum document's, imported by name.
     sce_generate_static_integration_c_test(static_enum
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2400,6 +2407,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}
         ${_DAYS_IN_MONTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}

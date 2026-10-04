@@ -301,21 +301,18 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
-    // C lowers integer, bool and enum variables, records of numbers and bools,
-    // lists of integers, bools and such records with `<sce:append>`,
+    // C lowers integer, bool and enum variables, records of numbers, bools and
+    // enums, lists of integers, bools and such records with `<sce:append>`,
     // `<sce:clear>` and `<foreach>`, guards, `<assign>`,
     // `<if>`, `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and
     // bools, a call of an imported algorithm, and a host action whose arguments
     // are typed expressions of them. What is past that — a string, a real, a list
-    // of reals, a record with a field of another type, a bytes variable, a
+    // of reals, a record with a string field, a bytes variable, a
     // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
     // not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
-    let fixture = |name: &str| {
-        std::fs::read_to_string(fixtures.join(name)).unwrap_or_else(|_| panic!("fixture {name}"))
-    };
     let variable = |data: &str| doc("sce-static", data);
     let cases = [
         (
@@ -339,9 +336,23 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             r#"<data id="picked" sce:type="list">"#,
         ),
         (
-            "a record with an enum field",
-            fixture("static_record_enum.scxml"),
-            "record:View with the field `layout` of type enum:ViewMode",
+            "a record with a string field",
+            r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_echo.scxml" as="Echo"/>
+  <datamodel>
+    <data id="heard" sce:type="record:Echo">
+      <sce:set name="total" expr="0"/>
+      <sce:set name="ok" expr="false"/>
+      <sce:set name="tag" expr="''"/>
+    </data>
+  </datamodel>
+  <state id="s"/>
+</scxml>
+"##
+            .to_string(),
+            "record:Echo with the field `tag` of type string",
         ),
         (
             "a <send>",

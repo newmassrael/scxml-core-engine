@@ -51,6 +51,9 @@
 //   * `static_record_list`: a list of records copies the record it is appended
 //     to, a loop reads its record item typed and appends it whole to another
 //     list, and a whole record is assigned from a record by name.
+//   * `static_record_enum`: a record's enum field is held in the machine's type for
+//     the enum, compared, assigned a variant and appended with the record, and
+//     observed as the name its document declares.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -74,6 +77,7 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_sm.h"
@@ -106,16 +110,18 @@ typedef struct {
 static const list_variable_t no_lists[] = {{NULL, NULL}};
 
 // A published record's reader, or a published list of records': the number a
-// field of it holds — in the record, or in element `index` of the list — and, for
-// a list, how many elements it holds. A table of these ends at a NULL name.
+// field of it holds, or the name an enum field holds — in the record, or in
+// element `index` of the list — and, for a list, how many elements it holds. A
+// table of these ends at a NULL name.
 typedef struct {
     const char *name;
     bool (*field)(const void *sm, size_t index, const char *field, int64_t *out);
+    const char *(*text)(const void *sm, size_t index, const char *field);
     size_t (*count)(const void *sm);
 } record_variable_t;
 
 // What a machine with no record passes for its table.
-static const record_variable_t no_records[] = {{NULL, NULL, NULL}};
+static const record_variable_t no_records[] = {{NULL, NULL, NULL, NULL}};
 
 static bool find(const name_value_t *table, size_t count, const char *name, int *out) {
     for (size_t i = 0; i < count; ++i) {
@@ -145,24 +151,42 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return view.len;                                                                                               \
     }
 
-// A record variable's reader, over the record the machine publishes by value.
-// FIELDS names every field a scenario can state, as `X(field)` for each, which
-// is how the reader tells a field by its name from a typo.
-#define RECORD_FIELD_CASE(FIELD)                                                                                       \
+// A record's fields as a reader tells them by name — which is how a field is told
+// from a typo. FIELDS names every field a scenario can state, as `N(field)` for a
+// number or a bool and `E(field, declared_name)` for an enum, `declared_name` being
+// the function its document declares for the name of a value.
+#define RECORD_NUMBER(FIELD)                                                                                           \
     if (strcmp(field, #FIELD) == 0) {                                                                                  \
         *out = (int64_t)rec->FIELD;                                                                                    \
         return true;                                                                                                   \
     }
+#define RECORD_NOT_NUMBER(FIELD, NAME)
+#define RECORD_NAME(FIELD, NAME)                                                                                       \
+    if (strcmp(field, #FIELD) == 0) {                                                                                  \
+        return NAME(rec->FIELD);                                                                                       \
+    }
+#define RECORD_NOT_NAME(FIELD)
+
+// A record variable's readers, over the record the machine publishes by value.
 #define RECORD_READER(M, VAR, RECORD, FIELDS)                                                                          \
     static bool M##_read_record_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {                 \
         const RECORD value = M##_get_##VAR((const M##_t *)sm);                                                         \
         const RECORD *rec = &value;                                                                                    \
         (void)index;                                                                                                   \
-        FIELDS(RECORD_FIELD_CASE)                                                                                      \
+        FIELDS(RECORD_NUMBER, RECORD_NOT_NUMBER)                                                                       \
         return false;                                                                                                  \
+    }                                                                                                                  \
+    static const char *M##_text_record_##VAR(const void *sm, size_t index, const char *field) {                        \
+        const RECORD value = M##_get_##VAR((const M##_t *)sm);                                                         \
+        const RECORD *rec = &value;                                                                                    \
+        (void)index;                                                                                                   \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        FIELDS(RECORD_NOT_NAME, RECORD_NAME)                                                                           \
+        return NULL;                                                                                                   \
     }
 
-// A published list of records' reader, over the borrowed view of its elements.
+// A published list of records' readers, over the borrowed view of its elements.
 #define RECORD_LIST_READER(M, VAR, VIEW, RECORD, FIELDS)                                                               \
     static bool M##_read_record_list_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {            \
         const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
@@ -170,13 +194,29 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
             return false;                                                                                              \
         }                                                                                                              \
         const RECORD *rec = &view.data[index];                                                                         \
-        FIELDS(RECORD_FIELD_CASE)                                                                                      \
+        FIELDS(RECORD_NUMBER, RECORD_NOT_NUMBER)                                                                       \
         return false;                                                                                                  \
+    }                                                                                                                  \
+    static const char *M##_text_record_list_##VAR(const void *sm, size_t index, const char *field) {                   \
+        const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
+        if (index >= view.len) {                                                                                       \
+            return NULL;                                                                                               \
+        }                                                                                                              \
+        const RECORD *rec = &view.data[index];                                                                         \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        FIELDS(RECORD_NOT_NAME, RECORD_NAME)                                                                           \
+        return NULL;                                                                                                   \
     }                                                                                                                  \
     static size_t M##_count_record_list_##VAR(const void *sm) {                                                        \
         const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
         return view.len;                                                                                               \
     }
+
+// A table row for each.
+#define RECORD_ROW(M, VAR) {#VAR, M##_read_record_##VAR, M##_text_record_##VAR, NULL}
+#define RECORD_LIST_ROW(M, VAR)                                                                                        \
+    {#VAR, M##_read_record_list_##VAR, M##_text_record_list_##VAR, M##_count_record_list_##VAR}
 
 // One machine as `sce_scenario_driver_t` asks for it: the event by the name the
 // machine itself resolves (§scxml-3.12.1), the state by its document name, the
@@ -190,6 +230,14 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
             }                                                                                                          \
         }                                                                                                              \
         return false;                                                                                                  \
+    }                                                                                                                  \
+    static const char *M##_read_record_text(void *sm, const char *name, size_t index, const char *field) {             \
+        for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
+            if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
+                return RECORDS[i].text(sm, index, field);                                                              \
+            }                                                                                                          \
+        }                                                                                                              \
+        return NULL;                                                                                                   \
     }                                                                                                                  \
     static bool M##_read_record_count(void *sm, const char *name, size_t *len) {                                       \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
@@ -258,6 +306,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               TEXT,                                                                    \
                                               M##_read_lists,                                                          \
                                               M##_read_record_field,                                                   \
+                                              M##_read_record_text,                                                    \
                                               M##_read_record_count};                                                  \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
@@ -481,7 +530,7 @@ STATIC_SCENARIO(static_block_ends_list, block_ends_list_states, block_ends_list_
 // field by field in a guard and an assignment, and updated a field at a time —
 // from its own value and from a typed event payload. It is published by value,
 // as the struct the machine's header declares.
-#define DAY_FIELDS(X) X(year) X(month) X(dayOfMonth)
+#define DAY_FIELDS(N, E) N(year) N(month) N(dayOfMonth)
 VARIABLE_READER(static_record_fields, refusals)
 RECORD_READER(static_record_fields, shown, static_record_fields_record_day_t, DAY_FIELDS)
 static const name_value_t record_fields_states[] = {
@@ -490,8 +539,8 @@ static const name_value_t record_fields_states[] = {
 static const variable_t record_fields_variables[] = {
     {"refusals", static_record_fields_read_refusals},
 };
-static const record_variable_t record_fields_records[] = {{"shown", static_record_fields_read_record_shown, NULL},
-                                                          {NULL, NULL, NULL}};
+static const record_variable_t record_fields_records[] = {RECORD_ROW(static_record_fields, shown),
+                                                          {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_fields, record_fields_states, record_fields_variables, NULL, no_lists,
                 record_fields_records)
 
@@ -505,8 +554,7 @@ static const name_value_t record_states[] = {
 static const variable_t record_variables[] = {
     {"refusals", static_record_read_refusals},
 };
-static const record_variable_t record_records[] = {{"shown", static_record_read_record_shown, NULL},
-                                                   {NULL, NULL, NULL}};
+static const record_variable_t record_records[] = {RECORD_ROW(static_record, shown), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record, record_states, record_variables, NULL, no_lists, record_records)
 
 // static_record_list: lists of records — each append takes a copy of the record
@@ -527,13 +575,33 @@ static const variable_t record_list_variables[] = {
     {"total", static_record_list_read_total},
     {"errors", static_record_list_read_errors},
 };
-static const record_variable_t record_list_records[] = {
-    {"draft", static_record_list_read_record_draft, NULL},
-    {"last", static_record_list_read_record_last, NULL},
-    {"days", static_record_list_read_record_list_days, static_record_list_count_record_list_days},
-    {"copies", static_record_list_read_record_list_copies, static_record_list_count_record_list_copies},
-    {NULL, NULL, NULL}};
+static const record_variable_t record_list_records[] = {RECORD_ROW(static_record_list, draft),
+                                                        RECORD_ROW(static_record_list, last),
+                                                        RECORD_LIST_ROW(static_record_list, days),
+                                                        RECORD_LIST_ROW(static_record_list, copies),
+                                                        {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_list, record_list_states, record_list_variables, NULL, no_lists, record_list_records)
+
+// static_record_enum: a record with an enum field is held in the machine's own
+// type for the enum — compared with `===`, assigned a variant, appended whole and
+// read through a loop's record item — and its field is observed as the name its
+// document declares, not the constant C spells for it.
+#define VIEW_FIELDS(N, E) E(layout, enum_view_mode_declared_name) N(zoom)
+VARIABLE_READER(static_record_enum, weeks)
+VARIABLE_READER(static_record_enum, flips)
+RECORD_READER(static_record_enum, shown, static_record_enum_record_view_t, VIEW_FIELDS)
+RECORD_LIST_READER(static_record_enum, seen, static_record_enum_record_view_view_t, static_record_enum_record_view_t,
+                   VIEW_FIELDS)
+static const name_value_t record_enum_states[] = {
+    {"viewing", STATIC_RECORD_ENUM_STATE_VIEWING},
+};
+static const variable_t record_enum_variables[] = {
+    {"weeks", static_record_enum_read_weeks},
+    {"flips", static_record_enum_read_flips},
+};
+static const record_variable_t record_enum_records[] = {
+    RECORD_ROW(static_record_enum, shown), RECORD_LIST_ROW(static_record_enum, seen), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_enum, record_enum_states, record_enum_variables, NULL, no_lists, record_enum_records)
 
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
@@ -574,6 +642,7 @@ int main(void) {
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
+    bad |= static_record_enum_scenario("static_record_enum", 13);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= sync_client_scenario("sync_client", 30);

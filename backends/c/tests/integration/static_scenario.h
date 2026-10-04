@@ -63,6 +63,11 @@ typedef struct {
     // and a list of records as an array of them, and a driver with no record may
     // leave this unset.
     bool (*record_field)(void *sm, const char *name, size_t index, const char *field, int64_t *out);
+    // The name an enum field of a record holds, as its document declares it —
+    // addressed as `record_field` is; NULL for a field that is not an enum's. A
+    // scenario states such a value as a string, and a driver with no enum field
+    // may leave this unset.
+    const char *(*record_text)(void *sm, const char *name, size_t index, const char *field);
     // How many elements the list of records `name` holds. False for a name the
     // machine publishes no list of records of.
     bool (*record_count)(void *sm, const char *name, size_t *len);
@@ -248,7 +253,7 @@ static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const cha
     return 1;
 }
 
-// A record stated as an object of numbers, against the record variable `name`
+// A record stated as an object of numbers, bools and enum names, against the record variable `name`
 // or element `index` of the list of records `name`. A well-formed object sets
 // `*well_formed`, whatever the machine holds; the rest of the file is read only
 // when it is.
@@ -266,24 +271,44 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
         return 0;
     }
     for (;;) {
+        char where[160];
+        char want_text[64];
         int64_t want = 0;
-        if (!sce_scenario_string(c, field, sizeof(field)) || !sce_scenario_take(c, ':') ||
-            !sce_scenario_number(c, &want)) {
-            return sce_scenario_fail(d, step, "a record field is not an integer or a bool");
+        if (!sce_scenario_string(c, field, sizeof(field)) || !sce_scenario_take(c, ':')) {
+            return sce_scenario_fail(d, step, "a record has a field with no name");
         }
-        int64_t got = 0;
-        if (d->record_field == NULL || !d->record_field(d->sm, name, index, field, &got)) {
-            (void)snprintf(message, sizeof(message), "the machine publishes no field `%s` of record `%s`", field, name);
-            bad |= sce_scenario_fail(d, step, message);
-        } else if (got != want) {
-            if (index == SCE_SCENARIO_WHOLE) {
-                (void)snprintf(message, sizeof(message), "`%s.%s` is %lld, want %lld", name, field, (long long)got,
-                               (long long)want);
-            } else {
-                (void)snprintf(message, sizeof(message), "`%s`[%zu].%s is %lld, want %lld", name, index, field,
-                               (long long)got, (long long)want);
+        if (index == SCE_SCENARIO_WHOLE) {
+            (void)snprintf(where, sizeof(where), "`%s.%s`", name, field);
+        } else {
+            (void)snprintf(where, sizeof(where), "`%s`[%zu].%s", name, index, field);
+        }
+        sce_scenario_space(c);
+        if (*c->at == '"') {
+            // An enum field is stated as the name its document declares.
+            if (!sce_scenario_string(c, want_text, sizeof(want_text))) {
+                return sce_scenario_fail(d, step, "a record field's name is not a string");
             }
-            bad |= sce_scenario_fail(d, step, message);
+            const char *got_text = d->record_text == NULL ? NULL : d->record_text(d->sm, name, index, field);
+            if (got_text == NULL) {
+                (void)snprintf(message, sizeof(message), "the machine publishes no enum field %s", where);
+                bad |= sce_scenario_fail(d, step, message);
+            } else if (strcmp(got_text, want_text) != 0) {
+                (void)snprintf(message, sizeof(message), "%s is `%s`, want `%s`", where, got_text, want_text);
+                bad |= sce_scenario_fail(d, step, message);
+            }
+        } else {
+            if (!sce_scenario_number(c, &want)) {
+                return sce_scenario_fail(d, step, "a record field is not an integer, a bool or an enum name");
+            }
+            int64_t got = 0;
+            if (d->record_field == NULL || !d->record_field(d->sm, name, index, field, &got)) {
+                (void)snprintf(message, sizeof(message), "the machine publishes no field %s", where);
+                bad |= sce_scenario_fail(d, step, message);
+            } else if (got != want) {
+                (void)snprintf(message, sizeof(message), "%s is %lld, want %lld", where, (long long)got,
+                               (long long)want);
+                bad |= sce_scenario_fail(d, step, message);
+            }
         }
         if (sce_scenario_take(c, '}')) {
             *well_formed = true;

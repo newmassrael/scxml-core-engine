@@ -3517,9 +3517,10 @@ impl StaticTarget for CTarget {
             };
             return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
         }
-        // A record is a struct of the fields its schema declares, which are the
-        // numbers and bools a list holds. A field is named as the author wrote
-        // it; a name C reserves is refused where the schema is read, for every
+        // A record is a struct of the fields its schema declares: the numbers
+        // and bools a list holds, and an enum the machine imports under the
+        // alias the schema writes. A field is named as the author wrote it; a
+        // name C reserves is refused where the schema is read, for every
         // backend at once.
         for var in &scope.variables {
             let Some(alias) = var.value_type.as_ref().and_then(|t| {
@@ -3531,7 +3532,11 @@ impl StaticTarget for CTarget {
             let Some(schema) = model.imported_records.get(alias) else {
                 continue;
             };
-            if let Some(field) = schema.fields.iter().find(|f| !held_scalar(&f.sce_type)) {
+            if let Some(field) = schema
+                .fields
+                .iter()
+                .find(|f| !held_scalar(&f.sce_type) && !matches!(f.sce_type, SceType::Enum(_)))
+            {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",
                     field.id,
@@ -3692,23 +3697,24 @@ impl StaticTarget for CTarget {
     }
     // Plain data by the record rule: a struct of the schema's fields in the
     // schema's order, copied by assignment, and the borrowed view a host reads
-    // a published list of them through.
+    // a published list of them through. An enum field is held in the machine's
+    // own type for the enum, which is declared before the record.
     fn record_def(
         &self,
         ty: &str,
         alias: &str,
         schema: &EventSchemaModel,
-        _enum_types: &std::collections::BTreeMap<String, String>,
+        enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let fields: String = schema
             .fields
             .iter()
             .map(|field| {
-                format!(
-                    "    {} {};\n",
-                    crate::forge::generator::c_type(&field.sce_type),
-                    self.record_field(&field.id)
-                )
+                let field_ty = match &field.sce_type {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::c_type(other).to_string(),
+                };
+                format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
             .collect();
         let view = format!("{}_view_t", ty.trim_end_matches("_t"));
