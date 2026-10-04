@@ -19,11 +19,13 @@ mutation_targets sce-build/tests/a_record_holds_an_enum_field.rs
 mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_enum.rs
 
 # A `<record>.<field>` path is no enum value: the comparison of the field with a
-# number, and the field in arithmetic, pass the judge.
+# number, and the field in arithmetic, pass the judge. The path is read where a
+# member chain is asked what it holds, one place for a record's field and for the
+# payload's.
 mutation_case "a record's field is not an enum value" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "                if let Some(held) = var_alias(&format!(\"{alias}.{property}\")) {\n",
-     "                if let Some(held) = var_alias(&format!(\"{alias}.{property}\")).filter(|_| false) {\n")
+     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {\n",
+     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)).filter(|_| false) {\n")
 PY
 
 # A record variable's fields are not entered as enum paths: the same, for a
@@ -59,9 +61,10 @@ PY
 # A `<param>` takes an enum value held by a variable, by a record variable's
 # field or by a field of the payload, and not a loop item's: the lowering has no
 # table for the item, so the judge that took it would pass a document no backend
-# lowers.
+# lowers. The mutant keeps the narrower lookup in use: a tree built under
+# `-D warnings` would not compile with it left unread.
 mutation_case "a loop item's enum field is carried as a param" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);\n",
-     "        let held_by_a_variable = |name: &str| self.enum_of(name);\n")
+     "        let held_by_a_variable = |name: &str| self.enum_of(name).or_else(|| self.enum_of_wire_value(name));\n")
 PY

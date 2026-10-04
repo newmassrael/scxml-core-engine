@@ -43,9 +43,10 @@ PY
 
 # The enum a payload field holds is not required to be imported: the machine has
 # no type to hold it in, and the generator stops on the field with a panic where
-# the author cannot see.
+# the author cannot see. The mutant reads `alias` still: a tree built under
+# `-D warnings` would not compile with it left unused.
 mutation_case "the enum a payload field holds need not be imported" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "            declarations.enum_type(alias).map_err(|enum_alias| {\n",
-     "            Ok::<String, String>(String::new()).map_err(|enum_alias| {\n")
+     "            Ok::<String, String>(alias.to_string()).map_err(|enum_alias| {\n")
 PY

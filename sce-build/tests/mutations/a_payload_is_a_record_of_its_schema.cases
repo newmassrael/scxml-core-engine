@@ -36,11 +36,13 @@ edit("sce-build/src/forge/static_datamodel.rs",
 PY
 
 # The order a schema writes its fields in is no part of its shape: the same two
-# fields declared the other way round are the same record.
+# fields declared the other way round are the same record. The mutant leaves the
+# list as written but still borrows it mutably: a tree built under `-D warnings`
+# would not compile with the `mut` left unused.
 mutation_case "the order of the fields is compared" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "                    fields.sort_by(|a, b| a.0.cmp(&b.0));\n",
-     "")
+     "                    fields.truncate(usize::MAX);\n")
 PY
 
 # The payload is not offered to the record rule: `_event.data` is judged as any

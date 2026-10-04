@@ -54,18 +54,15 @@ fn class_of(
     match &node.kind {
         // `<alias>.<variant>`: the variant itself was judged against the
         // enum's own set by the expression pass that ran before this one.
-        ExprKind::Member { object, property } => {
+        ExprKind::Member { object, .. } => {
             if let ExprKind::Ident(alias) = &object.kind {
                 if ctx.lookup_enum(alias).is_some() {
                     return Ok(Some(alias.clone()));
                 }
-                // `<record>.<field>`: a field of a record that holds an enum.
-                if let Some(held) = var_alias(&format!("{alias}.{property}")) {
-                    return Ok(Some(held));
-                }
             }
-            // `_event.data.<field>`: a field of the payload that holds one — a
-            // path of more than two names, which the arm above does not read.
+            // `<record>.<field>` or `_event.data.<field>`: the path of a field of
+            // a record, or of the payload, that holds an enum — whatever the
+            // number of names it is spelled in.
             if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {
                 return Ok(Some(held));
             }

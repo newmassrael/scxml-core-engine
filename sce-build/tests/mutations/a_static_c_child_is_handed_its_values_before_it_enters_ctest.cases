@@ -26,7 +26,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^c11_integration_static_invoke$'
-mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 backends/c/forge-runtime/include/sce/forge/algorithm.h
 mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integration/static_invoke_entry.scxml sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
 
 # ── The child's entry walk runs after it was handed its values ─────
@@ -55,11 +55,18 @@ PY
 # `capacity + 1` bytes, and a value past it is a write past its end. The
 # fixture's `over` and `wide` children are handed eight bytes and five bytes in
 # two characters to a variable of four.
+#
+# The lowering wraps the value in the runtime's check, and that check is what the
+# case breaks: an edit of the lowering itself is Rust that `sce-codegen` is built
+# from, which a ctest round does not rebuild (the generator is refused when its
+# sources are not the ones it was built from), so it could only read as
+# INCONCLUSIVE. The runtime header is compiled into the machine, where the write
+# past the buffer is what the tests' sanitizer reports.
 
 mutation_case "a string handed to a child is not held to the child's bound" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "            (SceType::String, Some(capacity)) => {\n                (target.bounded_string(&value.text, capacity), true)",
-     "            (SceType::String, Some(capacity)) if capacity == 0 => {\n                (target.bounded_string(&value.text, capacity), true)")
+edit("backends/c/forge-runtime/include/sce/forge/algorithm.h",
+     "    if (strlen(value) > (size_t)capacity) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);",
+     "    if (strlen(value) > (size_t)capacity && capacity == 0u) {\n        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);")
 PY
 
 mutation_case "a value that failed is not reported" <<'PY'
