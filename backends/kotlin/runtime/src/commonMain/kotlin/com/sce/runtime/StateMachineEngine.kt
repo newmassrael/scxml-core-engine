@@ -3498,14 +3498,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
             SendHelper.SendTarget.Unreachable -> return TargetSendOutcome.UNREACHABLE
             SendHelper.SendTarget.SelfExternal -> {
                 if (event != null) {
+                    // §scxml-5.10: [event] is the member the sender's name resolved
+                    // to in THIS machine's document, so its own queues are told the
+                    // name it was sent under when the member is not called that.
                     val metadata = EventMetadata.external(sendId = sendId, origin = origin, data = eventData)
+                        .copy(name = arrivalNameOf(event, eventName))
                     if (delayed) scheduleSend(sendId, delayMs, event, metadata) else send(event, metadata)
                 }
                 return TargetSendOutcome.SENT
             }
             SendHelper.SendTarget.Internal -> {
                 if (event != null) {
-                    val metadata = EventMetadata.internal(eventData)
+                    val metadata = EventMetadata.internal(eventData).copy(name = arrivalNameOf(event, eventName))
                     if (delayed) scheduleInternalSend(sendId, delayMs, event, metadata) else raiseInternal(event, metadata)
                 }
                 return TargetSendOutcome.SENT

@@ -1,0 +1,76 @@
+# Mutation cases for "a computed event name is matched like any other" (Go engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/go_a_computed_event_name_is_matched_like_any_other.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event `Engine.ResolveEventByName` gives
+# it (§scxml-3.12.1: the document's own event of that name, the longest token
+# prefix of it the document writes, or its wildcard) and `_event.name` is the
+# whole name (§scxml-5.10), over the external and the internal queue, now and
+# after a delay: `Engine.SendNamedExternal` and `Engine.SendNamedInternal` are the
+# two the generated send site calls, and the scheduler entry carries the name
+# through the wait. `integration_resources/a_computed_event_name_is_matched_like_any_other/`
+# is the document: four sends, and each is taken only when `_event.name` is the
+# whole name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes), a delivery that resolves the name and forgets to carry it (the
+# transition is taken, the machine is told the shorter name), and a wait that
+# forgets it (the immediate send is right and the delayed one is not).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/a_computed_event_name_is_matched_like_any_other/
+mutation_runtime_targets backends/go/runtime/engine.go
+mutation_oracles backends/go/tests/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_other_test.go
+
+mutation_case "an external computed name is looked up in the exact table again" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
+     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
+PY
+
+mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
+     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
+PY
+
+mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\tmeta.Metadata.Data = eventData\n\tmeta.Metadata.Name = arrival\n\te.RaiseExternalWithMeta(meta)\n",
+     "\tmeta.Metadata.Data = eventData\n\te.RaiseExternalWithMeta(meta)\n")
+PY
+
+mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\tmeta.Metadata.Name = e.arrivalNameOf(event, name)\n\te.Raise(meta)\n}",
+     "\te.Raise(meta)\n}")
+PY
+
+mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)\n\t\treturn\n",
+     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, \"\")\n\t\treturn\n")
+PY
+
+mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\t\t\tScheduledRoute{Kind: RouteInternalQueue, EventName: name})\n",
+     "\t\t\tScheduledRoute{Kind: RouteInternalQueue})\n")
+PY
+
+mutation_case "a delayed external send is raised without the name its entry carried" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\t\t\tdue.Metadata.Name = act.Name\n",
+     "")
+PY
+
+mutation_case "a delayed internal send is raised without the name its route carried" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "\t\tif route.EventName != \"\" {\n\t\t\tmeta.Metadata.Name = e.arrivalNameOf(event, route.EventName)\n\t\t}\n",
+     "")
+PY

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.12.1 + 5.10 + 6.2: a `<send>` whose event name is COMPUTED is
+     matched like any other event, and its `_event.name` is the whole name.
+
+     A transition's `event` descriptor matches by whole tokens (§3.12.1), so
+     `request` takes `request.new`, and `*` takes every name no other descriptor
+     takes, whether or not the document ever writes the name. An `eventexpr` makes
+     the name a run-time value: no build can know it, so a machine that carries
+     events as the members of the names its document writes has to resolve it the
+     way it resolves a name that arrives from outside — its own event of that name,
+     else the longest token prefix of it the document writes, else its wildcard —
+     and tell the machine the name it was sent under (§5.10). Measured 2026-10-04:
+     every AOT engine looked a computed name up exactly in the table of the names
+     its document writes, so `eventexpr="'request.' + 'new'"` was dropped in silence
+     beside a transition on `request`, which the Interpreter takes.
+
+     Four sends, one per way a machine's own queue is reached, each of which waits
+     for the one before it, and a delay on the second and the fourth so the name
+     has to survive the scheduler:
+
+       s1  to this session's external queue, now      `request.new`  -> `request`
+       s2  to this session's external queue, delayed  `other.thing`  -> `*`
+       s3  to the internal queue, now                 `request.again` -> `request`
+       s4  to the internal queue, delayed             `last.one`      -> `*`
+
+     and two more whose TARGET is computed too (`targetexpr`), which every engine
+     routes through the one table that classifies a target value, apart from the
+     literal `target` above:
+
+       s5  to `#_internal`, now                       `request.third` -> `request`
+       s6  to this session by its id, delayed         `last.two`      -> `*`
+
+     A transition is taken only when `_event.name` is the whole name, so a name
+     that was matched but shortened to the member's own does not advance the run:
+     the machine stays where it is and the driver reads that it never reached
+     `pass`. A name that is dropped does the same.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="s1"
+       name="a_computed_event_name_is_matched_like_any_other">
+    <state id="s1">
+        <onentry>
+            <send eventexpr="'request.' + 'new'"/>
+        </onentry>
+        <transition event="request" cond="_event.name === 'request.new'" target="s2"/>
+    </state>
+    <state id="s2">
+        <onentry>
+            <send eventexpr="'other.' + 'thing'" delay="20ms"/>
+        </onentry>
+        <transition event="*" cond="_event.name === 'other.thing'" target="s3"/>
+    </state>
+    <state id="s3">
+        <onentry>
+            <send target="#_internal" eventexpr="'request.' + 'again'"/>
+        </onentry>
+        <transition event="request" cond="_event.name === 'request.again'" target="s4"/>
+    </state>
+    <state id="s4">
+        <onentry>
+            <send target="#_internal" eventexpr="'last.' + 'one'" delay="20ms"/>
+        </onentry>
+        <transition event="*" cond="_event.name === 'last.one'" target="s5"/>
+    </state>
+    <state id="s5">
+        <onentry>
+            <send targetexpr="'#_internal'" eventexpr="'request.' + 'third'"/>
+        </onentry>
+        <transition event="request" cond="_event.name === 'request.third'" target="s6"/>
+    </state>
+    <state id="s6">
+        <onentry>
+            <send targetexpr="'#_scxml_' + _sessionid" eventexpr="'last.' + 'two'" delay="20ms"/>
+        </onentry>
+        <transition event="*" cond="_event.name === 'last.two'" target="pass"/>
+    </state>
+    <final id="pass"/>
+</scxml>

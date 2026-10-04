@@ -1334,7 +1334,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 0, "__send_6", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1448,7 +1448,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_7", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

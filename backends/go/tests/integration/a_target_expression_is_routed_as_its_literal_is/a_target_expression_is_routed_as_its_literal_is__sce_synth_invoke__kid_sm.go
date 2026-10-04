@@ -913,7 +913,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("kAckNow")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("kAckNow")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kAckNow", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1021,7 +1021,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("kAckLater")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("kAckLater")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kAckLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1131,7 +1131,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("sAckNow")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("sAckNow")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sAckNow", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1239,7 +1239,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("sAckLater")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("sAckLater")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sAckLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

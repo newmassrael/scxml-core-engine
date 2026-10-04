@@ -1,0 +1,74 @@
+# Mutation cases for "a computed event name is matched like any other" (C++ AOT engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_a_computed_event_name_is_matched_like_any_other_ctest.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event `engine.resolveEventByName` gives it
+# (§scxml-3.12.1: the document's own event of that name, the longest token prefix of
+# it the document writes, or its wildcard) and `_event.name` is the whole name
+# (§scxml-5.10), over the external and the internal queue, now and after a delay:
+# the generated send site resolves the name, sets `EventWithMetadata::name` on an
+# immediate send, and schedules a delayed one with a `ScheduledRoute` that carries
+# the name (`Kind::ExternalQueue` for this session's external queue, the route's
+# `eventName` for the internal one), which `deliverRouted` puts back on the event
+# when the wait is over. `integration_resources/a_computed_event_name_is_matched_like_any_other/`
+# is the document: four sends, and each is taken only when `_event.name` is the
+# whole name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes), a delivery that resolves the name and forgets to carry it, and a wait
+# that forgets it.
+#
+# The generated machine is built from the document at CMake time, from the
+# templates, so a template edit reaches the test through `cmake --build`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/actions/send.jinja2
+mutation_oracles tests/integration/AComputedEventNameIsMatchedLikeAnyOtherAotTest.cpp
+
+mutation_case "a computed name is looked up in the exact table again" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "std::optional<Event> sendEvent = engine.resolveEventByName(eventName);",
+     "std::optional<Event> sendEvent = {{ model.name }}Policy::getEventFromName(eventName);")
+PY
+
+mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "engine.currentEventInvokeId(), {{ target_cpp }});\n{% if event_cpp == '*sendEvent' %}\n    meta.name = engine.arrivalNameOf(*sendEvent, eventName);\n{% endif %}",
+     "engine.currentEventInvokeId(), {{ target_cpp }});")
+PY
+
+mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    auto meta = typename Engine::EventWithMetadata({{ event_cpp }}, eventData);\n{% if event_cpp == '*sendEvent' %}\n    meta.name = engine.arrivalNameOf(*sendEvent, eventName);\n{% endif %}",
+     "    auto meta = typename Engine::EventWithMetadata({{ event_cpp }}, eventData);")
+PY
+
+mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::ExternalQueue, eventName});",
+     "::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::ExternalQueue, \"\"});")
+PY
+
+mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, {% if dyn_event %}eventName{% else %}\"\"{% endif %}, \"\"});",
+     "::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, \"\", \"\"});")
+PY
+
+mutation_case "a delayed external send is raised without the name its route carried" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "            meta.name = arrivalNameOf(event, route.eventName);\n            raiseExternal(std::move(meta));\n            return true;",
+     "            raiseExternal(std::move(meta));\n            return true;")
+PY
+
+mutation_case "a delayed internal send is raised without the name its route carried" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "            meta.name = arrivalNameOf(event, route.eventName);\n            raise(std::move(meta));",
+     "            raise(std::move(meta));")
+PY

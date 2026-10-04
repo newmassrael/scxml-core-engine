@@ -1,0 +1,83 @@
+# Mutation cases for "a computed event name is matched like any other" (Python engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_a_computed_event_name_is_matched_like_any_other.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event
+# `StatePolicy.resolve_event_by_name` gives it (§scxml-3.12.1: the document's own
+# event of that name, the longest token prefix of it the document writes, or its
+# wildcard) and `_event.name` is the whole name (§scxml-5.10), over the external
+# and the internal queue, now and after a delay: the generated send site resolves
+# the name and hands it to `Engine.send_to_self`, `schedule_send` and
+# `schedule_routed_send`, and the scheduler entry (`ScheduledEvent.name`, or the
+# internal route's `event_name`) carries it through the wait.
+# `integration_resources/a_computed_event_name_is_matched_like_any_other/` is the
+# document: four sends, and each is taken only when `_event.name` is the whole
+# name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes), a delivery that resolves the name and forgets to carry it (the
+# transition is taken, the machine is told the shorter name), and a wait that
+# forgets it (the immediate send is right and the delayed one is not).
+#
+# Python compiles nothing, so the module on disk is the artifact and every edit
+# here is a `mutation_runtime_targets`. The machine the oracle imports is
+# GENERATED and gitignored, so its regeneration is declared.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/a_computed_event_name_is_matched_like_any_other
+mutation_regen scripts/regen_a_computed_event_name_is_matched_like_any_other_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/scheduler.py tools/codegen/templates/python/actions/send.py.jinja2
+mutation_oracles backends/python/tests/integration/a_computed_event_name_is_matched_like_any_other/test_a_computed_event_name_is_matched_like_any_other_aot.py
+
+mutation_case "an external computed name is looked up in the exact table again" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}_evt = self.resolve_event_by_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_delay %}\n{{ indent }}    engine.schedule_send(_evt,",
+     "{{ indent }}_evt = self.get_event_from_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_delay %}\n{{ indent }}    engine.schedule_send(_evt,")
+PY
+
+mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}_evt = self.resolve_event_by_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_payload %}\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=",
+     "{{ indent }}_evt = self.get_event_from_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_payload %}\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=")
+PY
+
+mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            origin_type=SCXML_EVENT_PROCESSOR_URI,\n            name=name,\n        )",
+     "            origin_type=SCXML_EVENT_PROCESSOR_URI,\n        )")
+PY
+
+mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "engine.raise_internal(_evt, EventMetadata(data=_data, name=engine.arrival_name_of(_evt, _evt_name)))",
+     "engine.raise_internal(_evt, EventMetadata(data=_data))")
+PY
+
+mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data, name=name)",
+     "        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)")
+PY
+
+mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "\"internal\", event_name=_evt_name)",
+     "\"internal\")")
+PY
+
+mutation_case "a delayed external send is raised without the name its entry carried" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                    origin_type=SCXML_EVENT_PROCESSOR_URI,\n                    name=entry.name,\n                )",
+     "                    origin_type=SCXML_EVENT_PROCESSOR_URI,\n                )")
+PY
+
+mutation_case "a delayed internal send is raised without the name its route carried" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "                name = self.arrival_name_of(event, route.event_name) if route.event_name else \"\"\n",
+     "                name = \"\"\n")
+PY

@@ -1104,7 +1104,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("reply")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("reply")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "reply", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

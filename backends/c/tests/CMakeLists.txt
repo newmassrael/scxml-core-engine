@@ -529,6 +529,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.12.1 + 5.10: a `<send eventexpr>` computes its event's name, so
+    # the document cannot have written it; a transition on `request` takes
+    # `request.new`, `*` takes the rest, and `_event.name` is the whole name — over
+    # the external and the internal queue, now and after a delay.
+    sce_generate_static_integration_c_test(a_computed_event_name_is_matched_like_any_other "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_a_computed_event_name_is_matched_like_any_other
+        integration/test_a_computed_event_name_is_matched_like_any_other.c
+        ${INTEGRATION_C_TEST_a_computed_event_name_is_matched_like_any_other_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_a_computed_event_name_is_matched_like_any_other PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_a_computed_event_name_is_matched_like_any_other PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_computed_event_name_is_matched_like_any_other PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_computed_event_name_is_matched_like_any_other
+        COMMAND sce_c_integration_a_computed_event_name_is_matched_like_any_other
+    )
+    set_tests_properties(c11_integration_a_computed_event_name_is_matched_like_any_other PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
     # `mainEventLoop` forwards every event dequeued from the external queue to each
     # autoforward child and excludes only the cancel event; §6.4.2 puts

@@ -1592,7 +1592,19 @@ class Engine(Generic[S, E]):
         )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
-    def send_to_self(self, event: E, sendid: str = "", data: Any = "") -> None:
+    def arrival_name_of(self, event: E, name: str) -> str:
+        """§scxml-5.10 — what `EventMetadata.name` is for an event sent as
+        `name` and delivered as `event`: empty when `event` is the document's
+        own event of that name, so an event the document raises or sends
+        carries no copy of a name its member already holds, and `name` when
+        `resolve_event_by_name` had to cut it back to a shorter one or to the
+        wildcard. A `<send eventexpr>` computes its name, so the generated send
+        site asks."""
+        return "" if self._policy.get_event_name(event) == name else name
+
+    def send_to_self(
+        self, event: E, sendid: str = "", data: Any = "", name: str = ""
+    ) -> None:
         """W3C SCXML 6.2 + C.1 — a `<send>` this session addressed to itself.
 
         The event `send_external` enqueues, named by its sender: C.1 gives
@@ -1600,13 +1612,15 @@ class Engine(Generic[S, E]):
         Processor delivers — the location the SENDER published, the address a
         reply goes back to — and a session sending to itself is such a sender.
         `send_external` stays origin-less because a host that injects an event
-        is not this session."""
+        is not this session. `name` is the name the event was sent under when
+        that is not `event`'s own (`arrival_name_of`)."""
         metadata = EventMetadata(
             send_id=sendid,
             event_type="external",
             data=data,
             origin=self._session_id,
             origin_type=SCXML_EVENT_PROCESSOR_URI,
+            name=name,
         )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
@@ -1635,17 +1649,18 @@ class Engine(Generic[S, E]):
         return False
 
     def schedule_send(
-        self, event: E, delay_ms: int, sendid: str = "", data: Any = ""
+        self, event: E, delay_ms: int, sendid: str = "", data: Any = "", name: str = ""
     ) -> None:
         """W3C SCXML 6.2 — schedule `event` for delivery `delay_ms` after
         the current virtual time. Callers later move time forward via
         `advance_time(...)`; the scheduler is then drained into the
         external queue. `data` is preserved across the scheduler delay
-        and surfaces on `_event.data` when the event is delivered."""
+        and surfaces on `_event.data` when the event is delivered, and so is
+        `name`, the name the event was sent under when that is not its own."""
         if delay_ms <= 0:
-            self.send_to_self(event, sendid, data)
+            self.send_to_self(event, sendid, data, name)
             return
-        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)
+        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data, name=name)
 
     def schedule_routed_send(
         self,
@@ -1668,7 +1683,9 @@ class Engine(Generic[S, E]):
         is what lets one `<cancel sendid>` (W3C SCXML 6.3) reach it.
 
         `event` is this machine's own event, used for the internal queue; a
-        child or a parent resolves `event_name`."""
+        child or a parent resolves `event_name`. For the internal queue
+        `event_name` is the name the event was sent under, which is
+        `_event.name` there when `event` is not called that (§scxml-5.10)."""
         route = ScheduledRoute(kind=kind, event_name=event_name, invoke_id=invoke_id)
         if delay_ms <= 0:
             self._deliver_routed(event, sendid, data, route)
@@ -1714,7 +1731,8 @@ class Engine(Generic[S, E]):
         where it goes). Answers whether the target was there to take it."""
         if route.kind == "internal":
             if event is not None:
-                self.raise_internal(event, EventMetadata(send_id=sendid, data=data))
+                name = self.arrival_name_of(event, route.event_name) if route.event_name else ""
+                self.raise_internal(event, EventMetadata(send_id=sendid, data=data, name=name))
             return True
         if route.kind == "parent":
             parent_queue = self._policy._parent_queue
@@ -1772,10 +1790,11 @@ class Engine(Generic[S, E]):
             return "unreachable"
         if kind == send_module.TARGET_SELF:
             if event is not None:
+                name = self.arrival_name_of(event, event_name)
                 if delay_ms > 0:
-                    self.schedule_send(event, delay_ms, sendid, data)
+                    self.schedule_send(event, delay_ms, sendid, data, name)
                 else:
-                    self.send_to_self(event, sendid, data)
+                    self.send_to_self(event, sendid, data, name)
             return "sent"
         if kind == send_module.TARGET_INVOCATION:
             invoke = self._active_invokes.get(address)
@@ -1795,7 +1814,7 @@ class Engine(Generic[S, E]):
                 return "unreachable"
             route = ScheduledRoute(kind="parent", event_name=event_name)
         else:
-            route = ScheduledRoute(kind="internal")
+            route = ScheduledRoute(kind="internal", event_name=event_name)
         if delay_ms > 0:
             self._scheduler.schedule(
                 self._now_ms + delay_ms, sendid, event, data, route=route, rests_on=rests_on
@@ -1990,6 +2009,7 @@ class Engine(Generic[S, E]):
                     data=entry.data,
                     origin=self._session_id,
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
+                    name=entry.name,
                 )
                 self._external_queue.append(
                     EventWithMetadata(event=entry.event, metadata=metadata)

@@ -60,10 +60,17 @@ struct HostInvokeDeadline;
  *
  * `eventName` is the event as the receiving machine resolves it: a child or a
  * parent is another machine with its own event set, so the name is what
- * crosses, as it does on an immediate send.
+ * crosses, as it does on an immediate send. For this session's own queues it
+ * is the name the event was sent under, which is `_event.name` there when the
+ * member is not called that (§scxml-5.10).
  */
 struct ScheduledRoute {
     enum class Kind {
+        /// This session's own external queue, for an event sent under a name
+        /// that is not its member's own: a `<send eventexpr>` computes the name
+        /// (§scxml-3.12.1), so the entry carries it in `eventName`. An event
+        /// sent under its own name takes no route.
+        ExternalQueue,
         InternalQueue,  ///< `#_internal`: this session's internal queue
         Invocation,     ///< `#_<invokeid>`: an invocation of this session
         Parent,         ///< `#_parent`: the session that invoked this one
@@ -510,7 +517,8 @@ public:
             return std::nullopt;
         }
         const bool ownsEvent = !entry.hostSend && !entry.hostInvokeDeadline &&
-                               (!entry.route || entry.route->kind == ScheduledRoute::Kind::InternalQueue);
+                               (!entry.route || entry.route->kind == ScheduledRoute::Kind::InternalQueue ||
+                                entry.route->kind == ScheduledRoute::Kind::ExternalQueue);
         return ReadyHead{entry.fireTime, ownsEvent ? &entry.event : nullptr};
     }
 

@@ -835,12 +835,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		eventDataStr := ""
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
-	if sendEvt, sendOk := p.GetEventFromName(sendEventName); sendOk {
-		meta := sce.NewEventWithMetadata(sendEvt)
-		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
-		meta.Metadata.Data = eventDataStr
-		engine.RaiseExternalWithMeta(meta)
-	}
+	engine.SendNamedExternal(sendEventName, 0, "__send_1", eventDataStr, p.SessionID)
 
 	}
 	}
@@ -941,7 +936,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("sent")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("sent")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sent", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

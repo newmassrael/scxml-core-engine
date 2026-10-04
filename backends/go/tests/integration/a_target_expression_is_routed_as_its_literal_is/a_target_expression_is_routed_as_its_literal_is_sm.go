@@ -1424,7 +1424,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) ExecuteEntryActions(stat
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 0, "__send_7", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1538,7 +1538,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) ExecuteEntryActions(stat
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_8", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1654,7 +1654,7 @@ time.Duration(10) * time.Millisecond, "__send_8", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 0, "__send_9", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1768,7 +1768,7 @@ time.Duration(10) * time.Millisecond, "__send_8", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_10", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1884,7 +1884,7 @@ time.Duration(10) * time.Millisecond, "__send_10", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 0, "__send_11", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1998,7 +1998,7 @@ time.Duration(10) * time.Millisecond, "__send_10", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("lost")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("lost")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "lost", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_12", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2346,7 +2346,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) ExecuteTransitionContent
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("inNow")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("inNow")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "inNow", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2449,7 +2449,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) ExecuteTransitionContent
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("inLater")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("inLater")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "inLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2554,7 +2554,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("kNow")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("kNow")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kNow", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2657,7 +2657,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("kLater")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("kLater")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2762,7 +2762,7 @@ time.Duration(10) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("sNow")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("sNow")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sNow", sendTarget, p.SessionID,
 0, "__send_4", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -2865,7 +2865,7 @@ time.Duration(10) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("sLater")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("sLater")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_5", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

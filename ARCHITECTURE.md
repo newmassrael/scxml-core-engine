@@ -1015,9 +1015,31 @@ the wildcard member) until 2026-10-04, and
 `backends/python/tests/integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py`
 holds Python's.
 
-Not yet: a `<send eventexpr>` a machine sends itself with a computed name the
-document does not write is looked up exactly, so it is dropped where a descriptor
-or a `*` of the document would take it.
+**A name the machine computes meets the same rule.** A `<send eventexpr>` names its
+event at run time, so the document cannot have written the name, and every engine
+used to look one up exactly in the table of the names its document writes and drop
+one that was not in it, in silence, where the Interpreter takes it (measured
+2026-10-04: `eventexpr="'request.' + 'new'"` beside a transition on `request`).
+The send to this session's own queues now goes through the rule above and tells the
+machine the whole name, over the external and the internal queue, now and after a
+delay, so a scheduler entry carries the name through the wait (a saved state holds no
+such entry: a computed name needs a script engine, and only a `sce-static` machine,
+which has none, is saved):
+
+| Engine | Where | Carried through the wait by |
+|--------|-------|-----------------------------|
+| Rust | `Engine::send_named_external` / `send_named_internal` | `ScheduledAct::{Raise, Routed}.name` |
+| Go | `Engine.SendNamedExternal` / `SendNamedInternal` | `scheduledEntry.name`; the internal route's `EventName` |
+| Kotlin | the generated send site (`resolveArrivingEvent`, `arrivalNameOf`) | the entry's `EventMetadata.name` |
+| Python | the generated send site, `Engine.send_to_self` / `schedule_send` | `ScheduledEvent.name`; the internal route's `event_name` |
+| C++ AOT | the generated send site, `engine.resolveEventByName` | `ScheduledRoute::Kind::ExternalQueue` (and the internal route's `eventName`) |
+| C11 | the generated send site, `<machine>_arrive` | the scheduled entry's `name[]` |
+
+`a_computed_event_name_is_matched_like_any_other` (`integration_resources/`, every
+channel) holds it with six sends — the four of those queues, and two more whose
+target is computed too (`targetexpr`), which every engine routes through its table
+that classifies a target value. A name sent to `#_parent` or to an invoked child
+is the receiver's to resolve, and crosses as the name.
 
 ### LuaDOMBinding
 

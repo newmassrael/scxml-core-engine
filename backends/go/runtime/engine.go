@@ -539,8 +539,9 @@ func (e *Engine[S, E]) Tick() {
 			e.deliverRouted(act)
 		} else {
 			// §scxml-5.10.1 + §scxml-C-1: the metadata the immediate send
-			// stamps, restored when the wait ends.
-			e.externalQueue.Raise(NewEventWithFields(
+			// stamps, restored when the wait ends, and §scxml-5.10: the name
+			// it was sent under.
+			due := NewEventWithFields(
 				act.Event,
 				act.Data,
 				act.Origin,
@@ -549,7 +550,9 @@ func (e *Engine[S, E]) Tick() {
 				SCXMLEventProcessorType,
 				"", // invokeID
 				"", // target
-			))
+			)
+			due.Metadata.Name = act.Name
+			e.externalQueue.Raise(due)
 		}
 		// The macrostep this act drives may <cancel> a later one, so the
 		// queue is re-consulted after it rather than before.
@@ -1018,6 +1021,52 @@ func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, event
 	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
 }
 
+// SendNamedExternal is a `<send eventexpr>` this session addresses to its own
+// EXTERNAL queue, now or after delay (§scxml-6.2 + §scxml-3.12.1 + §scxml-5.10).
+//
+// The name is computed at run time, so the document cannot have written it: it
+// is delivered as the event ResolveEventByName gives it — the document's own
+// event of that name, the longest token prefix of it the document writes, or its
+// wildcard — and a name no descriptor of the document could match is dropped, as
+// one that arrives from outside is. `_event.name` is the whole name whenever the
+// member is not called that, a delayed send's included.
+func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {
+	event, ok := e.ResolveEventByName(name)
+	if !ok {
+		return
+	}
+	arrival := e.arrivalNameOf(event, name)
+	if delay > 0 {
+		readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
+		e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)
+		return
+	}
+	meta := NewEventWithMetadata(event)
+	meta.Metadata = ExternalMetadata(sendID, origin)
+	meta.Metadata.Data = eventData
+	meta.Metadata.Name = arrival
+	e.RaiseExternalWithMeta(meta)
+}
+
+// SendNamedInternal is the internal-queue twin of SendNamedExternal: a
+// `<send target="#_internal" eventexpr>`, now or after delay. A delay postpones
+// it and does not change the queue (§scxml-6.2).
+func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {
+	event, ok := e.ResolveEventByName(name)
+	if !ok {
+		return
+	}
+	if delay > 0 {
+		e.ScheduleRoutedEvent(event, delay, sendID, eventData, origin,
+			ScheduledRoute{Kind: RouteInternalQueue, EventName: name})
+		return
+	}
+	meta := NewEventWithMetadata(event)
+	meta.Metadata.Data = eventData
+	meta.Metadata.Name = e.arrivalNameOf(event, name)
+	e.Raise(meta)
+}
+
 // InvocationDelivery is implemented by a generated policy that invokes, so it
 // can hand a delayed send's event to one of its invocations (§scxml-6.2 +
 // §scxml-6.4). It answers whether that invocation was there to take it.
@@ -1105,16 +1154,23 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 		return TargetNotReachable
 	case TargetSelfExternal:
 		if hasEvent {
+			// §scxml-5.10: event is the member the sender's name resolved to in
+			// THIS machine's document, so its own queues are told the name it
+			// was sent under when the member is not called that.
+			arrival := e.arrivalNameOf(event, eventName)
 			if delayed {
-				e.ScheduleEvent(event, delay, sendID, eventData, origin)
+				readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
+				e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)
 			} else {
-				e.RaiseExternalWithMeta(NewEventWithFields(event, eventData, origin, sendID,
-					EventTypeExternal, SCXMLEventProcessorType, "", ""))
+				meta := NewEventWithFields(event, eventData, origin, sendID,
+					EventTypeExternal, SCXMLEventProcessorType, "", "")
+				meta.Metadata.Name = arrival
+				e.RaiseExternalWithMeta(meta)
 			}
 		}
 		return TargetSent
 	case TargetInternal:
-		route = ScheduledRoute{Kind: RouteInternalQueue}
+		route = ScheduledRoute{Kind: RouteInternalQueue, EventName: eventName}
 	case TargetParent:
 		// §scxml-C-1: a session nothing invoked has no parent to address,
 		// delayed or not.
@@ -1160,6 +1216,9 @@ func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData
 		meta.Metadata.Data = eventData
 		meta.Metadata.SendID = sendID
 		meta.Metadata.Origin = origin
+		if route.EventName != "" {
+			meta.Metadata.Name = e.arrivalNameOf(event, route.EventName)
+		}
 		e.Raise(meta)
 		return true
 	case RouteInvocation:

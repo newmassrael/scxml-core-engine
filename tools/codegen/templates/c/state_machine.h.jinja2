@@ -338,6 +338,16 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        postpones a send; it does not change where it goes. One of
        `{{ csym_prefix }}{{ model.name }}_sched_route_t`. */
     uint8_t route;
+{% if model.needs_script_engine %}
+    /* W3C SCXML 5.10: the name this machine's own event was sent under, when
+       that is not the name of its member — a `<send eventexpr>` computes it, and
+       the member that takes it is the document's event of that name, the longest
+       token prefix of it the document writes, or its wildcard
+       (`{{ csym_prefix }}{{ model.name }}_resolve_event_by_name`). `_event.name`
+       is the whole name when the wait ends. Empty when the member's own name is
+       the name sent. Only a machine with a script engine computes a name. */
+    char name[SCE_MAX_ID_LEN];
+{% endif %}
 {% set sched_invocations = model.invokes | scxml_family | list %}
 {% if model.may_address_parent or sched_invocations %}
     /* The event NAME a `#_parent` or `#_<invokeid>` entry delivers: the

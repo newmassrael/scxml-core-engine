@@ -1222,6 +1222,8 @@ add_executable(integration_tests
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/AnEventKeepsTheNameItWasSentUnderTest.cpp
     integration/AnEventKeepsTheNameItWasSentUnderAotTest.cpp
+    integration/AComputedEventNameIsMatchedLikeAnyOtherTest.cpp
+    integration/AComputedEventNameIsMatchedLikeAnyOtherAotTest.cpp
     integration/EventOriginIsALocationTest.cpp
     integration/EventOriginIsALocationAotTest.cpp
     integration/SessionIdsAreDistinctTest.cpp
@@ -1654,6 +1656,12 @@ sce_generate_static_integration_test(autoforward_event_fields ${STATIC_INTEGRATI
 # a transition on `request` takes `request.new` whether or not the document
 # writes it. The IRP corpus never reads a name the document does not write.
 sce_generate_static_integration_test(an_event_keeps_the_name_it_was_sent_under ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.12.1 + 5.10: a `<send eventexpr>` computes its event's name, so the
+# document cannot have written it; a transition on `request` takes `request.new`,
+# `*` takes the rest, and `_event.name` is the whole name — over the external and
+# the internal queue, now and after a delay.
+sce_generate_static_integration_test(a_computed_event_name_is_matched_like_any_other ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML C.1: `_event.origin` must be the sender's published
 # `_ioprocessors` location, and that location must be a usable <send>

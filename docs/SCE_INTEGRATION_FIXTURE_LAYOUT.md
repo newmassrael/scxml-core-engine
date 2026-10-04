@@ -53,6 +53,24 @@ its document writes: before the arrival name travelled beside the member
 was delivered the child was told the shorter one. The public IRP suite never reads a
 name its document does not write, so nothing else fails.
 
+`a_computed_event_name_is_matched_like_any_other` covers the same rule for a name the
+machine computes itself (W3C §3.12.1 with §5.10): a `<send eventexpr>` names its event
+at run time, so no build can know the name, and it has to meet the rule a name that
+arrives from outside meets — the document's own event of that name, else the longest
+token prefix of it the document writes, else its wildcard — and tell the machine the
+whole name. The document sends six, each waiting for the one before it: to this
+session's external queue now (`request.new` takes the transition on `request`), to it
+after a delay (`other.thing` takes `*`), to the internal queue now and after a delay,
+and — with the target computed too (`targetexpr`), which every engine routes through
+the table that classifies a target value — to `#_internal` now and to this session by
+its id after a delay; each is taken only when `_event.name` is the whole name. The
+delay is the point of the second, the fourth and the sixth: a scheduler entry that
+held the member and not the name delivers an event the machine is then told is called
+something shorter. Every channel
+asserts it, the Interpreter's included; before it every AOT engine looked a computed
+name up exactly in the table of the names its document writes and dropped one that
+was not in it, in silence (`ARCHITECTURE.md` "Event Names at the Door").
+
 **Fixtures stay on one axis.** `autoforward_event_fields` returns the child's
 verdict as its own event rather than as `<donedata>`, so a regression in the
 donedata lift cannot surface as an autoforward failure; `donedata_local_invoke`

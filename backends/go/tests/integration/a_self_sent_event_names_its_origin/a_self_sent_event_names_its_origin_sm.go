@@ -927,7 +927,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("nowhere")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("nowhere")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "nowhere", sendTarget, p.SessionID,
 0, "__send_3", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -1298,7 +1298,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("pong")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("pong")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "pong", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

@@ -28,9 +28,9 @@
 {% if action.event %}
     engine.schedule_event({{ machine_name }}Event::{{ action.event | to_event_variant }}, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }});
 {% else %}
-    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-        engine.schedule_event(evt, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }});
-    }
+    // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+    // document's names resolve it to, and `_event.name` is the whole name.
+    engine.send_named_external(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_origin(no_std) }});
 {% endif %}
 {% elif action.event %}
     {
@@ -41,12 +41,7 @@
         engine.raise_external_with_meta(meta);
     }
 {% elif dyn_event %}
-    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), {{ self_origin(no_std) }});
-        meta.set_event_data(event_data);
-        engine.raise_external_with_meta(meta);
-    }
+    engine.send_named_external(&_send_event_name, None, &send_id, event_data, &{{ self_origin(no_std) }});
 {% endif %}
 {%- endmacro %}
 {# §scxml-6.2.5: the act a host-served send performs, for `processor_type`.
@@ -653,10 +648,9 @@
     engine.schedule_routed_event(Some({{ machine_name }}Event::{{ action.event | to_event_variant }}), {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }},
         sce_rust_runtime::ScheduledRoute::InternalQueue);
 {% else %}
-    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-        engine.schedule_routed_event(Some(evt), {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }},
-            sce_rust_runtime::ScheduledRoute::InternalQueue);
-    }
+    // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+    // document's names resolve it to, and `_event.name` is the whole name.
+    engine.send_named_internal(&_send_event_name, Some({{ delay_rs }}), &send_id, event_data, &{{ self_origin(no_std) }});
 {% endif %}
 {% elif action.event %}
     {
@@ -665,11 +659,7 @@
         engine.raise(meta);
     }
 {% elif dyn_event %}
-    if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-        meta.set_event_data(event_data);
-        engine.raise(meta);
-    }
+    engine.send_named_internal(&_send_event_name, None, &send_id, event_data, &{{ self_origin(no_std) }});
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target is startingwith('http://') or action.target is startingwith('https://')))) %}
     // W3C SCXML C.2: BasicHTTP send to HTTP target
@@ -744,7 +734,7 @@
             Some({{ machine_name }}Event::{{ action.event | to_event_variant }}),
             "{{ action.event }}",
 {% else %}
-            Self::get_event_from_name(&_send_event_name),
+            Self::resolve_event_by_name(&_send_event_name),
             &_send_event_name,
 {% endif %}
             _rt,

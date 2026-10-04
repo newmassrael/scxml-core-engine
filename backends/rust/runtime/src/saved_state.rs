@@ -1049,11 +1049,15 @@ fn save_pending<P: StatePolicy>(
         .map(|(ready_at, act)| {
             let due = clamp_to_i64(wall_now_ms.saturating_add(ready_at.saturating_sub(now)));
             let act = match act {
+                // §scxml-5.10: a send is saved under its member's name. A name the
+                // document computed (`<send eventexpr>`, `name`) needs a script
+                // engine, which no saved machine has, so none is waiting here.
                 ScheduledAct::Raise {
                     event,
                     event_data,
                     send_id,
                     origin,
+                    ..
                 } => SavedAct::Raise {
                     event: name(event),
                     data: event_data.clone(),
@@ -1066,6 +1070,7 @@ fn save_pending<P: StatePolicy>(
                     send_id,
                     origin,
                     route: ScheduledRoute::InternalQueue,
+                    ..
                 } => SavedAct::Internal {
                     event: name(event),
                     data: event_data.clone(),

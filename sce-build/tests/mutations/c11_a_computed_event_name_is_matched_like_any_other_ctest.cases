@@ -1,0 +1,67 @@
+# Mutation cases for "a computed event name is matched like any other" (C11
+# generated machines).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/c11_a_computed_event_name_is_matched_like_any_other_ctest.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event `<machine>_arrive` gives it
+# (§scxml-3.12.1: the document's own event of that name, the longest token prefix of
+# it the document writes, or its wildcard) and `_event.name` is the whole name
+# (§scxml-5.10), over the external and the internal queue, now and after a delay:
+# the generated send site resolves the name into the event's `name`, and a delayed
+# send keeps it in the scheduled entry (`name[]`), which the tick puts back on the
+# event when the wait is over. `integration_resources/a_computed_event_name_is_matched_like_any_other/`
+# is the document: four sends, and each is taken only when `_event.name` is the
+# whole name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes), a delivery that resolves the name and forgets to carry it, and a wait
+# that forgets it.
+#
+# The machine is emitted by the template, which `cmake --build` reads at generation
+# time, so the template is the target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_a_computed_event_name_is_matched_like_any_other$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_computed_event_name_is_matched_like_any_other.c
+
+mutation_case "an immediate computed name is looked up in the exact table again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);",
+     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name) &&\n                        {{ csym_prefix }}{{ model.name }}_event_exact(_send_evt_name) != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;")
+PY
+
+mutation_case "a delayed computed name is looked up in the exact table again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival)) {",
+     "if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival) &&\n                        {{ P }}_event_exact(_send_evt_name) != {{ PU }}_EVENT_NONE) {")
+PY
+
+mutation_case "an immediate send does not carry the name it was sent under" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);",
+     "                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);\n                    _send_evt.name[0] = '\\0';")
+PY
+
+mutation_case "a delayed send waits without the name it was sent under" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "_send_delayed, _send_arrival[0] != '\\0' ? _send_evt_name : NULL, NULL,",
+     "_send_delayed, NULL, NULL,")
+PY
+
+mutation_case "the scheduled entry does not keep the name it was handed" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        sce_copy_bounded_id(slot->name, event_name);",
+     "        (void)slot;")
+PY
+
+mutation_case "a delayed send is raised without the name its entry carried" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        memcpy(evt.name, ready.name, sizeof(evt.name));\n",
+     "")
+PY

@@ -1166,6 +1166,15 @@
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "detail",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendNamedExternal",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5621,6 +5630,68 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_route_to_child",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendNamedExternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendToTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendToTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scheduler.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledAct",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "schedule_event_named_at",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "send_to_target",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "deliverRouted",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "sendToTarget",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8976,6 +9047,16 @@
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
           "symbol": "ScheduledRoute",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendNamedExternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SendNamedInternal",
           "kind": "references"
         }
       ],

@@ -1576,15 +1576,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% set PU = csym_prefix | upper ~ model.name | upper %}
                 {
 {% if action.eventexpr %}
+                    /* W3C SCXML 3.12.1 + 5.10: the event the document's names
+                       resolve the computed name to, and the name it is told it
+                       arrived under when its member is not called that. */
                     {{ P }}_event_t _send_delayed = {{ PU }}_EVENT_NONE;
-                    {% for event_name in model.events | sort %}
-                    if (_send_delayed == {{ PU }}_EVENT_NONE && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                        _send_delayed = {{ PU }}_EVENT_{{ event_name | to_c11_upper_ident }};
-                    }
-                    {% endfor %}
-                    if (_send_delayed != {{ PU }}_EVENT_NONE) {
+                    char _send_arrival[SCE_MAX_ID_LEN];
+                    if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival)) {
                         scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
-                                              _send_delayed, NULL, NULL,
+                                              _send_delayed, _send_arrival[0] != '\0' ? _send_evt_name : NULL, NULL,
                                               "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
                     }
 {% else %}
@@ -1603,13 +1602,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                     memset(&_send_evt, 0, sizeof(_send_evt));
 {% if action.eventexpr %}
-                    bool _send_evt_matched = false;
-                    {% for event_name in model.events | sort %}
-                    if (!_send_evt_matched && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
-                        _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
-                        _send_evt_matched = true;
-                    }
-                    {% endfor %}
+                    /* W3C SCXML 3.12.1 + 5.10: the event the document's names
+                       resolve the computed name to; `_send_evt.name` is left
+                       holding the whole name when its member is not called that. */
+                    const bool _send_evt_matched = {{ csym_prefix }}{{ model.name }}_arrive(
+                        _send_evt_name, strlen(_send_evt_name), &_send_evt.event, _send_evt.name);
 {% else %}
                     _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | to_c11_upper_ident }};
 {% endif %}
@@ -3362,6 +3359,15 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
     slot->route = (uint8_t)route;
     slot->event = event;
     sce_copy_bounded_id(slot->send_id, send_id);
+{% if model.needs_script_engine %}
+    /* W3C SCXML 5.10: for an event of this machine's own queues, `event_name` is
+       the name it was sent under when that is not its member's — NULL when the
+       member is called that. */
+    if (event_name != NULL && (route == {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_EXTERNAL ||
+                               route == {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL)) {
+        sce_copy_bounded_id(slot->name, event_name);
+    }
+{% endif %}
 {% set sched_invocations = model.invokes | scxml_family | list %}
 {% if model.may_address_parent or sched_invocations %}
     if (event_name != NULL) {
@@ -4685,6 +4691,10 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            → LuaEngine::setCurrentEvent delivery). Same-sized arrays, NUL
            written by `scheduled_push_routed`. */
         memcpy(evt.data, ready.data, sizeof(evt.data));
+        /* W3C SCXML 5.10: the name the event was sent under, when its member is
+           not called that. Same-sized arrays; the NUL is written by
+           `scheduled_push_routed`. */
+        memcpy(evt.name, ready.name, sizeof(evt.name));
 {% endif %}
         /* W3C SCXML 6.2.4 + C.1: a `#_internal` entry joins the internal
            queue it named; every other one this session's external queue. */

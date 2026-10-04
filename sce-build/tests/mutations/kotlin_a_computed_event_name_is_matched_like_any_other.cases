@@ -1,0 +1,80 @@
+# Mutation cases for "a computed event name is matched like any other" (Kotlin engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_a_computed_event_name_is_matched_like_any_other.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event `resolveArrivingEvent` gives it
+# (§scxml-3.12.1: the document's own event of that name, the longest token prefix
+# of it the document writes, or its wildcard) and `_event.name` is the whole name
+# (§scxml-5.10): the generated send site resolves it and carries the name in the
+# metadata it hands `send`, `scheduleSend`, `raiseInternal` and
+# `scheduleInternalSend`, over the external and the internal queue, now and after
+# a delay. `integration_resources/a_computed_event_name_is_matched_like_any_other/` is
+# the document: four sends, and each is taken only when `_event.name` is the whole
+# name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes) and a delivery that resolves the name and forgets to carry it (the
+# transition is taken, the machine is told the shorter name). Only a name the
+# document does not write, told whole, over each queue and each wait, tells them
+# apart.
+#
+# The machine under test is the committed generated one, so the casefile edits it
+# the way the template would have emitted it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AComputedEventNameIsMatchedLikeAnyOtherTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AComputedEventNameIsMatchedLikeAnyOtherTest.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt
+
+mutation_case "an external computed name is looked up in the exact table again" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "            val sendEvent = resolveArrivingEvent(sendEventName)\n            // W3C SCXML 6.2: send to this session's external queue\n",
+     "            val sendEvent = resolveEventByName(sendEventName)\n            // W3C SCXML 6.2: send to this session's external queue\n")
+PY
+
+mutation_case "a delayed external computed name is looked up in the exact table again" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "            val sendEvent = resolveArrivingEvent(sendEventName)\n            // W3C SCXML 6.2: Delayed send\n",
+     "            val sendEvent = resolveEventByName(sendEventName)\n            // W3C SCXML 6.2: Delayed send\n")
+PY
+
+mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "            val sendEvent = resolveArrivingEvent(sendEventName)\n            // W3C SCXML 5.10: an internal send carries `_event.data` just as an\n            // external one does.\n            if (sendEvent != null) raiseInternal(",
+     "            val sendEvent = resolveEventByName(sendEventName)\n            // W3C SCXML 5.10: an internal send carries `_event.data` just as an\n            // external one does.\n            if (sendEvent != null) raiseInternal(")
+PY
+
+mutation_case "a delayed internal computed name is looked up in the exact table again" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "            val sendEvent = resolveArrivingEvent(sendEventName)\n            // W3C SCXML 5.10: an internal send carries `_event.data` just as an\n            // external one does.\n            // W3C SCXML 6.2.4: a delay postpones",
+     "            val sendEvent = resolveEventByName(sendEventName)\n            // W3C SCXML 5.10: an internal send carries `_event.data` just as an\n            // external one does.\n            // W3C SCXML 6.2.4: a delay postpones")
+PY
+
+mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = scriptSessionId ?: \"\", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = scriptSessionId ?: \"\", data = sendData))")
+PY
+
+mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = scriptSessionId ?: \"\", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = scriptSessionId ?: \"\", data = sendData))")
+PY
+
+mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "if (sendEvent != null) raiseInternal(sendEvent, EventMetadata.internal(sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) raiseInternal(sendEvent, EventMetadata.internal(sendData))")
+PY
+
+mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
+     "if (sendEvent != null) scheduleInternalSend(\"__send_3\", 20L, sendEvent, EventMetadata.internal(sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) scheduleInternalSend(\"__send_3\", 20L, sendEvent, EventMetadata.internal(sendData))")
+PY

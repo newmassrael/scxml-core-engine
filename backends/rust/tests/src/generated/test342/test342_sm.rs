@@ -706,17 +706,15 @@ impl StatePolicy for Test342Policy {
                             let event_data: &str = "";
 
                             // W3C SCXML 6.2: Default send (no target = external event)
-                            if let Some(evt) = Self::get_event_from_name(&_send_event_name) {
-                                let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                                meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
-                                );
-                                meta.set_event_data(event_data);
-                                engine.raise_external_with_meta(meta);
-                            }
+                            engine.send_named_external(
+                                &_send_event_name,
+                                None,
+                                &send_id,
+                                event_data,
+                                &::sce_rust_runtime::sce_string_from_str(
+                                    self.session_id.as_deref().unwrap_or(""),
+                                ),
+                            );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)

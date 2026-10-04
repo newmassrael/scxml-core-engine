@@ -817,7 +817,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("ping")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("ping")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "ping", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
@@ -922,7 +922,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName("loopback")
+		sendEvt, sendHasEvt := engine.ResolveEventByName("loopback")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "loopback", sendTarget, p.SessionID,
 0, "__send_1", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

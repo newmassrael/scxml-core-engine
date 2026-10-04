@@ -251,6 +251,13 @@ pub enum ScheduledAct<E> {
         /// A delayed send is the same event as an immediate one, only later,
         /// so waiting must not cost it the address a reply goes back to.
         origin: SceString,
+        /// §scxml-5.10: the name the event was sent under when that is not
+        /// `event`'s own — a `<send eventexpr>` computes it, and the member that
+        /// takes it is the document's event of that name, the longest token
+        /// prefix of it the document writes, or its wildcard. Empty when the
+        /// member's own name is the name sent; `_event.name` is the whole name
+        /// when the wait ends, so the entry carries it.
+        name: SceString,
     },
     /// §scxml-6.2: deliver a delayed send whose target is not this session's
     /// own external queue to the target it resolved when it was made.
@@ -264,6 +271,9 @@ pub enum ScheduledAct<E> {
         send_id: SceString,
         /// §scxml-C-1: the sending session.
         origin: SceString,
+        /// §scxml-5.10: the name `event` was sent under when that is not its
+        /// own, for the internal queue (see `Raise::name`).
+        name: SceString,
         /// Where the event goes.
         route: ScheduledRoute,
     },
@@ -444,6 +454,21 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         event_data: &str,
         origin: &str,
     ) -> SceString {
+        self.schedule_event_named_at(event, ready_at, send_id, event_data, origin, "")
+    }
+
+    /// [`schedule_event_at`](Self::schedule_event_at) for an event sent under
+    /// `name` when that is not the member's own (§scxml-5.10): the name is kept
+    /// with the entry and is `_event.name` when it comes due.
+    pub fn schedule_event_named_at(
+        &mut self,
+        event: E,
+        ready_at: SchedTimePoint,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+        name: &str,
+    ) -> SceString {
         let effective_send_id: SceString = if send_id.is_empty() {
             self.next_auto_send_id += 1;
             format_auto_send_id(self.next_auto_send_id)
@@ -453,7 +478,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         // no_std elides the per-entry strings (see `ScheduledEntry`); the
         // parameters are then unused (mirrors `raise_external`'s `let _ = ...`).
         #[cfg(feature = "no_std")]
-        let _ = (event_data, origin);
+        let _ = (event_data, origin, name);
         let entry = ScheduledEntry {
             #[cfg(not(feature = "no_std"))]
             act: ScheduledAct::Raise {
@@ -461,6 +486,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
                 event_data: crate::sce_string_from_str(event_data),
                 send_id: effective_send_id.clone(),
                 origin: crate::sce_string_from_str(origin),
+                name: crate::sce_string_from_str(name),
             },
             #[cfg(feature = "no_std")]
             event,
@@ -491,6 +517,24 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         origin: &str,
         route: ScheduledRoute,
     ) -> SceString {
+        self.schedule_routed_named_at(event, ready_at, send_id, event_data, origin, route, "")
+    }
+
+    /// [`schedule_routed_at`](Self::schedule_routed_at) for an event sent under
+    /// `name` when that is not the member's own (§scxml-5.10), which the internal
+    /// queue's delivery reads as `_event.name`.
+    #[cfg(not(feature = "no_std"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn schedule_routed_named_at(
+        &mut self,
+        event: Option<E>,
+        ready_at: SchedTimePoint,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+        route: ScheduledRoute,
+        name: &str,
+    ) -> SceString {
         let effective_send_id: SceString = if send_id.is_empty() {
             self.next_auto_send_id += 1;
             format_auto_send_id(self.next_auto_send_id)
@@ -503,6 +547,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
                 event_data: crate::sce_string_from_str(event_data),
                 send_id: effective_send_id.clone(),
                 origin: crate::sce_string_from_str(origin),
+                name: crate::sce_string_from_str(name),
                 route,
             },
             send_id: S::store(&effective_send_id),
@@ -1734,11 +1779,14 @@ impl<P: StatePolicy> Engine<P> {
                         event_data,
                         send_id,
                         origin,
+                        name,
                     } => {
                         // §scxml-5.10.1 + §scxml-C-1: the metadata the
-                        // immediate send stamps, restored when the wait ends.
+                        // immediate send stamps, restored when the wait ends,
+                        // and §scxml-5.10: the name it was sent under.
                         let mut meta = EventWithMetadata::new(event);
                         meta.metadata = EventMetadata::external(send_id, origin);
+                        meta.metadata.name = name;
                         meta.set_event_data(&event_data);
                         self.raise_external_with_meta(meta);
                     }
@@ -1748,9 +1796,10 @@ impl<P: StatePolicy> Engine<P> {
                         event_data,
                         send_id,
                         origin,
+                        name,
                         route,
                     } => {
-                        self.deliver_routed(event, &event_data, send_id, origin, route);
+                        self.deliver_routed(event, &event_data, send_id, origin, name, route);
                     }
                     // §scxml-6.2.4: the wait is over, so now the act happens.
                     // Everything the immediate send site does happens here
@@ -2730,6 +2779,83 @@ impl<P: StatePolicy> Engine<P> {
             .schedule_routed_at(event, ready_at, send_id, event_data, origin, route)
     }
 
+    /// §scxml-6.2 + §scxml-3.12.1 + §scxml-5.10: a `<send eventexpr>` this
+    /// session addresses to its own EXTERNAL queue, now or after `delay`.
+    ///
+    /// The name is computed at run time, so the document cannot have written it:
+    /// it is delivered as the event [`StatePolicy::resolve_event_by_name`] gives
+    /// it — the document's own event of that name, the longest token prefix of it
+    /// the document writes, or its wildcard — and a name no descriptor of the
+    /// document could match is dropped, as one that arrives from outside is.
+    /// `_event.name` is the whole name whenever the member is not called that, a
+    /// delayed send's included.
+    #[cfg(not(feature = "no_std"))]
+    pub fn send_named_external(
+        &mut self,
+        name: &str,
+        delay: Option<Duration>,
+        send_id: &SceString,
+        event_data: &str,
+        origin: &SceString,
+    ) {
+        let Some(event) = P::resolve_event_by_name(name) else {
+            return;
+        };
+        let arrival = Self::arrival_name_of(event, name);
+        match delay {
+            Some(delay) => {
+                let ready_at = self.sched_now_plus(delay);
+                self.scheduler
+                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, arrival);
+            }
+            None => {
+                let mut meta = EventWithMetadata::new(event);
+                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());
+                meta.metadata.name = crate::sce_string_from_str(arrival);
+                meta.set_event_data(event_data);
+                self.raise_external_with_meta(meta);
+            }
+        }
+    }
+
+    /// The internal-queue twin of [`send_named_external`](Self::send_named_external):
+    /// a `<send target="#_internal" eventexpr>`, now or after `delay`. A delay
+    /// postpones it and does not change the queue (§scxml-6.2).
+    #[cfg(not(feature = "no_std"))]
+    pub fn send_named_internal(
+        &mut self,
+        name: &str,
+        delay: Option<Duration>,
+        send_id: &SceString,
+        event_data: &str,
+        origin: &SceString,
+    ) {
+        let Some(event) = P::resolve_event_by_name(name) else {
+            return;
+        };
+        let arrival = Self::arrival_name_of(event, name);
+        match delay {
+            Some(delay) => {
+                let ready_at = self.sched_now_plus(delay);
+                self.scheduler.schedule_routed_named_at(
+                    Some(event),
+                    ready_at,
+                    send_id,
+                    event_data,
+                    origin,
+                    ScheduledRoute::InternalQueue,
+                    arrival,
+                );
+            }
+            None => {
+                let mut meta = EventWithMetadata::new(event);
+                meta.metadata.name = crate::sce_string_from_str(arrival);
+                meta.set_event_data(event_data);
+                self.raise(meta);
+            }
+        }
+    }
+
     /// §scxml-6.2.4 + §scxml-C-1: send to a target value read at run time.
     ///
     /// A `targetexpr` is a target: whatever value it yields is routed as the
@@ -2760,6 +2886,11 @@ impl<P: StatePolicy> Engine<P> {
         origin: &str,
     ) -> TargetSendOutcome {
         use crate::helpers::send::{classify_target, SendTarget};
+        // §scxml-5.10: `event` is the member the sender's name resolved to in
+        // THIS machine's document, so its own queues are told the name it was
+        // sent under when the member is not called that; a child or a parent
+        // resolves `event_name` itself.
+        let arrival = event.map_or("", |event| Self::arrival_name_of(event, event_name));
         let route = match classify_target(target, own_session_id) {
             SendTarget::Unsupported | SendTarget::Mesh => return TargetSendOutcome::Unsupported,
             SendTarget::Unreachable => return TargetSendOutcome::Unreachable,
@@ -2767,7 +2898,10 @@ impl<P: StatePolicy> Engine<P> {
                 if let Some(event) = event {
                     match delay {
                         Some(delay) => {
-                            engine.schedule_event(event, delay, send_id, event_data, origin);
+                            let ready_at = engine.sched_now_plus(delay);
+                            engine.scheduler.schedule_event_named_at(
+                                event, ready_at, send_id, event_data, origin, arrival,
+                            );
                         }
                         None => {
                             let mut meta = EventWithMetadata::new(event);
@@ -2775,6 +2909,7 @@ impl<P: StatePolicy> Engine<P> {
                                 crate::sce_string_from_str(send_id),
                                 crate::sce_string_from_str(origin),
                             );
+                            meta.metadata.name = crate::sce_string_from_str(arrival);
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
                         }
@@ -2813,7 +2948,10 @@ impl<P: StatePolicy> Engine<P> {
             }
         };
         if let Some(delay) = delay {
-            engine.schedule_routed_event(event, delay, send_id, event_data, origin, route);
+            let ready_at = engine.sched_now_plus(delay);
+            engine.scheduler.schedule_routed_named_at(
+                event, ready_at, send_id, event_data, origin, route, arrival,
+            );
             return TargetSendOutcome::Sent;
         }
         let delivered = match &route {
@@ -2822,6 +2960,7 @@ impl<P: StatePolicy> Engine<P> {
                     let mut meta = EventWithMetadata::new(event);
                     meta.metadata.send_id = crate::sce_string_from_str(send_id);
                     meta.metadata.origin = crate::sce_string_from_str(origin);
+                    meta.metadata.name = crate::sce_string_from_str(arrival);
                     meta.set_event_data(event_data);
                     engine.raise(meta);
                 }
@@ -2860,6 +2999,7 @@ impl<P: StatePolicy> Engine<P> {
         event_data: &str,
         send_id: SceString,
         origin: SceString,
+        name: SceString,
         route: ScheduledRoute,
     ) {
         let delivered = match &route {
@@ -2872,6 +3012,7 @@ impl<P: StatePolicy> Engine<P> {
                 let mut meta = EventWithMetadata::new(event);
                 meta.metadata.send_id = send_id;
                 meta.metadata.origin = origin;
+                meta.metadata.name = name;
                 meta.set_event_data(event_data);
                 self.raise(meta);
                 return;

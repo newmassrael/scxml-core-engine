@@ -79,16 +79,17 @@
 {% if delay_go %}
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
 	// origin is this session, as on the immediate path.
+{% if action.eventexpr and model.needs_script_engine %}
+	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+	// document's names resolve it to, and `_event.name` is the whole name.
+	engine.SendNamedExternal({{ event_name_go }}, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+{% else %}
 	if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
 		engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 	}
+{% endif %}
 {% elif action.eventexpr and model.needs_script_engine %}
-	if sendEvt, sendOk := p.GetEventFromName({{ event_name_go }}); sendOk {
-		meta := sce.NewEventWithMetadata(sendEvt)
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
-		meta.Metadata.Data = eventDataStr
-		engine.RaiseExternalWithMeta(meta)
-	}
+	engine.SendNamedExternal({{ event_name_go }}, 0, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 {% elif action.event %}
 	{
 		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
@@ -597,6 +598,10 @@
 		engine.Raise(meta)
 	}
 {% endif %}
+{% elif action.eventexpr and model.needs_script_engine %}
+	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+	// document's names resolve it to, and `_event.name` is the whole name.
+	engine.SendNamedInternal({{ event_name_go }}, {% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 {% endif %}
 {% elif action.target == '#_parent' %}
 	// W3C SCXML 6.2: Send to parent
@@ -680,7 +685,7 @@
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
 	{
-		sendEvt, sendHasEvt := p.GetEventFromName({{ event_name_go }})
+		sendEvt, sendHasEvt := engine.ResolveEventByName({{ event_name_go }})
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, {{ event_name_go }}, sendTarget, p.SessionID,
 			{% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {

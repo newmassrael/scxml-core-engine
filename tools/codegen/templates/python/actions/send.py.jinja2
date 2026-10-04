@@ -57,7 +57,7 @@
     error.execution, one naming nothing there error.communication, and either
     ends the block (W3C SCXML 4.9). -#}
 {%- macro routed_to_target(indent, has_delay, delay_py, machine_name, model, route_arg='') -%}
-{{ indent }}_routed = engine.send_to_target(self.get_event_from_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data{{ route_arg }})
+{{ indent }}_routed = engine.send_to_target(self.resolve_event_by_name(_evt_name), _evt_name, _target_str, {% if has_delay %}{{ delay_py }}{% else %}0{% endif %}, _sid, _data{{ route_arg }})
 {{ indent }}if _routed == "unsupported":
 {% if 'error.execution' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"){{ route_arg }})
@@ -321,19 +321,22 @@
    does. A delay postpones it and does not change the queue (W3C SCXML 6.2). #}
 {% if has_delay %}
 {% if dyn_event %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{# §scxml-3.12.1 + §scxml-5.10: a computed name is delivered as the event the
+   resolver gives it (its own, the longest token prefix the document writes, or
+   its wildcard), and `_event.name` is the whole name. #}
+{{ indent }}_evt = self.resolve_event_by_name(_evt_name)
 {{ indent }}if _evt is not None:
-{{ indent }}    engine.schedule_routed_send(_evt, {{ delay_py }}, _sid, _data, "internal")
+{{ indent }}    engine.schedule_routed_send(_evt, {{ delay_py }}, _sid, _data, "internal", event_name=_evt_name)
 {% else %}
 {{ indent }}engine.schedule_routed_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data, "internal")
 {% endif %}
 {% elif dyn_event %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}_evt = self.resolve_event_by_name(_evt_name)
 {{ indent }}if _evt is not None:
 {% if has_payload %}
-{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data))
+{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=engine.arrival_name_of(_evt, _evt_name)))
 {% else %}
-{{ indent }}    engine.raise_internal(_evt)
+{{ indent }}    engine.raise_internal(_evt, EventMetadata(name=engine.arrival_name_of(_evt, _evt_name)))
 {% endif %}
 {% elif has_payload %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_data))
@@ -352,9 +355,9 @@
 {% endif %}
 {% set self_call = ('engine.schedule_send', ', ' ~ delay_py ~ ', _sid, _data') if has_delay else ('engine.send_to_self', ', _sid, _data') %}
 {% if dyn_event %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}_evt = self.resolve_event_by_name(_evt_name)
 {{ indent }}if _evt is not None:
-{{ indent }}    {{ self_call[0] }}(_evt{{ self_call[1] }})
+{{ indent }}    {{ self_call[0] }}(_evt{{ self_call[1] }}, name=engine.arrival_name_of(_evt, _evt_name))
 {% else %}
 {{ indent }}{{ self_call[0] }}({{ machine_name }}Event.{{ action.event | to_python_const }}{{ self_call[1] }})
 {% endif %}
@@ -394,12 +397,12 @@
 {% else %}
 {# W3C SCXML 6.2 — this session's external queue, now or after the delay. #}
 {% if dyn_event %}
-{{ indent }}_evt = self.get_event_from_name(_evt_name)
+{{ indent }}_evt = self.resolve_event_by_name(_evt_name)
 {{ indent }}if _evt is not None:
 {% if has_delay %}
-{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data)
+{{ indent }}    engine.schedule_send(_evt, {{ delay_py }}, _sid, _data, name=engine.arrival_name_of(_evt, _evt_name))
 {% else %}
-{{ indent }}    engine.send_to_self(_evt, _sid, _data)
+{{ indent }}    engine.send_to_self(_evt, _sid, _data, name=engine.arrival_name_of(_evt, _evt_name))
 {% endif %}
 {% elif has_delay %}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data)

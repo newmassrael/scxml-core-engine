@@ -1205,7 +1205,18 @@ public:
                        const ::SCE::ScheduledRoute &route) {
         using Kind = ::SCE::ScheduledRoute::Kind;
         if (route.kind == Kind::InternalQueue) {
-            raise(EventWithMetadata(event, eventData, origin, sendId));
+            EventWithMetadata meta(event, eventData, origin, sendId);
+            meta.name = arrivalNameOf(event, route.eventName);
+            raise(std::move(meta));
+            return true;
+        }
+        if (route.kind == Kind::ExternalQueue) {
+            // §scxml-5.10: this session's own external queue, for an event sent
+            // under a name that is not its member's own (a computed one).
+            EventWithMetadata meta(event, eventData, origin, sendId, "external",
+                                   SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+            meta.name = arrivalNameOf(event, route.eventName);
+            raiseExternal(std::move(meta));
             return true;
         }
         if (route.kind == Kind::MeshPeer) {
@@ -1283,11 +1294,21 @@ public:
         case Kind::Unreachable:
             return TargetSendOutcome::Unreachable;
         case Kind::SelfExternal:
+            // §scxml-5.10: `event` is the member the sender's name resolved to in
+            // THIS machine's document, so its own queues are told the name it was
+            // sent under when the member is not called that.
             if (delayed) {
-                scheduleEvent(event, delay, sendId, eventData, origin);
+                if (arrivalNameOf(event, eventName).empty()) {
+                    scheduleEvent(event, delay, sendId, eventData, origin);
+                } else {
+                    scheduleRoutedEvent(event, delay, sendId, eventData, origin,
+                                        ::SCE::ScheduledRoute{RouteKind::ExternalQueue, eventName});
+                }
             } else {
-                raiseExternal(EventWithMetadata(event, eventData, origin, sendId, "external",
-                                                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
+                EventWithMetadata meta(event, eventData, origin, sendId, "external",
+                                       SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+                meta.name = arrivalNameOf(event, eventName);
+                raiseExternal(std::move(meta));
             }
             return TargetSendOutcome::Sent;
         case Kind::Mesh:
@@ -1305,7 +1326,7 @@ public:
                                             SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, "", target));
             return TargetSendOutcome::Sent;
         case Kind::Internal:
-            route = ::SCE::ScheduledRoute{RouteKind::InternalQueue, "", ""};
+            route = ::SCE::ScheduledRoute{RouteKind::InternalQueue, eventName, ""};
             break;
         case Kind::Parent:
             // §scxml-C-1: a session nothing invoked has no parent to address,

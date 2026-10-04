@@ -216,6 +216,9 @@ eventData = contentData;
 {% macro send_raise_internal(event_cpp, carries_typed) %}
 {
     auto meta = typename Engine::EventWithMetadata({{ event_cpp }}, eventData);
+{% if event_cpp == '*sendEvent' %}
+    meta.name = engine.arrivalNameOf(*sendEvent, eventName);
+{% endif %}
 {% if carries_typed %}
     meta.typedData = typedData;
 {% endif %}
@@ -226,6 +229,9 @@ eventData = contentData;
 {% if model.needs_script_engine or model.needs_event_origin %}
 {
     auto meta = typename Engine::EventWithMetadata({{ event_cpp }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, engine.currentEventInvokeId(), {{ target_cpp }});
+{% if event_cpp == '*sendEvent' %}
+    meta.name = engine.arrivalNameOf(*sendEvent, eventName);
+{% endif %}
 {% if carries_typed %}
     meta.typedData = typedData;
 {% endif %}
@@ -363,16 +369,12 @@ if (eventName.empty()) {
 #error "SCE codegen drift: `<send eventexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
 {% if dyn_event %}
-// The event this machine raises when it delivers locally. A name no
-// transition of this document can match is delivered nowhere.
-std::optional<Event> sendEvent;
-{% for event_name in model.events | sort %}
-{{ 'if' if loop.first else '} else if' }} (eventName == "{{ event_name }}") {
-    sendEvent = Event::{{ event_name | to_cpp_event_variant }};
-{% if loop.last %}
-}
-{% endif %}
-{% endfor %}
+// The event this machine raises when it delivers locally (W3C SCXML 3.12.1): the
+// document's own event of that name, else the longest token prefix of it the
+// document writes, else its wildcard — the rule a name that arrives from outside
+// meets. A name no transition of this document can match is delivered nowhere.
+// `_event.name` is the whole name when the event is not called that (§5.10).
+std::optional<Event> sendEvent = engine.resolveEventByName(eventName);
 {% endif %}
 {% endif %}
 {% if action.targetexpr %}
@@ -703,7 +705,7 @@ if (sendEvent) {
 {% if not action.targetexpr and action.target == '#_internal' %}
 // W3C SCXML 6.2 + C.1: delayed to this session's internal queue.
 engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
-                           ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, "", ""});
+                           ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::InternalQueue, {% if dyn_event %}eventName{% else %}""{% endif %}, ""});
 {% elif not action.targetexpr and action.target.startswith('#') and not action.target.startswith('#_') %}
 // W3C SCXML 6.2 + SCE_MESH.md §mesh-9.5: delayed to the Mesh peer
 // "{{ action.target }}". The peer and the invokeid of the event
@@ -716,7 +718,14 @@ engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ 
 {
     // W3C SCXML 6.2: Delayed send to this session's external queue.
     // §scxml-C-1: the origin is this session, as on the immediate path.
+{% if dyn_event %}
+    // §scxml-5.10: the entry carries the name the event was sent under, which is
+    // `_event.name` when the delay is over and the member is not called that.
+    engine.scheduleRoutedEvent(*sendEvent, delayMs, sendId, eventData, {{ delayed_origin_cpp }},
+                               ::SCE::ScheduledRoute{::SCE::ScheduledRoute::Kind::ExternalQueue, eventName});
+{% else %}
     engine.scheduleEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ delayed_origin_cpp }});
+{% endif %}
 }
 {% endif %}
 {% else %}

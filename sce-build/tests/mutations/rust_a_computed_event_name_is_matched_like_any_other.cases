@@ -1,0 +1,78 @@
+# Mutation cases for "a computed event name is matched like any other" (Rust engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/rust_a_computed_event_name_is_matched_like_any_other.cases`.
+#
+# A `<send eventexpr>` names its event at run time, so the document cannot have
+# written the name. It is delivered as the event
+# `StatePolicy::resolve_event_by_name` gives it (§scxml-3.12.1: the document's own
+# event of that name, the longest token prefix of it the document writes, or its
+# wildcard) and `_event.name` is the whole name (§scxml-5.10), over the external and
+# the internal queue, now and after a delay: `Engine::send_named_external` and
+# `Engine::send_named_internal` are the two the generated send site calls, and the
+# scheduler entry (`ScheduledAct::Raise` / `Routed`) carries the name through the
+# wait. `integration_resources/a_computed_event_name_is_matched_like_any_other/` is the
+# document: four sends, and each is taken only when `_event.name` is the whole name.
+#
+# What is easy to get wrong and read as success: a computed name looked up in the
+# exact table again (every document that writes the name it computes still
+# passes), a delivery that resolves the name and forgets to carry it (the
+# transition is taken, the machine is told the shorter name), and a wait that
+# forgets it (the immediate send is right and the delayed one is not). Only a name
+# the document does not write, told whole, over each queue and each wait, tells
+# them apart.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_computed_event_name_is_matched_like_any_other
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/a_computed_event_name_is_matched_like_any_other.rs
+
+mutation_case "an external computed name is looked up in the exact table again" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        let Some(event) = P::resolve_event_by_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler\n                    .schedule_event_named_at(",
+     "        let Some(event) = P::get_event_from_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler\n                    .schedule_event_named_at(")
+PY
+
+mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        let Some(event) = P::resolve_event_by_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler.schedule_routed_named_at(",
+     "        let Some(event) = P::get_event_from_name(name) else {\n            return;\n        };\n        let arrival = Self::arrival_name_of(event, name);\n        match delay {\n            Some(delay) => {\n                let ready_at = self.sched_now_plus(delay);\n                self.scheduler.schedule_routed_named_at(")
+PY
+
+mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());\n                meta.metadata.name = crate::sce_string_from_str(arrival);\n",
+     "                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());\n")
+PY
+
+mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                meta.metadata.name = crate::sce_string_from_str(arrival);\n                meta.set_event_data(event_data);\n                self.raise(meta);",
+     "                meta.set_event_data(event_data);\n                self.raise(meta);")
+PY
+
+mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, arrival);\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(",
+     "                    .schedule_event_named_at(event, ready_at, send_id, event_data, origin, \"\");\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(")
+PY
+
+mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                    ScheduledRoute::InternalQueue,\n                    arrival,\n                );",
+     "                    ScheduledRoute::InternalQueue,\n                    \"\",\n                );")
+PY
+
+mutation_case "a delayed external send is raised without the name its entry carried" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                        meta.metadata.name = name;\n                        meta.set_event_data(&event_data);",
+     "                        let _ = name;\n                        meta.set_event_data(&event_data);")
+PY
+
+mutation_case "a delayed internal send is raised without the name its entry carried" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                meta.metadata.origin = origin;\n                meta.metadata.name = name;",
+     "                meta.metadata.origin = origin;\n                let _ = name;")
+PY

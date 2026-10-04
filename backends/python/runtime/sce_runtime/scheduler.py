@@ -84,6 +84,13 @@ class ScheduledEvent(Generic[E]):
     #: send site returned, so a refusal made then can only name them if the entry
     #: carried them here. Empty for a send whose route rests on none.
     rests_on: Tuple[str, ...] = field(default=(), compare=False)
+    #: §scxml-5.10 — the name the event is sent under when it is not the name of
+    #: `event` itself: a `<send eventexpr>` computes it, and the member that
+    #: takes it is the document's own event of that name, or the longest token
+    #: prefix of it the document writes, or its wildcard. `_event.name` is the
+    #: whole name whenever the delay is over, so the entry carries it. Empty when
+    #: `event`'s own name is the name sent.
+    name: str = field(default="", compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -107,6 +114,7 @@ class Scheduler(Generic[E]):
         host_invoke_deadline: Any = None,
         route: Optional[ScheduledRoute] = None,
         rests_on: Tuple[str, ...] = (),
+        name: str = "",
     ) -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
@@ -125,7 +133,8 @@ class Scheduler(Generic[E]):
         `route` is where the event goes when due (W3C SCXML 6.2), ``None``
         for this session's own external queue. `rests_on` is the open
         questions that route rests on, handed back to whoever reports a
-        refusal made when the entry comes due."""
+        refusal made when the entry comes due. `name` is the name `event`
+        was sent under when that is not its own."""
         heapq.heappush(
             self._heap,
             ScheduledEvent(
@@ -138,6 +147,7 @@ class Scheduler(Generic[E]):
                 host_invoke_deadline=host_invoke_deadline,
                 route=route,
                 rests_on=rests_on,
+                name=name,
             ),
         )
 
