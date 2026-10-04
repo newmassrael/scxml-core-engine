@@ -3019,6 +3019,24 @@ A missing field is refused on the
 both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
 because `<sce:field>` is the codec's byte-layout field.
 
+**A payload taken whole.** The payload of the event a transition is on is a record
+of its schema, and `_event.data` names it: `<assign location="shown"
+expr="_event.data"/>` replaces the record in one assignment, and `<sce:append
+target="seen" expr="_event.data"/>` adds it whole to a list of the same schema, with no
+`<assign>` per field to keep in step with the schema. It is accepted when the
+schema of the event declares the fields the record's does, each of the type it
+does, in any order; one that declares other fields, or the same fields of other
+types, is `scxml/static-datamodel-rule` on the `expr`, as is a transition on an
+event that has no schema. A payload that does not fit its schema — a name its
+enum does not declare, an integer past its width — is refused before the
+transition runs, so the record is not replaced and the list not appended to, the
+fields that did fit included. Every generated backend and the Interpreter replay
+`scenarios/static_whole_payload.json`; Python's lift reads an integer at the width
+the schema declares, as the others do, since its `int` has none to refuse a value
+by. The fixture is not named `static_record_payload`: C11 names a machine's
+payload struct `<machine>_<event>`, and `static_record` has an event `payload`, so
+a machine of that name put both in one header.
+
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
 starts at one of the variants, written as the expression `<alias>.<variant>`

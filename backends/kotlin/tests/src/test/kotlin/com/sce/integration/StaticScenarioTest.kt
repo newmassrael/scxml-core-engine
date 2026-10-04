@@ -41,6 +41,7 @@ import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
+import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -409,6 +410,25 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_list"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The payload of an event is a record of its schema taken whole: it replaces a
+    // record variable in one assignment and is appended whole to a list.
+    @Test
+    fun staticWholePayloadIsTakenWholeAsARecord() {
+        val sm = StaticWholePayloadStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_whole_payload"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

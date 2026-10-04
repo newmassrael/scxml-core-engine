@@ -54,6 +54,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
@@ -493,6 +494,31 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		},
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
+	}))
+}
+
+// The payload of an event is a record of its schema taken whole: it replaces a
+// record variable in one assignment and is appended whole to a list, the enum
+// field read back by the name the enum document declares.
+func TestThePayloadOfAnEventIsTakenWholeAsARecord(t *testing.T) {
+	policy := static_whole_payload.NewStaticWholePayloadPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	viewJSON := func(view static_whole_payload.StaticWholePayloadViewRecord) any {
+		return map[string]any{"layout": view.Layout().String(), "zoom": view.Zoom()}
+	}
+	replay(t, "static_whole_payload", drive[static_whole_payload.StaticWholePayloadState, static_whole_payload.StaticWholePayloadEvent](&policy, map[string]func() any{
+		"shown": func() any { return viewJSON(policy.Shown()) },
+		"seen": func() any {
+			seen := policy.Seen()
+			out := make([]any, len(seen))
+			for i, view := range seen {
+				out[i] = viewJSON(view)
+			}
+			return out
+		},
+		"updates": func() any { return policy.Updates() },
+		"agendas": func() any { return policy.Agendas() },
+		"others":  func() any { return policy.Others() },
 	}))
 }
 

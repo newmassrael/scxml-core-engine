@@ -114,6 +114,7 @@ pub fn check(
         enum_vars: enum_variables(&scope, &model.imported_records),
         loop_enum_paths: Default::default(),
         payload_enum_paths: Default::default(),
+        payload_schema: Default::default(),
         diag_label,
         read: Default::default(),
     };
@@ -174,8 +175,9 @@ pub fn check(
             let paths = scope.paths(schema);
             let ctx = judge.ctx(&paths);
             // An enum field of the payload is a value of the enum the schema
-            // names, as a record's field is.
-            judge.open_payload_enums(schema);
+            // names, as a record's field is, and the payload taken whole is a
+            // record of its schema.
+            judge.open_payload(schema);
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
@@ -189,7 +191,7 @@ pub fn check(
             }
             judge.actions(&ctx, &transition.actions, &state.id)?;
         }
-        judge.open_payload_enums(None);
+        judge.open_payload(None);
         for invoke in &state.invokes {
             judge.invoke(&plain, invoke, &state.id)?;
         }
@@ -327,6 +329,9 @@ struct Judge<'a> {
     /// The enum fields of the payload of the transition the walk is in, by
     /// `_event.data.<field>` path with the alias of the enum each holds.
     payload_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
+    /// The schema of the payload of the transition the walk is in, which
+    /// `_event.data` taken whole is a record of.
+    payload_schema: std::cell::RefCell<Option<crate::forge::model::EventSchemaModel>>,
     /// Every item and index of the `<foreach>`es the walk is inside: values
     /// the loop binds and the body reads, and does not write.
     loop_names: std::cell::RefCell<Vec<String>>,
@@ -417,14 +422,16 @@ impl<'a> Judge<'a> {
     }
 
     /// Opens the walk of a transition, whose event's payload `schema` is
-    /// declared, to the enum fields that payload holds, each a value of the
-    /// enum the schema names. Whether the document imports that enum under the
+    /// declared, to the payload: the enum fields it holds, each a value of the
+    /// enum the schema names, and the schema itself, which `_event.data` taken
+    /// whole is a record of. Whether the document imports that enum under the
     /// alias the schema writes is asked where the payload is read, which is
     /// where the lowering knows it is.
-    fn open_payload_enums(&self, schema: Option<&crate::forge::model::EventSchemaModel>) {
+    fn open_payload(&self, schema: Option<&crate::forge::model::EventSchemaModel>) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
             .unwrap_or_default();
+        *self.payload_schema.borrow_mut() = schema.cloned();
     }
 
     /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant
@@ -1179,11 +1186,44 @@ impl<'a> Judge<'a> {
         if names_one {
             return Ok(());
         }
+        // The payload of the event the transition is on is a record of its
+        // schema, taken whole as `_event.data` — when that schema declares the
+        // fields the record's does, each of the type it does.
+        if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+            let payload = self.payload_schema.borrow();
+            let record = self.schemas.get(alias);
+            if let (Some(payload), Some(record)) = (payload.as_ref(), record) {
+                let shape = |schema: &crate::forge::model::EventSchemaModel| {
+                    let mut fields: Vec<_> = schema
+                        .fields
+                        .iter()
+                        .map(|f| (f.id.clone(), f.sce_type.clone()))
+                        .collect();
+                    fields.sort_by(|a, b| a.0.cmp(&b.0));
+                    fields
+                };
+                if shape(payload) == shape(record) {
+                    return Ok(());
+                }
+                return Err(self.rule_at(
+                    format!("<{element} expr=\"{written}\">"),
+                    &format!(
+                        "the payload of the event is not a record of the schema {alias}: it \
+                         declares other fields, or the same fields of other types"
+                    ),
+                    spelling.map(|s| s.row()),
+                    spelling.map(|s| s.col()),
+                    state,
+                    written,
+                ));
+            }
+        }
         Err(self.rule_at(
             format!("<{element} expr=\"{written}\">"),
             &format!(
                 "a whole record of the schema {alias} is taken by name: a record variable \
-                 declared record:{alias}, or the item of a <foreach> over a list of it"
+                 declared record:{alias}, the item of a <foreach> over a list of it, or the \
+                 payload of an event whose schema it is (`_event.data`)"
             ),
             spelling.map(|s| s.row()),
             spelling.map(|s| s.col()),

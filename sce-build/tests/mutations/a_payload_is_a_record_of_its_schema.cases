@@ -1,0 +1,53 @@
+# Mutation cases for "a payload is a record of its schema"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_payload_is_a_record_of_its_schema.cases
+#
+# `_event.data` is taken whole where a whole record of a schema is taken, when
+# the schema of the event declares the fields the record's does, each of the
+# type it does. A record the payload does not fit is the one a generated machine
+# would otherwise have written field by field into a type it does not have, so
+# each property of that comparison is held by a case of its own: that it is made,
+# that it reads the types, that it ignores the order a schema writes the fields
+# in, and that the payload is offered to it at all.
+
+mutation_tests -p sce-build --features cli --test a_payload_is_a_record_of_its_schema
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/a_payload_is_a_record_of_its_schema.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs
+
+# Any payload is taken whole by any record: a schema that declares another field
+# passes the judge.
+mutation_case "the payload's shape is not compared with the record's" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                if shape(payload) == shape(record) {\n",
+     "                if shape(payload) == shape(record) || true {\n")
+PY
+
+# A field of the same name and another type is the same field: a uint16 is taken
+# whole by a record of a uint8.
+mutation_case "the types of the fields are not compared" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                        .map(|f| (f.id.clone(), f.sce_type.clone()))\n",
+     "                        .map(|f| (f.id.clone(), String::new()))\n")
+PY
+
+# The order a schema writes its fields in is no part of its shape: the same two
+# fields declared the other way round are the same record.
+mutation_case "the order of the fields is compared" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                    fields.sort_by(|a, b| a.0.cmp(&b.0));\n",
+     "")
+PY
+
+# The payload is not offered to the record rule: `_event.data` is judged as any
+# other name no record variable carries, and the payload of a record's own schema
+# is refused.
+mutation_case "the payload is not offered to the record rule" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if written == crate::forge::event_schema_check::EVENT_DATA_PATH {\n            let payload = self.payload_schema.borrow();\n",
+     "        if false && written == crate::forge::event_schema_check::EVENT_DATA_PATH {\n            let payload = self.payload_schema.borrow();\n")
+PY

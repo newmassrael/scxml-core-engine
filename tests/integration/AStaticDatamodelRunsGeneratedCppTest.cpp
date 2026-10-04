@@ -50,6 +50,7 @@
 #include "static_record_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_whole_payload_sm.h"
 #include "sync_client_sm.h"
 
 #include <filesystem>
@@ -558,6 +559,32 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAnEnumField) {
         {"flips", [](const Machine &m) { return json(m.flips()); }},
     });
     replay("static_record_enum", driver);
+}
+
+// The payload of an event is a record of its schema taken whole: it replaces a
+// record variable in one assignment and is appended whole to a list, the enum
+// field read back by the name the enum document declares.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ThePayloadOfAnEventIsTakenWholeAsARecord) {
+    namespace E = G::static_whole_payload;
+    using Machine = E::static_whole_payload;
+    auto viewJson = [](const auto &view) {
+        return json{{"layout", std::string(E::sceLogName(view.layout))}, {"zoom", view.zoom}};
+    };
+    Driver<Machine> driver({
+        {"shown", [&](const Machine &m) { return viewJson(m.shown()); }},
+        {"seen",
+         [&](const Machine &m) {
+             json listed = json::array();
+             for (const auto &view : m.seen()) {
+                 listed.push_back(viewJson(view));
+             }
+             return listed;
+         }},
+        {"updates", [](const Machine &m) { return json(m.updates()); }},
+        {"agendas", [](const Machine &m) { return json(m.agendas()); }},
+        {"others", [](const Machine &m) { return json(m.others()); }},
+    });
+    replay("static_whole_payload", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

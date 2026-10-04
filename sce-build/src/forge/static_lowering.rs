@@ -1386,7 +1386,10 @@ pub fn lower(
         .iter()
         .filter_map(|v| {
             let alias = v.value_type.as_ref()?.record_alias()?;
-            Some((v.id.clone(), records.get(alias)?.clone()))
+            Some((
+                v.id.clone(),
+                (alias.to_string(), records.get(alias)?.clone()),
+            ))
         })
         .collect();
     // The list variables, each with its element and bound — what an
@@ -2228,9 +2231,9 @@ fn initial_value(
     Ok(value.text)
 }
 
-/// A `sce-static` document's record variables, each with the schema its
-/// alias names.
-type RecordVars = std::collections::BTreeMap<String, EventSchemaModel>;
+/// A `sce-static` document's record variables, each with the alias it is
+/// declared under and the schema that alias names.
+type RecordVars = std::collections::BTreeMap<String, (String, EventSchemaModel)>;
 
 /// A `sce-static` document's list variables, each with its element type and
 /// its declared capacity.
@@ -4556,6 +4559,44 @@ fn renames<'a>(
     map
 }
 
+/// A whole record of the schema `alias` made from the payload of the event the
+/// walk is in (validation judged that payload to be of that schema): each field
+/// is read as `_event.data.<field>`, lowered like any expression into the type
+/// the record holds it in, and the record is made in one value — so what cannot
+/// be read leaves the variable as it was, and never half of a payload is written.
+fn payload_record_value(
+    machine: &str,
+    alias: &str,
+    schema: &EventSchemaModel,
+    target: &dyn StaticTarget,
+    lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
+) -> Result<Receiving, GenerateError> {
+    let ty = target.record_type(machine, alias);
+    let mut values = Vec::with_capacity(schema.fields.len());
+    for field in &schema.fields {
+        let read = lower(
+            &format!(
+                "{}.{}",
+                crate::forge::event_schema_check::EVENT_DATA_PATH,
+                field.id
+            ),
+            InferredType::from_sce_type(&field.sce_type),
+        )?;
+        if read.can_fail {
+            return Err(GenerateError::unsupported(format!(
+                "`_event.data.{}` can fail, which a record made whole from a payload does \
+                 not receive",
+                field.id
+            )));
+        }
+        values.push((target.record_field(&field.id), read.text));
+    }
+    Ok(Receiving {
+        text: target.record_value(&ty, &values),
+        can_fail: false,
+    })
+}
+
 /// How `target` reads each enum field of the payload `schema` declares, keyed by
 /// the `_event.data.<field>` path an expression names it by — for a target
 /// whose payload is untyped data, which it reads a field of through a call
@@ -4674,13 +4715,21 @@ fn lower_action(
         // record variable or a loop's record item, which validation judged
         // before this walk — and is a plain value, so the variable holds a copy
         // of it as it stands now. The name lowers as any other: renamed to the
-        // field that holds it, which is all the assignment needs.
+        // field that holds it, which is all the assignment needs. The payload of
+        // the event the transition is on is a record of its schema too, taken
+        // whole as `_event.data`: it is made field by field into one value
+        // ([`payload_record_value`]).
         "assign" => {
             reads_payload = reads(&action.expr);
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
-            let mut value = lower(&action.expr, slot)?;
             let location = action.location.trim();
+            let mut value = match rewrites.records.get(location) {
+                Some((alias, schema)) if action.expr.trim() == "_event.data" => {
+                    payload_record_value(rewrites.machine, alias, schema, target, &lower)?
+                }
+                _ => lower(&action.expr, slot)?,
+            };
             // A string variable holds at most what it declared, whatever the
             // value came from: past it the assignment fails as any other does,
             // writing nothing and ending its block (§scxml-4.9).
@@ -4800,6 +4849,19 @@ fn lower_action(
             let value = match elem {
                 crate::forge::model::ListElemType::Scalar(elem) => {
                     lower(&action.expr, InferredType::from_sce_type(elem))?
+                }
+                // The payload of the event the transition is on is a record of
+                // its schema too, taken whole as `_event.data`.
+                crate::forge::model::ListElemType::Record { alias }
+                    if action.expr.trim() == "_event.data" =>
+                {
+                    let schema = rewrites.schemas.get(alias).ok_or_else(|| {
+                        GenerateError::unsupported(format!(
+                            "<sce:append target=\"{list}\">: record:{alias} names no \
+                             event-schema this build read"
+                        ))
+                    })?;
+                    payload_record_value(rewrites.machine, alias, schema, target, &lower)?
                 }
                 crate::forge::model::ListElemType::Record { .. } => {
                     reads_payload = false;

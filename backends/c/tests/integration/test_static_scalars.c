@@ -103,6 +103,7 @@
 #include "static_record_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_whole_payload_sm.h"
 #include "sync_client_sm.h"
 
 #include <sce/forge/wire.h>
@@ -863,6 +864,28 @@ static const record_variable_t record_enum_records[] = {
     RECORD_ROW(static_record_enum, shown), RECORD_LIST_ROW(static_record_enum, seen), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_enum, record_enum_states, record_enum_variables, NULL, no_lists, record_enum_records)
 
+// static_whole_payload: the payload of an event is a record of its schema taken
+// whole — it replaces a record variable in one assignment and is appended whole to
+// a list — and a payload that does not fit its schema is refused as a whole.
+VARIABLE_READER(static_whole_payload, updates)
+VARIABLE_READER(static_whole_payload, agendas)
+VARIABLE_READER(static_whole_payload, others)
+RECORD_READER(static_whole_payload, shown, static_whole_payload_record_view_t, VIEW_FIELDS)
+RECORD_LIST_READER(static_whole_payload, seen, static_whole_payload_record_view_view_t,
+                   static_whole_payload_record_view_t, VIEW_FIELDS)
+static const name_value_t whole_payload_states[] = {
+    {"viewing", STATIC_WHOLE_PAYLOAD_STATE_VIEWING},
+};
+static const variable_t whole_payload_variables[] = {
+    {"updates", static_whole_payload_read_updates},
+    {"agendas", static_whole_payload_read_agendas},
+    {"others", static_whole_payload_read_others},
+};
+static const record_variable_t whole_payload_records[] = {
+    RECORD_ROW(static_whole_payload, shown), RECORD_LIST_ROW(static_whole_payload, seen), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
+                whole_payload_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -981,6 +1004,7 @@ int main(void) {
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_record_enum_scenario("static_record_enum", 13);
+    bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);

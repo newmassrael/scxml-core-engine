@@ -80,6 +80,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_whole_payload_sm::{
+    StaticWholePayloadPersist, StaticWholePayloadPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -345,6 +348,19 @@ fn static_record_real_holds_a_real_field_to_the_bit() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real.json"
+        ),
+    );
+}
+
+// The payload of an event is a record of its schema taken whole: it replaces a
+// record variable in one assignment and is appended whole to a list.
+#[test]
+fn static_whole_payload_is_taken_whole_as_a_record() {
+    replay(
+        Engine::new(StaticWholePayloadPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_whole_payload.json"
         ),
     );
 }

@@ -31,7 +31,7 @@ optimisation observable, which is the one thing it may not be.
 from __future__ import annotations
 
 import json
-from typing import Any, Sequence, Tuple
+from typing import Any, Sequence
 
 from .payload_reading import PayloadReading, payload_reading_of_text
 
@@ -137,8 +137,13 @@ def _as(name: str, declared: type, value: Any) -> Any:
         f"for it")
 
 
-def lift(data: Any, fields: Sequence[Tuple[str, type]]) -> list:
+def lift(data: Any, fields: Sequence[tuple]) -> list:
     """Every field of this event's schema, in declaration order.
+
+    A field is `(name, declared)`, or `(name, int, low, high)` for an integer of
+    the width its schema declares: a value past that width is a payload that does
+    not fit the schema, refused as every other engine refuses it — Python's `int`
+    has no width of its own to refuse it by.
 
     Raises `TypedPayloadError` naming the first thing that is wrong, which the
     caller reports as `error.execution` — the answer W3C SCXML 3.13 gives for
@@ -147,8 +152,12 @@ def lift(data: Any, fields: Sequence[Tuple[str, type]]) -> list:
     """
     decoded = _decode(data)
     values = []
-    for name, declared in fields:
+    for name, declared, *width in fields:
         if name not in decoded:
             raise TypedPayloadError(f"the event's data has no {name!r}")
-        values.append(_as(name, declared, decoded[name]))
+        value = _as(name, declared, decoded[name])
+        if width and not width[0] <= value <= width[1]:
+            raise TypedPayloadError(
+                f"{name!r} does not fit the width its schema declares ({value!r})")
+        values.append(value)
     return values

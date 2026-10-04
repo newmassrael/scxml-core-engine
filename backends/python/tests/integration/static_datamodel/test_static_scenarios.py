@@ -216,6 +216,12 @@ def test_a_list_holds_records_and_a_foreach_walks_them() -> None:
     replay("static_record_list")
 
 
+# The payload of an event is a record of its schema taken whole: it replaces a
+# record variable in one assignment and is appended whole to a list.
+def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:
+    replay("static_whole_payload")
+
+
 # A record may hold an enum: its field is read back by the name the enum
 # document declares.
 def test_a_record_holds_an_enum_field() -> None:

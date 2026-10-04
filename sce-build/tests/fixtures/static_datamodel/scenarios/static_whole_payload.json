@@ -1,0 +1,37 @@
+{
+  "machine": "static_whole_payload",
+  "about": "The payload of an event taken whole as a record of its schema: `shown` is replaced by `_event.data` in one assignment and the payload is appended whole to a list, with the enum field carried as the variant's declared name. A payload that does not fit its schema (a layout the enum does not declare, a zoom past a uint8) is refused as a whole and writes nothing — not the layout it did carry, not the list. What the replaced record decides is read back through `peek`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the record starts at the values its <sce:set>s give",
+      "expect": { "state": "viewing", "variables": { "shown": { "layout": "month", "zoom": 1 }, "seen": [], "updates": 0, "agendas": 0, "others": 0 } } },
+
+    { "note": "a month is no agenda",
+      "event": "peek", "expect": { "variables": { "agendas": 0, "others": 1 } } },
+
+    { "note": "the payload replaces the record whole and is appended whole",
+      "event": "view.shown", "data": { "layout": "week", "zoom": 3 },
+      "expect": { "variables": { "shown": { "layout": "week", "zoom": 3 }, "seen": [ { "layout": "week", "zoom": 3 } ], "updates": 1 } } },
+
+    { "note": "a variant spelled with an underscore keeps the name the document wrote",
+      "event": "view.shown", "data": { "layout": "agenda_list", "zoom": 7 },
+      "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 7 }, "seen": [ { "layout": "week", "zoom": 3 }, { "layout": "agenda_list", "zoom": 7 } ], "updates": 2 } } },
+
+    { "note": "the guard reads the record the payload replaced",
+      "event": "peek", "expect": { "variables": { "agendas": 1, "others": 1 } } },
+
+    { "note": "a name the enum does not declare does not fit the schema: nothing is written, the zoom beside it included",
+      "event": "view.shown", "data": { "layout": "fortnight", "zoom": 9 },
+      "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 7 }, "seen": [ { "layout": "week", "zoom": 3 }, { "layout": "agenda_list", "zoom": 7 } ], "updates": 2 } } },
+
+    { "note": "a zoom past a uint8 does not fit either, and the layout beside it is not written",
+      "event": "view.shown", "data": { "layout": "day", "zoom": 300 },
+      "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 7 }, "seen": [ { "layout": "week", "zoom": 3 }, { "layout": "agenda_list", "zoom": 7 } ], "updates": 2 } } },
+
+    { "note": "a payload after a refused one is taken as any other",
+      "event": "view.shown", "data": { "layout": "month", "zoom": 1 },
+      "expect": { "variables": { "shown": { "layout": "month", "zoom": 1 }, "seen": [ { "layout": "week", "zoom": 3 }, { "layout": "agenda_list", "zoom": 7 }, { "layout": "month", "zoom": 1 } ], "updates": 3 } } },
+
+    { "note": "the month it came back to is no agenda",
+      "event": "peek", "expect": { "variables": { "agendas": 1, "others": 2 } } }
+  ]
+}

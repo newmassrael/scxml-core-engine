@@ -4328,7 +4328,14 @@ pub fn build_python_event_payload(
                 data_items.push_str(", ");
             }
             call_args.push_str(&f.id);
-            lift_fields.push_str(&format!("(\"{}\", {ty}), ", f.id));
+            // An integer is read at the width its schema declares, as every
+            // other engine reads it: Python's `int` has no width to refuse a
+            // value past it by.
+            let width = f
+                .sce_type
+                .int_value_range()
+                .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
+            lift_fields.push_str(&format!("(\"{}\", {ty}{width}), ", f.id));
             // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
             // `bytes` field rides the wire as its byte-exact Latin-1 text (the
             // lift reads it back the same way). Printable ASCII — what a bytes

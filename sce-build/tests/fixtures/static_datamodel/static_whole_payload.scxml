@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the payload of an
+  event taken whole as a record. `view.shown` carries the fields of
+  schema_view.scxml, which is the schema `shown` is a record of, so
+  `_event.data` is a `View` too: it replaces `shown` in one assignment and is
+  appended whole to a list, with no `<assign>` per field to keep in step with the
+  schema. A payload that does not fit its schema — a layout the enum does not
+  declare, a zoom past a uint8 — is refused as a whole, and writes nothing.
+
+  What the replaced record decides is read back: `peek` takes a different
+  transition when the layout the payload carried is the agenda's.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticScenarioTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="viewing" datamodel="sce-static" name="static_whole_payload">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="shown" sce:type="record:View" sce:direction="out">
+      <sce:set name="layout" expr="ViewMode.month"/>
+      <sce:set name="zoom" expr="1"/>
+    </data>
+    <data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="updates" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="agendas" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="others" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="viewing">
+    <transition event="view.shown" type="internal">
+      <assign location="shown" expr="_event.data"/>
+      <sce:append target="seen" expr="_event.data"/>
+      <assign location="updates" expr="updates + 1"/>
+    </transition>
+    <transition event="peek" cond="shown.layout === ViewMode.agenda_list" type="internal">
+      <assign location="agendas" expr="agendas + 1"/>
+    </transition>
+    <transition event="peek" type="internal">
+      <assign location="others" expr="others + 1"/>
+    </transition>
+  </state>
+</scxml>

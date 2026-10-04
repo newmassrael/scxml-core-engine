@@ -564,7 +564,7 @@ fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_l
         // The policy's members, the lift among them, are in the header.
         ("cpp", "h", "is not a variant of ViewMode"),
         ("go", "go", "is not a variant of ViewMode"),
-        ("python", "py", "ViewModeEnum), (\"zoom\", int)"),
+        ("python", "py", "ViewModeEnum), (\"zoom\", int, 0, 255)"),
         // The lift is in the machine's own file, beside the header that declares
         // the enum before the channel names it.
         ("c", "c", "is not a variant of ViewMode"),
@@ -1005,14 +1005,15 @@ fn a_field_nothing_declares_is_refused_where_it_is_read() {
 
 #[test]
 fn a_whole_record_is_assigned_only_from_a_record_by_name() {
-    // The event's payload is a class of its own, not a record of the machine:
-    // a record is taken whole from another record, by name, and
-    // `a_list_holds_records.rs` holds that.
+    // Nothing in an expression makes a record: one is taken whole from another
+    // record, by name, from the payload of an event whose schema it is, or from
+    // the item of a loop over a list of it. `a_list_holds_records.rs` holds the
+    // first and `a_payload_is_a_record_of_its_schema.rs` the payload.
     let (ok, out) = run_record(
         &["check"],
         &record(
             EVERY_FIELD,
-            r#"<state id="s"><transition event="day.picked" type="internal"><assign location="shown" expr="_event.data"/></transition></state>"#,
+            r#"<state id="s"><transition event="day.picked" type="internal"><assign location="shown" expr="0"/></transition></state>"#,
         ),
     );
     assert!(!ok, "a record is taken whole from a record:\n{out}");

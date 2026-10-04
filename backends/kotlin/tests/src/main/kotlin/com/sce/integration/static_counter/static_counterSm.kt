@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9493bf23538ed8d47286821b6e59498d494b9a1841184ab306e76017e761f5de
+// source-hash: ee8495d8519d9257bdb9024d6550b7e516332cbc0e313913dd41d6e748564ee3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
