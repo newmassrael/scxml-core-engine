@@ -153,7 +153,7 @@ class Reads(unittest.TestCase):
 
     def notes_about_pictures(self, blob: bytes) -> list[str]:
         return [n for n in self.read(blob).notes if "picture" in n or "drawn object" in n
-                or "drawing part" in n]
+                or "drawing(s) referred to" in n]
 
 
 class APictureOnAnEnclosedCellIsNotLostQuietly(Reads):
@@ -245,7 +245,7 @@ class APictureOnAnEnclosedCellIsNotLostQuietly(Reads):
         blob = workbook([("Marks", sheet_xml(row(1, A="x")), "<xdr:wsDr")])
         got = self.read(blob)
         self.assertIn("| x |", got.text)
-        self.assertTrue(any("1 drawing part(s) of this workbook could not be read" in n
+        self.assertTrue(any('1 drawing(s) referred to by sheet(s) "Marks"' in n
                             for n in got.notes), got.notes)
 
     def test_an_anchor_with_no_readable_cell_is_counted_not_placed(self):
@@ -255,16 +255,63 @@ class APictureOnAnEnclosedCellIsNotLostQuietly(Reads):
         said = " ".join(self.notes_about_pictures(blob))
         self.assertIn("1 picture(s) in this workbook are not anchored on a cell", said)
 
-    def test_a_relationship_to_a_drawing_that_is_not_there_is_ignored(self):
+    def test_a_sheet_that_refers_to_a_drawing_the_file_does_not_hold_says_so_by_sheet_name(self):
+        """⚠ This case used to assert the OPPOSITE -- that such a reference is ignored -- and so
+        pinned the defect: the sheet says it has a drawing, the file has none to give, the
+        pictures it held are gone, and the cells they sat on read as empty with no word said."""
+        blob = workbook([("Marks", sheet_xml(row(1, A="x"), row(2, A="y")), drawing_xml(picture_on(1, 0)))])
+        # Remove the drawing part and keep the reference to it.
+        kept = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(blob)) as src, zipfile.ZipFile(kept, "w") as dst:
+            for item in src.infolist():
+                if not item.filename.startswith("xl/drawings/"):
+                    dst.writestr(item, src.read(item.filename))
+        got = self.read(kept.getvalue())
+        self.assertIn("| x |", got.text)
+        said = " ".join(self.notes_about_pictures(kept.getvalue()))
+        self.assertIn('1 drawing(s) referred to by sheet(s) "Marks"', said)
+        self.assertIn("a cell that reads as empty there may have held one", said)
+        self.assertNotIn("[picture]", got.text)
+
+    def test_a_sheet_whose_links_cannot_be_read_says_so_rather_than_reading_as_having_none(self):
+        """The relationship file is there and is not XML. Its sheet may have a drawing; that is
+        not known, and 'none' is not the same answer."""
+        blob = workbook([("Marks", sheet_xml(row(1, A="x")), drawing_xml(picture_on(1, 0)))])
+        broken = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(blob)) as src, zipfile.ZipFile(broken, "w") as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+                if item.filename == "xl/worksheets/_rels/sheet1.xml.rels":
+                    data = b"<Relationships"
+                dst.writestr(item, data)
+        got = self.read(broken.getvalue())
+        self.assertIn("| x |", got.text)
+        said = " ".join(self.notes_about_pictures(broken.getvalue()))
+        self.assertIn('referred to by sheet(s) "Marks"', said)
+
+    def test_a_sheet_with_no_links_file_at_all_says_nothing(self):
+        """A relationship file that is simply absent means the sheet has no drawing. That is a
+        fact, not a loss, and saying otherwise would cry wolf at every plain sheet."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
             z.writestr("xl/worksheets/sheet1.xml", sheet_xml(row(1, A="x")))
-            z.writestr("xl/worksheets/_rels/sheet1.xml.rels",
-                       f'<Relationships xmlns="{PKG}"><Relationship Id="rId1" '
-                       f'Type="{REL}/drawing" Target="../drawings/gone.xml"/></Relationships>')
         got = self.read(buf.getvalue())
         self.assertIn("| x |", got.text)
-        self.assertEqual([], [n for n in got.notes if "picture" in n or "drawing part" in n])
+        self.assertEqual([], self.notes_about_pictures(buf.getvalue()))
+
+    def test_only_the_sheet_that_lost_its_drawing_is_named(self):
+        good = workbook([("Whole", sheet_xml(row(1, A="a")), drawing_xml(picture_on(1, 0))),
+                         ("Lost", sheet_xml(row(1, A="b")), drawing_xml(picture_on(1, 0)))])
+        trimmed = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(good)) as src, zipfile.ZipFile(trimmed, "w") as dst:
+            for item in src.infolist():
+                if item.filename != "xl/drawings/drawing2.xml":
+                    dst.writestr(item, src.read(item.filename))
+        said = " ".join(self.notes_about_pictures(trimmed.getvalue()))
+        self.assertIn('"Lost"', said)
+        self.assertNotIn('"Whole"', said)
+        # the sheet that still has its drawing keeps its mark
+        self.assertIn("| a | [picture] |", self.read(trimmed.getvalue()).text)
 
     # -------------------------------------------------------------- absence
 

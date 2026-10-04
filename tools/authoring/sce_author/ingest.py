@@ -190,22 +190,37 @@ _R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
 
-def _related(archive: zipfile.ZipFile, part: str) -> dict[str, tuple[str, str]]:
+class _Related(dict):
+    """The relationships of one part: id -> (type, path), and whether they could be read.
+
+    `readable` is False when the part's relationship file is THERE and cannot be parsed. That
+    is not the same as a part that declares none: an empty answer for "this part has no
+    neighbours" and for "this part's neighbours are unknown" read alike, and the second is the
+    one that loses a picture without a word.
+    """
+
+    readable: bool = True
+
+
+def _related(archive: zipfile.ZipFile, part: str) -> _Related:
     """What a part of an office package points at: relationship id -> (type, path).
 
     The path is the part's name inside the zip, resolved from where the
     relationship was declared. A link that leaves the package, or a package
-    that declares none, answers nothing rather than raising: a part whose
-    relationships cannot be read is a part whose neighbours are unknown, and
-    the callers say so where it matters.
+    that declares none, answers nothing rather than raising. A relationship
+    file that is present and unreadable also answers nothing, but says so in
+    `readable`, and the callers that would lose something by it report it.
     """
     folder, name = posixpath.split(part)
     declared = posixpath.join(folder, "_rels", name + ".rels")
+    out = _Related()
     try:
         root = ET.parse(io.BytesIO(archive.read(declared))).getroot()
-    except (KeyError, ET.ParseError):
-        return {}
-    out: dict[str, tuple[str, str]] = {}
+    except KeyError:
+        return out
+    except ET.ParseError:
+        out.readable = False
+        return out
     for rel in root.iter(f"{_PKG}Relationship"):
         if rel.get("TargetMode") == "External" or not rel.get("Id"):
             continue
@@ -279,7 +294,9 @@ class _Drawn:
     loose: int = 0
     # Shapes and charts, which are not read at all.
     other: int = 0
-    # Drawing parts that were named and could not be parsed.
+    # Drawings the sheet refers to and this reader could not use: the part is not in the file,
+    # it cannot be parsed, or the sheet's own relationships could not be read so that it is not
+    # known whether it has any. Each is a place a picture could have been and was not seen.
     unreadable: int = 0
 
 
@@ -298,8 +315,17 @@ def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str) -> _Drawn:
     leaves the rest alone.
     """
     drawn = _Drawn()
-    for kind, part in _related(book, sheet).values():
-        if kind != "drawing" or part not in inner:
+    related = _related(book, sheet)
+    if not related.readable:
+        # Whether the sheet has a drawing is not known, which is not the same as having none.
+        drawn.unreadable += 1
+    for kind, part in related.values():
+        if kind != "drawing":
+            continue
+        if part not in inner:
+            # The sheet says it has a drawing and the file has none to give: whatever pictures
+            # it held are gone, and the cells they sat on read as empty.
+            drawn.unreadable += 1
             continue
         try:
             root = ET.parse(io.BytesIO(book.read(part))).getroot()
@@ -400,6 +426,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                       for si in root.iter(f"{_XL}si")]
         lines: list[str] = []
         pictures = cells_with_pictures = loose = other = unreadable = rich = 0
+        unreadable_on: list[str] = []
         in_cell = _picture_values(book, inner)
         for name, sheet, hidden in _sheets_in_order(book, inner):
             root = ET.parse(io.BytesIO(book.read(sheet))).getroot()
@@ -457,6 +484,8 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             loose += drawn.loose
             other += drawn.other
             unreadable += drawn.unreadable
+            if drawn.unreadable:
+                unreadable_on.append(f"\"{name}\"")
             placed = dict(drawn.placed)
             for at, count in held.items():
                 placed[at] = placed.get(at, 0) + count
@@ -499,7 +528,16 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             notes.append(f"{other} drawn object(s) in this workbook other than pictures "
                          f"(shapes, charts) were not read")
         if unreadable:
-            notes.append(f"{unreadable} drawing part(s) of this workbook could not be read")
+            # ⚠ The loudest of these notes, because this is the loss that looks like an empty
+            # cell: a sheet that refers to a drawing the file does not hold, or whose
+            # relationships cannot be read, may have held pictures that were never seen, and
+            # the cells they sat on read as blank. A reader cannot tell a cell that is empty
+            # from one whose picture was lost; this is how it is told.
+            notes.append(
+                f"{unreadable} drawing(s) referred to by sheet(s) {', '.join(unreadable_on)} of "
+                f"this workbook could not be read (the drawing is missing from the file, cannot "
+                f"be parsed, or the sheet's links to it cannot be read). Pictures on those "
+                f"sheets were not seen, and a cell that reads as empty there may have held one")
         return lines, notes
     except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
         return [], [f"an enclosed workbook could not be opened ({exc})"]
