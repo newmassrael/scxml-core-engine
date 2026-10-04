@@ -18,6 +18,7 @@ pub mod cross_doc_registry;
 pub mod cross_kind_check;
 pub mod cycle_check;
 pub mod cycle_expand;
+pub mod declared_names;
 pub mod diagnostic;
 pub mod drift;
 pub mod enum_naming;

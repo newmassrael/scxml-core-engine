@@ -71,6 +71,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // so a filter written over today's fixture trees names the carriers it
     // already has and cannot start on the arrival.
     "a_name_the_generated_code_spells_is_a_code_identifier",
+    // Parses every committed `*.scxml` and fails if the rule against two names
+    // that a backend spells as one refuses any of them, so a document added
+    // anywhere changes what it reads. A pair that folds can arrive in
+    // whichever document an author writes next, in any directory, so a filter
+    // written over today's fixture trees names the documents already known to
+    // pass and by construction cannot start on the arrival.
+    "a_forge_document_never_declares_one_name_twice",
     // Parses every committed `*.scxml` and refuses one carrying an `sce:`
     // attribute nothing reads, then writes an invented one on each W3C
     // element name the documents use. The attribute that proves a reader

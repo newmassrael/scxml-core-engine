@@ -302,7 +302,13 @@ fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> 
             let message = e.error.to_string();
             // `validation/reserved-code-identifier`, whichever the reason: a
             // keyword, or a name the generated class or call already uses.
-            if message.contains("cannot declare it — rename it") {
+            // Or `validation/colliding-code-identifier`: the candidate and one
+            // of the shape's own names are one name to some backend (`_n`
+            // beside `n` is Go's `N` twice), which is also an answer given in
+            // the document before any code exists.
+            if message.contains("cannot declare it — rename it")
+                || message.contains("so it would declare one name twice")
+            {
                 Ok(Outcome::Refused)
             } else {
                 Err(format!("{doc_name}: {message}"))

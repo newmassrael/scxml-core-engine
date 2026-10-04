@@ -898,6 +898,41 @@ pub enum ValidationError {
         language: &'static str,
     },
 
+    /// Two names a forge document declares that a backend spells as one, so
+    /// the generated code would declare one parameter, field or method twice
+    /// — `minRpm` beside `min_rpm`, which Rust, C11 and Python write
+    /// `min_rpm`.
+    ///
+    /// The same narrowing as [`ValidationError::ReservedCodeIdentifier`]: a
+    /// pair one backend cannot declare is refused for every backend at once,
+    /// on the later declaration's own attribute, rather than surfacing as a
+    /// compiler error, or as a value silently read into the wrong variable,
+    /// in the generated code of one of them. Raised by
+    /// [`crate::forge::declared_names::reject_colliding`], whose header
+    /// states which declarations are compared and where they share a
+    /// namespace.
+    #[error(
+        "{}",
+        crate::forge::declared_names::colliding_code_identifier_message(
+            element, attr, value, noun, other, other_noun, spellings
+        )
+    )]
+    CollidingCodeIdentifier {
+        element: String,
+        attr: String,
+        /// The later declaration, as the document spells it — where the record
+        /// is placed.
+        value: String,
+        /// What the later declaration is: `codec member`, `flag`, `data id`.
+        noun: &'static str,
+        /// The earlier declaration it collides with.
+        other: String,
+        other_noun: &'static str,
+        /// `(backend, spelling)` for every backend that spells the two as
+        /// one, in [`crate::generator::Language::ALL`] order.
+        spellings: Vec<(&'static str, String)>,
+    },
+
     /// An `event` attribute whose descriptor is not a legal token sequence.
     ///
     /// Separate from [`ValidationError::MalformedIdentifier`] because W3C

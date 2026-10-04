@@ -114,6 +114,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # committed document carries that attribute, and the carrier of the next row
 # can arrive in any directory.
 #
+# `a_forge_document_never_declares_one_name_twice` parses every committed
+# `*.scxml` and fails if the rule against two names that a backend spells as
+# one refuses any of them (`SCE_ACCEPTED_SUBSET.md` §2.14). It is here for the
+# same reason: a pair that folds can arrive in a document in any directory, and
+# the lane that would judge it must start on that commit.
+#
 # `an_sce_attribute_nothing_reads_is_refused_not_ignored` parses every
 # committed `*.scxml` against the rule that an `sce:` attribute on a W3C
 # element must have a reader, and writes an invented one on each W3C element
@@ -165,6 +171,7 @@ cargo test -p sce-build --features cli,ffi \
     --test spec_citations_carry_no_line_numbers \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
+    --test a_forge_document_never_declares_one_name_twice \
     --test an_sce_attribute_nothing_reads_is_refused_not_ignored \
     --test non_latin_prose_declares_why_it_is_here \
     --test ffi_header_parity \

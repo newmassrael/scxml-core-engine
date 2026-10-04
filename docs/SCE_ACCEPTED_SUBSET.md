@@ -2634,11 +2634,39 @@ name the kind's committed Python uses, and compares what the generated module
 does — about 15 000 renamings — and a second test fails when the committed
 output starts to use a name that list does not carry.
 
-Two of an author's own names that snake-case to one spelling (`minRpm` and
-`min_rpm`) are still accepted and are one parameter to the generated Python,
-which the interpreter refuses as a duplicate argument. That is not a name the
-generator wrote, the oracle counts it and leaves it out, and it is recorded as
-open rather than closed here.
+Two of an author's own names that a backend spells as one are a different
+fault: `minRpm` beside `min_rpm` is two names in the document and one
+parameter to the generated Python, which the interpreter refuses as a
+duplicate argument, one field in Rust and a codec decoder that reads two
+fields into one local. They are refused for every backend at once, as
+`validation/colliding-code-identifier`, on the later declaration's own
+attribute, naming both names and every backend that folds them — the same
+narrowing as a reserved word, and for the same reason: whether a document is
+accepted must not depend on which backend a deployment builds. Two names are
+compared only where the generated code puts them in one namespace, so `Foo`
+beside `foo` is refused as two codec fields (Rust, Python, C11 and Go spell
+them alike) and a codec member beside a flag's accessor only in C++, Go and
+Python, where a class holds both in one table; Kotlin and C++ write a codec
+member as written, so they fold nothing and are not named in a message that
+they do not cause. What is compared is `SCOPES` in
+`sce-build/src/forge/declared_names.rs`: a forge document's input (its
+`<data id>` where `sce:direction="in"`, for the kinds that spell it
+snake_case; an algorithm's `<sce:param>`), a codec's members and its flag
+accessors and inputs, and a const.
+`a_forge_declaration_is_spelled_the_way_the_collision_rule_says` holds the
+table to the templates: it renames every declaration of every committed forge
+document and reads the name back in each backend, so a convention that
+changes fails there.
+
+What the rule does not compare is stated, not assumed safe. An output, an
+internal and a lookup's output type are spelled by the role they play and are
+not claimed; a `<sce:var>` is function-local and two of them in different
+blocks are legitimately two; a C++ embed is a member written as written and a
+decode local in snake_case, which is two spellings and compares as neither; a
+codec's field local in a Rust decoder and a flag input of the same spelling
+share a function and are not compared. Measured with
+`measure_the_spelling_of_every_declaring_attribute`, which is how a row is
+added.
 
 The document's own name reaches generated Python too. The first line of a
 module the library returns is the source-map marker, `# SCE-MAP:
@@ -5491,6 +5519,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/event-name-grammar` | Validation |
 | `validation/malformed-code-identifier` | Validation |
 | `validation/reserved-code-identifier` | Validation |
+| `validation/colliding-code-identifier` | Validation |
 | `validation/duplicate-context-object` | Validation |
 | `validation/reserved-context-id` | Validation |
 | `validation/empty-collection` | Validation |

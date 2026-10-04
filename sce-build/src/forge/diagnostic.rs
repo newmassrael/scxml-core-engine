@@ -706,6 +706,10 @@ pub enum DiagnosticCode {
     //    reserves, so that backend could not declare it. ────────────
     #[serde(rename = "validation/reserved-code-identifier")]
     ValidationReservedCodeIdentifier,
+    // ── Two such names that a backend spells as one, so it would
+    //    declare one parameter, field or method twice. ──────────────
+    #[serde(rename = "validation/colliding-code-identifier")]
+    ValidationCollidingCodeIdentifier,
     #[serde(rename = "validation/duplicate-context-object")]
     ValidationDuplicateContextObject,
     #[serde(rename = "validation/reserved-context-id")]
@@ -3298,6 +3302,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationEventNameGrammar,
         ValidationMalformedCodeIdentifier,
         ValidationReservedCodeIdentifier,
+        ValidationCollidingCodeIdentifier,
         ValidationDuplicateContextObject,
         ValidationReservedContextId,
         ValidationEmptyCollection,
@@ -4048,6 +4053,7 @@ impl DiagnosticCode {
             // where the accepted subset registers the names SCE owns.
             ValidationMalformedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
             ValidationReservedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
+            ValidationCollidingCodeIdentifier => Some("SCE Accepted Subset §2.14"),
             // A host-run invoke's typed interface is registered where the
             // accepted subset registers invoke types SCE does not run.
             ValidationTypedInvokeSchema | ValidationTypedInvokeRequest => {
@@ -4718,6 +4724,7 @@ impl DiagnosticCode {
             ValidationEventNameGrammar => "validation/event-name-grammar",
             ValidationMalformedCodeIdentifier => "validation/malformed-code-identifier",
             ValidationReservedCodeIdentifier => "validation/reserved-code-identifier",
+            ValidationCollidingCodeIdentifier => "validation/colliding-code-identifier",
             ValidationDuplicateContextObject => "validation/duplicate-context-object",
             ValidationReservedContextId => "validation/reserved-context-id",
             ValidationEmptyCollection => "validation/empty-collection",
@@ -6220,6 +6227,32 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 attr.clone(),
                 value.clone(),
                 (*language).to_string(),
+            ],
+        },
+        // `actual` is the later declaration, the one the record is placed
+        // on; `expected` is left empty because what is expected is a name the
+        // author has not chosen yet, and there is no closed set to offer as
+        // a fix. The pair keys the id, not the spellings, so two documents
+        // with the same collision keep one id whichever backends fold it.
+        ValidationError::CollidingCodeIdentifier {
+            element,
+            attr,
+            value,
+            other,
+            noun: _,
+            other_noun: _,
+            spellings: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationCollidingCodeIdentifier,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![
+                element.clone(),
+                attr.clone(),
+                value.clone(),
+                other.clone(),
             ],
         },
         ValidationError::DuplicateRequirementId { element, id } => DiagnosticPayload {
@@ -10808,6 +10841,26 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:cfa1042251265097","code":"validation/reserved-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<data id=\"override\">: 'override' is a reserved word in rust, so the generated rust code cannot declare it — rename it","expected":["a name rust can declare"],"actual":"override"}"#,
+            ),
+            (
+                // Two names a backend spells as one: Rust, Python and C11
+                // write `minRpm` and `min_rpm` alike.
+                "forge/colliding-code-identifier",
+                ValidationError::CollidingCodeIdentifier {
+                    element: "data".into(),
+                    attr: "id".into(),
+                    value: "min_rpm".into(),
+                    noun: "data id",
+                    other: "minRpm".into(),
+                    other_noun: "data id",
+                    spellings: vec![
+                        ("rust", "min_rpm".into()),
+                        ("python", "min_rpm".into()),
+                        ("c11", "min_rpm".into()),
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a97b83bd19ab1263","code":"validation/colliding-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<data id=\"min_rpm\">: data id 'min_rpm' and data id 'minRpm' are two names of this document, but the generated rust code spells both 'min_rpm' (so do python 'min_rpm' and c11 'min_rpm'), so it would declare one name twice — rename one of them","actual":"min_rpm"}"#,
             ),
             (
                 "forge/invalid-reference",
@@ -16629,6 +16682,9 @@ mod tests {
             // The repair is a new name for one of the two, which only
             // the author can choose.
             | ScxmlGeneratedNameCollision
+            // The same repair for two names of a forge document that a
+            // backend spells as one.
+            | ValidationCollidingCodeIdentifier
             // Two repairs of different kinds — declare the event in a
             // schema, or use one declared — and the record names the
             // declared set in its message, so no closed candidate set.
@@ -16946,6 +17002,7 @@ mod tests {
                 | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
                 | ValidationMalformedCodeIdentifier | ValidationReservedCodeIdentifier
+                | ValidationCollidingCodeIdentifier
                 | ValidationDuplicateContextObject | ValidationReservedContextId
                 | ValidationEmptyCollection
                 | ValidationCountMismatch | ValidationIncompatibleAttributes
@@ -17300,9 +17357,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            415,
+            416,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 415 distinct variants to match the DiagnosticCode \
+             expected 416 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17923,6 +17980,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEventNameGrammar
             | ValidationMalformedCodeIdentifier
             | ValidationReservedCodeIdentifier
+            | ValidationCollidingCodeIdentifier
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
             | ValidationEmptyCollection

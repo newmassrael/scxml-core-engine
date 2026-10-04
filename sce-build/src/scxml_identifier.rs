@@ -547,7 +547,7 @@ fn declares_static_datamodel(node: &roxmltree::Node) -> bool {
 
 /// `node`'s tag as the document spells it — `sce:field`, `state` — so a
 /// refusal names the element the author wrote.
-fn spelled_tag(node: &roxmltree::Node) -> String {
+pub(crate) fn spelled_tag(node: &roxmltree::Node) -> String {
     let local = node.tag_name().name();
     match node
         .tag_name()
@@ -671,7 +671,10 @@ pub fn reject_malformed(
             ));
         }
     }
-    Ok(())
+    // Every name is well formed and none is reserved; what is left is two
+    // that a backend spells as one. After the per-attribute pass, so that a
+    // malformed or reserved name keeps its own refusal.
+    crate::forge::declared_names::reject_colliding(root, doc_name, dialect)
 }
 
 #[cfg(test)]

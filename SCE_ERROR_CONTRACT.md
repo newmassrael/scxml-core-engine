@@ -893,6 +893,7 @@ references against a real document and drift silently.
 | `validation/attribute-rule-violated` | `validation` | no |  |
 | `validation/bytes-comparison-not-equality` | `validation` | no |  |
 | `validation/bytes-max-size-violation` | `validation` | no |  |
+| `validation/colliding-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/count-mismatch` | `validation` | no |  |
 | `validation/cross-kind-circular-dependency` | `validation` | no |  |
 | `validation/cross-kind-field-not-found` | `validation` | `replace_one_of` |  |
