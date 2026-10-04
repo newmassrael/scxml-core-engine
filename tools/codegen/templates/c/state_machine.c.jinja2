@@ -76,7 +76,11 @@
    is taken, for the host-served arm, which reads its text params from the
    same evaluation rather than evaluating each `<param>` a second time. It
    clears them itself. #}
-{% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false) %}
+{# `host_texts`: the send is one a host serves, whose request carries the same
+   pairs as text. The caller has declared `_host_params`, `_host_param_count` and
+   `_host_param_texts` (one row per param), and each pair that crosses is written
+   there too, from the one value that is written into the JSON. #}
+{% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false, host_texts=false) %}
                 char _ed[SCE_MAX_DATA_LEN];
 {% if static_datamodel %}
                 /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
@@ -90,16 +94,32 @@
                 {
                     sce_forge_wire_t sce_wire_;
                     sce_forge_wire_begin(&sce_wire_, _ed, sizeof(_ed));
-{% for param in params %}
+{# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
+   "JSON Object Key Order"): a pair left out leaves the order of the others as
+   it was, so the names are sorted here, once, and not at run time. #}
+{% for param in params | sort(attribute='name', case_sensitive=true) %}
 {% if param.is_static_literal %}
                     sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
                                         sce_forge_wire_string("{{ param.static_value | escape_c }}"));
+{% if host_texts %}
+                    _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                    _host_params[_host_param_count].value = "{{ param.static_value | escape_c }}";
+                    _host_param_count++;
+{% endif %}
 {% elif param.native_value %}
                     {
                         sce_forge_algorithm_failure_t sce_failure_ = {0};
                         const sce_forge_wire_value_t sce_value = {{ param.native_value }};
                         if (!sce_failure_.failed) {
                             sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
+{% if host_texts %}
+                            if (sce_forge_wire_text(sce_value, _host_param_texts[{{ loop.index0 }}],
+                                                    sizeof(_host_param_texts[{{ loop.index0 }}]))) {
+                                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                                _host_params[_host_param_count].value = _host_param_texts[{{ loop.index0 }}];
+                                _host_param_count++;
+                            }
+{% endif %}
                         } else {
                             {{ csym_prefix }}{{ machine }}_raise_platform_error(
                                 sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
@@ -871,7 +891,17 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    pairs are the literals themselves, so nothing is evaluated at all. #}
 {% set host_pair_cap = (action.params | default([]) | length) + ((action.namelist or '').split() | length) %}
 {% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
-{% if action.params or action.namelist %}
+{% if (action.params or action.namelist) and static_datamodel %}
+                /* SCE Accepted Subset §2.15: under `sce-static` each pair is a
+                   typed value of the machine's own fields, which crosses twice —
+                   as the text the host's `params` carry and as a pair of the JSON
+                   `event_data` — written from the one value by the payload macro,
+                   with no script engine to read them back from. */
+                sce_host_send_param_t _host_params[{{ host_pair_cap }}];
+                int _host_param_count = 0;
+                char _host_param_texts[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, true) }}
+{% elif action.params or action.namelist %}
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
                 sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
@@ -2583,7 +2613,11 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {
             sce_forge_wire_t sce_wire_;
             sce_forge_wire_begin(&sce_wire_, sm->done_data, sizeof(sm->done_data));
-        {% for param in state.donedata.params %}
+        {# The members of an event's data come in one order on every engine:
+           ascending by the name's UTF-8 bytes (ARCHITECTURE.md, "JSON Object Key
+           Order"). A pair left out leaves the order of the others as it was, so
+           the names are sorted here, once, and not at run time. #}
+        {% for param in state.donedata.params | sort(attribute='name', case_sensitive=true) %}
         {% if param.native_value %}
             {
                 sce_forge_algorithm_failure_t sce_failure_ = {0};

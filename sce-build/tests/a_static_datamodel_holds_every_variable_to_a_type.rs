@@ -307,11 +307,13 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
     // numbers, bools and strings, a call of an imported algorithm, a host action
     // whose arguments are typed expressions of them, the `<param>`s of a final's
-    // `<donedata>` and of a `<send>` to the machine's own processor, and an
-    // `<invoke type="scxml">` handing numbers and bools. What is past that — a
-    // real, a list of reals, a record with a string field, a bytes variable, a
-    // `<send>` with a `<content>` or to another processor, a host-run
-    // `<invoke>`, a final's `<donedata>` with a `<content>`, a payload field that
+    // `<donedata>` and of a `<send>` to the machine's own processor or to one
+    // the host is declared to serve, an `<invoke type="scxml">` handing numbers,
+    // bools and strings, and an `<invoke>` the host is declared to serve. What is
+    // past that — a real, a list of reals, a record with a string field, a bytes
+    // variable, a `<send>` with a `<content>` or to a processor no host is
+    // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
+    // repeats, a final's `<donedata>` with a `<content>`, a payload field that
     // is bytes or an enum — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
@@ -368,6 +370,28 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
   </state>"#,
             ),
             "a host-run <invoke>",
+        ),
+        (
+            "a <send> to a processor no host is declared to serve",
+            machine(
+                r#"<state id="s"><onentry><send type="x-sce-host" event="x"><param name="k" expr="count"/></send></onentry></state>"#,
+            ),
+            "a <send> of type `x-sce-host`",
+        ),
+        (
+            "a <send> that names a <param> twice",
+            machine(
+                r#"<state id="s"><onentry><send event="x"><param name="k" expr="count"/><param name="k" expr="count + 1"/></send></onentry></state>"#,
+            ),
+            "a <send> that names <param name=\"k\"> twice",
+        ),
+        (
+            "a <donedata> that names a <param> twice",
+            machine(
+                r#"<state id="s"><transition event="go" target="fin"/></state>
+  <final id="fin"><donedata><param name="k" expr="count"/><param name="k" expr="count + 1"/></donedata></final>"#,
+            ),
+            "a <donedata> that names <param name=\"k\"> twice",
         ),
         (
             "a <donedata> with a <content>",

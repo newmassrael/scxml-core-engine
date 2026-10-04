@@ -726,10 +726,12 @@ held to it:
 | Go | `BuildJSONFromTypedParams`, `ScriptValueToJSON` | `backends/go/runtime/event_data_key_order_test.go` |
 | Python | `ScriptValue.to_json_literal` (no parameter builder yet) | `backends/python/tests/json_text/test_object_key_order.py` |
 | Kotlin | `buildJsonFromParams`, `valueToJson`, `Json.writeCanonical`; order is `Json.compareKeys` | `backends/kotlin/tests/.../runtime/EventDataKeyOrderTest.kt` |
-| C11 | none — it reads a payload (`sce_payload_*`) and writes no parameter object | — |
+| C11 | a script-engine machine reads a payload (`sce_payload_*`) and writes no parameter object; a `sce-static` machine writes a flat object of scalars through `sce_forge_wire_pair` (`sce/forge/wire.h`), whose pairs the generator lists sorted by name once, since a pair a failed value leaves out leaves the others' order as it was. A name that repeats is one array, which it does not write yet and refuses by name | `sce-build/tests/a_c_machines_event_data_follows_the_shared_key_order.rs` (the table's flat cases, read from the generated source) |
 
 Do NOT write a new object writer in a template or a backend; call the engine's
-writer above, so a new engine arrives with the order already decided.
+writer above, so a new engine arrives with the order already decided. A runtime
+that has none writes one pair at a time and has its generator fix the order, as C11
+does, and is added to the table above with the test that holds it to the cases.
 
 ### Durations (Single Source of Truth)
 

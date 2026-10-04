@@ -3314,19 +3314,30 @@ algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools and enums, a list of integers, bools or
 such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
-processor with its `<param>`s, an `<invoke type="scxml">` of a child that
+processor or to one the host serves (`--host-processor`) with its `<param>`s, an
+`<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
 the host serves (`--host-invoker`) with its `<param>`s. A real, bytes and a record
 with a string field, a list of reals, a `<send>` with a `<content>` or to
-another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` of a type the
-host was not declared to serve, a final's
+another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
+type the host was not declared to serve, a `<param>` name that repeats in a
+`<send>`, an `<invoke>` or a `<donedata>`, a final's
 `<donedata>` with a `<content>` and a
 transition on an event whose payload carries a bytes or enum field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
 not carry yet, and a real is not yet held to a scenario — a `<param>` whose
 value is one is refused with it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
 an event carries as its data, by the header-only wire writer of the forge runtime
-(`sce/forge/wire.h`). A `<donedata>`'s go into the `done_data` buffer the machine
+(`sce/forge/wire.h`), in the one order every engine writes the members in —
+ascending by the name's UTF-8 bytes, whatever order the document declared its
+`<param>`s in (ARCHITECTURE.md, "JSON Object Key Order") — which the generator
+fixes once by listing the pairs sorted, a pair a failed value leaves out leaving
+the others' order as it was. A name that repeats is one array on every engine,
+which the writer does not write yet: it is refused by name, not written as an
+object with a key twice. `a_c_machines_event_data_follows_the_shared_key_order.rs`
+holds the order to the table the other engines' writers are held to. A `<send>`
+the host serves carries the same pairs as the text of its request's `params`, from
+the one value each is written from. A `<donedata>`'s go into the `done_data` buffer the machine
 holds, which a host reads through `<machine>_done_data(sm)` and a compound
 final's done event is built from; a `<send>`'s into the event's own data buffer,
 which every delivery of the send reads. A `<send>` with a `delay` waits in the
@@ -3464,10 +3475,14 @@ A value that failed is reported and left out of both, and the invocation still
 starts with the others (5.7.1); a request whose event data does not fit its buffer
 starts nothing. `test_static_host_invoke.c` drives `statechart_static_host_invoke`
 for the value on the wire and `static_host_invoke_overflow`, a document of this
-channel kept beside its tests, for the pair a failed computation leaves out. The
-`<send>` the host serves is not lowered here yet, and
-`statechart_static_host_params`, which has both, is the document the other five
-channels drive. A
+channel kept beside its tests, for the pair a failed computation leaves out, and
+`test_static_host_send.c` drives `statechart_static_delayed_host_send` for a send
+the host serves: its `<param>`s are read when the send is made, the wait carries
+that request (`job` 7, not the 8 the field holds when the wait ends), and the
+`event_data` is the one text every engine writes, byte for byte.
+`statechart_static_host_params`, which has both a send and an invoke, is the
+document the other five channels drive; it declares a real, which C11 does not hold
+yet, so the two halves are driven from the two documents above. A
 `--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own

@@ -2598,6 +2598,17 @@ impl StaticTarget for CppTarget {
     }
 }
 
+/// The first of `names` that an earlier one already was — a `<param>` that repeats.
+///
+/// A name that repeats collects its values, in document order, into one array of
+/// the event's data on every engine (ARCHITECTURE.md, "JSON Object Key Order"; W3C
+/// SCXML test178). A target whose writer writes one value a name does not spell it
+/// yet, and says so by name rather than write the object with a key twice.
+fn repeated_name<'a>(names: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let mut seen = std::collections::BTreeSet::new();
+    names.into_iter().find(|name| !seen.insert(*name))
+}
+
 /// The first of `invokes` a target that lowers a `<invoke type="scxml">` has no
 /// lowering for yet, described for a refusal. A scxml child is started by the
 /// machine's own invoke code and handed its values by the build; a hybrid one and
@@ -3563,9 +3574,11 @@ impl CTarget {
                 | "sce_clear" | "foreach" | "cancel" => {}
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
-                // `<donedata>`'s are. Its `<content>` is text the script engine
-                // reads, and a processor the host serves collects its params
-                // through one, so neither is spelled yet.
+                // `<donedata>`'s are, and for a processor the host serves also
+                // as the text of the request's `params`, from the same value.
+                // Its `<content>` is text the script engine reads, so it is not
+                // spelled yet; a processor that no one is declared to serve is
+                // refused by name.
                 "send" => {
                     if !action.content.is_empty() || !action.contentexpr.is_empty() {
                         return Some("a <send> with a <content>".to_string());
@@ -3573,8 +3586,12 @@ impl CTarget {
                     let scxml_processor = action.send_type.is_empty()
                         || action.send_type == "scxml"
                         || action.send_type.ends_with("#SCXMLEventProcessor");
-                    if action.send_type_host_served || !scxml_processor {
+                    if !scxml_processor && !action.send_type_host_served {
                         return Some(format!("a <send> of type `{}`", action.send_type));
+                    }
+                    if let Some(name) = repeated_name(action.params.iter().map(|p| p.name.as_str()))
+                    {
+                        return Some(format!("a <send> that names <param name=\"{name}\"> twice"));
                     }
                 }
                 other => return Some(format!("<{other}>")),
@@ -3606,6 +3623,17 @@ impl CTarget {
                     "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
                     info.common.base.invoke_id
                 ))
+            }
+            // A name that repeats collects its values into one array of the
+            // event's data on every engine (ARCHITECTURE.md, "JSON Object Key
+            // Order"), which the wire writer of the forge runtime does not yet.
+            crate::model::Invoke::Unsupported(info) if info.host_served => {
+                repeated_name(info.base.params.iter().map(|p| p.name.as_str())).map(|name| {
+                    format!(
+                        "an <invoke id=\"{}\"> that names <param name=\"{name}\"> twice",
+                        info.base.invoke_id
+                    )
+                })
             }
             _ => None,
         })
@@ -3769,13 +3797,22 @@ impl StaticTarget for CTarget {
             }
             // The pairs of a `<donedata>` are written as the JSON object of the
             // done event's data from the machine's own fields; its `<content>` is
-            // not spelled yet.
+            // not spelled yet, and nor is a name that repeats.
             if state
                 .donedata
                 .as_ref()
                 .is_some_and(|done| !matches!(done.content, crate::model::DoneDataContent::None))
             {
                 return Some("a <donedata> with a <content>".to_string());
+            }
+            if let Some(name) = state
+                .donedata
+                .as_ref()
+                .and_then(|done| repeated_name(done.params.iter().map(|p| p.name.as_str())))
+            {
+                return Some(format!(
+                    "a <donedata> that names <param name=\"{name}\"> twice"
+                ));
             }
         }
         None

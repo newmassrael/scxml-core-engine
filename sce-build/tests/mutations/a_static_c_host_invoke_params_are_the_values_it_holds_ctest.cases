@@ -15,18 +15,26 @@
 # invocation still starts. The values those decide are the ones
 # `backends/c/tests/integration/test_static_host_invoke.c` states.
 #
+# The same holds of a `<send>` the host serves (`test_static_host_send.c`), whose
+# pairs the payload macro of `state_machine.c.jinja2` writes into the request's
+# `params` and `event_data` from the one value.
+#
 # What is easy to get wrong and reads as success: the params a host reads are
 # right while the event data it forwards is `{}`, a pair written with the zero of a
 # failed value is a request that still looks complete, and a pair dropped without a
-# word is one that does too. The test reads the event data and the params
-# separately, and `errors` counts the reports the document took.
+# word is one that does too. And the pairs written in the order the document
+# declared them, which reads the same as JSON and is not the text every other
+# engine writes (ARCHITECTURE.md, "JSON Object Key Order"): a host that forwards or
+# compares the request as bytes sees a difference between backends, and a saved
+# state holds that text. The tests read the event data as text, byte for byte, and
+# the params separately, and `errors` counts the reports the document took.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_ctest --test-dir build -R '^c11_integration_static_host_invoke$'
-mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 backends/c/forge-runtime/include/sce/forge/wire.h
-mutation_oracles backends/c/tests/integration/test_static_host_invoke.c backends/c/tests/integration_resources/static_host_invoke_overflow/static_host_invoke_overflow.scxml sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
+mutation_ctest --test-dir build -R '^c11_integration_static_host_(invoke|send)$'
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/integration/test_static_host_invoke.c backends/c/tests/integration/test_static_host_send.c backends/c/tests/integration_resources/static_host_invoke_overflow/static_host_invoke_overflow.scxml sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml
 
 # ── The request carries the value twice ────────────────────────────
 
@@ -58,4 +66,26 @@ mutation_case "a bool crosses as text with a capital" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
      "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"true\" : \"false\");",
      "        written = snprintf(buf, cap, \"%s\", value.as.b ? \"True\" : \"False\");")
+PY
+
+# ── The members come in the one order every engine writes ──────────
+
+mutation_case "an invoke's event data comes in the order the document declared" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "{% for param in invoke_info.params | sort(attribute='name', case_sensitive=true) %}",
+     "{% for param in invoke_info.params %}")
+PY
+
+mutation_case "a send's event data comes in the order the document declared" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% for param in params | sort(attribute='name', case_sensitive=true) %}",
+     "{% for param in params %}")
+PY
+
+# ── A send the host serves carries its pairs as text too ───────────
+
+mutation_case "a send's param reaches the host as the event data alone" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% if host_texts %}\n                            if (sce_forge_wire_text(",
+     "{% if false %}\n                            if (sce_forge_wire_text(")
 PY

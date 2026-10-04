@@ -378,7 +378,10 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             sce_forge_wire_t _host_inv_wire;
             sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(_host_inv_event_data));
 {% endif %}
-{% for param in invoke_info.params %}
+{# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
+   "JSON Object Key Order"): a pair left out leaves the order of the others as
+   it was, so the names are sorted here, once, and not at run time. #}
+{% for param in invoke_info.params | sort(attribute='name', case_sensitive=true) %}
 {% if param.is_static_literal %}
             _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
             _host_inv_params[_host_inv_param_count].value = "{{ param.static_value | escape_c }}";

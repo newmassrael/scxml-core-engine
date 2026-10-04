@@ -103,14 +103,6 @@ static int expect_text(const char *what, const char *got, const char *want) {
     return 0;
 }
 
-static int expect_has(const char *what, const char *text, const char *piece) {
-    if (strstr(text, piece) == NULL) {
-        (void)fprintf(stderr, "FAIL: %s `%s` does not hold `%s`\n", what, text, piece);
-        return 1;
-    }
-    return 0;
-}
-
 // The request carries what the fields hold when the invocation starts: `bump`
 // made `job` 8 before `start`, and `label` is the string the document gave it.
 static int a_param_carries_the_value_the_fields_hold_when_the_invocation_starts(void) {
@@ -135,10 +127,11 @@ static int a_param_carries_the_value_the_fields_hold_when_the_invocation_starts(
         (void)fprintf(stderr, "FAIL: the engine's deadline param was handed to the host\n");
         bad = 1;
     }
-    // The pairs as the data model holds them: a number stays a number.
-    bad |= expect_has("event data", seen.event_data, "\"job\":8");
-    bad |= expect_has("event data", seen.event_data, "\"label\":\"report\"");
-    bad |= expect_has("event data", seen.event_data, "\"_sce_deadline_ms\":5000");
+    // The pairs as the data model holds them — a number stays a number — in the
+    // one order every engine writes them in: ascending by name, though the
+    // document declares `label` before `job`, and the saved state holds this very
+    // text (ARCHITECTURE.md, "JSON Object Key Order").
+    bad |= expect_text("event data", seen.event_data, "{\"_sce_deadline_ms\":5000,\"job\":8,\"label\":\"report\"}");
     statechart_static_host_invoke_destroy(&sm);
     return bad;
 }
@@ -158,7 +151,7 @@ static int a_param_read_before_any_bump_carries_the_declared_value(void) {
         return 1;
     }
     bad |= expect_text("param `job`", param_of(&seen, "job"), "7");
-    bad |= expect_has("event data", seen.event_data, "\"job\":7");
+    bad |= expect_text("event data", seen.event_data, "{\"_sce_deadline_ms\":5000,\"job\":7,\"label\":\"report\"}");
     statechart_static_host_invoke_destroy(&sm);
     return bad;
 }
@@ -198,16 +191,12 @@ static int a_param_whose_value_cannot_be_computed_is_reported_and_left_out(void)
     }
     bad |= expect_text("param `ok`", param_of(&seen, "ok"), "4");
     bad |= expect_text("param `flag`", param_of(&seen, "flag"), "true");
-    bad |= expect_has("event data", seen.event_data, "\"flag\":true");
     if (param_of(&seen, "boom") != NULL) {
         (void)fprintf(stderr, "FAIL: the failed pair `boom` is in the request's params\n");
         bad = 1;
     }
-    bad |= expect_has("event data", seen.event_data, "\"ok\":4");
-    if (strstr(seen.event_data, "boom") != NULL) {
-        (void)fprintf(stderr, "FAIL: the failed pair `boom` is in the event data `%s`\n", seen.event_data);
-        bad = 1;
-    }
+    // The pairs that crossed, ascending by name, and no `boom` among them.
+    bad |= expect_text("event data", seen.event_data, "{\"flag\":true,\"ok\":4}");
     if (static_host_invoke_overflow_get_errors(&sm) != 1u) {
         (void)fprintf(stderr, "FAIL: errors is %u, want 1: the failed pair was not reported once\n",
                       (unsigned)static_host_invoke_overflow_get_errors(&sm));

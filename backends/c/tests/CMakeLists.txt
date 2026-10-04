@@ -2671,6 +2671,41 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15: a delayed `<send>` the host serves, in a
+    # `datamodel="sce-static"` machine — typed `<param>`s read from the machine's
+    # own fields when the send is made, and carried by the wait. The document the
+    # Rust, Kotlin and Go channels save and restore, generated with the processor
+    # declaration they pass. Linked WITHOUT `sce_c_scripting` and `lua54`: the
+    # machine has no script engine, so the link is the proof.
+    sce_generate_static_integration_c_test(statechart_static_delayed_host_send
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
+        HOST_PROCESSOR x-sce-host
+    )
+    add_executable(sce_c_integration_static_host_send
+        integration/test_static_host_send.c
+        ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_send PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_send PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_host_send PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_send
+        COMMAND sce_c_integration_static_host_send
+    )
+    set_tests_properties(c11_integration_static_host_send PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset §2.15: the `<param>`s of an `<invoke>` the host serves,
     # in a `datamodel="sce-static"` machine — typed expressions read from the
     # machine's own fields when the invocation starts. The invoke-only document
