@@ -29,7 +29,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^c11_integration_static_(scalars|host_call)$'
-mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs backends/c/forge-runtime/include/sce/forge/wire.h
 mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h backends/c/tests/integration/test_static_host_call.c
 
 # ── A failed statement writes nothing and ends its block ───────────
@@ -199,6 +199,32 @@ mutation_case "a published string reads as nothing" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "    return {{ field.read }};",
      "    return \"\";")
+PY
+
+# ── A done event carries the pairs whose value was computed ─────────
+#
+# `static_donedata`: `overflow` is `small + small` over a uint8 holding 250, so its
+# pair is left out of the object — a pair written anyway is a fourth member the
+# scenario does not state — and the others cross as the JSON they are. The wire
+# writer's own rules (`sce/forge/wire.h`) are the ones no scenario value reaches:
+# the check at the end of `test_static_scalars.c` states them.
+
+mutation_case "a done pair whose value failed is written anyway" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                if (!sce_failure_.failed) {\n                    sce_forge_wire_pair(&sce_wire_,",
+     "                if (true) {\n                    sce_forge_wire_pair(&sce_wire_,")
+PY
+
+mutation_case "a quote inside a string is written unescaped" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "            sce_forge_wire_put(w, \"\\\\\\\"\", 2u);",
+     "            sce_forge_wire_put(w, \"\\\"\", 1u);")
+PY
+
+mutation_case "an object past its buffer is left truncated" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        if (w->cap >= 3u) {\n            memcpy(w->buf, \"{}\", 3u);",
+     "        if (false && w->cap >= 3u) {\n            memcpy(w->buf, \"{}\", 3u);")
 PY
 
 # ── A published list is its elements and their count ───────────────

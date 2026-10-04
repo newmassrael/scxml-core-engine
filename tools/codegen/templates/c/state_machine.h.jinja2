@@ -484,6 +484,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {{ event_payload_type }} pending_payload;
 {{ event_payload_lift_storage }}
 {% endif %}
+{% if static_done_data %}
+    /* §scxml-5.5: the pairs of a final's `<donedata>`, written when the final is
+       entered as the JSON object a done event carries as its data — what a host
+       reads through `_done_data`, and a compound final's done event is built
+       from. Empty until then. */
+    char done_data[SCE_MAX_DATA_LEN];
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
     {{ csym_prefix }}{{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
 {% if model.needs_event_scheduler %}
@@ -1385,6 +1392,12 @@ bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.
 /* §scxml-3.7: whether the run has ended at a top-level <final> — the same
    answer as `_terminal_state` returning true. */
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% if static_done_data %}
+/* §scxml-5.5: the data the done event of the final this run ended at carries —
+   the JSON object of its `<donedata>` pairs, the ones whose value was computed —
+   or the empty string while no final with a `<donedata>` has been entered. */
+const char *{{ csym_prefix }}{{ model.name }}_done_data(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 {% for field in static_published %}
 
 /* SCE Accepted Subset §2.15: the published variable `{{ field.id }}` (`sce:direction="out"`),

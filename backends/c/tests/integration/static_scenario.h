@@ -71,6 +71,10 @@ typedef struct {
     // How many elements the list of records `name` holds. False for a name the
     // machine publishes no list of records of.
     bool (*record_count)(void *sm, const char *name, size_t *len);
+    // The data the done event of the final the run ended at carries — the JSON
+    // object of its `<donedata>` pairs. A scenario states it as an object, and a
+    // driver whose machine has no `<donedata>` may leave this unset.
+    const char *(*done_data)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -253,6 +257,112 @@ static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const cha
     return 1;
 }
 
+// One value of a flat JSON object: a bool or an integer, or a string.
+typedef struct {
+    bool is_text;
+    int64_t number;
+    char text[128];
+} sce_scenario_value_t;
+
+static bool sce_scenario_read_value(sce_scenario_cursor_t *c, sce_scenario_value_t *value) {
+    sce_scenario_space(c);
+    if (*c->at == '"') {
+        value->is_text = true;
+        return sce_scenario_string(c, value->text, sizeof(value->text));
+    }
+    value->is_text = false;
+    return sce_scenario_number(c, &value->number);
+}
+
+// The member `key` of the flat object `json` — one of bools, integers and strings,
+// as a machine's `<donedata>` writes it — and how many members it has. False when
+// the text is not such an object, or has no `key`.
+static bool sce_scenario_find_member(const char *json, const char *key, sce_scenario_value_t *out, size_t *count) {
+    sce_scenario_cursor_t c = {json};
+    char name[64];
+    bool found = false;
+    *count = 0;
+    if (!sce_scenario_take(&c, '{')) {
+        return false;
+    }
+    if (sce_scenario_take(&c, '}')) {
+        return false;
+    }
+    for (;;) {
+        sce_scenario_value_t value;
+        if (!sce_scenario_string(&c, name, sizeof(name)) || !sce_scenario_take(&c, ':') ||
+            !sce_scenario_read_value(&c, &value)) {
+            return false;
+        }
+        ++*count;
+        if (strcmp(name, key) == 0) {
+            *out = value;
+            found = true;
+        }
+        if (sce_scenario_take(&c, '}')) {
+            return found;
+        }
+        if (!sce_scenario_take(&c, ',')) {
+            return false;
+        }
+    }
+}
+
+// The pairs a step states of the done event's data, against what the machine's
+// final wrote: each stated pair is there and equal, and nothing else is.
+static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
+    int bad = 0;
+    char key[64];
+    char message[256];
+    size_t stated = 0;
+    const char *got = d->done_data == NULL ? NULL : d->done_data(d->sm);
+    if (!sce_scenario_take(c, '{')) {
+        return sce_scenario_fail(d, step, "`donedata` is not an object");
+    }
+    if (got == NULL) {
+        bad |= sce_scenario_fail(d, step, "the machine publishes no done data");
+    }
+    if (!sce_scenario_take(c, '}')) {
+        for (;;) {
+            sce_scenario_value_t want;
+            sce_scenario_value_t have;
+            size_t members = 0;
+            if (!sce_scenario_string(c, key, sizeof(key)) || !sce_scenario_take(c, ':') ||
+                !sce_scenario_read_value(c, &want)) {
+                return sce_scenario_fail(d, step, "a done-data pair is not a bool, an integer or a string");
+            }
+            ++stated;
+            if (got != NULL) {
+                if (!sce_scenario_find_member(got, key, &have, &members)) {
+                    (void)snprintf(message, sizeof(message), "the done data `%s` has no `%s`", got, key);
+                    bad |= sce_scenario_fail(d, step, message);
+                } else if (have.is_text != want.is_text ||
+                           (want.is_text ? strcmp(have.text, want.text) != 0 : have.number != want.number)) {
+                    (void)snprintf(message, sizeof(message), "the done data `%s` holds a different `%s`", got, key);
+                    bad |= sce_scenario_fail(d, step, message);
+                }
+            }
+            if (sce_scenario_take(c, '}')) {
+                break;
+            }
+            if (!sce_scenario_take(c, ',')) {
+                return sce_scenario_fail(d, step, "`donedata` is not well formed");
+            }
+        }
+    }
+    if (got != NULL) {
+        sce_scenario_value_t ignored;
+        size_t members = 0;
+        (void)sce_scenario_find_member(got, "", &ignored, &members);
+        if (members != stated) {
+            (void)snprintf(message, sizeof(message), "the done data `%s` holds %zu pair(s), want %zu", got, members,
+                           stated);
+            bad |= sce_scenario_fail(d, step, message);
+        }
+    }
+    return bad;
+}
+
 // A record stated as an object of numbers, bools and enum names, against the record variable `name`
 // or element `index` of the list of records `name`. A well-formed object sets
 // `*well_formed`, whatever the machine holds; the rest of the file is read only
@@ -345,6 +455,11 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                 (void)snprintf(message, sizeof(message), "state `%s` is %s", state,
                                active < 0 ? "not one of this machine's states" : "not active");
                 bad |= sce_scenario_fail(d, step, message);
+            }
+        } else if (strcmp(key, "donedata") == 0) {
+            const int mismatch = sce_scenario_expect_done_data(c, d, step);
+            if (mismatch != 0) {
+                bad |= mismatch;
             }
         } else if (strcmp(key, "ended") == 0) {
             int64_t want = 0;

@@ -305,11 +305,12 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // numbers, bools and enums, lists of integers, bools and such records with
     // `<sce:append>`, `<sce:clear>` and `<foreach>`, guards, `<assign>`,
     // `<if>`, `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and
-    // bools, a call of an imported algorithm, and a host action whose arguments
-    // are typed expressions of them. What is past that — a real, a list
+    // bools, a call of an imported algorithm, a host action whose arguments
+    // are typed expressions of them, and the `<param>`s of a final's
+    // `<donedata>`. What is past that — a real, a list
     // of reals, a record with a string field, a bytes variable, a
-    // `<send>`, an `<invoke>`, a final's `<donedata>`, a payload field that is
-    // not a number or a bool — is refused by
+    // `<send>`, an `<invoke>`, a final's `<donedata>` with a `<content>`, a
+    // payload field that is not a number or a bool — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -365,12 +366,12 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "an <invoke>",
         ),
         (
-            "a <donedata>",
+            "a <donedata> with a <content>",
             machine(
                 r#"<state id="s"><transition event="go" target="fin"/></state>
-  <final id="fin"><donedata><param name="n" expr="count"/></donedata></final>"#,
+  <final id="fin"><donedata><content>hello</content></donedata></final>"#,
             ),
-            "a <donedata>",
+            "a <donedata> with a <content>",
         ),
         (
             "a typed payload with a string field",

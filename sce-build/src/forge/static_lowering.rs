@@ -602,6 +602,13 @@ pub trait StaticTarget {
     /// value this backend's wire helpers take: the one a `<param>` crosses to a
     /// host as, text and JSON alike.
     fn wire_value(&self, ty: InferredType, value: &str) -> String;
+    /// Whether this backend spells a value of `ty` for the wire
+    /// ([`Self::wire_value`]). A type it does not is refused where the `<param>`
+    /// is written, by name, rather than crossed as something no scenario holds it
+    /// to. Every type [`InferredType::wire_param_slot`] admits, by default.
+    fn wire_admits(&self, _ty: InferredType) -> bool {
+        true
+    }
 }
 
 /// Kotlin: a variable is a property of the machine class, a record an
@@ -3716,11 +3723,15 @@ impl StaticTarget for CTarget {
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
             }
-            if state.donedata.as_ref().is_some_and(|done| {
-                !done.params.is_empty()
-                    || !matches!(done.content, crate::model::DoneDataContent::None)
-            }) {
-                return Some("a <donedata>".to_string());
+            // The pairs of a `<donedata>` are written as the JSON object of the
+            // done event's data from the machine's own fields; its `<content>` is
+            // not spelled yet.
+            if state
+                .donedata
+                .as_ref()
+                .is_some_and(|done| !matches!(done.content, crate::model::DoneDataContent::None))
+            {
+                return Some("a <donedata> with a <content>".to_string());
             }
         }
         None
@@ -4162,8 +4173,27 @@ impl StaticTarget for CTarget {
     fn payload_guards_the_value(&self) -> bool {
         true
     }
-    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
-        unreachable!("a C11 document with a <send> or an <invoke> is refused by `unsupported`")
+    // The runtime's typed wire value (`sce/forge/wire.h`), which a pair's JSON
+    // is written from: a number crosses as the widest of its signedness, which
+    // is exact. A real is not spelled yet ([`Self::wire_admits`]).
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool => format!("sce_forge_wire_bool({value})"),
+            InferredType::Str => format!("sce_forge_wire_string({value})"),
+            InferredType::Int { signed: true, .. } | InferredType::UntypedInt => {
+                format!("sce_forge_wire_int((int64_t)({value}))")
+            }
+            InferredType::Int { signed: false, .. } => {
+                format!("sce_forge_wire_uint((uint64_t)({value}))")
+            }
+            other => unreachable!("a C11 wire value of {other:?} is refused by `wire_admits`"),
+        }
+    }
+    fn wire_admits(&self, ty: InferredType) -> bool {
+        matches!(
+            ty,
+            InferredType::Bool | InferredType::Str | InferredType::Int { .. }
+        )
     }
 }
 
@@ -4667,6 +4697,11 @@ fn lower_wire_value(
     let slot = ty
         .wire_param_slot()
         .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;
+    if !target.wire_admits(slot) {
+        return Err(refused(format!(
+            "a value of {slot:?} has no wire spelling here yet"
+        )));
+    }
     // The value is read once and is its own: an owned string, for the typed
     // value that carries it.
     let value = transpile_into_owned(written, target.expr_target(), ctx, renames, slot)

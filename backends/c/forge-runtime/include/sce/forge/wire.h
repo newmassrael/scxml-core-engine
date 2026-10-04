@@ -1,0 +1,185 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+ * SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+ *
+ * The wire form of a `sce-static` machine's values (docs/SCE_ACCEPTED_SUBSET.md
+ * §2.15) — the JSON object a `<donedata>` or a `<send>` carries as the data of
+ * its event, built with no script engine from the machine's own fields.
+ *
+ * A value is a `sce_forge_wire_value_t`: the typed value of the data model, which
+ * is what the pair's JSON value is written from. A pair is written whole or not at
+ * all, so a value that failed is left out and the others still cross (§scxml-5.7.1).
+ * The object is written into a buffer the caller owns; one that does not fit it
+ * is reported by `sce_forge_wire_end`, and the buffer then holds `{}`, never a
+ * truncated object.
+ */
+#ifndef SCE_FORGE_WIRE_H
+#define SCE_FORGE_WIRE_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef enum {
+    SCE_FORGE_WIRE_BOOL,
+    SCE_FORGE_WIRE_INT,
+    SCE_FORGE_WIRE_UINT,
+    SCE_FORGE_WIRE_STRING
+} sce_forge_wire_kind_t;
+
+/* One value of the data model, as it crosses. */
+typedef struct {
+    sce_forge_wire_kind_t kind;
+
+    union {
+        bool b;
+        int64_t i;
+        uint64_t u;
+        const char *s;
+    } as;
+} sce_forge_wire_value_t;
+
+static inline sce_forge_wire_value_t sce_forge_wire_bool(bool v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_BOOL;
+    value.as.b = v;
+    return value;
+}
+
+static inline sce_forge_wire_value_t sce_forge_wire_int(int64_t v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_INT;
+    value.as.i = v;
+    return value;
+}
+
+static inline sce_forge_wire_value_t sce_forge_wire_uint(uint64_t v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_UINT;
+    value.as.u = v;
+    return value;
+}
+
+static inline sce_forge_wire_value_t sce_forge_wire_string(const char *v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_STRING;
+    value.as.s = v;
+    return value;
+}
+
+/* The object being written: `buf` holds `len` bytes of it, `cap` is its size. */
+typedef struct {
+    char *buf;
+    size_t cap;
+    size_t len;
+    bool any;
+    bool overflow;
+} sce_forge_wire_t;
+
+static inline void sce_forge_wire_put(sce_forge_wire_t *w, const char *text, size_t n) {
+    if (w->overflow || w->len + n >= w->cap) {
+        w->overflow = true;
+        return;
+    }
+    memcpy(w->buf + w->len, text, n);
+    w->len += n;
+}
+
+/* Start an object in `buf`, of `cap` bytes. */
+static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t cap) {
+    w->buf = buf;
+    w->cap = cap;
+    w->len = 0;
+    w->any = false;
+    w->overflow = false;
+    sce_forge_wire_put(w, "{", 1u);
+}
+
+/* The text of a string as a JSON string's body: `"`, `\` and the control
+ * characters escaped, every other byte — UTF-8 included — as it is. */
+static inline void sce_forge_wire_put_text(sce_forge_wire_t *w, const char *text) {
+    for (const char *p = text; *p != '\0'; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        char escaped[7];
+        switch (c) {
+        case '"':
+            sce_forge_wire_put(w, "\\\"", 2u);
+            break;
+        case '\\':
+            sce_forge_wire_put(w, "\\\\", 2u);
+            break;
+        case '\n':
+            sce_forge_wire_put(w, "\\n", 2u);
+            break;
+        case '\r':
+            sce_forge_wire_put(w, "\\r", 2u);
+            break;
+        case '\t':
+            sce_forge_wire_put(w, "\\t", 2u);
+            break;
+        default:
+            if (c < 0x20u) {
+                (void)snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)c);
+                sce_forge_wire_put(w, escaped, 6u);
+            } else {
+                sce_forge_wire_put(w, (const char *)&c, 1u);
+            }
+            break;
+        }
+    }
+}
+
+/* One pair: `key` is the JSON text of the name, quotes included, which the
+ * generator has already escaped. */
+static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
+    char number[32];
+    if (w->any) {
+        sce_forge_wire_put(w, ",", 1u);
+    }
+    w->any = true;
+    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, ":", 1u);
+    switch (value.kind) {
+    case SCE_FORGE_WIRE_BOOL:
+        sce_forge_wire_put(w, value.as.b ? "true" : "false", value.as.b ? 4u : 5u);
+        break;
+    case SCE_FORGE_WIRE_INT:
+        (void)snprintf(number, sizeof(number), "%lld", (long long)value.as.i);
+        sce_forge_wire_put(w, number, strlen(number));
+        break;
+    case SCE_FORGE_WIRE_UINT:
+        (void)snprintf(number, sizeof(number), "%llu", (unsigned long long)value.as.u);
+        sce_forge_wire_put(w, number, strlen(number));
+        break;
+    case SCE_FORGE_WIRE_STRING:
+        sce_forge_wire_put(w, "\"", 1u);
+        sce_forge_wire_put_text(w, value.as.s);
+        sce_forge_wire_put(w, "\"", 1u);
+        break;
+    }
+}
+
+/* Finish the object. False when it did not fit the buffer, which then holds `{}`. */
+static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {
+    if (!w->overflow) {
+        sce_forge_wire_put(w, "}", 1u);
+    }
+    if (w->overflow) {
+        if (w->cap >= 3u) {
+            memcpy(w->buf, "{}", 3u);
+        } else if (w->cap > 0u) {
+            w->buf[0] = '\0';
+        }
+        return false;
+    }
+    w->buf[w->len] = '\0';
+    return true;
+}
+
+#endif /* SCE_FORGE_WIRE_H */

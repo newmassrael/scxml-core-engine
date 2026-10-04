@@ -3285,14 +3285,25 @@ variables of the integer types, `bool`, an enum and a string, a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's
 typed payload of numbers and bools, a call of an imported algorithm, a
 `<sce:action>` whose arguments are typed expressions of them, a record whose
-fields are numbers, bools and enums, and a list of integers, bools or such
-records with its `<sce:append>`, `<sce:clear>` and `<foreach>`. A
+fields are numbers, bools and enums, a list of integers, bools or such
+records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, and the
+`<param>`s of a final's `<donedata>`. A
 real, bytes and a record with a string field, a list of
 reals, a `<send>` / `<cancel>`, an
-`<invoke>`, a final's `<donedata>` and a transition on an event whose payload
+`<invoke>`, a final's `<donedata>` with a `<content>` and a transition on an
+event whose payload
 carries a string, bytes or enum field are refused until their spellings are
 written: bytes need a capacity the C11 contract does not carry yet, and a real
-is not yet held to a scenario. A string is a struct of the buffer its bound
+is not yet held to a scenario — a `<param>` whose value is one is refused with
+it. The pairs of a `<donedata>` are written as the JSON object a done event
+carries as its data, by the header-only wire writer of the forge runtime
+(`sce/forge/wire.h`), into the `done_data` buffer the machine holds, which a host
+reads through `<machine>_done_data(sm)` and a compound final's done event is
+built from: a bool, a string — its `"`, `\` and control characters escaped, its
+UTF-8 as it is — or an integer, at the widest of its signedness. A pair whose
+value failed to compute, or whose location is empty, raises `error.execution`
+and is left out, every other pair still crosses (5.7.1), and an object that does
+not fit the buffer is `{}` and raises it too. A string is a struct of the buffer its bound
 declares, `sce_static_string_<capacity>_t { char data[<capacity> + 1]; }`,
 declared once in the machine's header per bound and held by value in the policy:
 an expression reads its `data`, so a comparison is `strcmp` over it, and an
@@ -3369,13 +3380,16 @@ from the call, as it does for a guard that is only `In()`.
 `static_block_ends`, `static_list`, `static_foreach`, `static_block_ends_list`,
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
-`static_string_capacity`, `static_payload`, `static_enum` (a value stated as the
+`static_string_capacity`, `static_donedata` (the done data read through
+`_done_data` and held to the pairs it states and no others), `static_payload`,
+`static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms
 called over the payload of each answer) against machines generated from the
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,
 an event's `data` included) rather than writing the expected values out a second
-time, and states the one thing no scenario can — a delivery that carried no
-payload. `test_static_host_call.c` drives `static_host_call` and
+time, and states the two things no scenario can — a delivery that carried no
+payload, and the wire writer's own escaping and its refusal of a full buffer.
+`test_static_host_call.c` drives `static_host_call` and
 `static_host_call_arguments` with a recording vtable, to the calls the C++ suite
 states. A `--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and

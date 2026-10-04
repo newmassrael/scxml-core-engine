@@ -2989,6 +2989,15 @@ fn render_c11(
         .iter()
         .filter(|f| f.published)
         .collect();
+    // SCE Accepted Subset §2.15: a final's `<donedata>` pairs, lowered to native
+    // values, are written as JSON into a buffer the machine holds, which a host
+    // reads and a compound final's done event is built from.
+    let static_done_data = model_lowered.states.values().any(|state| {
+        state
+            .donedata
+            .as_ref()
+            .is_some_and(|done| done.params.iter().any(|p| !p.native_value.is_empty()))
+    });
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
@@ -3028,6 +3037,7 @@ fn render_c11(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        static_done_data => static_done_data,
     };
     let source_ctx = minijinja::context! {
         model => &model_val,
@@ -3044,6 +3054,7 @@ fn render_c11(
         csym_prefix => &csym_prefix,
         host_invoker_defs => &host_invoker.defs,
         host_invoke_request_checks => &host_invoke_request_checks,
+        static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),

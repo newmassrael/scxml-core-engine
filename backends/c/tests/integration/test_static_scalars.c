@@ -54,6 +54,11 @@
 //   * `static_record_enum`: a record's enum field is held in the machine's type for
 //     the enum, compared, assigned a variant and appended with the record, and
 //     observed as the name its document declares.
+//   * `static_donedata`: a top-level final writes the pairs of its `<donedata>`, each
+//     read from the machine's own fields, as the JSON object of the done event's
+//     data; a pair whose value failed to compute is left out and the others cross.
+//   * `static_string_capacity`: a string is a buffer of the UTF-8 bytes its variable
+//     declares, and an assignment past it is refused by bytes, not characters.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -71,6 +76,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
 #include "static_foreach_sm.h"
@@ -83,6 +89,8 @@
 #include "static_record_sm.h"
 #include "static_string_capacity_sm.h"
 #include "sync_client_sm.h"
+
+#include <sce/forge/wire.h>
 
 #include "static_scenario.h"
 
@@ -222,8 +230,9 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // One machine as `sce_scenario_driver_t` asks for it: the event by the name the
 // machine itself resolves (§scxml-3.12.1), the state by its document name, the
 // variable by its, the lists and records by theirs, and the replay of its
-// scenario.
-#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                                    \
+// scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
+// that has one.
+#define STATIC_SCENARIO_DONE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE)                                         \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -308,7 +317,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               M##_read_lists,                                                          \
                                               M##_read_record_field,                                                   \
                                               M##_read_record_text,                                                    \
-                                              M##_read_record_count};                                                  \
+                                              M##_read_record_count,                                                   \
+                                              DONE};                                                                   \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -321,6 +331,10 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         }                                                                                                              \
         return bad;                                                                                                    \
     }
+
+// A machine with no `<donedata>`.
+#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                                    \
+    STATIC_SCENARIO_DONE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL)
 
 // static_counter
 VARIABLE_READER(static_counter, count)
@@ -470,6 +484,26 @@ static const variable_t string_capacity_variables[] = {
 };
 STATIC_SCENARIO(static_string_capacity, string_capacity_states, string_capacity_variables, static_string_capacity_text,
                 no_lists, no_records)
+
+// static_donedata: a top-level final hands its done event the pairs of its
+// `<donedata>`, each read from the machine's own fields when the final is entered
+// and written as the JSON object of the event's data; a pair whose value failed
+// to compute (`small + small` over a uint8) is left out and the others cross.
+VARIABLE_READER(static_donedata, count)
+
+static const char *static_donedata_done(void *sm) {
+    return static_donedata_done_data((const static_donedata_t *)sm);
+}
+
+static const name_value_t donedata_states[] = {
+    {"counting", STATIC_DONEDATA_STATE_COUNTING},
+    {"done", STATIC_DONEDATA_STATE_DONE},
+};
+static const variable_t donedata_variables[] = {
+    {"count", static_donedata_read_count},
+};
+STATIC_SCENARIO_DONE(static_donedata, donedata_states, donedata_variables, NULL, no_lists, no_records,
+                     static_donedata_done)
 
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
@@ -657,6 +691,35 @@ static int content_that_reads_a_payload_does_not_run_for_a_delivery_without_one(
     return bad;
 }
 
+// The wire writer's own rules, which no scenario's values reach: a string's `"`,
+// `\` and control characters are escaped and its UTF-8 is not, a number of either
+// signedness crosses at its widest, and an object that does not fit its buffer is
+// `{}` and says so — never a truncated one.
+static int the_wire_writer_escapes_text_and_refuses_a_full_buffer(void) {
+    int bad = 0;
+    char buffer[160];
+    sce_forge_wire_t wire;
+    sce_forge_wire_begin(&wire, buffer, sizeof(buffer));
+    sce_forge_wire_pair(&wire, "\"s\"", sce_forge_wire_string("a\"b\\c\n\x01\xc3\xa9"));
+    sce_forge_wire_pair(&wire, "\"i\"", sce_forge_wire_int(-9223372036854775807LL - 1));
+    sce_forge_wire_pair(&wire, "\"u\"", sce_forge_wire_uint(18446744073709551615ULL));
+    sce_forge_wire_pair(&wire, "\"b\"", sce_forge_wire_bool(false));
+    const char *want = "{\"s\":\"a\\\"b\\\\c\\n\\u0001\xc3\xa9\",\"i\":-9223372036854775808,"
+                       "\"u\":18446744073709551615,\"b\":false}";
+    if (!sce_forge_wire_end(&wire) || strcmp(buffer, want) != 0) {
+        (void)fprintf(stderr, "wire: FAIL - the object is `%s`, want `%s`\n", buffer, want);
+        bad = 1;
+    }
+    char small[8];
+    sce_forge_wire_begin(&wire, small, sizeof(small));
+    sce_forge_wire_pair(&wire, "\"key\"", sce_forge_wire_string("a value that is too long"));
+    if (sce_forge_wire_end(&wire) || strcmp(small, "{}") != 0) {
+        (void)fprintf(stderr, "wire: FAIL - an object past its buffer is `%s`, want `{}` and a refusal\n", small);
+        bad = 1;
+    }
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -675,8 +738,10 @@ int main(void) {
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
+    bad |= static_donedata_scenario("static_donedata", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
+    bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();
     if (bad != 0) {
         return 1;
     }
