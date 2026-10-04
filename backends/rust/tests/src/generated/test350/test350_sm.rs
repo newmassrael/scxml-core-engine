@@ -100,6 +100,7 @@ pub enum Test350Event {
     ErrorExecution,
     S0Event,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -596,6 +597,7 @@ impl StatePolicy for Test350Policy {
             Test350Event::ErrorExecution => "error.execution",
             Test350Event::S0Event => "s0Event",
             Test350Event::Timeout => "timeout",
+            Test350Event::Wildcard => "*",
             Test350Event::Null => "",
         }
     }
@@ -605,6 +607,7 @@ impl StatePolicy for Test350Policy {
             "error.execution" => Some(Test350Event::ErrorExecution),
             "s0Event" => Some(Test350Event::S0Event),
             "timeout" => Some(Test350Event::Timeout),
+            "*" => Some(Test350Event::Wildcard),
             _ => None,
         }
     }

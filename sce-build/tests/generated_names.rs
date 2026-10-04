@@ -161,6 +161,22 @@ fn an_event_spelled_as_the_member_cpp_and_c11_reserve_is_refused() {
 }
 
 #[test]
+fn an_event_spelled_as_the_wildcards_member_is_refused_for_every_backend() {
+    // `event="*"` is a member of every backend's event type: the one an arriving
+    // name that no event of the document matches is delivered as. An event named
+    // `wildcard` therefore spells the same member in all six.
+    let (enumeration, name, clash, backends) = refusal(
+        r#"<state id="a"><transition event="wildcard" target="b"/><transition event="*" target="b"/></state><final id="b"/>"#,
+    );
+    assert_eq!(enumeration, Enumeration::Event);
+    assert_eq!(
+        (name.as_str(), clash),
+        ("wildcard", Clash::Name("Wildcard".to_string()))
+    );
+    assert_eq!(backends, EVERY_BACKEND);
+}
+
+#[test]
 fn an_event_spelled_as_the_eventless_null_is_refused_where_it_is_declared() {
     // Rust and Go declare `Null`; Python spells the event `NULL_` to avoid
     // its own sentinel, and C++ and C11 reserve a different word.

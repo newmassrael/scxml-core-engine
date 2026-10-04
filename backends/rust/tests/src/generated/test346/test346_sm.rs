@@ -105,6 +105,7 @@ pub enum Test346Event {
     Event2,
     Event3,
     Event4,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -545,6 +546,7 @@ impl StatePolicy for Test346Policy {
             Test346Event::Event2 => "event2",
             Test346Event::Event3 => "event3",
             Test346Event::Event4 => "event4",
+            Test346Event::Wildcard => "*",
             Test346Event::Null => "",
         }
     }
@@ -556,6 +558,7 @@ impl StatePolicy for Test346Policy {
             "event2" => Some(Test346Event::Event2),
             "event3" => Some(Test346Event::Event3),
             "event4" => Some(Test346Event::Event4),
+            "*" => Some(Test346Event::Wildcard),
             _ => None,
         }
     }

@@ -138,6 +138,7 @@ pub enum Test387Event {
     EnteringS122,
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -437,6 +438,7 @@ impl StatePolicy for Test387Policy {
             Test387Event::EnteringS122 => "enteringS122",
             Test387Event::ErrorExecution => "error.execution",
             Test387Event::Timeout => "timeout",
+            Test387Event::Wildcard => "*",
             Test387Event::Null => "",
         }
     }
@@ -453,6 +455,7 @@ impl StatePolicy for Test387Policy {
             "enteringS122" => Some(Test387Event::EnteringS122),
             "error.execution" => Some(Test387Event::ErrorExecution),
             "timeout" => Some(Test387Event::Timeout),
+            "*" => Some(Test387Event::Wildcard),
             _ => None,
         }
     }

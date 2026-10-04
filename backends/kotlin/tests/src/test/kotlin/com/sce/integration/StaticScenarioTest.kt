@@ -26,6 +26,7 @@ import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
+import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
@@ -175,6 +176,25 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_event_arrival"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ...and where the document listens with `event="*"`, a name no descriptor it
+    // writes extends is delivered as the wildcard event instead of being dropped.
+    @Test
+    fun staticEventWildcardTakesANameTheDocumentDoesNotWrite() {
+        val sm = StaticEventWildcardStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_event_wildcard"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

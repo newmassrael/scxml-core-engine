@@ -23,6 +23,7 @@ sealed interface Test352State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test352Event : Event {
+    data object Wildcard : Test352Event
     sealed interface Error : Test352Event {
         data object Execution : Error
     }
@@ -140,6 +141,7 @@ class Test352StateMachine(
         "error.execution" -> Test352Event.Error.Execution
         "s0Event" -> Test352Event.S0Event
         "timeout" -> Test352Event.Timeout
+        "*" -> Test352Event.Wildcard
         else -> null
     }
 
@@ -148,6 +150,7 @@ class Test352StateMachine(
         is Test352Event.Error.Execution -> "error.execution"
         is Test352Event.S0Event -> "s0Event"
         is Test352Event.Timeout -> "timeout"
+        is Test352Event.Wildcard -> "*"
     }
 
 

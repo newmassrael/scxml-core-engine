@@ -100,6 +100,7 @@ pub enum Test375State {
 pub enum Test375Event {
     Event1,
     Event2,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -299,6 +300,7 @@ impl StatePolicy for Test375Policy {
         match event {
             Test375Event::Event1 => "event1",
             Test375Event::Event2 => "event2",
+            Test375Event::Wildcard => "*",
             Test375Event::Null => "",
         }
     }
@@ -307,6 +309,7 @@ impl StatePolicy for Test375Policy {
         match name {
             "event1" => Some(Test375Event::Event1),
             "event2" => Some(Test375Event::Event2),
+            "*" => Some(Test375Event::Wildcard),
             _ => None,
         }
     }

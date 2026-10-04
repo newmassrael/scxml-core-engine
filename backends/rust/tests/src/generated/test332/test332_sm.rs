@@ -101,6 +101,7 @@ pub enum Test332Event {
     Error,
     ErrorExecution,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -547,6 +548,7 @@ impl StatePolicy for Test332Policy {
             Test332Event::Error => "error",
             Test332Event::ErrorExecution => "error.execution",
             Test332Event::Foo => "foo",
+            Test332Event::Wildcard => "*",
             Test332Event::Null => "",
         }
     }
@@ -556,6 +558,7 @@ impl StatePolicy for Test332Policy {
             "error" => Some(Test332Event::Error),
             "error.execution" => Some(Test332Event::ErrorExecution),
             "foo" => Some(Test332Event::Foo),
+            "*" => Some(Test332Event::Wildcard),
             _ => None,
         }
     }

@@ -108,6 +108,7 @@ pub enum Test404Event {
     Event2,
     Event3,
     Event4,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -370,6 +371,7 @@ impl StatePolicy for Test404Policy {
             Test404Event::Event2 => "event2",
             Test404Event::Event3 => "event3",
             Test404Event::Event4 => "event4",
+            Test404Event::Wildcard => "*",
             Test404Event::Null => "",
         }
     }
@@ -380,6 +382,7 @@ impl StatePolicy for Test404Policy {
             "event2" => Some(Test404Event::Event2),
             "event3" => Some(Test404Event::Event3),
             "event4" => Some(Test404Event::Event4),
+            "*" => Some(Test404Event::Wildcard),
             _ => None,
         }
     }

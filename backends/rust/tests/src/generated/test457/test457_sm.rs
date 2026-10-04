@@ -103,6 +103,7 @@ pub enum Test457Event {
     Bar,
     ErrorExecution,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -665,6 +666,7 @@ impl StatePolicy for Test457Policy {
             Test457Event::Bar => "bar",
             Test457Event::ErrorExecution => "error.execution",
             Test457Event::Foo => "foo",
+            Test457Event::Wildcard => "*",
             Test457Event::Null => "",
         }
     }
@@ -674,6 +676,7 @@ impl StatePolicy for Test457Policy {
             "bar" => Some(Test457Event::Bar),
             "error.execution" => Some(Test457Event::ErrorExecution),
             "foo" => Some(Test457Event::Foo),
+            "*" => Some(Test457Event::Wildcard),
             _ => None,
         }
     }

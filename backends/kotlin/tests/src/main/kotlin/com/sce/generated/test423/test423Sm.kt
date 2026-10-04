@@ -23,6 +23,7 @@ sealed interface Test423State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test423Event : Event {
+    data object Wildcard : Test423Event
     sealed interface Error : Test423Event {
         data object Execution : Error
     }
@@ -135,6 +136,7 @@ class Test423StateMachine(
         "externalEvent1" -> Test423Event.ExternalEvent1
         "externalEvent2" -> Test423Event.ExternalEvent2
         "internalEvent" -> Test423Event.InternalEvent
+        "*" -> Test423Event.Wildcard
         else -> null
     }
 
@@ -144,6 +146,7 @@ class Test423StateMachine(
         is Test423Event.ExternalEvent1 -> "externalEvent1"
         is Test423Event.ExternalEvent2 -> "externalEvent2"
         is Test423Event.InternalEvent -> "internalEvent"
+        is Test423Event.Wildcard -> "*"
     }
 
 

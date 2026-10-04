@@ -201,9 +201,10 @@ const (
 	EventDescriptorSpellingsAgreeEventAnyTokenSequence EventDescriptorSpellingsAgreeEvent = 0
 	EventDescriptorSpellingsAgreeEventDot EventDescriptorSpellingsAgreeEvent = 1
 	EventDescriptorSpellingsAgreeEventWild EventDescriptorSpellingsAgreeEvent = 2
-	EventDescriptorSpellingsAgreeEventWilder EventDescriptorSpellingsAgreeEvent = 3
+	EventDescriptorSpellingsAgreeEventWildcard EventDescriptorSpellingsAgreeEvent = 3
+	EventDescriptorSpellingsAgreeEventWilder EventDescriptorSpellingsAgreeEvent = 4
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EventDescriptorSpellingsAgreeEventNull EventDescriptorSpellingsAgreeEvent = 4
+	EventDescriptorSpellingsAgreeEventNull EventDescriptorSpellingsAgreeEvent = 5
 )
 
 func (e EventDescriptorSpellingsAgreeEvent) String() string {
@@ -214,6 +215,8 @@ func (e EventDescriptorSpellingsAgreeEvent) String() string {
 		return "dot"
 	case EventDescriptorSpellingsAgreeEventWild:
 		return "wild"
+	case EventDescriptorSpellingsAgreeEventWildcard:
+		return "*"
 	case EventDescriptorSpellingsAgreeEventWilder:
 		return "wilder"
 	case EventDescriptorSpellingsAgreeEventNull:
@@ -392,6 +395,8 @@ func (p *EventDescriptorSpellingsAgreePolicy) GetEventFromName(name string) (Eve
 		return EventDescriptorSpellingsAgreeEventDot, true
 	case "wild":
 		return EventDescriptorSpellingsAgreeEventWild, true
+	case "*":
+		return EventDescriptorSpellingsAgreeEventWildcard, true
 	case "wilder":
 		return EventDescriptorSpellingsAgreeEventWilder, true
 	}

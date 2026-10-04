@@ -103,6 +103,7 @@ pub enum Test403aEvent {
     Event1,
     Event2,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -310,6 +311,7 @@ impl StatePolicy for Test403aPolicy {
             Test403aEvent::Event1 => "event1",
             Test403aEvent::Event2 => "event2",
             Test403aEvent::Timeout => "timeout",
+            Test403aEvent::Wildcard => "*",
             Test403aEvent::Null => "",
         }
     }
@@ -320,6 +322,7 @@ impl StatePolicy for Test403aPolicy {
             "event1" => Some(Test403aEvent::Event1),
             "event2" => Some(Test403aEvent::Event2),
             "timeout" => Some(Test403aEvent::Timeout),
+            "*" => Some(Test403aEvent::Wildcard),
             _ => None,
         }
     }

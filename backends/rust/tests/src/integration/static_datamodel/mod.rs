@@ -7,6 +7,7 @@ pub mod static_counter_sm;
 pub mod static_donedata_sm;
 pub mod static_enum_sm;
 pub mod static_event_arrival_sm;
+pub mod static_event_wildcard_sm;
 pub mod static_foreach_sm;
 pub mod static_history_sm;
 pub mod static_host_call_sm;

@@ -31,6 +31,7 @@
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
+#include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
@@ -216,6 +217,17 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventArrivesUnderANameTheDocumentDo
         {"specials", [](const Machine &m) { return json(m.specials()); }},
     });
     replay("static_event_arrival", driver);
+}
+
+/// ...and where the document listens with `event="*"`, a name no descriptor it
+/// writes extends is delivered as the wildcard event instead of being dropped.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventArrivesUnderANameOnlyTheWildcardTakes) {
+    using Machine = G::static_event_wildcard::static_event_wildcard;
+    Driver<Machine> driver({
+        {"requests", [](const Machine &m) { return json(m.requests()); }},
+        {"strays", [](const Machine &m) { return json(m.strays()); }},
+    });
+    replay("static_event_wildcard", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnOverflowingOperationFailsInsteadOfWrapping) {

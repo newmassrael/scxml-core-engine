@@ -1,0 +1,38 @@
+# Mutation cases for "an autoforwarded copy is told the name its event arrived
+# under" (Python engine).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_autoforward_arrival_name.cases`.
+#
+# §scxml-6.4 has the parent forward an exact copy of every external event to an
+# `<invoke autoforward="true">` child, and §scxml-5.10 makes `_event.name` the name
+# an event was sent under. A parent delivers an event it does not write as the
+# member of a shorter descriptor (`request.new` as `request`) or as the wildcard
+# member (`other.thing`, for a document that listens with `event="*"`), and neither
+# member is called what the host sent. `Engine._route_to_child` hands the child the
+# event's `EventMetadata.name` when it has one and the member's name when it has
+# not; `backends/python/tests/integration/static_datamodel/
+# test_an_autoforwarded_copy_keeps_the_arrival_name.py` reads what the policy is
+# asked to forward for both.
+#
+# What is easy to get wrong and read as success: a copy forwarded under the
+# member's name. A document that writes its names whole never tells it apart, and
+# a wildcard member forwarded under its own name is the child's `*`.
+#
+# Python compiles nothing, so the module on disk is the artifact and the edit
+# here is a `mutation_runtime_targets`. The machine the oracle imports is
+# GENERATED and gitignored, so its regeneration is declared.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
+mutation_oracles backends/python/tests/integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py
+
+mutation_case "the copy is forwarded under the name of the member, not the name it arrived under" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        name = evt.metadata.name or self._policy.get_event_name(evt.event)\n",
+     "        name = self._policy.get_event_name(evt.event)\n")
+PY

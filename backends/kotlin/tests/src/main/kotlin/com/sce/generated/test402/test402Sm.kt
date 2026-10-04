@@ -25,6 +25,7 @@ sealed interface Test402State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test402Event : Event {
+    data object Wildcard : Test402Event
     sealed interface Error : Test402Event {
         data object Self : Error
         data object Execution : Error
@@ -211,6 +212,7 @@ class Test402StateMachine(
         "event1" -> Test402Event.Event1
         "event2" -> Test402Event.Event2
         "timeout" -> Test402Event.Timeout
+        "*" -> Test402Event.Wildcard
         else -> null
     }
 
@@ -221,6 +223,7 @@ class Test402StateMachine(
         is Test402Event.Event1 -> "event1"
         is Test402Event.Event2 -> "event2"
         is Test402Event.Timeout -> "timeout"
+        is Test402Event.Wildcard -> "*"
     }
 
 

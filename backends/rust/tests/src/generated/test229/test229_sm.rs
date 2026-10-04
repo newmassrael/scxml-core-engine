@@ -102,6 +102,7 @@ pub enum Test229Event {
     ErrorExecution,
     EventReceived,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -546,6 +547,7 @@ impl StatePolicy for Test229Policy {
             Test229Event::ErrorExecution => "error.execution",
             Test229Event::EventReceived => "eventReceived",
             Test229Event::Timeout => "timeout",
+            Test229Event::Wildcard => "*",
             Test229Event::Null => "",
         }
     }
@@ -557,6 +559,7 @@ impl StatePolicy for Test229Policy {
             "error.execution" => Some(Test229Event::ErrorExecution),
             "eventReceived" => Some(Test229Event::EventReceived),
             "timeout" => Some(Test229Event::Timeout),
+            "*" => Some(Test229Event::Wildcard),
             _ => None,
         }
     }

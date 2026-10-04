@@ -255,8 +255,9 @@ const (
 	WildcardInDocumentOrderEventErrorExecution WildcardInDocumentOrderEvent = 0
 	WildcardInDocumentOrderEventHop WildcardInDocumentOrderEvent = 1
 	WildcardInDocumentOrderEventProbe WildcardInDocumentOrderEvent = 2
+	WildcardInDocumentOrderEventWildcard WildcardInDocumentOrderEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	WildcardInDocumentOrderEventNull WildcardInDocumentOrderEvent = 3
+	WildcardInDocumentOrderEventNull WildcardInDocumentOrderEvent = 4
 )
 
 func (e WildcardInDocumentOrderEvent) String() string {
@@ -267,6 +268,8 @@ func (e WildcardInDocumentOrderEvent) String() string {
 		return "hop"
 	case WildcardInDocumentOrderEventProbe:
 		return "probe"
+	case WildcardInDocumentOrderEventWildcard:
+		return "*"
 	case WildcardInDocumentOrderEventNull:
 		return ""
 	}
@@ -736,6 +739,8 @@ func (p *WildcardInDocumentOrderPolicy) GetEventFromName(name string) (WildcardI
 		return WildcardInDocumentOrderEventHop, true
 	case "probe":
 		return WildcardInDocumentOrderEventProbe, true
+	case "*":
+		return WildcardInDocumentOrderEventWildcard, true
 	}
 	return WildcardInDocumentOrderEventNull, false
 }

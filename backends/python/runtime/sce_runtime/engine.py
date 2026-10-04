@@ -2499,7 +2499,10 @@ class Engine(Generic[S, E]):
             return
         if not self._active_invokes:
             return
-        name = self._policy.get_event_name(evt.event)
+        # §scxml-5.10: under the name the event arrived under, which is the
+        # member's own unless a door cut a longer one back to it or delivered it
+        # as the wildcard member.
+        name = evt.metadata.name or self._policy.get_event_name(evt.event)
         if not name:
             return
         # §scxml-6.4 requires an exact copy, so the whole metadata goes

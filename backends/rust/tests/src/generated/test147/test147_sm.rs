@@ -102,6 +102,7 @@ pub enum Test147Event {
     Baz,
     ErrorExecution,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -570,6 +571,7 @@ impl StatePolicy for Test147Policy {
             Test147Event::Baz => "baz",
             Test147Event::ErrorExecution => "error.execution",
             Test147Event::Foo => "foo",
+            Test147Event::Wildcard => "*",
             Test147Event::Null => "",
         }
     }
@@ -581,6 +583,7 @@ impl StatePolicy for Test147Policy {
             "baz" => Some(Test147Event::Baz),
             "error.execution" => Some(Test147Event::ErrorExecution),
             "foo" => Some(Test147Event::Foo),
+            "*" => Some(Test147Event::Wildcard),
             _ => None,
         }
     }

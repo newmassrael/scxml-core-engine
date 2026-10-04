@@ -26,6 +26,7 @@ sealed interface Test532Event : Event {
     sealed interface HTTP : Test532Event {
         data object POST : HTTP
     }
+    data object Wildcard : Test532Event
     sealed interface Error : Test532Event {
         data object Communication : Error
         data object Execution : Error
@@ -124,6 +125,7 @@ class Test532StateMachine(
         "error.execution" -> Test532Event.Error.Execution
         "HTTP.POST" -> Test532Event.HTTP.POST
         "timeout" -> Test532Event.Timeout
+        "*" -> Test532Event.Wildcard
         else -> null
     }
 
@@ -134,6 +136,7 @@ class Test532StateMachine(
         is Test532Event.Error.Execution -> "error.execution"
         is Test532Event.HTTP.POST -> "HTTP.POST"
         is Test532Event.Timeout -> "timeout"
+        is Test532Event.Wildcard -> "*"
     }
 
 

@@ -316,8 +316,11 @@ class StatePolicy(ABC, Generic[S, E]):
         of the LONGEST of those — which therefore matches exactly what the
         arriving name would. That is the event this answers: `event_name`
         itself when the document writes it, else the longest token prefix of
-        it the document does, else `None` — no transition the document has
-        could match it, and it is dropped.
+        it the document does, else the wildcard member — the one `event="*"`
+        stands for, which the exact table keeps under the name `*` (no
+        document can write that as an event's name) — when the document has
+        such a transition, else `None`: no transition the document has could
+        match it, and it is dropped.
 
         Provided, not generated: the rule is one, and a generated copy per
         document is a copy that can age. `get_event_from_name` stays the
@@ -331,7 +334,7 @@ class StatePolicy(ABC, Generic[S, E]):
                 return event
             head, dot, _ = candidate.rpartition(".")
             if not dot:
-                return None
+                return self.get_event_from_name("*")
             candidate = head
 
     def host_invoke_ids(self) -> Tuple[str, ...]:

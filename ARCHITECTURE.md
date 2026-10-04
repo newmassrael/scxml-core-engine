@@ -936,16 +936,25 @@ delivers an arriving name as:
 1. the document's own event of that name, when it writes it;
 2. else the event of the longest token prefix of the name that it does write
    (the name cut at its last `.`, repeatedly);
-3. else none: no transition the document has could match the name, so it is
+3. else the wildcard event, when the document has a transition that listens
+   with `event="*"`;
+4. else none: no transition the document has could match the name, so it is
    dropped.
 
-The longest prefix is the whole answer because every descriptor that matches
-an arriving name is a token prefix of it, so is one of the document's names, so
-is a prefix of the longest of those, which therefore matches exactly what the
-arriving name would. `requesty` is not an extension of `request` (the cut is at a
-`.`, never at a character), and `req` is a prefix of a descriptor, not an
-extension of one: both are dropped. The generated lookup stays the exact table;
-the rule is written once per engine and every by-name door goes through it:
+The longest prefix is the whole answer to the descriptors that name something,
+because every one that matches an arriving name is a token prefix of it, so is
+one of the document's names, so is a prefix of the longest of those, which
+therefore matches exactly what the arriving name would. `*` is the one that names
+nothing and matches every name, so it is the last resort and not a prefix at all:
+`requesty` is not an extension of `request` (the cut is at a `.`, never at a
+character) and `req` is a prefix of a descriptor, not an extension of one, so a
+document that listens with `*` takes both there and a document that does not drops
+both. The wildcard event is the member every engine declares for a document that
+has such a transition, and its generated name table keeps it under the name `*`,
+which no document can write as the name of an event, so the exact table the
+generated code holds is the only thing the rule asks. The generated lookup stays
+the exact table; the rule is written once per engine and every by-name door goes
+through it:
 
 | Engine | Rule | Held by |
 |--------|------|---------|
@@ -991,15 +1000,24 @@ Two documents hold two questions. `static_event_arrival.json` (over
 `sce-build/tests/fixtures/static_datamodel/`) holds WHICH event a name is delivered
 as, and a step that expects the drop says `"dropped": true`; every harness but
 Kotlin's asks the engine's own rule whether the name reaches the machine (Kotlin's
-lookup is not public, so it holds the variables that did not move). The integration
+lookup is not public, so it holds the variables that did not move).
+`static_event_wildcard.json` holds the same question for a document that also
+listens with `event="*"`, where no name is dropped. The integration
 stem `integration_resources/an_event_keeps_the_name_it_was_sent_under/` holds what
 the machine is TOLD it is called, on every channel — a `sce-static` machine has no
-`_event`, so a scenario cannot.
+`_event`, so a scenario cannot — and
+`backends/c/tests/integration_resources/autoforward_keeps_the_arrival_name/` holds
+that a parent's autoforwarded copy is told the whole name, whether the parent
+delivered the event as the member of a shorter descriptor or as the wildcard member.
+Rust, Go, Kotlin and C++ forward the name from the event's metadata; Python's and
+C11's forwarded the member's own name (`request` for `request.new`, and now `*` for
+the wildcard member) until 2026-10-04, and
+`backends/python/tests/integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py`
+holds Python's.
 
-Not yet: an arriving name no prefix of which the document writes is dropped even
-where the document listens with `event="*"` (the transition would take it in the
-Interpreter), and a `<send eventexpr>` a machine sends itself with a computed name
-the document does not write is looked up exactly.
+Not yet: a `<send eventexpr>` a machine sends itself with a computed name the
+document does not write is looked up exactly, so it is dropped where a descriptor
+or a `*` of the document would take it.
 
 ### LuaDOMBinding
 

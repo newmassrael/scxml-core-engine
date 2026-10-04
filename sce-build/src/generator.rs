@@ -3156,13 +3156,7 @@ pub fn generate_kotlin_with_templates(
 fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     use crate::kotlin;
 
-    let kotlin_events: std::collections::BTreeSet<String> = model
-        .events
-        .iter()
-        .filter(|e| e.as_str() != "Wildcard")
-        .cloned()
-        .collect();
-    let event_tree = kotlin::build_event_tree(&kotlin_events);
+    let event_tree = kotlin::build_event_tree(&model.events);
     let branch_events = kotlin::collect_branch_events(&event_tree, "");
 
     env.add_filter("to_event_ref", move |name: String| -> String {
@@ -3237,13 +3231,7 @@ fn render_kotlin(
     let invoke_entries = kotlin::compute_invoke_entries(model);
 
     // Event tree for sealed interface hierarchy
-    let kotlin_events: std::collections::BTreeSet<String> = model
-        .events
-        .iter()
-        .filter(|e| e.as_str() != "Wildcard")
-        .cloned()
-        .collect();
-    let event_tree = kotlin::build_event_tree(&kotlin_events);
+    let event_tree = kotlin::build_event_tree(&model.events);
     let leaf_events = kotlin::collect_leaf_events(&event_tree, "");
 
     // Pre-render event tree as Kotlin sealed interfaces

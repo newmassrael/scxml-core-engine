@@ -102,6 +102,7 @@ pub enum Test244Event {
     Failure,
     Success,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -825,6 +826,7 @@ impl StatePolicy for Test244Policy {
             Test244Event::Failure => "failure",
             Test244Event::Success => "success",
             Test244Event::Timeout => "timeout",
+            Test244Event::Wildcard => "*",
             Test244Event::Null => "",
         }
     }
@@ -836,6 +838,7 @@ impl StatePolicy for Test244Policy {
             "failure" => Some(Test244Event::Failure),
             "success" => Some(Test244Event::Success),
             "timeout" => Some(Test244Event::Timeout),
+            "*" => Some(Test244Event::Wildcard),
             _ => None,
         }
     }

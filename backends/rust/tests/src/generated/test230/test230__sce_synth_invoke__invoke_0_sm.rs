@@ -100,6 +100,7 @@ pub enum Test230SceSynthInvokeInvoke0Event {
     ErrorCommunication,
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -541,6 +542,7 @@ impl StatePolicy for Test230SceSynthInvokeInvoke0Policy {
             Test230SceSynthInvokeInvoke0Event::ErrorCommunication => "error.communication",
             Test230SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test230SceSynthInvokeInvoke0Event::Timeout => "timeout",
+            Test230SceSynthInvokeInvoke0Event::Wildcard => "*",
             Test230SceSynthInvokeInvoke0Event::Null => "",
         }
     }
@@ -551,6 +553,7 @@ impl StatePolicy for Test230SceSynthInvokeInvoke0Policy {
             "error.communication" => Some(Test230SceSynthInvokeInvoke0Event::ErrorCommunication),
             "error.execution" => Some(Test230SceSynthInvokeInvoke0Event::ErrorExecution),
             "timeout" => Some(Test230SceSynthInvokeInvoke0Event::Timeout),
+            "*" => Some(Test230SceSynthInvokeInvoke0Event::Wildcard),
             _ => None,
         }
     }

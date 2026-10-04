@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the name an event
+  arrives under, where the document listens with `event="*"`. W3C SCXML 3.12.1
+  matches a transition's `event` against an event's name by tokens, and a
+  descriptor of `*` matches every event. An event arrives by name from outside
+  the document (a child's autoforward, a host), so the names it can arrive
+  under are open, and a name the document never writes is still an event that
+  `*` takes.
+
+  The document writes `request` and then `*`, and the first one that matches
+  takes the event (§3.13):
+
+    `request`  counts `request`, and every other name that extends it past a
+               `.` (`request.new`);
+    `*`        counts every other name, whether or not the document writes it:
+               `requesty` (another token that merely begins like `request`),
+               `req` (a prefix of `request`, no extension of it) and a name
+               that has nothing to do with it (`other`, `other.deeper`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="listening" datamodel="sce-static" name="static_event_wildcard">
+  <datamodel>
+    <data id="requests" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="strays" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="listening">
+    <transition event="request" type="internal">
+      <assign location="requests" expr="requests + 1"/>
+    </transition>
+    <transition event="*" type="internal">
+      <assign location="strays" expr="strays + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -1,5 +1,5 @@
 # Mutation cases for "an event that arrives by name is delivered as the event
-# whose name it extends" (Python engine).
+# whose name it extends, or as the wildcard" (Python engine).
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/python_event_arrival_name.cases`.
@@ -7,18 +7,22 @@
 # An event arrives by name from outside the document — a child's autoforward, a
 # host, a host-served act's reply — so the names it can arrive under are open
 # (§scxml-3.12.1): `request` takes `request.new` though the document never writes
-# it, and a name no descriptor of the document matches is dropped.
+# it, a name no descriptor of the document matches is the wildcard member's when
+# the document listens with `event="*"`, and is dropped when it does not.
 # `StatePolicy.resolve_event_by_name` is the one rule every by-name door of the
 # engine reaches the machine through, and
 # `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
-# states what it decides, replayed by
+# and `static_event_wildcard.json` state what it decides, replayed by
 # `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`.
 #
-# Two things are easy to get wrong and read as success: a walk that never leaves
-# the whole name (every document that writes its names whole still passes), and a
+# Things that are easy to get wrong and read as success: a walk that never leaves
+# the whole name (every document that writes its names whole still passes), a
 # cut at any character rather than at a `.` (`requesty` is then `request`'s, and
-# a machine that is sent a misspelling answers it). Only a name that extends a
-# descriptor past a `.` and one that merely begins like it tell them apart.
+# a machine that is sent a misspelling answers it), a wildcard that is never
+# reached (every document without `event="*"` still passes) and one that is taken
+# before the document's own events (a name the document writes goes to `*`). Only
+# a name that extends a descriptor past a `.`, one that merely begins like it, and
+# one that has nothing to do with it tell them apart.
 #
 # Python compiles nothing, so the module on disk is the artifact and every edit
 # here is a `mutation_runtime_targets`. The machine the oracle imports is
@@ -42,4 +46,16 @@ mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
 edit("backends/python/runtime/sce_runtime/policy.py",
      "            head, dot, _ = candidate.rpartition(\".\")\n",
      "            head, dot = candidate[:-1], candidate[-1:]\n")
+PY
+
+mutation_case "a name no event of the document matches is dropped although it has a wildcard" <<'PY'
+edit("backends/python/runtime/sce_runtime/policy.py",
+     "                return self.get_event_from_name(\"*\")\n",
+     "                return None\n")
+PY
+
+mutation_case "the wildcard member takes a name before the document's own events" <<'PY'
+edit("backends/python/runtime/sce_runtime/policy.py",
+     "        candidate = event_name\n",
+     "        wildcard = self.get_event_from_name(\"*\")\n        if wildcard is not None:\n            return wildcard\n        candidate = event_name\n")
 PY

@@ -23,6 +23,7 @@ sealed interface Test336State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test336Event : Event {
+    data object Wildcard : Test336Event
     data object Bar : Test336Event
     data object Baz : Test336Event
     sealed interface Error : Test336Event {
@@ -144,6 +145,7 @@ class Test336StateMachine(
         "error.communication" -> Test336Event.Error.Communication
         "error.execution" -> Test336Event.Error.Execution
         "foo" -> Test336Event.Foo
+        "*" -> Test336Event.Wildcard
         else -> null
     }
 
@@ -154,6 +156,7 @@ class Test336StateMachine(
         is Test336Event.Error.Communication -> "error.communication"
         is Test336Event.Error.Execution -> "error.execution"
         is Test336Event.Foo -> "foo"
+        is Test336Event.Wildcard -> "*"
     }
 
 

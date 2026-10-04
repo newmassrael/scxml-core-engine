@@ -28,6 +28,7 @@ sealed interface EventDescriptorSpellingsAgreeState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface EventDescriptorSpellingsAgreeEvent : Event {
+    data object Wildcard : EventDescriptorSpellingsAgreeEvent
     sealed interface Any : EventDescriptorSpellingsAgreeEvent {
         sealed interface Token : Any {
             data object Sequence : Token
@@ -192,6 +193,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         "any.token.sequence" -> EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence
         "dot" -> EventDescriptorSpellingsAgreeEvent.Dot
         "wild" -> EventDescriptorSpellingsAgreeEvent.Wild
+        "*" -> EventDescriptorSpellingsAgreeEvent.Wildcard
         "wilder" -> EventDescriptorSpellingsAgreeEvent.Wilder
         else -> null
     }
@@ -201,6 +203,7 @@ class EventDescriptorSpellingsAgreeStateMachine(
         is EventDescriptorSpellingsAgreeEvent.Any.Token.Sequence -> "any.token.sequence"
         is EventDescriptorSpellingsAgreeEvent.Dot -> "dot"
         is EventDescriptorSpellingsAgreeEvent.Wild -> "wild"
+        is EventDescriptorSpellingsAgreeEvent.Wildcard -> "*"
         is EventDescriptorSpellingsAgreeEvent.Wilder -> "wilder"
     }
 

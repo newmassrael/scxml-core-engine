@@ -805,9 +805,15 @@ fn stamp_wildcard_descriptors(model: &mut SCXMLModel) {
 }
 
 /// The event-set entry that stands for `event="*"` (§scxml-3.12.1). It is
-/// not an event a document raises: each backend's templates either skip it or
-/// give it a member of its own.
+/// not an event a document raises: every backend's templates give it a member
+/// of its own, which an arriving name that no event of the document matches is
+/// delivered as (ARCHITECTURE.md, "Event Names at the Door").
 pub const WILDCARD_EVENT: &str = "Wildcard";
+
+/// The name that member goes by in a generated name table: the descriptor that
+/// asks for it, which no document can write as the name of an event, so a table
+/// that maps it to the member cannot be reached by an event of the document's own.
+pub const WILDCARD_EVENT_WIRE_NAME: &str = "*";
 
 /// Add system-level events (wildcards, invoke events).
 fn add_system_events(model: &mut SCXMLModel) {

@@ -100,6 +100,7 @@ pub enum Test419Event {
     ErrorExecution,
     ExternalEvent,
     InternalEvent,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -299,6 +300,7 @@ impl StatePolicy for Test419Policy {
             Test419Event::ErrorExecution => "error.execution",
             Test419Event::ExternalEvent => "externalEvent",
             Test419Event::InternalEvent => "internalEvent",
+            Test419Event::Wildcard => "*",
             Test419Event::Null => "",
         }
     }
@@ -308,6 +310,7 @@ impl StatePolicy for Test419Policy {
             "error.execution" => Some(Test419Event::ErrorExecution),
             "externalEvent" => Some(Test419Event::ExternalEvent),
             "internalEvent" => Some(Test419Event::InternalEvent),
+            "*" => Some(Test419Event::Wildcard),
             _ => None,
         }
     }

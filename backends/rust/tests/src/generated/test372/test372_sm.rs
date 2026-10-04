@@ -101,6 +101,7 @@ pub enum Test372Event {
     DoneStateS0,
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -575,6 +576,7 @@ impl StatePolicy for Test372Policy {
             Test372Event::DoneStateS0 => "done.state.s0",
             Test372Event::ErrorExecution => "error.execution",
             Test372Event::Timeout => "timeout",
+            Test372Event::Wildcard => "*",
             Test372Event::Null => "",
         }
     }
@@ -584,6 +586,7 @@ impl StatePolicy for Test372Policy {
             "done.state.s0" => Some(Test372Event::DoneStateS0),
             "error.execution" => Some(Test372Event::ErrorExecution),
             "timeout" => Some(Test372Event::Timeout),
+            "*" => Some(Test372Event::Wildcard),
             _ => None,
         }
     }

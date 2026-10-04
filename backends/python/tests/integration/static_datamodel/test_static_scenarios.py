@@ -142,6 +142,12 @@ def test_an_event_arrives_under_a_name_the_document_does_not_write() -> None:
     replay("static_event_arrival")
 
 
+# ...and where the document listens with `event="*"`, a name no descriptor it
+# writes extends is delivered as the wildcard event instead of being dropped.
+def test_an_event_arrives_under_a_name_only_the_wildcard_takes() -> None:
+    replay("static_event_wildcard")
+
+
 # A checked integer operation that overflows fails instead of wrapping.
 def test_an_overflowing_operation_fails_instead_of_wrapping() -> None:
     replay("static_overflow")

@@ -22,6 +22,7 @@ sealed interface Test496State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test496Event : Event {
+    data object Wildcard : Test496Event
     sealed interface Error : Test496Event {
         data object Communication : Error
         data object Execution : Error
@@ -120,6 +121,7 @@ class Test496StateMachine(
         "error.execution" -> Test496Event.Error.Execution
         "event" -> Test496Event.Event
         "foo" -> Test496Event.Foo
+        "*" -> Test496Event.Wildcard
         else -> null
     }
 
@@ -129,6 +131,7 @@ class Test496StateMachine(
         is Test496Event.Error.Execution -> "error.execution"
         is Test496Event.Event -> "event"
         is Test496Event.Foo -> "foo"
+        is Test496Event.Wildcard -> "*"
     }
 
 

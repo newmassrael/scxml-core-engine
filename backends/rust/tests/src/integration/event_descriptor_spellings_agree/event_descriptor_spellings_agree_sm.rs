@@ -106,6 +106,7 @@ pub enum EventDescriptorSpellingsAgreeEvent {
     AnyTokenSequence,
     Dot,
     Wild,
+    Wildcard,
     Wilder,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -317,6 +318,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
             EventDescriptorSpellingsAgreeEvent::AnyTokenSequence => "any.token.sequence",
             EventDescriptorSpellingsAgreeEvent::Dot => "dot",
             EventDescriptorSpellingsAgreeEvent::Wild => "wild",
+            EventDescriptorSpellingsAgreeEvent::Wildcard => "*",
             EventDescriptorSpellingsAgreeEvent::Wilder => "wilder",
             EventDescriptorSpellingsAgreeEvent::Null => "",
         }
@@ -327,6 +329,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
             "any.token.sequence" => Some(EventDescriptorSpellingsAgreeEvent::AnyTokenSequence),
             "dot" => Some(EventDescriptorSpellingsAgreeEvent::Dot),
             "wild" => Some(EventDescriptorSpellingsAgreeEvent::Wild),
+            "*" => Some(EventDescriptorSpellingsAgreeEvent::Wildcard),
             "wilder" => Some(EventDescriptorSpellingsAgreeEvent::Wilder),
             _ => None,
         }

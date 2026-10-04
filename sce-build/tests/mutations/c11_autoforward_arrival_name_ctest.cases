@@ -1,0 +1,43 @@
+# Mutation cases for "an autoforwarded copy is told the name its event arrived
+# under" (C11 generated machines).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/c11_autoforward_arrival_name_ctest.cases`.
+#
+# §scxml-6.4 has the parent forward an exact copy of every external event to an
+# `<invoke autoforward="true">` child, and §scxml-5.10 makes `_event.name` the name
+# an event was sent under. A parent delivers an event it does not write as the
+# member of a shorter descriptor (`request.new` as `request`) or as the wildcard
+# member (`other.thing`, for a document that listens with `event="*"`), and neither
+# member is called what the host sent. `_forward_to_autoforward_children` hands the
+# child the event's own `name` when it has one, and the member's when it has not;
+# `backends/c/tests/integration/test_autoforward_keeps_the_arrival_name.c` delivers
+# both names by name and reads whether the child was told them whole.
+#
+# Two things are easy to get wrong and read as success: a copy forwarded under the
+# member's name (every document that writes its names whole still passes, and the
+# child still matches the descriptor it is given), and a wildcard member left out
+# of the forward (it has no name of its own to copy, so it was left out for as long
+# as no engine delivered it).
+#
+# The forward is emitted by the template, which `cmake --build` reads at
+# generation time, so the template is the target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_autoforward_keeps_the_arrival_name$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_autoforward_keeps_the_arrival_name.c
+
+mutation_case "the copy is forwarded under the name of the member, not the name it arrived under" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    sce_copy_bounded_id(fwd.name, evt->name[0] != '\\0' ? evt->name : member_name);\n",
+     "    sce_copy_bounded_id(fwd.name, member_name);\n")
+PY
+
+mutation_case "the wildcard member is not forwarded" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        {% if ev_name %}\n        case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }}:\n            member_name",
+     "        {% if ev_name and ev_name != 'Wildcard' %}\n        case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }}:\n            member_name")
+PY

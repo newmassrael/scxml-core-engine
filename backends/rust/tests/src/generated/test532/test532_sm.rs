@@ -102,6 +102,7 @@ pub enum Test532Event {
     ErrorExecution,
     HTTPPOST,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -539,6 +540,7 @@ impl StatePolicy for Test532Policy {
             Test532Event::ErrorExecution => "error.execution",
             Test532Event::HTTPPOST => "HTTP.POST",
             Test532Event::Timeout => "timeout",
+            Test532Event::Wildcard => "*",
             Test532Event::Null => "",
         }
     }
@@ -550,6 +552,7 @@ impl StatePolicy for Test532Policy {
             "error.execution" => Some(Test532Event::ErrorExecution),
             "HTTP.POST" => Some(Test532Event::HTTPPOST),
             "timeout" => Some(Test532Event::Timeout),
+            "*" => Some(Test532Event::Wildcard),
             _ => None,
         }
     }

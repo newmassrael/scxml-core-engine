@@ -102,6 +102,7 @@ pub enum Test237Event {
     ErrorExecution,
     Timeout1,
     Timeout2,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -519,6 +520,7 @@ impl StatePolicy for Test237Policy {
             Test237Event::ErrorExecution => "error.execution",
             Test237Event::Timeout1 => "timeout1",
             Test237Event::Timeout2 => "timeout2",
+            Test237Event::Wildcard => "*",
             Test237Event::Null => "",
         }
     }
@@ -529,6 +531,7 @@ impl StatePolicy for Test237Policy {
             "error.execution" => Some(Test237Event::ErrorExecution),
             "timeout1" => Some(Test237Event::Timeout1),
             "timeout2" => Some(Test237Event::Timeout2),
+            "*" => Some(Test237Event::Wildcard),
             _ => None,
         }
     }

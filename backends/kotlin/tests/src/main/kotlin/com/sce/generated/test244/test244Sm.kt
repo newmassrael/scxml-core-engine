@@ -22,6 +22,7 @@ sealed interface Test244State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test244Event : Event {
+    data object Wildcard : Test244Event
     sealed interface Done : Test244Event {
         data object Invoke : Done
     }
@@ -138,6 +139,7 @@ class Test244StateMachine(
         "failure" -> Test244Event.Failure
         "success" -> Test244Event.Success
         "timeout" -> Test244Event.Timeout
+        "*" -> Test244Event.Wildcard
         else -> null
     }
 
@@ -148,6 +150,7 @@ class Test244StateMachine(
         is Test244Event.Failure -> "failure"
         is Test244Event.Success -> "success"
         is Test244Event.Timeout -> "timeout"
+        is Test244Event.Wildcard -> "*"
     }
 
 

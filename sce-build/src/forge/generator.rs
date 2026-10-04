@@ -3754,13 +3754,7 @@ pub fn build_kotlin_event_payload(
 
     // Resolve the sealed-event reference spelling exactly as the template's
     // `to_event_ref` does (a branch event needs the `.Self` data object).
-    let kotlin_events: std::collections::BTreeSet<String> = model
-        .events
-        .iter()
-        .filter(|e| e.as_str() != "Wildcard")
-        .cloned()
-        .collect();
-    let event_tree = crate::kotlin::build_event_tree(&kotlin_events);
+    let event_tree = crate::kotlin::build_event_tree(&model.events);
     let branch_events = crate::kotlin::collect_branch_events(&event_tree, "");
 
     // Lower every typed-access guard first; the set of events owning a lowered

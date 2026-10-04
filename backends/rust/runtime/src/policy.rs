@@ -314,8 +314,11 @@ pub trait StatePolicy: Sized + 'static {
     /// one of the document's names, so is a prefix of the LONGEST of those —
     /// which therefore matches exactly what the arriving name would. That is the
     /// event this answers: `name` itself when the document writes it, else the
-    /// longest token prefix of `name` it does, else `None` — no transition the
-    /// document has could match it, and it is dropped.
+    /// longest token prefix of `name` it does, else the wildcard member — the
+    /// one `event="*"` stands for, which the exact table keeps under the name
+    /// `*` (no document can write that as an event's name) — when the document
+    /// has such a transition, else `None`: no transition the document has could
+    /// match it, and it is dropped.
     ///
     /// Provided, not generated: the rule is one, and a generated copy per
     /// document is a copy that can age. [`get_event_from_name`](Self::get_event_from_name)
@@ -326,7 +329,10 @@ pub trait StatePolicy: Sized + 'static {
             if let Some(event) = Self::get_event_from_name(candidate) {
                 return Some(event);
             }
-            candidate = &candidate[..candidate.rfind('.')?];
+            match candidate.rfind('.') {
+                Some(at) => candidate = &candidate[..at],
+                None => return Self::get_event_from_name("*"),
+            }
         }
     }
 

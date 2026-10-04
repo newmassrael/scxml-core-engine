@@ -22,6 +22,7 @@ sealed interface Test419State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test419Event : Event {
+    data object Wildcard : Test419Event
     sealed interface Error : Test419Event {
         data object Execution : Error
     }
@@ -111,6 +112,7 @@ class Test419StateMachine(
         "error.execution" -> Test419Event.Error.Execution
         "externalEvent" -> Test419Event.ExternalEvent
         "internalEvent" -> Test419Event.InternalEvent
+        "*" -> Test419Event.Wildcard
         else -> null
     }
 
@@ -119,6 +121,7 @@ class Test419StateMachine(
         is Test419Event.Error.Execution -> "error.execution"
         is Test419Event.ExternalEvent -> "externalEvent"
         is Test419Event.InternalEvent -> "internalEvent"
+        is Test419Event.Wildcard -> "*"
     }
 
 

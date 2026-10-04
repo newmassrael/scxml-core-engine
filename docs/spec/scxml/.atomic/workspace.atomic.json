@@ -5616,6 +5616,11 @@
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "detail",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_route_to_child",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

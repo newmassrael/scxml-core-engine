@@ -1,0 +1,28 @@
+{
+  "machine": "static_event_wildcard",
+  "about": "A descriptor of `*` matches every event, and an event arrives by name from outside the document, so the names it can arrive under are open: a name the document never writes, and that no descriptor it writes extends, is still an event the `*` transition takes. A name a written descriptor extends goes to that descriptor, which comes first. Expected values are derived from the document and from W3C SCXML 3.12.1, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has arrived",
+      "expect": { "state": "listening", "variables": { "requests": 0, "strays": 0 } } },
+
+    { "note": "a name the document writes, which comes before `*`",
+      "event": "request", "expect": { "variables": { "requests": 1, "strays": 0 } } },
+    { "note": "an extension the document never writes: `request` is a token prefix of `request.new`, and comes first",
+      "event": "request.new", "expect": { "variables": { "requests": 2, "strays": 0 } } },
+
+    { "note": "a name nothing the document writes has to do with: only `*` matches it",
+      "event": "other", "expect": { "variables": { "requests": 2, "strays": 1 } } },
+    { "note": "and one with a `.` in it, none of whose prefixes the document writes",
+      "event": "other.deeper", "expect": { "variables": { "requests": 2, "strays": 2 } } },
+    { "note": "`requesty` begins with the same letters as `request` but is another token",
+      "event": "requesty", "expect": { "variables": { "requests": 2, "strays": 3 } } },
+    { "note": "a prefix of a descriptor is no extension of it",
+      "event": "req", "expect": { "variables": { "requests": 2, "strays": 4 } } },
+
+    { "note": "the descriptor itself, spelled as an event's name: `*` is the event it stands for",
+      "event": "*", "expect": { "variables": { "requests": 2, "strays": 5 } } },
+
+    { "note": "a name `request` extends still goes to `request` after the strays",
+      "event": "request.again", "expect": { "variables": { "requests": 3, "strays": 5 } } }
+  ]
+}

@@ -99,6 +99,7 @@ pub enum Test311State {
 pub enum Test311Event {
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -533,6 +534,7 @@ impl StatePolicy for Test311Policy {
         match event {
             Test311Event::ErrorExecution => "error.execution",
             Test311Event::Timeout => "timeout",
+            Test311Event::Wildcard => "*",
             Test311Event::Null => "",
         }
     }
@@ -541,6 +543,7 @@ impl StatePolicy for Test311Policy {
         match name {
             "error.execution" => Some(Test311Event::ErrorExecution),
             "timeout" => Some(Test311Event::Timeout),
+            "*" => Some(Test311Event::Wildcard),
             _ => None,
         }
     }

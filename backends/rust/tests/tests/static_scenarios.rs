@@ -35,6 +35,9 @@ use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
 use sce_rust_tests::integration::static_datamodel::static_event_arrival_sm::{
     StaticEventArrivalPersist, StaticEventArrivalPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_event_wildcard_sm::{
+    StaticEventWildcardPersist, StaticEventWildcardPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
     StaticForeachPersist, StaticForeachPolicy,
 };
@@ -181,6 +184,19 @@ fn static_event_arrival_delivers_a_name_the_document_does_not_write() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json"
+        ),
+    );
+}
+
+// ...and where the document listens with `event="*"`, a name no descriptor
+// it writes extends is delivered as the wildcard event, not dropped.
+#[test]
+fn static_event_wildcard_takes_a_name_the_document_does_not_write() {
+    replay(
+        Engine::new(StaticEventWildcardPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_event_wildcard.json"
         ),
     );
 }

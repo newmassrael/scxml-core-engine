@@ -20,6 +20,8 @@
 //     event the machine resolves the name to (§scxml-3.12.1) — the document's
 //     own name for it, or the longest of the document's names that is a token
 //     prefix of it — and a name no event matches is dropped.
+//   * `static_event_wildcard`: where the document listens with `event="*"`, a
+//     name no event matches is delivered as the wildcard event, not dropped.
 //   * `static_overflow`: a checked integer operation that overflows is a
 //     failure, not a wrapped value (SCE_FORGE.md §3.4.1) — the variable keeps
 //     what it held, `error.execution` is raised, and a guard over the
@@ -79,6 +81,7 @@
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
+#include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
@@ -363,6 +366,20 @@ static const variable_t event_arrival_variables[] = {
     {"specials", static_event_arrival_read_specials},
 };
 STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL, no_lists, no_records)
+
+// static_event_wildcard: where the document listens with `event="*"`, a name
+// that no event of the machine's matches is delivered as the wildcard event
+// (§scxml-3.12.1) rather than dropped.
+VARIABLE_READER(static_event_wildcard, requests)
+VARIABLE_READER(static_event_wildcard, strays)
+static const name_value_t event_wildcard_states[] = {
+    {"listening", STATIC_EVENT_WILDCARD_STATE_LISTENING},
+};
+static const variable_t event_wildcard_variables[] = {
+    {"requests", static_event_wildcard_read_requests},
+    {"strays", static_event_wildcard_read_strays},
+};
+STATIC_SCENARIO(static_event_wildcard, event_wildcard_states, event_wildcard_variables, NULL, no_lists, no_records)
 
 // static_overflow
 VARIABLE_READER(static_overflow, level)
@@ -756,6 +773,7 @@ int main(void) {
     bad |= static_counter_scenario("static_counter", 7);
     bad |= static_counter_scenario("static_counter_bound", 12);
     bad |= static_event_arrival_scenario("static_event_arrival", 8);
+    bad |= static_event_wildcard_scenario("static_event_wildcard", 9);
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_list_scenario("static_list", 11);

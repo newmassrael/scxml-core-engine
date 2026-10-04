@@ -21,6 +21,7 @@ sealed interface Test207SceSynthInvokeInvoke0State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test207SceSynthInvokeInvoke0Event : Event {
+    data object Wildcard : Test207SceSynthInvokeInvoke0Event
     data object ChildToParent : Test207SceSynthInvokeInvoke0Event
     sealed interface Error : Test207SceSynthInvokeInvoke0Event {
         data object Communication : Error
@@ -115,6 +116,7 @@ class Test207SceSynthInvokeInvoke0StateMachine(
         "event2" -> Test207SceSynthInvokeInvoke0Event.Event2
         "fail" -> Test207SceSynthInvokeInvoke0Event.Fail
         "pass" -> Test207SceSynthInvokeInvoke0Event.Pass
+        "*" -> Test207SceSynthInvokeInvoke0Event.Wildcard
         else -> null
     }
 
@@ -127,6 +129,7 @@ class Test207SceSynthInvokeInvoke0StateMachine(
         is Test207SceSynthInvokeInvoke0Event.Event2 -> "event2"
         is Test207SceSynthInvokeInvoke0Event.Fail -> "fail"
         is Test207SceSynthInvokeInvoke0Event.Pass -> "pass"
+        is Test207SceSynthInvokeInvoke0Event.Wildcard -> "*"
     }
 
 

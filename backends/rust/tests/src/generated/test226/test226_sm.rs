@@ -101,6 +101,7 @@ pub enum Test226Event {
     ErrorExecution,
     Timeout,
     VarBound,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -782,6 +783,7 @@ impl StatePolicy for Test226Policy {
             Test226Event::ErrorExecution => "error.execution",
             Test226Event::Timeout => "timeout",
             Test226Event::VarBound => "varBound",
+            Test226Event::Wildcard => "*",
             Test226Event::Null => "",
         }
     }
@@ -792,6 +794,7 @@ impl StatePolicy for Test226Policy {
             "error.execution" => Some(Test226Event::ErrorExecution),
             "timeout" => Some(Test226Event::Timeout),
             "varBound" => Some(Test226Event::VarBound),
+            "*" => Some(Test226Event::Wildcard),
             _ => None,
         }
     }

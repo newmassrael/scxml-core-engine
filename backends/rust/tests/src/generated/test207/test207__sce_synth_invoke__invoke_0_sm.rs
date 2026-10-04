@@ -103,6 +103,7 @@ pub enum Test207SceSynthInvokeInvoke0Event {
     Event2,
     Fail,
     Pass,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -307,6 +308,7 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
             Test207SceSynthInvokeInvoke0Event::Event2 => "event2",
             Test207SceSynthInvokeInvoke0Event::Fail => "fail",
             Test207SceSynthInvokeInvoke0Event::Pass => "pass",
+            Test207SceSynthInvokeInvoke0Event::Wildcard => "*",
             Test207SceSynthInvokeInvoke0Event::Null => "",
         }
     }
@@ -320,6 +322,7 @@ impl StatePolicy for Test207SceSynthInvokeInvoke0Policy {
             "event2" => Some(Test207SceSynthInvokeInvoke0Event::Event2),
             "fail" => Some(Test207SceSynthInvokeInvoke0Event::Fail),
             "pass" => Some(Test207SceSynthInvokeInvoke0Event::Pass),
+            "*" => Some(Test207SceSynthInvokeInvoke0Event::Wildcard),
             _ => None,
         }
     }

@@ -98,6 +98,7 @@ pub enum Test337State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test337Event {
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -295,6 +296,7 @@ impl StatePolicy for Test337Policy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             Test337Event::Foo => "foo",
+            Test337Event::Wildcard => "*",
             Test337Event::Null => "",
         }
     }
@@ -302,6 +304,7 @@ impl StatePolicy for Test337Policy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "foo" => Some(Test337Event::Foo),
+            "*" => Some(Test337Event::Wildcard),
             _ => None,
         }
     }

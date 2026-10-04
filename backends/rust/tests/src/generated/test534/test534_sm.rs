@@ -101,6 +101,7 @@ pub enum Test534Event {
     ErrorExecution,
     Test,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -537,6 +538,7 @@ impl StatePolicy for Test534Policy {
             Test534Event::ErrorExecution => "error.execution",
             Test534Event::Test => "test",
             Test534Event::Timeout => "timeout",
+            Test534Event::Wildcard => "*",
             Test534Event::Null => "",
         }
     }
@@ -547,6 +549,7 @@ impl StatePolicy for Test534Policy {
             "error.execution" => Some(Test534Event::ErrorExecution),
             "test" => Some(Test534Event::Test),
             "timeout" => Some(Test534Event::Timeout),
+            "*" => Some(Test534Event::Wildcard),
             _ => None,
         }
     }

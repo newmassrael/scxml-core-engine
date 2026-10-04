@@ -139,9 +139,7 @@ pub enum {{ machine_name }}History {
 {{ event_derives_attr }}
 pub enum {{ machine_name }}Event {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
     {{ event_name | to_event_variant }},
-{% endif %}
 {% endfor %}
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -1015,9 +1013,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
-            {{ machine_name }}Event::{{ event_name | to_event_variant }} => "{{ event_name }}",
-{% endif %}
+            {{ machine_name }}Event::{{ event_name | to_event_variant }} => "{{ event_name | event_wire_name }}",
 {% endfor %}
             {{ machine_name }}Event::Null => "",
         }
@@ -1026,9 +1022,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
-            "{{ event_name }}" => Some({{ machine_name }}Event::{{ event_name | to_event_variant }}),
-{% endif %}
+            "{{ event_name | event_wire_name }}" => Some({{ machine_name }}Event::{{ event_name | to_event_variant }}),
 {% endfor %}
             _ => None,
         }

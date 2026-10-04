@@ -24,6 +24,7 @@ sealed interface Test322State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test322Event : Event {
+    data object Wildcard : Test322Event
     sealed interface Error : Test322Event {
         data object Execution : Error
     }
@@ -151,6 +152,7 @@ class Test322StateMachine(
     override fun resolveEventByName(name: String): Test322Event? = when (name) {
         "error.execution" -> Test322Event.Error.Execution
         "foo" -> Test322Event.Foo
+        "*" -> Test322Event.Wildcard
         else -> null
     }
 
@@ -158,6 +160,7 @@ class Test322StateMachine(
     override fun eventNameOf(event: Test322Event): String? = when (event) {
         is Test322Event.Error.Execution -> "error.execution"
         is Test322Event.Foo -> "foo"
+        is Test322Event.Wildcard -> "*"
     }
 
 

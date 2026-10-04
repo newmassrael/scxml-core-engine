@@ -103,6 +103,7 @@ pub enum Test230Event {
     DoneInvoke,
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -789,6 +790,7 @@ impl StatePolicy for Test230Policy {
             Test230Event::DoneInvoke => "done.invoke",
             Test230Event::ErrorExecution => "error.execution",
             Test230Event::Timeout => "timeout",
+            Test230Event::Wildcard => "*",
             Test230Event::Null => "",
         }
     }
@@ -799,6 +801,7 @@ impl StatePolicy for Test230Policy {
             "done.invoke" => Some(Test230Event::DoneInvoke),
             "error.execution" => Some(Test230Event::ErrorExecution),
             "timeout" => Some(Test230Event::Timeout),
+            "*" => Some(Test230Event::Wildcard),
             _ => None,
         }
     }

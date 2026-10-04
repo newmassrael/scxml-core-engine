@@ -561,19 +561,22 @@ SCE_SM_FN static SCE_C_UNUSED const char *invocation_of_session(const {{ csym_pr
    the document's names, so is a prefix of the LONGEST of those — which therefore
    matches exactly what the arriving name would. So the name is looked up whole,
    and then without its last token, and so on: the first the document writes is
-   the event, and a name none of whose prefixes it writes matches no transition
-   and is dropped.
+   the event. A name none of whose prefixes it writes is matched by no descriptor
+   but `*`, so it is the wildcard member's when the document has an `event="*"`
+   transition (the entry the exact table keeps under the name `*`, which no
+   document can write as an event's name), and is dropped when it has none.
 
    The one resolver every such door goes through, so none resolves a name its own
    way. `arrival` (a buffer of `SCE_MAX_ID_LEN`, an event's `name` field) is left
    EMPTY when the document writes the name itself and holds the whole name when it
-   had to be cut back to a shorter one (§scxml-5.10: `_event.name` is the name the
-   event arrived under). `name` is `len` bytes, not necessarily terminated, and is
-   copied into a bounded buffer before it is cut, so one longer than an id is
-   refused rather than truncated into another name. */
+   had to be cut back to a shorter one or delivered as the wildcard member
+   (§scxml-5.10: `_event.name` is the name the event arrived under). `name` is
+   `len` bytes, not necessarily terminated, and is copied into a bounded buffer
+   before it is cut, so one longer than an id is refused rather than truncated
+   into another name. */
 SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_exact(const char *candidate) {
     {% for event_name in model.events | sort %}
-    if (strcmp(candidate, "{{ event_name }}") == 0) {
+    if (strcmp(candidate, "{{ event_name | event_wire_name }}") == 0) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }};
     }
     {% endfor %}
@@ -601,10 +604,18 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_arrive(const char *name,
         }
         char *cut = strrchr(candidate, '.');
         if (cut == NULL) {
-            return false;
+            break;
         }
         *cut = '\0';
     }
+    const {{ csym_prefix }}{{ model.name }}_event_t any = {{ csym_prefix }}{{ model.name }}_event_exact("*");
+    if (any == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        return false;
+    }
+    *out = any;
+    memcpy(arrival, name, len);
+    arrival[len] = '\0';
+    return true;
 }
 
 /* Public, so a host can ask whether a name reaches the machine before it sends
@@ -3813,17 +3824,20 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
    returns it "to the external event queue of the invoking process": a
    sibling invoke that is still running must see it.
 
-   The exclusions that remain are not events: the wildcard sentinel and the
-   empty-name placeholder are codegen bookkeeping with no name to copy.
-   Appendix D's `isCancelEvent` is the platform cancelling this session, not
-   an event a document can name, so a `cancel.invoke` in the vocabulary is
-   forwarded like any other name. */
+   The one exclusion that remains is not an event: the empty-name placeholder
+   is codegen bookkeeping with no name to copy. Appendix D's `isCancelEvent`
+   is the platform cancelling this session, not an event a document can name,
+   so a `cancel.invoke` in the vocabulary is forwarded like any other name.
+
+   The copy is forwarded under the name the event arrived under
+   (§scxml-5.10: `evt->name`, set when a door delivered it as a member of a
+   shorter name or as the wildcard member), and under the member's own name
+   otherwise. */
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children({{ csym_prefix }}{{ model.name }}_t *sm,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     /* W3C SCXML 6.4: the copy handed to each child is exact, so the source
        event's fields are packed into the transport-neutral carrier once and
-       reused across every autoforward child on this event. The per-event
-       switch below fills in the name. */
+       reused across every autoforward child on this event. */
     sce_forwarded_event_t fwd;
     memset(&fwd, 0, sizeof(fwd));
     sce_copy_bounded_data(fwd.data, evt->data);
@@ -3832,26 +3846,31 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     sce_copy_bounded_event_type(fwd.type, evt->type);
     sce_copy_bounded_id(fwd.origin_type, evt->origin_type);
     sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
+    const char *member_name = NULL;
     switch (evt->event) {
         {% for ev_name in model.events | sort %}
-        {% if ev_name and ev_name != 'Wildcard' %}
+        {% if ev_name %}
         case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | to_c11_upper_ident }}:
-            sce_copy_bounded_id(fwd.name, "{{ ev_name }}");
-            {% for state_id, state in model.states | dictsort %}
-            {% for invoke_info in state.invokes | scxml %}
-            {% if invoke_info.autoforward %}
-            if (sm->child_{{ invoke_info.field_suffix }}_active) {
-                {{ csym_prefix }}{{ invoke_info.child_name }}_raise_external_forwarded(
-                    &sm->child_{{ invoke_info.field_suffix }}, &fwd);
-            }
-            {% endif %}
-            {% endfor %}
-            {% endfor %}
+            member_name = "{{ ev_name | event_wire_name }}";
             break;
         {% endif %}
         {% endfor %}
         default: break;
     }
+    if (member_name == NULL) {
+        return;
+    }
+    sce_copy_bounded_id(fwd.name, evt->name[0] != '\0' ? evt->name : member_name);
+    {% for state_id, state in model.states | dictsort %}
+    {% for invoke_info in state.invokes | scxml %}
+    {% if invoke_info.autoforward %}
+    if (sm->child_{{ invoke_info.field_suffix }}_active) {
+        {{ csym_prefix }}{{ invoke_info.child_name }}_raise_external_forwarded(
+            &sm->child_{{ invoke_info.field_suffix }}, &fwd);
+    }
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
 }
 {% endif %}
 

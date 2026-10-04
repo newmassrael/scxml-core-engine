@@ -104,6 +104,7 @@ pub enum Test354Event {
     Event1,
     Event2,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -587,6 +588,7 @@ impl StatePolicy for Test354Policy {
             Test354Event::Event1 => "event1",
             Test354Event::Event2 => "event2",
             Test354Event::Timeout => "timeout",
+            Test354Event::Wildcard => "*",
             Test354Event::Null => "",
         }
     }
@@ -597,6 +599,7 @@ impl StatePolicy for Test354Policy {
             "event1" => Some(Test354Event::Event1),
             "event2" => Some(Test354Event::Event2),
             "timeout" => Some(Test354Event::Timeout),
+            "*" => Some(Test354Event::Wildcard),
             _ => None,
         }
     }

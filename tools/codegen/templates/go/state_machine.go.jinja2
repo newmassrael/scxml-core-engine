@@ -205,10 +205,8 @@ type {{ machine_name }}Event int
 const (
 {% set ns = namespace(idx=0) %}
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
 	{{ machine_name }}Event{{ event_name | to_event_variant }} {{ machine_name }}Event = {{ ns.idx }}
 {% set ns.idx = ns.idx + 1 %}
-{% endif %}
 {% endfor %}
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
 	{{ machine_name }}EventNull {{ machine_name }}Event = {{ ns.idx }}
@@ -217,10 +215,8 @@ const (
 func (e {{ machine_name }}Event) String() string {
 	switch e {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
 	case {{ machine_name }}Event{{ event_name | to_event_variant }}:
-		return "{{ event_name }}"
-{% endif %}
+		return "{{ event_name | event_wire_name }}"
 {% endfor %}
 	case {{ machine_name }}EventNull:
 		return ""
@@ -633,10 +629,8 @@ func (p *{{ machine_name }}Policy) GetEventName(event {{ machine_name }}Event) s
 func (p *{{ machine_name }}Policy) GetEventFromName(name string) ({{ machine_name }}Event, bool) {
 	switch name {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
-	case "{{ event_name }}":
+	case "{{ event_name | event_wire_name }}":
 		return {{ machine_name }}Event{{ event_name | to_event_variant }}, true
-{% endif %}
 {% endfor %}
 	}
 	return {{ machine_name }}EventNull, false

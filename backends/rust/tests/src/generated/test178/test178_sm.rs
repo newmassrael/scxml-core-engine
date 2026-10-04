@@ -99,6 +99,7 @@ pub enum Test178State {
 pub enum Test178Event {
     ErrorExecution,
     Event1,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -533,6 +534,7 @@ impl StatePolicy for Test178Policy {
         match event {
             Test178Event::ErrorExecution => "error.execution",
             Test178Event::Event1 => "event1",
+            Test178Event::Wildcard => "*",
             Test178Event::Null => "",
         }
     }
@@ -541,6 +543,7 @@ impl StatePolicy for Test178Policy {
         match name {
             "error.execution" => Some(Test178Event::ErrorExecution),
             "event1" => Some(Test178Event::Event1),
+            "*" => Some(Test178Event::Wildcard),
             _ => None,
         }
     }

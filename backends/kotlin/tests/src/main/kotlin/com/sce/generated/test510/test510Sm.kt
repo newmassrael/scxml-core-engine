@@ -23,6 +23,7 @@ sealed interface Test510State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test510Event : Event {
+    data object Wildcard : Test510Event
     sealed interface Error : Test510Event {
         data object Communication : Error
         data object Execution : Error
@@ -144,6 +145,7 @@ class Test510StateMachine(
         "internal" -> Test510Event.Internal
         "test" -> Test510Event.Test
         "timeout" -> Test510Event.Timeout
+        "*" -> Test510Event.Wildcard
         else -> null
     }
 
@@ -154,6 +156,7 @@ class Test510StateMachine(
         is Test510Event.Internal -> "internal"
         is Test510Event.Test -> "test"
         is Test510Event.Timeout -> "timeout"
+        is Test510Event.Wildcard -> "*"
     }
 
 

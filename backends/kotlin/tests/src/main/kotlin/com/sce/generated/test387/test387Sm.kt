@@ -37,6 +37,7 @@ sealed interface Test387State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test387Event : Event {
+    data object Wildcard : Test387Event
     data object EnteringS011 : Test387Event
     data object EnteringS012 : Test387Event
     data object EnteringS021 : Test387Event
@@ -315,6 +316,7 @@ class Test387StateMachine(
         "enteringS122" -> Test387Event.EnteringS122
         "error.execution" -> Test387Event.Error.Execution
         "timeout" -> Test387Event.Timeout
+        "*" -> Test387Event.Wildcard
         else -> null
     }
 
@@ -330,6 +332,7 @@ class Test387StateMachine(
         is Test387Event.EnteringS122 -> "enteringS122"
         is Test387Event.Error.Execution -> "error.execution"
         is Test387Event.Timeout -> "timeout"
+        is Test387Event.Wildcard -> "*"
     }
 
 

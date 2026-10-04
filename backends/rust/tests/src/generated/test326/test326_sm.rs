@@ -101,6 +101,7 @@ pub enum Test326State {
 pub enum Test326Event {
     ErrorExecution,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -565,6 +566,7 @@ impl StatePolicy for Test326Policy {
         match event {
             Test326Event::ErrorExecution => "error.execution",
             Test326Event::Foo => "foo",
+            Test326Event::Wildcard => "*",
             Test326Event::Null => "",
         }
     }
@@ -573,6 +575,7 @@ impl StatePolicy for Test326Policy {
         match name {
             "error.execution" => Some(Test326Event::ErrorExecution),
             "foo" => Some(Test326Event::Foo),
+            "*" => Some(Test326Event::Wildcard),
             _ => None,
         }
     }

@@ -1,23 +1,28 @@
 # Mutation cases for "an event that arrives by name is delivered as the event
-# whose name it extends" (C11 generated machines).
+# whose name it extends, or as the wildcard" (C11 generated machines).
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/c11_event_arrival_name_ctest.cases`.
 #
 # An event arrives by name from outside the document — a parent's `<send>`, an
 # autoforward, a host — so the names it can arrive under are open (§scxml-3.12.1):
-# `request` takes `request.new` though the document never writes it, and a name no
-# descriptor of the document matches is dropped. `<machine>_resolve_event_by_name`
-# is the one rule every by-name door of a generated machine reaches it through,
-# and `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
-# states what it decides, replayed by
+# `request` takes `request.new` though the document never writes it, a name no
+# descriptor of the document matches is the wildcard member's when the document
+# listens with `event="*"`, and is dropped when it does not.
+# `<machine>_resolve_event_by_name` is the one rule every by-name door of a
+# generated machine reaches it through, and
+# `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
+# and `static_event_wildcard.json` state what it decides, replayed by
 # `backends/c/tests/integration/test_static_scalars.c`.
 #
-# Two things are easy to get wrong and read as success: a walk that never leaves
-# the whole name (every document that writes its names whole still passes), and a
+# Things that are easy to get wrong and read as success: a walk that never leaves
+# the whole name (every document that writes its names whole still passes), a
 # cut at any character rather than at a `.` (`requesty` is then `request`'s, and
-# a machine that is sent a misspelling answers it). Only a name that extends a
-# descriptor past a `.` and one that merely begins like it tell them apart.
+# a machine that is sent a misspelling answers it), a wildcard that is never
+# reached (every document without `event="*"` still passes) and one that is taken
+# before the document's own events (a name the document writes goes to `*`). Only
+# a name that extends a descriptor past a `.`, one that merely begins like it, and
+# one that has nothing to do with it tell them apart.
 #
 # The resolver is emitted by the template, which `cmake --build` reads at
 # generation time, so the template is the target.
@@ -31,12 +36,24 @@ mutation_oracles backends/c/tests/integration/test_static_scalars.c
 
 mutation_case "the walk never leaves the whole name" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        if (cut == NULL) {\n            return false;\n        }\n        *cut = '\\0';\n",
-     "        if (cut == NULL || length > 0u) {\n            return false;\n        }\n        *cut = '\\0';\n")
+     "        if (cut == NULL) {\n            break;\n        }\n",
+     "        if (cut == NULL || strlen(candidate) == len) {\n            break;\n        }\n")
 PY
 
 mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "        char *cut = strrchr(candidate, '.');\n",
      "        char *cut = strlen(candidate) == 0u ? NULL : candidate + strlen(candidate) - 1;\n")
+PY
+
+mutation_case "a name no event of the document matches is dropped although it has a wildcard" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    *out = any;\n    memcpy(arrival, name, len);\n    arrival[len] = '\\0';\n    return true;\n",
+     "    (void)any;\n    return false;\n")
+PY
+
+mutation_case "the wildcard member takes a name before the document's own events" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    memcpy(candidate, name, len);\n    candidate[len] = '\\0';\n    for (;;) {\n        const {{ csym_prefix }}{{ model.name }}_event_t found",
+     "    memcpy(candidate, name, len);\n    candidate[len] = '\\0';\n    {\n        const {{ csym_prefix }}{{ model.name }}_event_t first = {{ csym_prefix }}{{ model.name }}_event_exact(\"*\");\n        if (first != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {\n            *out = first;\n            memcpy(arrival, name, len);\n            arrival[len] = '\\0';\n            return true;\n        }\n    }\n    for (;;) {\n        const {{ csym_prefix }}{{ model.name }}_event_t found")
 PY

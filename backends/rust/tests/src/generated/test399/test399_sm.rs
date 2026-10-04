@@ -109,6 +109,7 @@ pub enum Test399Event {
     FooZoo,
     Foos,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -333,6 +334,7 @@ impl StatePolicy for Test399Policy {
             Test399Event::FooZoo => "foo.zoo",
             Test399Event::Foos => "foos",
             Test399Event::Timeout => "timeout",
+            Test399Event::Wildcard => "*",
             Test399Event::Null => "",
         }
     }
@@ -345,6 +347,7 @@ impl StatePolicy for Test399Policy {
             "foo.zoo" => Some(Test399Event::FooZoo),
             "foos" => Some(Test399Event::Foos),
             "timeout" => Some(Test399Event::Timeout),
+            "*" => Some(Test399Event::Wildcard),
             _ => None,
         }
     }

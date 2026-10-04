@@ -37,6 +37,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
@@ -268,6 +269,17 @@ func TestAnEventArrivesUnderANameTheDocumentDoesNotWrite(t *testing.T) {
 	replay(t, "static_event_arrival", drive[static_event_arrival.StaticEventArrivalState, static_event_arrival.StaticEventArrivalEvent](&policy, map[string]func() any{
 		"requests": func() any { return policy.Requests() },
 		"specials": func() any { return policy.Specials() },
+	}))
+}
+
+// ...and where the document listens with `event="*"`, a name no descriptor it
+// writes extends is delivered as the wildcard event instead of being dropped.
+func TestAnEventArrivesUnderANameOnlyTheWildcardTakes(t *testing.T) {
+	policy := static_event_wildcard.NewStaticEventWildcardPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_event_wildcard", drive[static_event_wildcard.StaticEventWildcardState, static_event_wildcard.StaticEventWildcardEvent](&policy, map[string]func() any{
+		"requests": func() any { return policy.Requests() },
+		"strays":   func() any { return policy.Strays() },
 	}))
 }
 

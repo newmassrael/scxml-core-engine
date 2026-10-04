@@ -28,6 +28,7 @@ sealed interface Test403cState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test403cEvent : Event {
+    data object Wildcard : Test403cEvent
     sealed interface Error : Test403cEvent {
         data object Execution : Error
     }
@@ -271,6 +272,7 @@ class Test403cStateMachine(
         "event1" -> Test403cEvent.Event1
         "event2" -> Test403cEvent.Event2
         "timeout" -> Test403cEvent.Timeout
+        "*" -> Test403cEvent.Wildcard
         else -> null
     }
 
@@ -280,6 +282,7 @@ class Test403cStateMachine(
         is Test403cEvent.Event1 -> "event1"
         is Test403cEvent.Event2 -> "event2"
         is Test403cEvent.Timeout -> "timeout"
+        is Test403cEvent.Wildcard -> "*"
     }
 
 

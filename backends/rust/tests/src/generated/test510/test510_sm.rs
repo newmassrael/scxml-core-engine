@@ -103,6 +103,7 @@ pub enum Test510Event {
     Internal,
     Test,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -541,6 +542,7 @@ impl StatePolicy for Test510Policy {
             Test510Event::Internal => "internal",
             Test510Event::Test => "test",
             Test510Event::Timeout => "timeout",
+            Test510Event::Wildcard => "*",
             Test510Event::Null => "",
         }
     }
@@ -552,6 +554,7 @@ impl StatePolicy for Test510Policy {
             "internal" => Some(Test510Event::Internal),
             "test" => Some(Test510Event::Test),
             "timeout" => Some(Test510Event::Timeout),
+            "*" => Some(Test510Event::Wildcard),
             _ => None,
         }
     }

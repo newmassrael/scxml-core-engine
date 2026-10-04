@@ -102,6 +102,7 @@ pub enum Test423Event {
     ExternalEvent1,
     ExternalEvent2,
     InternalEvent,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -303,6 +304,7 @@ impl StatePolicy for Test423Policy {
             Test423Event::ExternalEvent1 => "externalEvent1",
             Test423Event::ExternalEvent2 => "externalEvent2",
             Test423Event::InternalEvent => "internalEvent",
+            Test423Event::Wildcard => "*",
             Test423Event::Null => "",
         }
     }
@@ -313,6 +315,7 @@ impl StatePolicy for Test423Policy {
             "externalEvent1" => Some(Test423Event::ExternalEvent1),
             "externalEvent2" => Some(Test423Event::ExternalEvent2),
             "internalEvent" => Some(Test423Event::InternalEvent),
+            "*" => Some(Test423Event::Wildcard),
             _ => None,
         }
     }

@@ -153,10 +153,8 @@ _STATE_BY_NAME: Dict[str, {{ machine_name }}State] = {
 class {{ machine_name }}Event(IntEnum):
 {% set ns = namespace(idx=0) %}
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
     {{ event_name | to_python_const }} = {{ ns.idx }}
 {% set ns.idx = ns.idx + 1 %}
-{% endif %}
 {% endfor %}
     # W3C SCXML 3.13: sentinel for eventless transition dispatch
     NULL = {{ ns.idx }}
@@ -167,9 +165,7 @@ class {{ machine_name }}Event(IntEnum):
 
 _EVENT_NAMES: Dict[{{ machine_name }}Event, str] = {
 {% for event_name in model.events | sort %}
-{% if event_name != 'Wildcard' %}
-    {{ machine_name }}Event.{{ event_name | to_python_const }}: "{{ event_name }}",
-{% endif %}
+    {{ machine_name }}Event.{{ event_name | to_python_const }}: "{{ event_name | event_wire_name }}",
 {% endfor %}
     {{ machine_name }}Event.NULL: "",
 }

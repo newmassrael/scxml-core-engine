@@ -467,6 +467,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.4 + 5.10 + 3.12.1: the copy a parent autoforwards to its child
+    # is told the name the event arrived under, whether the parent delivered it as
+    # the member of a shorter descriptor or as the wildcard member. A document of
+    # this channel alone, beside the C test: the parent reads the name of the
+    # event its own member does not hold, which the shared stems drive no host to
+    # send.
+    sce_generate_static_integration_c_test(autoforward_keeps_the_arrival_name
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/autoforward_keeps_the_arrival_name/autoforward_keeps_the_arrival_name.scxml"
+    )
+    add_executable(sce_c_integration_autoforward_keeps_the_arrival_name
+        integration/test_autoforward_keeps_the_arrival_name.c
+        ${INTEGRATION_C_TEST_autoforward_keeps_the_arrival_name_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_autoforward_keeps_the_arrival_name PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_autoforward_keeps_the_arrival_name PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_autoforward_keeps_the_arrival_name PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_autoforward_keeps_the_arrival_name
+        COMMAND sce_c_integration_autoforward_keeps_the_arrival_name
+    )
+    set_tests_properties(c11_integration_autoforward_keeps_the_arrival_name PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + 3.12.1: `_event.name` is the name an event arrived under,
     # and a transition on `request` takes `request.new` whether or not the
     # document writes it. The IRP corpus never reads a name the document does not
@@ -2308,8 +2341,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # machines have no script engine, and the link is the proof. The checked
     # integer operations their statements call are the forge runtime's
     # header-only half, reached by its include directory.
-    foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_overflow static_block_ends
-                                   static_foreach static_block_ends_list static_string_capacity static_donedata)
+    foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow
+                                   static_block_ends static_foreach static_block_ends_list static_string_capacity
+                                   static_donedata)
         sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SCALAR_MACHINE}.scxml"
@@ -2407,6 +2441,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}
         ${INTEGRATION_C_TEST_static_event_arrival_SOURCES}
+        ${INTEGRATION_C_TEST_static_event_wildcard_SOURCES}
         ${INTEGRATION_C_TEST_static_overflow_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
         ${INTEGRATION_C_TEST_static_foreach_SOURCES}

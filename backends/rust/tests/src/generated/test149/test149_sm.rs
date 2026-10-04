@@ -101,6 +101,7 @@ pub enum Test149Event {
     Bat,
     ErrorExecution,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -568,6 +569,7 @@ impl StatePolicy for Test149Policy {
             Test149Event::Bat => "bat",
             Test149Event::ErrorExecution => "error.execution",
             Test149Event::Foo => "foo",
+            Test149Event::Wildcard => "*",
             Test149Event::Null => "",
         }
     }
@@ -578,6 +580,7 @@ impl StatePolicy for Test149Policy {
             "bat" => Some(Test149Event::Bat),
             "error.execution" => Some(Test149Event::ErrorExecution),
             "foo" => Some(Test149Event::Foo),
+            "*" => Some(Test149Event::Wildcard),
             _ => None,
         }
     }

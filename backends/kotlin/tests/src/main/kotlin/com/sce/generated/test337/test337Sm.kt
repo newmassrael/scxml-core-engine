@@ -22,6 +22,7 @@ sealed interface Test337State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test337Event : Event {
+    data object Wildcard : Test337Event
     data object Foo : Test337Event
 }
 // --- State Machine (W3C SCXML) ---
@@ -105,12 +106,14 @@ class Test337StateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test337Event? = when (name) {
         "foo" -> Test337Event.Foo
+        "*" -> Test337Event.Wildcard
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test337Event): String? = when (event) {
         is Test337Event.Foo -> "foo"
+        is Test337Event.Wildcard -> "*"
     }
 
 

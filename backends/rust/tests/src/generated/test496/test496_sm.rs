@@ -101,6 +101,7 @@ pub enum Test496Event {
     ErrorExecution,
     Event,
     Foo,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -537,6 +538,7 @@ impl StatePolicy for Test496Policy {
             Test496Event::ErrorExecution => "error.execution",
             Test496Event::Event => "event",
             Test496Event::Foo => "foo",
+            Test496Event::Wildcard => "*",
             Test496Event::Null => "",
         }
     }
@@ -547,6 +549,7 @@ impl StatePolicy for Test496Policy {
             "error.execution" => Some(Test496Event::ErrorExecution),
             "event" => Some(Test496Event::Event),
             "foo" => Some(Test496Event::Foo),
+            "*" => Some(Test496Event::Wildcard),
             _ => None,
         }
     }

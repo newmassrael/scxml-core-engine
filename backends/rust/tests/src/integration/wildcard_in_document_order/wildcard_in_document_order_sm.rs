@@ -112,6 +112,7 @@ pub enum WildcardInDocumentOrderEvent {
     ErrorExecution,
     Hop,
     Probe,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -729,6 +730,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
             WildcardInDocumentOrderEvent::ErrorExecution => "error.execution",
             WildcardInDocumentOrderEvent::Hop => "hop",
             WildcardInDocumentOrderEvent::Probe => "probe",
+            WildcardInDocumentOrderEvent::Wildcard => "*",
             WildcardInDocumentOrderEvent::Null => "",
         }
     }
@@ -738,6 +740,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
             "error.execution" => Some(WildcardInDocumentOrderEvent::ErrorExecution),
             "hop" => Some(WildcardInDocumentOrderEvent::Hop),
             "probe" => Some(WildcardInDocumentOrderEvent::Probe),
+            "*" => Some(WildcardInDocumentOrderEvent::Wildcard),
             _ => None,
         }
     }

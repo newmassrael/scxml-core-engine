@@ -102,6 +102,7 @@ pub enum Test298Event {
     DoneStateS0,
     ErrorExecution,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -576,6 +577,7 @@ impl StatePolicy for Test298Policy {
             Test298Event::DoneStateS0 => "done.state.s0",
             Test298Event::ErrorExecution => "error.execution",
             Test298Event::Timeout => "timeout",
+            Test298Event::Wildcard => "*",
             Test298Event::Null => "",
         }
     }
@@ -585,6 +587,7 @@ impl StatePolicy for Test298Policy {
             "done.state.s0" => Some(Test298Event::DoneStateS0),
             "error.execution" => Some(Test298Event::ErrorExecution),
             "timeout" => Some(Test298Event::Timeout),
+            "*" => Some(Test298Event::Wildcard),
             _ => None,
         }
     }

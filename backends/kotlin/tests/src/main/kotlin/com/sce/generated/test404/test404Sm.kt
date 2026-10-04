@@ -29,6 +29,7 @@ sealed interface Test404State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test404Event : Event {
+    data object Wildcard : Test404Event
     data object Event1 : Test404Event
     data object Event2 : Test404Event
     data object Event3 : Test404Event
@@ -245,6 +246,7 @@ class Test404StateMachine(
         "event2" -> Test404Event.Event2
         "event3" -> Test404Event.Event3
         "event4" -> Test404Event.Event4
+        "*" -> Test404Event.Wildcard
         else -> null
     }
 
@@ -254,6 +256,7 @@ class Test404StateMachine(
         is Test404Event.Event2 -> "event2"
         is Test404Event.Event3 -> "event3"
         is Test404Event.Event4 -> "event4"
+        is Test404Event.Wildcard -> "*"
     }
 
 

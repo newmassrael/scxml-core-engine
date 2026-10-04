@@ -101,6 +101,7 @@ pub enum Test229SceSynthInvokeInvoke0Event {
     ErrorExecution,
     EventReceived,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -303,6 +304,7 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
             Test229SceSynthInvokeInvoke0Event::ErrorExecution => "error.execution",
             Test229SceSynthInvokeInvoke0Event::EventReceived => "eventReceived",
             Test229SceSynthInvokeInvoke0Event::Timeout => "timeout",
+            Test229SceSynthInvokeInvoke0Event::Wildcard => "*",
             Test229SceSynthInvokeInvoke0Event::Null => "",
         }
     }
@@ -314,6 +316,7 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
             "error.execution" => Some(Test229SceSynthInvokeInvoke0Event::ErrorExecution),
             "eventReceived" => Some(Test229SceSynthInvokeInvoke0Event::EventReceived),
             "timeout" => Some(Test229SceSynthInvokeInvoke0Event::Timeout),
+            "*" => Some(Test229SceSynthInvokeInvoke0Event::Wildcard),
             _ => None,
         }
     }

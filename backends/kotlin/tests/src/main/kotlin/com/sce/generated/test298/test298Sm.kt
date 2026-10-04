@@ -24,6 +24,7 @@ sealed interface Test298State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test298Event : Event {
+    data object Wildcard : Test298Event
     sealed interface Done : Test298Event {
         sealed interface State : Done {
             data object S0 : State
@@ -184,6 +185,7 @@ class Test298StateMachine(
         "done.state.s0" -> Test298Event.Done.State.S0
         "error.execution" -> Test298Event.Error.Execution
         "timeout" -> Test298Event.Timeout
+        "*" -> Test298Event.Wildcard
         else -> null
     }
 
@@ -192,6 +194,7 @@ class Test298StateMachine(
         is Test298Event.Done.State.S0 -> "done.state.s0"
         is Test298Event.Error.Execution -> "error.execution"
         is Test298Event.Timeout -> "timeout"
+        is Test298Event.Wildcard -> "*"
     }
 
 

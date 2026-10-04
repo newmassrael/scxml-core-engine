@@ -100,6 +100,7 @@ pub enum Test173Event {
     ErrorCommunication,
     ErrorExecution,
     Event1,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -572,6 +573,7 @@ impl StatePolicy for Test173Policy {
             Test173Event::ErrorCommunication => "error.communication",
             Test173Event::ErrorExecution => "error.execution",
             Test173Event::Event1 => "event1",
+            Test173Event::Wildcard => "*",
             Test173Event::Null => "",
         }
     }
@@ -581,6 +583,7 @@ impl StatePolicy for Test173Policy {
             "error.communication" => Some(Test173Event::ErrorCommunication),
             "error.execution" => Some(Test173Event::ErrorExecution),
             "event1" => Some(Test173Event::Event1),
+            "*" => Some(Test173Event::Wildcard),
             _ => None,
         }
     }

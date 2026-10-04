@@ -23,6 +23,7 @@ sealed interface Test228State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test228Event : Event {
+    data object Wildcard : Test228Event
     sealed interface Done : Test228Event {
         data object Invoke : Done
     }
@@ -142,6 +143,7 @@ class Test228StateMachine(
         "done.invoke" -> Test228Event.Done.Invoke
         "error.execution" -> Test228Event.Error.Execution
         "timeout" -> Test228Event.Timeout
+        "*" -> Test228Event.Wildcard
         else -> null
     }
 
@@ -150,6 +152,7 @@ class Test228StateMachine(
         is Test228Event.Done.Invoke -> "done.invoke"
         is Test228Event.Error.Execution -> "error.execution"
         is Test228Event.Timeout -> "timeout"
+        is Test228Event.Wildcard -> "*"
     }
 
 

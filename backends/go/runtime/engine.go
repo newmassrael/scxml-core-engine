@@ -846,8 +846,11 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 // token prefix of it, so is one of the document's names, so is a prefix of the
 // LONGEST of those — which therefore matches exactly what the arriving name
 // would. That is the event this answers: the name itself when the document
-// writes it, else the longest token prefix of it the document does, else
-// (_, false) — no transition the document has could match it.
+// writes it, else the longest token prefix of it the document does, else the
+// wildcard member — the one `event="*"` stands for, which the exact table keeps
+// under the name `*` (no document can write that as an event's name) — when the
+// document has such a transition, else (_, false): no transition the document
+// has could match it.
 //
 // GetEventFromName stays the exact table; the rule is written once, here, and
 // the Rust twin is StatePolicy::resolve_event_by_name.
@@ -859,8 +862,7 @@ func (e *Engine[S, E]) ResolveEventByName(name string) (E, bool) {
 		}
 		at := strings.LastIndexByte(candidate, '.')
 		if at < 0 {
-			var none E
-			return none, false
+			return e.policy.GetEventFromName("*")
 		}
 		candidate = candidate[:at]
 	}

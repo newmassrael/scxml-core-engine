@@ -33,8 +33,11 @@ namespace SCE::Core {
  * of the document's names, so is a prefix of the LONGEST of those — which
  * therefore matches exactly what the arriving name would. That is the event this
  * answers: the name itself when the document writes it, else the longest token
- * prefix of it the document does, else the empty optional — no transition the
- * document has could match it, and it is dropped.
+ * prefix of it the document does, else the wildcard member — the one
+ * `event="*"` stands for, which `exact` keeps under the name `*` (no document
+ * can write that as an event's name) — when the document has such a
+ * transition, else the empty optional: no transition the document has could
+ * match it, and it is dropped.
  *
  * `exact` is the policy's `getEventFromName`, which stays the exact table the
  * generated code writes; the rule is written once, here, for every place a name
@@ -54,7 +57,7 @@ template <typename Lookup> auto resolveArrivingEventName(std::string_view name, 
         }
         const auto at = candidate.rfind('.');
         if (at == std::string::npos) {
-            return decltype(exact(candidate)){};
+            return exact(std::string("*"));
         }
         candidate.resize(at);
     }

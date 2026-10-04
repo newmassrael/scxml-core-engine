@@ -25,6 +25,7 @@ sealed interface Test351State : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test351Event : Event {
+    data object Wildcard : Test351Event
     sealed interface Error : Test351Event {
         data object Execution : Error
     }
@@ -186,6 +187,7 @@ class Test351StateMachine(
         "s0Event" -> Test351Event.S0Event
         "s0Event2" -> Test351Event.S0Event2
         "timeout" -> Test351Event.Timeout
+        "*" -> Test351Event.Wildcard
         else -> null
     }
 
@@ -195,6 +197,7 @@ class Test351StateMachine(
         is Test351Event.S0Event -> "s0Event"
         is Test351Event.S0Event2 -> "s0Event2"
         is Test351Event.Timeout -> "timeout"
+        is Test351Event.Wildcard -> "*"
     }
 
 

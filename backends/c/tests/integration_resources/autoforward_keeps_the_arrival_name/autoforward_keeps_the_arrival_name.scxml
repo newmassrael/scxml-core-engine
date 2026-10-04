@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4 + 5.10 + 3.12.1: an autoforwarded copy is told the name its
+     event ARRIVED under.
+
+     §6.4 has the parent forward an exact copy of every external event to an
+     `<invoke autoforward="true">` child, and §5.10 makes `_event.name` the name
+     an event was sent under. A parent that carries an event as the enumeration
+     member of the descriptor its document writes has two such members here, and
+     neither is the name the host sent:
+
+       `request.new`  is delivered as the member `request`, which the parent
+                      writes, because a descriptor matches by whole tokens
+                      (§3.12.1);
+       `other.thing`  is delivered as the wildcard member, because the parent
+                      listens with `event="*"` and nothing else of its document
+                      matches it.
+
+     The copy handed to the child has to carry the name the event arrived under,
+     not the member's own, or a guard in the child reads `request` and `*`.
+
+     The child's transitions take each name only when they are told the whole of
+     it, and report it as their own event. A copy forwarded under the member's
+     name matches the descriptors all the same and says nothing, so the parent
+     is left in its waiting state: the driver reads the state it ended in.
+
+     Both parent transitions are targetless, because §6.4 autoforward is
+     orthogonal to the parent's own handling of the event.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="autoforward_keeps_the_arrival_name">
+    <state id="phase" initial="waitRequest">
+        <invoke type="scxml" id="listener" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="waiting">
+                    <state id="waiting">
+                        <transition event="request"
+                                    cond="_event.name === 'request.new'"
+                                    target="gotRequest">
+                            <send target="#_parent" event="heardRequest"/>
+                        </transition>
+                    </state>
+                    <state id="gotRequest">
+                        <transition event="*"
+                                    cond="_event.name === 'other.thing'"
+                                    target="done">
+                            <send target="#_parent" event="heardOther"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="request"/>
+        <transition event="*"/>
+        <state id="waitRequest">
+            <transition event="heardRequest" target="waitOther"/>
+        </state>
+        <state id="waitOther">
+            <transition event="heardOther" target="pass"/>
+        </state>
+    </state>
+    <final id="pass"/>
+</scxml>

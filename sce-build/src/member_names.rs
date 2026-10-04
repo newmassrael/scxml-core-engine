@@ -36,7 +36,6 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::analyzer::WILDCARD_EVENT;
 use crate::filters;
 use crate::generator::Language;
 use crate::model::SCXMLModel;
@@ -164,10 +163,12 @@ fn kotlin_state(name: &str) -> Option<String> {
     Some(filters::to_state_class_name(name.to_string()))
 }
 
-/// Rust and Go skip the wildcard entry and give eventless dispatch a member
-/// of their own.
+/// The wildcard entry is a member like any other name: the one an arriving
+/// name that no event of the document matches is delivered as. An event named
+/// `wildcard` beside an `event="*"` therefore folds into it, as it does in C++
+/// and C11.
 fn pascal_event(name: &str) -> Option<String> {
-    (name != WILDCARD_EVENT).then(|| filters::to_event_variant(name.to_string()))
+    Some(filters::to_event_variant(name.to_string()))
 }
 
 fn python_state(name: &str) -> Option<String> {
@@ -175,7 +176,7 @@ fn python_state(name: &str) -> Option<String> {
 }
 
 fn python_event(name: &str) -> Option<String> {
-    (name != WILDCARD_EVENT).then(|| filters::to_python_const(name.to_string()))
+    Some(filters::to_python_const(name.to_string()))
 }
 
 fn c11_upper(name: &str) -> Option<String> {
@@ -476,7 +477,7 @@ fn spellings_of(
 /// is asked too.
 fn kotlin_event_spelling(model: &SCXMLModel, name: &str, clash: &Clash) -> Option<String> {
     if let Clash::Name(other) = clash {
-        let events = |n: &str| n != WILDCARD_EVENT && model.events.contains(n);
+        let events = |n: &str| model.events.contains(n);
         if events(name) && events(other) {
             let spelled = filters::to_event_class_name(name.to_string());
             if spelled == filters::to_event_class_name(other.clone()) {
@@ -497,13 +498,7 @@ fn kotlin_event_spelling(model: &SCXMLModel, name: &str, clash: &Clash) -> Optio
 /// Each entry is the reported path, what it collides with, and the spelling,
 /// in the order the tree is walked.
 fn kotlin_event_collisions(model: &SCXMLModel) -> Vec<(String, Clash, String)> {
-    let events: std::collections::BTreeSet<String> = model
-        .events
-        .iter()
-        .filter(|e| e.as_str() != WILDCARD_EVENT)
-        .cloned()
-        .collect();
-    let tree = crate::kotlin::build_event_tree(&events);
+    let tree = crate::kotlin::build_event_tree(&model.events);
     let mut out = Vec::new();
     kotlin_tree_collisions(&tree, "", &mut out);
     out

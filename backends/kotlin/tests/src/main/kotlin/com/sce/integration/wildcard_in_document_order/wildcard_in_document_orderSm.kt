@@ -34,6 +34,7 @@ sealed interface WildcardInDocumentOrderState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface WildcardInDocumentOrderEvent : Event {
+    data object Wildcard : WildcardInDocumentOrderEvent
     sealed interface Error : WildcardInDocumentOrderEvent {
         data object Execution : Error
     }
@@ -317,6 +318,7 @@ class WildcardInDocumentOrderStateMachine(
         "error.execution" -> WildcardInDocumentOrderEvent.Error.Execution
         "hop" -> WildcardInDocumentOrderEvent.Hop
         "probe" -> WildcardInDocumentOrderEvent.Probe
+        "*" -> WildcardInDocumentOrderEvent.Wildcard
         else -> null
     }
 
@@ -325,6 +327,7 @@ class WildcardInDocumentOrderStateMachine(
         is WildcardInDocumentOrderEvent.Error.Execution -> "error.execution"
         is WildcardInDocumentOrderEvent.Hop -> "hop"
         is WildcardInDocumentOrderEvent.Probe -> "probe"
+        is WildcardInDocumentOrderEvent.Wildcard -> "*"
     }
 
 

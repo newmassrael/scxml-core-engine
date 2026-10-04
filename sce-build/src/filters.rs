@@ -920,6 +920,19 @@ pub fn register_event_wire_filters(env: &mut minijinja::Environment) {
     // serialized to JSON.
     env.add_filter("escape_json_string", escape_json_string);
     env.add_filter("static_params_json", static_params_json);
+    env.add_filter("event_wire_name", event_wire_name);
+}
+
+/// The name an entry of the document's event set goes by in a generated name
+/// table: its own, except the wildcard entry, which is the descriptor that asks
+/// for it ([`WILDCARD_EVENT_WIRE_NAME`]). The table that maps `*` to the member
+/// is what a name that no event of the document matches is delivered through.
+fn event_wire_name(name: String) -> String {
+    if name == crate::analyzer::WILDCARD_EVENT {
+        crate::analyzer::WILDCARD_EVENT_WIRE_NAME.to_string()
+    } else {
+        name
+    }
 }
 
 /// A `<send>`'s params, as JSON, when every value is a literal.

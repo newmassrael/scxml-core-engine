@@ -102,6 +102,7 @@ pub enum Test520Event {
     ErrorExecution,
     HTTPPOST,
     Timeout,
+    Wildcard,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -539,6 +540,7 @@ impl StatePolicy for Test520Policy {
             Test520Event::ErrorExecution => "error.execution",
             Test520Event::HTTPPOST => "HTTP.POST",
             Test520Event::Timeout => "timeout",
+            Test520Event::Wildcard => "*",
             Test520Event::Null => "",
         }
     }
@@ -550,6 +552,7 @@ impl StatePolicy for Test520Policy {
             "error.execution" => Some(Test520Event::ErrorExecution),
             "HTTP.POST" => Some(Test520Event::HTTPPOST),
             "timeout" => Some(Test520Event::Timeout),
+            "*" => Some(Test520Event::Wildcard),
             _ => None,
         }
     }
