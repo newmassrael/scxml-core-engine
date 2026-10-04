@@ -466,13 +466,13 @@ interchangeable.
 
 | Engine | Standard | Selection | W3C IRP | ECMA-262 (`tests/ecmascript/ecma262_semantics.json`) |
 |--------|----------|-----------|---------|------|
-| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **98/98** |
-| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **98/98** |
+| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **107/107** |
+| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **107/107** |
 
 ⚠ **The Lua row is about the RUNTIME REWRITER, and since 2026-08-29 that is no
 longer everything the `lua` selection runs.** `sce_add_state_machine` now
 derives `--script-engine lua` for a `-DSCE_SCRIPT_ENGINE=lua` tree, so
-**generated C++ in such a tree is lowered at build time and answers 98/98** —
+**generated C++ in such a tree is lowered at build time and answers 107/107** —
 it never reaches the rewriter. What still does is the **Interpreter**, which has
 no build step, and any artifact generated with `--script-engine ecmascript`
 explicitly. So read this row as the score for those, not for a C++ AOT build.
@@ -499,7 +499,7 @@ sequence, which reaches the engine through `loweredScriptOf`. That path now
 asks `sce_lower_script`, so `continue` reaches a real Lua label instead of the
 rewriter's `_ = continue`.
 **An empty list was not a retired rewriter**, and this cell still scores the
-98-case shared table rather than every program a consumer can write.
+107-case shared table rather than every program a consumer can write.
 Retirement was the separate claim, and it now has the separate witness it
 needed: the seam doc's `retire-rewriter` row sweeps every tracked C++ file
 for anything that reaches `EcmaScriptToLuaTransformer` and finds none — the
