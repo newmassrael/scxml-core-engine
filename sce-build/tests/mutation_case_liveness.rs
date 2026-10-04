@@ -515,8 +515,26 @@ fn a_bin_source_under_a_test_selector_is_accepted() {
 /// the fixtures above write their subject into a temp directory, and a temp
 /// path is not under `tools/codegen/templates/` however it is spelled. The
 /// refusal fires before the snapshot, so nothing in the working tree is read
-/// or written by these two tests.
+/// or written by the test that expects it.
 const A_TEMPLATE: &str = "tools/codegen/templates/rust/invoke_methods.rs.jinja2";
+
+/// The templates the two tests that are NOT refused declare, one each.
+///
+/// A casefile that is accepted goes on to snapshot its targets and restore them
+/// after the case, and a restore is a write to the file in the working tree. The
+/// tests of this binary run in parallel, so two accepted rounds naming one
+/// template are two writers and a reader of one file: the round that hashes it
+/// to compare against its baseline can read it half-written by the other and
+/// report that the restore did not reproduce the baseline. Measured on CI
+/// 2026-10-04 (`a_cargo_casefile_whose_binaries_embed_the_templates_needs_no_
+/// regeneration`, which ran in the window of `..._that_declares_the_regeneration_
+/// is_accepted`), and never reproduced locally in 25 runs, as a window of
+/// microseconds is. Each such test has a template of its own, so no file is
+/// shared by two rounds.
+const A_TEMPLATE_WITH_ITS_REGENERATION_DECLARED: &str =
+    "tools/codegen/templates/go/invoke_methods.go.jinja2";
+const A_TEMPLATE_IN_A_ROUND_THAT_EMBEDS_IT: &str =
+    "tools/codegen/templates/python/invoke_methods.py.jinja2";
 
 /// A selector whose artifacts do NOT embed the templates.
 ///
@@ -533,10 +551,10 @@ const SELECTOR_WITHOUT_THE_TEMPLATES: &str = "mutation_tests -p sce-rust-tests -
 /// A casefile declaring the temp subject AND a real template, with whatever
 /// extra declarations the test is about.
 fn fixture_with_template(extra: &str) -> Fixture {
-    fixture_with_template_under(SELECTOR_WITHOUT_THE_TEMPLATES, extra)
+    fixture_with_template_under(SELECTOR_WITHOUT_THE_TEMPLATES, A_TEMPLATE, extra)
 }
 
-fn fixture_with_template_under(selector: &str, extra: &str) -> Fixture {
+fn fixture_with_template_under(selector: &str, template: &str, extra: &str) -> Fixture {
     let dir = tempdir().expect("temp dir");
     let target = dir.path().join("subject.txt");
     fs::write(&target, "fn keep(x: u8) -> u8 {\n    x + 1\n}\n").expect("write the subject");
@@ -550,7 +568,7 @@ fn fixture_with_template_under(selector: &str, extra: &str) -> Fixture {
         format!(
             "{selector}\n\
              mutation_targets {path}\n\
-             mutation_targets {A_TEMPLATE}\n\
+             mutation_targets {template}\n\
              mutation_oracles {}\n\
              {extra}\n\n\
              mutation_case \"studies the generated code\" <<'PY'\n\
@@ -596,7 +614,11 @@ fn a_cargo_casefile_that_mutates_a_template_without_regenerating_it_is_refused()
 /// subject is a mode whose verdicts nothing else re-proves.
 #[test]
 fn a_cargo_casefile_that_declares_the_regeneration_is_accepted() {
-    let f = fixture_with_template("mutation_regen true");
+    let f = fixture_with_template_under(
+        SELECTOR_WITHOUT_THE_TEMPLATES,
+        A_TEMPLATE_WITH_ITS_REGENERATION_DECLARED,
+        "mutation_regen true",
+    );
     let (ok, output) = check(&f.casefile);
     assert!(
         ok,
@@ -613,7 +635,7 @@ fn a_cargo_casefile_that_declares_the_regeneration_is_accepted() {
 /// could not tell those from the inert one would have to be switched off.
 #[test]
 fn a_cargo_casefile_whose_binaries_embed_the_templates_needs_no_regeneration() {
-    let f = fixture_with_template_under(LIVE_SELECTOR, "");
+    let f = fixture_with_template_under(LIVE_SELECTOR, A_TEMPLATE_IN_A_ROUND_THAT_EMBEDS_IT, "");
     let (ok, output) = check(&f.casefile);
     assert!(
         ok,
