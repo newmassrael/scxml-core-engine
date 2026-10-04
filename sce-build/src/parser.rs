@@ -2021,19 +2021,30 @@ impl SCXMLParser {
     /// the multi-doc build's — the exact divergence class this seam
     /// exists to prevent.
     ///
-    /// Best-effort: an unreadable or non-Forge sibling is silently skipped,
-    /// mirroring the resolvers' conservative-defensive skip. A skipped
-    /// sibling leaves its events schemaless, which keeps them on the
-    /// dynamic `_event.data` baseline — the typed path is never entered on
-    /// a schema the parser could not read, so codegen and the validators
-    /// stay in agreement about what is in scope.
+    /// An import that cannot be resolved is reported here, as the build
+    /// orchestrator's import pass reports it, and not skipped: this seam is the
+    /// only voice for an import on the entry points that parse one document
+    /// (`sce-codegen generate`, `check`), and a sibling skipped in silence left
+    /// the typed path with no schema to read, so the author was told that a
+    /// field of a record "is not a member" of it (measured 2026-10-04 with
+    /// the schema missing, and again with it present and defective) and sent
+    /// to the wrong file. A file that is not there, a document that is not a
+    /// Forge kind or is of another than the declared one, and one that does not
+    /// parse each have a diagnostic of their own, anchored where the author can
+    /// act on it: the `<sce:import>` line of this document, or the line of the
+    /// sibling's own defect.
     fn parse_imported_forge_siblings(
         model: &SCXMLModel,
         base_dir: &Path,
-    ) -> (
-        std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
-        std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
-    ) {
+        diag_label: &str,
+    ) -> Result<
+        (
+            std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+            std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+        ),
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
+        use crate::forge::error::{ImportError, Located};
         use crate::forge::model::{ForgeDocument, ForgeKind};
         let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> =
             std::collections::BTreeMap::new();
@@ -2043,9 +2054,24 @@ impl SCXMLParser {
             if !matches!(import.kind, ForgeKind::EventSchema | ForgeKind::Enum) {
                 continue;
             }
-            let Some(parsed) = crate::forge::import_source::parse_quietly(base_dir, import) else {
-                continue;
+            let at_the_import =
+                |error: ImportError| Located::new(error.into(), diag_label, import.line, None);
+            let source = crate::forge::import_source::ImportSource::read(base_dir, import)
+                .map_err(|error| Located::new(error.into(), diag_label, import.line, None))?;
+            // A defect of the sibling is reported at the sibling, in its own words.
+            let Some(parsed) = source.parse()? else {
+                return Err(at_the_import(ImportError::NotForge {
+                    src: import.src.clone(),
+                }));
             };
+            let actual = parsed.document.kind();
+            if actual != import.kind {
+                return Err(at_the_import(ImportError::KindMismatch {
+                    src: import.src.clone(),
+                    declared: import.kind.to_string(),
+                    actual: actual.to_string(),
+                }));
+            }
             match parsed.document {
                 ForgeDocument::EventSchema(schema) => {
                     schemas.entry(schema.name.clone()).or_insert(schema);
@@ -2056,7 +2082,7 @@ impl SCXMLParser {
                 _ => {}
             }
         }
-        (schemas, enums)
+        Ok((schemas, enums))
     }
 
     /// Two-role label contract — see [`DocumentLabel`]. `label.identifier`
@@ -2499,7 +2525,8 @@ impl SCXMLParser {
         // at the offending `cond`. Any future entry point that parses a
         // document is now validated by construction.
         let imported_enums = if let Some(dir) = base_dir {
-            let (schemas_by_stem, enums_by_stem) = Self::parse_imported_forge_siblings(&model, dir);
+            let (schemas_by_stem, enums_by_stem) =
+                Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =
                 crate::forge::event_schema_check::resolve_imported_event_schemas(
                     &model,
