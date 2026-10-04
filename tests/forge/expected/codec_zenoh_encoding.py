@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # SCE-MAP: codec_zenoh_encoding:68 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")

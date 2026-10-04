@@ -252,9 +252,10 @@ enum Outcome {
 
 /// The document is named by position, never by the candidate: a document
 /// whose name ends in `coding` has a first line Python reads as a source
-/// encoding declaration (`# SCE-MAP: …coding:23`), a separate matter from
-/// what this oracle asks and one that would hide the answer behind a
-/// `SyntaxError`.
+/// encoding declaration (`# SCE-MAP: …coding:23`). The generator guards that
+/// (`a_python_module_is_never_read_as_declaring_an_encoding`), and it stays a
+/// separate matter from what this oracle asks: were it not guarded, it would
+/// hide the answer behind a `SyntaxError`.
 fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> {
     let doc_name = format!("p_{}_{}", shape.id, index);
     let imports: String = shape

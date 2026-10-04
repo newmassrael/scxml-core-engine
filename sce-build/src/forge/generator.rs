@@ -18424,10 +18424,72 @@ pub fn generate_python_with_imports(
             files.push(sidecar);
         }
     }
+    // Every module, the sidecars included, is guarded in one place.
+    for (_, source) in &mut files {
+        *source = settle_python_source_encoding(std::mem::take(source));
+    }
     Ok(GeneratedOutput {
         files,
         ..Default::default()
     })
+}
+
+/// Whether `line` is a PEP 263 encoding declaration, by CPython's own rule
+/// (`Lib/tokenize.py`, `cookie_re`): a comment carrying `coding` followed by
+/// `:` or `=` and a name.
+fn python_line_declares_an_encoding(line: &str) -> bool {
+    static COOKIE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^[ \t\x0c]*#.*?coding[:=][ \t]*[-A-Za-z0-9_.]+")
+            .expect("PEP 263's declaration is a regex")
+    });
+    COOKIE.is_match(line)
+}
+
+/// Whether the interpreter would read an encoding declaration out of the first
+/// two lines of `source` — `tokenize.detect_encoding`: the first line is
+/// looked at, and the second only when the first is blank or a comment.
+fn python_source_reads_an_encoding_declaration(source: &str) -> bool {
+    let mut lines = source.lines();
+    let Some(first) = lines.next() else {
+        return false;
+    };
+    if python_line_declares_an_encoding(first) {
+        return true;
+    }
+    let after_indent = first.trim_start_matches([' ', '\t', '\x0c']);
+    let blank_or_comment = after_indent.is_empty() || after_indent.starts_with('#');
+    blank_or_comment && lines.next().is_some_and(python_line_declares_an_encoding)
+}
+
+/// Declare a generated Python module UTF-8 when, and only when, the
+/// interpreter would otherwise read an encoding out of its first two lines
+/// that nobody wrote.
+///
+/// The `# SCE-MAP: <document>:<line>` marker is the first line of a module the
+/// library hands back, and the document's name is the author's. A name that
+/// ends in `coding` (`zenoh_encoding`, `transcoding`, `recoding`) makes that
+/// line `…coding:23`, which PEP 263 reads as the declaration of an encoding
+/// called `23`. The file is then a `SyntaxError: unknown encoding` to every
+/// import, and nothing that compiles a string shows it, because a str source
+/// ignores the declaration. `sce-codegen` stamps its header lines above the
+/// marker, which is why the command line never showed it.
+///
+/// The rule is CPython's own, applied to the module as it is complete. A
+/// module it does not fire on is returned byte for byte, so only a module that
+/// was unreadable moves: of the committed goldens that is one,
+/// `codec_zenoh_encoding.py`, which had been pinned as a string for as long as
+/// it was a file nothing could import. Declaring an encoding on every module
+/// would move every generated tree, and reshaping the marker would break
+/// whatever reads it. UTF-8 is the truth: the templates emit nothing else. A
+/// caller that stamps a header above the result
+/// (`apply_drift_headers_to_output`) leaves the declaration as a redundant
+/// comment on a later line, which Python ignores.
+fn settle_python_source_encoding(source: String) -> String {
+    if python_source_reads_an_encoding_declaration(&source) {
+        format!("# -*- coding: utf-8 -*-\n{source}")
+    } else {
+        source
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -28103,5 +28165,90 @@ mod tests {
             !flag_truncate.contains("TlvChainOverflow"),
             "{flag_truncate}"
         );
+    }
+
+    /// The rule that decides whether a generated module needs its encoding
+    /// settled is the interpreter's, so the interpreter is the oracle. Library
+    /// output always opens with the marker, which leaves the second-line and
+    /// indentation branches unreachable from outside; these shapes reach them.
+    /// A declaration counts as read when the interpreter ends on anything but
+    /// its default (UTF-8) or refuses the name.
+    #[test]
+    fn the_encoding_rule_agrees_with_the_interpreters_reading() {
+        let present = std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !present {
+            assert!(
+                std::env::var_os("SCE_REQUIRE_ALL_COMPILERS").is_none(),
+                "python3 is required (SCE_REQUIRE_ALL_COMPILERS is set) and is absent"
+            );
+            eprintln!("python3 absent: the encoding rule was not compared");
+            return;
+        }
+        let sources = [
+            "# coding: latin-1\nx = 1\n",
+            "# SCE-MAP: zenoh_encoding:23 :: _forge_body\n",
+            "# SCE-MAP: a/coding=x/foo:1 :: _forge_body\n",
+            "# SCE-MAP: plain_codec:23 :: _forge_body\n",
+            "#!/usr/bin/python\n# coding=latin-1\n",
+            "\n# coding=latin-1\n",
+            "   \n# coding: latin-1\n",
+            "\t\n\t# coding: latin-1\n",
+            "# first\n# coding: latin-1\n",
+            "# one\r\n# coding: latin-1\r\n",
+            "# coding: latin-1\r\nx = 1\r\n",
+            "# coding: latin-1",
+            "  # coding: latin-1\n",
+            "\x0c# coding: latin-1\n",
+            "#coding=ascii\n",
+            "x = 1\n# coding: latin-1\n",
+            "'''doc'''\n# coding: latin-1\n",
+            "\n\n# coding: latin-1\n",
+            "# one\n# two\n# coding: latin-1\n",
+            "x = 1  # coding: latin-1\n",
+            "# coding_notes: latin-1\n",
+            "# coding:\n",
+            "# coding: \n",
+            "",
+        ];
+        let script = r#"
+import io, sys, tokenize
+for src in sys.argv[1:]:
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(src.encode("utf-8")).readline)
+        print("1" if encoding != "utf-8" else "0")
+    except SyntaxError:
+        print("1")
+"#;
+        let out = std::process::Command::new("python3")
+            .arg("-c")
+            .arg(script)
+            .args(sources)
+            .output()
+            .expect("python3 reads the sources");
+        assert!(
+            out.status.success(),
+            "the oracle itself failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let oracle: Vec<bool> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l == "1")
+            .collect();
+        assert_eq!(oracle.len(), sources.len(), "one answer per source");
+        assert!(
+            oracle.iter().any(|r| *r) && oracle.iter().any(|r| !*r),
+            "the table asks only one kind of question"
+        );
+        for (source, reads) in sources.iter().zip(&oracle) {
+            assert_eq!(
+                python_source_reads_an_encoding_declaration(source),
+                *reads,
+                "the interpreter and the rule disagree about {source:?}"
+            );
+        }
     }
 }

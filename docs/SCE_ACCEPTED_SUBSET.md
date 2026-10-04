@@ -2640,6 +2640,20 @@ which the interpreter refuses as a duplicate argument. That is not a name the
 generator wrote, the oracle counts it and leaves it out, and it is recorded as
 open rather than closed here.
 
+The document's own name reaches generated Python too. The first line of a
+module the library returns is the source-map marker, `# SCE-MAP:
+<document>:<line>`, and a name ending in `coding` (`zenoh_encoding`,
+`transcoding`) made it `…coding:23`, which PEP 263 reads as the declaration of
+an encoding called `23`: the file was a `SyntaxError: unknown encoding` to
+every import, and invisible to anything that compiles the text as a string,
+which ignores the declaration. A module whose first two lines the interpreter
+would read as an encoding declaration is now headed `# -*- coding: utf-8 -*-`,
+which is what the templates emit; every other module is byte for byte as it
+was. `a_python_module_is_never_read_as_declaring_an_encoding` imports the
+modules of such names and reads every committed Python golden the way the
+interpreter reads a file; the one it found was the committed golden of
+`codec_zenoh_encoding`, unreadable for as long as it had been pinned as text.
+
 This is the narrowing §1 draws for W3C's identifiers, drawn for the
 names SCE owns, and it is narrower than an XML Name in the same
 direction for the same reason: `-` and `.` are operators in every target
