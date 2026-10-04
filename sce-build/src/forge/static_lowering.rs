@@ -3554,7 +3554,23 @@ impl CTarget {
                 // machine's variables, lowered where the call is rendered
                 // ([`crate::forge::native_action`]).
                 "assign" | "log" | "if" | "raise" | "native_action" | "sce_append"
-                | "sce_clear" | "foreach" => {}
+                | "sce_clear" | "foreach" | "cancel" => {}
+                // The pairs of a `<send>`'s `<param>`s are written as the JSON
+                // object of the event's data from the machine's own fields, as a
+                // `<donedata>`'s are. Its `<content>` is text the script engine
+                // reads, and a processor the host serves collects its params
+                // through one, so neither is spelled yet.
+                "send" => {
+                    if !action.content.is_empty() || !action.contentexpr.is_empty() {
+                        return Some("a <send> with a <content>".to_string());
+                    }
+                    let scxml_processor = action.send_type.is_empty()
+                        || action.send_type == "scxml"
+                        || action.send_type.ends_with("#SCXMLEventProcessor");
+                    if action.send_type_host_served || !scxml_processor {
+                        return Some(format!("a <send> of type `{}`", action.send_type));
+                    }
+                }
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -3698,20 +3714,19 @@ impl StaticTarget for CTarget {
             }
             // A typed payload is read through the channel the machine's own
             // file declares for it, field by field. A number and a bool are the
-            // fields it holds as values; a string is a borrowed pointer into a
-            // buffer the machine owns, bytes a buffer with a length, and an
-            // enum has no field type there — none of them is held to a
-            // scenario.
+            // fields it holds as values, and a string is a borrowed pointer into
+            // a buffer the machine owns, which an assignment then holds to its
+            // own variable's bound. Bytes are a buffer with a length and an enum
+            // has no field type there — neither is held to a scenario.
             for t in &state.transitions {
                 let Some(schema) = model.imported_event_schemas.get(&t.event) else {
                     continue;
                 };
-                if let Some(field) = schema.fields.iter().find(|f| {
-                    matches!(
-                        f.sce_type,
-                        SceType::String | SceType::Bytes | SceType::Enum(_)
-                    )
-                }) {
+                if let Some(field) = schema
+                    .fields
+                    .iter()
+                    .find(|f| matches!(f.sce_type, SceType::Bytes | SceType::Enum(_)))
+                {
                     return Some(format!(
                         "a transition on `{}`, an event whose payload carries `{}` of type {}",
                         t.event,

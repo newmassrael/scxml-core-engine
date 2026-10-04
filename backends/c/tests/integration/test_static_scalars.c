@@ -87,6 +87,7 @@
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_sm.h"
+#include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
 #include "sync_client_sm.h"
 
@@ -505,6 +506,35 @@ static const variable_t donedata_variables[] = {
 STATIC_SCENARIO_DONE(static_donedata, donedata_states, donedata_variables, NULL, no_lists, no_records,
                      static_donedata_done)
 
+// static_send_params: a `<send>` hands its event the pairs of its `<param>`s, read
+// from the machine's own fields when the send runs; the machine sends itself the
+// event and reads the pairs back through the schemas it imports. A pair whose value
+// failed (`small + small` over a uint8) is left out, the message still goes, and
+// the receiver, finding a field missing, raises an `error.execution` of its own.
+VARIABLE_READER(static_send_params, total)
+VARIABLE_READER(static_send_params, ok)
+VARIABLE_READER(static_send_params, partialTotal)
+VARIABLE_READER(static_send_params, refusals)
+
+static const char *static_send_params_text(void *sm, const char *name) {
+    if (strcmp(name, "tag") == 0) {
+        return static_send_params_get_tag((const static_send_params_t *)sm);
+    }
+    return NULL;
+}
+
+static const name_value_t send_params_states[] = {
+    {"idle", STATIC_SEND_PARAMS_STATE_IDLE},
+};
+static const variable_t send_params_variables[] = {
+    {"total", static_send_params_read_total},
+    {"ok", static_send_params_read_ok},
+    {"partialTotal", static_send_params_read_partialTotal},
+    {"refusals", static_send_params_read_refusals},
+};
+STATIC_SCENARIO(static_send_params, send_params_states, send_params_variables, static_send_params_text, no_lists,
+                no_records)
+
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
 // reports. `retryAt` is an int64, and a rule it calls refuses a status outside
@@ -739,6 +769,7 @@ int main(void) {
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 5);
+    bad |= static_send_params_scenario("static_send_params", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();

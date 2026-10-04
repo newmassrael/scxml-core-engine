@@ -2322,6 +2322,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # A `<send>` hands its event the pairs of its `<param>`s, which the machine
+    # reads back through the two schemas it imports.
+    sce_generate_static_integration_c_test(static_send_params
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_params.scxml"
+        STAGE_ALSO schema_echo.scxml schema_partial.scxml
+    )
     # A list filled from the payload's field, whose element is read through the
     # library's view of it.
     sce_generate_static_integration_c_test(static_list
@@ -2406,6 +2413,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_block_ends_list_SOURCES}
         ${INTEGRATION_C_TEST_static_string_capacity_SOURCES}
         ${INTEGRATION_C_TEST_static_donedata_SOURCES}
+        ${INTEGRATION_C_TEST_static_send_params_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}

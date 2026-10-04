@@ -212,7 +212,18 @@ PY
 mutation_case "a done pair whose value failed is written anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "                if (!sce_failure_.failed) {\n                    sce_forge_wire_pair(&sce_wire_,",
-     "                if (true) {\n                    sce_forge_wire_pair(&sce_wire_,")
+     "                if (!sce_failure_.failed || true) {\n                    sce_forge_wire_pair(&sce_wire_,")
+PY
+
+# `static_send_params`: `bad` sends `partial` with `total` and a `part` that is
+# `small + small` over a uint8 holding 250. The pair that failed is left out and the
+# message goes; the receiver finds `part` missing and refuses it, which is the
+# second `error.execution` of the step — a pair written anyway is no refusal there.
+
+mutation_case "a send param whose value failed is written anyway" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                        if (!sce_failure_.failed) {\n                            sce_forge_wire_pair(&sce_wire_,",
+     "                        if (!sce_failure_.failed || true) {\n                            sce_forge_wire_pair(&sce_wire_,")
 PY
 
 mutation_case "a quote inside a string is written unescaped" <<'PY'

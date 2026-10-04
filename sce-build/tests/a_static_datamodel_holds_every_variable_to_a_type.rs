@@ -304,13 +304,14 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // C lowers integer, bool, enum and bounded string variables, records of
     // numbers, bools and enums, lists of integers, bools and such records with
     // `<sce:append>`, `<sce:clear>` and `<foreach>`, guards, `<assign>`,
-    // `<if>`, `<log>`, `<raise>`, `In()`, an event's typed payload of numbers and
-    // bools, a call of an imported algorithm, a host action whose arguments
-    // are typed expressions of them, and the `<param>`s of a final's
-    // `<donedata>`. What is past that — a real, a list
-    // of reals, a record with a string field, a bytes variable, a
-    // `<send>`, an `<invoke>`, a final's `<donedata>` with a `<content>`, a
-    // payload field that is not a number or a bool — is refused by
+    // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
+    // numbers, bools and strings, a call of an imported algorithm, a host action
+    // whose arguments are typed expressions of them, the `<param>`s of a final's
+    // `<donedata>` and of a `<send>` to the machine's own processor. What is past
+    // that — a real, a list of reals, a record with a string field, a bytes
+    // variable, a `<send>` with a `<content>` or to another processor, an
+    // `<invoke>`, a final's `<donedata>` with a `<content>`, a payload field that
+    // is bytes or an enum — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -351,9 +352,11 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "record:Echo with the field `tag` of type string",
         ),
         (
-            "a <send>",
-            machine(r#"<state id="s"><onentry><send event="x"/></onentry></state>"#),
-            "<send>",
+            "a <send> with a <content>",
+            machine(
+                r#"<state id="s"><onentry><send event="x"><content>hello</content></send></onentry></state>"#,
+            ),
+            "a <send> with a <content>",
         ),
         (
             "an <invoke>",
@@ -374,18 +377,18 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a <donedata> with a <content>",
         ),
         (
-            "a typed payload with a string field",
+            "a typed payload with an enum field",
             r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_echo.scxml" as="Echo"/>
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
   <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
-  <state id="s"><transition event="echo" cond="_event.data.total &gt; 1" target="done"/></state>
+  <state id="s"><transition event="view.shown" cond="_event.data.zoom &gt; 1" target="done"/></state>
   <final id="done"/>
 </scxml>
 "##
             .to_string(),
-            "an event whose payload carries `tag` of type string",
+            "an event whose payload carries `layout` of type enum:ViewMode",
         ),
     ];
     let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)

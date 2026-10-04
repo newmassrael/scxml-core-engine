@@ -3282,28 +3282,34 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types, `bool`, an enum and a string, a transition's
-guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's
-typed payload of numbers and bools, a call of an imported algorithm, a
-`<sce:action>` whose arguments are typed expressions of them, a record whose
-fields are numbers, bools and enums, a list of integers, bools or such
-records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, and the
-`<param>`s of a final's `<donedata>`. A
+guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
+event's typed payload of numbers, bools and strings, a call of an imported
+algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
+record whose fields are numbers, bools and enums, a list of integers, bools or
+such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
+`<param>`s of a final's `<donedata>`, and a `<send>` to the machine's own event
+processor with its `<param>`s. A
 real, bytes and a record with a string field, a list of
-reals, a `<send>` / `<cancel>`, an
+reals, a `<send>` with a `<content>` or to another processor, an
 `<invoke>`, a final's `<donedata>` with a `<content>` and a transition on an
 event whose payload
-carries a string, bytes or enum field are refused until their spellings are
+carries a bytes or enum field are refused until their spellings are
 written: bytes need a capacity the C11 contract does not carry yet, and a real
 is not yet held to a scenario — a `<param>` whose value is one is refused with
-it. The pairs of a `<donedata>` are written as the JSON object a done event
-carries as its data, by the header-only wire writer of the forge runtime
-(`sce/forge/wire.h`), into the `done_data` buffer the machine holds, which a host
-reads through `<machine>_done_data(sm)` and a compound final's done event is
-built from: a bool, a string — its `"`, `\` and control characters escaped, its
-UTF-8 as it is — or an integer, at the widest of its signedness. A pair whose
-value failed to compute, or whose location is empty, raises `error.execution`
-and is left out, every other pair still crosses (5.7.1), and an object that does
-not fit the buffer is `{}` and raises it too. A string is a struct of the buffer its bound
+it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
+an event carries as its data, by the header-only wire writer of the forge runtime
+(`sce/forge/wire.h`). A `<donedata>`'s go into the `done_data` buffer the machine
+holds, which a host reads through `<machine>_done_data(sm)` and a compound
+final's done event is built from; a `<send>`'s into the event's own data buffer,
+which every delivery of the send reads. A value is a bool, a string — its `"`,
+`\` and control characters escaped, its UTF-8 as it is — or an integer, at the
+widest of its signedness. A pair whose value failed to compute, or whose
+location is empty, raises `error.execution` and is left out, every other pair
+still crosses (5.7.1) — a `<send>`'s message still goes, and the error ends its
+block (4.9) — and an object that does not fit the buffer is `{}` and raises it
+too. A string a typed payload carries is read from the buffer the machine lifts
+it into, and is held to its variable's bound by the `<assign>` it lands in. A
+string is a struct of the buffer its bound
 declares, `sce_static_string_<capacity>_t { char data[<capacity> + 1]; }`,
 declared once in the machine's header per bound and held by value in the policy:
 an expression reads its `data`, so a comparison is `strcmp` over it, and an
@@ -3381,8 +3387,9 @@ from the call, as it does for a guard that is only `In()`.
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
 `static_string_capacity`, `static_donedata` (the done data read through
-`_done_data` and held to the pairs it states and no others), `static_payload`,
-`static_enum` (a value stated as the
+`_done_data` and held to the pairs it states and no others), `static_send_params`
+(a string carried by a `<send>` and read back through a typed payload),
+`static_payload`, `static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms
 called over the payload of each answer) against machines generated from the
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,

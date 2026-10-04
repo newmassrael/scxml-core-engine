@@ -78,7 +78,50 @@
    clears them itself. #}
 {% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false) %}
                 char _ed[SCE_MAX_DATA_LEN];
-{% if not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
+{% if static_datamodel %}
+                /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
+                   `<param>`'s value is native code (`Param::native_value`) read
+                   from the machine's own fields when the `<send>` runs, and the
+                   pairs are written as the JSON object of the event's data, with
+                   no script engine. §scxml-5.7.1: a pair whose value failed to
+                   compute — or whose location is empty — raises error.execution
+                   and is left out, the message still goes with the others, and the
+                   error ends the block once it has (4.9). */
+                {
+                    sce_forge_wire_t sce_wire_;
+                    sce_forge_wire_begin(&sce_wire_, _ed, sizeof(_ed));
+{% for param in params %}
+{% if param.is_static_literal %}
+                    sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
+                                        sce_forge_wire_string("{{ param.static_value | escape_c }}"));
+{% elif param.native_value %}
+                    {
+                        sce_forge_algorithm_failure_t sce_failure_ = {0};
+                        const sce_forge_wire_value_t sce_value = {{ param.native_value }};
+                        if (!sce_failure_.failed) {
+                            sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
+                        } else {
+                            {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                                "<send> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+                            _param_failed = true;
+                        }
+                    }
+{% else %}
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                    _param_failed = true;
+{% endif %}
+{% endfor %}
+                    if (!sce_forge_wire_end(&sce_wire_)) {
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send>'s payload does not fit the event's data, so the message was not sent");
+                        return;
+                    }
+                }
+{% elif not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
                 /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
                    payload is finished at codegen time. */
                 {
@@ -288,11 +331,10 @@
    Header-only and freestanding, like the rest of the tier a machine with no
    script engine is built from. */
 #include <sce/forge/algorithm.h>
-{% if static_done_data %}
-/* §scxml-5.5: a `<donedata>` is the JSON object of its pairs, written from the
-   machine's own fields by the wire writer. */
+/* §scxml-5.5 + §scxml-6.2: the pairs of a `<donedata>` or of a `<send>`'s
+   `<param>`s are the JSON object of an event's data, written from the machine's
+   own fields by the wire writer. */
 #include <sce/forge/wire.h>
-{% endif %}
 {% for line in static_imports %}
 {# An algorithm the document calls: its generated header, which `sce-codegen
    generate` writes beside the machine's own and does not include for it. #}
