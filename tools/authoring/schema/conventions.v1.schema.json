@@ -167,6 +167,47 @@
       }
     },
 
+    "companion_symbol": {
+      "type": "array",
+      "description": "A field of an output that holds one particular symbol of its own value space exactly while another field of the same output, its companion, is in use. A specification shows the companion where it shows the output and says nothing of what the first field holds beside it, and a writer fills that silence with the symbol the field's name suggests, where the platform keeps a different one that says the companion carries the display. Each rule names the outputs it is about by address, the field, its companion, the symbol the field holds while the companion is in use, and the symbol that means the companion is NOT in use. It reads: the field holds that symbol while the companion holds anything but its off symbol, and does not otherwise. The core says it beside the field in the brief, as the pack's convention and never as a fact of the specification, and checks no document against it. It does check the rule against the interface model -- a symbol a value space does not admit is one no document could write -- on every output that has both fields. A rule about outputs the pack does not have, or whose output lacks one of the two fields, applies to nothing and is not an error: a pack's conventions may be written once for outputs only some of its models carry.",
+      "items": {
+        "type": "object",
+        "required": ["address_pattern", "field", "companion", "symbol", "companion_off"],
+        "additionalProperties": false,
+        "properties": {
+          "address_pattern": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A regular expression searched in an output's address. The rule is about every output whose address it finds and that has both fields."
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The field that holds the symbol, by the name the interface model gives it."
+          },
+          "companion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The other field of the same output whose use switches the symbol on. It is not the field itself."
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The symbol of the field's value space that it holds while the companion is in use. The field's value space must admit it."
+          },
+          "companion_off": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The symbol of the companion's value space that means it is not in use. The companion is in use while it holds anything else. The companion's value space must admit it."
+          },
+          "measured": {
+            "type": "string",
+            "description": "What the pack knows about how often the rule holds, in one phrase (e.g. '125 of 136 cases while the companion is in use, 19 of 19 while it is off'). Printed with the sentence, for the reason `gate_off_note` is: a rule with a measured hit rate is not an oracle."
+          }
+        }
+      }
+    },
+
     "neutral_symbols": {
       "type": "array",
       "items": {"type": "string"},

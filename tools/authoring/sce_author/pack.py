@@ -394,6 +394,24 @@ class HeldRule:
     measured: str = ""
 
 
+@dataclass(frozen=True)
+class CompanionRule:
+    """A field that holds one symbol of its own value space while a companion field of
+    the same output is in use (`companion_symbol`).
+
+    The pack's CLAIM about the platform, read and said. What the core does check is the
+    rule against the interface model, because a symbol a value space does not admit is one
+    no document could write; it checks no document against the claim.
+    """
+
+    pattern: re.Pattern
+    field: str
+    companion: str
+    symbol: str
+    companion_off: str
+    measured: str = ""
+
+
 @dataclass
 class Conventions:
     name_classes: list[NameClass]
@@ -437,12 +455,22 @@ class Conventions:
     host: dict = field(default_factory=dict)
     # Fields that stay described while an output's gate is off, as the pack says it.
     held_when_off: tuple[HeldRule, ...] = ()
+    # A symbol a field holds while its companion is in use, as the pack says it.
+    companion_symbol: tuple[CompanionRule, ...] = ()
 
     def held_rule(self, address: str, field_name: str) -> HeldRule | None:
         """The rule that says `field_name` of the output at `address` stays described
         while its gate is off, or None. The first rule that names it decides."""
         for rule in self.held_when_off:
             if field_name in rule.fields and rule.pattern.search(address):
+                return rule
+        return None
+
+    def companion_rule(self, address: str, field_name: str) -> CompanionRule | None:
+        """The rule that says `field_name` of the output at `address` holds a symbol while
+        its companion is in use, or None. The first rule that names the field decides."""
+        for rule in self.companion_symbol:
+            if rule.field == field_name and rule.pattern.search(address):
                 return rule
         return None
 
@@ -555,6 +583,7 @@ def load_conventions(paths: list[pathlib.Path],
     protocols: dict[str, dict] = {}
     host: dict = {}
     held: list[HeldRule] = []
+    companions: list[CompanionRule] = []
     rules: dict[str, dict] = {}
     phrase_files: dict[str, pathlib.Path] = {}
 
@@ -679,6 +708,22 @@ def load_conventions(paths: list[pathlib.Path],
                 held.append(HeldRule(compiled, held_rule["gate"],
                                      tuple(held_rule["fields"]),
                                      held_rule.get("measured") or ""))
+        for number, companion in enumerate(doc.get("companion_symbol") or [], start=1):
+            where = f"companion_symbol[{number}]"
+            # ⚠ A field cannot be its own companion: "holds S while it holds anything but
+            # OFF" says nothing about when, and the rule would read as a sentence anyway.
+            if companion["field"] == companion["companion"]:
+                problems.refuse(PackError(
+                    f"{path}: {where} names {companion['field']!r} as its own companion "
+                    f"-- the companion is the OTHER field whose use switches the symbol on"))
+                continue
+            compiled = _compiled(path, f"{where}.address_pattern",
+                                 companion["address_pattern"], problems)
+            if compiled is not None:
+                companions.append(CompanionRule(compiled, companion["field"],
+                                                companion["companion"], companion["symbol"],
+                                                companion["companion_off"],
+                                                companion.get("measured") or ""))
         if doc.get("duration_pattern"):
             compiled = _compiled(path, "duration_pattern", doc["duration_pattern"], problems)
             if compiled is not None:
@@ -732,6 +777,7 @@ def load_conventions(paths: list[pathlib.Path],
         precondition_rules=rules,
         host=host,
         held_when_off=tuple(held),
+        companion_symbol=tuple(companions),
     )
 
 
@@ -955,12 +1001,16 @@ def _load(root: pathlib.Path, problems: Problems) -> Pack | None:
     if model is not None and conventions is not None:
         if model_clean:
             _hold_rules_to_the_model(root, conventions, model, problems)
+            _hold_companion_rules_to_the_model(root, conventions, model, problems)
         else:
             # ⚠ Not held to a model that did not load whole: an address it should
             # declare may be the one in the file that failed, and the check would
             # then accuse a rule of reading what the pack does declare.
             problems.skip("the rules in preconditions.inputs were not held to the "
                           "interface model, which did not load cleanly")
+            if conventions.companion_symbol:
+                problems.skip("the rules in companion_symbol were not held to the "
+                              "interface model, which did not load cleanly")
     examples = load_examples(example_paths, problems) if example_paths else Examples()
     if model is None or conventions is None:
         return None
@@ -996,6 +1046,44 @@ def check_pack(root: pathlib.Path) -> PackReport:
     problems = Problems(collect=True)
     _load(root, problems)
     return PackReport(pathlib.Path(root), problems.found, problems.skipped)
+
+
+def _hold_companion_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
+                                       model: Model,
+                                       problems: Problems = FIRST_PROBLEM) -> None:
+    """Refuse a `companion_symbol` rule that names a symbol no document could write.
+
+    The rule is a claim about the platform and is not checked against it. What the core can
+    hold it to is the interface model: on every output the rule is about -- its pattern
+    finds the address and the output has both fields -- the field's value space must admit
+    the symbol it holds, and the companion's must admit the symbol that means it is not in
+    use. A rule that fails that is not one a document could follow, and it loaded without a
+    word.
+
+    A rule about outputs the pack does not have, or whose output lacks one of the two
+    fields, applies to nothing and is not refused: a pack's conventions may be written once
+    for outputs only some of its models carry.
+    """
+    for number, rule in enumerate(conventions.companion_symbol, start=1):
+        where = f"{root}: companion_symbol[{number}]"
+        for entry in model.outputs():
+            if not rule.pattern.search(entry.address):
+                continue
+            held, companion = entry.field(rule.field), entry.field(rule.companion)
+            if held is None or companion is None:
+                continue
+            for owner, symbol, says in ((held, rule.symbol, "holds"),
+                                        (companion, rule.companion_off, "is not in use at")):
+                if owner.values is None:
+                    problems.refuse(PackError(
+                        f"{where} says the {owner.name!r} field {says} {symbol!r} on "
+                        f"{entry.address!r}, which declares no value space for it -- there "
+                        f"is no symbol there to name"))
+                elif symbol not in owner.values:
+                    problems.refuse(PackError(
+                        f"{where} says the {owner.name!r} field {says} {symbol!r} on "
+                        f"{entry.address!r}, which that field does not admit; it admits "
+                        f"{', '.join(sorted(owner.values))}"))
 
 
 def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,

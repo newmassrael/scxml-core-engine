@@ -1601,6 +1601,24 @@ thirty-three copies of one sentence bury every other class.
 rather than a set of rules because a generator has to choose one value; a rule
 set that offers three candidates has not answered anything.
 
+    companion_symbol:        # a symbol one field holds while another is in use
+      - address_pattern: '\.Out\.Lamp$'
+        field: Stat          # the field that holds the symbol
+        companion: Aux       # the other field of the same output
+        symbol: SPARE        # what `Stat` holds while `Aux` is in use
+        companion_off: "OFF" # `Aux` is in use while it holds anything else
+        measured: 125 of 136 cases while in use, 19 of 19 while off
+
+A specification shows the companion where it shows the output and says nothing of
+what the first field holds beside it, and a writer fills that silence with the
+symbol the field's name suggests. The rule reads: the field holds `symbol` while
+the companion holds anything but `companion_off`, and does not otherwise. The
+brief says it beside the field as the pack's convention, never as the
+specification's; no document is checked against it. The core does hold it to the
+interface model, though: a symbol a value space does not admit is one no document
+could write, so the pack is refused. A rule about an output that lacks either
+field applies to nothing and is not an error.
+
 A phrase whose reading is an assumption about the platform says so, with the
 reason, in the object form. ⚠ A reading that names no input -- `true`,
 `false` -- MUST: the pack is refused otherwise. Such a reading removes the

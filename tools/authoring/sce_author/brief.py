@@ -180,6 +180,20 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
                     f"placeholder because the output is off{basis}. The specification "
                     f"does not say; confirm it against the platform."
                 )
+            # A field that holds a symbol beside a companion: the specification shows the
+            # companion where it shows the output and is silent on this field, which a
+            # writer then fills with the symbol the field's name suggests. Said here as the
+            # pack's claim, and only on an output that has the companion -- a rule about
+            # one it lacks is about nothing.
+            companion = conv.companion_rule(entry.address, fld.name)
+            if companion is not None and entry.field(companion.companion) is not None:
+                basis = f" ({companion.measured})" if companion.measured else ""
+                parts.append(
+                    f"    - the pack's convention says this field holds `{companion.symbol}` "
+                    f"while `{companion.companion}` of this output holds anything but "
+                    f"`{companion.companion_off}`, and not otherwise{basis}. The "
+                    f"specification does not say; confirm it against the platform."
+                )
 
     parts += ["", "## 3. Outputs this specification is expected to decide", ""]
     for entry in model.outputs():
