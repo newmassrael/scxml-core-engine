@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: bd48d0023ebaaf348c84ae7b8c93328f1c2a8d13340f0d52e2a28233b69136fb
+// source-hash: 928525b042b933add53b083473e027b93afffa099739addb8c269c7194b0e79d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: tests/integration/a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml
