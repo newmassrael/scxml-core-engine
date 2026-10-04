@@ -10,7 +10,16 @@
 
 package {{ package }}
 
+{% if std_imports %}
+import (
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
+	"github.com/newmassrael/sce-forge-runtime/observer"
+)
+{% else %}
 import "github.com/newmassrael/sce-forge-runtime/observer"
+{% endif %}
 
 {% if has_event_domain %}
 // Event domain "{{ event_domain }}" is declared by the consuming module

@@ -285,6 +285,11 @@ pub mod scxml_semantic;
 /// so the pseudocode review surface can show `0x1a` where the model
 /// holds `26`. See [`source_literal`].
 pub mod source_literal;
+/// Which standard-library units (Go packages, C++ headers) a piece of
+/// generated source reaches for, read off the program text with literals and
+/// comments skipped, so that the import block of a generated file is decided in
+/// one place and not once per template.
+pub mod std_imports;
 /// An author's JSON read the way they meant it: an object that writes a key
 /// twice is refused, not resolved to the last. See [`strict_json::from_str`].
 pub mod strict_json;

@@ -19,7 +19,11 @@
 {% if needs_std_array %}#include <array>
 {% endif %}#include <cstddef>
 #include <cstdint>
-{% if needs_vector %}#include <vector>
+{# `std::string` and `std::to_string` are written by the expression emitter for a
+   string joined to an integer, and what a body needs is a fact about the text:
+   `std_includes` is what the render door (`LangCtx::render`) read off it. #}
+{% for header in std_includes %}#include <{{ header }}>
+{% endfor %}{% if needs_vector %}#include <vector>
 {% endif %}{% if needs_span or needs_list_view %}#include <span>
 {% endif %}{% if may_fail %}#include <sce/forge/algorithm.h>
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}

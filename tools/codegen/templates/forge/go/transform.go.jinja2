@@ -15,17 +15,19 @@ package {{ package }}
    reads the emitted bodies for the same reason as the C++ side: a flag
    computed upstream could disagree with what the emitter produced, and here
    that disagreement is a broken build in both directions. #}
-{# ⚠ `math.` rather than `math.Round`: `floor(x)` lowers to `math.Floor`, and a
+{# ⚠ The package is read off the emitted text, not named: `floor(x)` lowers to
+   `math.Floor`, a string joined to an integer to `strconv.FormatInt`, and a
    condition naming ONE function goes stale the moment the vocabulary grows —
-   which it did. Any `math.` in an emitted body is the math package and nothing
-   else, so this form cannot fall behind `real_to_int_builtin`. #}
-{% set needs_math = 'math.' in (functions | map(attribute='expr') | join(' ')) %}
-{% if all_imports or needs_math %}
+   which it did. `std_imports` is what the render door (`LangCtx::render`)
+   read off the text: a package used as a package, with literals and comments
+   skipped, so this form cannot fall behind `real_to_int_builtin` or the
+   concatenation emitter. #}
+{% if all_imports or std_imports %}
 
 import (
-{% if needs_math %}
-	"math"
-{% endif %}
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}

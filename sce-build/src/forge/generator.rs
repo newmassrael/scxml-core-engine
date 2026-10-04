@@ -21885,11 +21885,77 @@ impl LangCtx {
         &self,
         env: &minijinja::Environment,
         kind: &str,
-        ctx: serde_json::Map<String, serde_json::Value>,
+        mut ctx: serde_json::Map<String, serde_json::Value>,
     ) -> Result<String, ForgeError> {
         let tmpl = self.load_template(env, kind)?;
-        let value = minijinja::Value::from_serialize(&ctx);
-        Ok(tmpl.render(value).map_err(generator::render_error)?)
+        // What this language's files must import, and how to see that they do:
+        // the context key a template lists, the reader of the text, and the
+        // spelling an import has in the finished file.
+        type Reader = fn(&str) -> Vec<&'static str>;
+        let (key, read, spelled, unit): (&str, Reader, fn(&str) -> String, &str) = match self.lang {
+            crate::generator::Language::Go => (
+                "std_imports",
+                crate::std_imports::go_used_in,
+                |package| format!("\"{package}\""),
+                "package",
+            ),
+            crate::generator::Language::Cpp => (
+                "std_includes",
+                crate::std_imports::cpp_used_in,
+                |header| format!("#include <{header}>"),
+                "header",
+            ),
+            _ => {
+                let value = minijinja::Value::from_serialize(&ctx);
+                return Ok(tmpl.render(value).map_err(generator::render_error)?);
+            }
+        };
+        // Go refuses a file that names a package it does not import and a
+        // file that imports one it never names; a C++ file that names
+        // `std::string` without `<string>` builds only where another header
+        // happens to include it. So the import block is a fact about the TEXT
+        // the expression emitters produced (`math.Floor` for `floor`,
+        // `strconv.FormatInt` or `std::to_string` for a string joined to an
+        // integer), which a template cannot know until the text exists.
+        //
+        // Decided here, once, for every template of these languages: render
+        // with nothing listed, read which units the result uses, and render
+        // again with exactly those. A template lists the context key in its
+        // import block and states nothing about which function needs which.
+        // Reading the text rather than a flag computed upstream is the same
+        // reason `transform` always gave: a flag can disagree with what the
+        // emitter wrote, and here that is a broken build in both directions.
+        ctx.insert(key.into(), serde_json::Value::Array(Vec::new()));
+        let first = tmpl
+            .render(minijinja::Value::from_serialize(&ctx))
+            .map_err(generator::render_error)?;
+        // A unit the template already imports by itself (a C++ template that
+        // always includes `<string>`) needs nothing more said.
+        let used: Vec<&'static str> = read(&first)
+            .into_iter()
+            .filter(|unit| !first.contains(&spelled(unit)))
+            .collect();
+        if used.is_empty() {
+            return Ok(first);
+        }
+        ctx.insert(
+            key.into(),
+            serde_json::Value::Array(used.iter().map(|p| (*p).into()).collect()),
+        );
+        let second = tmpl
+            .render(minijinja::Value::from_serialize(&ctx))
+            .map_err(generator::render_error)?;
+        // A template that does not list the key would produce a file that does
+        // not build, and say nothing. Say it here.
+        if let Some(missing) = used.iter().find(|unit| !second.contains(&spelled(unit))) {
+            return Err(GenerateError::TemplateLoad(format!(
+                "the {:?} `{kind}` template emits code that uses the {unit} `{missing}` but \
+                 does not list `{key}` in its imports",
+                self.lang
+            ))
+            .into());
+        }
+        Ok(second)
     }
 
     /// Insert standard import fields into a context map.
@@ -23407,13 +23473,19 @@ fn lower_algorithm_stmt(
                 ))
             })?;
             let site = ExpressionSite::new(init, init_spelling.as_ref());
-            let init_lowered = expr::transpile_into(
+            // A local OWNS what it is given. Rust holds a `string` there as a
+            // `String`, and a string inside an expression is borrowed, so the
+            // initial value is lowered for a place that owns it: `let mut r:
+            // String = "";` is a type error that no document of a string local
+            // could get past, and every other backend emits what it always did.
+            let init_lowered = expr::transpile_into_owned(
                 init,
                 l.expr_target(),
                 type_ctx,
                 renames,
                 InferredType::from_sce_type(sce_type),
             )
+            .map(|lowered| lowered.text)
             .map_err(|refusal| site.place(refusal))?;
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
@@ -23626,8 +23698,13 @@ fn lower_algorithm_stmt(
             let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
                 .map_err(|refusal| target_site.place(refusal))?;
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
-            let rhs_lowered = expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
-                .map_err(|refusal| rhs_site.place(refusal))?;
+            // The place assigned to owns the value, as a local's initial value
+            // is lowered (see `AlgorithmStmt::Var`): `r = 'x'` must be a
+            // `String` in Rust, not the `&str` the literal is.
+            let rhs_lowered =
+                expr::transpile_into_owned(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
+                    .map(|lowered| lowered.text)
+                    .map_err(|refusal| rhs_site.place(refusal))?;
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {

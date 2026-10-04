@@ -9,9 +9,15 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
-{% if all_imports %}
+{# A condition compares strings too, and a string joined to an integer inside
+   the comparison reaches for `strconv`; `std_imports` is read off the emitted
+   text by the render door, so no template restates which functions need which. #}
+{% if all_imports or std_imports %}
 
 import (
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}

@@ -28,6 +28,9 @@ import (
 {% if needs_fmt %}
 	"fmt"
 {% endif %}
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 

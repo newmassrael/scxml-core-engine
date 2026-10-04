@@ -13,16 +13,18 @@
 // parameters lower to `[]byte` (RFC §synth-5-J-5 emitter table).
 
 package {{ package }}
-{# `round(x)` and `floor(x)` lower to `math.Round` / `math.Floor`. The test is
-   the one transform.go.jinja2 uses — any `math.` in the emitted code is the
-   math package — so it cannot fall behind the builtin vocabulary. #}
-{% set needs_math = 'math.' in (consts_prelude ~ ' ' ~ body) %}
-{% if all_imports or may_fail or needs_math %}
+{# `round(x)` and `floor(x)` lower to `math.Round` / `math.Floor`, and a string
+   joined to an integer to `strconv.FormatInt`. `std_imports` is the standard
+   packages the emitted text uses, read off it by the render door
+   (`LangCtx::render`) with literals and comments skipped — so the import block
+   cannot fall behind the vocabulary, and a name inside a string cannot add an
+   import. #}
+{% if all_imports or may_fail or std_imports %}
 
 import (
-{% if needs_math %}
-	"math"
-{% endif %}
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
 {% if may_fail %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}

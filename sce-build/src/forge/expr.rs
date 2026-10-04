@@ -3443,6 +3443,102 @@ fn bytes_as_hex_list(bytes: &[u8]) -> String {
         .join(", ")
 }
 
+/// Whether `left op right` is a string concatenation.
+///
+/// ECMA-262 13.15.3 makes `+` a concatenation as soon as one operand is a
+/// string, whatever the other turns out to be: `'E' + (52520 + n)` is a string
+/// and never a sum. The numeric lattice ([`join_arith`]) has no place for a
+/// string, so without this the sum was `Unknown` and every emitter wrote the
+/// operator between its operands as written -- a pointer addition in C and
+/// C++, a type error in Rust and Go, a `TypeError` in Python, and a
+/// concatenation only in Kotlin, where `String.plus` takes anything.
+///
+/// Decided here, once, so the emitters read one answer (the result is `Str`)
+/// instead of each re-deriving it from its operands. Constant folding and
+/// integer range analysis already stand aside for a non-numeric operand or a
+/// non-numeric result, so a `Str` sum is never read as a number.
+fn is_string_concatenation(op: BinOp, left: InferredType, right: InferredType) -> bool {
+    matches!(op, BinOp::Add)
+        && (matches!(left, InferredType::Str) || matches!(right, InferredType::Str))
+}
+
+/// How one operand of a string concatenation reaches the string.
+///
+/// ECMA-262 7.1.17 turns any value into its string form, and for most of them
+/// that form is a property of the language: `1.5`, `1e21`, `true`, `null` and a
+/// byte array each print one way in ECMAScript and another, or no way, in a
+/// target language. A document must mean the same in every backend, so the
+/// ones whose text this generator cannot make the same everywhere are refused
+/// by name, never left to whatever the target language does with them. That
+/// includes a type the generator could not infer (`Unknown`): passing it on
+/// is how the bug this classification exists for was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConcatOperand {
+    /// Already a string.
+    Text,
+    /// An integer: its string form is its decimal digits, with a leading `-`
+    /// for a negative, in every language.
+    Decimal,
+    /// A value whose string form differs between languages, or is unknown.
+    Refused(&'static str),
+}
+
+fn concat_operand(ty: InferredType) -> ConcatOperand {
+    match ty {
+        InferredType::Str => ConcatOperand::Text,
+        InferredType::UntypedInt | InferredType::Int { .. } => ConcatOperand::Decimal,
+        InferredType::UntypedFloat | InferredType::Float { .. } => {
+            ConcatOperand::Refused("a floating-point value")
+        }
+        InferredType::Bool => ConcatOperand::Refused("a boolean"),
+        InferredType::Null => ConcatOperand::Refused("null"),
+        InferredType::Bytes | InferredType::BytesBuffer => ConcatOperand::Refused("a byte array"),
+        InferredType::List(_) | InferredType::ListBuffer(_) => ConcatOperand::Refused("a list"),
+        InferredType::Record(_) => ConcatOperand::Refused("a record"),
+        InferredType::Quantity { .. } => ConcatOperand::Refused("a quantity"),
+        InferredType::Unknown => ConcatOperand::Refused("a value whose type is not known here"),
+    }
+}
+
+/// The refusal for a concatenation operand [`concat_operand`] will not carry.
+fn concat_refusal(what: &'static str, observed: String) -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: format!(
+            "string concatenation with {what} (the text of {what} is not the same in every backend; \
+             write the conversion explicitly)"
+        ),
+        observed: Some(observed),
+    }
+}
+
+/// The type of `c ? a : b`.
+///
+/// Two numeric branches join by the arithmetic lattice, as a sum of them
+/// would. Two branches of the SAME other type -- both strings, both booleans --
+/// are that type: the lattice has no place for them and answered `Unknown`, so
+/// `(flag ? 'A' : 'B') + n` was not seen to be a string at all and a conditional
+/// that returns text was opaque wherever it stood. Branches of different
+/// non-numeric types stay `Unknown`, as a numeric one mixed with a non-numeric
+/// one does: that is an expression the author has not made well typed, and it
+/// is not covered over here.
+fn join_branches(consequent: InferredType, alternate: InferredType) -> InferredType {
+    match (consequent, alternate) {
+        (InferredType::Str, InferredType::Str) => InferredType::Str,
+        (InferredType::Bool, InferredType::Bool) => InferredType::Bool,
+        _ => join_arith(consequent, alternate),
+    }
+}
+
+/// Whether the text of a string operand needs parentheses to stand beside a
+/// `+`. A binary child follows the backend's own precedence table; a
+/// conditional never stands bare, in the languages that spell it as an
+/// expression that reaches rightwards: Kotlin's `if (c) a else b + "E"` and
+/// Python's `a if c else b + "E"` both read the `+` into the else branch.
+fn concat_text_needs_parens(side: &TypedExpr, is_left: bool, precedence: fn(BinOp) -> u8) -> bool {
+    matches!(side.kind, ExprKind::Conditional { .. })
+        || child_needs_parens(side, BinOp::Add, is_left, precedence)
+}
+
 pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     expr.ty = match &mut expr.kind {
         ExprKind::NumberLit(n) => {
@@ -3477,7 +3573,9 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 reinterpret_string_as_bytes(left, right);
                 reinterpret_string_as_bytes(right, left);
             }
-            if op.is_arith() {
+            if is_string_concatenation(*op, left.ty, right.ty) {
+                InferredType::Str
+            } else if op.is_arith() {
                 join_arith(left.ty, right.ty)
             } else if op.is_comparison() || op.is_logical() {
                 InferredType::Bool
@@ -3503,7 +3601,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(condition, ctx);
             infer_types(consequent, ctx);
             infer_types(alternate, ctx);
-            join_arith(consequent.ty, alternate.ty)
+            join_branches(consequent.ty, alternate.ty)
         }
         ExprKind::Member { object, property } => {
             infer_types(object, ctx);
@@ -4481,7 +4579,10 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
     // cpp_coerce appends `.0` to integer literals, preventing C++ integer
     // division (e.g. `9 / 5` → `9.0 / 5.0`).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_cpp(left, expected)?;
             let r_raw = emit_cpp(right, expected)?;
             let l = if c_family_divides_integers(*op, left, right) {
@@ -4546,6 +4647,25 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::NullLit => "nullptr".to_string(),
         ExprKind::Ident(s) => s.clone(),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // `"E" + n` is pointer arithmetic in C++, so each side is made a
+            // `std::string` first: a string is wrapped (a literal is a
+            // `const char *`), an integer becomes its decimal digits. The
+            // left operand being a `std::string` is what makes every later
+            // `+` in a chain a concatenation (ECMA-262 13.15.3).
+            let operand = |side: &TypedExpr| -> Result<String, ExprError> {
+                match concat_operand(side.ty) {
+                    ConcatOperand::Text => Ok(format!("std::string({})", emit_cpp(side, side.ty)?)),
+                    ConcatOperand::Decimal => {
+                        Ok(format!("std::to_string({})", emit_cpp(side, side.ty)?))
+                    }
+                    ConcatOperand::Refused(what) => {
+                        Err(concat_refusal(what, emit_cpp(side, side.ty)?))
+                    }
+                }
+            };
+            format!("{} + {}", operand(left)?, operand(right)?)
+        }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_cpp(left, operand_ty)?;
@@ -4874,7 +4994,10 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_kotlin(left, expected)?;
             let r_raw = emit_kotlin(right, expected)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
@@ -5037,6 +5160,29 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::NullLit => "null".to_string(),
         ExprKind::Ident(s) => s.clone(),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // `String.plus` takes `Any`, so Kotlin concatenated this by
+            // accident while the other backends did not; the digits are made
+            // explicit so that it is the same decision here as everywhere
+            // (ECMA-262 13.15.3), not a property of Kotlin's overload.
+            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, ExprError> {
+                let text = emit_kotlin(side, side.ty)?;
+                match concat_operand(side.ty) {
+                    ConcatOperand::Text => Ok(
+                        if concat_text_needs_parens(side, is_left, kotlin_precedence) {
+                            format!("({text})")
+                        } else {
+                            text
+                        },
+                    ),
+                    ConcatOperand::Decimal => {
+                        Ok(format!("{}.toString()", wrap_postfix(side, text)))
+                    }
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text)),
+                }
+            };
+            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+        }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Kotlin `==` on `ByteArray` is reference
             // equality, so content comparison must use `contentEquals`.
@@ -5557,7 +5703,10 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
     // infers operand_ty = Float32 from join_arith, producing
     // `(raw as f32 * 0.1) as f64` instead of `raw as f64 * 0.1`.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_rust(left, expected)?;
             let r_raw = emit_rust(right, expected)?;
             let l = rust_left_operand(left, *op, l_raw);
@@ -5717,6 +5866,24 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // `&str + i64` does not compile in Rust, and `&str + &str` does
+            // not either. `format!` takes a string slice, an owned `String`
+            // and an integer alike, and prints an integer as its decimal
+            // digits -- the one text ECMA-262 13.15.3 gives it everywhere.
+            let operand = |side: &TypedExpr| -> Result<String, Refusal> {
+                let text = emit_rust(side, side.ty)?;
+                match concat_operand(side.ty) {
+                    ConcatOperand::Text | ConcatOperand::Decimal => Ok(text),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text).into()),
+                }
+            };
+            format!(
+                "format!(\"{{}}{{}}\", {}, {})",
+                operand(left)?,
+                operand(right)?
+            )
+        }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_rust(left, operand_ty)?;
@@ -6066,7 +6233,10 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
     }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_go(left, expected)?;
             let r_raw = emit_go(right, expected)?;
             let l = if child_needs_parens(left, *op, true, go_precedence) {
@@ -6150,6 +6320,32 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::NullLit => "nil".to_string(),
         ExprKind::Ident(s) => s.clone(),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // Go refuses `string + int64`, and `string(n)` is not the digits
+            // of `n` but the code point `n`. `strconv` is the digits; the
+            // file that holds this text imports it because the render door
+            // (`LangCtx::render`) reads the package off the text.
+            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, Refusal> {
+                let text = emit_go(side, side.ty)?;
+                match concat_operand(side.ty) {
+                    ConcatOperand::Text => {
+                        Ok(if concat_text_needs_parens(side, is_left, go_precedence) {
+                            format!("({text})")
+                        } else {
+                            text
+                        })
+                    }
+                    ConcatOperand::Decimal => Ok(match side.ty {
+                        InferredType::Int { signed: false, .. } => {
+                            format!("strconv.FormatUint(uint64({text}), 10)")
+                        }
+                        _ => format!("strconv.FormatInt(int64({text}), 10)"),
+                    }),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text).into()),
+                }
+            };
+            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+        }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Go forbids `==` on `[]byte` slices. Compare
             // via `string(slice)` conversion (no `bytes` import needed);
@@ -6557,7 +6753,10 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     // but the push-down is kept for structural symmetry with the other four
     // emitters (and python_coerce is a no-op for UntypedInt→Float).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_python(left, expected)?;
             let r_raw = emit_python(right, expected)?;
             let l = if child_needs_parens(left, *op, true, python_precedence) {
@@ -6620,6 +6819,25 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // builtin is escaped in the read as it was in the declaration.
         ExprKind::Ident(s) => crate::forge::generator::python_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // `'E' + 5` is a `TypeError` in Python; `str(int)` is the
+            // decimal digits, the one text ECMA-262 13.15.3 gives an integer.
+            let operand = |side: &TypedExpr, is_left: bool| -> Result<String, ExprError> {
+                let text = emit_python(side, side.ty)?;
+                match concat_operand(side.ty) {
+                    ConcatOperand::Text => Ok(
+                        if concat_text_needs_parens(side, is_left, python_precedence) {
+                            format!("({text})")
+                        } else {
+                            text
+                        },
+                    ),
+                    ConcatOperand::Decimal => Ok(format!("str({text})")),
+                    ConcatOperand::Refused(what) => Err(concat_refusal(what, text)),
+                }
+            };
+            format!("{} + {}", operand(left, true)?, operand(right, false)?)
+        }
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_python(left, operand_ty)?;
@@ -7373,7 +7591,10 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     // Push-down: arithmetic + Float expectation propagates into operands so
     // decimal-integer literals pick up `.0` and avoid integer division.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
-        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+        if op.is_arith()
+            && !is_string_concatenation(*op, left.ty, right.ty)
+            && matches!(expected, InferredType::Float { .. })
+        {
             let l_raw = emit_c(left, expected)?;
             let r_raw = emit_c(right, expected)?;
             let l = if c_family_divides_integers(*op, left, right) {
@@ -7430,6 +7651,23 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::NullLit => "NULL".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
         ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            // A C string is a `const char *`: there is nowhere for the joined
+            // text to live, and a returned pointer to a local buffer is a
+            // dangling one. Written as `"E" + n` -- the shape this branch
+            // replaces -- it compiled and read another string's bytes, which
+            // is the worst of the answers. Until a bounded buffer carries the
+            // result (the capacity contract `sce-static` strings are held to),
+            // the document is refused, by name, at the construct.
+            let (l, r) = (emit_c(left, left.ty)?, emit_c(right, right.ty)?);
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "string concatenation in C (a C string has no storage for \
+                            the joined text; hold the pieces in separate outputs, or \
+                            generate for another backend)"
+                    .to_string(),
+                observed: Some(format!("{l} + {r}")),
+            });
+        }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: C has no slice equality. The payload struct
             // stores a bytes field as `uint8_t <id>[CAP]; size_t <id>_len;`
