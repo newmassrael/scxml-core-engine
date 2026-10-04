@@ -33,6 +33,32 @@
 {% if typed and not param.envelope_metadata %}
 			{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
 {% endif %}
+{% elif param.native_value %}
+{# `datamodel="sce-static"` (SCE Accepted Subset §2.15): the value is native
+   code (`Param::native_value`) over the machine's own fields, read now, with no
+   script engine to ask. A checked operation that overflows records its failure
+   and answers a zero: the evaluation that failed, so the pair is left out and
+   reported (§scxml-5.7.1) while the element goes on, as it is for a `<send>`. #}
+			{
+{% if param.native_fails %}
+				var sceFailure scealgorithm.Failure
+{% endif %}
+				sceValue := {{ param.native_value }}
+{% if param.native_fails %}
+				if !sceFailure.Failed() {
+{% endif %}
+				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(sceValue))
+{% if typed and not param.envelope_metadata %}
+				{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})
+{% endif %}
+{% if param.native_fails %}
+				} else {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate"))
+{% endif %}
+				}
+{% endif %}
+			}
 {% elif param.expr and model.needs_script_engine %}
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
 				// W3C SCXML C.2: the value crosses as text, rendered by the

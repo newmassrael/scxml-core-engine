@@ -424,6 +424,47 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
+fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
+    // An `<invoke>` the host serves (`--host-invoker`) carries `<param>`s that
+    // are typed expressions of the machine's own fields. Rust, Kotlin and Go read
+    // them there when the invocation starts; C++, Python and C11 do not yet, and
+    // refuse the invoke by name rather than hand the host a request without them.
+    let document = std::fs::read_to_string(
+        repo_root()
+            .join("sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"),
+    )
+    .expect("the host invoke fixture");
+    for lang in ["rust", "kotlin", "go"] {
+        let (ok, out) = run(
+            &[
+                "check",
+                "-l",
+                lang,
+                "--go-module-prefix",
+                "x/y",
+                "--host-invoker",
+                "x-sce-host",
+            ],
+            &document,
+        );
+        assert!(ok, "{lang}: starts an invoke the host serves:\n{out}");
+    }
+    for (lang, name) in [("cpp", "C++"), ("python", "Python"), ("c11", "C11")] {
+        let (ok, out) = run(
+            &["check", "-l", lang, "--host-invoker", "x-sce-host"],
+            &document,
+        );
+        assert!(!ok, "{lang}: {name} has no lowering for it yet:\n{out}");
+        assert!(
+            out.contains("generate/unsupported-feature")
+                && out.contains(&format!("no {name} lowering yet"))
+                && out.contains("a host-run <invoke>"),
+            "{lang}: expected the unsupported-feature refusal naming {name}:\n{out}"
+        );
+    }
+}
+
+#[test]
 fn every_backend_lowers_the_model_with_no_script_engine() {
     // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest

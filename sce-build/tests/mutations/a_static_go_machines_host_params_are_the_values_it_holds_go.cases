@@ -1,0 +1,50 @@
+# Mutation cases for the `<param>`s of a host-served `<send>` and `<invoke>` of a
+# `datamodel="sce-static"` machine generated as Go (docs/SCE_ACCEPTED_SUBSET.md
+# §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_machines_host_params_are_the_values_it_holds_go.cases`.
+#
+# A `<param expr>` of such a machine is Go the lowering wrote, read from the
+# machine's own fields when the element runs, and the templates only place it:
+# the value goes into the request as the text `sce.ToWireString` renders and,
+# typed, into the pairs the request's `EventData` is built from. A value that
+# cannot be computed — a checked multiplication that overflows — is a zero with a
+# failure flag raised, and it is the evaluation that failed (W3C SCXML 5.7.1): the
+# pair is left out and `error.execution` is raised, while the message still goes
+# and the invocation still starts.
+#
+# What is easy to get wrong and reads as success: a pair written with the zero of
+# a failed value is a request that still looks complete, and a pair dropped without
+# a word is a request that does too. `statechart_static_host_params` tells both
+# apart: its `boom` is `count * 2000000000`, and `errors` counts the reports the
+# document took — one for the send and one for the invoke.
+#
+# The templates reach the tests only through the committed tree the regeneration
+# writes, so the tree is a declared target and the command is what carries a
+# mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/statechart_static_host_params/
+mutation_targets tools/codegen/templates/go/param_macros.go.jinja2
+mutation_targets backends/go/tests/integration/statechart_static_host_params/statechart_static_host_params_sm.go
+mutation_regen scripts/regen_host_processor.sh
+mutation_oracles backends/go/tests/integration/statechart_static_host_params/host_params_test.go sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+
+# ── A value that cannot be computed is left out ────────────────────
+
+mutation_case "a value that failed is written into the request anyway" <<'PY'
+edit("tools/codegen/templates/go/param_macros.go.jinja2",
+     "\t\t\t\tif !sceFailure.Failed() {\n{% endif %}\n\t\t\t\t{{ map }}",
+     "\t\t\t\tif !sceFailure.Failed() || true {\n{% endif %}\n\t\t\t\t{{ map }}")
+PY
+
+# ── ... and reported ───────────────────────────────────────────────
+
+mutation_case "a value that failed is left out without a word" <<'PY'
+edit("tools/codegen/templates/go/param_macros.go.jinja2",
+     "{% if 'error.execution' in model.events %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))",
+     "{% if false %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))")
+PY

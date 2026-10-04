@@ -3161,9 +3161,13 @@ and a list of numbers, bools or records with `<sce:append>`, `<sce:clear>` and
 `<send>` (the text it spells, as `Python` below says), `In()`, an event's typed
 payload, a call of an imported
 algorithm, the `<param>`s of a `<final>`'s `<donedata>`, an `<invoke
-type="scxml">` and the values it hands its child, and a `<sce:action>` whose
-arguments are typed expressions of the machine's variables. Bytes, and an
-`<invoke>` the host runs, a hybrid one and a mesh one, are not lowered yet. Each
+type="scxml">` and the values it hands its child, an `<invoke>` the host runs with
+its `<param>`s (read from the policy's fields into the request's `Params` and
+`EventData` when the invocation starts, as a `<send>`'s are), and a `<sce:action>`
+whose arguments are typed expressions of the machine's variables.
+`statechart_static_host_params`, driven by `host_params_test.go`, holds the value
+on the wire for both the send and the invoke, and the pair a failed computation
+leaves out. Bytes, and a hybrid invoke and a mesh one, are not lowered yet. Each
 variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name

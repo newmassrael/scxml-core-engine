@@ -180,6 +180,25 @@ for src in "$GO_DELAYED_TMP"/*_sm.go; do
 done
 cp "$GO_DELAYED_TMP"/*_sm.go "$GO_DELAYED_DIR/"
 
+# The typed-parameter document, which needs BOTH declarations: what a `<param>`
+# of a `<send>` and of an `<invoke>` the host serves puts on the wire, read from
+# the machine's own fields (SCE Accepted Subset §2.15). Its own Go directory for
+# the package-name reason above.
+GO_STATIC_PARAMS_DIR="backends/go/tests/integration/statechart_static_host_params"
+GO_STATIC_PARAMS_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l go -o "$GO_STATIC_PARAMS_TMP/" \
+    --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
+
+mkdir -p "$GO_STATIC_PARAMS_DIR"
+find "$GO_STATIC_PARAMS_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$GO_STATIC_PARAMS_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_STATIC_PARAMS_TMP}/|// From: $(dirname "$STATIC_PARAMS_FIXTURE")/|g" "$src"
+done
+cp "$GO_STATIC_PARAMS_TMP"/*_sm.go "$GO_STATIC_PARAMS_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
@@ -190,3 +209,5 @@ echo "Regenerated: $GO_DELAYED_DIR/ from"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $GO_INVOKER_DIR/ from"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "Regenerated: $GO_STATIC_PARAMS_DIR/ from"
+echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"

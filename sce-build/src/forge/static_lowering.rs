@@ -2284,7 +2284,7 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes) {
+            if let Some(other) = unlowered_invoke(&state.invokes, false) {
                 return Some(other);
             }
         }
@@ -2600,12 +2600,18 @@ impl StaticTarget for CppTarget {
 
 /// The first of `invokes` a target that lowers a `<invoke type="scxml">` has no
 /// lowering for yet, described for a refusal. A scxml child is started by the
-/// machine's own invoke code and handed its values by the build; one the host
-/// runs, a hybrid one and a mesh one are not lowered yet.
-fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
+/// machine's own invoke code and handed its values by the build; a hybrid one and
+/// a mesh one are not lowered yet, and one the host runs is only by a target that
+/// `lowers_host_run` — one whose invoke code reads a request's `<param>`s from the
+/// machine's own fields.
+fn unlowered_invoke(invokes: &[crate::model::Invoke], lowers_host_run: bool) -> Option<String> {
     invokes
         .iter()
-        .find(|i| !matches!(i, crate::model::Invoke::Scxml(_)))
+        .find(|i| match i {
+            crate::model::Invoke::Scxml(_) => false,
+            crate::model::Invoke::Unsupported(info) => !(lowers_host_run && info.host_served),
+            _ => true,
+        })
         .map(|other| {
             match other {
                 crate::model::Invoke::Hybrid(_) => "a hybrid <invoke>",
@@ -2728,7 +2734,7 @@ impl StaticTarget for GoTarget<'_> {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes) {
+            if let Some(other) = unlowered_invoke(&state.invokes, true) {
                 return Some(other);
             }
         }
@@ -3184,7 +3190,7 @@ impl StaticTarget for PythonTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes) {
+            if let Some(other) = unlowered_invoke(&state.invokes, false) {
                 return Some(other);
             }
         }
@@ -3589,7 +3595,7 @@ impl CTarget {
     /// refused here, by name: the host's act table of a child that declares
     /// `<sce:action>`s, which the parent has none to give it.
     fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
-        if let Some(other) = unlowered_invoke(invokes) {
+        if let Some(other) = unlowered_invoke(invokes, false) {
             return Some(other);
         }
         invokes.iter().find_map(|invoke| match invoke {
