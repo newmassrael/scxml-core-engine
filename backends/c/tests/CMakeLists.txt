@@ -2385,6 +2385,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # The payload's enum field is a value of an enum the machine imports under
+    # the alias its schema writes, so the staging carries both beside it.
+    sce_generate_static_integration_c_test(static_payload_enum
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml"
+        STAGE_ALSO schema_view.scxml enum_view_mode.scxml
+    )
     # A `<send>` hands its event the pairs of its `<param>`s, which the machine
     # reads back through the two schemas it imports.
     sce_generate_static_integration_c_test(static_send_params
@@ -2495,6 +2502,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_SOURCES}
         ${_DAYS_IN_MONTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}

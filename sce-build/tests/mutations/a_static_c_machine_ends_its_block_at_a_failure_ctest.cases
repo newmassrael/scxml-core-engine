@@ -30,6 +30,7 @@
 
 mutation_ctest --test-dir build -R '^c11_integration_static_(scalars|host_call)$'
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_targets sce-build/src/forge/generator.rs
 mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h backends/c/tests/integration/test_static_host_call.c
 
 # ── A failed statement writes nothing and ends its block ───────────
@@ -244,4 +245,19 @@ mutation_case "a published list's view says one element too few" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "    return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len };",
      "    return ({{ field.view }}){ sm->policy.{{ field.name }}.data, sm->policy.{{ field.name }}.len > 0 ? sm->policy.{{ field.name }}.len - 1 : 0 };")
+PY
+
+# ── A payload's enum field holds a variant of its enum ─────────────
+#
+# `static_payload_enum`: `view.shown` carries a `layout` named as the enum
+# document declares it, lifted from the data into the machine's own enum. A name no
+# variant declares (`fortnight`) is a payload that does not fit its schema, and the
+# delivery must be refused with nothing written — a lift that goes on past it keeps
+# the zero the payload was cleared to, which is the enum's first value, and writes
+# the `zoom` beside it.
+
+mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "_name_{id});\\n            \\\nreturn false;\\n        }}\\n    }}\\n\",",
+     "_name_{id});\\n            \\\n        }}\\n    }}\\n\",")
 PY

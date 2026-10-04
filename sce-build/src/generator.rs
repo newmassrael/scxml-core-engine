@@ -2420,6 +2420,7 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
                 &model,
                 &native.payload_events,
                 "",
+                &[],
             );
             for part in [
                 payload.defs,
@@ -2994,8 +2995,12 @@ fn render_c11(
         .chain(static_lowering.payload_events.iter())
         .cloned()
         .collect();
-    let payload =
-        crate::forge::generator::build_c11_event_payload(model, &payload_events, &csym_prefix);
+    let payload = crate::forge::generator::build_c11_event_payload(
+        model,
+        &payload_events,
+        &csym_prefix,
+        &static_lowering.enums,
+    );
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
     if model.datamodel != crate::model::Datamodel::SceStatic {

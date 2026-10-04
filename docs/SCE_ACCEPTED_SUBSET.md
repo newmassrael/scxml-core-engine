@@ -2817,13 +2817,15 @@ refused as any payload that does not is, and writes nothing. The typed channel h
 the field in the machine's own type for the enum, so the document imports the enum
 under the alias the schema writes, as it does for a record's field; one that does not
 is refused naming the alias (`generate/unsupported-feature`, "this document does not
-import it under that alias"). Rust, Go, Kotlin, Python and C++ lift the field into
-that type and write it back as the variant's declared name (Rust's `match`, Go's
-function literal over the name, Kotlin's `declaredName`, Python's `sce_name` and
-C++'s `sceLogName`); the Interpreter reads it through the library's `field`, given
-the variants the enum declares. C11 has no lowering for it yet and refuses every
-transition on such an event by name. `static_payload_enum` holds every backend to it,
-`a_payload_holds_an_enum_field.rs` holds what the judge knows of it, and
+import it under that alias"). Rust, Go, Kotlin, Python, C++ and C11 lift the field
+into that type and write it back as the variant's declared name (Rust's `match`, Go's
+function literal over the name, Kotlin's `declaredName`, Python's `sce_name`, C++'s
+`sceLogName` and C11's `strcmp` chain over a buffer as long as the longest name, with
+the wire writer's `switch`); the Interpreter reads it through the library's `field`,
+given the variants the enum declares. C11 declares the enum before the payload channel
+in the header, since a struct names a type only after it is declared.
+`static_payload_enum` holds every backend to it, `a_payload_holds_an_enum_field.rs`
+holds what the judge knows of it, and
 `a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_lowers_it`
 reads the generated machines. Measured 2026-10-04, Rust, Go, Kotlin, Python and C++
 had stopped on such a read with a panic (exit 101, "reached a context built by
@@ -3467,7 +3469,7 @@ C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types, `bool`, an enum, a string and a 64-bit real, a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
-event's typed payload of numbers, bools and strings, a call of an imported
+event's typed payload of numbers, bools, strings and enums, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools, 64-bit reals and enums, a list of integers, bools, 64-bit
 reals or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
@@ -3482,7 +3484,7 @@ them, bytes and a record with a string field or a 32-bit real field, a `<send>` 
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>` and a
-transition on an event whose payload carries a bytes or enum field are refused
+transition on an event whose payload carries a bytes field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
 not carry yet, and a 32-bit real has no wire spelling every engine shares (the
 contract fixes the 64-bit form only) — a `<param>` whose value is one is refused
@@ -3601,7 +3603,8 @@ compared as the 64 bits it is, after a payload carried it),
 `_done_data` and held to the pairs it states and no others), `static_donedata_content`
 (the same buffer, held to the string an inline `<content>` spells), `static_send_params`
 (a string carried by a `<send>` and read back through a typed payload),
-`static_payload`, `static_enum` (a value stated as the
+`static_payload`, `static_payload_enum` (a payload's enum field, lifted from the
+variant's declared name the data carries), `static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms
 called over the payload of each answer) against machines generated from the
 shared fixtures, reading `scenarios/<machine>.json` itself (`static_scenario.h`,

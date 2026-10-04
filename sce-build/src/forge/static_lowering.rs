@@ -3884,8 +3884,9 @@ impl StaticTarget for CTarget {
             // file declares for it, field by field. A number and a bool are the
             // fields it holds as values, and a string is a borrowed pointer into
             // a buffer the machine owns, which an assignment then holds to its
-            // own variable's bound. Bytes are a buffer with a length and an enum
-            // has no field type there — neither is held to a scenario.
+            // own variable's bound. An enum is the machine's own type, lifted
+            // from the variant's declared name. Bytes are a buffer with a
+            // length, which is not held to a scenario.
             for t in &state.transitions {
                 let Some(schema) = model.imported_event_schemas.get(&t.event) else {
                     continue;
@@ -3893,7 +3894,7 @@ impl StaticTarget for CTarget {
                 if let Some(field) = schema
                     .fields
                     .iter()
-                    .find(|f| matches!(f.sce_type, SceType::Bytes | SceType::Enum(_)))
+                    .find(|f| matches!(f.sce_type, SceType::Bytes))
                 {
                     return Some(format!(
                         "a transition on `{}`, an event whose payload carries `{}` of type {}",
@@ -4352,6 +4353,12 @@ impl StaticTarget for CTarget {
     // The local the `<if>` declares for it.
     fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
         "_if_cond_failed = true;".to_string()
+    }
+    // An enum field of the payload is held in the machine's own enum, declared
+    // in its header before the channel, lifted from the variant's declared name
+    // and written back as it (`build_c11_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
     }
     // The member of the channel's union the event's payload is lifted into
     // (`build_c11_event_payload`), whose fields carry the schema's own ids.

@@ -33,6 +33,10 @@
 //     assignments through the channel the machine declares for it, lifted from
 //     the `data` the event carries; an operation over it that overflows is a
 //     failure like any other, and the statements before it have run.
+//   * `static_payload_enum`: a payload's enum field is held in the machine's own
+//     enum, lifted from the variant's declared name the data carries, compared and
+//     assigned as a variable of the enum is; a name the enum does not declare, or
+//     a value that is no text, is a payload that does not fit, and writes nothing.
 //   * `sync_client`: a call of an imported algorithm — a header of `static inline`
 //     functions the machine includes — in a guard and in an assignment, over the
 //     payload of each answer, and a call that refuses its arguments is a failure
@@ -89,6 +93,7 @@
 #include "static_foreach_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_enum_sm.h"
 #include "static_payload_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
@@ -490,6 +495,37 @@ static const variable_t enum_variables[] = {
 };
 STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists, no_records)
 
+// static_payload_enum: an event's payload carries an enum field, the variant's
+// declared name, held in the machine's own enum and lifted from the data it
+// arrives in. A name the enum does not declare, or a value that is no text, does
+// not fit the schema: the delivery is refused and writes nothing.
+VARIABLE_READER(static_payload_enum, zoom)
+VARIABLE_READER(static_payload_enum, agenda)
+VARIABLE_READER(static_payload_enum, shown)
+
+static int64_t static_payload_enum_read_layout(const void *sm) {
+    return (int64_t)static_payload_enum_get_layout((const static_payload_enum_t *)sm);
+}
+
+static const char *static_payload_enum_text(void *sm, const char *name) {
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(static_payload_enum_get_layout((const static_payload_enum_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t payload_enum_states[] = {
+    {"browsing", STATIC_PAYLOAD_ENUM_STATE_BROWSING},
+};
+static const variable_t payload_enum_variables[] = {
+    {"layout", static_payload_enum_read_layout},
+    {"zoom", static_payload_enum_read_zoom},
+    {"agenda", static_payload_enum_read_agenda},
+    {"shown", static_payload_enum_read_shown},
+};
+STATIC_SCENARIO(static_payload_enum, payload_enum_states, payload_enum_variables, static_payload_enum_text, no_lists,
+                no_records)
+
 // static_string_capacity: a string is a buffer of the UTF-8 bytes its variable
 // declares, assigned from a literal or another string, and refused past its
 // bound — by bytes, not characters. A published string is read as the text of its
@@ -881,6 +917,52 @@ static int the_wire_writer_escapes_text_and_refuses_a_full_buffer(void) {
     return bad;
 }
 
+// The inject seam writes the wire beside the typed payload, and an enum field
+// rides it as the name its document declares, not as the number the enum holds: a
+// reader of `data` — a script engine, a child, a host — sees what a saved state
+// holds. A value no variant names is one the seam refuses, as it refuses a real
+// that is not finite. The text of the one event the seam queued is the witness.
+static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
+    static const struct {
+        enum_view_mode_enum_t value;
+        const char *wire;
+    } cases[] = {
+        {ENUM_VIEW_MODE_MONTH, "{\"layout\":\"month\",\"zoom\":3}"},
+        {ENUM_VIEW_MODE_AGENDA_LIST, "{\"layout\":\"agenda_list\",\"zoom\":3}"},
+    };
+
+    int bad = 0;
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        static_payload_enum_t sm;
+        static_payload_enum_init(&sm);
+        static_payload_enum_view_shown_payload_t payload;
+        memset(&payload, 0, sizeof(payload));
+        payload.layout = cases[i].value;
+        payload.zoom = 3u;
+        if (!static_payload_enum_raise_view_shown_typed(&sm, &payload)) {
+            (void)fprintf(stderr, "static_payload_enum: FAIL - the seam refused a variant of the enum\n");
+            bad = 1;
+            continue;
+        }
+        const char *queued = sm.external_queue.buf[sm.external_queue.head].data;
+        if (strcmp(queued, cases[i].wire) != 0) {
+            (void)fprintf(stderr, "static_payload_enum: FAIL - the seam wrote `%s`, want `%s`\n", queued,
+                          cases[i].wire);
+            bad = 1;
+        }
+    }
+    static_payload_enum_t sm;
+    static_payload_enum_init(&sm);
+    static_payload_enum_view_shown_payload_t payload;
+    memset(&payload, 0, sizeof(payload));
+    payload.layout = (enum_view_mode_enum_t)99;
+    if (static_payload_enum_raise_view_shown_typed(&sm, &payload)) {
+        (void)fprintf(stderr, "static_payload_enum: FAIL - the seam queued a value no variant names\n");
+        bad = 1;
+    }
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     // Each scenario file by its name, and the steps it has at the least.
@@ -901,12 +983,14 @@ int main(void) {
     bad |= static_record_enum_scenario("static_record_enum", 13);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
+    bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 5);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
+    bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();
     bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();
     if (bad != 0) {
         return 1;

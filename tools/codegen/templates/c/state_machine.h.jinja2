@@ -219,6 +219,16 @@ enum {{ csym_prefix }}{{ model.name }}_event_e {
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model.name }}_event_t;
 
+{% if static_type_defs %}
+/* ── Datamodel types (SCE Accepted Subset §2.15) ──────────────────── */
+{# Before the payload channel: a payload struct holds a field of the enum the
+   machine declares here (§2.15, an enum field of a payload), and a type must
+   be declared before a struct names it. What these declare is scalars, the
+   other enums and the bounded strings a record holds, none of which name the
+   payload or the event. #}
+{{ static_type_defs }}
+
+{% endif %}
 {% if event_payload_active %}
 /* ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────── */
 {{ event_payload_defs }}
@@ -423,11 +433,6 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
 } {{ csym_prefix }}{{ model.name }}_scheduled_queue_t;
 {% endif %}
 
-{% if static_type_defs %}
-/* ── Datamodel types (SCE Accepted Subset §2.15) ──────────────────── */
-{{ static_type_defs }}
-
-{% endif %}
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
 {# C++ `{name}Policy` mutable members: the last microstep's source and
    every <history>'s recorded configuration. #}

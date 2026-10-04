@@ -2830,6 +2830,18 @@ pub(crate) struct C11RecordWire {
 }
 
 pub(crate) fn c11_record_wire(fields: &[ForgeField], receiver: &str) -> C11RecordWire {
+    c11_record_wire_of(fields, receiver, &[])
+}
+
+/// [`c11_record_wire`] over fields that may hold an enum the machine declares
+/// (`static_enums`): it rides as the variant's declared name, quoted, as a saved
+/// state holds it. A value no variant names is one the writer refuses, as it
+/// refuses a real that is not finite.
+fn c11_record_wire_of(
+    fields: &[ForgeField],
+    receiver: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> C11RecordWire {
     let mut locals = String::new();
     let mut format = String::new();
     let mut args = String::new();
@@ -2906,10 +2918,27 @@ return false;\n    }}\n"
                 format.push_str(&format!("\\\"{id}\\\":%ld"));
                 args.push_str(&format!(", (long){receiver}->{id}"));
             }
-            SceType::Enum(_) => unreachable!(
-                "a C11 record admits only primitive fields, so no enum-typed \
-                 field reaches its wire"
-            ),
+            SceType::Enum(r) => {
+                let e = static_enum_of(static_enums, &r.alias);
+                let arms: String = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            "case {}: _name_{id} = \"\\\"{}\\\"\"; break; ",
+                            v.ident,
+                            filters::escape_c(v.declared.clone())
+                        )
+                    })
+                    .collect();
+                locals.push_str(&format!(
+                    "    const char *_name_{id} = NULL;\n    \
+switch ({receiver}->{id}) {{ {arms}default: break; }}\n    \
+if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
+                ));
+                format.push_str(&format!("\\\"{id}\\\":%s"));
+                args.push_str(&format!(", _name_{id}"));
+            }
         }
     }
     C11RecordWire {
@@ -2957,6 +2986,7 @@ pub fn build_c11_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
     csym_prefix: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> C11EventPayload {
     let inactive = || C11EventPayload {
         defs: String::new(),
@@ -3020,8 +3050,10 @@ pub fn build_c11_event_payload(
     // the tag enum. Field types resolve through `LangCtx::type_name`;
     // payload eligibility guarantees every field is primitive, so this
     // never reaches the Enum arm (which would need an out-of-scope
-    // include). Primitive by construction — see the Rust payload builder.
-    let l = LangCtx::primitive(crate::generator::Language::C11);
+    // include) — except under `sce-static`, whose machine declares the enums
+    // its variables hold in its own header, before this channel, and a payload
+    // field of one is held in that type. See the Rust payload builder.
+    let l = LangCtx::with_static_enums(crate::generator::Language::C11, static_enums);
     let mut structs = String::new();
     let mut tag_lines = format!("    {name_upper}_PAYLOAD_NONE = 0,\n");
     let mut union_lines = String::new();
@@ -3064,13 +3096,44 @@ pub fn build_c11_event_payload(
                     "sce_payload_read_bytes(&_fields, \"{id}\", out->{id}, sizeof(out->{id}), \
 &out->{id}_len)"
                 ),
-                // Payload eligibility keeps an enum-typed field out of this
-                // channel; `c_type` says the same thing by refusing to answer
-                // for one.
-                SceType::Enum(_) => unreachable!(
-                    "c11 payload lift called on SceType::Enum — payload \
-                     eligibility admits only primitive fields"
-                ),
+                // An enum is the machine's own, lifted from the variant's
+                // declared name; a name the enum does not declare is a payload
+                // that does not fit its schema, refused as a number out of
+                // range is. The text is read into a buffer the length of the
+                // longest name, so a longer one is refused before it is
+                // compared.
+                SceType::Enum(r) => {
+                    let e = static_enum_of(static_enums, &r.alias);
+                    let longest = e
+                        .variants
+                        .iter()
+                        .map(|v| v.declared.len())
+                        .max()
+                        .unwrap_or(0);
+                    let mut chain = String::new();
+                    for v in &e.variants {
+                        chain.push_str(&format!(
+                            "if (strcmp(_name_{id}, \"{}\") == 0) {{\n            \
+out->{id} = {};\n        }} else ",
+                            filters::escape_c(v.declared.clone()),
+                            v.ident
+                        ));
+                    }
+                    field_reads.push_str(&format!(
+                        "    {{\n        char _name_{id}[{}u];\n        \
+_refusal = sce_payload_read_text(&_fields, \"{id}\", _name_{id}, sizeof(_name_{id}));\n        \
+if (_refusal != NULL) {{\n            \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
+return false;\n        }}\n        \
+{chain}{{\n            \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' (%.32s) is not a variant of {alias}\",\n                     \
+_name_{id});\n            \
+return false;\n        }}\n    }}\n",
+                        longest + 1,
+                        alias = r.alias
+                    ));
+                    String::new()
+                }
                 SceType::String => {
                     // The machine owns where a lifted text lives — see
                     // `lift_storage`. Bounded by the field's own `sce:max-size`
@@ -3110,7 +3173,7 @@ return false;\n    }}\n"
             locals: wire_locals,
             format: wire_parts,
             args: wire_args,
-        } = c11_record_wire(&schema.fields, "payload");
+        } = c11_record_wire_of(&schema.fields, "payload", static_enums);
         lift_readers.push_str(&format!(
             "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
 with the sentence the caller raises as `error.execution`. */\n\

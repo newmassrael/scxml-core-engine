@@ -305,7 +305,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // records of numbers, bools and enums, lists of integers, bools and such records with
     // `<sce:append>`, `<sce:clear>` and `<foreach>`, guards, `<assign>`,
     // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
-    // numbers, bools and strings, a call of an imported algorithm, a host action
+    // numbers, bools, strings and enums, a call of an imported algorithm, a host action
     // whose arguments are typed expressions of them, the `<param>`s of a final's
     // `<donedata>` (and its inline `<content>`) and of a `<send>` to the machine's
     // own processor or to one the host is declared to serve (and the literal
@@ -315,7 +315,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a payload field that
-    // is bytes or an enum — is refused by
+    // is bytes — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
@@ -388,20 +388,34 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a <donedata> that names <param name=\"k\"> twice",
         ),
         (
-            "a typed payload with an enum field",
+            "a typed payload with a bytes field",
             r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="event-schema" src="schema_blob.scxml" as="Blob"/>
   <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
-  <state id="s"><transition event="view.shown" cond="_event.data.zoom &gt; 1" target="done"/></state>
+  <state id="s"><transition event="blob.sent" cond="_event.data.size &gt; 1" target="done"/></state>
   <final id="done"/>
 </scxml>
 "##
             .to_string(),
-            "an event whose payload carries `layout` of type enum:ViewMode",
+            "an event whose payload carries `frame` of type bytes",
         ),
     ];
+    // A schema with a bytes field, which no fixture of the tree declares.
+    let blob = (
+        "schema_blob.scxml".to_string(),
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_blob" sce:event-name="blob.sent">
+  <datamodel>
+    <data id="frame" sce:type="bytes" sce:direction="in"/>
+    <data id="size" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##
+        .to_string(),
+    );
     let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)
         .expect("the fixture directory")
         .map(|entry| entry.expect("an entry").path())
@@ -412,6 +426,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
                 std::fs::read_to_string(&path).expect("a fixture"),
             )
         })
+        .chain(std::iter::once(blob))
         .collect();
     let siblings: Vec<(&str, &str)> = siblings
         .iter()
@@ -444,8 +459,8 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
     // as it does for a record's field; one that does not is refused naming the
     // alias where it is lowered, and not left to stop the generator.
     //
-    // C11 has no lowering for the field and says so first, whatever the
-    // document imports.
+    // C11 held the same panic's place with its own refusal of every transition
+    // on such an event, until it held the field in the machine's enum too.
     //
     // A transition on the event that reads nothing from it still generates, so
     // the refusal is of the READ.
@@ -475,14 +490,7 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
   </state>
 </scxml>
 "##;
-    for (language, name) in [
-        ("kotlin", "Kotlin"),
-        ("rust", "Rust"),
-        ("cpp", "C++"),
-        ("go", "Go"),
-        ("python", "Python"),
-        ("c", "C11"),
-    ] {
+    for language in ["kotlin", "rust", "cpp", "go", "python", "c"] {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run_beside(
             &[
@@ -506,26 +514,18 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
             out.contains("generate/unsupported-feature"),
             "{language}: an unsupported feature:\n{out}"
         );
-        if language == "c" {
-            assert!(
-                out.contains(&format!("has no {name} lowering yet"))
-                    && out.contains("`layout` of type enum:ViewMode"),
-                "{language}: it names the enum field and the backend:\n{out}"
-            );
-        } else {
-            assert!(
-                out.contains("`layout`")
-                    && out.contains("the enum `ViewMode`")
-                    && out.contains("<sce:import kind=\\\"enum\\\" as=\\\"ViewMode\\\">"),
-                "{language}: it names the field and the import the document lacks:\n{out}"
-            );
-        }
+        assert!(
+            out.contains("`layout`")
+                && out.contains("the enum `ViewMode`")
+                && out.contains("<sce:import kind=\\\"enum\\\" as=\\\"ViewMode\\\">"),
+            "{language}: it names the field and the import the document lacks:\n{out}"
+        );
     }
 }
 
 #[test]
 fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_lowers_it() {
-    // The five backends that carry the typed channel hold the field in the type
+    // Every backend that carries the typed channel holds the field in the type
     // the machine declares for the enum (here named by a payload alone: no
     // variable of the machine holds it), lift it from the variant's declared
     // name and refuse a name the enum does not declare; the scenario
@@ -565,6 +565,9 @@ fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_l
         ("cpp", "h", "is not a variant of ViewMode"),
         ("go", "go", "is not a variant of ViewMode"),
         ("python", "py", "ViewModeEnum), (\"zoom\", int)"),
+        // The lift is in the machine's own file, beside the header that declares
+        // the enum before the channel names it.
+        ("c", "c", "is not a variant of ViewMode"),
     ] {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run_beside(

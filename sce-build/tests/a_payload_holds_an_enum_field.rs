@@ -150,6 +150,7 @@ fn an_enum_field_of_the_payload_is_compared_and_assigned_to_a_variable_of_its_en
         &["check", "-l", "go"],
         &["check", "-l", "python"],
         &["check", "-l", "cpp"],
+        &["check", "-l", "c11"],
     ] {
         let (ok, out) = run(args, &machine(true, body));
         assert!(ok, "{args:?}: an enum field of a payload:\n{out}");
@@ -163,7 +164,7 @@ fn the_enum_a_payload_field_holds_is_imported_under_the_alias_the_schema_writes(
     // none of: refused naming the alias, in every language that lowers a payload
     // enum, and not left to stop the generator.
     let body = r#"<assign location="total" expr="_event.data.count"/>"#;
-    for language in ["rust", "kotlin", "go", "python", "cpp"] {
+    for language in ["rust", "kotlin", "go", "python", "cpp", "c11"] {
         refused(
             &["check", "-l", language],
             &machine(false, body),
