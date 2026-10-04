@@ -56,6 +56,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_en
 mutation_targets backends/go/tests/integration/static_datamodel/static_list/static_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_overflow/static_overflow_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_payload/static_payload_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_real/static_real_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record/static_record_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_enum/static_record_enum_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_fields/static_record_fields_sm.go

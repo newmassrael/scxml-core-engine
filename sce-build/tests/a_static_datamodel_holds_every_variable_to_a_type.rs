@@ -311,7 +311,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // the host is declared to serve (and the literal `<content>` of one), an
     // `<invoke type="scxml">` handing numbers,
     // bools and strings, and an `<invoke>` the host is declared to serve. What is
-    // past that — a 32-bit real, a list of reals, a record with a string field, a bytes
+    // past that — a 32-bit real, a list of them, a record with a string field, a bytes
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a final's `<donedata>` with a `<content>`, a payload field that
@@ -332,8 +332,8 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             r#"<data id="frame" sce:type="bytes">"#,
         ),
         (
-            "a list of reals",
-            variable(r#"<data id="picked" sce:type="list&lt;float64&gt;" sce:capacity="3"/>"#),
+            "a list of 32-bit reals",
+            variable(r#"<data id="picked" sce:type="list&lt;float32&gt;" sce:capacity="3"/>"#),
             r#"<data id="picked" sce:type="list">"#,
         ),
         (

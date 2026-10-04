@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a 64-bit real is
+  a native field, and every expression over it — a product and a sum, a
+  quotient, a guard comparing it, a <foreach> summing a list of reals — is
+  lowered to native code with no script engine.
+
+  What the values are is chosen so that no engine's float parser, printer or
+  rounding mode can change them: 0.5, 1.5, 2.5 and every number they make by
+  doubling, adding and quartering are exact in binary. The one exception is
+  `tenth + 0.2`, which is exact only as IEEE 754 binary64 adds it
+  (0.30000000000000004): a machine that held a real as anything else, or
+  computed it in a wider type, would write a different number there.
+
+  Replayed by every backend that lowers the model
+  (sce-build/tests/fixtures/static_datamodel/scenarios/static_real.json).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="low" datamodel="sce-static" name="static_real">
+  <datamodel>
+    <data id="level" sce:type="float64" expr="0.5" sce:direction="out"/>
+    <data id="rate" sce:type="float64" expr="1.5"/>
+    <data id="total" sce:type="float64" expr="0" sce:direction="out"/>
+    <data id="tenth" sce:type="float64" expr="0.1"/>
+    <data id="drift" sce:type="float64" expr="0" sce:direction="out"/>
+    <data id="samples" sce:type="list&lt;float64&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="low">
+    <!-- A product and a sum: the level doubles and gains the rate. The level
+         is recorded after it moves; a fourth record finds the list full. -->
+    <transition event="grow" type="internal">
+      <assign location="level" expr="level * 2 + rate"/>
+      <sce:append target="samples" expr="level"/>
+    </transition>
+    <!-- A quotient. -->
+    <transition event="shrink" type="internal">
+      <assign location="level" expr="level / 4"/>
+    </transition>
+    <!-- The item alone: a sum of reals. -->
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="samples" item="v">
+        <assign location="total" expr="total + v"/>
+      </foreach>
+    </transition>
+    <!-- The one result that is exact only as binary64 adds it. -->
+    <transition event="drift" type="internal">
+      <assign location="drift" expr="tenth + 0.2"/>
+    </transition>
+    <!-- A guard comparing a real with a literal. -->
+    <transition event="rise" cond="level &gt; 7" target="high"/>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+  <state id="high">
+    <transition event="shrink" type="internal">
+      <assign location="level" expr="level / 4"/>
+    </transition>
+    <transition event="drop" cond="level &lt; 1" target="low"/>
+  </state>
+</scxml>

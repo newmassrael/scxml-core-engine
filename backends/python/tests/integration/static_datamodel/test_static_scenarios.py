@@ -181,6 +181,12 @@ def test_a_foreach_walks_a_list_variable() -> None:
     replay("static_foreach")
 
 
+# A 64-bit real is a native binary64 field: a product and a sum, a quotient, a
+# guard comparing it with a literal, and a `<foreach>` summing a list of reals.
+def test_a_real_is_a_native_binary64_field() -> None:
+    replay("static_real")
+
+
 # An append that fails ends its block, the list as it was.
 def test_an_append_that_fails_ends_its_block() -> None:
     replay("static_block_ends_list")

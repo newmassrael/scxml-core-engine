@@ -40,6 +40,7 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "static_real_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
@@ -303,6 +304,20 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AForeachWalksAListVariable) {
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_foreach", driver);
+}
+
+// A 64-bit real is a native double field: a product and a sum, a quotient, a
+// guard comparing it with a literal, and a `<foreach>` summing a list of reals.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARealIsANativeBinary64Field) {
+    using Machine = G::static_real::static_real;
+    Driver<Machine> driver({
+        {"level", [](const Machine &m) { return json(m.level()); }},
+        {"total", [](const Machine &m) { return json(m.total()); }},
+        {"drift", [](const Machine &m) { return json(m.drift()); }},
+        {"samples", [](const Machine &m) { return json(m.samples()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_real", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnAppendThatFailsEndsItsBlock) {

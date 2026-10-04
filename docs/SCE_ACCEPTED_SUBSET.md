@@ -3248,8 +3248,8 @@ the host is called only when none of them failed; otherwise `error.execution`
 is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_payload`, `static_enum`, `static_list`, `static_foreach`
-and `static_block_ends_list` against the generated machines (an
+`static_block_ends`, `static_payload`, `static_enum`, `static_list`, `static_foreach`,
+`static_real` and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
@@ -3315,7 +3315,7 @@ machines import, read from their `<sce:import kind="algorithm">`, and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
-`static_list`, `static_foreach`, `static_block_ends_list`,
+`static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
 read back from `DonedataAtFinal`) and `static_send_params` against them (an event's `data` goes in as the
@@ -3389,7 +3389,7 @@ before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
-`static_list`, `static_foreach`, `static_block_ends_list`,
+`static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record`, `sync_client`, `static_send_params` and `static_donedata` (the
 done event's pairs are read back from the engine's `done_data`) against
@@ -3406,16 +3406,16 @@ variables of the integer types, `bool`, an enum, a string and a 64-bit real, a t
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools and strings, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
-record whose fields are numbers, bools and enums, a list of integers, bools or
-such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
+record whose fields are numbers, bools and enums, a list of integers, bools, 64-bit
+reals or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor or to one the host serves (`--host-processor`) with its `<param>`s or its
 literal `<content>` (the text it spells, finished at build time and copied into the
 event's data, as on every other backend), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
-the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real, bytes and a record
-with a string field, a list of reals, a `<send>` to
+the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real and a list of
+them, bytes and a record with a string field, a record's real field, a `<send>` to
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>`, a final's
@@ -3529,7 +3529,8 @@ machine's own `<machine>_in_state(sm, <ENUMERATOR>)`, which the template writes
 from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
 `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_list`, `static_foreach`, `static_block_ends_list`,
+`static_block_ends`, `static_list`, `static_foreach`, `static_real` (a real is a
+`double` field, compared as the 64 bits it is), `static_block_ends_list`,
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
 `static_string_capacity`, `static_donedata` (the done data read through

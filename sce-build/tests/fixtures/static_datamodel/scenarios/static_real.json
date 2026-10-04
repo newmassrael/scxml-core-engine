@@ -1,0 +1,35 @@
+{
+  "machine": "static_real",
+  "about": "A 64-bit real is a native field: a product and a sum, a quotient, a guard comparing it with a literal, and a <foreach> summing a list of reals are lowered with no script engine. Every value is exact in binary except `0.1 + 0.2`, which is the one number binary64 addition writes as 0.30000000000000004. Whole-valued reals are written with a fraction (0.0) so that a reader that tells an integer from a real reads the expectation as the real it is. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the variables start at their declared values",
+      "expect": { "state": "low", "variables": { "level": 0.5, "total": 0.0, "drift": 0.0, "samples": [], "errors": 0 } } },
+
+    { "note": "0.5 * 2 + 1.5, recorded",
+      "event": "grow", "expect": { "variables": { "level": 2.5, "samples": [2.5] } } },
+    { "note": "2.5 * 2 + 1.5",
+      "event": "grow", "expect": { "variables": { "level": 6.5, "samples": [2.5, 6.5] } } },
+    { "note": "6.5 * 2 + 1.5: the list is full at three",
+      "event": "grow", "expect": { "variables": { "level": 14.5, "samples": [2.5, 6.5, 14.5], "errors": 0 } } },
+    { "note": "the level moves to 30.5, the fourth record finds the list full: the append is skipped and raises error.execution, which the machine counts",
+      "event": "grow", "expect": { "variables": { "level": 30.5, "samples": [2.5, 6.5, 14.5], "errors": 1 } } },
+
+    { "note": "2.5 + 6.5 + 14.5",
+      "event": "sum", "expect": { "variables": { "total": 23.5 } } },
+    { "note": "binary64 adds 0.1 and 0.2 to 0.30000000000000004, not 0.3",
+      "event": "drift", "expect": { "variables": { "drift": 0.30000000000000004 } } },
+
+    { "note": "30.5 / 4",
+      "event": "shrink", "expect": { "variables": { "level": 7.625 } } },
+    { "note": "7.625 is greater than 7, so the guard takes the transition",
+      "event": "rise", "expect": { "state": "high" } },
+    { "note": "7.625 / 4",
+      "event": "shrink", "expect": { "state": "high", "variables": { "level": 1.90625 } } },
+    { "note": "1.90625 is not less than 1: the guard is false and `drop` is not taken",
+      "event": "drop", "expect": { "state": "high" } },
+    { "note": "1.90625 / 4",
+      "event": "shrink", "expect": { "state": "high", "variables": { "level": 0.4765625 } } },
+    { "note": "0.4765625 is less than 1",
+      "event": "drop", "expect": { "state": "low" } }
+  ]
+}

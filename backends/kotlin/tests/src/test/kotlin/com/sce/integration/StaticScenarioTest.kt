@@ -31,6 +31,7 @@ import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
+import com.sce.integration.static_real.StaticRealStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
@@ -385,6 +386,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_foreach"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRealIsANativeBinary64Field() {
+        val sm = StaticRealStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_real"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

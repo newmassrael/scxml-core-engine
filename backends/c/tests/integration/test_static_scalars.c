@@ -86,6 +86,7 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "static_real_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
@@ -236,7 +237,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // variable by its, the lists and records by theirs, and the replay of its
 // scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
 // that has one.
-#define STATIC_SCENARIO_DONE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE)                                         \
+#define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST)                        \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -322,7 +323,9 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               M##_read_record_field,                                                   \
                                               M##_read_record_text,                                                    \
                                               M##_read_record_count,                                                   \
-                                              DONE};                                                                   \
+                                              DONE,                                                                    \
+                                              REAL,                                                                    \
+                                              REAL_LIST};                                                              \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -335,6 +338,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         }                                                                                                              \
         return bad;                                                                                                    \
     }
+
+// A machine that publishes no real: DONE as above, and REAL and REAL_LIST — the
+// readers of a real variable and of a list of reals — left unset.
+#define STATIC_SCENARIO_DONE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE)                                         \
+    STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, NULL, NULL)
 
 // A machine with no `<donedata>`.
 #define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                                    \
@@ -620,6 +628,51 @@ static const variable_t foreach_variables[] = {
 static const list_variable_t foreach_lists[] = {{"picked", static_foreach_read_list_picked}, {NULL, NULL}};
 STATIC_SCENARIO(static_foreach, foreach_states, foreach_variables, NULL, foreach_lists, no_records)
 
+// static_real: a 64-bit real is a `double` field of the policy, and a list of
+// reals a bounded buffer of them. Their readers answer the double itself, which
+// the scenario compares as the 64 bits it is, and `errors` is the integer the
+// full list's refused append is counted in.
+VARIABLE_READER(static_real, errors)
+
+static bool static_real_read_real(void *sm, const char *name, double *out) {
+    const static_real_t *machine = (const static_real_t *)sm;
+    if (strcmp(name, "level") == 0) {
+        *out = static_real_get_level(machine);
+        return true;
+    }
+    if (strcmp(name, "total") == 0) {
+        *out = static_real_get_total(machine);
+        return true;
+    }
+    if (strcmp(name, "drift") == 0) {
+        *out = static_real_get_drift(machine);
+        return true;
+    }
+    return false;
+}
+
+static bool static_real_read_real_list(void *sm, const char *name, double *out, size_t cap, size_t *len) {
+    if (strcmp(name, "samples") != 0) {
+        return false;
+    }
+    const sce_forge_double_view_t view = static_real_get_samples((const static_real_t *)sm);
+    for (size_t i = 0; i < view.len && i < cap; ++i) {
+        out[i] = view.data[i];
+    }
+    *len = view.len;
+    return view.len <= cap;
+}
+
+static const name_value_t real_states[] = {
+    {"low", STATIC_REAL_STATE_LOW},
+    {"high", STATIC_REAL_STATE_HIGH},
+};
+static const variable_t real_variables[] = {
+    {"errors", static_real_read_errors},
+};
+STATIC_SCENARIO_FULL(static_real, real_states, real_variables, NULL, no_lists, no_records, NULL, static_real_read_real,
+                     static_real_read_real_list)
+
 // static_block_ends_list: a full list ends the block it is appended to.
 VARIABLE_READER(static_block_ends_list, afterAppend)
 VARIABLE_READER(static_block_ends_list, errors)
@@ -778,6 +831,7 @@ int main(void) {
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_list_scenario("static_list", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
+    bad |= static_real_scenario("static_real", 13);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);

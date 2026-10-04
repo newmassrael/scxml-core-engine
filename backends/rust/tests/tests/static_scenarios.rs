@@ -50,6 +50,9 @@ use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_real_sm::{
+    StaticRealPersist, StaticRealPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_enum_sm::{
     StaticRecordEnumPersist, StaticRecordEnumPolicy,
 };
@@ -331,6 +334,17 @@ fn static_foreach_walks_a_list_and_a_failing_body_ends_the_block() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_foreach.json"
+        ),
+    );
+}
+
+#[test]
+fn static_real_is_a_native_binary64_field() {
+    replay(
+        Engine::new(StaticRealPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_real.json"
         ),
     );
 }

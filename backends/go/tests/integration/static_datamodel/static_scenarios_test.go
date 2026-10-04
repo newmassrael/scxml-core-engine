@@ -44,6 +44,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
@@ -377,6 +378,20 @@ func TestAForeachWalksAListVariable(t *testing.T) {
 		"visited":   func() any { return policy.Visited() },
 		"finished":  func() any { return policy.Finished() },
 		"errors":    func() any { return policy.Errors() },
+	}))
+}
+
+// A 64-bit real is a native float64 field: a product and a sum, a quotient, a
+// guard comparing it with a literal, and a `<foreach>` summing a list of reals.
+func TestARealIsANativeBinary64Field(t *testing.T) {
+	policy := static_real.NewStaticRealPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_real", drive[static_real.StaticRealState, static_real.StaticRealEvent](&policy, map[string]func() any{
+		"level":   func() any { return policy.Level() },
+		"total":   func() any { return policy.Total() },
+		"drift":   func() any { return policy.Drift() },
+		"samples": func() any { return policy.Samples() },
+		"errors":  func() any { return policy.Errors() },
 	}))
 }
 

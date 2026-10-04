@@ -3704,7 +3704,9 @@ impl StaticTarget for CTarget {
             if let Some(elem) = value_type.list_elem() {
                 return !(v.capacity.is_some()
                     && match elem {
-                        crate::forge::model::ListElemType::Scalar(ty) => held_scalar(ty),
+                        crate::forge::model::ListElemType::Scalar(ty) => {
+                            held_scalar(ty) || matches!(ty, SceType::Float64)
+                        }
                         crate::forge::model::ListElemType::Record { .. } => true,
                     });
             }
@@ -3963,9 +3965,15 @@ impl StaticTarget for CTarget {
         unreachable!("a C11 list is declared through `bounded_list`")
     }
     // The library's borrowed view over the elements — `{data, len}` — which a host
-    // reads and cannot grow past the bound the machine keeps.
+    // reads and cannot grow past the bound the machine keeps. It is named by the
+    // element's C type, as an algorithm's list parameter names it, and not by the
+    // document's type name: the two agree for an integer and differ for a real
+    // (`float64` is a `double`).
     fn list_view(&self, elem: &SceType) -> Option<String> {
-        Some(format!("sce_forge_{}_view_t", elem.as_attr()))
+        Some(format!(
+            "sce_forge_{}_view_t",
+            crate::forge::generator::c_type(elem).trim_end_matches("_t")
+        ))
     }
     fn record_list_type(&self, _record: &str) -> String {
         unreachable!("a C11 list is declared through `bounded_record_list`")

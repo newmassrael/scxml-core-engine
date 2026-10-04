@@ -16,8 +16,14 @@
 // `expect` for any other object that spelled `state`. It reads what a step
 // carries — `event`, an event's `data` as the compact JSON text every producer
 // fills it with, whether the step `dropped` it, `expect.state`, `expect.ended`,
-// `expect.variables` — and stops, naming it, at what it does not (a real
-// number), rather than passing a scenario it did not replay.
+// `expect.variables` — and stops, naming it, at what it does not, rather than
+// passing a scenario it did not replay.
+//
+// A number spelled with a fraction or an exponent (`0.0`, `0.5`, `1e21`) is a
+// real, and one without is an integer, so `0` and `0.0` are two different
+// expectations here as they are for every engine that reads the file. A real is
+// compared as the 64 bits it is: the expected value is derived from the
+// document, and `0.1 + 0.2` is not `0.3`.
 
 #ifndef SCE_C_TESTS_STATIC_SCENARIO_H
 #define SCE_C_TESTS_STATIC_SCENARIO_H
@@ -75,6 +81,15 @@ typedef struct {
     // object of its `<donedata>` pairs. A scenario states it as an object, and a
     // driver whose machine has no `<donedata>` may leave this unset.
     const char *(*done_data)(void *sm);
+    // The value of a real variable, as the double it is. False for a name the
+    // machine publishes no real of. A scenario states such a value with a
+    // fraction or an exponent, which is what tells it from an integer, and a
+    // driver with no real may leave this unset.
+    bool (*real)(void *sm, const char *name, double *out);
+    // The elements of a list of reals — at most `cap` of them written to `out` —
+    // and how many it holds in `*len`. False for a name the machine publishes no
+    // list of reals of. A driver with no list of reals may leave this unset.
+    bool (*real_list)(void *sm, const char *name, double *out, size_t cap, size_t *len);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -195,6 +210,45 @@ static bool sce_scenario_skip_value(sce_scenario_cursor_t *c) {
         }
         return true;
     }
+}
+
+// Whether the number at the cursor is spelled as a real: with a fraction or an
+// exponent after its digits.
+static bool sce_scenario_is_real(sce_scenario_cursor_t *c) {
+    sce_scenario_space(c);
+    const char *p = c->at;
+    if (*p == '-' || *p == '+') {
+        ++p;
+    }
+    while (*p >= '0' && *p <= '9') {
+        ++p;
+    }
+    return *p == '.' || *p == 'e' || *p == 'E';
+}
+
+// A real, as the double its text is the nearest to. `strtod` reads the "C"
+// locale's decimal point, which this program never leaves.
+static bool sce_scenario_real(sce_scenario_cursor_t *c, double *out) {
+    sce_scenario_space(c);
+    char *end = NULL;
+    const double value = strtod(c->at, &end);
+    if (end == c->at) {
+        return false;
+    }
+    c->at = end;
+    *out = value;
+    return true;
+}
+
+// Whether two reals are the same 64 bits: `==` would call -0.0 and 0.0 one value
+// and NaN none.
+static bool sce_scenario_same_real(double got, double want) {
+    _Static_assert(sizeof(double) == sizeof(uint64_t), "a double is 64 bits");
+    uint64_t got_bits = 0;
+    uint64_t want_bits = 0;
+    memcpy(&got_bits, &got, sizeof(got_bits));
+    memcpy(&want_bits, &want, sizeof(want_bits));
+    return got_bits == want_bits;
 }
 
 // An integer, or true / false as 1 / 0. A real number is refused, not rounded.
@@ -545,6 +599,54 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                             }
                             continue;
                         }
+                        if (sce_scenario_is_real(c)) {
+                            // A list of reals: each element spelled with a fraction or an
+                            // exponent, compared as the 64 bits it is.
+                            double want_reals[MAX_LIST];
+                            size_t want_real_len = 0;
+                            for (;;) {
+                                if (want_real_len == MAX_LIST || !sce_scenario_real(c, &want_reals[want_real_len])) {
+                                    return sce_scenario_fail(d, step,
+                                                             "a list of reals holds more than the reader keeps, or "
+                                                             "an element that is not a real");
+                                }
+                                ++want_real_len;
+                                if (sce_scenario_take(c, ']')) {
+                                    break;
+                                }
+                                if (!sce_scenario_take(c, ',')) {
+                                    return sce_scenario_fail(d, step, "a list is not well formed");
+                                }
+                            }
+                            double got_reals[MAX_LIST];
+                            size_t got_real_len = 0;
+                            if (d->real_list == NULL ||
+                                !d->real_list(d->sm, name, got_reals, MAX_LIST, &got_real_len)) {
+                                (void)snprintf(message, sizeof(message), "the machine publishes no list of reals `%s`",
+                                               name);
+                                bad |= sce_scenario_fail(d, step, message);
+                            } else if (got_real_len != want_real_len) {
+                                (void)snprintf(message, sizeof(message), "`%s` holds %zu element(s), want %zu", name,
+                                               got_real_len, want_real_len);
+                                bad |= sce_scenario_fail(d, step, message);
+                            } else {
+                                for (size_t i = 0; i < want_real_len; ++i) {
+                                    if (!sce_scenario_same_real(got_reals[i], want_reals[i])) {
+                                        (void)snprintf(message, sizeof(message), "`%s`[%zu] is %.17g, want %.17g", name,
+                                                       i, got_reals[i], want_reals[i]);
+                                        bad |= sce_scenario_fail(d, step, message);
+                                        break;
+                                    }
+                                }
+                            }
+                            if (sce_scenario_take(c, '}')) {
+                                break;
+                            }
+                            if (!sce_scenario_take(c, ',')) {
+                                return sce_scenario_fail(d, step, "`variables` is not well formed");
+                            }
+                            continue;
+                        }
                         if (!sce_scenario_take(c, ']')) {
                             for (;;) {
                                 if (want_len == MAX_LIST || !sce_scenario_number(c, &want_list[want_len])) {
@@ -568,6 +670,10 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         bool found = d->list != NULL && d->list(d->sm, name, got_list, MAX_LIST, &got_len);
                         if (!found && want_len == 0 && d->record_count != NULL) {
                             found = d->record_count(d->sm, name, &got_len);
+                        }
+                        if (!found && want_len == 0 && d->real_list != NULL) {
+                            double none[MAX_LIST];
+                            found = d->real_list(d->sm, name, none, MAX_LIST, &got_len);
                         }
                         if (!found) {
                             (void)snprintf(message, sizeof(message), "the machine publishes no list `%s`", name);
@@ -607,6 +713,29 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         } else if (strcmp(got_text, want_text) != 0) {
                             (void)snprintf(message, sizeof(message), "`%s` is `%s`, want `%s`", name, got_text,
                                            want_text);
+                            bad |= sce_scenario_fail(d, step, message);
+                        }
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
+                    if (sce_scenario_is_real(c)) {
+                        double want_real = 0;
+                        double got_real = 0;
+                        if (!sce_scenario_real(c, &want_real)) {
+                            return sce_scenario_fail(d, step, "a real variable's value is not a number");
+                        }
+                        if (d->real == NULL || !d->real(d->sm, name, &got_real)) {
+                            (void)snprintf(message, sizeof(message), "the machine publishes no real variable `%s`",
+                                           name);
+                            bad |= sce_scenario_fail(d, step, message);
+                        } else if (!sce_scenario_same_real(got_real, want_real)) {
+                            (void)snprintf(message, sizeof(message), "`%s` is %.17g, want %.17g", name, got_real,
+                                           want_real);
                             bad |= sce_scenario_fail(d, step, message);
                         }
                         if (sce_scenario_take(c, '}')) {

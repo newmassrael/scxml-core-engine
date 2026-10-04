@@ -1,0 +1,47 @@
+# Mutation cases for "a real the C11 scenario harness compares is read and
+# compared as the 64 bits it is" (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# `static_real`).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c_scenario_compares_a_real_as_the_bits_it_is_ctest.cases`.
+#
+# `scenarios/static_real.json` states every real with a fraction or an exponent
+# (`0.0`, `0.5`, `0.30000000000000004`), and the harness reads that spelling as a
+# real and compares it with the machine's `double` by its bits. The scenario is
+# chosen so that the answer is exact in binary except for `0.1 + 0.2`, which
+# binary64 addition writes as 0.30000000000000004.
+#
+# What this does NOT hold, stated because it was measured rather than assumed: a
+# comparison that is loosened to a tolerance, or that skips the elements of a
+# list, cannot be told from the exact one by a machine that answers correctly,
+# because the scenario and the machine agree to the bit. Those two mutations were
+# written first and cannot be killed by this oracle, so they are not cases here.
+# What does hold the comparison is the other direction, run by hand when the
+# harness was written: an expectation one unit in the last place wrong
+# (14.500000000000002 for 14.5) makes `static_real` fail at that element, naming
+# it. Each case below is a way the harness stops reading a real as the real it is.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets backends/c/tests/integration/static_scenario.h backends/c/tests/integration/test_static_scalars.c
+mutation_oracles sce-build/tests/fixtures/static_datamodel/scenarios/static_real.json
+
+mutation_case "an expected real is read at 32-bit precision" <<'PY'
+edit("backends/c/tests/integration/static_scenario.h",
+     "    const double value = strtod(c->at, &end);",
+     "    const double value = (double)(float)strtod(c->at, &end);")
+PY
+
+mutation_case "a number spelled with a fraction is never read as a real" <<'PY'
+edit("backends/c/tests/integration/static_scenario.h",
+     "    return *p == '.' || *p == 'e' || *p == 'E';",
+     "    return false;")
+PY
+
+mutation_case "the machine's list of reals answers no elements" <<'PY'
+edit("backends/c/tests/integration/test_static_scalars.c",
+     "    *len = view.len;\n    return view.len <= cap;",
+     "    *len = 0;\n    return view.len <= cap;")
+PY
