@@ -3263,7 +3263,11 @@ an argument whose computation failed (an exception, as every checked operation
 is) costs the call and not the block: the call stands in a `try`, the host is not
 called, and `error.execution` is raised in its place, as on Kotlin, Rust, Go and
 C++. A call that reads the event's payload sits in a block that checks the
-delivery carried one. A host-run, a hybrid and a mesh `<invoke>` and `bytes` are
+delivery carried one. An `<invoke>` the host runs reads its `<param>`s from the
+policy's attributes when it starts, into the request's `params` (the payload
+rendered as text) and `event_data` (its JSON), a value that failed left out and
+reported (5.7.1); `test_static_host_params.py` drives `statechart_static_host_params`
+and holds the value on the wire. A hybrid and a mesh `<invoke>` and `bytes` are
 not lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name

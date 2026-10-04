@@ -426,15 +426,15 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 #[test]
 fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
     // An `<invoke>` the host serves (`--host-invoker`) carries `<param>`s that
-    // are typed expressions of the machine's own fields. Rust, Kotlin, Go and C++
-    // read them there when the invocation starts; Python and C11 do not yet, and
-    // refuse the invoke by name rather than hand the host a request without them.
+    // are typed expressions of the machine's own fields. Rust, Kotlin, Go, C++ and
+    // Python read them there when the invocation starts; C11 does not yet, and
+    // refuses the invoke by name rather than hand the host a request without them.
     let document = std::fs::read_to_string(
         repo_root()
             .join("sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"),
     )
     .expect("the host invoke fixture");
-    for lang in ["rust", "kotlin", "go", "cpp"] {
+    for lang in ["rust", "kotlin", "go", "cpp", "python"] {
         let (ok, out) = run(
             &[
                 "check",
@@ -449,7 +449,7 @@ fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
         );
         assert!(ok, "{lang}: starts an invoke the host serves:\n{out}");
     }
-    for (lang, name) in [("python", "Python"), ("c11", "C11")] {
+    for (lang, name) in [("c11", "C11")] {
         let (ok, out) = run(
             &["check", "-l", lang, "--host-invoker", "x-sce-host"],
             &document,

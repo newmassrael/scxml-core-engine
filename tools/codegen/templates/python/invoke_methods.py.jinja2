@@ -422,7 +422,9 @@
 {% endif %}
                 _host_src = {{ inv.src | default('', true) | py_string_literal }}
                 _host_content = {{ inv.content | default('', true) | py_string_literal }}
-{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{# A `datamodel="sce-static"` param is native code (`Param::native_value`) over
+   the policy's own attributes, so it asks no script engine for its value. #}
+{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | rejectattr('is_static_literal') | rejectattr('native_value') | list | length > 0) %}
 {% if host_evaluates %}
                 # W3C SCXML 6.4.1: what the request says is evaluated now, when
                 # the invocation starts. An attribute that cannot be evaluated
@@ -528,9 +530,28 @@
                 _host_payload: dict = {}
                 _host_repeats: dict = {}
 {% for param in inv.params %}
+{% if param.native_value %}
+{# `datamodel="sce-static"`: the value is native code over the policy's own
+   attributes, read now. A checked operation that fails raises
+   `AlgorithmFailure`: the evaluation that failed, so the pair is left out and
+   reported (W3C SCXML 5.7.1) while the invocation still starts. The text is
+   the payload's own rendering, as a `<send>`'s host params are. #}
+                try:
+                    _native = ({{ param.native_value }}).to_python()
+                except sce_algorithm.AlgorithmFailure:
+                    self._raise_error_execution(
+                        engine, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate"
+                    )
+                else:
+                    self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, _native)
+                    _host_params.setdefault({{ param.name | py_string_literal }}, []).extend(
+                        self._wire_params_from_payload({ {{ param.name | py_string_literal }}: _native })[{{ param.name | py_string_literal }}]
+                    )
+{% else %}
                 _host_params.setdefault({{ param.name | py_string_literal }}, []).append({{ param.static_value | py_string_literal }})
 {% if not param.envelope_metadata %}
                 self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})
+{% endif %}
 {% endif %}
 {% endfor %}
                 _host_event_data = self._event_data_text(_host_payload, "", bool(_host_payload))

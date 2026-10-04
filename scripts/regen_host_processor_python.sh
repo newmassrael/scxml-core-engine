@@ -65,6 +65,13 @@ HOST_INVOKER="x-sce-host"
 "$CODEGEN" generate "$INVOKER_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-invoker "$HOST_INVOKER"
 
+# SCE Accepted Subset §2.15: the typed `<param>` of a host-served `<send>` and
+# `<invoke>` of a `datamodel="sce-static"` machine — the one fixture that needs
+# BOTH declarations, because it sends to the host and invokes it.
+STATIC_PARAMS_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml"
+"$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
+
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
 for src in "$TMP"/*_sm.py; do
@@ -77,3 +84,4 @@ echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
