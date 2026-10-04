@@ -1091,6 +1091,40 @@ another document: the flag or field must exist, a flag must be multi-bit, and
 every value a predicate looks for must fit the identifier's width — a value it
 cannot hold makes the predicate false for every message.
 
+**An identifier can leave flags out of its field.** A field that is itself a
+flags carrier is one byte of several parts, and not all of them tell a kind.
+When a chain ends on a flag of its entries (`terminate-on="entry-flag"`), that
+continuation flag is set on every entry but the last, so the byte that holds
+the identifier is a different value for the same kind depending on where in the
+chain the entry stands. `entry-id-except` names the flags the identifier does
+not include:
+
+```xml
+<sce:tlv-chain id="extensions" type="entry" sce:byte="1" max-depth="4"
+               on-overflow="reject" terminate-on="entry-flag"
+               entry-flag-name="Z"
+               entry-id="header" entry-id-except="header.Z"/>
+<sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+           sce:present-if="!extensions.has(0x12)"/>
+```
+
+The identifier is the field with those bits cleared, so `has(0x12)` is true for
+an entry whose header is `0x12` and for one whose header is `0x92`, and
+`!has(0x12)` is true for an entry that shares the low bits but not the rest —
+a different kind. `entry-id` names the whole field (`header`, not
+`header.ext_id`), and `entry-id-except` is a whitespace-separated list of
+`<field>.<flag>`, each a flag of that same field. Which bits the flags occupy is
+read from the entry codec's own layout, so the mask is not written a second time
+and cannot disagree with the flags. Two refusals are specific to it: a flag the
+field does not declare, and a value a predicate looks for that has one of the
+left-out bits set (the refusal names the bit and the value without it). A chain
+without the attribute reads its identifier whole, and its generated code is
+unchanged.
+
+`!(<clause> || <clause>)` is not a clause: `!` negates one clause, and the
+grammar has no `&&` to spell the group as `!<clause> && !<clause>`. A group that
+lists several spellings of one identifier is what `entry-id-except` is for.
+
 **Decode and encode read the same predicate.** The decoder binds one boolean
 per identifier a predicate looks for, right after the chain, and each gated
 field tests it. The encoder binds the same booleans from the value it is

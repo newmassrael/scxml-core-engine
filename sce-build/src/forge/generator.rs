@@ -4853,8 +4853,10 @@ fn render_codec(
 
     // A `<sce:tlv-chain entry-id="…">` names a flag or a field of the entry
     // codec it imports, and the values a `<chain>.has(…)` predicate looks
-    // for must be values that identifier can hold.
+    // for must be values that identifier can hold. The bits a chain leaves
+    // out of that identifier are read from the same resolution, once, here.
     validate_cross_codec_chain_entry_id(m, imports)?;
+    let chain_masks = chain_identifier_masks(m, imports);
 
     // RFC flag inversion + caller-tag variant shape: reject the
     // variant-arm-body-is-caller-tag-dispatcher configuration upfront
@@ -5319,7 +5321,8 @@ fn render_codec(
                     // A later field gated on `<chain>.has(…)` reads a boolean
                     // local that follows the chain (`with_chain_has_decls`);
                     // nothing is appended when no predicate asks.
-                    let decode_stmt = with_chain_has_decls(decode_stmt, f, &m.fields, lang);
+                    let decode_stmt =
+                        with_chain_has_decls(decode_stmt, f, &m.fields, &chain_masks, lang);
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     let encode_block = if f.present_if.is_some() {
                         tlv_chain_streaming_encode_block_gated(
@@ -6235,7 +6238,7 @@ fn render_codec(
     // byte-stable. `encode_can_refuse` makes the infallible-looking facades
     // (`encode_to_vec` and kin) fallible for that codec alone.
     let (present_if_encode_prologue, encode_can_refuse) =
-        present_if_chain_encode_prologue(&m.fields, lang);
+        present_if_chain_encode_prologue(&m.fields, &chain_masks, lang);
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),
@@ -7315,15 +7318,22 @@ fn validate_cross_codec_chain_entry_id(
             Some(carrier) => format!("{carrier}.{}", identifier.name),
             None => identifier.name.clone(),
         };
-        let refuse = |rule: String| {
+        let spelled_except = identifier
+            .except
+            .iter()
+            .map(|flag| format!("{}.{flag}", identifier.name))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let refuse_attr = |attr: &str, value: &str, rule: String| {
             ForgeError::Validation(Box::new(ValidationError::AttributeRuleViolated {
                 element: format!("<sce:tlv-chain id='{}'>", chain.id),
-                attr: "entry-id".into(),
-                value: spelled.clone(),
+                attr: attr.into(),
+                value: value.to_string(),
                 rule,
             }))
             .at_line(chain.line)
         };
+        let refuse = |rule: String| refuse_attr("entry-id", &spelled, rule);
 
         // (4) Nothing follows a chain that ends only with the wire.
         if matches!(terminate_on, TlvTerminateStrategy::ExhaustOrDepth) {
@@ -7336,113 +7346,317 @@ fn validate_cross_codec_chain_entry_id(
             )));
         }
 
-        let Some(alias) = chain.tlv_chain_body_alias.as_deref() else {
-            continue;
-        };
-        let Some(entry_codec) = imports.iter().find(|i| i.alias == alias) else {
-            continue;
-        };
-        if entry_codec.codec_fields.is_empty() {
-            // The imported codec did not parse; its own error is the one to read.
-            continue;
-        }
-        let entry_name = &entry_codec.document_name;
-
-        // (1) + (2) Resolve the identifier to the number of bits it holds.
-        let bits: u32 = match &identifier.carrier {
-            Some(carrier) => {
-                let Some(carrier_field) =
-                    entry_codec.codec_fields.iter().find(|f| &f.id == carrier)
-                else {
-                    let candidates: Vec<&str> = entry_codec
-                        .codec_fields
-                        .iter()
-                        .filter(|f| f.is_flags_carrier())
-                        .map(|f| f.id.as_str())
-                        .collect();
-                    return Err(refuse(format!(
-                        "the entry codec '{entry_name}' declares no flags carrier \
-                         '{carrier}' (flags carriers: {})",
-                        candidates.join(", ")
-                    )));
-                };
-                let Some(flag) = carrier_field
-                    .flags
-                    .iter()
-                    .find(|f| f.name == identifier.name)
-                else {
-                    let candidates: Vec<String> = carrier_field
-                        .flags
-                        .iter()
-                        .map(|f| format!("{carrier}.{}", f.name))
-                        .collect();
-                    return Err(refuse(format!(
-                        "the carrier '{carrier}' of the entry codec '{entry_name}' declares \
-                         no flag '{}' (flags: {})",
-                        identifier.name,
-                        candidates.join(", ")
-                    )));
-                };
-                if flag.width <= 1 {
-                    return Err(refuse(format!(
-                        "'{carrier}.{}' is a one-bit flag, which tells two kinds of entry \
-                         apart at most; an identifier is a multi-bit flag or an integer \
-                         field of '{entry_name}'",
-                        identifier.name
-                    )));
-                }
-                flag.width
+        let entry_codec = chain
+            .tlv_chain_body_alias
+            .as_deref()
+            .and_then(|alias| imports.iter().find(|i| i.alias == alias))
+            .filter(|entry_codec| !entry_codec.codec_fields.is_empty());
+        let Some(entry_codec) = entry_codec else {
+            if identifier.except.is_empty() {
+                // The imported codec did not parse; its own error is the one to read.
+                continue;
             }
-            None => {
-                let Some(entry_field) = entry_codec
-                    .codec_fields
-                    .iter()
-                    .find(|f| f.id == identifier.name)
-                else {
-                    let candidates: Vec<&str> = entry_codec
-                        .codec_fields
-                        .iter()
-                        .filter(|f| f.sce_type.int_bit_width().is_some())
-                        .map(|f| f.id.as_str())
-                        .collect();
-                    return Err(refuse(format!(
-                        "the entry codec '{entry_name}' declares no field '{}' \
-                         (integer fields: {})",
-                        identifier.name,
-                        candidates.join(", ")
-                    )));
-                };
-                let Some(width) = entry_field.sce_type.int_bit_width() else {
-                    return Err(refuse(format!(
-                        "the field '{}' of the entry codec '{entry_name}' is not an \
-                         unsigned integer, so it cannot identify a kind of entry",
-                        identifier.name
-                    )));
-                };
-                if entry_field.present_if.is_some() {
-                    return Err(refuse(format!(
-                        "the field '{}' of the entry codec '{entry_name}' is gated by \
-                         sce:present-if, so an entry may carry no identifier at all",
-                        identifier.name
-                    )));
-                }
-                width
+            // Which bits an identifier leaves out is read from the entry
+            // codec, so without it the chain cannot be lowered at all. Say so
+            // here rather than generate a predicate that reads the whole byte.
+            return Err(refuse_attr(
+                "entry-id-except",
+                &spelled_except,
+                format!(
+                    "the entry codec of the chain '{}' is not available (not imported, or \
+                     its own document is refused), and the bits the listed flags occupy are \
+                     read from it",
+                    chain.id
+                ),
+            ));
+        };
+
+        // (1) + (2) Resolve the identifier against the entry codec.
+        let resolved = match resolve_chain_entry_identifier(identifier, entry_codec) {
+            Ok(resolved) => resolved,
+            Err(EntryIdentifierRefusal::Identifier(rule)) => return Err(refuse(rule)),
+            Err(EntryIdentifierRefusal::Except(rule)) => {
+                return Err(refuse_attr("entry-id-except", &spelled_except, rule))
             }
         };
 
-        // (3) Every value some predicate looks for fits the identifier.
+        // (3) Every value some predicate looks for is one an entry can have.
         for value in chain_has_values(&parent.fields, &chain.id) {
-            if bits < 64 && value >> bits != 0 {
-                return Err(refuse(format!(
-                    "a predicate looks for the identifier {value} in the chain '{}', but \
-                     '{spelled}' holds {bits} bits (0..={}), so no entry can have it",
-                    chain.id,
-                    (1u64 << bits) - 1
-                )));
+            if let Some(rule) = resolved.why_no_entry_has(value, &chain.id, &spelled) {
+                return Err(refuse(rule));
             }
         }
     }
     Ok(())
+}
+
+/// Why `<sce:tlv-chain entry-id="…" entry-id-except="…">` was refused, and
+/// which of the two attributes the author has to change.
+enum EntryIdentifierRefusal {
+    /// The refusal is about `entry-id`: what it names, or how wide it is.
+    Identifier(String),
+    /// The refusal is about `entry-id-except`: the flags it leaves out.
+    Except(String),
+}
+
+/// An entry's identifier once the entry codec it is read from is known — the
+/// single reading the validator checks the chain's predicates against and the
+/// code generator lowers them from, so the two cannot disagree on which bits
+/// of an entry make up its kind.
+struct ResolvedEntryIdentifier {
+    /// Width in bits of the flag or field the identifier is read from.
+    bits: u32,
+    /// The bits of that value which are the identifier, when flags are left
+    /// out of it (`entry-id-except`); `None` when all of them are.
+    mask: Option<u64>,
+    /// The flags left out as `(name, first bit, width)`, in the order the
+    /// author listed them.
+    left_out: Vec<(String, u32, u32)>,
+    /// The field the flags are left out of; empty when none are.
+    field: String,
+}
+
+impl ResolvedEntryIdentifier {
+    /// Why no entry can have `value` as its identifier, or `None` when one
+    /// can. A value no entry can have makes the predicate false for every
+    /// message and the field it gates unreachable.
+    fn why_no_entry_has(&self, value: u64, chain: &str, spelled: &str) -> Option<String> {
+        let bits = self.bits;
+        if bits < 64 && value >> bits != 0 {
+            return Some(format!(
+                "a predicate looks for the identifier {value} in the chain '{chain}', but \
+                 '{spelled}' holds {bits} bits (0..={}), so no entry can have it",
+                (1u64 << bits) - 1
+            ));
+        }
+        let mask = self.mask?;
+        if value & !mask == 0 {
+            return None;
+        }
+        let set: Vec<String> = self
+            .left_out
+            .iter()
+            .filter(|(_, bit, width)| value & flag_bits(*bit, *width) != 0)
+            .map(|(name, bit, _)| format!("{}.{name} (bit {bit})", self.field))
+            .collect();
+        Some(format!(
+            "a predicate looks for the identifier {value} in the chain '{chain}', but \
+             '{spelled}' leaves out {} and {value} has {} set, so no entry can have it; \
+             the identifier without those bits is {}",
+            self.left_out
+                .iter()
+                .map(|(name, _, _)| format!("{}.{name}", self.field))
+                .collect::<Vec<_>>()
+                .join(", "),
+            set.join(", "),
+            value & mask
+        ))
+    }
+}
+
+/// The bits `width` wide that start at `bit`, as a mask over the carrier's
+/// integer value — the numbering the flag getters and setters use.
+fn flag_bits(bit: u32, width: u32) -> u64 {
+    let ones = if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
+    ones.checked_shl(bit).unwrap_or(0)
+}
+
+/// Resolve what `identifier` names against the entry codec, refusing what no
+/// entry can be told apart by: a name the codec does not declare, a one-bit
+/// flag, a field that is not an unsigned integer or not always on the wire,
+/// and flags left out of a field that is not made of flags or that leave
+/// nothing behind.
+fn resolve_chain_entry_identifier(
+    identifier: &TlvEntryId,
+    entry_codec: &ImportContext,
+) -> Result<ResolvedEntryIdentifier, EntryIdentifierRefusal> {
+    use EntryIdentifierRefusal::{Except, Identifier};
+
+    let entry_name = &entry_codec.document_name;
+    match &identifier.carrier {
+        Some(carrier) => {
+            let Some(carrier_field) = entry_codec.codec_fields.iter().find(|f| &f.id == carrier)
+            else {
+                let candidates: Vec<&str> = entry_codec
+                    .codec_fields
+                    .iter()
+                    .filter(|f| f.is_flags_carrier())
+                    .map(|f| f.id.as_str())
+                    .collect();
+                return Err(Identifier(format!(
+                    "the entry codec '{entry_name}' declares no flags carrier \
+                     '{carrier}' (flags carriers: {})",
+                    candidates.join(", ")
+                )));
+            };
+            let Some(flag) = carrier_field
+                .flags
+                .iter()
+                .find(|f| f.name == identifier.name)
+            else {
+                let candidates: Vec<String> = carrier_field
+                    .flags
+                    .iter()
+                    .map(|f| format!("{carrier}.{}", f.name))
+                    .collect();
+                return Err(Identifier(format!(
+                    "the carrier '{carrier}' of the entry codec '{entry_name}' declares \
+                     no flag '{}' (flags: {})",
+                    identifier.name,
+                    candidates.join(", ")
+                )));
+            };
+            if flag.width <= 1 {
+                return Err(Identifier(format!(
+                    "'{carrier}.{}' is a one-bit flag, which tells two kinds of entry \
+                     apart at most; an identifier is a multi-bit flag or an integer \
+                     field of '{entry_name}'",
+                    identifier.name
+                )));
+            }
+            if !identifier.except.is_empty() {
+                return Err(Except(format!(
+                    "'{carrier}.{}' is a single flag, which has no other flags to leave out",
+                    identifier.name
+                )));
+            }
+            Ok(ResolvedEntryIdentifier {
+                bits: flag.width,
+                mask: None,
+                left_out: Vec::new(),
+                field: String::new(),
+            })
+        }
+        None => {
+            let Some(entry_field) = entry_codec
+                .codec_fields
+                .iter()
+                .find(|f| f.id == identifier.name)
+            else {
+                let candidates: Vec<&str> = entry_codec
+                    .codec_fields
+                    .iter()
+                    .filter(|f| f.sce_type.int_bit_width().is_some())
+                    .map(|f| f.id.as_str())
+                    .collect();
+                return Err(Identifier(format!(
+                    "the entry codec '{entry_name}' declares no field '{}' \
+                     (integer fields: {})",
+                    identifier.name,
+                    candidates.join(", ")
+                )));
+            };
+            let Some(width) = entry_field.sce_type.int_bit_width() else {
+                return Err(Identifier(format!(
+                    "the field '{}' of the entry codec '{entry_name}' is not an \
+                     unsigned integer, so it cannot identify a kind of entry",
+                    identifier.name
+                )));
+            };
+            if entry_field.present_if.is_some() {
+                return Err(Identifier(format!(
+                    "the field '{}' of the entry codec '{entry_name}' is gated by \
+                     sce:present-if, so an entry may carry no identifier at all",
+                    identifier.name
+                )));
+            }
+            if identifier.except.is_empty() {
+                return Ok(ResolvedEntryIdentifier {
+                    bits: width,
+                    mask: None,
+                    left_out: Vec::new(),
+                    field: String::new(),
+                });
+            }
+            if !entry_field.is_flags_carrier() {
+                return Err(Except(format!(
+                    "the field '{}' of the entry codec '{entry_name}' is not a flags \
+                     carrier, so it has no flags to leave out",
+                    identifier.name
+                )));
+            }
+            let mut left_out: Vec<(String, u32, u32)> = Vec::new();
+            let mut taken = 0u64;
+            for name in &identifier.except {
+                let Some(flag) = entry_field.flags.iter().find(|f| &f.name == name) else {
+                    let candidates: Vec<String> = entry_field
+                        .flags
+                        .iter()
+                        .map(|f| format!("{}.{}", identifier.name, f.name))
+                        .collect();
+                    return Err(Except(format!(
+                        "the field '{}' of the entry codec '{entry_name}' declares no flag \
+                         '{name}' (flags: {})",
+                        identifier.name,
+                        candidates.join(", ")
+                    )));
+                };
+                taken |= flag_bits(flag.bit, flag.width);
+                left_out.push((flag.name.clone(), flag.bit, flag.width));
+            }
+            let all = flag_bits(0, width);
+            let mask = all & !taken;
+            if mask == 0 {
+                return Err(Except(format!(
+                    "the flags it lists cover every bit of '{}' ({width} bits), which \
+                     leaves nothing to tell one kind of entry from another",
+                    identifier.name
+                )));
+            }
+            Ok(ResolvedEntryIdentifier {
+                bits: width,
+                mask: Some(mask),
+                left_out,
+                field: identifier.name.clone(),
+            })
+        }
+    }
+}
+
+/// Chain id to the bits of an entry's value that are its identifier, for the
+/// chains that leave flags out of it. See [`chain_identifier_masks`].
+type ChainIdentifierMasks = std::collections::BTreeMap<String, u64>;
+
+/// For each chain of `parent` that leaves flags out of its entries'
+/// identifier, the bits of an entry's value that are the identifier. A chain
+/// that reads its identifier whole has no entry: nothing is masked.
+///
+/// Read after `validate_cross_codec_chain_entry_id`, which has refused every
+/// chain this cannot resolve, so a chain that leaves flags out and is missing
+/// here is a defect in the generator and not in the document.
+fn chain_identifier_masks(parent: &CodecModel, imports: &[ImportContext]) -> ChainIdentifierMasks {
+    let mut masks = ChainIdentifierMasks::new();
+    for chain in parent.fields.iter().filter(|f| f.is_tlv_chain()) {
+        let BitSize::TlvChain {
+            entry_id: Some(identifier),
+            ..
+        } = &chain.bit_size
+        else {
+            continue;
+        };
+        if identifier.except.is_empty() {
+            continue;
+        }
+        let entry_codec = chain
+            .tlv_chain_body_alias
+            .as_deref()
+            .and_then(|alias| imports.iter().find(|i| i.alias == alias))
+            .expect("a chain that leaves flags out of its identifier imports its entry codec");
+        let Ok(resolved) = resolve_chain_entry_identifier(identifier, entry_codec) else {
+            panic!("validate_cross_codec_chain_entry_id has accepted this identifier");
+        };
+        masks.insert(
+            chain.id.clone(),
+            resolved
+                .mask
+                .expect("an identifier that leaves flags out has a mask"),
+        );
+    }
+    masks
 }
 
 /// RFC §synth-5-B variant primitive (item B1): per-language decoder reference
@@ -13923,9 +14137,18 @@ fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::La
 /// One decoded entry's identifier as an unsigned 64-bit value, whatever the
 /// width of the flag or field it is read from, so that one literal compares
 /// against all of them. `entry` names the entry in the loop that reads it.
+///
+/// `mask` is the bits of the value that are the identifier when the chain
+/// leaves flags out of it (`entry-id-except`), applied before the comparison:
+/// a continuation flag set on one entry and clear on the next must not make
+/// them two kinds. `None` reads the value whole, and the text is then exactly
+/// what it was before a mask could be asked for. A masked read is
+/// parenthesised, because `&` binds looser than `==` in Rust and Kotlin's
+/// `and` is not an operator at all.
 fn chain_entry_identifier(
     chain: &CodecField,
     entry: &str,
+    mask: Option<u64>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -13955,13 +14178,21 @@ fn chain_entry_identifier(
     } else {
         format!("{entry}.{}", codec_field_local_name(&identifier.name, lang))
     };
-    match lang {
+    let whole = match lang {
         Language::Rust => format!("u64::from({raw})"),
         Language::Cpp => format!("static_cast<std::uint64_t>({raw})"),
         Language::Kotlin => format!("({raw}).toULong()"),
         Language::Go => format!("uint64({raw})"),
         Language::Python => raw,
         Language::C11 => format!("(uint64_t)({raw})"),
+    };
+    let Some(mask) = mask else {
+        return whole;
+    };
+    let mask = chain_identifier_literal(mask, lang);
+    match lang {
+        Language::Kotlin => format!("({whole} and {mask})"),
+        _ => format!("({whole} & {mask})"),
     }
 }
 
@@ -13986,6 +14217,7 @@ fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> Str
 fn chain_has_decl_lines(
     chain: &CodecField,
     value: u64,
+    masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
     site: PresentIfSite,
 ) -> Vec<String> {
@@ -13994,10 +14226,11 @@ fn chain_has_decl_lines(
     let gated = chain.present_if.is_some();
     let id = codec_field_local_name(&chain.id, lang);
     let literal = chain_identifier_literal(value, lang);
+    let mask = masks.get(&chain.id).copied();
     let test = |entry: &str| {
         format!(
             "{} == {literal}",
-            chain_entry_identifier(chain, entry, lang)
+            chain_entry_identifier(chain, entry, mask, lang)
         )
     };
     let encode = site == PresentIfSite::Encode;
@@ -14222,6 +14455,7 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
 /// — which makes its `encode_to_vec`-style facade fallible.
 fn present_if_chain_encode_prologue(
     fields: &[CodecField],
+    masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
 ) -> (String, bool) {
     let indent = encode_body_indent(lang);
@@ -14231,6 +14465,7 @@ fn present_if_chain_encode_prologue(
             lines.extend(chain_has_decl_lines(
                 chain,
                 value,
+                masks,
                 lang,
                 PresentIfSite::Encode,
             ));
@@ -14269,12 +14504,13 @@ fn with_chain_has_decls(
     decode_stmt: String,
     chain: &CodecField,
     fields: &[CodecField],
+    masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
 ) -> String {
     let indent = chain_decode_indent(lang);
     let mut stmt = decode_stmt;
     for value in chain_has_values(fields, &chain.id) {
-        for line in chain_has_decl_lines(chain, value, lang, PresentIfSite::Decode) {
+        for line in chain_has_decl_lines(chain, value, masks, lang, PresentIfSite::Decode) {
             stmt.push('\n');
             stmt.push_str(indent);
             stmt.push_str(&line);

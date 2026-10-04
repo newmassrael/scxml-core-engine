@@ -1074,6 +1074,19 @@
            sce-build checks there that the flag or field exists, is
            unsigned and holds the values the predicates look for. -->
       <xs:attribute name="entry-id" type="xs:string"/>
+      <!-- Flags of the field `entry-id` names whose bits the identifier
+           leaves out: a whitespace-separated list of `<field>.<flag>`,
+           where `<field>` is the bare name `entry-id` carries and a flags
+           carrier of the entry codec. The identifier is the field with
+           those bits cleared, so an entry's continuation flag (set on
+           every entry but the last) does not make two entries of one kind
+           two identifiers, and `has(<value>)` looks for the value without
+           them. The bits are read from the entry codec's own flag layout,
+           not written here a second time. Requires `entry-id`, which must
+           name a whole field and not a single flag; sce-build checks the
+           flags exist and that a value a predicate looks for has none of
+           those bits set. -->
+      <xs:attribute name="entry-id-except" type="xs:string"/>
       <!-- RFC §synth-5-B — `<sce:tlv-chain sce:present-if="P">`
            gates the entire chain on a flag predicate (mirrors the
            repeat-with-present-if lift). When the predicate is

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: one element of a sliced payload — the element
+     codec `codec_chain_has_marker` repeats when its extension chain carries
+     the marker entry.
+
+     Wire shape: `kind` (VLE) ++ `size` (VLE) ++ `size` bytes of `data`. The
+     field names are the ones a generated Python decoder can bind as locals
+     without shadowing a builtin it then calls, which is why this element
+     codec is not `codec_chain_has_slice`: the marker fixture is run on
+     Python, and that codec's `bytes` field is not runnable there. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_has_marker_slice">
+  <datamodel>
+    <sce:field id="kind" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="size" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="data" sce:type="bytes"  sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="size" sce:max-size="256"/>
+  </datamodel>
+</scxml>

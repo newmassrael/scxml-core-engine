@@ -273,6 +273,7 @@
 //!     field <id>: <type> at byte <n> [bit <n>] size <bit-size>
 //!       endian <e> / max-size <n> / length-field <f> / length-arith <i>
 //!       max-count <n> / repeat-body <a> / tlv-body <a> / embed-body <a>
+//!       entry-id <f>[.<flag>] / entry-id-except <f>.<flag> (one per flag)
 //!       embed-length-from <f> / dma-align <n> / quantity <s> <o> <u>
 //!       present-if [not] (local|input):<field>.<flag> [or ...]
 //!       flag <name> bit <n> width <n> [value <v>]
@@ -3200,6 +3201,15 @@ fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
                     out.line(&format!("entry-id {}.{}", text(carrier), text(&id.name)))
                 }
                 None => out.line(&format!("entry-id {}", text(&id.name))),
+            }
+            // One flag per line, in the order the author listed them: a
+            // line carries one free-text value and it comes last.
+            for flag in &id.except {
+                out.line(&format!(
+                    "entry-id-except {}.{}",
+                    text(&id.name),
+                    text(flag)
+                ));
             }
         }
         if let Some(v) = &f.embed_body_alias {

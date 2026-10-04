@@ -2430,12 +2430,48 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
                     Some((carrier, name)) => TlvEntryId {
                         carrier: Some(undo(carrier, k.number)?),
                         name: undo(name, k.number)?,
+                        except: Vec::new(),
                     },
                     None => TlvEntryId {
                         carrier: None,
                         name: undo(spelled, k.number)?,
+                        except: Vec::new(),
                     },
                 });
+            }
+            // One flag of the field `entry-id` names per line, in the order
+            // the author listed them; the line that names the field is
+            // written first.
+            Some("entry-id-except") => {
+                let BitSize::TlvChain {
+                    entry_id: Some(identifier),
+                    ..
+                } = &mut f.bit_size
+                else {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: "`entry-id-except` follows the `entry-id` clause of a tlv-chain \
+                              field"
+                            .to_string(),
+                    });
+                };
+                let spelled = tail(1);
+                let Some((field, flag)) = spelled.split_once('.') else {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!("`{spelled}` is not `<field>.<flag>`"),
+                    });
+                };
+                if undo(field, k.number)? != identifier.name {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: format!(
+                            "`{spelled}` is not a flag of `{}`, the field `entry-id` names",
+                            identifier.name
+                        ),
+                    });
+                }
+                identifier.except.push(undo(flag, k.number)?);
             }
             Some("embed-body") => f.embed_body_alias = Some(undo(tail(1), k.number)?),
             Some("embed-length-from") => f.embed_length_from = Some(undo(tail(1), k.number)?),

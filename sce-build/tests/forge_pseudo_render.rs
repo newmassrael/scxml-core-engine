@@ -888,6 +888,7 @@ fn a_codec_renders_every_field_it_can_carry() {
             entry_id: Some(TlvEntryId {
                 carrier: Some("ctl".to_string()),
                 name: "kind".to_string(),
+                except: Vec::new(),
             }),
         },
         endian: Some(Endian::Little),
@@ -1030,6 +1031,70 @@ terminate entry-flag more
 ";
 
     assert_eq!(render(&ForgeDocument::Codec(m)).unwrap(), expected);
+}
+
+/// A chain identifier that leaves flags out of its field: the field on the
+/// `entry-id` line, then one `entry-id-except` line per flag in the order the
+/// author listed them. The other shape of identifier — a single flag — is the
+/// whole-output case above, and carries no such line.
+#[test]
+fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
+    let chain = CodecField {
+        id: "ext".to_string(),
+        line: None,
+        sce_type: SceType::Bytes,
+        byte_offset: 1,
+        bit_offset: None,
+        bit_size: BitSize::TlvChain {
+            max_depth: 4,
+            on_overflow: TlvOverflowPolicy::Reject,
+            terminate_on: TlvTerminateStrategy::EntryFlag {
+                flag_name: "Z".to_string(),
+            },
+            entry_id: Some(TlvEntryId {
+                carrier: None,
+                name: "header".to_string(),
+                except: vec!["Z".to_string(), "M".to_string()],
+            }),
+        },
+        endian: None,
+        max_size: None,
+        length_field: None,
+        flags: Vec::new(),
+        present_if: None,
+        repeat_body_alias: None,
+        max_count: None,
+        tlv_chain_body_alias: Some("entry".to_string()),
+        dma_burst_align: None,
+        embed_body_alias: None,
+        embed_length_from: None,
+        length_arith: None,
+        quantity: None,
+    };
+    let m = CodecModel {
+        name: "env".to_string(),
+        default_endian: Endian::Big,
+        input_length: None,
+        fields: vec![chain],
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: None,
+        encoding: Default::default(),
+        cbor_entries: Vec::new(),
+    };
+    assert_eq!(
+        render(&ForgeDocument::Codec(m)).unwrap(),
+        "\
+codec env endian big
+  field ext: bytes at byte 1 size tlv-chain max-depth 4 on-overflow reject \
+terminate entry-flag Z
+    tlv-body entry
+    entry-id header
+    entry-id-except header.Z
+    entry-id-except header.M
+"
+    );
 }
 
 /// The three MCU kinds, with every optional field populated.

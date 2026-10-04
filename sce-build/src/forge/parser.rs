@@ -3645,6 +3645,38 @@ fn parse_present_if_predicate(
     field_id: &str,
 ) -> Result<PresentIfPredicate, Located<ForgeError>> {
     let trimmed = raw.trim();
+    // A parenthesised group, negated or not, is a refusal in its own right.
+    // It is judged on the whole attribute before anything is split on `||`:
+    // split first, and the refusal is about a fragment of what the author
+    // wrote (`' ext.has(2))'`) and not about the group they wrote. Looking at
+    // every `||`-separated clause once, here, also means the recursion below
+    // only ever sees text this check has passed.
+    let opens_group = trimmed.split("||").any(|clause| {
+        let clause = clause.trim();
+        clause
+            .strip_prefix('!')
+            .unwrap_or(clause)
+            .trim_start()
+            .starts_with('(')
+    });
+    if opens_group {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: format!("field '{field_id}'"),
+                attr: "sce:present-if".into(),
+                value: raw.to_string(),
+                rule: "a parenthesised group is not part of this grammar: '!' \
+                       negates one clause, and there is no '&&' to spell \
+                       '!(<clause> || <clause>)' as '!<clause> && !<clause>'. \
+                       When the group lists several spellings of one chain \
+                       identifier, declare the chain's entry-id-except instead \
+                       and test the one identifier"
+                    .into(),
+            },
+        ));
+    }
     let invalid = || {
         located(
             node,
@@ -4425,29 +4457,37 @@ fn parse_codec_tlv_chain_from_node(
     // `<carrier>.<flag>` for a flag of the entry codec's flags carrier, a bare
     // name for one of its integer fields. Whether the entry codec has that
     // flag or field is only known once it is imported, and is checked there.
-    let entry_id = match node.attribute("entry-id") {
+    //
+    // `entry-id-except` narrows a bare integer field that is itself a flags
+    // carrier to the bits no listed flag occupies, so an entry's continuation
+    // flag does not make two entries of one kind two identifiers. It names
+    // flags of the field `entry-id` names; which bits they occupy is the
+    // entry codec's declaration, read where the import is resolved.
+    let refuse_entry_id = |attr: &str, raw: &str, rule: &str| {
+        located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: format!("<sce:tlv-chain id='{id}'>"),
+                attr: attr.into(),
+                value: raw.to_string(),
+                rule: rule.into(),
+            },
+        )
+    };
+    let is_ident = crate::scxml_identifier::is_code_identifier;
+    let mut entry_id = match node.attribute("entry-id") {
         None => None,
         Some(raw) => {
-            let invalid = |rule: &str| {
-                located(
-                    node,
-                    doc_name,
-                    ValidationError::AttributeRuleViolated {
-                        element: format!("<sce:tlv-chain id='{id}'>"),
-                        attr: "entry-id".into(),
-                        value: raw.to_string(),
-                        rule: rule.into(),
-                    },
-                )
-            };
-            let is_ident = crate::scxml_identifier::is_code_identifier;
             let spelled = raw.trim();
             let (carrier, name) = match spelled.split_once('.') {
                 Some((carrier, name)) => (Some(carrier.trim()), name.trim()),
                 None => (None, spelled),
             };
             if !is_ident(name) || carrier.is_some_and(|c| !is_ident(c)) {
-                return Err(invalid(
+                return Err(refuse_entry_id(
+                    "entry-id",
+                    raw,
                     "'<carrier>.<flag>' naming a flag of the entry codec's flags \
                      carrier, or a bare '<field>' naming one of its integer fields; \
                      each part is a non-empty identifier",
@@ -4456,9 +4496,70 @@ fn parse_codec_tlv_chain_from_node(
             Some(TlvEntryId {
                 carrier: carrier.map(str::to_string),
                 name: name.to_string(),
+                except: Vec::new(),
             })
         }
     };
+    if let Some(raw) = node.attribute("entry-id-except") {
+        let Some(identifier) = entry_id.as_mut() else {
+            return Err(refuse_entry_id(
+                "entry-id-except",
+                raw,
+                "entry-id-except narrows the identifier entry-id names, so the chain \
+                 must declare entry-id",
+            ));
+        };
+        if identifier.carrier.is_some() {
+            return Err(refuse_entry_id(
+                "entry-id-except",
+                raw,
+                "entry-id names a single flag, which has no other flags to leave \
+                 out; name the whole field in entry-id (for example \
+                 entry-id=\"header\") and leave the flags out of it",
+            ));
+        }
+        let mut except: Vec<String> = Vec::new();
+        for token in raw.split_whitespace() {
+            let spelled_flag = token
+                .split_once('.')
+                .filter(|(carrier, flag)| is_ident(carrier) && is_ident(flag));
+            let Some((carrier, flag)) = spelled_flag else {
+                return Err(refuse_entry_id(
+                    "entry-id-except",
+                    raw,
+                    "a whitespace-separated list of '<field>.<flag>', each part an \
+                     identifier, naming flags of the field entry-id names",
+                ));
+            };
+            if carrier != identifier.name {
+                return Err(refuse_entry_id(
+                    "entry-id-except",
+                    raw,
+                    &format!(
+                        "'{token}' is not a flag of '{}', the field entry-id names; \
+                         the identifier can only leave out flags of its own field",
+                        identifier.name
+                    ),
+                ));
+            }
+            if except.iter().any(|seen| seen == flag) {
+                return Err(refuse_entry_id(
+                    "entry-id-except",
+                    raw,
+                    &format!("'{token}' is listed more than once"),
+                ));
+            }
+            except.push(flag.to_string());
+        }
+        if except.is_empty() {
+            return Err(refuse_entry_id(
+                "entry-id-except",
+                raw,
+                "at least one '<field>.<flag>'; drop the attribute to leave nothing out",
+            ));
+        }
+        identifier.except = except;
+    }
 
     Ok(CodecField {
         id,

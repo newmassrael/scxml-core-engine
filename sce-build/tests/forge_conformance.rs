@@ -2232,6 +2232,90 @@ fn forge_c11_codec_chain_has_envelope() {
 }
 
 #[test]
+fn forge_codec_chain_has_marker_slice_cpp() {
+    assert_standalone_forge(
+        "codec_chain_has_marker_slice",
+        "codec_chain_has_marker_slice.h",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_marker_slice_kotlin() {
+    assert_standalone_forge_kotlin(
+        "codec_chain_has_marker_slice",
+        "CodecChainHasMarkerSlice.kt",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_marker_slice_rust() {
+    assert_standalone_forge_rust(
+        "codec_chain_has_marker_slice",
+        "codec_chain_has_marker_slice.rs",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_marker_slice_go() {
+    assert_standalone_forge_go(
+        "codec_chain_has_marker_slice",
+        "codec_chain_has_marker_slice.go",
+    );
+}
+
+#[test]
+fn forge_codec_chain_has_marker_slice_python() {
+    assert_standalone_forge_python(
+        "codec_chain_has_marker_slice",
+        "codec_chain_has_marker_slice.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_chain_has_marker_slice() {
+    assert_standalone_forge_c(
+        "codec_chain_has_marker_slice",
+        "codec_chain_has_marker_slice.c.h",
+    );
+}
+
+// `codec_chain_has_marker` is the envelope's shape with an identifier that
+// leaves the entry's continuation flag out (`entry-id-except`): the masked
+// read is a different spelling on each backend, so each has its own golden.
+// Its slice element is its own codec, `codec_chain_has_marker_slice`, because
+// the fixture is also run on Python.
+
+#[test]
+fn forge_codec_chain_has_marker_cpp() {
+    assert_standalone_forge("codec_chain_has_marker", "codec_chain_has_marker.h");
+}
+
+#[test]
+fn forge_codec_chain_has_marker_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_has_marker", "CodecChainHasMarker.kt");
+}
+
+#[test]
+fn forge_codec_chain_has_marker_rust() {
+    assert_standalone_forge_rust("codec_chain_has_marker", "codec_chain_has_marker.rs");
+}
+
+#[test]
+fn forge_codec_chain_has_marker_go() {
+    assert_standalone_forge_go("codec_chain_has_marker", "codec_chain_has_marker.go");
+}
+
+#[test]
+fn forge_codec_chain_has_marker_python() {
+    assert_standalone_forge_python("codec_chain_has_marker", "codec_chain_has_marker.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_has_marker() {
+    assert_standalone_forge_c("codec_chain_has_marker", "codec_chain_has_marker.c.h");
+}
+
+#[test]
 fn forge_codec_chain_has_tagged_entry_cpp() {
     assert_standalone_forge(
         "codec_chain_has_tagged_entry",
@@ -2736,6 +2820,8 @@ const CHAIN_HAS_SET: &[&str] = &[
     "codec_zenoh_ext_entry.scxml",
     "codec_chain_has_slice.scxml",
     "codec_chain_has_envelope.scxml",
+    "codec_chain_has_marker_slice.scxml",
+    "codec_chain_has_marker.scxml",
     "codec_chain_has_tagged_entry.scxml",
     "codec_chain_has_tagged.scxml",
 ];
@@ -2838,6 +2924,72 @@ fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_re
             "ext.has(1)",
             "ends only when the frame does",
         ),
+        (
+            "entry-id-except without entry-id",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id-except="header.Z""#,
+            "ext.has(1)",
+            "the chain must declare entry-id",
+        ),
+        (
+            "entry-id-except on a single flag",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id" entry-id-except="header.Z""#,
+            "ext.has(1)",
+            "has no other flags to leave out",
+        ),
+        (
+            "a left-out flag of some other field",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="other.Z""#,
+            "ext.has(1)",
+            "is not a flag of 'header'",
+        ),
+        (
+            "a left-out entry that is not field.flag",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="Z""#,
+            "ext.has(1)",
+            "whitespace-separated list of '<field>.<flag>'",
+        ),
+        (
+            "an empty list of left-out flags",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except=" ""#,
+            "ext.has(1)",
+            "at least one '<field>.<flag>'",
+        ),
+        (
+            "a flag left out twice",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.Z header.Z""#,
+            "ext.has(1)",
+            "is listed more than once",
+        ),
+        (
+            "a left-out flag the field does not declare",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.nope""#,
+            "ext.has(1)",
+            "declares no flag 'nope'",
+        ),
+        (
+            "left-out flags that cover every bit",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.ext_id header.M header.enc header.Z""#,
+            "ext.has(1)",
+            "leaves nothing to tell one kind of entry from another",
+        ),
+        (
+            "a value with a left-out bit set",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.Z""#,
+            "ext.has(0x92)",
+            "the identifier without those bits is 18",
+        ),
+        (
+            "a value wider than the field",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.Z""#,
+            "ext.has(0x112)",
+            "holds 8 bits",
+        ),
+        (
+            "a negated group of clauses",
+            r#"terminate-on="entry-flag" entry-flag-name="Z" entry-id="header" entry-id-except="header.Z""#,
+            "!(ext.has(0x12) || ext.has(0x13))",
+            "is not part of this grammar",
+        ),
     ];
 
     for (case, chain_attrs, predicate, phrase) in CASES {
@@ -2903,6 +3055,89 @@ fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_re
         message.contains("not declared earlier"),
         "forward reference must say so; got: {message}"
     );
+}
+
+/// What a chain identifier leaves out is a flag of a field made of flags. An
+/// entry codec whose identifier field is a plain integer has no flags to leave
+/// out, and the refusal says so at `entry-id-except`, the attribute the author
+/// has to change, not at `entry-id`.
+#[test]
+fn a_plain_integer_identifier_has_no_flags_to_leave_out() {
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="chain_has_plain_except">
+  <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
+                   max-depth="3" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="more"
+                   entry-id="entry_type" entry-id-except="entry_type.x"/>
+    <sce:field id="after" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="entries.has(1)"/>
+  </datamodel>
+</scxml>"#;
+    let error = match sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("chain_has_plain_except"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("flags cannot be left out of a field that is not made of flags"),
+        Err(e) => e.error.to_string(),
+    };
+    assert!(
+        error.contains("entry-id-except") && error.contains("is not a flags carrier"),
+        "the refusal must be about entry-id-except and say why; got: {error}"
+    );
+}
+
+/// `!` negates one clause. A group under it is refused as a group, and the
+/// refusal quotes the attribute the author wrote, whole, wherever in it the
+/// group stands: splitting on `||` before looking made it quote the fragment
+/// `' ext.has(2))'`, which is nothing the author typed.
+#[test]
+fn a_negated_group_is_refused_as_what_the_author_wrote() {
+    for predicate in [
+        "!(ext.has(1) || ext.has(2))",
+        "ext.has(3) || !(ext.has(1) || ext.has(2))",
+    ] {
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="chain_has_group">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="0"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id"/>
+    <sce:field id="after" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="{predicate}"/>
+  </datamodel>
+</scxml>"#
+        );
+        let error = match sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("chain_has_group"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        ) {
+            Ok(_) => panic!("{predicate}: a negated group must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            error.contains(&format!("'{predicate}'")),
+            "{predicate}: the refusal must quote the whole attribute; got: {error}"
+        );
+        assert!(
+            error.contains("is not part of this grammar"),
+            "{predicate}: the refusal must say a negated group is not a clause; got: {error}"
+        );
+    }
 }
 
 /// What the chain-membership predicate DOES, run on the Rust backend: the
@@ -3019,6 +3254,115 @@ mod tests {
         "chain_has_behaviour",
     )
     .expect("chain-membership predicates must decide the layout and the encoder must refuse a contradiction");
+}
+
+/// What an identifier that leaves the continuation flag out DOES, run on the
+/// Rust backend. The marker entry is `0x12`, and is `0x92` when another entry
+/// follows it; both are the marker. An entry that shares only the 4-bit id —
+/// the mandatory bit clear, or another encoding — is not.
+///
+/// Each frame is also encoded back, which makes the encoder evaluate the same
+/// masked identifier from the value it was given and agree with the decoder.
+#[test]
+fn an_identifier_without_its_continuation_flag_finds_the_marker_wherever_it_stands() {
+    const HARNESS: &str = r#"// Injected by an_identifier_without_its_continuation_flag_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_chain_has_marker::CodecChainHasMarker;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    // The marker (0x12) is the last entry; the SLICED layout follows: a count
+    // of 1 and one slice (kind 0, len 2, bytes AA BB).
+    const MARKER_LAST: [u8; 7] = [0x80, 0x12, 0x01, 0x00, 0x02, 0xAA, 0xBB];
+    // The marker has its continuation flag set (0x92) because an entry of
+    // kind 3 follows it. It is the same marker: SLICED.
+    const MARKER_THEN_ENTRY: [u8; 8] = [0x80, 0x92, 0x03, 0x01, 0x00, 0x02, 0xAA, 0xBB];
+    // Kind 2 without the mandatory bit (0x02): not the marker, so PLAIN: a
+    // length of 2 and two bytes.
+    const SAME_ID_NOT_MANDATORY: [u8; 5] = [0x80, 0x02, 0x02, 0xAA, 0xBB];
+    // The same entry with its continuation flag set (0x82), then a last entry:
+    // still not the marker.
+    const SAME_ID_NOT_MANDATORY_THEN_ENTRY: [u8; 6] = [0x80, 0x82, 0x03, 0x02, 0xAA, 0xBB];
+    // Kind 2 with the mandatory bit but the ZInt encoding (0x32, one VLE body
+    // byte): a different entry than the unit marker, so PLAIN.
+    const SAME_ID_OTHER_ENCODING: [u8; 6] = [0x80, 0x32, 0x05, 0x02, 0xAA, 0xBB];
+
+    fn decode_frame(frame: &[u8]) -> CodecChainHasMarker<'_> {
+        CodecChainHasMarker::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn assert_sliced(frame: &[u8]) {
+        let v = decode_frame(frame);
+        assert!(v.payload_len.is_none() && v.payload.is_none());
+        assert_eq!(v.slice_count, Some(1));
+        let slices = v.slices.as_ref().expect("slices follow the marker");
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].data, &[0xAA, 0xBB][..]);
+        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+    }
+
+    fn assert_plain(frame: &[u8]) {
+        let v = decode_frame(frame);
+        assert!(v.slice_count.is_none() && v.slices.is_none());
+        assert_eq!(v.payload_len, Some(2));
+        assert_eq!(v.payload, Some(&[0xAA, 0xBB][..]));
+        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+    }
+
+    #[test]
+    fn the_marker_is_found_at_the_end_of_the_chain() {
+        assert_sliced(&MARKER_LAST);
+    }
+
+    #[test]
+    fn the_marker_is_found_with_its_continuation_flag_set() {
+        assert_sliced(&MARKER_THEN_ENTRY);
+    }
+
+    #[test]
+    fn an_entry_that_shares_only_the_id_is_not_the_marker() {
+        assert_plain(&SAME_ID_NOT_MANDATORY);
+        assert_plain(&SAME_ID_NOT_MANDATORY_THEN_ENTRY);
+        assert_plain(&SAME_ID_OTHER_ENCODING);
+    }
+
+    #[test]
+    fn an_absent_chain_has_no_marker() {
+        let frame = [0x00u8, 0x01, 0xCC];
+        let v = decode_frame(&frame);
+        assert!(v.extensions.is_none());
+        assert_eq!(v.payload, Some(&[0xCC][..]));
+        assert_eq!(v.encode_to_vec().expect("encode"), frame.to_vec());
+    }
+
+    #[test]
+    fn the_encoder_reads_the_marker_through_the_same_mask() {
+        // The chain carries the marker with its continuation flag set; the
+        // plain layout is supplied. The encoder must see the marker, and so
+        // the contradiction, rather than read 0x92 as some other kind.
+        let mut v = decode_frame(&MARKER_THEN_ENTRY);
+        v.slice_count = None;
+        v.slices = None;
+        v.payload_len = Some(2);
+        v.payload = Some(&[0xAA, 0xBB]);
+        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+
+        // The converse: the chain has no marker, so the plain layout is owed,
+        // and it is withheld.
+        let mut v = decode_frame(&SAME_ID_NOT_MANDATORY_THEN_ENTRY);
+        v.payload_len = None;
+        v.payload = None;
+        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        CHAIN_HAS_SET,
+        &[("chain_has_marker_behaviour.rs", HARNESS)],
+        "chain_has_marker_behaviour",
+    )
+    .expect("a masked identifier must find the marker whether or not its continuation flag is set");
 }
 
 // ── RFC §synth-5-B — zenoh-specific demo
@@ -13093,6 +13437,621 @@ fn compile_generated_set_python(
     }
     let _ = std::fs::remove_dir_all(&proj_dir);
     Ok(())
+}
+
+/// One frame of `codec_chain_has_marker`, and the layout it must decode as.
+///
+/// The frames are the contract of a masked identifier and are shared by every
+/// backend that runs them: the marker entry is `0x12` and is `0x92` when
+/// another entry follows it, and entries that share only the 4-bit id (the
+/// mandatory bit clear, or another encoding) are not the marker.
+struct MarkerFrame {
+    name: &'static str,
+    bytes: &'static [u8],
+    /// `true` when the chain carries the marker, so the slice layout follows.
+    sliced: bool,
+}
+
+const MARKER_FRAMES: &[MarkerFrame] = &[
+    MarkerFrame {
+        name: "marker_last",
+        bytes: &[0x80, 0x12, 0x01, 0x00, 0x02, 0xAA, 0xBB],
+        sliced: true,
+    },
+    MarkerFrame {
+        name: "marker_then_entry",
+        bytes: &[0x80, 0x92, 0x03, 0x01, 0x00, 0x02, 0xAA, 0xBB],
+        sliced: true,
+    },
+    MarkerFrame {
+        name: "same_id_not_mandatory",
+        bytes: &[0x80, 0x02, 0x02, 0xAA, 0xBB],
+        sliced: false,
+    },
+    MarkerFrame {
+        name: "same_id_not_mandatory_then_entry",
+        bytes: &[0x80, 0x82, 0x03, 0x02, 0xAA, 0xBB],
+        sliced: false,
+    },
+    MarkerFrame {
+        name: "same_id_other_encoding",
+        bytes: &[0x80, 0x32, 0x05, 0x02, 0xAA, 0xBB],
+        sliced: false,
+    },
+    MarkerFrame {
+        name: "absent_chain",
+        bytes: &[0x00, 0x01, 0xCC],
+        sliced: false,
+    },
+];
+
+/// The frame whose chain holds the marker with its continuation flag set; the
+/// encoder must find the marker in it through the same mask the decoder used.
+const MARKER_WITH_FLAG_SET: &str = "marker_then_entry";
+
+fn marker_frame_bytes(frame: &MarkerFrame) -> String {
+    frame
+        .bytes
+        .iter()
+        .map(|b| format!("0x{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A scratch directory that no other run of this process shares.
+fn marker_scratch_dir(prefix: &str) -> Result<std::path::PathBuf, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "{prefix}_{}_{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Run `command` and turn a failing status into the text of what it said.
+fn marker_run(
+    what: &str,
+    mut command: std::process::Command,
+    proj_dir: &std::path::Path,
+) -> Result<(), String> {
+    let output = command
+        .output()
+        .map_err(|e| format!("{what} invocation: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "{what} FAILED\nproj_dir: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
+        proj_dir.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+fn marker_python_program() -> String {
+    let frames: String = MARKER_FRAMES
+        .iter()
+        .map(|f| {
+            format!(
+                "    (\"{}\", bytes([{}]), {}),\n",
+                f.name,
+                marker_frame_bytes(f),
+                if f.sliced { "True" } else { "False" }
+            )
+        })
+        .collect();
+    let flagged = MARKER_FRAMES
+        .iter()
+        .find(|f| f.name == MARKER_WITH_FLAG_SET)
+        .expect("the frame the encoder is held to exists");
+    format!(
+        r#"from marker_pkg.codec_chain_has_marker import CodecChainHasMarker
+from sce_forge_runtime.codec import PresentIfMismatch, SceCursor
+
+FRAMES = [
+{frames}]
+
+def decode(name, frame):
+    v = CodecChainHasMarker.decode(SceCursor(frame))
+    assert v is not None, name + ": decode"
+    return v
+
+for name, frame, sliced in FRAMES:
+    v = decode(name, frame)
+    if sliced:
+        assert v.payload_len is None and v.payload is None, name + ": plain fields on a marker"
+        assert v.slice_count == 1 and len(v.slices) == 1, name + ": slices missing"
+    else:
+        assert v.slice_count is None and v.slices is None, name + ": slices without a marker"
+        assert v.payload_len is not None, name + ": plain layout missing"
+    assert v.encode_to_bytes() == frame, name + ": round trip"
+
+v = decode("{MARKER_WITH_FLAG_SET}", bytes([{flagged_bytes}]))
+v.slice_count = None
+v.slices = None
+v.payload_len = 2
+v.payload = bytes([0xAA, 0xBB])
+try:
+    v.encode_to_bytes()
+except PresentIfMismatch:
+    pass
+else:
+    raise AssertionError("the encoder wrote a plain layout under a marker")
+"#,
+        flagged_bytes = marker_frame_bytes(flagged),
+    )
+}
+
+fn marker_go_program() -> String {
+    let frames: String = MARKER_FRAMES
+        .iter()
+        .map(|f| {
+            format!(
+                "\t{{\"{}\", []byte{{{}}}, {}}},\n",
+                f.name,
+                marker_frame_bytes(f),
+                f.sliced
+            )
+        })
+        .collect();
+    let flagged = MARKER_FRAMES
+        .iter()
+        .position(|f| f.name == MARKER_WITH_FLAG_SET)
+        .expect("the frame the encoder is held to exists");
+    format!(
+        r#"package marker_exec
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	marker "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_has_marker"
+)
+
+type frame struct {{
+	name   string
+	bytes  []byte
+	sliced bool
+}}
+
+var frames = []frame{{
+{frames}}}
+
+func decode(t *testing.T, f frame) *marker.CodecChainHasMarker {{
+	t.Helper()
+	cursor := codec.NewSceCursor(f.bytes)
+	v, err := marker.DecodeCodecChainHasMarker(&cursor)
+	if err != nil {{
+		t.Fatalf("%s: decode: %v", f.name, err)
+	}}
+	return v
+}}
+
+func TestMarkerLayout(t *testing.T) {{
+	for _, f := range frames {{
+		v := decode(t, f)
+		if f.sliced {{
+			if v.PayloadLen != nil || v.Payload != nil {{
+				t.Errorf("%s: plain fields on a marker", f.name)
+			}}
+			if v.SliceCount == nil || *v.SliceCount != 1 || len(v.Slices) != 1 {{
+				t.Errorf("%s: slices missing", f.name)
+			}}
+		}} else {{
+			if v.SliceCount != nil || v.Slices != nil {{
+				t.Errorf("%s: slices without a marker", f.name)
+			}}
+			if v.PayloadLen == nil {{
+				t.Errorf("%s: plain layout missing", f.name)
+			}}
+		}}
+		out, err := v.EncodeToBytes()
+		if err != nil || !bytes.Equal(out, f.bytes) {{
+			t.Errorf("%s: round trip: %v % x", f.name, err, out)
+		}}
+	}}
+}}
+
+func TestEncoderReadsTheMarkerThroughTheSameMask(t *testing.T) {{
+	v := decode(t, frames[{flagged}])
+	plain := uint64(2)
+	v.SliceCount = nil
+	v.Slices = nil
+	v.PayloadLen = &plain
+	v.Payload = []byte{{0xAA, 0xBB}}
+	if _, err := v.EncodeToBytes(); !errors.Is(err, codec.ErrPresentIfMismatch) {{
+		t.Errorf("a plain layout under a marker must be refused, got %v", err)
+	}}
+}}
+"#
+    )
+}
+
+fn marker_cpp_program() -> String {
+    let frames: String = MARKER_FRAMES
+        .iter()
+        .map(|f| {
+            format!(
+                "        {{\"{}\", {{{}}}, {}}},\n",
+                f.name,
+                marker_frame_bytes(f),
+                f.sliced
+            )
+        })
+        .collect();
+    let flagged = MARKER_FRAMES
+        .iter()
+        .position(|f| f.name == MARKER_WITH_FLAG_SET)
+        .expect("the frame the encoder is held to exists");
+    format!(
+        r#"#include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+#include "codec_chain_has_marker.h"
+
+using Marker = ::SCE::Generated::CodecChainHasMarker::CodecChainHasMarker;
+
+namespace {{
+struct Frame {{
+    const char* name;
+    std::vector<std::uint8_t> bytes;
+    bool sliced;
+}};
+
+int failures = 0;
+
+void expect(bool ok, const char* name, const char* what) {{
+    if (!ok) {{
+        std::fprintf(stderr, "FAIL %s: %s\n", name, what);
+        ++failures;
+    }}
+}}
+
+std::optional<Marker> decode(const Frame& f) {{
+    ::SCE::Forge::SceCursor cursor(f.bytes.data(), f.bytes.size());
+    return Marker::decode(cursor);
+}}
+}}  // namespace
+
+int main() {{
+    const std::vector<Frame> frames = {{
+{frames}    }};
+    for (const Frame& f : frames) {{
+        auto v = decode(f);
+        if (!v) {{
+            expect(false, f.name, "decode");
+            continue;
+        }}
+        if (f.sliced) {{
+            expect(!v->payload_len && !v->payload, f.name, "plain fields on a marker");
+            expect(v->slice_count == 1u && v->slices && v->slices->size() == 1, f.name,
+                   "slices missing");
+        }} else {{
+            expect(!v->slice_count && !v->slices, f.name, "slices without a marker");
+            expect(v->payload_len.has_value(), f.name, "plain layout missing");
+        }}
+        auto out = v->encode_to_vec();
+        expect(out.has_value() && *out == f.bytes, f.name, "round trip");
+    }}
+
+    auto v = decode(frames[{flagged}]);
+    if (!v) {{
+        expect(false, "{MARKER_WITH_FLAG_SET}", "decode");
+        return 1;
+    }}
+    v->slice_count.reset();
+    v->slices.reset();
+    v->payload_len = 2;
+    v->payload = std::vector<std::uint8_t>{{0xAA, 0xBB}};
+    expect(!v->encode_to_vec().has_value(), "{MARKER_WITH_FLAG_SET}",
+           "the encoder wrote a plain layout under a marker");
+    return failures == 0 ? 0 : 1;
+}}
+"#
+    )
+}
+
+fn marker_c_program() -> String {
+    let arrays: String = MARKER_FRAMES
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            format!(
+                "static const uint8_t F{i}[] = {{{}}};\n",
+                marker_frame_bytes(f)
+            )
+        })
+        .collect();
+    let table: String = MARKER_FRAMES
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            format!(
+                "    {{\"{}\", F{i}, sizeof F{i}, {}}},\n",
+                f.name,
+                i32::from(f.sliced)
+            )
+        })
+        .collect();
+    format!(
+        r#"#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "codec_chain_has_marker.h"
+
+typedef struct {{
+    const char *name;
+    const uint8_t *bytes;
+    size_t len;
+    int sliced;
+}} frame_t;
+
+{arrays}
+static const frame_t FRAMES[] = {{
+{table}}};
+
+static int failures = 0;
+
+static void expect(int ok, const char *name, const char *what) {{
+    if (!ok) {{
+        fprintf(stderr, "FAIL %s: %s\n", name, what);
+        ++failures;
+    }}
+}}
+
+int main(void) {{
+    for (size_t i = 0; i < sizeof FRAMES / sizeof FRAMES[0]; ++i) {{
+        const frame_t *f = &FRAMES[i];
+        codec_chain_has_marker_t v;
+        memset(&v, 0, sizeof v);
+        sce_forge_cursor_t cursor = sce_forge_cursor_init(f->bytes, f->len);
+        if (codec_chain_has_marker_decode(&cursor, &v) != SCE_FORGE_CODEC_OK) {{
+            expect(0, f->name, "decode");
+            continue;
+        }}
+        if (f->sliced) {{
+            expect(v.slices_len == 1 && v.slice_count == 1, f->name, "slices missing");
+        }} else {{
+            expect(v.slices_len == 0 && v.slice_count == 0, f->name, "slices without a marker");
+        }}
+        uint8_t out[2048];
+        size_t out_len = 0;
+        sce_forge_codec_status_t st =
+            codec_chain_has_marker_encode_to_buf(&v, out, sizeof out, &out_len);
+        expect(st == SCE_FORGE_CODEC_OK && out_len == f->len && memcmp(out, f->bytes, f->len) == 0,
+               f->name, "round trip");
+    }}
+    return failures == 0 ? 0 : 1;
+}}
+"#
+    )
+}
+
+/// A backend whose generated code is a header-only library the test compiles
+/// with its own C or C++ compiler against the in-tree runtime, and runs.
+struct NativeMarkerBackend {
+    tool: &'static str,
+    language: sce_build::generator::Language,
+    /// Directories of the in-tree runtime's headers, relative to this crate.
+    runtime_includes: &'static [&'static str],
+    header_extensions: &'static [&'static str],
+    standard: &'static str,
+    source_name: &'static str,
+    program: fn() -> String,
+}
+
+fn run_marker_native(dir: &std::path::Path, backend: &NativeMarkerBackend) -> Result<(), String> {
+    let tool = backend.tool;
+    if !toolchain_present(tool) {
+        return require_all_or_warn(&format!("marker_exec_{tool}"), tool);
+    }
+    let files = generate_files_for_codec_set(dir, CHAIN_HAS_SET, backend.language)?;
+    let proj = marker_scratch_dir(&format!("sce_marker_{tool}"))?;
+    let mut seen = std::collections::HashSet::new();
+    for (filename, content) in &files {
+        let path = std::path::Path::new(filename);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !backend.header_extensions.contains(&ext) {
+            continue;
+        }
+        let basename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid filename: {filename}"))?;
+        if seen.insert(basename.to_string()) {
+            std::fs::write(proj.join(basename), content)
+                .map_err(|e| format!("write {basename}: {e}"))?;
+        }
+    }
+    std::fs::write(proj.join(backend.source_name), (backend.program)())
+        .map_err(|e| format!("write {}: {e}", backend.source_name))?;
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut compile = std::process::Command::new(tool);
+    compile
+        .arg(format!("-std={}", backend.standard))
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", proj.display()));
+    for include in backend.runtime_includes {
+        let resolved = manifest
+            .join(include)
+            .canonicalize()
+            .map_err(|e| format!("canonicalize {include}: {e}"))?;
+        compile.arg(format!("-I{}", resolved.display()));
+    }
+    compile
+        .arg("-o")
+        .arg("marker_exec")
+        .arg(backend.source_name)
+        .current_dir(&proj);
+    marker_run(&format!("{tool} compile"), compile, &proj)?;
+    let mut run = std::process::Command::new(proj.join("marker_exec"));
+    run.current_dir(&proj);
+    marker_run("marker_exec", run, &proj)?;
+    let _ = std::fs::remove_dir_all(&proj);
+    Ok(())
+}
+
+/// What a masked identifier DOES on the backends that can be run from here:
+/// every one decodes the same frames to the same layouts and encodes them back
+/// to the same bytes, and a backend that carries presence in a wrapper refuses a
+/// plain layout under a marker whose continuation flag is set. A backend that
+/// read `0x92` as another kind would pass its golden and its compile gate and
+/// fail here, as `has(0x12)` on the wrong byte is a program that compiles.
+///
+/// Rust is run by `an_identifier_without_its_continuation_flag_*`; the Kotlin
+/// read is held to its golden and the compile gate, which fix its text.
+#[test]
+fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+
+    let run_python = || -> Result<(), String> {
+        if !toolchain_present("python3") {
+            return require_all_or_warn("marker_exec_python", "python3");
+        }
+        let files = generate_files_for_codec_set(
+            &dir,
+            CHAIN_HAS_SET,
+            sce_build::generator::Language::Python,
+        )?;
+        let proj = marker_scratch_dir("sce_marker_py")?;
+        let pkg = proj.join("marker_pkg");
+        std::fs::create_dir_all(&pkg).map_err(|e| format!("mkdir: {e}"))?;
+        std::fs::write(pkg.join("__init__.py"), "").map_err(|e| format!("write: {e}"))?;
+        for (filename, content) in &files {
+            if filename.ends_with(".py") {
+                let basename = std::path::Path::new(filename)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| format!("invalid filename: {filename}"))?;
+                std::fs::write(pkg.join(basename), content)
+                    .map_err(|e| format!("write {basename}: {e}"))?;
+            }
+        }
+        std::fs::write(proj.join("run.py"), marker_python_program())
+            .map_err(|e| format!("write run.py: {e}"))?;
+        let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../backends/python/forge-runtime")
+            .canonicalize()
+            .map_err(|e| format!("canonicalize backends/python/forge-runtime: {e}"))?;
+        let mut command = std::process::Command::new("python3");
+        command
+            .arg("-W")
+            .arg("error")
+            .arg("run.py")
+            .env("PYTHONPATH", &runtime)
+            .current_dir(&proj);
+        marker_run("python3 run.py", command, &proj)?;
+        let _ = std::fs::remove_dir_all(&proj);
+        Ok(())
+    };
+    if let Err(e) = run_python() {
+        failures.push(format!("Python:\n{e}"));
+    }
+
+    let run_go = || -> Result<(), String> {
+        if !toolchain_present("go") {
+            return require_all_or_warn("marker_exec_go", "go");
+        }
+        let files =
+            generate_files_for_codec_set(&dir, CHAIN_HAS_SET, sce_build::generator::Language::Go)?;
+        let proj = marker_scratch_dir("sce_marker_go")?;
+        let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../backends/go/forge-runtime")
+            .canonicalize()
+            .map_err(|e| format!("canonicalize backends/go/forge-runtime: {e}"))?;
+        std::fs::write(
+            proj.join("go.mod"),
+            format!(
+                "module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.22\n\n\
+                 require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
+                 replace github.com/newmassrael/sce-forge-runtime => {}\n",
+                runtime.display()
+            ),
+        )
+        .map_err(|e| format!("write go.mod: {e}"))?;
+        let mut seen = std::collections::HashSet::new();
+        for (filename, content) in &files {
+            let path = std::path::Path::new(filename);
+            if path.extension().and_then(|e| e.to_str()) != Some("go") {
+                continue;
+            }
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| format!("invalid filename: {filename}"))?;
+            if !seen.insert(stem.to_string()) {
+                continue;
+            }
+            let pkg_dir = proj.join(stem);
+            std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("mkdir: {e}"))?;
+            std::fs::write(pkg_dir.join(format!("{stem}.go")), content)
+                .map_err(|e| format!("write {stem}.go: {e}"))?;
+        }
+        let exec_dir = proj.join("marker_exec");
+        std::fs::create_dir_all(&exec_dir).map_err(|e| format!("mkdir: {e}"))?;
+        std::fs::write(exec_dir.join("marker_exec_test.go"), marker_go_program())
+            .map_err(|e| format!("write marker_exec_test.go: {e}"))?;
+        let mut command = std::process::Command::new("go");
+        command.arg("test").arg("./marker_exec/").current_dir(&proj);
+        marker_run("go test", command, &proj)?;
+        let _ = std::fs::remove_dir_all(&proj);
+        Ok(())
+    };
+    if let Err(e) = run_go() {
+        failures.push(format!("Go:\n{e}"));
+    }
+
+    let native = [
+        (
+            "Cpp",
+            NativeMarkerBackend {
+                tool: "g++",
+                language: sce_build::generator::Language::Cpp,
+                runtime_includes: &["../backends/cpp/forge-runtime/include"],
+                header_extensions: &["h", "hpp"],
+                standard: "c++17",
+                source_name: "marker_exec.cpp",
+                program: marker_cpp_program,
+            },
+        ),
+        (
+            "C11",
+            NativeMarkerBackend {
+                tool: "gcc",
+                language: sce_build::generator::Language::C11,
+                runtime_includes: &[
+                    "../backends/c/forge-runtime/include",
+                    "../backends/c/runtime/include",
+                ],
+                header_extensions: &["h"],
+                standard: "c11",
+                source_name: "marker_exec.c",
+                program: marker_c_program,
+            },
+        ),
+    ];
+    for (label, backend) in &native {
+        if let Err(e) = run_marker_native(&dir, backend) {
+            failures.push(format!("{label}:\n{e}"));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "a masked identifier must decode, encode and refuse the same way on every backend that runs. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
 }
 
 /// What to tell a developer whose tree has no Kotlin forge-runtime jar.

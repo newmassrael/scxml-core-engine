@@ -1877,6 +1877,16 @@ fn is_exhaust_or_depth(s: &TlvTerminateStrategy) -> bool {
 ///     distinguishes two kinds at most and is a flag, not an identifier;
 ///   - an unsigned integer field of the entry codec — `carrier = None`,
 ///     `name = "entry_type"`.
+///
+/// An integer field that is itself a flags carrier is one byte of several
+/// parts, and not all of them tell a kind: the continuation flag of a chain
+/// whose entries end on one is set on every entry but the last, so two
+/// entries of one kind would otherwise have two identifiers. `except` names
+/// the flags of that field whose bits are not part of the identifier, and the
+/// identifier is the field with those bits cleared. It is the author's
+/// statement of the one thing the entry codec already declares — where the
+/// flags sit — so the bits are read from that layout and not written down a
+/// second time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TlvEntryId {
@@ -1886,6 +1896,12 @@ pub struct TlvEntryId {
     pub carrier: Option<String>,
     /// The flag name when `carrier` is set, the field id otherwise.
     pub name: String,
+    /// Flags of the field `name` whose bits the identifier leaves out, in the
+    /// order the author wrote them. Empty unless `carrier` is `None` and the
+    /// field is a flags carrier; absent from the serialized form when empty,
+    /// so a document that does not use it keeps its AST.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub except: Vec<String>,
 }
 
 /// Bit size specification for codec fields.
