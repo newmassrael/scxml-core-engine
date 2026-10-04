@@ -56,7 +56,20 @@ typedef struct {
     // publishes no list of. A scenario states such a value as an array, and a
     // driver with no list may leave this unset.
     bool (*list)(void *sm, const char *name, int64_t *out, size_t cap, size_t *len);
+    // The number a record's `field` holds: in the record variable `name`, when
+    // `index` is SCE_SCENARIO_WHOLE, or in element `index` of the list of records
+    // `name`. False for a name or a field the machine publishes none of, and for
+    // an element the list does not hold. A scenario states a record as an object
+    // and a list of records as an array of them, and a driver with no record may
+    // leave this unset.
+    bool (*record_field)(void *sm, const char *name, size_t index, const char *field, int64_t *out);
+    // How many elements the list of records `name` holds. False for a name the
+    // machine publishes no list of records of.
+    bool (*record_count)(void *sm, const char *name, size_t *len);
 } sce_scenario_driver_t;
+
+// `index` of a record that is a variable of its own, not an element of a list.
+#define SCE_SCENARIO_WHOLE ((size_t)-1)
 
 typedef struct {
     const char *at;
@@ -235,6 +248,53 @@ static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const cha
     return 1;
 }
 
+// A record stated as an object of numbers, against the record variable `name`
+// or element `index` of the list of records `name`. A well-formed object sets
+// `*well_formed`, whatever the machine holds; the rest of the file is read only
+// when it is.
+static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step,
+                                      const char *name, size_t index, bool *well_formed) {
+    int bad = 0;
+    char field[64];
+    char message[256];
+    *well_formed = false;
+    if (!sce_scenario_take(c, '{')) {
+        return sce_scenario_fail(d, step, "a record is not an object");
+    }
+    if (sce_scenario_take(c, '}')) {
+        *well_formed = true;
+        return 0;
+    }
+    for (;;) {
+        int64_t want = 0;
+        if (!sce_scenario_string(c, field, sizeof(field)) || !sce_scenario_take(c, ':') ||
+            !sce_scenario_number(c, &want)) {
+            return sce_scenario_fail(d, step, "a record field is not an integer or a bool");
+        }
+        int64_t got = 0;
+        if (d->record_field == NULL || !d->record_field(d->sm, name, index, field, &got)) {
+            (void)snprintf(message, sizeof(message), "the machine publishes no field `%s` of record `%s`", field, name);
+            bad |= sce_scenario_fail(d, step, message);
+        } else if (got != want) {
+            if (index == SCE_SCENARIO_WHOLE) {
+                (void)snprintf(message, sizeof(message), "`%s.%s` is %lld, want %lld", name, field, (long long)got,
+                               (long long)want);
+            } else {
+                (void)snprintf(message, sizeof(message), "`%s`[%zu].%s is %lld, want %lld", name, index, field,
+                               (long long)got, (long long)want);
+            }
+            bad |= sce_scenario_fail(d, step, message);
+        }
+        if (sce_scenario_take(c, '}')) {
+            *well_formed = true;
+            return bad;
+        }
+        if (!sce_scenario_take(c, ',')) {
+            return sce_scenario_fail(d, step, "a record is not well formed");
+        }
+    }
+}
+
 // What a step expects, read from its `expect` object — the object `c` is at.
 static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
     int bad = 0;
@@ -284,6 +344,23 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         return sce_scenario_fail(d, step, "a variable has no name");
                     }
                     sce_scenario_space(c);
+                    if (*c->at == '{') {
+                        // A record is stated as an object of its fields.
+                        bool well_formed = false;
+                        const int mismatch =
+                            sce_scenario_expect_record(c, d, step, name, SCE_SCENARIO_WHOLE, &well_formed);
+                        if (!well_formed) {
+                            return mismatch;
+                        }
+                        bad |= mismatch;
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
                     if (*c->at == '[') {
                         // A list is stated as its elements, in order.
                         enum { MAX_LIST = 16 };
@@ -291,6 +368,43 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         int64_t want_list[MAX_LIST];
                         size_t want_len = 0;
                         (void)sce_scenario_take(c, '[');
+                        sce_scenario_space(c);
+                        if (*c->at == '{') {
+                            // Records: each element an object, the count the list's own.
+                            size_t count = 0;
+                            for (;;) {
+                                bool well_formed = false;
+                                const int mismatch = sce_scenario_expect_record(c, d, step, name, count, &well_formed);
+                                if (!well_formed) {
+                                    return mismatch;
+                                }
+                                bad |= mismatch;
+                                ++count;
+                                if (sce_scenario_take(c, ']')) {
+                                    break;
+                                }
+                                if (!sce_scenario_take(c, ',')) {
+                                    return sce_scenario_fail(d, step, "a list is not well formed");
+                                }
+                            }
+                            size_t held = 0;
+                            if (d->record_count == NULL || !d->record_count(d->sm, name, &held)) {
+                                (void)snprintf(message, sizeof(message),
+                                               "the machine publishes no list of records `%s`", name);
+                                bad |= sce_scenario_fail(d, step, message);
+                            } else if (held != count) {
+                                (void)snprintf(message, sizeof(message), "`%s` holds %zu element(s), want %zu", name,
+                                               held, count);
+                                bad |= sce_scenario_fail(d, step, message);
+                            }
+                            if (sce_scenario_take(c, '}')) {
+                                break;
+                            }
+                            if (!sce_scenario_take(c, ',')) {
+                                return sce_scenario_fail(d, step, "`variables` is not well formed");
+                            }
+                            continue;
+                        }
                         if (!sce_scenario_take(c, ']')) {
                             for (;;) {
                                 if (want_len == MAX_LIST || !sce_scenario_number(c, &want_list[want_len])) {
@@ -309,7 +423,13 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         }
                         int64_t got_list[MAX_LIST];
                         size_t got_len = 0;
-                        if (d->list == NULL || !d->list(d->sm, name, got_list, MAX_LIST, &got_len)) {
+                        // An empty array is a list of either kind: a machine whose
+                        // list holds records answers by its count.
+                        bool found = d->list != NULL && d->list(d->sm, name, got_list, MAX_LIST, &got_len);
+                        if (!found && want_len == 0 && d->record_count != NULL) {
+                            found = d->record_count(d->sm, name, &got_len);
+                        }
+                        if (!found) {
                             (void)snprintf(message, sizeof(message), "the machine publishes no list `%s`", name);
                             bad |= sce_scenario_fail(d, step, message);
                         } else if (got_len != want_len) {

@@ -3264,10 +3264,11 @@ not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
 variables of the integer types, `bool` and an enum, a transition's guard,
 `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, an event's typed
 payload of numbers and bools, a call of an imported algorithm, a
-`<sce:action>` whose arguments are typed expressions of them, and a list of
-integers or bools with its `<sce:append>`, `<sce:clear>` and `<foreach>`. A
-string, a real, bytes and a record variable, a list of reals, a
-`<send>` / `<cancel>`, an
+`<sce:action>` whose arguments are typed expressions of them, a record whose
+fields are numbers and bools, and a list of integers, bools or such records
+with its `<sce:append>`, `<sce:clear>` and `<foreach>`. A
+string, a real, bytes and a record with a field of another type, a list of
+reals, a `<send>` / `<cancel>`, an
 `<invoke>`, a final's `<donedata>` and a transition on an event whose payload
 carries a string, bytes or enum field are refused until their spellings are
 written: a
@@ -3284,7 +3285,15 @@ loop began, by a count of its own (4.6), so a body that appends to the list it
 walks neither lengthens the walk nor reads what it has just written. A published
 list's reader answers the library's borrowed view of its elements,
 `sce_forge_<element>_view_t { data, len }`, which a host reads and cannot grow
-past the bound. An enum is a C `enum` of the enum document's own
+past the bound. A record is a struct of its schema's fields in the schema's
+order, `<machine>_record_<alias>_t`, declared in the machine's own header — the
+machine's alone, so two machines that import one schema declare two — and
+copied by assignment: a field is written as `<record>.<field> = …` under the
+failure rules of any assignment, the variable is built whole from its
+`<sce:set>`s as a compound literal, and an append or a loop takes a copy. A list
+of records is the same struct of its bound over that element, published through
+`<machine>_record_<alias>_view_t { data, len }`. A published record is read by
+value. An enum is a C `enum` of the enum document's own
 values, declared in the machine's header under a guard named for the document, so
 that a program including two machines which import it declares it once; its
 constants carry the document's name (`<DOC>_<VARIANT>`, as the enum kind's own C
@@ -3329,6 +3338,8 @@ from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
 `static_counter`, `static_counter_bound`, `static_overflow`,
 `static_block_ends`, `static_list`, `static_foreach`, `static_block_ends_list`,
+`static_record_fields`, `static_record` (a guard that calls an algorithm over
+two of its fields), `static_record_list`,
 `static_payload`, `static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms
 called over the payload of each answer) against machines generated from the

@@ -374,11 +374,21 @@ pub trait StaticTarget {
             empty: self.list_empty(),
         }
     }
+    /// [`Self::bounded_list`] for a list of the record type `record`
+    /// ([`Self::record_type`]): the default is [`Self::record_list_type`] and
+    /// [`Self::list_empty`] with nothing declared.
+    fn bounded_record_list(&self, record: &str, _capacity: Option<u32>) -> BoundedList {
+        BoundedList {
+            ty: self.record_list_type(record),
+            def: None,
+            empty: self.list_empty(),
+        }
+    }
     /// [`Self::foreach_loop`] for a target that has to name the type of the item
     /// it binds and of the list it copies — C has no `auto` — handed both:
-    /// `item_ty` is the scalar element's type, empty for a list of records, and
-    /// `list_ty` the list's own ([`Self::bounded_list`]). The default is the
-    /// untyped loop.
+    /// `item_ty` is the element's type, a record's included, and `list_ty` the
+    /// list's own ([`Self::bounded_list`], [`Self::bounded_record_list`]). The
+    /// default is the untyped loop.
     fn foreach_loop_typed(
         &self,
         list: &str,
@@ -1408,12 +1418,13 @@ pub fn lower(
                             ))
                         })?;
                         let record_ty = declarations.record(alias, schema)?;
+                        let list = declarations.record_list(&record_ty, var.capacity);
                         (
-                            target.record_list_type(&record_ty),
+                            list.ty,
                             target.record_list_view(&record_ty),
                             "record_list",
                             record_ty,
-                            target.list_empty(),
+                            list.empty,
                         )
                     }
                 };
@@ -1751,6 +1762,17 @@ impl<'t> TypeDeclarations<'t> {
     /// variable names it.
     fn scalar_list(&mut self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
         let list = self.target.bounded_list(elem, capacity);
+        if let Some(def) = &list.def {
+            if self.declared.insert(list.ty.clone()) {
+                self.type_defs.push(def.clone());
+            }
+        }
+        list
+    }
+
+    /// [`Self::scalar_list`] for a list of the record type `record`.
+    fn record_list(&mut self, record: &str, capacity: Option<u32>) -> BoundedList {
+        let list = self.target.bounded_record_list(record, capacity);
         if let Some(def) = &list.def {
             if self.declared.insert(list.ty.clone()) {
                 self.type_defs.push(def.clone());
@@ -3446,8 +3468,8 @@ impl StaticTarget for CTarget {
         // hold without a length. A list of integers or bools too: it is a
         // buffer of its bound, which every list declares ([`Self::bounded_list`]).
         // A string or a bytes value needs a capacity the C11 contract does not
-        // carry yet, a real is not yet held to a scenario, and a record needs a
-        // type the machine's own file does not yet declare.
+        // carry yet, and a real is not yet held to a scenario. A record is a
+        // struct the machine's own header declares, of fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -3466,12 +3488,17 @@ impl StaticTarget for CTarget {
             let Some(value_type) = v.value_type.as_ref() else {
                 return true;
             };
+            // A record, alone or as a list's element, is judged below by its
+            // schema.
+            if value_type.record_alias().is_some() {
+                return false;
+            }
             if let Some(elem) = value_type.list_elem() {
                 return !(v.capacity.is_some()
-                    && matches!(
-                        elem,
-                        crate::forge::model::ListElemType::Scalar(ty) if held_scalar(ty)
-                    ));
+                    && match elem {
+                        crate::forge::model::ListElemType::Scalar(ty) => held_scalar(ty),
+                        crate::forge::model::ListElemType::Record { .. } => true,
+                    });
             }
             !matches!(
                 value_type.scalar(),
@@ -3489,6 +3516,28 @@ impl StaticTarget for CTarget {
                 None => "no type".to_string(),
             };
             return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
+        }
+        // A record is a struct of the fields its schema declares, which are the
+        // numbers and bools a list holds. A field is named as the author wrote
+        // it; a name C reserves is refused where the schema is read, for every
+        // backend at once.
+        for var in &scope.variables {
+            let Some(alias) = var.value_type.as_ref().and_then(|t| {
+                t.record_alias()
+                    .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
+            }) else {
+                continue;
+            };
+            let Some(schema) = model.imported_records.get(alias) else {
+                continue;
+            };
+            if let Some(field) = schema.fields.iter().find(|f| !held_scalar(&f.sce_type)) {
+                return Some(format!(
+                    "record:{alias} with the field `{}` of type {}",
+                    field.id,
+                    field.sce_type.as_attr()
+                ));
+            }
         }
         if !model.global_scripts.is_empty() {
             return Some("a <script>".to_string());
@@ -3632,23 +3681,54 @@ impl StaticTarget for CTarget {
              switch (value) {{\n{names}    }}\n    return NULL;\n}}\n#endif"
         )
     }
-    fn record_type(&self, _machine: &str, _alias: &str) -> String {
-        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    // The machine's own, named by its symbol (prefix included): a record is the
+    // machine's, declared in its header like the payload types, so two machines
+    // of one program that import one schema declare two types.
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}_record_{}_t",
+            filters::to_snake_case(alias.to_string())
+        )
     }
+    // Plain data by the record rule: a struct of the schema's fields in the
+    // schema's order, copied by assignment, and the borrowed view a host reads
+    // a published list of them through.
     fn record_def(
         &self,
-        _ty: &str,
-        _alias: &str,
-        _schema: &EventSchemaModel,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
         _enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "    {} {};\n",
+                    crate::forge::generator::c_type(&field.sce_type),
+                    self.record_field(&field.id)
+                )
+            })
+            .collect();
+        let view = format!("{}_view_t", ty.trim_end_matches("_t"));
+        format!(
+            "/* SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
+             typedef struct {{\n{fields}}} {ty};\n\n\
+             /* A borrowed view of a list of them: what a host reads, and cannot grow past\n   \
+             the bound the machine keeps. */\n\
+             typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};"
+        )
     }
-    fn record_field(&self, _id: &str) -> String {
-        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    // The author's spelling, which is what an expression's member access writes
+    // (`shown.year` is `sm->policy.v_shown.year`); a schema that names a field
+    // for a word C reserves is refused where it is read.
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
     }
-    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
-        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let inits: Vec<String> = fields.iter().map(|(f, v)| format!(".{f} = {v}")).collect();
+        format!("({ty}){{ {} }}", inits.join(", "))
     }
     // A list's type carries its bound, so it is named by [`Self::bounded_list`].
     fn list_type(&self, _elem: &SceType) -> String {
@@ -3660,13 +3740,29 @@ impl StaticTarget for CTarget {
         Some(format!("sce_forge_{}_view_t", elem.as_attr()))
     }
     fn record_list_type(&self, _record: &str) -> String {
-        unreachable!("a C11 document with a record list is refused by `unsupported`")
+        unreachable!("a C11 list is declared through `bounded_record_list`")
     }
-    fn record_list_view(&self, _record: &str) -> Option<String> {
-        unreachable!("a C11 document with a record list is refused by `unsupported`")
+    fn record_list_view(&self, record: &str) -> Option<String> {
+        Some(format!("{}_view_t", record.trim_end_matches("_t")))
     }
     fn list_empty(&self) -> String {
-        unreachable!("a C11 list is declared through `bounded_list`")
+        unreachable!("a C11 list is declared through `bounded_list` or `bounded_record_list`")
+    }
+    // The buffer of a list of numbers, of a record's own type: named by the
+    // record and the bound, and declared once beside the record, which is the
+    // machine's alone and so needs no guard.
+    fn bounded_record_list(&self, record: &str, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a C11 list has the bound `unsupported` asked of it");
+        let ty = format!("{}_list_{capacity}_t", record.trim_end_matches("_t"));
+        let def = format!(
+            "/* SCE Accepted Subset §2.15: a list of at most {capacity} of `{record}`. */\n\
+             typedef struct {{\n    size_t len;\n    {record} data[{capacity}];\n}} {ty};"
+        );
+        BoundedList {
+            empty: format!("({ty}){{ 0 }}"),
+            ty,
+            def: Some(def),
+        }
     }
     // A buffer of its bound with the count of what it holds, named by the element
     // and the bound so that two variables of one shape share a type, and declared
@@ -3722,8 +3818,8 @@ impl StaticTarget for CTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
-        unreachable!("a C11 document with a record variable is refused by `unsupported`")
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target}.{field} = {value};")
     }
     // To stderr, as the machine's other `<log>` is. The value is widened to the
     // type its conversion names, because C has no `fmt` that picks one: a
@@ -4293,14 +4389,17 @@ fn lower_action(
             let inner = loop_variables.bind(ctx);
             let name = renames.get(list).copied().unwrap_or(list);
             // What a target that has to name the item's type and the list it
-            // copies is told: a list of numbers has both, a list of records
-            // neither yet, which the target that needs them refuses.
+            // copies is told: the element's type and the list's own.
             let (item_ty, list_ty) = match elem {
                 crate::forge::model::ListElemType::Scalar(scalar) => (
                     target.scalar_type(scalar),
                     target.bounded_list(scalar, Some(*capacity)).ty,
                 ),
-                crate::forge::model::ListElemType::Record { .. } => (String::new(), String::new()),
+                crate::forge::model::ListElemType::Record { alias } => {
+                    let record_ty = target.record_type(rewrites.machine, alias);
+                    let list = target.bounded_record_list(&record_ty, Some(*capacity));
+                    (record_ty, list.ty)
+                }
             };
             if let Some((head, prologue)) =
                 target.foreach_loop_typed(name, item, index, &item_ty, &list_ty)

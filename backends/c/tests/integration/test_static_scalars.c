@@ -44,6 +44,13 @@
 //     it has just written; the item, its position and a loop in a loop are native.
 //   * `static_block_ends_list`: an append that fails ends the block it stands in,
 //     like any other failed statement.
+//   * `static_record_fields`, `static_record`: a record variable is a struct of
+//     its schema's fields, built whole from its `<sce:set>`s, read field by field
+//     in a guard and an assignment, and updated a field at a time; an assignment
+//     that fails leaves the record as it was.
+//   * `static_record_list`: a list of records copies the record it is appended
+//     to, a loop reads its record item typed and appends it whole to another
+//     list, and a whole record is assigned from a record by name.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -67,6 +74,9 @@
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
+#include "static_record_fields_sm.h"
+#include "static_record_list_sm.h"
+#include "static_record_sm.h"
 #include "sync_client_sm.h"
 
 #include "static_scenario.h"
@@ -94,6 +104,18 @@ typedef struct {
 
 // What a machine with no list passes for its table.
 static const list_variable_t no_lists[] = {{NULL, NULL}};
+
+// A published record's reader, or a published list of records': the number a
+// field of it holds — in the record, or in element `index` of the list — and, for
+// a list, how many elements it holds. A table of these ends at a NULL name.
+typedef struct {
+    const char *name;
+    bool (*field)(const void *sm, size_t index, const char *field, int64_t *out);
+    size_t (*count)(const void *sm);
+} record_variable_t;
+
+// What a machine with no record passes for its table.
+static const record_variable_t no_records[] = {{NULL, NULL, NULL}};
 
 static bool find(const name_value_t *table, size_t count, const char *name, int *out) {
     for (size_t i = 0; i < count; ++i) {
@@ -123,10 +145,61 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return view.len;                                                                                               \
     }
 
+// A record variable's reader, over the record the machine publishes by value.
+// FIELDS names every field a scenario can state, as `X(field)` for each, which
+// is how the reader tells a field by its name from a typo.
+#define RECORD_FIELD_CASE(FIELD)                                                                                       \
+    if (strcmp(field, #FIELD) == 0) {                                                                                  \
+        *out = (int64_t)rec->FIELD;                                                                                    \
+        return true;                                                                                                   \
+    }
+#define RECORD_READER(M, VAR, RECORD, FIELDS)                                                                          \
+    static bool M##_read_record_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {                 \
+        const RECORD value = M##_get_##VAR((const M##_t *)sm);                                                         \
+        const RECORD *rec = &value;                                                                                    \
+        (void)index;                                                                                                   \
+        FIELDS(RECORD_FIELD_CASE)                                                                                      \
+        return false;                                                                                                  \
+    }
+
+// A published list of records' reader, over the borrowed view of its elements.
+#define RECORD_LIST_READER(M, VAR, VIEW, RECORD, FIELDS)                                                               \
+    static bool M##_read_record_list_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {            \
+        const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
+        if (index >= view.len) {                                                                                       \
+            return false;                                                                                              \
+        }                                                                                                              \
+        const RECORD *rec = &view.data[index];                                                                         \
+        FIELDS(RECORD_FIELD_CASE)                                                                                      \
+        return false;                                                                                                  \
+    }                                                                                                                  \
+    static size_t M##_count_record_list_##VAR(const void *sm) {                                                        \
+        const VIEW view = M##_get_##VAR((const M##_t *)sm);                                                            \
+        return view.len;                                                                                               \
+    }
+
 // One machine as `sce_scenario_driver_t` asks for it: the event by the name the
 // machine itself resolves (§scxml-3.12.1), the state by its document name, the
-// variable by its, the lists by theirs, and the replay of its scenario.
-#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS)                                                             \
+// variable by its, the lists and records by theirs, and the replay of its
+// scenario.
+#define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                                    \
+    static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
+        for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
+            if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
+                return RECORDS[i].field(sm, index, field, out);                                                        \
+            }                                                                                                          \
+        }                                                                                                              \
+        return false;                                                                                                  \
+    }                                                                                                                  \
+    static bool M##_read_record_count(void *sm, const char *name, size_t *len) {                                       \
+        for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
+            if (strcmp(RECORDS[i].name, name) == 0 && RECORDS[i].count != NULL) {                                      \
+                *len = RECORDS[i].count(sm);                                                                           \
+                return true;                                                                                           \
+            }                                                                                                          \
+        }                                                                                                              \
+        return false;                                                                                                  \
+    }                                                                                                                  \
     static bool M##_read_lists(void *sm, const char *name, int64_t *out, size_t cap, size_t *len) {                    \
         for (size_t i = 0; LISTS[i].name != NULL; ++i) {                                                               \
             if (strcmp(LISTS[i].name, name) == 0) {                                                                    \
@@ -176,8 +249,16 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
     static int M##_scenario(const char *scenario, int min_steps) {                                                     \
         M##_t sm;                                                                                                      \
         M##_init(&sm);                                                                                                 \
-        const sce_scenario_driver_t driver = {                                                                         \
-            #M, &sm, M##_raise_event, M##_state_active, M##_run_ended, M##_read_variable, TEXT, M##_read_lists};       \
+        const sce_scenario_driver_t driver = {#M,                                                                      \
+                                              &sm,                                                                     \
+                                              M##_raise_event,                                                         \
+                                              M##_state_active,                                                        \
+                                              M##_run_ended,                                                           \
+                                              M##_read_variable,                                                       \
+                                              TEXT,                                                                    \
+                                              M##_read_lists,                                                          \
+                                              M##_read_record_field,                                                   \
+                                              M##_read_record_count};                                                  \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -202,7 +283,7 @@ static const variable_t counter_variables[] = {
     {"count", static_counter_read_count},
     {"ready", static_counter_read_ready},
 };
-STATIC_SCENARIO(static_counter, counter_states, counter_variables, NULL, no_lists)
+STATIC_SCENARIO(static_counter, counter_states, counter_variables, NULL, no_lists, no_records)
 
 // static_event_arrival: an event arrives by name from outside the document
 // (§scxml-3.12.1), so the machine delivers it as the event it resolves the name
@@ -216,7 +297,7 @@ static const variable_t event_arrival_variables[] = {
     {"requests", static_event_arrival_read_requests},
     {"specials", static_event_arrival_read_specials},
 };
-STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL, no_lists)
+STATIC_SCENARIO(static_event_arrival, event_arrival_states, event_arrival_variables, NULL, no_lists, no_records)
 
 // static_overflow
 VARIABLE_READER(static_overflow, level)
@@ -229,7 +310,7 @@ static const variable_t overflow_variables[] = {
     {"level", static_overflow_read_level},
     {"refusals", static_overflow_read_refusals},
 };
-STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL, no_lists)
+STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL, no_lists, no_records)
 
 // static_block_ends
 VARIABLE_READER(static_block_ends, a)
@@ -257,7 +338,7 @@ static const variable_t block_ends_variables[] = {
     {"afterOk", static_block_ends_read_afterOk},
     {"errors", static_block_ends_read_errors},
 };
-STATIC_SCENARIO(static_block_ends, block_ends_states, block_ends_variables, NULL, no_lists)
+STATIC_SCENARIO(static_block_ends, block_ends_states, block_ends_variables, NULL, no_lists, no_records)
 
 // static_payload
 VARIABLE_READER(static_payload, day)
@@ -273,7 +354,7 @@ static const variable_t payload_variables[] = {
     {"sinceEpoch", static_payload_read_sinceEpoch},
     {"refusals", static_payload_read_refusals},
 };
-STATIC_SCENARIO(static_payload, payload_states, payload_variables, NULL, no_lists)
+STATIC_SCENARIO(static_payload, payload_states, payload_variables, NULL, no_lists, no_records)
 
 // static_enum: the layout a calendar screen shows its days in. `layout` is
 // published; `previous` is the machine's own, so it is read from the policy the
@@ -310,7 +391,7 @@ static const variable_t enum_variables[] = {
     {"layout", static_enum_read_layout},
     {"previous", static_enum_read_previous},
 };
-STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists)
+STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists, no_records)
 
 // sync_client: one collection's sync run, which calls the standard sync rules —
 // algorithms the machine includes — over the payload of each answer the host
@@ -338,7 +419,7 @@ static const variable_t sync_variables[] = {
     {"discarded", sync_client_read_discarded}, {"pages", sync_client_read_pages},
     {"refusals", sync_client_read_refusals},
 };
-STATIC_SCENARIO(sync_client, sync_states, sync_variables, NULL, no_lists)
+STATIC_SCENARIO(sync_client, sync_states, sync_variables, NULL, no_lists, no_records)
 
 // static_list: a list filled to its bound by <sce:append> from a typed payload,
 // measured by len(), emptied by <sce:clear>. A published list is read through the
@@ -355,7 +436,7 @@ static const variable_t list_variables[] = {
     {"count", static_list_read_count},
 };
 static const list_variable_t list_lists[] = {{"picked", static_list_read_list_picked}, {NULL, NULL}};
-STATIC_SCENARIO(static_list, list_states, list_variables, NULL, list_lists)
+STATIC_SCENARIO(static_list, list_states, list_variables, NULL, list_lists, no_records)
 
 // static_foreach: a loop over a copy of the list as it began — the item alone, the
 // item and its position, a loop in a loop, and a body that appends to the list it
@@ -378,7 +459,7 @@ static const variable_t foreach_variables[] = {
     {"errors", static_foreach_read_errors},
 };
 static const list_variable_t foreach_lists[] = {{"picked", static_foreach_read_list_picked}, {NULL, NULL}};
-STATIC_SCENARIO(static_foreach, foreach_states, foreach_variables, NULL, foreach_lists)
+STATIC_SCENARIO(static_foreach, foreach_states, foreach_variables, NULL, foreach_lists, no_records)
 
 // static_block_ends_list: a full list ends the block it is appended to.
 VARIABLE_READER(static_block_ends_list, afterAppend)
@@ -393,7 +474,66 @@ static const variable_t block_ends_list_variables[] = {
 };
 static const list_variable_t block_ends_list_lists[] = {{"picked", static_block_ends_list_read_list_picked},
                                                         {NULL, NULL}};
-STATIC_SCENARIO(static_block_ends_list, block_ends_list_states, block_ends_list_variables, NULL, block_ends_list_lists)
+STATIC_SCENARIO(static_block_ends_list, block_ends_list_states, block_ends_list_variables, NULL, block_ends_list_lists,
+                no_records)
+
+// static_record_fields: a record variable built whole from its <sce:set>s, read
+// field by field in a guard and an assignment, and updated a field at a time —
+// from its own value and from a typed event payload. It is published by value,
+// as the struct the machine's header declares.
+#define DAY_FIELDS(X) X(year) X(month) X(dayOfMonth)
+VARIABLE_READER(static_record_fields, refusals)
+RECORD_READER(static_record_fields, shown, static_record_fields_record_day_t, DAY_FIELDS)
+static const name_value_t record_fields_states[] = {
+    {"showing", STATIC_RECORD_FIELDS_STATE_SHOWING},
+};
+static const variable_t record_fields_variables[] = {
+    {"refusals", static_record_fields_read_refusals},
+};
+static const record_variable_t record_fields_records[] = {{"shown", static_record_fields_read_record_shown, NULL},
+                                                          {NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_fields, record_fields_states, record_fields_variables, NULL, no_lists,
+                record_fields_records)
+
+// static_record: the same record, with a guard that calls an imported algorithm
+// over two of its fields.
+VARIABLE_READER(static_record, refusals)
+RECORD_READER(static_record, shown, static_record_record_day_t, DAY_FIELDS)
+static const name_value_t record_states[] = {
+    {"showing", STATIC_RECORD_STATE_SHOWING},
+};
+static const variable_t record_variables[] = {
+    {"refusals", static_record_read_refusals},
+};
+static const record_variable_t record_records[] = {{"shown", static_record_read_record_shown, NULL},
+                                                   {NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record, record_states, record_variables, NULL, no_lists, record_records)
+
+// static_record_list: lists of records — each append takes a copy of the record
+// as it stands, a loop reads its record item typed and appends it whole to
+// another list, and a whole record is assigned from a record by name.
+VARIABLE_READER(static_record_list, total)
+VARIABLE_READER(static_record_list, errors)
+RECORD_READER(static_record_list, draft, static_record_list_record_day_t, DAY_FIELDS)
+RECORD_READER(static_record_list, last, static_record_list_record_day_t, DAY_FIELDS)
+RECORD_LIST_READER(static_record_list, days, static_record_list_record_day_view_t, static_record_list_record_day_t,
+                   DAY_FIELDS)
+RECORD_LIST_READER(static_record_list, copies, static_record_list_record_day_view_t, static_record_list_record_day_t,
+                   DAY_FIELDS)
+static const name_value_t record_list_states[] = {
+    {"collecting", STATIC_RECORD_LIST_STATE_COLLECTING},
+};
+static const variable_t record_list_variables[] = {
+    {"total", static_record_list_read_total},
+    {"errors", static_record_list_read_errors},
+};
+static const record_variable_t record_list_records[] = {
+    {"draft", static_record_list_read_record_draft, NULL},
+    {"last", static_record_list_read_record_last, NULL},
+    {"days", static_record_list_read_record_list_days, static_record_list_count_record_list_days},
+    {"copies", static_record_list_read_record_list_copies, static_record_list_count_record_list_copies},
+    {NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_list, record_list_states, record_list_variables, NULL, no_lists, record_list_records)
 
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
@@ -431,6 +571,9 @@ int main(void) {
     bad |= static_list_scenario("static_list", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
+    bad |= static_record_fields_scenario("static_record_fields", 9);
+    bad |= static_record_scenario("static_record", 16);
+    bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= sync_client_scenario("sync_client", 30);

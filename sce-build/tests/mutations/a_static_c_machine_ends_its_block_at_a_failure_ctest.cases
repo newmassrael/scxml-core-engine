@@ -157,6 +157,25 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "        if (false) {\n            {{ action.native_loop_prologue }}")
 PY
 
+# ── A record is its fields, written one at a time ──────────────────
+#
+# `static_record_fields`: the record starts at the values its `<sce:set>`s give
+# and `next`, `day.picked` and `rewind` write one field of it. A field written
+# back as it stood is a record that never moves; an initial value that is not
+# the document's is a record that starts somewhere else.
+
+mutation_case "a record field is assigned its own value back" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        format!(\"{target}.{field} = {value};\")\n    }\n    // To stderr, as the machine's other `<log>` is.",
+     "        format!(\"{target}.{field} = {target}.{field};\")\n    }\n    // To stderr, as the machine's other `<log>` is.")
+PY
+
+mutation_case "a record starts with every field zero" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        let inits: Vec<String> = fields.iter().map(|(f, v)| format!(\".{f} = {v}\")).collect();",
+     "        let inits: Vec<String> = fields.iter().map(|(f, _)| format!(\".{f} = 0\")).collect();")
+PY
+
 # ── A published list is its elements and their count ───────────────
 
 mutation_case "a published list's view says one element too few" <<'PY'

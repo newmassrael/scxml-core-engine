@@ -2329,6 +2329,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # A record is a struct of its schema's fields, declared in the machine's own
+    # header; the schema is the document the machine imports it from.
+    foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list)
+        sce_generate_static_integration_c_test(${_STATIC_RECORD_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_RECORD_MACHINE}.scxml"
+            STAGE_ALSO schema_day.scxml
+        )
+    endforeach()
+    # A guard over two fields of the record calls an algorithm of the fixtures'
+    # own, whose header is generated once beside the machines that include it.
+    set(_DAYS_IN_MONTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/days_in_month.h")
+    set(_DAYS_IN_MONTH_SOURCE
+        "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml")
+    add_custom_command(
+        OUTPUT "${_DAYS_IN_MONTH_HEADER}"
+        COMMAND "${SCE_CODEGEN}" generate "${_DAYS_IN_MONTH_SOURCE}"
+                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                --write-deps "${_DAYS_IN_MONTH_HEADER}.d"
+        DEPENDS "${_DAYS_IN_MONTH_SOURCE}" "${SCE_CODEGEN}"
+        DEPFILE "${_DAYS_IN_MONTH_HEADER}.d"
+        COMMENT "Generating C11 algorithm: days_in_month.h"
+        VERBATIM
+    )
+    sce_generate_static_integration_c_test(static_record
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record.scxml"
+        STAGE_ALSO schema_day.scxml algorithm_days_in_month.scxml
+    )
     # An enum variable's variants are the enum document's, imported by name.
     sce_generate_static_integration_c_test(static_enum
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2369,6 +2398,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_foreach_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_list_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_SOURCES}
+        ${_DAYS_IN_MONTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
