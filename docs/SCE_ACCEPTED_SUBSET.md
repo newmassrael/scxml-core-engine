@@ -3301,7 +3301,12 @@ an event carries as its data, by the header-only wire writer of the forge runtim
 (`sce/forge/wire.h`). A `<donedata>`'s go into the `done_data` buffer the machine
 holds, which a host reads through `<machine>_done_data(sm)` and a compound
 final's done event is built from; a `<send>`'s into the event's own data buffer,
-which every delivery of the send reads. A value is a bool, a string — its `"`,
+which every delivery of the send reads. A `<send>` with a `delay` waits in the
+machine's own scheduler and is delivered when its clock reaches it: a host that
+owns the clock (`<machine>_init_with_clock`, `<machine>_advance_time_ms`) has
+the sends that fall due together delivered in the order they were made, and a
+`<cancel>` removes the one whose id it names; `test_static_timers.c` drives
+`static_timers` so. A value is a bool, a string — its `"`,
 `\` and control characters escaped, its UTF-8 as it is — or an integer, at the
 widest of its signedness. A pair whose value failed to compute, or whose
 location is empty, raises `error.execution` and is left out, every other pair

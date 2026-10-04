@@ -2486,6 +2486,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # Delayed `<send>`s still waiting under `datamodel="sce-static"`: the
+    # machine's own clock brings each due, in the order it was sent, and a
+    # `<cancel>` removes the one it names. The document is the one the Rust,
+    # Kotlin and Go suites save and restore; the machine here runs on a clock
+    # the test moves, so no case sleeps.
+    sce_generate_static_integration_c_test(static_timers
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
+    )
+    add_executable(sce_c_integration_static_timers
+        integration/test_static_timers.c
+        ${INTEGRATION_C_TEST_static_timers_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_timers PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_timers PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_timers PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_timers
+        COMMAND sce_c_integration_static_timers
+    )
+    set_tests_properties(c11_integration_static_timers PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.2: the resume seam — what `_init_at` accepts and what it
     # refuses. Not a fixture stem: it drives the two machines above rather than
     # adding a document of its own, because the claim is about a runtime door
