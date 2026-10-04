@@ -3632,6 +3632,9 @@ impl SCXMLParser {
             action.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
             action.contentexpr_spelling = AttributeSpelling::of(&content_elem, None, "expr");
             action.content = content_body(&content_elem);
+            if action.contentexpr.is_empty() && !action.content.is_empty() {
+                action.content_text_spelling = AttributeSpelling::of_character_data(&content_elem);
+            }
         }
 
         // Dynamic expressions
@@ -4373,73 +4376,79 @@ impl SCXMLParser {
             // WASM (`base_dir == None`) takes the same in-memory path; the
             // historical empty-`child_name` skip is gone because inline
             // parsing has no filesystem dependency.
-            let (resolved_src, resolved_child_name, inline_child_model, inline_child_source_xml) =
-                if let Some(inline) = inline_document.as_ref() {
-                    // SCE Mesh §9.6.6 rule 1: synthesised machine name is
-                    // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
-                    // `field_suffix` is the invoke_id with its leading
-                    // underscore trimmed (line ~1438), so author ids map
-                    // verbatim and the auto-generated `_invoke_N` ids
-                    // (§scxml-6.4.1 §3.14 — SCE emits one when `id` is
-                    // absent) produce `invoke_N` rather than the triple
-                    // underscore block `__sce_synth_invoke___invoke_N`.
-                    let synth_name = format!(
-                        "{}{}{}",
-                        model.name,
-                        crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                        field_suffix,
-                    );
-                    // Recursive parse uses a fresh parser instance — sharing
-                    // `self` would cross-contaminate document_order_counter /
-                    // invoke_counter between parent and child. Asymmetric
-                    // [`DocumentLabel`]: identifier = synth name (extension-
-                    // free, drives template symbols), diagnostic label =
-                    // `<synth>.scxml` (matches the historical on-disk file
-                    // path so SCE-MAP markers + NDJSON `location.file` stay
-                    // byte-stable against the pre-refactor goldens).
-                    //
-                    // A child that does not parse refuses its parent, at the
-                    // row its author wrote. ⚠ Until 2026-09-24 the failure
-                    // was one `Warning:` line on stderr and no child at all:
-                    // the parent generated, its code still included the
-                    // child's header, and the build failed later, far from
-                    // the cause.
-                    let synth_diag_label = format!("{synth_name}.scxml");
-                    let inline_child = SCXMLParser::new()
-                        .parse_string_with_label(
-                            &inline.text,
-                            DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
-                        )
-                        .map_err(|err| inline.placed(&synth_diag_label, err))?;
-                    // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
-                    // carries the canonical `#<machine>` mesh peer
-                    // reference so `classify_remote_scxml_invokes`
-                    // treats the synth peer through the same axis as
-                    // author-declared peers. `child_name` carries the
-                    // synth identifier for local child session codegen
-                    // (`invoke_methods.jinja2` etc.) and for
-                    // `parse_child_metadata` below. `xml_content` rides
-                    // on the invoke so codegen can re-emit it to `-o`
-                    // for downstream consumers (`inject_partition_context_
-                    // for` + CMake stage-3 synth codegen + W3C
-                    // `process_children_<N>.cmake`).
-                    (
-                        format!("#{synth_name}"),
-                        synth_name,
-                        Some(Box::new(inline_child)),
-                        Some(inline.text.clone()),
+            let (
+                resolved_src,
+                resolved_child_name,
+                inline_child_model,
+                inline_child_source_xml,
+                inline_child_range,
+            ) = if let Some(inline) = inline_document.as_ref() {
+                // SCE Mesh §9.6.6 rule 1: synthesised machine name is
+                // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
+                // `field_suffix` is the invoke_id with its leading
+                // underscore trimmed (line ~1438), so author ids map
+                // verbatim and the auto-generated `_invoke_N` ids
+                // (§scxml-6.4.1 §3.14 — SCE emits one when `id` is
+                // absent) produce `invoke_N` rather than the triple
+                // underscore block `__sce_synth_invoke___invoke_N`.
+                let synth_name = format!(
+                    "{}{}{}",
+                    model.name,
+                    crate::mesh::deploy::SYNTH_INVOKE_INFIX,
+                    field_suffix,
+                );
+                // Recursive parse uses a fresh parser instance — sharing
+                // `self` would cross-contaminate document_order_counter /
+                // invoke_counter between parent and child. Asymmetric
+                // [`DocumentLabel`]: identifier = synth name (extension-
+                // free, drives template symbols), diagnostic label =
+                // `<synth>.scxml` (matches the historical on-disk file
+                // path so SCE-MAP markers + NDJSON `location.file` stay
+                // byte-stable against the pre-refactor goldens).
+                //
+                // A child that does not parse refuses its parent, at the
+                // row its author wrote. ⚠ Until 2026-09-24 the failure
+                // was one `Warning:` line on stderr and no child at all:
+                // the parent generated, its code still included the
+                // child's header, and the build failed later, far from
+                // the cause.
+                let synth_diag_label = format!("{synth_name}.scxml");
+                let inline_child = SCXMLParser::new()
+                    .parse_string_with_label(
+                        &inline.text,
+                        DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
                     )
-                } else if !src.is_empty() {
-                    let stripped = src.replace("file:", "");
-                    let child_name = Path::new(&stripped)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    (src.clone(), child_name, None, None)
-                } else {
-                    (src.clone(), String::new(), None, None)
-                };
+                    .map_err(|err| inline.placed(&synth_diag_label, err))?;
+                // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
+                // carries the canonical `#<machine>` mesh peer
+                // reference so `classify_remote_scxml_invokes`
+                // treats the synth peer through the same axis as
+                // author-declared peers. `child_name` carries the
+                // synth identifier for local child session codegen
+                // (`invoke_methods.jinja2` etc.) and for
+                // `parse_child_metadata` below. `xml_content` rides
+                // on the invoke so codegen can re-emit it to `-o`
+                // for downstream consumers (`inject_partition_context_
+                // for` + CMake stage-3 synth codegen + W3C
+                // `process_children_<N>.cmake`).
+                (
+                    format!("#{synth_name}"),
+                    synth_name,
+                    Some(Box::new(inline_child)),
+                    Some(inline.text.clone()),
+                    Some(inline.range.clone()),
+                )
+            } else if !src.is_empty() {
+                let stripped = src.replace("file:", "");
+                let child_name = Path::new(&stripped)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                (src.clone(), child_name, None, None, None)
+            } else {
+                (src.clone(), String::new(), None, None, None)
+            };
 
             let Traceability {
                 req: invoke_req,
@@ -4469,6 +4478,7 @@ impl SCXMLParser {
                 namelist,
                 inline_child: inline_child_model,
                 inline_child_xml: inline_child_source_xml,
+                inline_child_range,
                 remote_mesh_target: None,
                 remote_mesh_transport: None,
             };
@@ -6702,10 +6712,17 @@ struct InlineDocument {
     /// bindings map to the root's start and the end of its name, where
     /// nothing an author wrote can be refused.
     map: crate::position_map::PositionMap,
+    /// The child's root element in the enclosing document, as byte offsets.
+    range: std::ops::Range<usize>,
 }
 
+/// The prologue an inline child's text is wrapped in
+/// ([`ScxmlInvokeInfo::inline_child_xml`]), which is no part of the element it
+/// was cut from.
+pub(crate) const INLINE_CHILD_DECLARATION: &str = "<?xml version=\"1.0\"?>\n\n";
+
 impl InlineDocument {
-    const DECLARATION: &'static str = "<?xml version=\"1.0\"?>\n\n";
+    const DECLARATION: &'static str = INLINE_CHILD_DECLARATION;
 
     /// `root`, cut out of the document `parent_label` names.
     fn of(root: &roxmltree::Node, parent_label: &str) -> Self {
@@ -6746,7 +6763,7 @@ impl InlineDocument {
             map.push_entry(name, tail, from(name_end));
         }
         map.push_entry(tail, text.len(), from(name_end));
-        Self { text, map }
+        Self { text, map, range }
     }
 
     /// `err`, raised against this document under `label`, moved to where

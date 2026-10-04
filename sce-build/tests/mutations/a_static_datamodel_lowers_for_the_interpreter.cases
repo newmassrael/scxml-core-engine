@@ -66,3 +66,50 @@ edit("sce-build/src/forge/static_js.rs",
      "                    DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {\n",
      "                    DoneDataContent::InlineText(_) if false => {\n")
 PY
+
+# An inline child is left as its author wrote it, a `sce-static` document that the
+# Interpreter refuses when it starts the child.
+mutation_case "an inline child is not lowered" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            let lowered = lower_parsed(xml, child, &child_label, base_dir)?;\n",
+     "            let _ = (&child_label, base_dir, child);\n            let lowered = xml.to_string();\n")
+PY
+
+# The value an `<invoke>` hands its child is written as the author wrote it, with
+# no bound: a string past the child's is taken, where the generated backends leave
+# it out.
+mutation_case "a string's bound is not carried to the child" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        rewrites.note(&written, spelling.as_ref(), &seed);\n",
+     "        rewrites.note(&written, spelling.as_ref(), &written);\n")
+PY
+
+# An `<invoke>` by `src` is lowered as if its child were inline.
+mutation_case "an invoke by src is not refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    if info.inline_child.is_none() || info.inline_child_range.is_none() {\n",
+     "    if false {\n")
+PY
+
+# A `namelist` name that hands a child a string it bounds is no longer refused.
+mutation_case "a bounded namelist string is not refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        if bounded_string {\n",
+     "        if false && bounded_string {\n")
+PY
+
+# The text of a `<send>`'s inline `<content>` is left as the author wrote it: an
+# engine reads `42` as a number, where every generated backend carries the string.
+mutation_case "a send text is not finished to its string" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                rewrites.note(\n                    &action.content,\n                    action.content_text_spelling.as_ref(),\n                    &action.native_content,\n                );\n",
+     "")
+PY
+
+# A `<send>` whose `<content>` holds an element is no longer refused: the engine
+# would read it as a document where the generated backends carry it as a string.
+mutation_case "a send content holding an element is lowered" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        \"send\" if !action.content.trim().is_empty() && action.content_text_spelling.is_none() => {\n",
+     "        \"send\" if false => {\n")
+PY

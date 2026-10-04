@@ -5047,6 +5047,15 @@ fn lower_action(
             // no engine to evaluate the text with.
             if !action.content.trim().is_empty() {
                 action.native_content = crate::filters::static_content_wire(&action.content);
+                // Where the text is written, for a backend that runs the
+                // document's own `<content>`: the same finished text, which an
+                // engine reads as the string it spells and not as the value it
+                // could be read as.
+                rewrites.note(
+                    &action.content,
+                    action.content_text_spelling.as_ref(),
+                    &action.native_content,
+                );
             }
         }
         _ => {}
@@ -5213,7 +5222,6 @@ fn lower_child_arguments(
         };
         let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
             .map_err(|r| refused(r.error.to_string()))?;
-        rewrites.note(&written, spelling.as_ref(), &value.text);
         // A string handed to the child's variable is held to the bound the child
         // declared for it, whatever the value came from, as an `<assign>` to it
         // would be (§scxml-4.9): past it the value fails as any other does, is
@@ -5224,6 +5232,9 @@ fn lower_child_arguments(
             }
             _ => (value.text, value.can_fail),
         };
+        // Where the value is written, for a backend that runs the document's own
+        // expression: the seed, which carries the bound a string is held to.
+        rewrites.note(&written, spelling.as_ref(), &seed);
         param.native_seed = seed;
         param.native_seed_type = target.scalar_type(held);
         param.native_fails = fails;

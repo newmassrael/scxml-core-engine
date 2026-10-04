@@ -102,11 +102,12 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     }
     // Floor: a scan that found nothing to lower would pass. What is lowered
     // today — scalars, checked integers, the typed payload, lists, records,
-    // calls of scalar algorithms, a `<send>`'s `<param>`s and a `<final>`'s
-    // `<donedata>` — is at least these twenty-seven machines, and the floor
+    // calls of scalar algorithms, a `<send>`'s `<param>`s, a `<final>`'s
+    // `<donedata>` and a child session written inline — is at least these thirty
+    // machines, which is every one the fixture directory holds, and the floor
     // rises as the lowering grows.
     assert!(
-        lowered.len() >= 27,
+        lowered.len() >= 30,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
@@ -120,6 +121,9 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_wire_enum",
         "static_donedata",
         "static_donedata_content",
+        "static_invoke",
+        "static_invoke_params",
+        "static_invoke_string",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),
@@ -284,6 +288,109 @@ fn a_donedata_content_holding_an_element_is_refused_by_name() {
     let text = format!("{refusal:?}");
     assert!(
         text.contains("UnsupportedFeature") && text.contains("holding an element"),
+        "the refusal names the construct: {text}"
+    );
+}
+
+/// The text of a `<send>`'s inline `<content>` is the string it spells on every
+/// backend, as a `<donedata>`'s is, so it is finished in the document: an engine
+/// reads `42` as a number and `"42"` as the string. A `<content>` that holds an
+/// element is refused by name, for the reason a `<donedata>`'s is.
+#[test]
+fn a_send_content_is_finished_to_the_string_it_spells() {
+    let send = |content: &str| {
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="go" type="internal"><send event="note"><content>{content}</content></send></transition></state>
+</scxml>"#
+        )
+    };
+    let lowered = lower_source(&send("42"), "send_text").expect("a text content lowers");
+    assert!(
+        lowered.contains("<content>&quot;42&quot;</content>"),
+        "the text is written as the JSON string it spells: {lowered}"
+    );
+    let refusal = lower_source(&send(r#"<item code="7">ready</item>"#), "send_xml")
+        .expect_err("a content holding an element");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("holds an element"),
+        "the refusal names the construct: {text}"
+    );
+}
+
+/// An inline child is a `sce-static` document of its own, lowered where it stands
+/// in its parent's text, and a string it bounds is handed through that bound: the
+/// Interpreter holds no bound, so the lowered `<param>` carries it.
+#[test]
+fn an_inline_child_is_lowered_where_it_stands_and_its_bound_is_carried() {
+    let lowered = lowered_fixture("static_invoke_string");
+    assert_eq!(
+        lowered
+            .matches(r#"initial="waiting" datamodel="ecmascript""#)
+            .count(),
+        3,
+        "each of the three children is an ecmascript document: {lowered}"
+    );
+    assert!(
+        lowered.contains(r#"<param name="title" expr="SceStatic.bounded(lengthy, 4)"/>"#),
+        "a string the child bounds is handed through the bound: {lowered}"
+    );
+}
+
+/// An inline child is lowered where it stands in its parent's text; a child that
+/// is another file would need another file written for it, so it is refused by
+/// name.
+#[test]
+fn an_invoke_by_src_is_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(
+        dir.path().join("child.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
+  <state id="a"/>
+</scxml>"#,
+    )
+    .expect("the child is written");
+    let parent = dir.path().join("parent.scxml");
+    std::fs::write(
+        &parent,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><invoke type="scxml" id="c" src="child.scxml"/></state>
+</scxml>"#,
+    )
+    .expect("the parent is written");
+    let refusal = lower_file(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("by `src`"),
+        "the refusal names the construct: {text}"
+    );
+}
+
+/// A string a `namelist` hands a child is handed as the Interpreter holds it,
+/// with no expression to carry the bound the child declared for it, so the
+/// bound would go unkept: refused by name, where a `<param>` carries it.
+#[test]
+fn a_namelist_name_that_hands_a_child_a_bounded_string_is_refused_by_name() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="title" sce:type="string" sce:capacity="8" expr="'abc'"/></datamodel>
+  <state id="s">
+    <invoke type="scxml" id="c" namelist="title">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="w" datamodel="sce-static">
+          <datamodel><data id="title" sce:type="string" sce:capacity="4" expr="'ab'"/></datamodel>
+          <state id="w"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+    let refusal = lower_source(document, "namelist").expect_err("a document it cannot lower");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("namelist"),
         "the refusal names the construct: {text}"
     );
 }

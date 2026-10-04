@@ -33,12 +33,24 @@
 //! # What it does not lower yet
 //!
 //! `<sce:action>`, an algorithm with a construct
-//! [`crate::forge::static_js_algorithm`] does not spell, and the executable
-//! content the walk does not lower are refused with
-//! `generate/unsupported-feature` naming the
+//! [`crate::forge::static_js_algorithm`] does not spell, an `<invoke>` that is
+//! not a child session written inline (one by `src`, a hybrid, a mesh or a
+//! host-run one) and the executable content the walk does not lower are refused
+//! with `generate/unsupported-feature` naming the
 //! construct, never passed through: an expression left as the author wrote it
 //! would be run by the script engine as ECMAScript, which is the
 //! mis-execution the refusal exists to prevent.
+//!
+//! # Child sessions
+//!
+//! An inline child is a `sce-static` document of its own, with variables of its
+//! own that the values an `<invoke>` hands it land in, so it is lowered as one
+//! and put back where it stands in its parent's text. The values are expressions
+//! of the parent: each `<param>` is lowered where it is written, and a string the
+//! child bounds carries that bound (`SceStatic.bounded`), so that a value past it
+//! fails as it does on the generated backends and is left out. A `namelist` name
+//! cannot carry one, and a child that bounds a string it hands is refused by
+//! name.
 //!
 //! # Algorithms
 //!
@@ -83,8 +95,8 @@ use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::forge::types::InferredType;
-use crate::model::DoneDataContent;
 use crate::model::{Action, Datamodel, SCXMLModel};
+use crate::model::{DoneDataContent, Invoke};
 
 /// The global of the script engine the library is bound to, so every lowered
 /// expression reads `SceStatic.<member>`.
@@ -245,10 +257,12 @@ impl StaticTarget for JsTarget {
         if !model.global_scripts.is_empty() {
             return Some("a top-level <script>".to_string());
         }
-        if model.has_invoke() {
-            return Some("<invoke>".to_string());
-        }
         for state in model.states.values() {
+            for invoke in &state.invokes {
+                if let Some(construct) = unsupported_invoke(invoke, &state.id) {
+                    return Some(construct);
+                }
+            }
             // The pairs of a `<donedata>` are expressions the walk lowers, in
             // the attribute each is written in, and its inline text is finished
             // to the string it spells, at the place it is written. A
@@ -453,6 +467,45 @@ impl StaticTarget for JsTarget {
     }
 }
 
+/// What of an `<invoke>` has no lowering for the Interpreter, described for a
+/// refusal: every kind but a child session written inline, since its own
+/// document is lowered where it stands ([`child_edits`]) and a `src` is a file
+/// the lowering would have to write another one for.
+///
+/// An allowlist, as [`unsupported_action`] is.
+fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
+    let info = match invoke {
+        Invoke::Scxml(info) => info,
+        Invoke::Hybrid(_) => return Some(format!("a hybrid <invoke> in state `{state}`")),
+        Invoke::MeshRpc(_) => return Some(format!("a mesh <invoke> in state `{state}`")),
+        Invoke::Unsupported(_) => {
+            return Some(format!("a host-run <invoke> in state `{state}`"));
+        }
+    };
+    if info.inline_child.is_none() || info.inline_child_range.is_none() {
+        return Some(format!("an <invoke> by `src` in state `{state}`"));
+    }
+    // A `namelist` name is handed to the child by the Interpreter as it holds it,
+    // with no expression to carry the bound the child declared for a string.
+    let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
+    for name in info.namelist.split_whitespace() {
+        let bounded_string = declared.iter().find(|v| v.id == name).is_some_and(|v| {
+            v.capacity.is_some()
+                && matches!(
+                    v.value_type.as_ref().and_then(|t| t.scalar()),
+                    Some(SceType::String)
+                )
+        });
+        if bounded_string {
+            return Some(format!(
+                "the `namelist` name `{name}` of the <invoke> in state `{state}`, which hands \
+                 a child a string it bounds"
+            ));
+        }
+    }
+    None
+}
+
 /// The first action of `actions`, or of anything nested in one, that is not
 /// executable content the walk lowers — described for a refusal.
 ///
@@ -481,6 +534,13 @@ fn unsupported_action(action: &Action) -> Option<String> {
         "assign" | "if" | "log" | "raise" | "cancel" | "foreach" => None,
         "send" if !action.contentexpr.is_empty() => {
             Some("a <send> that carries <content expr>".to_string())
+        }
+        // An inline text is finished to the string it spells at the place it is
+        // written; one that holds an element has no text to finish, and an
+        // engine reads it as a document where the generated backends carry it
+        // as a string.
+        "send" if !action.content.trim().is_empty() && action.content_text_spelling.is_none() => {
+            Some("a <send> whose <content> holds an element".to_string())
         }
         // The pairs of its `<param>`s are expressions the walk lowers, in the
         // attribute each is written in, and the Interpreter's own `<send>` reads
@@ -713,7 +773,51 @@ fn lower_parsed(
         .chain(lowering.elements.iter().map(|e| e.text.as_str()))
         .any(|text| text.contains(&library_call));
     edits.extend(document_edits(text, needs_library, &installed).map_err(refuse)?);
+    edits.extend(child_edits(model, label, base_dir)?);
     apply(text, edits).map_err(refuse)
+}
+
+/// The edits that put each inline child session back where it stands in its
+/// parent's text, lowered by the same walk as any document: the child is a
+/// `sce-static` document of its own, with variables of its own that the values
+/// an `<invoke>` hands it land in, and what the Interpreter runs for it is its
+/// lowered text. A child under another data model is left as it was written.
+///
+/// The text the parser wrapped the child in begins with a prologue, which no
+/// element has, so it is dropped before the child takes its place.
+fn child_edits(
+    model: &SCXMLModel,
+    label: &str,
+    base_dir: Option<&Path>,
+) -> Result<Vec<Edit>, Located<ForgeError>> {
+    let mut edits = Vec::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            let Invoke::Scxml(info) = invoke else {
+                continue;
+            };
+            let (Some(child), Some(xml), Some(range)) = (
+                info.inline_child.as_deref(),
+                info.inline_child_xml.as_deref(),
+                info.inline_child_range.clone(),
+            ) else {
+                continue;
+            };
+            let child_label = format!("{label}, <invoke id=\"{}\">", info.common.base.invoke_id);
+            let lowered = lower_parsed(xml, child, &child_label, base_dir)?;
+            if lowered == xml {
+                continue;
+            }
+            let element = lowered
+                .strip_prefix(crate::parser::INLINE_CHILD_DECLARATION)
+                .unwrap_or(&lowered);
+            edits.push(Edit {
+                range,
+                text: element.to_string(),
+            });
+        }
+    }
+    Ok(edits)
 }
 
 /// The algorithms a statechart calls, and the functions that have to be

@@ -4034,17 +4034,31 @@ of numbers, a `bytes` buffer is appended to as a list is (an append of a `bytes`
 value extends it), and a `<sce:const>` table is built when the algorithm is
 installed, by the same evaluator every backend's is.
 
-A construct with no lowering yet — a `bytes` literal, a top-level `<script>`,
-an `<invoke>`, a `<donedata>` of a state, and a `<send>` that carries a
-`<param>` or a `<content expr>` — is refused with
+The pairs of a `<send>` and of a `<donedata>` are expressions the lowering
+rewrites where each is written, and the text of an inline `<content>` is
+finished to the string it spells (above, **Params**). A child session written
+inline in an `<invoke type="scxml">` is a `sce-static` document of its own and is
+lowered as one, where it stands in its parent's text: the values the `<invoke>`
+hands it are lowered `<param>` expressions, and a string the child bounds is
+handed through that bound (`SceStatic.bounded`), so that a value past it fails and
+is left out as on the generated backends, with an `error.execution`. A child
+under another data model is left as it was written.
+
+A construct with no lowering yet — a `bytes` literal, a top-level `<script>`, an
+`<invoke>` that is not an inline child (by `src`, a hybrid, a mesh or a host-run
+one) or whose `namelist` hands a child a string it bounds, a `<donedata>` or a
+`<send>` whose `<content>` is an expression or holds an element — is refused with
 `generate/unsupported-feature` naming it, never passed through half lowered.
 `<sce:action>` is lowered (§2.11): its `<sce:arg>` expressions are lowered as
 any expression is, and the action is performed by the host installed on the
 machine.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
-replays the scenarios the Kotlin and Rust backends replay
+replays the scenarios the generated backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
-lowered documents, so one oracle judges the three engines.
+lowered documents, so one oracle judges the engines; the three fixtures that
+invoke a child have no scenario of their own, and the same file runs each of them
+under the Interpreter and holds it to what the generated backends'
+`a_static_child_is_handed_its_params` and its siblings hold them to.
 
 **An algorithm on its own.** `sce-codegen lower-algorithm <document>` lowers one
 `sce:kind="algorithm"` document without a statechart around it — an

@@ -19,20 +19,20 @@ mutation_targets sce-build/src/parser.rs
 # `warnings = deny`, and a case that cannot build reports INCONCLUSIVE.
 mutation_case "a child that does not parse leaves its parent standing" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''                        .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
-     r'''                        .unwrap_or_else(|err| {
-                            let _ = inline.placed(&synth_diag_label, err);
-                            SCXMLModel::default()
-                        });''')
+     r'''                    .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
+     r'''                    .unwrap_or_else(|err| {
+                        let _ = inline.placed(&synth_diag_label, err);
+                        SCXMLModel::default()
+                    });''')
 PY
 
 mutation_case "a child's refusal keeps the child's coordinates" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''                        .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
-     r'''                        .map_err(|err| {
-                            let _placed = |e| inline.placed(&synth_diag_label, e);
-                            err
-                        })?;''')
+     r'''                    .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
+     r'''                    .map_err(|err| {
+                        let _placed = |e| inline.placed(&synth_diag_label, e);
+                        err
+                    })?;''')
 PY
 
 mutation_case "the inserted bindings are mapped as the author's text" <<'PY'

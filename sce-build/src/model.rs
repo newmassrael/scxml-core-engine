@@ -578,6 +578,13 @@ pub struct Action {
     /// body ([`crate::attribute_spelling::AttributeSpelling::of_character_data`]).
     #[serde(skip)]
     pub content_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// The character data of a `<send>`'s inline `<content>` as written and
+    /// where, for the reason [`DoneData::content_text_spelling`] gives: the place
+    /// a lowering that finishes the text to another spelling rewrites it at.
+    /// `None` for any other action, without inline text, and for a `<content>`
+    /// holding an element.
+    #[serde(skip)]
+    pub content_text_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// `sce:req` requirement IDs attached to this executable-content
     /// element. See [`Transition::req`] for the wire-format contract.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1838,6 +1845,14 @@ pub struct ScxmlInvokeInfo {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub inline_child_xml: Option<String>,
+    /// Where the inline child's root element stands in the document the parser
+    /// read, as byte offsets into it: what a lowering that rewrites the child's
+    /// text puts the rewritten child back at. Co-populated with
+    /// [`Self::inline_child`], and `None` for a model built from anything but
+    /// the text of a document.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub inline_child_range: Option<std::ops::Range<usize>>,
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading

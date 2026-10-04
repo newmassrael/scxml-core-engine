@@ -34,15 +34,18 @@
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <gtest/gtest.h>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -150,13 +153,12 @@ protected:
         return text.empty() ? nlohmann::json(nullptr) : nlohmann::json::parse(text, nullptr, false);
     }
 
-    /// Replay `scenario` against `document`, the machine the scenario names
-    /// once lowered.
-    void replay(const std::string &document, const nlohmann::json &scenario) {
-        const auto machine = std::make_shared<StateMachine>(*engine_);
-        // A `<send>` is handed to a dispatcher: without one the Interpreter raises
-        // error.execution for it, as for a send with nowhere to go. The events a
-        // machine sends itself are queued, and run once the step's event has.
+    /// What a `<send>` and an `<invoke>` need to run: a dispatcher. Without one
+    /// the Interpreter raises error.execution for a `<send>`, as for a send with
+    /// nowhere to go, and a child session has no way to answer its parent. The
+    /// events a machine sends itself are queued, and run when the raiser is
+    /// asked to; the raiser is returned for that.
+    std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine) {
         auto scheduler = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
                 try {
@@ -168,9 +170,35 @@ protected:
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
         eventRaiser->setScheduler(scheduler);
         eventRaiser->setImmediateMode(false);
-        machine->setEventRaiser(eventRaiser);
-        machine->setEventDispatcher(
+        machine.setEventRaiser(eventRaiser);
+        machine.setEventDispatcher(
             std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
+        return eventRaiser;
+    }
+
+    /// Whether `done` comes true within a few seconds, with the machine's queue
+    /// run on every look. A child session runs on a thread of its own and
+    /// answers its parent through the dispatcher, so what its run leaves in the
+    /// parent is there when the parent has been given time to be told, not
+    /// when `start` returns.
+    static bool settles(const std::shared_ptr<EventRaiserImpl> &raiser, const std::function<bool()> &done,
+                        std::chrono::milliseconds within = std::chrono::seconds(5)) {
+        const auto deadline = std::chrono::steady_clock::now() + within;
+        while (std::chrono::steady_clock::now() < deadline) {
+            raiser->processQueuedEvents();
+            if (done()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return false;
+    }
+
+    /// Replay `scenario` against `document`, the machine the scenario names
+    /// once lowered.
+    void replay(const std::string &document, const nlohmann::json &scenario) {
+        const auto machine = std::make_shared<StateMachine>(*engine_);
+        const auto eventRaiser = wire(*machine);
         ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
         eventRaiser->processQueuedEvents();
@@ -341,6 +369,88 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ADocumentUnderAnother
     std::filesystem::remove_all(dir, ec);
     ASSERT_TRUE(lowered.ok);
     EXPECT_EQ(document, lowered.document);
+}
+
+// An `<invoke type="scxml">` hands its child the values its `<param>`s and
+// `namelist` name, each to the child's variable of the same name, and a variable
+// nothing hands a value to keeps the one its `<data>` gave it
+// (`static_invoke_params.scxml`; the generated backends' halves are
+// `a_static_child_is_handed_its_params`). The child is a `sce-static` document of
+// its own, lowered where it stands: `worker` ends only on `start === 7 && enabled`.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildIsHandedTheValuesItsInvokeNames) {
+    const Lowered lowered = lower(kFixtures / "static_invoke_params.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+
+    // `worker` was handed 7 (the value `base` holds when the invoke executes, after
+    // the entry action added 3) and true, so it ended: the parent left `working`
+    // for `plain` and counted it.
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "completed") == 1; }))
+        << "the child was not handed `start` and `enabled`, so it never ended";
+    EXPECT_EQ("plain", machine->getCurrentState());
+
+    // `control`, the same child handed nothing, keeps its declared defaults and
+    // never ends (`done.invoke.control` would add 100); `watcher` was handed 7 and
+    // ends only at 8, and `bump` raising `base` does not reach it: a child is
+    // handed its values once, when it starts.
+    machine->processEvent("bump", "");
+    EXPECT_FALSE(settles(
+        raiser, [&] { return variable(*machine, "completed") != 1; }, std::chrono::milliseconds(300)))
+        << "a child that was handed nothing, or handed a value again, ended";
+}
+
+// A string an `<invoke>` hands its child is held to the bound the child declared
+// for the variable, in UTF-8 bytes: a value past it is left out, with an
+// error.execution, and the child starts holding the one its `<data>` gave it
+// (`static_invoke_string.scxml`). The bound is carried by the lowered `<param>`.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AStringHandedToAChildIsHeldToItsBound) {
+    const Lowered lowered = lower(kFixtures / "static_invoke_string.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+
+    // `fits` ends on 'wxyz' (1), `over` was handed 8 bytes past its 4 and ends on the
+    // 'ab' its `<data>` gave it (10), `wide` was handed five bytes in two characters
+    // and ends on the same (100); the two left out raise an error each.
+    EXPECT_TRUE(
+        settles(raiser, [&] { return variable(*machine, "completed") == 111 && variable(*machine, "errors") == 2; }))
+        << "completed is " << variable(*machine, "completed").dump() << " and errors "
+        << variable(*machine, "errors").dump();
+}
+
+// A child takes the events its parent forwards, and its end is one
+// `done.invoke.<id>` the parent counts (`static_invoke.scxml`).
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildTakesTheEventsItsParentForwards) {
+    const Lowered lowered = lower(kFixtures / "static_invoke.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    raiser->processQueuedEvents();
+    EXPECT_EQ("working", machine->getCurrentState());
+
+    // `a` moves the child on, and it has not ended.
+    machine->processEvent("a", "");
+    EXPECT_FALSE(settles(
+        raiser, [&] { return variable(*machine, "completed") != 0; }, std::chrono::milliseconds(300)))
+        << "the child ended on `a`, which only moves it on";
+
+    // `b` ends it: the parent counts `done.invoke.worker` and stays where it is.
+    machine->processEvent("b", "");
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "completed") == 1; }))
+        << "the child ended on `b` and its end was never counted";
+    EXPECT_EQ("working", machine->getCurrentState());
+
+    // `abort` leaves `working`, which cancels a child, and `idle` invokes nothing.
+    machine->processEvent("abort", "");
+    raiser->processQueuedEvents();
+    EXPECT_EQ("idle", machine->getCurrentState());
 }
 
 }  // namespace Tests
