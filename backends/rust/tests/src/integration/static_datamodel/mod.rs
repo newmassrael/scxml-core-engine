@@ -36,6 +36,7 @@ pub mod static_send_params_sm;
 pub mod static_string_capacity_sm;
 pub mod static_timers_sm;
 pub mod static_whole_payload_sm;
+pub mod static_wire_enum_sm;
 pub mod sync_client_sm;
 pub mod sync_delete_outcome;
 pub mod sync_failure;

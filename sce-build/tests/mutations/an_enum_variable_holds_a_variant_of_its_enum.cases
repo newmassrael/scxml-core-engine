@@ -81,3 +81,11 @@ edit("sce-build/src/forge/static_lowering.rs",
      "            let _ = writeln!(text, \"variant {holder}.{name}\");\n",
      "            let _ = (&mut *text, holder, name);\n")
 PY
+
+# An enum value is refused as a `<param>` as it was before it had a wire
+# spelling: the check falls through to the type slot, which an enum has none of.
+mutation_case "an enum value is not carried as a param" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            Ok(Some(_)) => return Ok(()),\n",
+     "            Ok(Some(_)) => {}\n")
+PY

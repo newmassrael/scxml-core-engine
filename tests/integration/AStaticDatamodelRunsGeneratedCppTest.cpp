@@ -51,6 +51,7 @@
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
+#include "static_wire_enum_sm.h"
 #include "sync_client_sm.h"
 
 #include <filesystem>
@@ -585,6 +586,24 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ThePayloadOfAnEventIsTakenWholeAsARec
         {"others", [](const Machine &m) { return json(m.others()); }},
     });
     replay("static_whole_payload", driver);
+}
+
+// An enum value as a `<param>` crosses as the name its enum declares for it: a
+// variable, a field of a record variable and a conditional, sent and read back
+// through the schema.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumValueCrossesAsTheNameItsEnumDeclares) {
+    namespace E = G::static_wire_enum;
+    using Machine = E::static_wire_enum;
+    Driver<Machine> driver({
+        {"layout", [](const Machine &m) { return json(std::string(E::sceLogName(m.layout()))); }},
+        {"shown",
+         [](const Machine &m) {
+             return json{{"layout", std::string(E::sceLogName(m.shown().layout))}, {"zoom", m.shown().zoom}};
+         }},
+        {"received", [](const Machine &m) { return json(std::string(E::sceLogName(m.received()))); }},
+        {"deliveries", [](const Machine &m) { return json(m.deliveries()); }},
+    });
+    replay("static_wire_enum", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {

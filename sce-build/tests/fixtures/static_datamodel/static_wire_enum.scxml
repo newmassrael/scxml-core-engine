@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): an enum value as
+  a <param>. It crosses as the name its enum document declares for it, the
+  string a saved state holds and a typed payload reads back, so the machine
+  sends itself `view.shown` and reads the layout through the schema: what
+  arrived is what the enum variable held.
+
+  Three values are sent — a variable, a field of a record variable, and a
+  conditional of two values of the enum. `agenda_list` is spelled with an
+  underscore on purpose: each backend writes its own identifier for the
+  variant, and the wire must carry the name the document wrote. What a
+  <donedata> carries of an enum value is held by `static_donedata`.
+
+  The Interpreter has no lowering for a <send> that carries a <param>, nor for
+  a final's <donedata>, so it replays neither this machine nor those; the six
+  generated backends do.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="viewing" datamodel="sce-static" name="static_wire_enum">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.week" sce:direction="out"/>
+    <data id="shown" sce:type="record:View" sce:direction="out">
+      <sce:set name="layout" expr="ViewMode.day"/>
+      <sce:set name="zoom" expr="2"/>
+    </data>
+    <data id="received" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="deliveries" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="viewing">
+    <transition event="pick" type="internal">
+      <assign location="layout" expr="ViewMode.agenda_list"/>
+    </transition>
+    <transition event="send.variable" type="internal">
+      <send event="view.shown">
+        <param name="layout" expr="layout"/>
+        <param name="zoom" expr="3"/>
+      </send>
+    </transition>
+    <transition event="send.record" type="internal">
+      <send event="view.shown">
+        <param name="layout" expr="shown.layout"/>
+        <param name="zoom" expr="shown.zoom"/>
+      </send>
+    </transition>
+    <transition event="send.chosen" type="internal">
+      <send event="view.shown">
+        <param name="layout" expr="layout === ViewMode.week ? ViewMode.day : layout"/>
+        <param name="zoom" expr="4"/>
+      </send>
+    </transition>
+    <transition event="view.shown" type="internal">
+      <assign location="received" expr="_event.data.layout"/>
+      <assign location="deliveries" expr="deliveries + 1"/>
+    </transition>
+  </state>
+</scxml>

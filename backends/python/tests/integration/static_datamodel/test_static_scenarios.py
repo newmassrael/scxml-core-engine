@@ -222,6 +222,13 @@ def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:
     replay("static_whole_payload")
 
 
+# An enum value as a `<param>` crosses as the name its enum declares for it: a
+# variable, a field of a record variable and a conditional, sent and read back
+# through the schema.
+def test_an_enum_value_crosses_as_the_name_its_enum_declares() -> None:
+    replay("static_wire_enum")
+
+
 # A record may hold an enum: its field is read back by the name the enum
 # document declares.
 def test_a_record_holds_an_enum_field() -> None:

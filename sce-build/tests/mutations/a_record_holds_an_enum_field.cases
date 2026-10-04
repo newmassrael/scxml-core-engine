@@ -55,3 +55,12 @@ edit("sce-build/src/forge/static_datamodel.rs",
      "                    &reference.alias,\n                )?;\n                continue;\n",
      "                    &reference.alias,\n                ).ok();\n                continue;\n")
 PY
+
+# A `<param>` takes an enum value held by a variable or by a record variable's
+# field, and not a loop item's: the lowering has no table for the item, so the
+# judge that took it would pass a document no backend lowers.
+mutation_case "a loop item's enum field is carried as a param" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        let held_by_a_variable = |name: &str| self.enum_vars.get(name).cloned();\n",
+     "        let held_by_a_variable = |name: &str| self.enum_of(name);\n")
+PY

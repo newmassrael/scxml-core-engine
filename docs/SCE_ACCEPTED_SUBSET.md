@@ -2786,7 +2786,7 @@ line of the element or attribute that breaks it:
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits or a real, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable or a field of a record variable, or reads the triggering event's payload | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -2857,9 +2857,21 @@ holds exactly) and a real (`float32` widened to `f64` / `Double`, exactly). A
 64-bit integer is refused because a backend that reads a JSON number through a
 `double` carries one past 2^53 with its low bits wrong and no error, while
 another carries it exactly: two backends giving one document two values. Bytes,
-a list, a record and an enum have no spelling yet. A value read from the triggering
-event's payload is refused too: reading it needs the payload channel's guard
-around the whole element, which a `<param>` does not yet get.
+a list and a record have no spelling yet. An enum value is admitted as the name
+its enum document declares for it, a string and as a saved state holds one — a
+variable declared `enum:<alias>`, a field of a record variable, an
+`<alias>.<variant>`, or a conditional of two of them — written through the
+enum's own name on each backend (Kotlin's `declaredName`, Rust's `sce_name()`,
+Go's `String()`, Python's `sce_name`, C++'s `sceLogName` and C11's
+`<enum>_declared_name`), so the wire carries `agenda_list` and not an
+identifier a backend made of it. One read from a loop's record item has no
+lowering yet and is refused with the values that have no spelling. A value read
+from the triggering event's payload is refused too, an enum field of it
+included: reading it needs the payload channel's guard around the whole
+element, which a `<param>` does not yet get. `scenarios/static_wire_enum.json`
+holds a `<send>` to it on the six generated backends and `static_donedata` a
+`<donedata>`; the Interpreter has no lowering for a `<send>` that carries a
+`<param>` or for a `<donedata>`, so it replays neither.
 
 A value that cannot be computed — a checked integer operation that overflows —
 is the evaluation that failed (W3C SCXML 5.7.1): `error.execution` is raised
@@ -3056,9 +3068,10 @@ variable of its own enum, logged, and compared with `===` or `!==` to a value
 of that same enum. Anything else is `expression/unsupported-construct` on the
 expression: ordering, arithmetic, a call argument, a comparison with a number
 or with another enum, a value of one enum stored in a variable of another or
-in a number. An enum value carried as a `<param>` to a host has no text and
-JSON spelling every backend shares yet, and is refused as
-`scxml/static-datamodel-rule` like a list or a record. The expression typer
+in a number. An enum value is also carried as a `<param>`, as the name its
+enum document declares for it (**Params** above); a value of a loop's record
+item is not, and is refused as `scxml/static-datamodel-rule` like a list or a
+record. The expression typer
 declines to type an enum value (its integer belongs to the enum document), so
 this is the one place that holds it to where it may stand
 (`forge/static_enum.rs`).

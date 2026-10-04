@@ -629,6 +629,15 @@ pub trait StaticTarget {
     fn wire_admits(&self, _ty: InferredType) -> bool {
         true
     }
+    /// `value`, a lowered expression of a value of the enum imported as
+    /// `alias`, as the string expression naming the variant it holds as its
+    /// enum document declares it — what an enum value crosses a `<param>` as,
+    /// and what a saved state holds. It is the string [`Self::wire_value`]
+    /// takes for [`InferredType::Str`]. `None` for a backend with no such
+    /// spelling, which refuses the `<param>` by name.
+    fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Kotlin: a variable is a property of the machine class, a record an
@@ -950,6 +959,10 @@ impl StaticTarget for KotlinTarget {
             _ => value.to_string(),
         }
     }
+    // The enum class declares `declaredName` beside its entries.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("({value}).declaredName"))
+    }
 }
 
 /// Rust: a variable is a field of the machine's policy struct, a record a
@@ -1068,8 +1081,27 @@ impl StaticTarget for RustTarget {
             .iter()
             .map(|v| format!("    {},\n", self.enum_variant(&model.name, &v.name)))
             .collect();
+        // `sce_name` answers the name the enum document declares for a value —
+        // what a `<param>` carries it as. Not every machine reads it, so it is
+        // allowed to go unused rather than warned about.
+        let names: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "            Self::{} => \"{}\",\n",
+                    self.enum_variant(&model.name, &v.name),
+                    filters::escape_rust(v.name.clone())
+                )
+            })
+            .collect();
         format!(
-            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n{}\npub enum {ty} {{\n{variants}}}",
+            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n{}\npub enum {ty} {{\n{variants}}}\n\n\
+             impl {ty} {{\n    \
+             /// The name the enum document declares for this value.\n    \
+             #[allow(dead_code)]\n    \
+             pub fn sce_name(self) -> &'static str {{\n        \
+             match self {{\n{names}        }}\n    }}\n}}",
             crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr()
         )
     }
@@ -1271,6 +1303,11 @@ impl StaticTarget for RustTarget {
             _ => format!("::sce_rust_runtime::ScriptValue::Double({value})"),
         }
     }
+    // The enum's own `sce_name` ([`StaticTarget::enum_def`]), owned: the wire
+    // value of a string holds a `String`.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("({value}).sce_name().to_string()"))
+    }
 }
 
 /// Every name a lowered `sce-static` expression spells differently on
@@ -1418,6 +1455,7 @@ pub fn lower(
     let rewrites = Rewrites {
         records: record_vars,
         schemas: records.clone(),
+        enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &records),
         lists: list_vars,
         strings: string_vars,
         machine,
@@ -2253,6 +2291,10 @@ struct Rewrites<'m> {
     /// Every schema the document imports, by alias — what the fields of a
     /// record a loop walks are read from.
     schemas: std::collections::BTreeMap<String, EventSchemaModel>,
+    /// The enum each variable declared `enum:<alias>` holds, and each enum field
+    /// of a record variable by its `<id>.<field>` path — what tells an enum
+    /// value from a number where a `<param>` is spelled for the wire.
+    enum_vars: std::collections::BTreeMap<String, String>,
     lists: ListVars,
     strings: StringVars,
     machine: &'m str,
@@ -2692,6 +2734,11 @@ impl StaticTarget for CppTarget {
             }
             _ => format!("ScriptValue(std::in_place_type<double>, static_cast<double>({value}))"),
         }
+    }
+    // `sceLogName`, which an enum declares beside its type, answers a
+    // `const char *`; the string value holds a `std::string`.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("std::string(sceLogName({value}))"))
     }
 }
 
@@ -3173,6 +3220,10 @@ impl StaticTarget for GoTarget<'_> {
             _ => format!("float64({value})"),
         }
     }
+    // The enum's `String` answers the name the enum document declares.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("({value}).String()"))
+    }
 }
 
 /// Rewrite `model` — a clone the Go backend renders — so every expression of a
@@ -3585,6 +3636,10 @@ impl StaticTarget for PythonTarget {
             }
             _ => format!("_ScriptValue.of(float({value}))"),
         }
+    }
+    // The enum's `sce_name` answers the name the enum document declares.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("({value}).sce_name"))
     }
 }
 
@@ -4417,6 +4472,14 @@ impl StaticTarget for CTarget {
                 | InferredType::Float { bits: 64 }
         )
     }
+    // The enum's own function answers the name its document declares
+    // ([`StaticTarget::enum_def`]): a `const char *` of static storage, which
+    // the wire string borrows.
+    fn enum_wire_name(&self, alias: &str, value: &str) -> Option<String> {
+        let prefix =
+            crate::forge::enum_naming::c11_function_prefix(&self.enum_document_name(alias));
+        Some(format!("{prefix}_declared_name({value})"))
+    }
 }
 
 /// Rewrite `model` — a clone the C11 backend renders — so every expression of
@@ -4989,8 +5052,10 @@ fn lower_action(
 /// is folded at build time and left as it is, and a param with no expression.
 ///
 /// Validation already judged the expression against the same scope and held
-/// its type to [`InferredType::wire_param_slot`], so a refusal here is a
-/// lowering this backend lacks, not a mistake in the document.
+/// its type to [`InferredType::wire_param_slot`], or took it for an enum value
+/// held by a variable, which crosses as a string ([`StaticTarget::enum_wire_name`]),
+/// so a refusal here is a lowering this backend lacks, not a mistake in the
+/// document.
 fn lower_wire_value(
     param: &crate::forge::static_datamodel::WireParam<'_>,
     ctx: &crate::forge::types::TypeCtx<'_>,
@@ -5015,6 +5080,31 @@ fn lower_wire_value(
         crate::forge::expr::Expected::Hint(InferredType::Unknown),
     )
     .map_err(|r| refused(r.error.to_string()))?;
+    // An enum value crosses as the name its enum declares, a string: the value
+    // is lowered as the enum value it is, and the backend names the variant it
+    // holds. The judge accepted only a variable or a field of a record variable
+    // as one, which is what `enum_vars` holds.
+    let held_by_a_variable = |name: &str| rewrites.enum_vars.get(name).cloned();
+    if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable)
+        .map_err(|r| refused(r.error.to_string()))?
+    {
+        let value = transpile_into_owned(
+            written,
+            target.expr_target(),
+            ctx,
+            renames,
+            InferredType::Unknown,
+        )
+        .map_err(|r| refused(r.error.to_string()))?;
+        let name = target.enum_wire_name(&alias, &value.text).ok_or_else(|| {
+            refused("a value of an enum has no wire spelling here yet".to_string())
+        })?;
+        rewrites.note(written, param.spelling, &value.text);
+        return Ok(Some((
+            target.wire_value(InferredType::Str, &name),
+            value.can_fail,
+        )));
+    }
     let slot = ty
         .wire_param_slot()
         .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;

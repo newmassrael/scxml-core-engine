@@ -2372,12 +2372,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # header-only half, reached by its include directory.
     foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow
                                    static_block_ends static_foreach static_block_ends_list static_string_capacity
-                                   static_donedata static_donedata_content static_real)
+                                   static_donedata_content static_real)
         sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SCALAR_MACHINE}.scxml"
         )
     endforeach()
+    # A final's `<donedata>` carries an enum value as the name its enum
+    # declares, the enum the machine imports, so the staging carries it beside
+    # the machine.
+    sce_generate_static_integration_c_test(static_donedata
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_donedata.scxml"
+        STAGE_ALSO enum_view_mode.scxml
+    )
     # The event's typed payload is the fields of the schema it imports, which
     # the staging has to carry beside it for the import to resolve.
     sce_generate_static_integration_c_test(static_payload
@@ -2456,6 +2464,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # An enum value as a `<param>` crosses as the name its enum declares for it.
+    sce_generate_static_integration_c_test(static_wire_enum
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml"
+        STAGE_ALSO schema_view.scxml enum_view_mode.scxml
+    )
     # An enum variable's variants are the enum document's, imported by name.
     sce_generate_static_integration_c_test(static_enum
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2507,6 +2521,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}
         ${_DAYS_IN_MONTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}

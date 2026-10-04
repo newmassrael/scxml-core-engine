@@ -1,0 +1,32 @@
+{
+  "machine": "static_wire_enum",
+  "about": "An enum value as a <param> crosses as the name its enum document declares for it: the machine sends itself `view.shown` with the value of a variable, of a field of a record variable and of a conditional, and reads the layout back through the schema, so what arrives is what the enum variable held. `agenda_list` is spelled with an underscore: the wire carries the name the document wrote, not an identifier a backend made of it. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the variable and the record start at the values the document gives them",
+      "expect": { "state": "viewing", "variables": { "layout": "week", "shown": { "layout": "day", "zoom": 2 }, "received": "month", "deliveries": 0 } } },
+
+    { "note": "a conditional of two values of the enum: a week is sent as a day",
+      "event": "send.chosen",
+      "expect": { "variables": { "received": "day", "deliveries": 1 } } },
+
+    { "note": "a variable: the week it holds",
+      "event": "send.variable",
+      "expect": { "variables": { "received": "week", "deliveries": 2 } } },
+
+    { "note": "the variable changes to a variant spelled with an underscore",
+      "event": "pick",
+      "expect": { "variables": { "layout": "agenda_list", "received": "week", "deliveries": 2 } } },
+
+    { "note": "the underscore name crosses as written",
+      "event": "send.variable",
+      "expect": { "variables": { "received": "agenda_list", "deliveries": 3 } } },
+
+    { "note": "a field of a record variable: the day it holds",
+      "event": "send.record",
+      "expect": { "variables": { "received": "day", "deliveries": 4 } } },
+
+    { "note": "the conditional keeps the variable when it is no week",
+      "event": "send.chosen",
+      "expect": { "variables": { "received": "agenda_list", "deliveries": 5 } } }
+  ]
+}

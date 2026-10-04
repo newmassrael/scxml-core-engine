@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee8495d8519d9257bdb9024d6550b7e516332cbc0e313913dd41d6e748564ee3
+// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_donedata.scxml:14 :: _machine
+// SCE-MAP: static_donedata.scxml:16 :: _machine
 
 package static_donedata
 
@@ -134,7 +134,7 @@ var documentInitialTargetsOfStaticDonedata = []StaticDonedataTarget{sce.StateTar
 // source's own transitions. A targetless transition's entry is empty.
 var transitionTargetsOfStaticDonedata = [2][][]StaticDonedataTarget{
 	StaticDonedataStateCounting: {
-		1: {sce.StateTarget[StaticDonedataState, sce.HistoryID](StaticDonedataStateDone)},
+		2: {sce.StateTarget[StaticDonedataState, sce.HistoryID](StaticDonedataStateDone)},
 	},
 }
 
@@ -148,8 +148,9 @@ const (
 	StaticDonedataEventErrorExecution StaticDonedataEvent = 0
 	StaticDonedataEventFinish StaticDonedataEvent = 1
 	StaticDonedataEventTick StaticDonedataEvent = 2
+	StaticDonedataEventWiden StaticDonedataEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticDonedataEventNull StaticDonedataEvent = 3
+	StaticDonedataEventNull StaticDonedataEvent = 4
 )
 
 func (e StaticDonedataEvent) String() string {
@@ -160,10 +161,38 @@ func (e StaticDonedataEvent) String() string {
 		return "finish"
 	case StaticDonedataEventTick:
 		return "tick"
+	case StaticDonedataEventWiden:
+		return "widen"
 	case StaticDonedataEventNull:
 		return ""
 	}
 	return "unknown"
+}
+
+// ── SCE Accepted Subset §2.15: the types the static variables are held in ──
+// SCE Accepted Subset §2.15: an `enum:ViewMode` datamodel value.
+type StaticDonedataViewModeEnum uint8
+
+const (
+	EnumViewModeMonth StaticDonedataViewModeEnum = 0
+	EnumViewModeWeek StaticDonedataViewModeEnum = 1
+	EnumViewModeDay StaticDonedataViewModeEnum = 2
+	EnumViewModeAgendaList StaticDonedataViewModeEnum = 3
+)
+
+// String is the name the enum document declares for the value.
+func (v StaticDonedataViewModeEnum) String() string {
+	switch v {
+	case EnumViewModeMonth:
+		return "month"
+	case EnumViewModeWeek:
+		return "week"
+	case EnumViewModeDay:
+		return "day"
+	case EnumViewModeAgendaList:
+		return "agenda_list"
+	}
+	return ""
 }
 
 // ======================================================================
@@ -180,6 +209,8 @@ type StaticDonedataPolicy struct {
 	vSmall uint8
 	// W3C SCXML 5.2: the `label` datamodel variable.
 	vLabel string
+	// W3C SCXML 5.2: the `layout` datamodel variable.
+	vLayout StaticDonedataViewModeEnum
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -195,6 +226,7 @@ func NewStaticDonedataPolicy() StaticDonedataPolicy {
 		vCount: 0,
 		vSmall: 250,
 		vLabel: "tally",
+		vLayout: EnumViewModeMonth,
 	}
 }
 
@@ -353,6 +385,8 @@ func (p *StaticDonedataPolicy) GetEventFromName(name string) (StaticDonedataEven
 		return StaticDonedataEventFinish, true
 	case "tick":
 		return StaticDonedataEventTick, true
+	case "widen":
+		return StaticDonedataEventWiden, true
 	}
 	return StaticDonedataEventNull, false
 }
@@ -452,11 +486,11 @@ func (p *StaticDonedataPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) ExecuteEntryActions(state StaticDonedataState, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticDonedataStateDone:
-		//line static_donedata.scxml:27
+		//line static_donedata.scxml:34
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -481,6 +515,12 @@ func (p *StaticDonedataPolicy) ExecuteEntryActions(state StaticDonedataState, en
 					sceValue := p.vLabel
 					{
 						jsonParts = append(jsonParts, "\"name\":" + sce.ScriptValueToJSON(sceValue))
+					}
+				}
+				{
+					sceValue := (p.vLayout).String()
+					{
+						jsonParts = append(jsonParts, "\"layout\":" + sce.ScriptValueToJSON(sceValue))
 					}
 				}
 				{
@@ -513,7 +553,7 @@ func (p *StaticDonedataPolicy) ExecuteEntryActions(state StaticDonedataState, en
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -521,7 +561,7 @@ func (p *StaticDonedataPolicy) ExecuteHistoryDefaultContent(history sce.HistoryI
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) ExecuteExitActions(state StaticDonedataState, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent], configurationBeforeExit []StaticDonedataState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -538,7 +578,7 @@ func (p *StaticDonedataPolicy) ExecuteExitActions(state StaticDonedataState, eng
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) BindCurrentEvent(event StaticDonedataEvent, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -548,7 +588,7 @@ func (p *StaticDonedataPolicy) BindCurrentEvent(event StaticDonedataEvent, engin
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) FirstEnabledTransition(state StaticDonedataState, event StaticDonedataEvent, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent]) (sce.EnabledTransition[StaticDonedataState, sce.HistoryID], bool) {
 	switch state {
 	case StaticDonedataStateCounting:
@@ -562,12 +602,22 @@ func (p *StaticDonedataPolicy) FirstEnabledTransition(state StaticDonedataState,
 				}, true
 			}
 		}
+		if event == StaticDonedataEventWiden {
+			{
+				return sce.EnabledTransition[StaticDonedataState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
 		if event == StaticDonedataEventFinish {
 			{
 				return sce.EnabledTransition[StaticDonedataState, sce.HistoryID]{
 					Source:          state,
-					Targets:         transitionTargetsOfStaticDonedata[state][1],
-					TransitionIndex: 1,
+					Targets:         transitionTargetsOfStaticDonedata[state][2],
+					TransitionIndex: 2,
 					HasActions:      false,
 					IsInternal:      false,
 				}, true
@@ -579,13 +629,13 @@ func (p *StaticDonedataPolicy) FirstEnabledTransition(state StaticDonedataState,
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_donedata.scxml:14
+//line static_donedata.scxml:16
 func (p *StaticDonedataPolicy) ExecuteTransitionContent(source StaticDonedataState, transitionIndex int, engine *sce.Engine[StaticDonedataState, StaticDonedataEvent]) {
 	switch source {
 	case StaticDonedataStateCounting:
 		switch transitionIndex {
 		case 0:
-			//line static_donedata.scxml:22
+			//line static_donedata.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -593,6 +643,15 @@ func (p *StaticDonedataPolicy) ExecuteTransitionContent(source StaticDonedataSta
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticDonedataEventErrorExecution, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
+
+			}()
+		case 1:
+			//line static_donedata.scxml:29
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vLayout = EnumViewModeAgendaList
 
 			}()
 		}

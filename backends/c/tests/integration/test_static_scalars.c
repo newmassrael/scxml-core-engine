@@ -104,6 +104,7 @@
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
+#include "static_wire_enum_sm.h"
 #include "sync_client_sm.h"
 
 #include <sce/forge/wire.h>
@@ -886,6 +887,44 @@ static const record_variable_t whole_payload_records[] = {
 STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
                 whole_payload_records)
 
+// static_wire_enum: an enum value as a `<param>` crosses as the name its enum
+// declares for it — a variable, a field of a record variable and a conditional,
+// sent and read back through the schema. A value is stated as the name its
+// document declares.
+VARIABLE_READER(static_wire_enum, deliveries)
+RECORD_READER(static_wire_enum, shown, static_wire_enum_record_view_t, VIEW_FIELDS)
+
+static int64_t static_wire_enum_read_layout(const void *sm) {
+    return (int64_t)static_wire_enum_get_layout((const static_wire_enum_t *)sm);
+}
+
+static int64_t static_wire_enum_read_received(const void *sm) {
+    return (int64_t)static_wire_enum_get_received((const static_wire_enum_t *)sm);
+}
+
+static const char *static_wire_enum_text(void *sm, const char *name) {
+    const static_wire_enum_t *machine = (const static_wire_enum_t *)sm;
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(static_wire_enum_get_layout(machine));
+    }
+    if (strcmp(name, "received") == 0) {
+        return enum_view_mode_declared_name(static_wire_enum_get_received(machine));
+    }
+    return NULL;
+}
+
+static const name_value_t wire_enum_states[] = {
+    {"viewing", STATIC_WIRE_ENUM_STATE_VIEWING},
+};
+static const variable_t wire_enum_variables[] = {
+    {"layout", static_wire_enum_read_layout},
+    {"received", static_wire_enum_read_received},
+    {"deliveries", static_wire_enum_read_deliveries},
+};
+static const record_variable_t wire_enum_records[] = {RECORD_ROW(static_wire_enum, shown), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_wire_enum, wire_enum_states, wire_enum_variables, static_wire_enum_text, no_lists,
+                wire_enum_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -1005,11 +1044,12 @@ int main(void) {
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_record_enum_scenario("static_record_enum", 13);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
+    bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
-    bad |= static_donedata_scenario("static_donedata", 5);
+    bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= sync_client_scenario("sync_client", 30);

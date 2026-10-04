@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee8495d8519d9257bdb9024d6550b7e516332cbc0e313913dd41d6e748564ee3
+// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_donedata.scxml:14 :: _machine
+// SCE-MAP: static_donedata.scxml:16 :: _machine
 
 package com.sce.integration.static_donedata
 
@@ -26,6 +26,27 @@ sealed interface StaticDonedataEvent : Event {
     }
     data object Finish : StaticDonedataEvent
     data object Tick : StaticDonedataEvent
+    data object Widen : StaticDonedataEvent
+}
+// ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
+/** SCE Accepted Subset §2.15: an `enum:ViewMode` datamodel value. */
+enum class StaticDonedataViewModeEnum(val declaredName: String) {
+    MONTH("month"),
+    WEEK("week"),
+    DAY("day"),
+    AGENDA_LIST("agenda_list");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticDonedataViewModeEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of ViewMode")
+        }
+    }
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -40,6 +61,8 @@ class StaticDonedataStateMachine(
     private var small: UByte = 250.toUByte()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
     private var label: String = "tally"
+    /** W3C SCXML 5.2: the `layout` datamodel variable, the machine's own. */
+    private var layout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.MONTH
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -105,7 +128,7 @@ class StaticDonedataStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "5f3737b6ec01e0331816c956925d2ba13b10520f6da24eb6070985daba27904d"
+    val savedShape: String = "0d0759aeddae60c9eb915b9c754c292935f6f65a9f8c69a23d950ddd6d8adc6d"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -124,6 +147,7 @@ class StaticDonedataStateMachine(
             "count" to SavedValues.of(count),
             "small" to SavedValues.of(small),
             "label" to SavedValues.of(label),
+            "layout" to layout.toSaved(),
         ),
         wallNowMs,
     )
@@ -152,9 +176,11 @@ class StaticDonedataStateMachine(
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.uint8(saved.variable("small"), "small")
         val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
+        val saved4 = StaticDonedataViewModeEnum.fromSaved(saved.variable("layout"), "layout")
         count = saved1
         small = saved2
         label = saved3
+        layout = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -205,8 +231,17 @@ class StaticDonedataStateMachine(
         // W3C SCXML 3.13: counting's transition 1, as the microstep reads it.
         val transitionCountingAt1 = EnabledTransition<StaticDonedataState, HistoryId>(
             StaticDonedataState.Counting,
-            listOf(StateTarget(StaticDonedataState.Done)),
+            emptyList(),
             1,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: counting's transition 2, as the microstep reads it.
+        val transitionCountingAt2 = EnabledTransition<StaticDonedataState, HistoryId>(
+            StaticDonedataState.Counting,
+            listOf(StateTarget(StaticDonedataState.Done)),
+            2,
             hasActions = false,
             isInternal = false,
         )
@@ -236,6 +271,7 @@ class StaticDonedataStateMachine(
         "error.execution" -> StaticDonedataEvent.Error.Execution
         "finish" -> StaticDonedataEvent.Finish
         "tick" -> StaticDonedataEvent.Tick
+        "widen" -> StaticDonedataEvent.Widen
         else -> null
     }
 
@@ -244,6 +280,7 @@ class StaticDonedataStateMachine(
         is StaticDonedataEvent.Error.Execution -> "error.execution"
         is StaticDonedataEvent.Finish -> "finish"
         is StaticDonedataEvent.Tick -> "tick"
+        is StaticDonedataEvent.Widen -> "widen"
     }
 
 
@@ -261,7 +298,8 @@ class StaticDonedataStateMachine(
     ): EnabledTransition<StaticDonedataState, HistoryId>? = when (state) {
         is StaticDonedataState.Counting -> when {
             event is StaticDonedataEvent.Tick -> transitionCountingAt0
-            event is StaticDonedataEvent.Finish -> transitionCountingAt1
+            event is StaticDonedataEvent.Widen -> transitionCountingAt1
+            event is StaticDonedataEvent.Finish -> transitionCountingAt2
             else -> null
         }
         else -> null
@@ -269,14 +307,14 @@ class StaticDonedataStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_donedata.scxml:14 :: _machine
+    // SCE-MAP: static_donedata.scxml:16 :: _machine
     override fun onEntry(state: StaticDonedataState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticDonedataState.Counting -> {
-                // SCE-MAP: static_donedata.scxml:21 :: counting :: _state_body
+                // SCE-MAP: static_donedata.scxml:25 :: counting :: _state_body
             }
             is StaticDonedataState.Done -> {
-                // SCE-MAP: static_donedata.scxml:27 :: done :: _state_body
+                // SCE-MAP: static_donedata.scxml:34 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     var doneEventData = ""
@@ -289,6 +327,7 @@ class StaticDonedataStateMachine(
                     }
                     doneParams["many"] = count > 2.toUInt()
                     doneParams["name"] = label
+                    doneParams["layout"] = (layout).declaredName
                     try {
                         doneParams["overflow"] = (com.sce.forge.runtime.SceChecked.add(small, small)).toLong()
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
@@ -310,30 +349,35 @@ class StaticDonedataStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_donedata.scxml:14 :: _machine
+    // SCE-MAP: static_donedata.scxml:16 :: _machine
     override fun onExit(state: StaticDonedataState) {
         when (state) {
             is StaticDonedataState.Counting -> {
-                // SCE-MAP: static_donedata.scxml:21 :: counting :: _state_body
+                // SCE-MAP: static_donedata.scxml:25 :: counting :: _state_body
             }
             is StaticDonedataState.Done -> {
-                // SCE-MAP: static_donedata.scxml:27 :: done :: _state_body
+                // SCE-MAP: static_donedata.scxml:34 :: done :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_donedata.scxml:14 :: _machine
+    // SCE-MAP: static_donedata.scxml:16 :: _machine
     override fun executeTransitionContent(source: StaticDonedataState, transitionIndex: Int) {
         when (source) {
         is StaticDonedataState.Counting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_donedata.scxml:22 :: counting :: _transition_0
+                // SCE-MAP: static_donedata.scxml:26 :: counting :: _transition_0
 
             if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
+            }
+            1 -> {
+                // SCE-MAP: static_donedata.scxml:29 :: counting :: _transition_1
+
+            layout = StaticDonedataViewModeEnum.AGENDA_LIST
             }
             else -> {}
         }

@@ -218,6 +218,40 @@ fn a_loop_items_enum_field_is_read_and_not_written() {
 }
 
 #[test]
+fn an_enum_field_of_a_record_variable_is_carried_as_a_param() {
+    // The field crosses as the name its enum declares for it, a string, on every
+    // backend that lowers a `<send>`'s `<param>`.
+    let body = r#"<send event="out"><param name="s" expr="gear.speed"/></send>"#;
+    for args in [
+        &["check"][..],
+        &["check", "-l", "rust"],
+        &["check", "-l", "kotlin"],
+        &["check", "-l", "go"],
+        &["check", "-l", "python"],
+        &["check", "-l", "cpp"],
+        &["check", "-l", "c11"],
+    ] {
+        let (ok, out) = run(args, &machine(true, "Mode.fast", body));
+        assert!(ok, "{args:?}: an enum field of a record as a param:\n{out}");
+    }
+}
+
+#[test]
+fn an_enum_field_of_a_loop_item_is_no_param_yet() {
+    // The value of a loop's record item has no lowering as a `<param>` here, so
+    // it is refused with the other values that have no wire spelling, and not
+    // left to stop a backend.
+    refused(
+        &machine(
+            true,
+            "Mode.fast",
+            r#"<foreach array="all" item="g"><send event="out"><param name="s" expr="g.speed"/></send></foreach>"#,
+        ),
+        "an enum value of a loop's item",
+    );
+}
+
+#[test]
 fn a_list_of_records_with_an_enum_field_needs_the_enum_too() {
     // No record variable of the schema: only the list, whose elements hold it.
     let doc = r##"<?xml version="1.0"?>

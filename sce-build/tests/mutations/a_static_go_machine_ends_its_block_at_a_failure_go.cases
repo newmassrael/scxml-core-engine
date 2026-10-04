@@ -69,6 +69,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_send_para
 mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_whole_payload/static_whole_payload_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_wire_enum/static_wire_enum_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/sync_client/sync_client_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go

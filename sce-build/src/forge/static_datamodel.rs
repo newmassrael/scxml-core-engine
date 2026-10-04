@@ -277,7 +277,7 @@ pub(crate) fn seed_slot(var: &Variable) -> Option<InferredType> {
 /// and each enum field of a record variable, by its `<id>.<field>` path —
 /// what [`crate::forge::static_enum`] asks to tell an enum value from a number
 /// that happens to share its inferred type.
-fn enum_variables(
+pub(crate) fn enum_variables(
     scope: &StaticScope,
     records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
 ) -> std::collections::BTreeMap<String, String> {
@@ -799,14 +799,31 @@ impl<'a> Judge<'a> {
                 written,
             ));
         }
+        // An enum value crosses as the name its enum declares for it, a string
+        // as a saved state holds one, so every backend spells it alike. Only a
+        // variable or a field of a record variable is read that way: a value of
+        // a loop's record item has no lowering here yet.
+        let held_by_a_variable = |name: &str| self.enum_vars.get(name).cloned();
+        match crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable) {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {}
+            Err(refusal) => {
+                return Err(Located::in_file(
+                    ExpressionSite::new(written, spelling).place(refusal),
+                    self.diag_label,
+                ))
+            }
+        }
         if ty.wire_param_slot().is_none() {
             return Err(self.rule_at(
                 construct,
                 "a <param> crosses as text and as a JSON value, which every \
-                 backend spells alike for a bool, a string, an integer of at most 32 bits \
-                 and a real; a 64-bit integer (which a backend that reads numbers through \
-                 a double would carry with its low bits wrong), bytes, a list, a record and \
-                 an enum have no such spelling yet",
+                 backend spells alike for a bool, a string, an integer of at most 32 bits, \
+                 a real, and an enum value held by a variable or by a field of a record \
+                 variable (as the name its enum declares); a 64-bit integer (which a \
+                 backend that reads numbers through a double would carry with its low bits \
+                 wrong), bytes, a list, a record and an enum value of a loop's item have \
+                 no such spelling yet",
                 line,
                 col,
                 state,

@@ -83,6 +83,9 @@ use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
 use sce_rust_tests::integration::static_datamodel::static_whole_payload_sm::{
     StaticWholePayloadPersist, StaticWholePayloadPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_wire_enum_sm::{
+    StaticWireEnumPersist, StaticWireEnumPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -447,6 +450,20 @@ fn static_payload_enum_reads_a_variant_the_event_names() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_enum.json"
+        ),
+    );
+}
+
+// An enum value as a <param> crosses as the name its enum declares for it: a
+// variable, a field of a record variable and a conditional, sent and read back
+// through the schema.
+#[test]
+fn static_wire_enum_carries_the_name_its_enum_declares() {
+    replay(
+        Engine::new(StaticWireEnumPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_enum.json"
         ),
     );
 }

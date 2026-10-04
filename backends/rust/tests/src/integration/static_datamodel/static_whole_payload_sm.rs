@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee8495d8519d9257bdb9024d6550b7e516332cbc0e313913dd41d6e748564ee3
+// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -177,6 +177,19 @@ pub enum StaticWholePayloadViewModeEnum {
     Week,
     Day,
     AgendaList,
+}
+
+impl StaticWholePayloadViewModeEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::Month => "month",
+            Self::Week => "week",
+            Self::Day => "day",
+            Self::AgendaList => "agenda_list",
+        }
+    }
 }
 
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.

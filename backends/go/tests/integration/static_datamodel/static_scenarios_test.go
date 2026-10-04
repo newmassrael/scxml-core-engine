@@ -55,6 +55,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
@@ -519,6 +520,23 @@ func TestThePayloadOfAnEventIsTakenWholeAsARecord(t *testing.T) {
 		"updates": func() any { return policy.Updates() },
 		"agendas": func() any { return policy.Agendas() },
 		"others":  func() any { return policy.Others() },
+	}))
+}
+
+// An enum value as a <param> crosses as the name its enum declares for it: a
+// variable, a field of a record variable and a conditional, sent and read back
+// through the schema.
+func TestAnEnumValueCrossesAsTheNameItsEnumDeclares(t *testing.T) {
+	policy := static_wire_enum.NewStaticWireEnumPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_wire_enum", drive[static_wire_enum.StaticWireEnumState, static_wire_enum.StaticWireEnumEvent](&policy, map[string]func() any{
+		"layout": func() any { return policy.Layout().String() },
+		"shown": func() any {
+			shown := policy.Shown()
+			return map[string]any{"layout": shown.Layout().String(), "zoom": shown.Zoom()}
+		},
+		"received":   func() any { return policy.Received().String() },
+		"deliveries": func() any { return policy.Deliveries() },
 	}))
 }
 

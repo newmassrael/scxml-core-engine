@@ -42,6 +42,7 @@ import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
+import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.SavedState
@@ -429,6 +430,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_whole_payload"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // An enum value as a <param> crosses as the name its enum declares for it: a
+    // variable, a field of a record variable and a conditional, sent and read back
+    // through the schema.
+    @Test
+    fun staticWireEnumCarriesTheNameItsEnumDeclares() {
+        val sm = StaticWireEnumStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_wire_enum"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -226,11 +226,35 @@ fn an_enum_value_is_not_stored_in_a_number_nor_a_number_in_an_enum() {
 }
 
 #[test]
-fn an_enum_value_is_not_carried_to_a_host_as_a_param() {
+fn an_enum_value_is_carried_to_a_host_as_the_name_its_enum_declares() {
+    // A variable, a variant and a conditional of two values of one enum, as a
+    // `<send>`'s param: the name travels as a string, which every backend spells
+    // alike.
+    let body = r#"<transition event="e" type="internal"><send event="out">
+      <param name="m" expr="mode"/>
+      <param name="v" expr="Mode.slow"/>
+      <param name="n" expr="count === 0 ? Mode.fast : mode"/>
+    </send></transition>"#;
+    for args in [
+        &["check"][..],
+        &["check", "-l", "rust"],
+        &["check", "-l", "kotlin"],
+        &["check", "-l", "go"],
+        &["check", "-l", "python"],
+        &["check", "-l", "cpp"],
+        &["check", "-l", "c11"],
+    ] {
+        let (ok, out) = run(args, &machine(MODE, body));
+        assert!(ok, "{args:?}: an enum value as a param:\n{out}");
+    }
+}
+
+#[test]
+fn a_number_chosen_against_an_enum_value_is_no_param() {
     refused(
         MODE,
-        r#"<transition event="e" type="internal"><send event="out"><param name="m" expr="mode"/></send></transition>"#,
-        "a list, a record and an enum have no such spelling yet",
+        r#"<transition event="e" type="internal"><send event="out"><param name="m" expr="count === 0 ? Mode.fast : 1"/></send></transition>"#,
+        "a conditional whose branches are not both values of one enum",
     );
 }
 
