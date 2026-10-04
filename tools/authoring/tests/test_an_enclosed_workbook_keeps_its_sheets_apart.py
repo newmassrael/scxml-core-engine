@@ -172,8 +172,15 @@ class AnEnclosedWorkbookKeepsItsSheetsApart(unittest.TestCase):
         self.assertIn('sheet "Limits"', said)
 
     def test_a_name_that_is_not_ascii_is_kept_as_written(self):
-        blob = workbook({"sheet1.xml": sheet_xml("x")}, [("시트 하나 (예시)", "sheet1.xml", "")])
-        self.assertIn("--- sheet: 시트 하나 (예시)", self.lines(blob))
+        """The name needs a value that is not ASCII and is several UTF-8 bytes wide, not a
+        particular script, so it is written as escapes: this source stays ASCII and the
+        width is stated instead of shown. The assertion on the width is what keeps the case
+        honest -- a fixture nobody checks can be swapped for an ASCII one and stay green."""
+        name = "Sheet é€☃"
+        self.assertGreater(len(name.encode("utf-8")), len(name))
+        self.assertGreater(max(len(c.encode("utf-8")) for c in name), 2)
+        blob = workbook({"sheet1.xml": sheet_xml("x")}, [(name, "sheet1.xml", "")])
+        self.assertIn(f"--- sheet: {name}", self.lines(blob))
 
 
 if __name__ == "__main__":
