@@ -199,13 +199,22 @@ bool tryDeliverInvokeDone(const MeshEnvelope & /*env*/, Engine & /*engine*/, std
 /// §scxml-5.10: record on `meta` the name `type` arrived under, when `event` is the
 /// member of a shorter name (§scxml-3.12.1) and not of `type` itself. A receiver that
 /// keeps no arrival name — a test double, an engine of a consumer's own — has nowhere
-/// to record it, and is left as it was.
+/// to record it, and is left as it was. The two probes are SFINAE rather than a
+/// `requires` expression: this header is included by consumers built as C++17.
+template <typename Meta, typename = void> struct HasArrivalName : std::false_type {};
+
+template <typename Meta>
+struct HasArrivalName<Meta, std::void_t<decltype(std::declval<Meta &>().name)>> : std::true_type {};
+
+template <typename Policy, typename Event, typename = void> struct HasEventNameOf : std::false_type {};
+
+template <typename Policy, typename Event>
+struct HasEventNameOf<Policy, Event, std::void_t<decltype(Policy::getEventName(std::declval<const Event &>()))>>
+    : std::true_type {};
+
 template <typename Policy, typename Meta, typename Event>
 void recordArrivalName(Meta &meta, const Event &event, const std::string &type) {
-    if constexpr (requires {
-                      meta.name;
-                      Policy::getEventName(event);
-                  }) {
+    if constexpr (HasArrivalName<Meta>::value && HasEventNameOf<Policy, Event>::value) {
         if (type != Policy::getEventName(event)) {
             meta.name = type;
         }
