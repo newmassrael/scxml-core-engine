@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "ae818b1ab82",
+  "embed_version": "56f38d5f273",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 297,
+  "symbol_count": 298,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -307,6 +307,12 @@
       "kind": "function",
       "name": "SCE::JsonText::escaped",
       "signature": "std::string SCE::JsonText::escaped(std::string_view)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::numberText",
+      "signature": "std::string SCE::JsonText::numberText(double)"
     },
     {
       "header": "common/JsonText.h",
