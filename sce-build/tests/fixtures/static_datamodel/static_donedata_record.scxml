@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `<content
+  expr>` of a <donedata> that names a record. The record crosses as the pairs of
+  its fields, each the `<param name="f" expr="record.f"/>` it abbreviates: read
+  from the machine's fields when the final is entered, an enum field as the name
+  its enum declares (`agenda_list`, spelled with an underscore on purpose: the
+  wire carries the name the document wrote).
+
+  `bump` changes the record before the final is entered: the done event carries
+  what the record holds then, not what the document gave it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_donedata_record">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="shown" sce:type="record:View" sce:direction="out">
+      <sce:set name="layout" expr="ViewMode.day"/>
+      <sce:set name="zoom" expr="2"/>
+    </data>
+  </datamodel>
+  <state id="counting">
+    <transition event="bump" type="internal">
+      <assign location="shown.zoom" expr="shown.zoom + 1"/>
+      <assign location="shown.layout" expr="ViewMode.agenda_list"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <content expr="shown"/>
+    </donedata>
+  </final>
+</scxml>

@@ -1703,6 +1703,92 @@ fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
     assert!(out.contains("twice"), "it says why:\n{out}");
 }
 
+/// A `sce-static` machine holding the record variable `shown` whose `<final>`
+/// carries a `<donedata>` of `content`, all on line 12.
+fn finishing_with_a_record(content: &str) -> String {
+    record(
+        EVERY_FIELD,
+        &format!(
+            r#"<state id="s"><transition event="go" target="d"/></state><final id="d"><donedata>{content}</donedata></final>"#
+        ),
+    )
+}
+
+#[test]
+fn a_donedata_content_that_names_a_record_is_the_pairs_of_its_fields() {
+    // Read as the state is entered, from the machine's fields, so no engine
+    // evaluates it and the manifest says so.
+    let content = r#"<content expr="shown"/>"#;
+    let (ok, out) = run_record(&["check"], &finishing_with_a_record(content));
+    assert!(ok, "a record crosses as the pairs of its fields:\n{out}");
+
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run_record(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &finishing_with_a_record(content),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a record named by a donedata content needs no script engine:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    for field in ["year", "month", "dayOfMonth"] {
+        assert!(
+            source.contains(&format!("\\\"{field}\\\":")),
+            "`{field}` is a pair of the done event's data"
+        );
+    }
+
+    // C11 writes the pairs as one JSON object of its own, so it is asked too.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run_record(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &finishing_with_a_record(content),
+    );
+    assert!(ok, "the machine generates for C11:\n{out}");
+}
+
+#[test]
+fn a_donedata_content_that_names_no_record_is_refused_on_its_line() {
+    for (what, content) in [
+        (
+            "an expression that is no record",
+            r#"<content expr="shown.year + 1"/>"#,
+        ),
+        (
+            "the payload, which no event has where a state is entered",
+            r#"<content expr="_event.data"/>"#,
+        ),
+        (
+            "a record beside a param",
+            r#"<content expr="shown"/><param name="k" expr="1"/>"#,
+        ),
+    ] {
+        let (ok, out) = run_record(&["check"], &finishing_with_a_record(content));
+        assert!(!ok, "{what}: no record is named alone:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
+    }
+}
+
 // ── A `<donedata>` param is the same value on the same wire ─────────────
 
 /// A `sce-static` machine whose `<final>` (line 9) carries a `<donedata>`

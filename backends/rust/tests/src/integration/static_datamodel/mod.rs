@@ -5,6 +5,7 @@ pub mod static_block_ends_list_sm;
 pub mod static_block_ends_sm;
 pub mod static_counter_sm;
 pub mod static_donedata_content_sm;
+pub mod static_donedata_record_sm;
 pub mod static_donedata_sm;
 pub mod static_enum_sm;
 pub mod static_event_arrival_sm;

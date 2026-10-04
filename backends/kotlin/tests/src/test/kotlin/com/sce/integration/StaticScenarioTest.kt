@@ -25,6 +25,7 @@ import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachin
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
+import com.sce.integration.static_donedata_record.StaticDonedataRecordStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
@@ -223,6 +224,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_donedata"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A top-level final whose <donedata> names a record in its `<content expr>`
+    // hands its done event the pairs of the record's fields, read when the state
+    // is entered.
+    @Test
+    fun staticDonedataRecordIsThePairsOfItsFields() {
+        val sm = StaticDonedataRecordStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_donedata_record"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

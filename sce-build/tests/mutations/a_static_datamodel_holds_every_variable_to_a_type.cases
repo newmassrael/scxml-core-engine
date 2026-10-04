@@ -250,8 +250,18 @@ PY
 
 mutation_case "a content is admitted beside a param" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "        if !action.params.is_empty() || !action.namelist.trim().is_empty() {",
-     "        if false && (!action.params.is_empty() || !action.namelist.trim().is_empty()) {")
+     "        if beside {\n            return Err(self.rule_at(\n                construct,\n",
+     "        if false && beside {\n            return Err(self.rule_at(\n                construct,\n")
+PY
+
+# The same record named in a `<final>`'s `<donedata>` is read when the state is
+# entered. C11 checks the content before it lowers it, and refuses what it has no
+# spelling for: a mutant that refuses this one again is a machine it would not
+# generate.
+mutation_case "C refuses a donedata record again" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                        | crate::model::DoneDataContent::InlineText(_)\n                        | crate::model::DoneDataContent::Expression(_)\n",
+     "                        | crate::model::DoneDataContent::InlineText(_)\n")
 PY
 
 mutation_case "a content record needs a script engine again" <<'PY'

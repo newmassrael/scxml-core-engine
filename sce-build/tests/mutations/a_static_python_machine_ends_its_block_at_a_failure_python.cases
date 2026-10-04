@@ -163,6 +163,15 @@ edit("sce-build/src/forge/static_lowering.rs",
      "                let _ = &fields;\n")
 PY
 
+# `static_donedata_record`: a final's `<content expr="shown"/>` is the pairs of the
+# record's fields, read when the state is entered. A walk that leaves the record in
+# the content hands the templates a donedata with no pairs.
+mutation_case "a donedata content record is not folded into its pairs" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                done.fold_content_record_into_params(record, &fields);\n",
+     "                let _ = &fields;\n")
+PY
+
 # ── A send param that failed is left out and the message goes ─────
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'

@@ -90,6 +90,7 @@
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
+#include "static_donedata_record_sm.h"
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
@@ -1032,6 +1033,31 @@ static const record_variable_t send_content_records[] = {RECORD_ROW(static_send_
 STATIC_SCENARIO(static_send_content, send_content_states, send_content_variables, static_send_content_text, no_lists,
                 send_content_records)
 
+// static_donedata_record: a top-level final whose `<donedata>` names a record in
+// its `<content expr>` hands its done event the pairs of the record's fields, read
+// when the state is entered — an enum field as the name its enum declares.
+RECORD_READER(static_donedata_record, shown, static_donedata_record_record_view_t, VIEW_FIELDS)
+
+static int64_t static_donedata_record_read_zoom(const void *sm) {
+    return static_donedata_record_get_shown((const static_donedata_record_t *)sm).zoom;
+}
+
+static const char *static_donedata_record_done(void *sm) {
+    return static_donedata_record_done_data((const static_donedata_record_t *)sm);
+}
+
+static const name_value_t donedata_record_states[] = {
+    {"counting", STATIC_DONEDATA_RECORD_STATE_COUNTING},
+    {"done", STATIC_DONEDATA_RECORD_STATE_DONE},
+};
+static const variable_t donedata_record_variables[] = {
+    {"zoom", static_donedata_record_read_zoom},
+};
+static const record_variable_t donedata_record_records[] = {RECORD_ROW(static_donedata_record, shown),
+                                                            {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_DONE(static_donedata_record, donedata_record_states, donedata_record_variables, NULL, no_lists,
+                     donedata_record_records, static_donedata_record_done)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -1159,6 +1185,7 @@ int main(void) {
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
+    bad |= static_donedata_record_scenario("static_donedata_record", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= static_send_content_scenario("static_send_content", 5);

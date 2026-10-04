@@ -70,6 +70,21 @@ edit("sce-build/src/forge/static_js.rs",
      "        \"send\" if !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <content expr>\".to_string())\n        }\n        \"send\" => None,\n")
 PY
 
+# The same two for a `<final>`'s `<donedata>` that names a record: its pairs are
+# noted as rewrites of an attribute they do not have, or its content is refused
+# again, and the fixture that hands its done event a record leaves the replay.
+mutation_case "a donedata record's pairs are noted as rewrites" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            if record.is_some() {\n                rewrites.sites.borrow_mut().truncate(noted);\n            }\n",
+     "            let _ = (&record, noted);\n")
+PY
+
+mutation_case "a donedata content expr is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "                match &done.content {\n                    DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {",
+     "                match &done.content {\n                    DoneDataContent::Expression(_) => {\n                        return Some(format!(\"the <donedata><content expr> of state `{}`\", state.id));\n                    }\n                    DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {")
+PY
+
 # A `<final>` that carries a `<donedata>` is refused again, as it was before its
 # pairs were lowered: both donedata fixtures leave the replay.
 mutation_case "a final's donedata is refused" <<'PY'

@@ -29,6 +29,9 @@ use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
 use sce_rust_tests::integration::static_datamodel::static_donedata_content_sm::{
     StaticDonedataContentPersist, StaticDonedataContentPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_donedata_record_sm::{
+    StaticDonedataRecordPersist, StaticDonedataRecordPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_donedata_sm::{
     StaticDonedataPersist, StaticDonedataPolicy,
 };
@@ -248,6 +251,19 @@ fn static_donedata_hands_the_done_event_its_params() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata.json"
+        ),
+    );
+}
+
+// A top-level final whose <donedata> names a record in its `<content expr>` hands
+// its done event the pairs of the record's fields, read when the state is entered.
+#[test]
+fn static_donedata_record_is_the_pairs_of_its_fields() {
+    replay(
+        Engine::new(StaticDonedataRecordPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_record.json"
         ),
     );
 }

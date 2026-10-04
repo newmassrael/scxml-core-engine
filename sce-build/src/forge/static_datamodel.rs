@@ -216,13 +216,17 @@ pub fn check(
                     &state.id,
                 )?;
             }
+            // The record it names crosses as the pairs of its fields, read when
+            // the state is entered, where no event's payload is in scope.
             if let crate::model::DoneDataContent::Expression(expr) = &done.content {
-                return Err(judge.untyped(
-                    format!("<content expr=\"{expr}\">"),
-                    done.content_spelling.as_ref(),
-                    &state.id,
+                judge.content_record(
+                    &plain,
+                    "<donedata>",
                     expr,
-                ));
+                    done.content_spelling.as_ref(),
+                    !done.params.is_empty(),
+                    &state.id,
+                )?;
             }
         }
     }
@@ -773,29 +777,34 @@ impl<'a> Judge<'a> {
         )
     }
 
-    /// A `<send>`'s `<content expr>`: the one value this model has that is an
-    /// object, a record, taken whole by name — a record variable, the item of a
-    /// `<foreach>` over a list of records, or the payload of the event the
-    /// transition is on (`_event.data`). It crosses as the pairs of its fields,
-    /// each the `<param name="f" expr="record.f"/>` it abbreviates
+    /// The `<content expr>` of a `<send>` or of a `<final>`'s `<donedata>`
+    /// (`element`): the one value this model has that is an object, a record,
+    /// taken whole by name — a record variable, the item of a `<foreach>` over a
+    /// list of records, or the payload of the event the transition is on
+    /// (`_event.data`). It crosses as the pairs of its fields, each the
+    /// `<param name="f" expr="record.f"/>` it abbreviates
     /// ([`crate::model::Action::fold_content_record_into_params`]) and held to
     /// the rule a param is. The element carries its data one way, as content or
-    /// as pairs, so a `<param>` or a `namelist` beside it is refused.
+    /// as pairs, so a `<param>` or a `namelist` `beside` it is refused.
     fn content_record(
         &self,
         ctx: &TypeCtx<'_>,
-        action: &Action,
+        element: &str,
+        written: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        beside: bool,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        let written = action.contentexpr.trim();
-        let spelling = action.contentexpr_spelling.as_ref();
+        let written = written.trim();
         let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
         let construct = format!("<content expr=\"{written}\">");
-        if !action.params.is_empty() || !action.namelist.trim().is_empty() {
+        if beside {
             return Err(self.rule_at(
                 construct,
-                "a <send> carries its data as <content> or as <param>s and a namelist, \
-                 and never as both",
+                &format!(
+                    "a {element} carries its data as <content> or as <param>s (and a namelist), \
+                     and never as both"
+                ),
                 line,
                 col,
                 state,
@@ -806,8 +815,9 @@ impl<'a> Judge<'a> {
             return Err(self.rule_at(
                 construct,
                 "a <content expr> of this data model names a record, which crosses as the pairs \
-                 of its fields: a record variable, the item of a <foreach> over a list of \
-                 records, or the payload of an event whose schema it is (`_event.data`)",
+                 of its fields: a record variable, or, in the content of a transition, the \
+                 item of a <foreach> over a list of records or the payload of an event whose \
+                 schema it is (`_event.data`)",
                 line,
                 col,
                 state,
@@ -823,7 +833,7 @@ impl<'a> Judge<'a> {
                 spelling,
                 source_location: None,
             };
-            self.wire_param(ctx, &pair, "<send>", state)?;
+            self.wire_param(ctx, &pair, element, state)?;
         }
         Ok(())
     }
@@ -1099,7 +1109,14 @@ impl<'a> Judge<'a> {
                     self.wire_param(ctx, &namelist, "<send>", state)?;
                 }
                 if !action.contentexpr.is_empty() {
-                    self.content_record(ctx, action, state)?;
+                    self.content_record(
+                        ctx,
+                        "<send>",
+                        &action.contentexpr,
+                        action.contentexpr_spelling.as_ref(),
+                        !action.params.is_empty() || !action.namelist.trim().is_empty(),
+                        state,
+                    )?;
                 }
             }
             // SCE Accepted Subset §2.15: the value appended is judged

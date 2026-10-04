@@ -266,18 +266,13 @@ impl StaticTarget for JsTarget {
             // The pairs of a `<donedata>` are expressions the walk lowers, in
             // the attribute each is written in, and its inline text is finished
             // to the string it spells, at the place it is written. A
-            // `<content expr>` is handed to the script engine as text, which the
-            // model refuses beforehand and this refuses again; a `<content>` that
-            // holds an element has no text to finish and is read by the engine as
-            // a document, where the generated backends carry it as a string.
+            // `<content expr>` the model let through names a record, which the
+            // engine reads as the object it holds, the fields the generated
+            // backends carry as pairs; a `<content>` that holds an element has
+            // no text to finish and is read by the engine as a document, where
+            // the generated backends carry it as a string.
             if let Some(done) = &state.donedata {
                 match &done.content {
-                    DoneDataContent::Expression(_) => {
-                        return Some(format!(
-                            "the <donedata><content expr> of state `{}`",
-                            state.id
-                        ));
-                    }
                     DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {
                         return Some(format!(
                             "the <donedata> <content> holding an element, of state `{}`",

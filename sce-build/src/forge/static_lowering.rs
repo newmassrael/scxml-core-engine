@@ -1728,7 +1728,26 @@ pub fn lower(
         // What a `<final>` hands the event it raises is read from the
         // machine's fields when the state is entered (§scxml-5.5).
         if let Some(done) = &mut state.donedata {
+            // A record named by `<content expr>` is the pairs of its fields, as
+            // a `<send>`'s is; they have no attribute of their own to be
+            // rewritten at, for the reason a `<send>`'s have none.
+            let record = match &done.content {
+                crate::model::DoneDataContent::Expression(expr) => Some(expr.trim().to_string()),
+                _ => None,
+            };
+            let noted = rewrites.sites.borrow().len();
+            if let Some(record) = &record {
+                let fields = rewrites.content_fields(record).ok_or_else(|| {
+                    GenerateError::unsupported(format!(
+                        "`<content expr=\"{record}\">` names no record this {lang} lowering reads"
+                    ))
+                })?;
+                done.fold_content_record_into_params(record, &fields);
+            }
             lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
+            if record.is_some() {
+                rewrites.sites.borrow_mut().truncate(noted);
+            }
             // Inline `<content>` is the event's data as written, finished here
             // ([`crate::filters::static_content_wire`]) as a `<send>`'s is: the
             // machine has no engine to evaluate the text with (§scxml-5.5).
@@ -4051,14 +4070,15 @@ impl StaticTarget for CTarget {
             // done event's data from the machine's own fields, and its inline
             // `<content>` is the text it spells, finished at build time
             // ([`crate::filters::static_content_wire`]) and copied into that
-            // data. A name that repeats is not spelled yet. The model refuses
-            // an evaluated `<content expr>`; one that reached here is refused
-            // again rather than read as text.
+            // data. An evaluated `<content expr>` names a record, which the
+            // model let through as the pairs of its fields. A name that repeats
+            // is not spelled yet.
             if state.donedata.as_ref().is_some_and(|done| {
                 !matches!(
                     done.content,
                     crate::model::DoneDataContent::None
                         | crate::model::DoneDataContent::InlineText(_)
+                        | crate::model::DoneDataContent::Expression(_)
                 )
             }) {
                 return Some("a <donedata> with a <content> that is not inline text".to_string());

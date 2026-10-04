@@ -36,6 +36,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
@@ -565,6 +566,19 @@ func TestAFinalHandsItsDoneEventItsParams(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata", drive[static_donedata.StaticDonedataState, static_donedata.StaticDonedataEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// A top-level final whose <donedata> names a record in its `<content expr>` hands
+// its done event the pairs of the record's fields, read when the state is entered.
+func TestAFinalHandsItsDoneEventTheRecordItsContentNames(t *testing.T) {
+	policy := static_donedata_record.NewStaticDonedataRecordPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_donedata_record", drive[static_donedata_record.StaticDonedataRecordState, static_donedata_record.StaticDonedataRecordEvent](&policy, map[string]func() any{
+		"shown": func() any {
+			shown := policy.Shown()
+			return map[string]any{"layout": shown.Layout().String(), "zoom": shown.Zoom()}
+		},
 	}))
 }
 

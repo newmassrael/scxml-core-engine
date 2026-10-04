@@ -308,6 +308,12 @@ def test_a_final_hands_its_done_event_the_pairs_of_its_donedata() -> None:
     replay("static_donedata")
 
 
+# A top-level final whose `<donedata>` names a record in its `<content expr>` hands
+# its done event the pairs of the record's fields, read when the state is entered.
+def test_a_final_hands_its_done_event_the_record_its_content_names() -> None:
+    replay("static_donedata_record")
+
+
 # A top-level final whose `<donedata>` is inline `<content>` hands its done event
 # the text as the string it spells, with no script engine to read it as a number.
 def test_a_final_hands_its_done_event_the_text_its_content_spells() -> None:

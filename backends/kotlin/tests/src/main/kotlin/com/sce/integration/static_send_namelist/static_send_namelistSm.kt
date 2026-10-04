@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: dd1a6b6c55ab533e307bc7e47f7d1f334126ccba017dba6d270609c22c55e26e
+// source-hash: fb3302d1a39b9f33f23d5670c605e9c0dde32870608a39fa98fe9b54962bd426
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_namelist.scxml

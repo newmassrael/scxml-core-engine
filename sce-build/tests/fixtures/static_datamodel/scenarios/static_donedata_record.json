@@ -1,0 +1,16 @@
+{
+  "machine": "static_donedata_record",
+  "about": "A top-level final whose <donedata> names a record in its `<content expr>` hands its done event the pairs of the record's fields, each read when the state is entered: `shown` starts as a day at zoom 2, `bump` changes it to an agenda at zoom 3, and the final is entered after, so the done event carries what the record holds then. `agenda_list` is spelled with an underscore: the wire carries the name the enum document wrote. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the record starts at the values its sets give it",
+      "expect": { "state": "counting", "variables": { "shown": { "layout": "day", "zoom": 2 } } } },
+
+    { "note": "the record changes before the final is entered",
+      "event": "bump",
+      "expect": { "state": "counting", "variables": { "shown": { "layout": "agenda_list", "zoom": 3 } } } },
+
+    { "note": "the final is entered: the pairs are the fields of the record as it is now",
+      "event": "finish",
+      "expect": { "ended": true, "donedata": { "layout": "agenda_list", "zoom": 3 } } }
+  ]
+}

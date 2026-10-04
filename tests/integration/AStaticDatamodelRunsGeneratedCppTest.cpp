@@ -29,6 +29,7 @@
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
+#include "static_donedata_record_sm.h"
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
@@ -406,6 +407,20 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventItsPar
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata", driver);
+}
+
+// A top-level final whose `<donedata>` names a record in its `<content expr>` hands
+// its done event the pairs of the record's fields, read when the state is entered.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheRecordItsContentNames) {
+    namespace E = G::static_donedata_record;
+    using Machine = E::static_donedata_record;
+    Driver<Machine> driver({
+        {"shown",
+         [](const Machine &m) {
+             return json{{"layout", std::string(E::sceLogName(m.shown().layout))}, {"zoom", m.shown().zoom}};
+         }},
+    });
+    replay("static_donedata_record", driver);
 }
 
 // A top-level final whose `<donedata>` is inline `<content>` hands its done event

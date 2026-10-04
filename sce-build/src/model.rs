@@ -1254,6 +1254,22 @@ pub struct DoneData {
     pub native_content: String,
 }
 
+impl DoneData {
+    /// §scxml-5.5: a `<content expr>` that names a record `holder`, each of the
+    /// record's `fields` as the `<param name="f" expr="holder.f"/>` that carries
+    /// it, and the content itself cleared — as
+    /// [`Action::fold_content_record_into_params`] does for a `<send>`. A pair
+    /// carries no position of its own.
+    pub fn fold_content_record_into_params(&mut self, holder: &str, fields: &[String]) {
+        self.content = DoneDataContent::None;
+        self.params.extend(fields.iter().map(|field| DoneDataParam {
+            name: field.clone(),
+            expr: Some(format!("{holder}.{field}")),
+            ..DoneDataParam::default()
+        }));
+    }
+}
+
 /// §scxml-5.5: `<content>` body semantics.
 ///
 /// - [`DoneDataContent::None`] — no `<content>` child (`{"kind":"none"}`).
