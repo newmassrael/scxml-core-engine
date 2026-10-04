@@ -1746,6 +1746,34 @@ pub fn lower(
         let ctx = scope.ctx(&no_payload, &enums);
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
+    // A payload that is read rides the typed channel, whose struct holds every
+    // field its schema declares. An enum field has no spelling there — the
+    // enum's type is the enum document's, which the payload's unit does not
+    // import — so the channel would name a type it does not have. Under any
+    // other data model the guard keeps the script engine instead; this one has
+    // none, and a generator that reached the field would stop on it rather than
+    // refuse, so the read is refused by name here, whatever the target.
+    // [`crate::forge::event_schema_check::schema_is_native_payload_eligible`] is
+    // the one rule for what the channel holds.
+    for event in &payload_events {
+        let Some(schema) = schemas.get(event) else {
+            continue;
+        };
+        if !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
+            let carried = schema
+                .fields
+                .iter()
+                .find(|f| matches!(f.sce_type, SceType::Enum(_)))
+                .map_or_else(
+                    || "a field it cannot carry".to_string(),
+                    |f| format!("`{}` of type {}", f.id, f.sce_type.as_attr()),
+                );
+            return Err(GenerateError::unsupported(format!(
+                "a transition that reads the payload of `{event}`, an event whose payload \
+                 carries {carried} has no {lang} lowering yet"
+            )));
+        }
+    }
     Ok(StaticLowering {
         fields,
         payload_events,

@@ -2806,6 +2806,17 @@ own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
 
+A transition that reads `_event.data` of an event whose schema declares an enum
+field is refused by name on every backend
+(`generate/unsupported-feature`, "an event whose payload carries `<field>` of type
+enum:<Alias> has no <backend> lowering yet"). The typed channel holds every field
+its schema declares and an enum has no spelling in it; under any other data model
+the guard keeps the script engine, which this one has none of. Measured 2026-10-04,
+Rust, Go, Kotlin, Python and C++ stopped on such a read with a panic (exit 101) and
+only C refused, and C refused every transition on such an event, read or not; a
+transition that reads nothing from it still generates on the five. Reading an enum
+field of a payload is an extension of its own, not written yet.
+
 **Params.** A `<param>` of a `<send>`, of an `<invoke>` the host runs
 (§2.12) and of a `<final>`'s `<donedata>` is a typed expression read from the
 machine's fields at the moment the element runs — W3C SCXML 6.2.3 evaluates a

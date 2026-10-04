@@ -434,6 +434,81 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
+fn a_payload_read_of_an_event_that_carries_an_enum_field_is_refused_in_every_language() {
+    // Measured 2026-10-04: Rust, Go, Kotlin, Python and C++ stopped with a panic
+    // (exit 101, "SceType::Enum(alias='ViewMode') reached a context built by
+    // LangCtx::primitive") on a transition that reads `_event.data.zoom` of an
+    // event whose schema also declares `layout`, an enum, and only C refused by
+    // name — and C refused every transition on such an event, read or not. The
+    // typed channel holds every field its schema declares, and an enum has no
+    // spelling in it; under any other data model the guard keeps the script
+    // engine, which this one has none of.
+    //
+    // A transition on the event that reads nothing from it still generates on the
+    // five that carry no channel for it, so the refusal is of the READ.
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let siblings: Vec<(String, String)> = ["schema_view.scxml", "enum_view_mode.scxml"]
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_string(),
+                std::fs::read_to_string(fixtures.join(name)).expect("a fixture"),
+            )
+        })
+        .collect();
+    let siblings: Vec<(&str, &str)> = siblings
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
+    let document = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <datamodel><data id="zoom" sce:type="uint8" expr="0" sce:direction="out"/></datamodel>
+  <state id="s">
+    <transition event="view.shown" type="internal">
+      <assign location="zoom" expr="_event.data.zoom"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+    for (language, name) in [
+        ("kotlin", "Kotlin"),
+        ("rust", "Rust"),
+        ("cpp", "C++"),
+        ("go", "Go"),
+        ("python", "Python"),
+        ("c", "C11"),
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run_beside(
+            &[
+                "generate",
+                "-l",
+                language,
+                "--go-module-prefix",
+                "x/y",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            document,
+            &siblings,
+        );
+        assert!(!ok, "{language}: the machine is refused:\n{out}");
+        assert!(
+            !out.contains("panicked"),
+            "{language}: a refusal, not a panic:\n{out}"
+        );
+        assert!(
+            out.contains("generate/unsupported-feature")
+                && out.contains(&format!("has no {name} lowering yet"))
+                && out.contains("`layout` of type enum:ViewMode"),
+            "{language}: it names the enum field and the backend:\n{out}"
+        );
+    }
+}
+
+#[test]
 fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
     // An `<invoke>` the host serves (`--host-invoker`) carries `<param>`s that
     // are typed expressions of the machine's own fields, which every backend reads
