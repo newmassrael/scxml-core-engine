@@ -2717,9 +2717,17 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
         HOST_PROCESSOR x-sce-host
     )
+    # A `<send>`'s literal `<content>` is the text it spells, finished at build
+    # time: a document of this channel alone, beside the C test.
+    sce_generate_static_integration_c_test(static_host_send_content
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/static_host_send_content/static_host_send_content.scxml"
+        HOST_PROCESSOR x-sce-host
+    )
     add_executable(sce_c_integration_static_host_send
         integration/test_static_host_send.c
         ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_send_content_SOURCES}
     )
     target_link_libraries(sce_c_integration_static_host_send PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

@@ -308,10 +308,11 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // numbers, bools and strings, a call of an imported algorithm, a host action
     // whose arguments are typed expressions of them, the `<param>`s of a final's
     // `<donedata>` and of a `<send>` to the machine's own processor or to one
-    // the host is declared to serve, an `<invoke type="scxml">` handing numbers,
+    // the host is declared to serve (and the literal `<content>` of one), an
+    // `<invoke type="scxml">` handing numbers,
     // bools and strings, and an `<invoke>` the host is declared to serve. What is
     // past that — a real, a list of reals, a record with a string field, a bytes
-    // variable, a `<send>` with a `<content>` or to a processor no host is
+    // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a final's `<donedata>` with a `<content>`, a payload field that
     // is bytes or an enum — is refused by
@@ -353,13 +354,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 "##
             .to_string(),
             "record:Echo with the field `tag` of type string",
-        ),
-        (
-            "a <send> with a <content>",
-            machine(
-                r#"<state id="s"><onentry><send event="x"><content>hello</content></send></onentry></state>"#,
-            ),
-            "a <send> with a <content>",
         ),
         (
             "a host-run <invoke>",
@@ -1719,6 +1713,9 @@ fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
             "emitContentLiteral(\"two words\"",
             "DoneDataHelper::evaluateContent(",
         ),
+        // C copies the wire text into the event's data, with no call into the
+        // Lua engine the machine was not given.
+        ("c", "c", wire, "luaL_dostring("),
     ] {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(

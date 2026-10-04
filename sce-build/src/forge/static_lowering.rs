@@ -3576,12 +3576,14 @@ impl CTarget {
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
                 // as the text of the request's `params`, from the same value.
-                // Its `<content>` is text the script engine reads, so it is not
-                // spelled yet; a processor that no one is declared to serve is
-                // refused by name.
+                // Its literal `<content>` is the text it spells, finished at
+                // build time ([`crate::filters::static_content_wire`]) and
+                // copied into the event's data; an evaluated one is text the
+                // script engine reads, which no `sce-static` document has. A
+                // processor that no one is declared to serve is refused by name.
                 "send" => {
-                    if !action.content.is_empty() || !action.contentexpr.is_empty() {
-                        return Some("a <send> with a <content>".to_string());
+                    if !action.contentexpr.is_empty() {
+                        return Some("a <send> with a <content expr>".to_string());
                     }
                     let scxml_processor = action.send_type.is_empty()
                         || action.send_type == "scxml"

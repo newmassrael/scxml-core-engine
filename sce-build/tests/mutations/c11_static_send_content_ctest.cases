@@ -1,0 +1,34 @@
+# Mutation cases for "a literal send content is the text it spells" (C11
+# generated machines).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/c11_static_send_content_ctest.cases`.
+#
+# SCE Accepted Subset §2.15: under `datamodel="sce-static"` a `<send>`'s literal
+# `<content>` is finished at build time (`Action::native_content`, the JSON string
+# the text spells) and no script engine reads it. The generated machine copies that
+# text into the event's data, which a send the host serves hands over as the
+# request's `event_data` and a send to the machine itself delivers.
+# `backends/c/tests/integration/test_static_host_send.c` reads the request the host
+# was handed and the event the machine counted.
+#
+# What is easy to get wrong and read as success: a copy that is left out. The
+# generated machine still builds, since the buffer it fills is there either way, and
+# every send that carries `<param>`s still passes, because those are written by
+# another macro.
+#
+# The macro is emitted by the template, which `cmake --build` reads at generation
+# time, so the template is the target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_host_send$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_host_send.c
+
+mutation_case "the literal content is not copied into the event's data" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                    memcpy(_ed, _lit, sizeof(_lit));\n                }\n{% elif action.contentexpr %}",
+     "                    (void)_lit;\n                    _ed[0] = '\\0';\n                }\n{% elif action.contentexpr %}")
+PY

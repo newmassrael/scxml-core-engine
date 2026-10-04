@@ -3381,11 +3381,13 @@ algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools and enums, a list of integers, bools or
 such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
-processor or to one the host serves (`--host-processor`) with its `<param>`s, an
+processor or to one the host serves (`--host-processor`) with its `<param>`s or its
+literal `<content>` (the text it spells, finished at build time and copied into the
+event's data, as on every other backend), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
 the host serves (`--host-invoker`) with its `<param>`s. A real, bytes and a record
-with a string field, a list of reals, a `<send>` with a `<content>` or to
+with a string field, a list of reals, a `<send>` to
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>`, a final's

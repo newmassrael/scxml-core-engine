@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `<send>`'s literal
+  `<content>` is the text it spells, finished at build time, and no script engine
+  reads it.
+
+  `go` makes two sends:
+
+    to the host   `<content>two   words</content>`  the request's `event_data` is
+                  the JSON string the text spells, whitespace-normalised
+                  (`"two words"`), and its `content` is the text as written;
+    to itself     `<content>again</content>`        the event `again` arrives and
+                  is counted, so the local delivery carries the same text.
+
+  A document of the C11 channel alone, beside the C test: the shared fixtures'
+  scenarios read an event's typed payload, which a string content is not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="static_host_send_content">
+  <datamodel>
+    <data id="heard" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="go" type="internal">
+      <send type="x-sce-host" event="note" target="job://report">
+        <content>two   words</content>
+      </send>
+      <send event="again">
+        <content>again</content>
+      </send>
+    </transition>
+    <transition event="again" type="internal">
+      <assign location="heard" expr="heard + 1"/>
+    </transition>
+  </state>
+</scxml>

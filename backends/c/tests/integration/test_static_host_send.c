@@ -26,6 +26,11 @@
 //     although the document declares `label` before `job`, so a host that compares
 //     the request as bytes sees the same text from any backend;
 //   * a `<cancel>` of the id removes the wait, and the host is never called.
+//
+// A second document, `integration_resources/static_host_send_content/` (C11 alone),
+// holds a `<send>`'s literal `<content>`: the text it spells, finished at build time,
+// as the request's `event_data` for a send the host serves and as the event a send to
+// the machine itself delivers.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,6 +38,7 @@
 #include <string.h>
 
 #include "statechart_static_delayed_host_send_sm.h"
+#include "static_host_send_content_sm.h"
 
 #define DECLARED_TYPE "x-sce-host"
 
@@ -45,6 +51,7 @@ typedef struct {
     char target[32];
     char send_id[16];
     char event_data[128];
+    char content[64];
     char label[32];
     char job[16];
     int param_count;
@@ -58,6 +65,8 @@ static void handler(void *user_data, const sce_host_send_request_t *request, sce
     (void)snprintf(seen->target, sizeof(seen->target), "%s", request->target);
     (void)snprintf(seen->send_id, sizeof(seen->send_id), "%s", request->send_id);
     (void)snprintf(seen->event_data, sizeof(seen->event_data), "%s", request->event_data);
+    (void)snprintf(seen->content, sizeof(seen->content), "%s",
+                   request->content != NULL ? request->content : "(absent)");
     const char *label = sce_host_send_param(request, "label");
     const char *job = sce_host_send_param(request, "job");
     (void)snprintf(seen->label, sizeof(seen->label), "%s", label != NULL ? label : "(absent)");
@@ -150,10 +159,46 @@ static int a_cancelled_send_never_reaches_the_host(void) {
     return bad;
 }
 
+// A literal `<content>` is the text it spells (SCE Accepted Subset §2.15), with no
+// script engine to read it: the host's request carries the JSON string the
+// whitespace-normalised text makes, and the text as written as its `content`; a send
+// to the machine itself delivers the event, which the machine counts.
+static int a_literal_content_is_the_text_it_spells(void) {
+    static static_host_send_content_t sm;
+    seen_t seen;
+    memset(&seen, 0, sizeof(seen));
+    sce_host_processor_registry_t wiring;
+    memset(&wiring, 0, sizeof(wiring));
+    (void)sce_host_registry_register(&wiring, DECLARED_TYPE, handler, &seen);
+    static_host_send_content_init_with_host_processors(&sm, &wiring);
+    static_host_send_content_event_t go;
+    if (!static_host_send_content_resolve_event_by_name("go", &go)) {
+        (void)fprintf(stderr, "FAIL: the content machine has no event `go`\n");
+        static_host_send_content_destroy(&sm);
+        return 1;
+    }
+    static_host_send_content_event_with_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.event = go;
+    static_host_send_content_raise_external(&sm, &meta);
+    static_host_send_content_run(&sm);
+    int bad = expect_int("host calls", seen.calls, 1);
+    if (seen.calls == 1) {
+        bad |= expect_text("event", seen.event, "note");
+        bad |= expect_text("target", seen.target, "job://report");
+        bad |= expect_text("event data (the text, normalised, as a JSON string)", seen.event_data, "\"two words\"");
+        bad |= expect_text("content (the text as written)", seen.content, "two   words");
+    }
+    bad |= expect_int("events the machine sent itself and counted", (long)static_host_send_content_get_heard(&sm), 1);
+    static_host_send_content_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= the_send_waits_with_the_request_it_was_made_with();
     bad |= a_cancelled_send_never_reaches_the_host();
+    bad |= a_literal_content_is_the_text_it_spells();
     if (bad != 0) {
         return 1;
     }

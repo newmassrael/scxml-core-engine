@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -113,4 +113,19 @@ mutation_case "a Kotlin send content is read by the engine again" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
      "{% if action.native_content %}\n{% set content_data",
      "{% if false and action.native_content %}\n{% set content_data")
+PY
+
+# C's arm for it is the one that stops copying the text, and falls through to the
+# branch that asks the Lua engine the machine was not given.
+mutation_case "a C send content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% if action.native_content %}\n                {\n                    static const char _lit[]",
+     "{% if false and action.native_content %}\n                {\n                    static const char _lit[]")
+PY
+
+# C stops lowering the text and refuses the send by name again.
+mutation_case "C refuses a send content again" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    if !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());",
+     "                    if !action.content.is_empty() || !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());")
 PY

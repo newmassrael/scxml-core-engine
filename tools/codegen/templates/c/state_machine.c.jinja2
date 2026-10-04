@@ -217,10 +217,22 @@
    5.6.2 says: error.execution, and the empty string as the content's value —
    so the message still goes, carrying the JSON `""` — and, like a failing
    `<param>`, the error ends the block once it has (4.9), which is the
-   `_param_failed` the end of the element reads. #}
+   `_param_failed` the end of the element reads.
+
+   Under `datamodel="sce-static"` (`Action::native_content`) there is no engine
+   to ask: the text is the value, finished at build time as the JSON string it
+   spells, or the XML as written (SCE Accepted Subset §2.15), so a
+   `<content>123</content>` is the string `"123"` on every backend. #}
 {% macro send_content_json(action, csym_prefix, machine) %}
                 char _ed[SCE_MAX_DATA_LEN];
-{% if action.contentexpr %}
+{% if action.native_content %}
+                {
+                    static const char _lit[] = "{{ action.native_content | escape_c }}";
+                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
+                                   "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
+                    memcpy(_ed, _lit, sizeof(_lit));
+                }
+{% elif action.contentexpr %}
                 if (luaL_dostring(sm->L,
                     "return JSON.stringify(({{ action.contentexpr | to_lua_expr | escape_c }}))") != 0) {
                     lua_pop(sm->L, 1);
