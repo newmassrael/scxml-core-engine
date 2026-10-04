@@ -35,6 +35,7 @@
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
 #include "static_invoke_params_sm.h"
+#include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_sm.h"
@@ -399,6 +400,23 @@ TEST_F(AStaticChildIsHandedItsParams, AChildHandedNothingKeepsTheValuesItsDataGa
     // counted.
     EXPECT_EQ(state(), "plain");
     EXPECT_EQ(machine.completed(), 1u);
+}
+
+// A string an `<invoke type="scxml">` hands its child is held to the bound the
+// child declared for that variable, in UTF-8 bytes, as an `<assign>` to it would
+// be: a value past it is left out and reported (§scxml-5.7.1), and the child
+// still starts, holding the one its `<data>` gave it. `fits` is handed the four
+// bytes its `title` holds and ends on them; `over` is handed eight bytes and
+// `wide` two characters of five bytes, so each starts with the 'ab' it ends on:
+// 1 + 10 + 100, and two errors.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStringHandedToAChildIsHeldToTheChildsBound) {
+    G::static_invoke_string::static_invoke_string machine;
+    machine.initialize();
+    for (int i = 0; i < 5; ++i) {
+        machine.tick();
+    }
+    EXPECT_EQ(machine.completed(), 111u);
+    EXPECT_EQ(machine.errors(), 2u);
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

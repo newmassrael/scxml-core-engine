@@ -3587,40 +3587,20 @@ impl CTarget {
     /// hands a static child its parent's values between the two steps its
     /// start takes (§scxml-6.4.1). What the child cannot be started without is
     /// refused here, by name: the host's act table of a child that declares
-    /// `<sce:action>`s, which the parent has none to give it, and a string handed
-    /// to a child's variable, whose bound the child's buffer would have to be
-    /// held to.
+    /// `<sce:action>`s, which the parent has none to give it.
     fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
         if let Some(other) = unlowered_invoke(invokes) {
             return Some(other);
         }
-        for invoke in invokes {
-            let crate::model::Invoke::Scxml(info) = invoke else {
-                continue;
-            };
-            if info.common.child_declares_host_acts {
-                return Some(format!(
+        invokes.iter().find_map(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
+                Some(format!(
                     "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
                     info.common.base.invoke_id
-                ));
+                ))
             }
-            let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
-            for param in info.arguments() {
-                let held = declared
-                    .iter()
-                    .find(|v| v.id == param.name)
-                    .and_then(|v| v.value_type.as_ref())
-                    .and_then(|t| t.scalar());
-                if matches!(held, Some(SceType::String)) {
-                    return Some(format!(
-                        "a <param name=\"{}\"> handed to a string variable of the child of \
-                         <invoke id=\"{}\">",
-                        param.name, info.common.base.invoke_id
-                    ));
-                }
-            }
-        }
-        None
+            _ => None,
+        })
     }
 
     /// The C type a value of `ty` is held in while it is computed. An enum's
@@ -4850,9 +4830,19 @@ fn lower_child_arguments(
         let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
             .map_err(|r| refused(r.error.to_string()))?;
         rewrites.note(&written, spelling.as_ref(), &value.text);
-        param.native_seed = value.text;
+        // A string handed to the child's variable is held to the bound the child
+        // declared for it, whatever the value came from, as an `<assign>` to it
+        // would be (§scxml-4.9): past it the value fails as any other does, is
+        // left out, and the child starts with the one its `<data>` gave it.
+        let (seed, fails) = match (held, variable.and_then(|v| v.capacity)) {
+            (SceType::String, Some(capacity)) => {
+                (target.bounded_string(&value.text, capacity), true)
+            }
+            _ => (value.text, value.can_fail),
+        };
+        param.native_seed = seed;
         param.native_seed_type = target.scalar_type(held);
-        param.native_fails = value.can_fail;
+        param.native_fails = fails;
     }
     info.common.base.params = arguments;
     info.namelist.clear();

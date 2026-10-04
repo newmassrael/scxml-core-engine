@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions" and
+  "String variables"): a string an <invoke type="scxml"> hands its child is held
+  to the bound the child declared for that variable, in UTF-8 bytes, as an
+  <assign> to it would be. A value past it is the evaluation that failed (W3C
+  SCXML 5.7.1): `error.execution` is raised, that one value is left out, and the
+  child still starts, holding the one its <data> gave it.
+
+  Three children, each with `title` bounded to 4 bytes:
+
+    fits  handed 'wxyz' (4 bytes); it ends only if it holds exactly that
+    over  handed `lengthy`, which holds 'abcdefgh' (8 bytes), past the bound;
+          left out, so `title` is the 'ab' its <data> gave it, which it ends on
+    wide  handed 'é€' — two characters and five bytes, past the bound, so a
+          bound counted in characters would let it through; left out as well
+
+  `done.invoke.<id>` counts each child that ended in `completed` — 1, 10 and 100
+  — and each value left out raises an `error.execution`, counted in `errors`.
+  A child handed a value past its bound that took it anyway would hold 'abcdefgh'
+  and never end, so the run is over at `completed` 111 and `errors` 2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="static_invoke_string">
+  <datamodel>
+    <data id="lengthy" sce:type="string" sce:capacity="8" expr="'abcdefgh'"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="fits">
+      <param name="title" expr="'wxyz'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="title" sce:type="string" sce:capacity="4" expr="'ab'"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="title === 'wxyz'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="over">
+      <param name="title" expr="lengthy"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="title" sce:type="string" sce:capacity="4" expr="'ab'"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="title === 'ab'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="wide">
+      <param name="title" expr="'é€'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="title" sce:type="string" sce:capacity="4" expr="'ab'"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="title === 'ab'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.fits">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+    <transition event="done.invoke.over">
+      <assign location="completed" expr="completed + 10"/>
+    </transition>
+    <transition event="done.invoke.wide">
+      <assign location="completed" expr="completed + 100"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

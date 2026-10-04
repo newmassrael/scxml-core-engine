@@ -2758,7 +2758,9 @@ it as a bool, a string, an integer or a real. The value is held to that variable
 type as an `<assign>` to it would be, read from the invoking machine's fields when
 the invoke executes — at the end of the macrostep that entered its state, after
 the entry actions, not when the state was entered — and lowered to native code, so
-it costs no script engine. A name the child does not declare, a variable of
+it costs no script engine. A string is held to the bound the child declared for
+the variable, in UTF-8 bytes, whatever it came from: past it the value fails as
+any other does (below), and is left out. A name the child does not declare, a variable of
 another kind, a name handed twice and a child under another data model are refused
 at the `<param>` as `scxml/static-datamodel-rule`: each would be typed, accepted
 and never delivered (measured 2026-10-01 on Rust and Kotlin, when no generated code
@@ -2781,7 +2783,13 @@ it, that one value is left out, and the child still starts. The witness is
 Rust, Kotlin and C++ (the restore half is not, for C++ has no saved state): its
 child ends only when it holds both a `<param>`'s value, read
 after the entry action that changes it, and a `namelist`'s, and a child handed
-nothing keeps its declared values and never ends.
+nothing keeps its declared values and never ends. A string's bound has its own,
+`static_invoke_string.scxml`, driven on all six backends (Rust, Kotlin, C++, Go,
+Python and C11): its children hold four bytes, and one handed four ends on them
+while one handed eight bytes and one handed two characters of five bytes are
+left out and reported, each starting with the value its `<data>` gave it. A bound
+counted in characters lets the second through, and a child that took a value past
+its bound never ends.
 
 A child is handed its values once, when it starts: a field the machine changes
 while the child runs does not reach it. A restore starts each running child again
@@ -3293,10 +3301,10 @@ record whose fields are numbers, bools and enums, a list of integers, bools or
 such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor with its `<param>`s, and an `<invoke type="scxml">` of a child that
-declares no `<sce:action>`, handed numbers and bools. A real, bytes and a record
+declares no `<sce:action>`, handed numbers, bools and strings. A real, bytes and a record
 with a string field, a list of reals, a `<send>` with a `<content>` or to
-another processor, an `<invoke>` the host runs, a hybrid or a mesh one, a string
-handed to a child's variable, a final's `<donedata>` with a `<content>` and a
+another processor, an `<invoke>` the host runs, a hybrid or a mesh one, a final's
+`<donedata>` with a `<content>` and a
 transition on an event whose payload carries a bytes or enum field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
 not carry yet, and a real is not yet held to a scenario — a `<param>` whose
@@ -3416,7 +3424,10 @@ parent, the routing `_init_with_parent` stamps, and `<machine>_invoked_enter`,
 the entry walk — and the parent writes between them each value a `<param>` or
 `namelist` name hands over, into the child's variable of that name, read from the
 parent's fields when the invoke executes (the lowering the other backends share,
-spelled as a typed local that is written only when it was computed). A value that
+spelled as a typed local that is written only when it was computed). A string is
+bounded to the child's own bound where it is lowered and then copied, terminator
+and all, into the child's buffer, which a value past it would have written beyond.
+A value that
 cannot be computed raises `error.execution` and is left out, and the child still
 starts holding the value its `<data>` gave it (5.7.1). A child that declares
 `<sce:action>`s has no such door, for the acts are a host's to supply, and a
@@ -3425,7 +3436,8 @@ parent that invokes one is refused by name. `test_static_invoke.c` drives
 counterpart, since a C machine is not saved) and `static_invoke_entry`, which
 sits beside the C++ suite's own fixtures and whose child reads in its `<onentry>`
 what it was handed, sends its parent from there, and is handed a value that
-overflows. A `--c-symbol-prefix` build carries the prefix to every symbol a lowered
+overflows; the string fixture `static_invoke_string` is driven there too. A
+`--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own
 tag constants stay `<MACHINE>_PAYLOAD_<EVENT>`.

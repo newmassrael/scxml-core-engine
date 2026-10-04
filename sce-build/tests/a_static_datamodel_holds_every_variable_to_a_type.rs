@@ -922,25 +922,25 @@ fn c11_starts_a_static_child_and_hands_it_a_number() {
 }
 
 #[test]
-fn c11_refuses_a_string_handed_to_a_child_and_names_it() {
-    // A string in a child is a buffer of the bound its variable declares, which
-    // a value arriving from another machine would have to be held to: refused by
-    // name until it is, not written past the end of the buffer.
+fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
+    // A string in a child is a buffer of the bound its variable declares, and a
+    // value arriving from another machine is held to that bound as an
+    // `<assign>` to it would be (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child
+    // sessions"), so every backend that starts a child takes one.
     let document = invoking_with(
         "",
         r#"<param name="title" expr="'x'"/>"#,
         r#"<data id="title" sce:type="string" sce:capacity="8" expr="''"/>"#,
     );
-    let (ok, out) = run(&["check", "-l", "c11"], &document);
-    assert!(!ok, "c11 has no lowering for it yet:\n{out}");
-    assert!(
-        out.contains("generate/unsupported-feature") && out.contains("no C11 lowering yet"),
-        "expected the unsupported-feature refusal naming C11:\n{out}"
+    for lang in ["rust", "kotlin", "cpp", "python", "c11"] {
+        let (ok, out) = run(&["check", "-l", lang], &document);
+        assert!(ok, "{lang}: the child declares `title`, a string:\n{out}");
+    }
+    let (ok, out) = run(
+        &["check", "-l", "go", "--go-module-prefix", "x/y"],
+        &document,
     );
-    assert!(
-        out.contains(r#"a <param name=\"title\"> handed to a string variable of the child"#),
-        "it names the param and the invoke:\n{out}"
-    );
+    assert!(ok, "go: the child declares `title`, a string:\n{out}");
 }
 
 #[test]

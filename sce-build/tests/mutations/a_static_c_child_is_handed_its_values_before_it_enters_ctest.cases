@@ -26,15 +26,15 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^c11_integration_static_invoke$'
-mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
-mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integration/static_invoke_entry.scxml
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integration/static_invoke_entry.scxml sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
 
 # ── The child's entry walk runs after it was handed its values ─────
 
 mutation_case "a child is entered before it is handed its values" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "            {% for param in invoke_info.params if param.native_seed %}\n            {\n                {% if param.native_fails %}",
-     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% for param in invoke_info.params if param.native_seed %}\n            {\n                {% if param.native_fails %}")
+     "            {% for param in invoke_info.params if param.native_seed %}\n            {# A string is a buffer",
+     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% for param in invoke_info.params if param.native_seed %}\n            {# A string is a buffer")
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      "            {% endfor %}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% endif %}",
      "            {% endfor %}\n            {% endif %}")
@@ -44,8 +44,22 @@ PY
 
 mutation_case "a value that failed is written over the child's own" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "                } else {\n                    sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;\n                }",
-     "                }\n                sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;")
+     "                } else {\n                    {{ seed_write }}\n                }",
+     "                }\n                {{ seed_write }}")
+PY
+
+# ── A string handed to a child is held to the child's own bound ────
+#
+# The bound is applied where the value is lowered, for every backend, and C is
+# the one that cannot survive without it: the child's variable is a buffer of
+# `capacity + 1` bytes, and a value past it is a write past its end. The
+# fixture's `over` and `wide` children are handed eight bytes and five bytes in
+# two characters to a variable of four.
+
+mutation_case "a string handed to a child is not held to the child's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::String, Some(capacity)) => {\n                (target.bounded_string(&value.text, capacity), true)",
+     "            (SceType::String, Some(capacity)) if capacity == 0 => {\n                (target.bounded_string(&value.text, capacity), true)")
 PY
 
 mutation_case "a value that failed is not reported" <<'PY'

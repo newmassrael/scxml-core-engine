@@ -8,7 +8,8 @@
 //
 // Three documents: the first two are the ones the Rust, Kotlin and Go suites
 // drive, run live here — their restore half has no C counterpart, since a C
-// machine is not saved — and the third is this suite's own:
+// machine is not saved — and the third is this suite's own. A fourth,
+// `static_invoke_string`, is shared by every backend:
 //
 //   * `static_invoke`        a child that takes `a` then `b`, which its parent
 //                            forwards (autoforward); `abort` leaves the state that
@@ -23,6 +24,10 @@
 //                            `<onentry>` arrives, and a value that cannot be
 //                            computed is left out and reported, the child still
 //                            starting with the one its `<data>` gave it.
+//   * `static_invoke_string` a string handed to a child is held to the bound the
+//                            child declared, in bytes: one that fits arrives, one
+//                            past it and one of two characters and five bytes are
+//                            left out and reported.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54`: the machines have no script
 // engine, so the link is the proof.
@@ -35,6 +40,7 @@
 #include "static_invoke_entry_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
+#include "static_invoke_string_sm.h"
 
 // A machine's own door for an event named as a document names it: the event is
 // raised on its external queue and the macrostep it starts is run.
@@ -154,6 +160,20 @@ static int the_values_are_there_when_the_child_enters(void) {
     return bad;
 }
 
+// `fits` is handed the four bytes its variable holds and ends on them. `over` and
+// `wide` are handed values past that bound — eight bytes, and five bytes in two
+// characters — which are left out and reported, so each starts with the 'ab' its
+// `<data>` gave it, which is what it ends on: 1 + 10 + 100 and two errors. A
+// child that took a value past its bound would never end.
+static int a_string_handed_to_a_child_is_held_to_the_childs_bound(void) {
+    static static_invoke_string_t sm;
+    static_invoke_string_init(&sm);
+    int bad = expect_count(static_invoke_string_get_completed(&sm), 111u, "all three children ended");
+    bad |= expect_count(static_invoke_string_get_errors(&sm), 2u, "the two values past the bound were reported");
+    static_invoke_string_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= a_child_takes_what_its_parent_forwards();
@@ -161,6 +181,7 @@ int main(void) {
     bad |= leaving_the_state_cancels_the_child();
     bad |= the_children_are_handed_what_the_parent_holds_when_they_start();
     bad |= the_values_are_there_when_the_child_enters();
+    bad |= a_string_handed_to_a_child_is_held_to_the_childs_bound();
     if (bad != 0) {
         return 1;
     }

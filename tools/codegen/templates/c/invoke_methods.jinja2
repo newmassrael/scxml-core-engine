@@ -518,6 +518,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                still starts, one value short, holding what its `<data>` gave
                it. #}
             {% for param in invoke_info.params if param.native_seed %}
+            {# A string is a buffer of the bound its variable declares: the value
+               was bounded to the child's own bound where it was lowered, so a
+               failure never reaches the copy, and the terminator goes with it. #}
+            {% set seed_into = 'sm->child_' ~ invoke_info.field_suffix ~ '.policy.v_' ~ (param.name | to_snake_case) %}
+            {% set seed_write = ('memmove(' ~ seed_into ~ '.data, sce_value, strlen(sce_value) + 1u);') if param.native_seed_type == 'const char *' else (seed_into ~ ' = sce_value;') %}
             {
                 {% if param.native_fails %}
                 sce_forge_algorithm_failure_t sce_failure_ = {0};
@@ -531,10 +536,10 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                         "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
                     {% endif %}
                 } else {
-                    sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;
+                    {{ seed_write }}
                 }
                 {% else %}
-                sm->child_{{ invoke_info.field_suffix }}.policy.v_{{ param.name | to_snake_case }} = sce_value;
+                {{ seed_write }}
                 {% endif %}
             }
             {% endfor %}

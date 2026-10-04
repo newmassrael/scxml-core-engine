@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c769688680043642d7b46211c31312f7471f398adc2bffecf5e2b210fa2f7270
+// source-hash: ee5d765fef6383db8d0fe56109b4e13749bb8d75bbfabe8a9b076c0c501145db
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sync_client.scxml
