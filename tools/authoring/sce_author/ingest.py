@@ -28,6 +28,7 @@ import posixpath
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 
@@ -117,15 +118,32 @@ def _docx_text(node, attached: dict[str, str]) -> str:
     whose reference is not in it -- a picture of an equation, a link that leaves
     the document -- is not marked: there is no file to point at.
     """
-    text = _docx_paragraph(node)
-    marks: list[str] = []
+    return " ".join(part for part in (_docx_paragraph(node), *enclosed_marks(node, attached)) if part)
+
+
+def enclosed_objects(node, attached: dict[str, str]) -> list[tuple[str, str | None]]:
+    """`(file name, kind)` of each object under `node` that names an enclosed file, in the order they sit.
+
+    Public so that a caller which slices a document by clause can ask which files a clause
+    refers to, and carry them with it, without reading the mark back out of its text.
+    """
+    found: list[tuple[str, str | None]] = []
     for ole in node.iter(f"{_O}OLEObject"):
         name = attached.get(ole.get(f"{_DOC_R}id") or "")
-        if name is None:
-            continue
-        kind = ole.get("ProgID")
-        marks.append(f"[enclosed object: {name}" + (f" ({kind})" if kind else "") + "]")
-    return " ".join(part for part in (text, *marks) if part)
+        if name is not None:
+            found.append((name, ole.get("ProgID")))
+    return found
+
+
+def enclosed_marks(node, attached: dict[str, str]) -> list[str]:
+    """The `[enclosed object: NAME (KIND)]` marks of one paragraph, in the order its objects sit.
+
+    Public because the mark is what ties a clause that says "the attached sheet" to the file
+    it means. A caller that slices a document by clause, rather than reading it whole, places
+    the same marks the whole-document reader does and does not write a second spelling of them.
+    """
+    return [f"[enclosed object: {name}" + (f" ({kind})" if kind else "") + "]"
+            for name, kind in enclosed_objects(node, attached)]
 
 
 # A clause heading is a SHORT line that opens with its number. Long numbered
@@ -562,6 +580,68 @@ def _read_enclosed_deck(blob: bytes) -> tuple[list[str], list[str]]:
         return [], [f"an enclosed presentation could not be opened ({exc})"]
 
 
+@dataclass(frozen=True)
+class Enclosed:
+    """What a word document encloses, read.
+
+    ⚠ Reading an attachment is not one caller's feature. A reader that takes the whole document
+    and a reader that slices it by clause meet the same objects, and a reader that opens only the
+    document part SUCCEEDS QUIETLY: the sentence "the limits are in the attached sheet" survives
+    and the sheet does not. The opening therefore lives here once, and both callers ask it.
+
+    `attached`  a relationship id -> the name the enclosed file is carried under, for placing a mark
+    `rows`      that name -> the file's rows as the reader carries them; only files that opened,
+                in name order
+    `unopened`  names of enclosed objects that could not be read as rows -- named, never dropped
+    `notes`     what went wrong opening them, one entry per trouble
+    """
+
+    attached: dict[str, str]
+    rows: dict[str, list[str]]
+    unopened: list[str]
+    notes: list[str]
+
+    def carried(self, names: Iterable[str] | None = None) -> list[str]:
+        """The lines that carry enclosed files under their names: a heading, then the rows.
+
+        `None` carries every file that opened. A name that did not open is refused rather than
+        skipped: a slice that asked for a file and was handed nothing would read as one that
+        never referred to it.
+        """
+        wanted = list(self.rows) if names is None else list(names)
+        lines: list[str] = []
+        for name in wanted:
+            if name not in self.rows:
+                raise KeyError(f"{name!r} is not an enclosed file that opened; "
+                               f"those that did: {', '.join(self.rows) or 'none'}")
+            lines.append(f"--- enclosed: {name}")
+            lines.extend(self.rows[name])
+        return lines
+
+
+def read_enclosed(archive: zipfile.ZipFile) -> Enclosed:
+    """Open every workbook and presentation a word document encloses, and say which object is which."""
+    embedded = sorted(n for n in archive.namelist() if n.startswith("word/embeddings/"))
+    # Which enclosed file each object in the body refers to, by the name the file is carried
+    # under below.
+    attached = {rid: posixpath.basename(part)
+                for rid, (_kind, part) in _related(archive, "word/document.xml").items()
+                if part in embedded}
+    rows: dict[str, list[str]] = {}
+    notes: list[str] = []
+    for part in embedded:
+        if not part.lower().endswith((".xlsx", ".pptx")):
+            continue
+        name = posixpath.basename(part)
+        opened, trouble = (_read_enclosed_sheet(archive.read(part)) if part.lower().endswith(".xlsx")
+                           else _read_enclosed_deck(archive.read(part)))
+        notes.extend(f"{name}: {t}" for t in trouble)
+        if opened:
+            rows[name] = opened
+    unopened = [name for name in map(posixpath.basename, embedded) if name not in rows]
+    return Enclosed(attached, rows, unopened, notes)
+
+
 def _read_docx(path: pathlib.Path) -> Ingested:
     notes: list[str] = []
     try:
@@ -582,15 +662,8 @@ def _read_docx(path: pathlib.Path) -> Ingested:
             # opposite: the body text hands requirements to "the spreadsheet
             # attached", and a reader that opens only the document part sees
             # none of it AND SUCCEEDS QUIETLY.
-            embedded = sorted(n for n in names if n.startswith("word/embeddings/"))
             pictures = sorted(n for n in names if n.startswith("word/media/"))
-            enclosed = {n: zf.read(n) for n in embedded
-                        if n.lower().endswith((".xlsx", ".pptx"))}
-            # Which enclosed file each object in the body refers to, by the name
-            # the file is carried under below.
-            attached = {rid: posixpath.basename(part)
-                        for rid, (_kind, part) in _related(zf, "word/document.xml").items()
-                        if part in embedded}
+            enclosed = read_enclosed(zf)
     except zipfile.BadZipFile as exc:
         raise IngestError(f"{path}: not a readable document ({exc})") from exc
 
@@ -598,11 +671,11 @@ def _read_docx(path: pathlib.Path) -> Ingested:
     for node in body.iter():
         if node.tag == f"{_W}p":
             # A paragraph inside a table cell is emitted by the table branch.
-            lines.append(_docx_text(node, attached))
+            lines.append(_docx_text(node, enclosed.attached))
         elif node.tag == f"{_W}tbl":
             for tr in node.iter(f"{_W}tr"):
                 cells = [
-                    " ".join(_docx_text(p, attached) for p in tc.iter(f"{_W}p")).strip()
+                    " ".join(_docx_text(p, enclosed.attached) for p in tc.iter(f"{_W}p")).strip()
                     for tc in tr.iter(f"{_W}tc")
                 ]
                 lines.append("| " + " | ".join(cells) + " |")
@@ -619,30 +692,20 @@ def _read_docx(path: pathlib.Path) -> Ingested:
     # reader above keeps. Measured on one 22,669-line specification: eleven
     # enclosed files held 732 spreadsheet rows and 14 slides that the body
     # text handed its requirements to and no reader had ever opened.
-    carried, opened = [], []
-    for name, blob in sorted(enclosed.items()):
-        rows, trouble = (_read_enclosed_sheet(blob)
-                         if name.lower().endswith(".xlsx")
-                         else _read_enclosed_deck(blob))
-        notes.extend(f"{posixpath.basename(name)}: {t}" for t in trouble)
-        if rows:
-            opened.append(name)
-            carried.append(f"--- enclosed: {posixpath.basename(name)}")
-            carried.extend(rows)
-    lines.extend(carried)
+    notes.extend(enclosed.notes)
+    lines.extend(enclosed.carried())
 
-    unopened = [n for n in embedded if n not in opened]
-    if unopened:
+    if enclosed.unopened:
         notes.append(
             "enclosed objects that could not be opened: "
-            + ", ".join(posixpath.basename(n) for n in unopened)
+            + ", ".join(enclosed.unopened)
             + " -- when a document hands a requirement to an attachment, the "
               "decision logic is in there and not in the text. This is the "
               "loss that looks most like success."
         )
-    if opened:
+    if enclosed.rows:
         notes.append(
-            f"{len(opened)} enclosed file(s) WERE opened and their contents "
+            f"{len(enclosed.rows)} enclosed file(s) WERE opened and their contents "
             f"carried; a merged cell keeps the file's own layout, so a table "
             f"that looked merged on screen reads wider here"
         )
