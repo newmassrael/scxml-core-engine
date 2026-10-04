@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml
@@ -92,7 +92,7 @@ class StatechartStaticDelayedHostSendStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "0cad5dd54ade22f8cb8ae70a18245ec376daaf97fc380a7e68104a4ec9d3f9d3"
+    val savedShape: String = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -136,7 +136,7 @@ class StatechartStaticDelayedHostSendStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("job"), "job")
-        val saved2 = SavedValues.string(saved.variable("label"), "label")
+        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
         job = saved1
         label = saved2
         enterSaved(saved, wallNowMs)

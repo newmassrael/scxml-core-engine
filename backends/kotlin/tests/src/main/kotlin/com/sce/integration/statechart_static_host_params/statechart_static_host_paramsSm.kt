@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
@@ -125,7 +125,7 @@ class StatechartStaticHostParamsStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "49f6ab9c0a4f795a3d206b842c6bf0d9c0f1f21ac66842cb417665ca60cf32ff"
+    val savedShape: String = "a7c682777e0bb461ecb0e9c2d23ac6917b84ef45db8abaf99a8efdc63a5698cb"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -174,7 +174,7 @@ class StatechartStaticHostParamsStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.bool(saved.variable("ready"), "ready")
-        val saved3 = SavedValues.string(saved.variable("label"), "label")
+        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
         val saved4 = SavedValues.int16(saved.variable("delta"), "delta")
         val saved5 = SavedValues.float64(saved.variable("ratio"), "ratio")
         val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
@@ -554,7 +554,9 @@ class StatechartStaticHostParamsStateMachine(
 
             ready = true
 
-            label = "busy"
+            if (try { label = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
             }
             else -> {}
         }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -251,7 +251,7 @@ pub trait StatechartStaticHostParamsPersist: Sized {
 impl StatechartStaticHostParamsPersist for Engine<StatechartStaticHostParamsPolicy> {
     type Policy = StatechartStaticHostParamsPolicy;
 
-    const SHAPE: &'static str = "49f6ab9c0a4f795a3d206b842c6bf0d9c0f1f21ac66842cb417665ca60cf32ff";
+    const SHAPE: &'static str = "a7c682777e0bb461ecb0e9c2d23ac6917b84ef45db8abaf99a8efdc63a5698cb";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -321,10 +321,8 @@ impl StatechartStaticHostParamsPersist for Engine<StatechartStaticHostParamsPoli
             saved.variable("ready")?,
             "ready",
         )?;
-        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("label")?,
-            "label",
-        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         policy.delta = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("delta")?,
             "delta",
@@ -1162,7 +1160,19 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             self.ready = true;
 
                             // W3C SCXML 5.3: <assign location="label">
-                            self.label = "busy".to_string();
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.label = sce_forge_runtime::algorithm::bounded("busy".to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
                         }
                     }
                     _ => {}

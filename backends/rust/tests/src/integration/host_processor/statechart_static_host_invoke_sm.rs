@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -253,7 +253,7 @@ pub trait StatechartStaticHostInvokePersist: Sized {
 impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePolicy> {
     type Policy = StatechartStaticHostInvokePolicy;
 
-    const SHAPE: &'static str = "e153a37c2a5398d267fc11619b7f740bb3f56d91a9d02d6a02693545170258ab";
+    const SHAPE: &'static str = "6c5500351260aea6df554c7d384da2c3d9c85ac7094c6f1401a93a4610aa72e4";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -305,10 +305,8 @@ impl StatechartStaticHostInvokePersist for Engine<StatechartStaticHostInvokePoli
         )?;
         policy.job =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("label")?,
-            "label",
-        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         policy.seen = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("seen")?,
             "seen",

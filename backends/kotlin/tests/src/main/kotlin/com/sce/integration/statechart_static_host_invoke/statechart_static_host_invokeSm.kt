@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
@@ -118,7 +118,7 @@ class StatechartStaticHostInvokeStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "e153a37c2a5398d267fc11619b7f740bb3f56d91a9d02d6a02693545170258ab"
+    val savedShape: String = "6c5500351260aea6df554c7d384da2c3d9c85ac7094c6f1401a93a4610aa72e4"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -163,7 +163,7 @@ class StatechartStaticHostInvokeStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("job"), "job")
-        val saved2 = SavedValues.string(saved.variable("label"), "label")
+        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
         val saved3 = SavedValues.uint32(saved.variable("seen"), "seen")
         job = saved1
         label = saved2

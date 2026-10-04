@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 67a8ee70d6c9b8647377271d8184759d92924ae6af3132990efaa71c8eaaa9bd
+// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -239,7 +239,7 @@ pub trait StatechartStaticDelayedHostSendPersist: Sized {
 impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHostSendPolicy> {
     type Policy = StatechartStaticDelayedHostSendPolicy;
 
-    const SHAPE: &'static str = "0cad5dd54ade22f8cb8ae70a18245ec376daaf97fc380a7e68104a4ec9d3f9d3";
+    const SHAPE: &'static str = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -287,10 +287,8 @@ impl StatechartStaticDelayedHostSendPersist for Engine<StatechartStaticDelayedHo
         )?;
         policy.job =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
-        policy.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("label")?,
-            "label",
-        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
