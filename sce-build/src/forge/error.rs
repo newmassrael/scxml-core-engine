@@ -1764,9 +1764,10 @@ pub enum ValidationError {
 
     /// Parent-side flag-bind rule: parent's `<sce:flag-bind source="X.Y">`
     /// references a local carrier flag whose carrier field is declared
-    /// AFTER the embed field that depends on it. The streaming codec
-    /// cannot read the flag's bit before reaching the embed; the
-    /// carrier must precede the embed in field declaration order.
+    /// AFTER the field that depends on it — an embed, a repeat or a TLV
+    /// chain, all of which hand the bound input to the imported codec. The
+    /// streaming codec cannot read the flag's bit before reaching that
+    /// field; the carrier must precede it in field declaration order.
     /// Mirrors the legacy
     /// `codec/requires-parent-flags-carrier-after-embed` ordering
     /// constraint translated into the inverted shape.

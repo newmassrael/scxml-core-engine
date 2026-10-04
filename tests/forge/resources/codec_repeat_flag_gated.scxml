@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a gated repeat whose element takes a flag.
+
+     The same hand-over as `codec_repeat_flag_carrier`, through the gated
+     repeat shape: the count and the elements are both on the wire only when
+     L is set, and every element still receives W as its `wide` input. A gated
+     repeat is rendered by its own builder in every backend, so it is covered
+     on its own rather than assumed to follow the plain one.
+
+     Wire shape:
+       byte 0 : head  (bit 0 = W, bit 1 = L)
+       byte 1 : count (uint8, present iff L)
+       byte 2..: `count` elements, each laid out by W (present iff L) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_flag_gated">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+      <sce:flag name="L" bit="1"/>
+    </sce:flags>
+    <sce:field id="count" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="2"
+                count="count" max-count="4"
+                sce:present-if="head.L"/>
+  </datamodel>
+</scxml>

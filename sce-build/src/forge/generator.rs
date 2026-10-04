@@ -5422,17 +5422,25 @@ fn render_codec(
                         bare.clone()
                     };
                     obj.insert(type_key.into(), wrapped.into());
+                    // The element codec's `<sce:flag-input>`s are bound at the
+                    // import and handed to every element, the way an embed's are.
+                    let repeat_thread = embed_flag_bind_thread_args(
+                        imports.iter().find(|i| i.alias == alias),
+                        m,
+                        lang,
+                    );
                     obj.insert(
                         "repeat_decode_stmt".into(),
-                        repeat_streaming_decode_stmt(
-                            f,
-                            &m.fields,
-                            &body_type,
+                        repeat_streaming_decode_stmt(RepeatDecode {
+                            field: f,
+                            fields: &m.fields,
+                            body_type: &body_type,
                             body_lt,
-                            &body_decoder,
+                            body_decoder: &body_decoder,
+                            decode_arg: &repeat_thread.decode_arg,
                             max_count,
                             lang,
-                        )
+                        })
                         .into(),
                     );
                     obj.insert(
@@ -5441,6 +5449,7 @@ fn render_codec(
                             f,
                             &m.fields,
                             &body_encoder,
+                            &repeat_thread.encode_arg,
                             lang,
                         )
                         .into(),
@@ -5550,6 +5559,15 @@ fn render_codec(
                         (crate::generator::Language::C11, _) => body_type.clone(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
+                    // The entry codec's `<sce:flag-input>`s are bound where the
+                    // chain imports it, and every entry it decodes or encodes is
+                    // handed the same values: a parent's carrier flag or its own
+                    // flag-input, neither of which changes from entry to entry.
+                    let entry_thread = embed_flag_bind_thread_args(
+                        imports.iter().find(|i| i.alias == alias),
+                        m,
+                        lang,
+                    );
                     let decode_stmt = if f.present_if.is_some() {
                         tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
                             field: f,
@@ -5557,6 +5575,7 @@ fn render_codec(
                             body_type: &body_type,
                             body_lt,
                             body_decoder: &body_decoder,
+                            decode_arg: &entry_thread.decode_arg,
                             max_depth: *max_depth,
                             on_overflow: *on_overflow,
                             terminate_on,
@@ -5568,6 +5587,7 @@ fn render_codec(
                             body_type: &body_type,
                             body_lt,
                             body_decoder: &body_decoder,
+                            decode_arg: &entry_thread.decode_arg,
                             max_depth: *max_depth,
                             on_overflow: *on_overflow,
                             terminate_on,
@@ -5582,10 +5602,12 @@ fn render_codec(
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     let encode_block = if f.present_if.is_some() {
                         tlv_chain_streaming_encode_block_gated(
-                            f, &body_encoder, &m.fields, lang,
+                            f, &body_encoder, &entry_thread.encode_arg, &m.fields, lang,
                         )
                     } else {
-                        tlv_chain_streaming_encode_block(f, &body_encoder, lang)
+                        tlv_chain_streaming_encode_block(
+                            f, &body_encoder, &entry_thread.encode_arg, lang,
+                        )
                     };
                     obj.insert("tlv_chain_encode_block".into(), encode_block.into());
                     // Kotlin's data-class primary constructor needs a
@@ -8148,10 +8170,11 @@ fn validate_cross_codec_variant_dispatch(
 /// 3. Width agreement: leaf-side input width matches source width. v1
 ///    fixes width=1, so any non-unit source width fires
 ///    `CodecFlagBindWidthMismatch`.
-/// 4. Carrier-before-embed ordering: when the bind source is a local
-///    carrier flag, the carrier field must precede the embed (the
-///    streaming decoder reads the carrier byte before reaching the
-///    embed). Violations fire `CodecFlagBindCarrierAfterEmbed`.
+/// 4. Carrier-before-consumer ordering: when the bind source is a local
+///    carrier flag, the carrier field must precede the first field that
+///    consumes the import (an embed, the elements of a repeat, or the
+///    entries of a chain — the streaming decoder reads the carrier byte
+///    before reaching it). Violations fire `CodecFlagBindCarrierAfterEmbed`.
 ///
 /// Duplicate `input=` checking is parse-time (see `parse_flag_binds`),
 /// not repeated here.
@@ -8241,16 +8264,32 @@ fn validate_cross_codec_flag_bind(
         .iter()
         .map(|fi| (fi.name.as_str(), fi.width))
         .collect();
-    // Map from import alias → first embed field-index that consumes it
-    // (variant arm dispatch may have no embed field; default to 0 in
-    // that case for the ordering check — the binding still gates the
-    // variant decode at the dispatch site).
-    let alias_first_consumer_index: std::collections::BTreeMap<&str, usize> = parent
-        .fields
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, f)| f.embed_body_alias.as_deref().map(|alias| (alias, idx)))
-        .collect();
+    // Map from import alias → the first field that consumes it, by index: an
+    // embed, the elements of a repeat, or the entries of a chain, each of which
+    // calls the imported codec with the values its binds name. A variant arm has no field of its own
+    // (the dispatch site calls it), so an alias only an arm uses has no entry
+    // here and its ordering is not checked — the binding still gates the
+    // variant decode at the dispatch site.
+    //
+    // The FIRST consumer is what the carrier must precede: the streaming
+    // decoder reads the carrier byte before reaching it, and a second
+    // consumer further along does not move that. Collecting into a map would
+    // keep the last of two fields that share an import, so each is kept only
+    // when its alias has not been seen.
+    let mut alias_first_consumer_index: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
+    for (idx, f) in parent.fields.iter().enumerate() {
+        for alias in [
+            f.embed_body_alias.as_deref(),
+            f.repeat_body_alias.as_deref(),
+            f.tlv_chain_body_alias.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            alias_first_consumer_index.entry(alias).or_insert(idx);
+        }
+    }
 
     for imp in imports {
         // Quick skip when nothing axis-1 applies to this import.
@@ -8805,6 +8844,28 @@ fn resolve_repeat_body_type(
     })
 }
 
+/// Codec-emit inputs for [`repeat_streaming_decode_stmt`], bundled the way
+/// [`RepeatDecodeGated`] and [`TlvChainDecode`] bundle theirs: the element
+/// codec's `decode_arg` took the loose-argument form to 8, over the
+/// `too_many_arguments` bound.
+struct RepeatDecode<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    body_type: &'a str,
+    // Borrowed zero-copy: `"<'a>"` when the element codec is borrowed
+    // (Rust), applied to the `Vec<Body<'a>>` element type annotation;
+    // `""` otherwise. `Body::decode` call sites stay bare.
+    body_lt: &'a str,
+    body_decoder: &'a str,
+    /// What each element's `decode` is handed after the cursor: one argument
+    /// per `<sce:flag-input>` the element codec declares, spelled for `lang`
+    /// with a leading `, ` (see [`embed_flag_bind_thread_args`]); empty when it
+    /// declares none. A repeated element sees the same flags a lone embed would.
+    decode_arg: &'a str,
+    max_count: u32,
+    lang: crate::generator::Language,
+}
+
 /// RFC §synth-5-B B2 repeat primitive — pre-rendered streaming decode
 /// statement for one repeat field. The output binds the field id to
 /// the host-language list value, iterating either a sibling integer
@@ -8815,19 +8876,18 @@ fn resolve_repeat_body_type(
 /// spaces); inner lines carry absolute 12-space indent so they nest
 /// inside the surrounding `decode()` body alongside present-if /
 /// vle / per-field statements without re-indentation.
-fn repeat_streaming_decode_stmt(
-    field: &CodecField,
-    fields: &[CodecField],
-    body_type: &str,
-    // Borrowed zero-copy: `"<'a>"` when the element codec is borrowed
-    // (Rust), applied to the `Vec<Body<'a>>` element type annotation;
-    // `""` otherwise. `Body::decode` call sites stay bare.
-    body_lt: &str,
-    body_decoder: &str,
-    max_count: u32,
-    lang: crate::generator::Language,
-) -> String {
+fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
     use crate::generator::Language;
+    let RepeatDecode {
+        field,
+        fields,
+        body_type,
+        body_lt,
+        body_decoder,
+        decode_arg,
+        max_count,
+        lang,
+    } = ctx;
     // Per-language struct-field casing must match `codec_field_id` so
     // the helper-rendered `let <id> = ...` / `self.<id>` references
     // resolve to the same identifier the template emits at struct
@@ -8859,6 +8919,7 @@ fn repeat_streaming_decode_stmt(
             body_type,
             body_lt,
             body_decoder,
+            decode_arg,
             max_count,
             lang,
         });
@@ -8882,7 +8943,7 @@ fn repeat_streaming_decode_stmt(
                 "let {id} = {{\n            \
                      let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                      for _ in 0..{len_field_snake} {{\n                \
-                         _vec.push({body_type}::decode(cursor)?)\n                    \
+                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                          .map_err(|_| CodecError::TooManyElements)?;\n            \
                      }}\n            \
                      _vec\n        \
@@ -8893,7 +8954,7 @@ fn repeat_streaming_decode_stmt(
             "let {id} = {{\n            \
                  let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            \
                  }}\n            \
                  _vec\n        \
@@ -8907,7 +8968,7 @@ fn repeat_streaming_decode_stmt(
             "std::vector<{body_type}> {id};\n        \
              {id}.reserve({len_field});\n        \
              for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
-                 auto _elem = {body_type}::decode(cursor);\n            \
+                 auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                  if (!_elem.has_value()) return std::nullopt;\n            \
                  {id}.push_back(*_elem);\n        \
              }}"
@@ -8915,7 +8976,7 @@ fn repeat_streaming_decode_stmt(
         (Language::Cpp, CountRef::UntilEof) => format!(
             "std::vector<{body_type}> {id};\n        \
              while (cursor.remaining() > 0) {{\n            \
-                 auto _elem = {body_type}::decode(cursor);\n            \
+                 auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                  if (!_elem.has_value()) return std::nullopt;\n            \
                  {id}.push_back(*_elem);\n        \
              }}"
@@ -8935,14 +8996,14 @@ fn repeat_streaming_decode_stmt(
         (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
             "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                  repeat({len_field}.toInt()) {{\n                    \
-                     add({body_type}.decode(cursor) ?: return null)\n                \
+                     add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
                  }}\n            \
              }}"
         ),
         (Language::Kotlin, CountRef::UntilEof) => format!(
             "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                  while (cursor.remaining() > 0) {{\n                    \
-                     add({body_type}.decode(cursor) ?: return null)\n                \
+                     add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
                  }}\n            \
              }}"
         ),
@@ -8960,7 +9021,7 @@ fn repeat_streaming_decode_stmt(
             format!(
                 "{go_id} := make([]{body_type}, 0, {go_len})\n\t\
                  for _i := 0; _i < int({go_len}); _i++ {{\n\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -8973,7 +9034,7 @@ fn repeat_streaming_decode_stmt(
             format!(
                 "{go_id} := make([]{body_type}, 0)\n\t\
                  for cursor.Remaining() > 0 {{\n\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -8999,7 +9060,7 @@ fn repeat_streaming_decode_stmt(
                      size_t _n = (size_t)out->{len_snake};\n        \
                      if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      for (size_t _i = 0; _i < _n; ++_i) {{\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]);\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
                      }}\n        \
                      out->{id_snake}_len = _n;\n    \
@@ -9013,7 +9074,7 @@ fn repeat_streaming_decode_stmt(
                      out->{id_snake}_len = 0;\n        \
                      while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
                          if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                          out->{id_snake}_len++;\n        \
                      }}\n    \
@@ -9035,7 +9096,7 @@ fn repeat_streaming_decode_stmt(
             format!(
                 "{py_id} = []\n            \
                  for _ in range({py_len}):\n                \
-                     _elem = {body_type}.decode(cursor)\n                \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
                          return None\n                \
                      {py_id}.append(_elem)"
@@ -9046,7 +9107,7 @@ fn repeat_streaming_decode_stmt(
             format!(
                 "{py_id} = []\n            \
                  while cursor.remaining() > 0:\n                \
-                     _elem = {body_type}.decode(cursor)\n                \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
                          return None\n                \
                      {py_id}.append(_elem)"
@@ -9070,6 +9131,7 @@ fn repeat_streaming_encode_block(
     field: &CodecField,
     fields: &[CodecField],
     body_encoder: &str,
+    encode_arg: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -9080,15 +9142,22 @@ fn repeat_streaming_encode_block(
     // through the wrapped storage shape (Option<Vec> / std::optional
     // / MutableList? / Optional[List] / Go nilness / C11 carrier-bit).
     if let Some(pred) = &field.present_if {
-        return repeat_streaming_encode_block_gated(field, fields, pred, body_encoder, lang);
+        return repeat_streaming_encode_block_gated(
+            field,
+            fields,
+            pred,
+            body_encoder,
+            encode_arg,
+            lang,
+        );
     }
     match lang {
         Language::Rust => {
-            format!("        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}")
+            format!("        for _e in &self.{id} {{\n            _e.encode(w{encode_arg})?;\n        }}")
         }
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
-                 if (auto _se = _e.encode(w); _se) return _se;\n        \
+                 if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n        \
              }}"
         ),
         // Kotlin: `for (_e in this.<id>) { _e.encode(w)?.let { return it } }`.
@@ -9097,7 +9166,7 @@ fn repeat_streaming_encode_block(
         // Kotlin's idiomatic propagation form (mirrors Rust `?`).
         Language::Kotlin => format!(
             "        for (_e in this.{id}) {{\n            \
-                 _e.encode(w)?.let {{ return it }}\n        \
+                 _e.encode(w{encode_arg})?.let {{ return it }}\n        \
              }}"
         ),
         // Go: range over `s.<Pascal>` by value (`_e` is a copy of
@@ -9107,7 +9176,7 @@ fn repeat_streaming_encode_block(
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tfor _i := range s.{go_id} {{\n\t\t\
-                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                     if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -9130,7 +9199,7 @@ fn repeat_streaming_encode_block(
             // struct return. Status propagates via `SCE_FORGE_TRY_WRITE`.
             format!(
                 "    for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n        \
-                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w));\n    \
+                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w{encode_arg}));\n    \
                  }}",
                 body_encoder = body_encoder,
             )
@@ -9141,7 +9210,7 @@ fn repeat_streaming_encode_block(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        for _e in self.{py_id}:\n            \
-                     _e.encode(w)"
+                     _e.encode(w{encode_arg})"
             )
         }
     }
@@ -10093,6 +10162,8 @@ struct RepeatDecodeGated<'a> {
     // applied to the `Vec<Body<'a>>` element type annotation.
     body_lt: &'a str,
     body_decoder: &'a str,
+    // One argument per `<sce:flag-input>` of the element codec, leading `, `.
+    decode_arg: &'a str,
     max_count: u32,
     lang: crate::generator::Language,
 }
@@ -10127,6 +10198,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         body_type,
         body_lt,
         body_decoder,
+        decode_arg,
         max_count,
         lang,
     } = ctx;
@@ -10164,7 +10236,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      let _n = {count_read};\n            \
                      let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                      for _ in 0.._n {{\n                \
-                         _vec.push({body_type}::decode(cursor)?)\n                    \
+                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                          .map_err(|_| CodecError::TooManyElements)?;\n            \
                      }}\n            \
                      Some(_vec)\n        \
@@ -10177,7 +10249,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             "let {id} = if {test} {{\n            \
                  let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            \
                  }}\n            \
                  Some(_vec)\n        \
@@ -10203,7 +10275,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  std::vector<{body_type}> _list;\n            \
                  _list.reserve(_n);\n            \
                  for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
-                     auto _elem = {body_type}::decode(cursor);\n                \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
                      _list.push_back(*_elem);\n            \
                  }}\n            \
@@ -10216,7 +10288,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              if ({test}) {{\n            \
                  std::vector<{body_type}> _list;\n            \
                  while (cursor.remaining() > 0) {{\n                \
-                     auto _elem = {body_type}::decode(cursor);\n                \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
                      _list.push_back(*_elem);\n            \
                  }}\n            \
@@ -10244,7 +10316,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  val _n = {count_read}\n                \
                  mutableListOf<{body_type}>().apply {{\n                    \
                      repeat(_n.toInt()) {{\n                        \
-                         add({body_type}.decode(cursor) ?: return null)\n                    \
+                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
@@ -10254,7 +10326,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
                  mutableListOf<{body_type}>().apply {{\n                    \
                      while (cursor.remaining() > 0) {{\n                        \
-                         add({body_type}.decode(cursor) ?: return null)\n                    \
+                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
@@ -10277,7 +10349,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      _n := {count_read}\n\t\t\
                      {go_id} = make([]{body_type}, 0, _n)\n\t\t\
                      for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
-                         _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                         _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
                              return nil, err\n\t\t\t\
                          }}\n\t\t\t\
@@ -10293,7 +10365,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  if {test} {{\n\t\t\
                      {go_id} = make([]{body_type}, 0)\n\t\t\
                      for cursor.Remaining() > 0 {{\n\t\t\t\
-                         _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                         _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
                              return nil, err\n\t\t\t\
                          }}\n\t\t\t\
@@ -10315,7 +10387,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      size_t _n = (size_t)out->{len_snake};\n        \
                      if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      for (size_t _i = 0; _i < _n; ++_i) {{\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]);\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
                      }}\n        \
                      out->{id_snake}_len = _n;\n    \
@@ -10331,7 +10403,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      out->{id_snake}_len = 0;\n        \
                      while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
                          if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                          out->{id_snake}_len++;\n        \
                      }}\n    \
@@ -10351,7 +10423,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 "if {test}:\n                \
                      {py_id} = []\n                \
                      for _ in range({py_len}):\n                    \
-                         _elem = {body_type}.decode(cursor)\n                    \
+                         _elem = {body_type}.decode(cursor{decode_arg})\n                    \
                          if _elem is None:\n                        \
                              return None\n                    \
                          {py_id}.append(_elem)\n            \
@@ -10365,7 +10437,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 "if {test}:\n                \
                      {py_id} = []\n                \
                      while cursor.remaining() > 0:\n                    \
-                         _elem = {body_type}.decode(cursor)\n                    \
+                         _elem = {body_type}.decode(cursor{decode_arg})\n                    \
                          if _elem is None:\n                        \
                              return None\n                    \
                          {py_id}.append(_elem)\n            \
@@ -10388,6 +10460,7 @@ fn repeat_streaming_encode_block_gated(
     fields: &[CodecField],
     pred: &PresentIfPredicate,
     body_encoder: &str,
+    encode_arg: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -10401,21 +10474,21 @@ fn repeat_streaming_encode_block_gated(
         Language::Rust => format!(
             "        if let Some(_list) = &self.{id} {{\n            \
                  for _e in _list {{\n                \
-                     _e.encode(w)?;\n            \
+                     _e.encode(w{encode_arg})?;\n            \
                  }}\n        \
              }}"
         ),
         Language::Cpp => format!(
             "        if (this->{id}.has_value()) {{\n            \
                  for (const auto& _e : *this->{id}) {{\n                \
-                     if (auto _se = _e.encode(w); _se) return _se;\n            \
+                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n            \
                  }}\n        \
              }}"
         ),
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
-                     _e.encode(w)?.let {{ return it }}\n            \
+                     _e.encode(w{encode_arg})?.let {{ return it }}\n            \
                  }}\n        \
              }}"
         ),
@@ -10429,7 +10502,7 @@ fn repeat_streaming_encode_block_gated(
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
                      for _i := range s.{go_id} {{\n\t\t\t\
-                         if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\t\
+                         if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\t\
                              return err\n\t\t\t\
                          }}\n\t\t\
                      }}\n\t\
@@ -10448,7 +10521,7 @@ fn repeat_streaming_encode_block_gated(
             format!(
                 "    if ({test}) {{\n        \
                      for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n            \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w));\n        \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w{encode_arg}));\n        \
                      }}\n    \
                  }}"
             )
@@ -10458,7 +10531,7 @@ fn repeat_streaming_encode_block_gated(
             format!(
                 "        if self.{py_id} is not None:\n            \
                      for _e in self.{py_id}:\n                \
-                         _e.encode(w)"
+                         _e.encode(w{encode_arg})"
             )
         }
     }
@@ -10495,6 +10568,11 @@ struct TlvChainDecode<'a> {
     // applied to the `Vec<Entry<'a>>` element type annotation.
     body_lt: &'a str,
     body_decoder: &'a str,
+    /// What the entry's `decode` is handed after the cursor: one argument per
+    /// `<sce:flag-input>` the entry codec declares, spelled for `lang` with a
+    /// leading `, ` (see [`embed_flag_bind_thread_args`]); empty when it
+    /// declares none.
+    decode_arg: &'a str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
@@ -10670,6 +10748,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         body_type,
         body_lt,
         body_decoder,
+        decode_arg,
         max_depth,
         on_overflow,
         terminate_on,
@@ -10700,12 +10779,12 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor)?)\n                    \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     let _entry = {body_type}::decode(cursor)?;\n                \
+                     let _entry = {body_type}::decode(cursor{decode_arg})?;\n                \
                      _more = _entry.{acc}();\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
                      if !_more {{ break; }}\n            "
@@ -10742,13 +10821,13 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                      out->{id_snake}_len++;\n        "
                 ),
                 Some(acc) => format!(
                     "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                      size_t _just = out->{id_snake}_len;\n            \
                      out->{id_snake}_len++;\n            \
@@ -10779,13 +10858,13 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
-                     auto _elem = {body_type}::decode(cursor);\n            \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                      if (!_elem.has_value()) return std::nullopt;\n            \
                      {id}.push_back(*_elem);\n        "
                 ),
                 Some(acc) => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
-                     auto _elem = {body_type}::decode(cursor);\n            \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                      if (!_elem.has_value()) return std::nullopt;\n            \
                      _more = _elem->{acc}();\n            \
                      {id}.push_back(*_elem);\n            \
@@ -10822,11 +10901,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     it.add({body_type}.decode(cursor) ?: return null)\n                "
+                     it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
                 ),
                 Some(acc) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     val _entry = {body_type}.decode(cursor) ?: return null\n                    \
+                     val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null\n                    \
                      _more = _entry.{acc}()\n                    \
                      it.add(_entry)\n                    \
                      if (!_more) break\n                "
@@ -10855,7 +10934,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
                          break\n\t\t\
                      }}\n\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -10865,7 +10944,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
                          break\n\t\t\
                      }}\n\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -10900,7 +10979,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 None => format!(
                     "                if cursor.remaining() == 0:\n                    \
                          break\n                \
-                     _elem = {body_type}.decode(cursor)\n                \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
                          return None\n                \
                      {py_id}.append(_elem)"
@@ -10908,7 +10987,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0:\n                    \
                          break\n                \
-                     _elem = {body_type}.decode(cursor)\n                \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
                      if _elem is None:\n                    \
                          return None\n                \
                      _more = _elem.{acc}()\n                \
@@ -10936,20 +11015,24 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
 fn tlv_chain_streaming_encode_block(
     field: &CodecField,
     body_encoder: &str,
+    // What the entry's `encode` is handed after the sink: one argument per
+    // `<sce:flag-input>` the entry codec declares, each with a leading `, `
+    // (see `embed_flag_bind_thread_args`); empty when it declares none.
+    encode_arg: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match lang {
-        Language::Rust => {
-            format!("        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}")
-        }
+        Language::Rust => format!(
+            "        for _e in &self.{id} {{\n            _e.encode(w{encode_arg})?;\n        }}"
+        ),
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
                 "    for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n        \
-                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w));\n    \
+                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));\n    \
                  }}"
             )
         }
@@ -10963,19 +11046,19 @@ fn tlv_chain_streaming_encode_block(
         // contract).
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
-                 if (auto _se = _e.encode(w); _se) return _se;\n        \
+                 if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n        \
              }}"
         ),
         Language::Kotlin => format!(
             "        for (_e in this.{id}) {{\n            \
-                 _e.encode(w)?.let {{ return it }}\n        \
+                 _e.encode(w{encode_arg})?.let {{ return it }}\n        \
              }}"
         ),
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tfor _i := range s.{go_id} {{\n\t\t\
-                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                     if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -10985,7 +11068,7 @@ fn tlv_chain_streaming_encode_block(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        for _e in self.{py_id}:\n            \
-                     _e.encode(w)"
+                     _e.encode(w{encode_arg})"
             )
         }
     }
@@ -11004,6 +11087,8 @@ struct TlvChainDecodeGated<'a> {
     // applied to the `Vec<Entry<'a>>` element type annotation.
     body_lt: &'a str,
     body_decoder: &'a str,
+    /// See [`TlvChainDecode::decode_arg`].
+    decode_arg: &'a str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
@@ -11037,6 +11122,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         body_type,
         body_lt,
         body_decoder,
+        decode_arg,
         max_depth,
         on_overflow,
         terminate_on,
@@ -11067,12 +11153,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor)?)\n                    \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     let _entry = {body_type}::decode(cursor)?;\n                \
+                     let _entry = {body_type}::decode(cursor{decode_arg})?;\n                \
                      _more = _entry.{acc}();\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
                      if !_more {{ break; }}\n            "
@@ -11096,13 +11182,13 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
-                     auto _elem = {body_type}::decode(cursor);\n                \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
                      _list.push_back(*_elem);\n            "
                 ),
                 Some(acc) => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
-                     auto _elem = {body_type}::decode(cursor);\n                \
+                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
                      _more = _elem->{acc}();\n                \
                      _list.push_back(*_elem);\n                \
@@ -11131,11 +11217,11 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     it.add({body_type}.decode(cursor) ?: return null)\n                "
+                     it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
                 ),
                 Some(acc) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     val _entry = {body_type}.decode(cursor) ?: return null\n                    \
+                     val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null\n                    \
                      _more = _entry.{acc}()\n                    \
                      it.add(_entry)\n                    \
                      if (!_more) break\n                "
@@ -11162,7 +11248,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
                          break\n\t\t\t\
                      }}\n\t\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                      if err != nil {{\n\t\t\t\t\
                          return nil, err\n\t\t\t\
                      }}\n\t\t\t\
@@ -11172,7 +11258,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
                          break\n\t\t\t\
                      }}\n\t\t\t\
-                     _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                      if err != nil {{\n\t\t\t\t\
                          return nil, err\n\t\t\t\
                      }}\n\t\t\t\
@@ -11201,13 +11287,13 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n                \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n                \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
                      out->{id_snake}_len++;\n            "
                 ),
                 Some(acc) => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n                \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n                \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
                      size_t _just = out->{id_snake}_len;\n                \
                      out->{id_snake}_len++;\n                \
@@ -11236,7 +11322,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 None => format!(
                     "                    if cursor.remaining() == 0:\n                        \
                          break\n                    \
-                     _elem = {body_type}.decode(cursor)\n                    \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                    \
                      if _elem is None:\n                        \
                          return None\n                    \
                      {py_id}.append(_elem)"
@@ -11244,7 +11330,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 Some(acc) => format!(
                     "                    if cursor.remaining() == 0:\n                        \
                          break\n                    \
-                     _elem = {body_type}.decode(cursor)\n                    \
+                     _elem = {body_type}.decode(cursor{decode_arg})\n                    \
                      if _elem is None:\n                        \
                          return None\n                    \
                      _more = _elem.{acc}()\n                    \
@@ -11273,6 +11359,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
 fn tlv_chain_streaming_encode_block_gated(
     field: &CodecField,
     body_encoder: &str,
+    // See `tlv_chain_streaming_encode_block`.
+    encode_arg: &str,
     fields: &[CodecField],
     lang: crate::generator::Language,
 ) -> String {
@@ -11288,21 +11376,21 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::Rust => format!(
             "        if let Some(_list) = &self.{id} {{\n            \
                  for _e in _list {{\n                \
-                     _e.encode(w)?;\n            \
+                     _e.encode(w{encode_arg})?;\n            \
                  }}\n        \
              }}"
         ),
         Language::Cpp => format!(
             "        if (this->{id}.has_value()) {{\n            \
                  for (const auto& _e : *this->{id}) {{\n                \
-                     if (auto _se = _e.encode(w); _se) return _se;\n            \
+                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n            \
                  }}\n        \
              }}"
         ),
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
-                     _e.encode(w)?.let {{ return it }}\n            \
+                     _e.encode(w{encode_arg})?.let {{ return it }}\n            \
                  }}\n        \
              }}"
         ),
@@ -11310,7 +11398,7 @@ fn tlv_chain_streaming_encode_block_gated(
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tfor _i := range s.{go_id} {{\n\t\t\
-                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                     if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -11324,7 +11412,7 @@ fn tlv_chain_streaming_encode_block_gated(
             format!(
                 "    if ({test}) {{\n        \
                      for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w));\n        \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));\n        \
                      }}\n    \
                  }}"
             )
@@ -11334,7 +11422,7 @@ fn tlv_chain_streaming_encode_block_gated(
             format!(
                 "        if self.{py_id} is not None:\n            \
                      for _e in self.{py_id}:\n                \
-                         _e.encode(w)"
+                         _e.encode(w{encode_arg})"
             )
         }
     }

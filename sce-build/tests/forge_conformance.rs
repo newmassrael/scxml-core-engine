@@ -2860,6 +2860,275 @@ fn chain_has_codecs_compile_on_every_backend() {
     );
 }
 
+/// The documents the flag-taking-entry fixtures import, then the fixtures:
+/// three that hand the flag to the entries of a TLV chain and two that hand it
+/// to the elements of a repeat, plain and gated.
+const FLAG_ENTRY_SET: &[&str] = &[
+    "codec_chain_flag_entry.scxml",
+    "codec_chain_flag_carrier.scxml",
+    "codec_chain_flag_forward.scxml",
+    "codec_repeat_flag_carrier.scxml",
+    "codec_repeat_flag_gated.scxml",
+];
+
+/// A chain or a repeat applies one entry codec many times, and that codec can
+/// declare flag-inputs the parent binds at its import. The statements called
+/// the entry as `decode(cursor)` and `encode(w)` whatever it declared, so a
+/// codec the generator accepted and whose flag-bind it validated was a call
+/// with too few arguments in every backend: a compile error in five of them
+/// and a `TypeError` on the first decode in Python, which no golden shows
+/// because a golden is text. This is the gate that it is a program.
+#[test]
+fn entries_that_take_a_flag_compile_on_every_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = rustc_compile_codec_set(&dir, FLAG_ENTRY_SET, "flag_entry_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(&dir, FLAG_ENTRY_SET, "flag_entry_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(&dir, FLAG_ENTRY_SET, "flag_entry_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(&dir, FLAG_ENTRY_SET, "flag_entry_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(&dir, FLAG_ENTRY_SET, "flag_entry_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(&dir, FLAG_ENTRY_SET, "flag_entry_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "entries that take a flag must compile on every backend. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+/// The entries of a chain and the elements of a repeat are handed the flag
+/// their import binds, and the value has to exist where they read it: a
+/// carrier flag the streaming decoder has not read yet is a name that is not
+/// bound, a compile error in the generated code, so it is refused where the
+/// document is, as it is for an embed. The same bind that names a flag nothing
+/// declares is refused for the same reason it is on an embed.
+#[test]
+fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
+    // (case, the parent's datamodel, a phrase the refusal must contain)
+    const CASES: &[(&str, &str, &str)] = &[
+        (
+            "a carrier declared after the chain that reads it",
+            r#"<sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="0"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:flags id="head" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+    </sce:flags>"#,
+            "head",
+        ),
+        (
+            "a carrier declared after the repeat that reads it",
+            r#"<sce:field id="count" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="1"
+                count="count" max-count="4"/>
+    <sce:flags id="head" sce:type="uint8" sce:byte="2" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+    </sce:flags>"#,
+            "head",
+        ),
+        (
+            "a bind to a flag the carrier does not declare",
+            r#"<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="V" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>"#,
+            "'W'",
+        ),
+    ];
+    for (case, datamodel, phrase) in CASES {
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="chain_flag_refusal">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    {datamodel}
+  </datamodel>
+</scxml>"#
+        );
+        let message = match sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("chain_flag_refusal"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        ) {
+            Ok(_) => panic!("{case}: the document must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            message.contains(phrase),
+            "{case}: the refusal must name `{phrase}`; got: {message}"
+        );
+    }
+}
+
+#[test]
+fn forge_codec_chain_flag_entry_cpp() {
+    assert_standalone_forge("codec_chain_flag_entry", "codec_chain_flag_entry.h");
+}
+
+#[test]
+fn forge_codec_chain_flag_entry_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_flag_entry", "CodecChainFlagEntry.kt");
+}
+
+#[test]
+fn forge_codec_chain_flag_entry_rust() {
+    assert_standalone_forge_rust("codec_chain_flag_entry", "codec_chain_flag_entry.rs");
+}
+
+#[test]
+fn forge_codec_chain_flag_entry_go() {
+    assert_standalone_forge_go("codec_chain_flag_entry", "codec_chain_flag_entry.go");
+}
+
+#[test]
+fn forge_codec_chain_flag_entry_python() {
+    assert_standalone_forge_python("codec_chain_flag_entry", "codec_chain_flag_entry.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_flag_entry() {
+    assert_standalone_forge_c("codec_chain_flag_entry", "codec_chain_flag_entry.c.h");
+}
+
+#[test]
+fn forge_codec_chain_flag_carrier_cpp() {
+    assert_standalone_forge("codec_chain_flag_carrier", "codec_chain_flag_carrier.h");
+}
+
+#[test]
+fn forge_codec_chain_flag_carrier_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_flag_carrier", "CodecChainFlagCarrier.kt");
+}
+
+#[test]
+fn forge_codec_chain_flag_carrier_rust() {
+    assert_standalone_forge_rust("codec_chain_flag_carrier", "codec_chain_flag_carrier.rs");
+}
+
+#[test]
+fn forge_codec_chain_flag_carrier_go() {
+    assert_standalone_forge_go("codec_chain_flag_carrier", "codec_chain_flag_carrier.go");
+}
+
+#[test]
+fn forge_codec_chain_flag_carrier_python() {
+    assert_standalone_forge_python("codec_chain_flag_carrier", "codec_chain_flag_carrier.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_flag_carrier() {
+    assert_standalone_forge_c("codec_chain_flag_carrier", "codec_chain_flag_carrier.c.h");
+}
+
+#[test]
+fn forge_codec_chain_flag_forward_cpp() {
+    assert_standalone_forge("codec_chain_flag_forward", "codec_chain_flag_forward.h");
+}
+
+#[test]
+fn forge_codec_chain_flag_forward_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_flag_forward", "CodecChainFlagForward.kt");
+}
+
+#[test]
+fn forge_codec_chain_flag_forward_rust() {
+    assert_standalone_forge_rust("codec_chain_flag_forward", "codec_chain_flag_forward.rs");
+}
+
+#[test]
+fn forge_codec_chain_flag_forward_go() {
+    assert_standalone_forge_go("codec_chain_flag_forward", "codec_chain_flag_forward.go");
+}
+
+#[test]
+fn forge_codec_chain_flag_forward_python() {
+    assert_standalone_forge_python("codec_chain_flag_forward", "codec_chain_flag_forward.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_flag_forward() {
+    assert_standalone_forge_c("codec_chain_flag_forward", "codec_chain_flag_forward.c.h");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_cpp() {
+    assert_standalone_forge("codec_repeat_flag_carrier", "codec_repeat_flag_carrier.h");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_kotlin() {
+    assert_standalone_forge_kotlin("codec_repeat_flag_carrier", "CodecRepeatFlagCarrier.kt");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_rust() {
+    assert_standalone_forge_rust("codec_repeat_flag_carrier", "codec_repeat_flag_carrier.rs");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_go() {
+    assert_standalone_forge_go("codec_repeat_flag_carrier", "codec_repeat_flag_carrier.go");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_python() {
+    assert_standalone_forge_python("codec_repeat_flag_carrier", "codec_repeat_flag_carrier.py");
+}
+
+#[test]
+fn forge_c11_codec_repeat_flag_carrier() {
+    assert_standalone_forge_c("codec_repeat_flag_carrier", "codec_repeat_flag_carrier.c.h");
+}
+
+#[test]
+fn forge_codec_repeat_flag_gated_cpp() {
+    assert_standalone_forge("codec_repeat_flag_gated", "codec_repeat_flag_gated.h");
+}
+
+#[test]
+fn forge_codec_repeat_flag_gated_kotlin() {
+    assert_standalone_forge_kotlin("codec_repeat_flag_gated", "CodecRepeatFlagGated.kt");
+}
+
+#[test]
+fn forge_codec_repeat_flag_gated_rust() {
+    assert_standalone_forge_rust("codec_repeat_flag_gated", "codec_repeat_flag_gated.rs");
+}
+
+#[test]
+fn forge_codec_repeat_flag_gated_go() {
+    assert_standalone_forge_go("codec_repeat_flag_gated", "codec_repeat_flag_gated.go");
+}
+
+#[test]
+fn forge_codec_repeat_flag_gated_python() {
+    assert_standalone_forge_python("codec_repeat_flag_gated", "codec_repeat_flag_gated.py");
+}
+
+#[test]
+fn forge_c11_codec_repeat_flag_gated() {
+    assert_standalone_forge_c("codec_repeat_flag_gated", "codec_repeat_flag_gated.c.h");
+}
+
 /// Every way a chain-membership predicate or its `entry-id` can be wrong is
 /// a refusal that names what is wrong and where, and none of them reaches the
 /// host compiler. Each case is a document differing from a valid one in one
@@ -13511,6 +13780,111 @@ fn marker_scratch_dir(prefix: &str) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+/// Generate `set` in Python into a package named `pkg_name` and run `program`
+/// (which imports from that package) under `python3 -W error`. A missing
+/// `python3` is skipped, or refused where the lane requires its tools.
+fn run_python_program(
+    dir: &std::path::Path,
+    set: &[&str],
+    pkg_name: &str,
+    program: String,
+) -> Result<(), String> {
+    if !toolchain_present("python3") {
+        return require_all_or_warn(&format!("{pkg_name}_exec_python"), "python3");
+    }
+    let files = generate_files_for_codec_set(dir, set, sce_build::generator::Language::Python)?;
+    let proj = marker_scratch_dir("sce_exec_py")?;
+    let pkg = proj.join(pkg_name);
+    std::fs::create_dir_all(&pkg).map_err(|e| format!("mkdir: {e}"))?;
+    std::fs::write(pkg.join("__init__.py"), "").map_err(|e| format!("write: {e}"))?;
+    for (filename, content) in &files {
+        if filename.ends_with(".py") {
+            let basename = std::path::Path::new(filename)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| format!("invalid filename: {filename}"))?;
+            std::fs::write(pkg.join(basename), content)
+                .map_err(|e| format!("write {basename}: {e}"))?;
+        }
+    }
+    std::fs::write(proj.join("run.py"), program).map_err(|e| format!("write run.py: {e}"))?;
+    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../backends/python/forge-runtime")
+        .canonicalize()
+        .map_err(|e| format!("canonicalize backends/python/forge-runtime: {e}"))?;
+    let mut command = std::process::Command::new("python3");
+    command
+        .arg("-W")
+        .arg("error")
+        .arg("run.py")
+        .env("PYTHONPATH", &runtime)
+        .current_dir(&proj);
+    marker_run("python3 run.py", command, &proj)?;
+    let _ = std::fs::remove_dir_all(&proj);
+    Ok(())
+}
+
+/// Generate `set` in Go, one package per document under the golden module
+/// prefix, and run `program` as the test file of a package named `exec_name`
+/// with `go test`. A missing `go` is skipped, or refused where the lane
+/// requires its tools.
+fn run_go_program(
+    dir: &std::path::Path,
+    set: &[&str],
+    exec_name: &str,
+    program: String,
+) -> Result<(), String> {
+    if !toolchain_present("go") {
+        return require_all_or_warn(&format!("{exec_name}_go"), "go");
+    }
+    let files = generate_files_for_codec_set(dir, set, sce_build::generator::Language::Go)?;
+    let proj = marker_scratch_dir("sce_exec_go")?;
+    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../backends/go/forge-runtime")
+        .canonicalize()
+        .map_err(|e| format!("canonicalize backends/go/forge-runtime: {e}"))?;
+    std::fs::write(
+        proj.join("go.mod"),
+        format!(
+            "module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.22\n\n\
+             require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
+             replace github.com/newmassrael/sce-forge-runtime => {}\n",
+            runtime.display()
+        ),
+    )
+    .map_err(|e| format!("write go.mod: {e}"))?;
+    let mut seen = std::collections::HashSet::new();
+    for (filename, content) in &files {
+        let path = std::path::Path::new(filename);
+        if path.extension().and_then(|e| e.to_str()) != Some("go") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| format!("invalid filename: {filename}"))?;
+        if !seen.insert(stem.to_string()) {
+            continue;
+        }
+        let pkg_dir = proj.join(stem);
+        std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("mkdir: {e}"))?;
+        std::fs::write(pkg_dir.join(format!("{stem}.go")), content)
+            .map_err(|e| format!("write {stem}.go: {e}"))?;
+    }
+    let exec_dir = proj.join(exec_name);
+    std::fs::create_dir_all(&exec_dir).map_err(|e| format!("mkdir: {e}"))?;
+    std::fs::write(exec_dir.join(format!("{exec_name}_test.go")), program)
+        .map_err(|e| format!("write {exec_name}_test.go: {e}"))?;
+    let mut command = std::process::Command::new("go");
+    command
+        .arg("test")
+        .arg(format!("./{exec_name}/"))
+        .current_dir(&proj);
+    marker_run("go test", command, &proj)?;
+    let _ = std::fs::remove_dir_all(&proj);
+    Ok(())
+}
+
 /// Run `command` and turn a failing status into the text of what it said.
 fn marker_run(
     what: &str,
@@ -13845,6 +14219,8 @@ struct NativeMarkerBackend {
     header_extensions: &'static [&'static str],
     standard: &'static str,
     source_name: &'static str,
+    /// The documents the program includes, in dependency order.
+    set: &'static [&'static str],
     program: fn() -> String,
 }
 
@@ -13853,7 +14229,7 @@ fn run_marker_native(dir: &std::path::Path, backend: &NativeMarkerBackend) -> Re
     if !toolchain_present(tool) {
         return require_all_or_warn(&format!("marker_exec_{tool}"), tool);
     }
-    let files = generate_files_for_codec_set(dir, CHAIN_HAS_SET, backend.language)?;
+    let files = generate_files_for_codec_set(dir, backend.set, backend.language)?;
     let proj = marker_scratch_dir(&format!("sce_marker_{tool}"))?;
     let mut seen = std::collections::HashSet::new();
     for (filename, content) in &files {
@@ -13915,100 +14291,11 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
     let dir = resource_dir();
     let mut failures: Vec<String> = Vec::new();
 
-    let run_python = || -> Result<(), String> {
-        if !toolchain_present("python3") {
-            return require_all_or_warn("marker_exec_python", "python3");
-        }
-        let files = generate_files_for_codec_set(
-            &dir,
-            CHAIN_HAS_SET,
-            sce_build::generator::Language::Python,
-        )?;
-        let proj = marker_scratch_dir("sce_marker_py")?;
-        let pkg = proj.join("marker_pkg");
-        std::fs::create_dir_all(&pkg).map_err(|e| format!("mkdir: {e}"))?;
-        std::fs::write(pkg.join("__init__.py"), "").map_err(|e| format!("write: {e}"))?;
-        for (filename, content) in &files {
-            if filename.ends_with(".py") {
-                let basename = std::path::Path::new(filename)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .ok_or_else(|| format!("invalid filename: {filename}"))?;
-                std::fs::write(pkg.join(basename), content)
-                    .map_err(|e| format!("write {basename}: {e}"))?;
-            }
-        }
-        std::fs::write(proj.join("run.py"), marker_python_program())
-            .map_err(|e| format!("write run.py: {e}"))?;
-        let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../backends/python/forge-runtime")
-            .canonicalize()
-            .map_err(|e| format!("canonicalize backends/python/forge-runtime: {e}"))?;
-        let mut command = std::process::Command::new("python3");
-        command
-            .arg("-W")
-            .arg("error")
-            .arg("run.py")
-            .env("PYTHONPATH", &runtime)
-            .current_dir(&proj);
-        marker_run("python3 run.py", command, &proj)?;
-        let _ = std::fs::remove_dir_all(&proj);
-        Ok(())
-    };
-    if let Err(e) = run_python() {
+    if let Err(e) = run_python_program(&dir, CHAIN_HAS_SET, "marker_pkg", marker_python_program()) {
         failures.push(format!("Python:\n{e}"));
     }
 
-    let run_go = || -> Result<(), String> {
-        if !toolchain_present("go") {
-            return require_all_or_warn("marker_exec_go", "go");
-        }
-        let files =
-            generate_files_for_codec_set(&dir, CHAIN_HAS_SET, sce_build::generator::Language::Go)?;
-        let proj = marker_scratch_dir("sce_marker_go")?;
-        let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../backends/go/forge-runtime")
-            .canonicalize()
-            .map_err(|e| format!("canonicalize backends/go/forge-runtime: {e}"))?;
-        std::fs::write(
-            proj.join("go.mod"),
-            format!(
-                "module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.22\n\n\
-                 require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
-                 replace github.com/newmassrael/sce-forge-runtime => {}\n",
-                runtime.display()
-            ),
-        )
-        .map_err(|e| format!("write go.mod: {e}"))?;
-        let mut seen = std::collections::HashSet::new();
-        for (filename, content) in &files {
-            let path = std::path::Path::new(filename);
-            if path.extension().and_then(|e| e.to_str()) != Some("go") {
-                continue;
-            }
-            let stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {filename}"))?;
-            if !seen.insert(stem.to_string()) {
-                continue;
-            }
-            let pkg_dir = proj.join(stem);
-            std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("mkdir: {e}"))?;
-            std::fs::write(pkg_dir.join(format!("{stem}.go")), content)
-                .map_err(|e| format!("write {stem}.go: {e}"))?;
-        }
-        let exec_dir = proj.join("marker_exec");
-        std::fs::create_dir_all(&exec_dir).map_err(|e| format!("mkdir: {e}"))?;
-        std::fs::write(exec_dir.join("marker_exec_test.go"), marker_go_program())
-            .map_err(|e| format!("write marker_exec_test.go: {e}"))?;
-        let mut command = std::process::Command::new("go");
-        command.arg("test").arg("./marker_exec/").current_dir(&proj);
-        marker_run("go test", command, &proj)?;
-        let _ = std::fs::remove_dir_all(&proj);
-        Ok(())
-    };
-    if let Err(e) = run_go() {
+    if let Err(e) = run_go_program(&dir, CHAIN_HAS_SET, "marker_exec", marker_go_program()) {
         failures.push(format!("Go:\n{e}"));
     }
 
@@ -14022,6 +14309,7 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
                 header_extensions: &["h", "hpp"],
                 standard: "c++17",
                 source_name: "marker_exec.cpp",
+                set: CHAIN_HAS_SET,
                 program: marker_cpp_program,
             },
         ),
@@ -14037,6 +14325,7 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
                 header_extensions: &["h"],
                 standard: "c11",
                 source_name: "marker_exec.c",
+                set: CHAIN_HAS_SET,
                 program: marker_c_program,
             },
         ),
@@ -14052,6 +14341,934 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
         "a masked identifier must decode, encode and refuse the same way on every backend that runs. Failures:\n\n{}",
         failures.join("\n\n"),
     );
+}
+
+// ── Entries that take a flag: what the generated code DOES ─────────────────
+//
+// The frames, shared by every backend's program. The carrier codec reads
+// `head.W` (bit 0) and hands it to every entry; the forward codec has the
+// chain only when `head.E` (bit 0) is set and is handed `wide` by its caller.
+// An entry is a header byte (kind in bits 0..3, Z at bit 7 on all but the
+// last), then one byte (`wide` = 0) or two bytes big endian (`wide` = 1).
+
+/// W clear: two short entries.
+const FLAG_NARROW: &[u8] = &[0x00, 0x83, 0x11, 0x05, 0x22];
+/// W (or E) set: two wide entries, 0x1234 and 0xABCD.
+const FLAG_WIDE: &[u8] = &[0x01, 0x83, 0x12, 0x34, 0x05, 0xAB, 0xCD];
+/// E set: two short entries, for a caller that says `wide` = 0.
+const FLAG_FORWARD_NARROW: &[u8] = &[0x01, 0x83, 0x11, 0x05, 0x22];
+/// E clear: no chain at all.
+const FLAG_FORWARD_ABSENT: &[u8] = &[0x00];
+
+// The repeat fixtures carry a count byte after `head` and lay the same entries
+// out after it. `codec_repeat_flag_carrier` reads `head.W`; the gated one
+// reads `head.W` as well and has the count and the elements only when
+// `head.L` (bit 1) is set.
+
+/// W clear: a count of two, then two short elements.
+const FLAG_REPEAT_NARROW: &[u8] = &[0x00, 0x02, 0x83, 0x11, 0x05, 0x22];
+/// W set: a count of two, then two wide elements.
+const FLAG_REPEAT_WIDE: &[u8] = &[0x01, 0x02, 0x83, 0x12, 0x34, 0x05, 0xAB, 0xCD];
+/// L set, W clear: the gated repeat, short elements.
+const FLAG_GATED_NARROW: &[u8] = &[0x02, 0x02, 0x83, 0x11, 0x05, 0x22];
+/// L and W set: the gated repeat, wide elements.
+const FLAG_GATED_WIDE: &[u8] = &[0x03, 0x02, 0x83, 0x12, 0x34, 0x05, 0xAB, 0xCD];
+/// L clear (W set): neither the count nor the elements are on the wire.
+const FLAG_GATED_ABSENT: &[u8] = &[0x01];
+
+/// `bytes` as the body of an array literal, `0x00, 0x83, …`.
+fn flag_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("0x{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `program` with each `@NAME@` of the shared frames replaced by its bytes.
+fn flag_frames_in(program: &str) -> String {
+    program
+        .replace("@NARROW@", &flag_hex(FLAG_NARROW))
+        .replace("@WIDE@", &flag_hex(FLAG_WIDE))
+        .replace("@FWD_NARROW@", &flag_hex(FLAG_FORWARD_NARROW))
+        .replace("@FWD_ABSENT@", &flag_hex(FLAG_FORWARD_ABSENT))
+        .replace("@REP_NARROW@", &flag_hex(FLAG_REPEAT_NARROW))
+        .replace("@REP_WIDE@", &flag_hex(FLAG_REPEAT_WIDE))
+        .replace("@GATED_NARROW@", &flag_hex(FLAG_GATED_NARROW))
+        .replace("@GATED_WIDE@", &flag_hex(FLAG_GATED_WIDE))
+        .replace("@GATED_ABSENT@", &flag_hex(FLAG_GATED_ABSENT))
+}
+
+fn chain_flag_python_program() -> String {
+    flag_frames_in(
+        r#"from flag_pkg.codec_chain_flag_carrier import CodecChainFlagCarrier
+from flag_pkg.codec_chain_flag_forward import CodecChainFlagForward
+from flag_pkg.codec_repeat_flag_carrier import CodecRepeatFlagCarrier
+from flag_pkg.codec_repeat_flag_gated import CodecRepeatFlagGated
+from sce_forge_runtime.codec import SceCursor
+
+NARROW = bytes([@NARROW@])
+WIDE = bytes([@WIDE@])
+FWD_NARROW = bytes([@FWD_NARROW@])
+FWD_ABSENT = bytes([@FWD_ABSENT@])
+REP_NARROW = bytes([@REP_NARROW@])
+REP_WIDE = bytes([@REP_WIDE@])
+GATED_NARROW = bytes([@GATED_NARROW@])
+GATED_WIDE = bytes([@GATED_WIDE@])
+GATED_ABSENT = bytes([@GATED_ABSENT@])
+
+def carrier(frame):
+    v = CodecChainFlagCarrier.decode(SceCursor(frame))
+    assert v is not None, "carrier decode"
+    return v
+
+def forward(frame, wide):
+    v = CodecChainFlagForward.decode(SceCursor(frame), wide)
+    assert v is not None, "forward decode"
+    return v
+
+def shape(e):
+    return (e.header, e.short_value, e.long_value)
+
+v = carrier(NARROW)
+assert [shape(e) for e in v.entries] == [(0x83, 0x11, None), (0x05, 0x22, None)], "carrier narrow"
+assert v.encode_to_bytes() == NARROW, "carrier narrow round trip"
+
+v = carrier(WIDE)
+assert [shape(e) for e in v.entries] == [(0x83, None, 0x1234), (0x05, None, 0xABCD)], "carrier wide"
+assert v.encode_to_bytes() == WIDE, "carrier wide round trip"
+
+v = forward(FWD_NARROW, 0)
+assert [shape(e) for e in v.entries] == [(0x83, 0x11, None), (0x05, 0x22, None)], "forward narrow"
+assert v.encode_to_bytes(0) == FWD_NARROW, "forward narrow round trip"
+
+v = forward(WIDE, 1)
+assert [shape(e) for e in v.entries] == [(0x83, None, 0x1234), (0x05, None, 0xABCD)], "forward wide"
+assert v.encode_to_bytes(1) == WIDE, "forward wide round trip"
+
+# The same bytes under the other answer: the value the caller gave reached the
+# entries, and they are not read as wide.
+v = forward(WIDE, 0)
+assert v.entries[0].long_value is None and v.entries[0].short_value == 0x12, "forward flag ignored"
+
+v = forward(FWD_ABSENT, 1)
+assert v.entries is None, "forward chain without its gate"
+assert v.encode_to_bytes(1) == FWD_ABSENT, "forward absent round trip"
+
+# A repeat hands its elements the same value, plain and gated.
+def repeat(codec, frame):
+    v = codec.decode(SceCursor(frame))
+    assert v is not None, "repeat decode"
+    return v
+
+NARROW_SHAPES = [(0x83, 0x11, None), (0x05, 0x22, None)]
+WIDE_SHAPES = [(0x83, None, 0x1234), (0x05, None, 0xABCD)]
+
+v = repeat(CodecRepeatFlagCarrier, REP_NARROW)
+assert [shape(e) for e in v.entries] == NARROW_SHAPES, "repeat narrow"
+assert v.encode_to_bytes() == REP_NARROW, "repeat narrow round trip"
+
+v = repeat(CodecRepeatFlagCarrier, REP_WIDE)
+assert [shape(e) for e in v.entries] == WIDE_SHAPES, "repeat wide"
+assert v.encode_to_bytes() == REP_WIDE, "repeat wide round trip"
+
+v = repeat(CodecRepeatFlagGated, GATED_NARROW)
+assert [shape(e) for e in v.entries] == NARROW_SHAPES, "gated repeat narrow"
+assert v.encode_to_bytes() == GATED_NARROW, "gated repeat narrow round trip"
+
+v = repeat(CodecRepeatFlagGated, GATED_WIDE)
+assert [shape(e) for e in v.entries] == WIDE_SHAPES, "gated repeat wide"
+assert v.encode_to_bytes() == GATED_WIDE, "gated repeat wide round trip"
+
+v = repeat(CodecRepeatFlagGated, GATED_ABSENT)
+assert v.entries is None, "gated repeat without its gate"
+assert v.encode_to_bytes() == GATED_ABSENT, "gated repeat absent round trip"
+"#,
+    )
+}
+
+fn chain_flag_go_program() -> String {
+    flag_frames_in(&format!(
+        r#"package chain_flag_exec
+
+import (
+	"bytes"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	carrier "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_flag_carrier"
+	forward "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_flag_forward"
+	repcarrier "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_flag_carrier"
+	repgated "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_flag_gated"
+)
+
+var (
+	narrow        = []byte{{@NARROW@}}
+	wide          = []byte{{@WIDE@}}
+	fwdNarrow     = []byte{{@FWD_NARROW@}}
+	fwdAbsent     = []byte{{@FWD_ABSENT@}}
+	repNarrow     = []byte{{@REP_NARROW@}}
+	repWide       = []byte{{@REP_WIDE@}}
+	gatedNarrow   = []byte{{@GATED_NARROW@}}
+	gatedWide     = []byte{{@GATED_WIDE@}}
+	gatedAbsent   = []byte{{@GATED_ABSENT@}}
+)
+
+// u8 and u16 read an optional value as -1 when it is absent.
+func u8(p *uint8) int {{
+	if p == nil {{
+		return -1
+	}}
+	return int(*p)
+}}
+
+func u16(p *uint16) int {{
+	if p == nil {{
+		return -1
+	}}
+	return int(*p)
+}}
+
+type entry struct {{
+	header uint8
+	short  int
+	long   int
+}}
+
+func decodeCarrier(t *testing.T, frame []byte) *carrier.CodecChainFlagCarrier {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := carrier.DecodeCodecChainFlagCarrier(&cursor)
+	if err != nil {{
+		t.Fatalf("carrier decode: %v", err)
+	}}
+	return v
+}}
+
+func decodeForward(t *testing.T, frame []byte, flag byte) *forward.CodecChainFlagForward {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := forward.DecodeCodecChainFlagForward(&cursor, flag)
+	if err != nil {{
+		t.Fatalf("forward decode: %v", err)
+	}}
+	return v
+}}
+
+func carrierEntries(v *carrier.CodecChainFlagCarrier) []entry {{
+	var out []entry
+	for _, e := range v.Entries {{
+		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
+	}}
+	return out
+}}
+
+func forwardEntries(v *forward.CodecChainFlagForward) []entry {{
+	var out []entry
+	for _, e := range v.Entries {{
+		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
+	}}
+	return out
+}}
+
+func same(a, b []entry) bool {{
+	if len(a) != len(b) {{
+		return false
+	}}
+	for i := range a {{
+		if a[i] != b[i] {{
+			return false
+		}}
+	}}
+	return true
+}}
+
+func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
+	narrowEntries := []entry{{{{0x83, 0x11, -1}}, {{0x05, 0x22, -1}}}}
+	wideEntries := []entry{{{{0x83, -1, 0x1234}}, {{0x05, -1, 0xABCD}}}}
+
+	c := decodeCarrier(t, narrow)
+	if !same(carrierEntries(c), narrowEntries) {{
+		t.Errorf("carrier narrow: %v", carrierEntries(c))
+	}}
+	if !bytes.Equal(c.EncodeToBytes(), narrow) {{
+		t.Errorf("carrier narrow round trip")
+	}}
+
+	c = decodeCarrier(t, wide)
+	if !same(carrierEntries(c), wideEntries) {{
+		t.Errorf("carrier wide: %v", carrierEntries(c))
+	}}
+	if !bytes.Equal(c.EncodeToBytes(), wide) {{
+		t.Errorf("carrier wide round trip")
+	}}
+
+	f := decodeForward(t, fwdNarrow, 0)
+	if !same(forwardEntries(f), narrowEntries) {{
+		t.Errorf("forward narrow: %v", forwardEntries(f))
+	}}
+	if !bytes.Equal(f.EncodeToBytes(0), fwdNarrow) {{
+		t.Errorf("forward narrow round trip")
+	}}
+
+	f = decodeForward(t, wide, 1)
+	if !same(forwardEntries(f), wideEntries) {{
+		t.Errorf("forward wide: %v", forwardEntries(f))
+	}}
+	if !bytes.Equal(f.EncodeToBytes(1), wide) {{
+		t.Errorf("forward wide round trip")
+	}}
+
+	// The same bytes under the other answer: the caller's value reached the
+	// entries, and they are not read as wide.
+	f = decodeForward(t, wide, 0)
+	if u16(f.Entries[0].LongValue) != -1 || u8(f.Entries[0].ShortValue) != 0x12 {{
+		t.Errorf("forward flag ignored: %v", forwardEntries(f))
+	}}
+
+	f = decodeForward(t, fwdAbsent, 1)
+	if f.Entries != nil {{
+		t.Errorf("forward chain without its gate: %v", forwardEntries(f))
+	}}
+	if !bytes.Equal(f.EncodeToBytes(1), fwdAbsent) {{
+		t.Errorf("forward absent round trip")
+	}}
+}}
+
+func decodeRepeat(t *testing.T, frame []byte) *repcarrier.CodecRepeatFlagCarrier {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := repcarrier.DecodeCodecRepeatFlagCarrier(&cursor)
+	if err != nil {{
+		t.Fatalf("repeat decode: %v", err)
+	}}
+	return v
+}}
+
+func decodeGated(t *testing.T, frame []byte) *repgated.CodecRepeatFlagGated {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := repgated.DecodeCodecRepeatFlagGated(&cursor)
+	if err != nil {{
+		t.Fatalf("gated repeat decode: %v", err)
+	}}
+	return v
+}}
+
+func repeatEntries(v *repcarrier.CodecRepeatFlagCarrier) []entry {{
+	var out []entry
+	for _, e := range v.Entries {{
+		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
+	}}
+	return out
+}}
+
+func gatedEntries(v *repgated.CodecRepeatFlagGated) []entry {{
+	var out []entry
+	for _, e := range v.Entries {{
+		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
+	}}
+	return out
+}}
+
+func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
+	narrowEntries := []entry{{{{0x83, 0x11, -1}}, {{0x05, 0x22, -1}}}}
+	wideEntries := []entry{{{{0x83, -1, 0x1234}}, {{0x05, -1, 0xABCD}}}}
+
+	r := decodeRepeat(t, repNarrow)
+	if !same(repeatEntries(r), narrowEntries) {{
+		t.Errorf("repeat narrow: %v", repeatEntries(r))
+	}}
+	if !bytes.Equal(r.EncodeToBytes(), repNarrow) {{
+		t.Errorf("repeat narrow round trip")
+	}}
+
+	r = decodeRepeat(t, repWide)
+	if !same(repeatEntries(r), wideEntries) {{
+		t.Errorf("repeat wide: %v", repeatEntries(r))
+	}}
+	if !bytes.Equal(r.EncodeToBytes(), repWide) {{
+		t.Errorf("repeat wide round trip")
+	}}
+
+	g := decodeGated(t, gatedNarrow)
+	if !same(gatedEntries(g), narrowEntries) {{
+		t.Errorf("gated repeat narrow: %v", gatedEntries(g))
+	}}
+	if !bytes.Equal(g.EncodeToBytes(), gatedNarrow) {{
+		t.Errorf("gated repeat narrow round trip")
+	}}
+
+	g = decodeGated(t, gatedWide)
+	if !same(gatedEntries(g), wideEntries) {{
+		t.Errorf("gated repeat wide: %v", gatedEntries(g))
+	}}
+	if !bytes.Equal(g.EncodeToBytes(), gatedWide) {{
+		t.Errorf("gated repeat wide round trip")
+	}}
+
+	g = decodeGated(t, gatedAbsent)
+	if g.Entries != nil {{
+		t.Errorf("gated repeat without its gate: %v", gatedEntries(g))
+	}}
+	if !bytes.Equal(g.EncodeToBytes(), gatedAbsent) {{
+		t.Errorf("gated repeat absent round trip")
+	}}
+}}
+"#
+    ))
+}
+
+fn chain_flag_c_program() -> String {
+    flag_frames_in(
+        r#"#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "codec_chain_flag_carrier.h"
+#include "codec_chain_flag_forward.h"
+#include "codec_repeat_flag_carrier.h"
+#include "codec_repeat_flag_gated.h"
+
+static const uint8_t NARROW[] = {@NARROW@};
+static const uint8_t WIDE[] = {@WIDE@};
+static const uint8_t FWD_NARROW[] = {@FWD_NARROW@};
+static const uint8_t FWD_ABSENT[] = {@FWD_ABSENT@};
+static const uint8_t REP_NARROW[] = {@REP_NARROW@};
+static const uint8_t REP_WIDE[] = {@REP_WIDE@};
+static const uint8_t GATED_NARROW[] = {@GATED_NARROW@};
+static const uint8_t GATED_WIDE[] = {@GATED_WIDE@};
+static const uint8_t GATED_ABSENT[] = {@GATED_ABSENT@};
+
+static int failures = 0;
+
+static void expect(int ok, const char *what) {
+    if (!ok) {
+        fprintf(stderr, "FAIL %s\n", what);
+        ++failures;
+    }
+}
+
+/* An absent optional entry value is 0 in a C struct that was zeroed first. */
+static int entry_is(const codec_chain_flag_entry_t *e, uint8_t header, uint8_t s, uint16_t l) {
+    return e->header == header && e->short_value == s && e->long_value == l;
+}
+
+static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_flag_carrier_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_flag_carrier_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int forward_decode(const uint8_t *bytes, size_t len, uint8_t wide,
+                          codec_chain_flag_forward_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_flag_forward_decode(&cursor, v, wide) == SCE_FORGE_CODEC_OK;
+}
+
+static int repeat_decode(const uint8_t *bytes, size_t len, codec_repeat_flag_carrier_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_repeat_flag_carrier_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int gated_decode(const uint8_t *bytes, size_t len, codec_repeat_flag_gated_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_repeat_flag_gated_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+int main(void) {
+    uint8_t out[64];
+    size_t out_len = 0;
+    codec_chain_flag_carrier_t c;
+    codec_chain_flag_forward_t f;
+    codec_repeat_flag_carrier_t r;
+    codec_repeat_flag_gated_t g;
+
+    expect(carrier_decode(NARROW, sizeof NARROW, &c), "carrier narrow decode");
+    expect(c.entries_len == 2 && entry_is(&c.entries[0], 0x83, 0x11, 0) &&
+               entry_is(&c.entries[1], 0x05, 0x22, 0),
+           "carrier narrow");
+    expect(codec_chain_flag_carrier_encode_to_buf(&c, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof NARROW && memcmp(out, NARROW, sizeof NARROW) == 0,
+           "carrier narrow round trip");
+
+    expect(carrier_decode(WIDE, sizeof WIDE, &c), "carrier wide decode");
+    expect(c.entries_len == 2 && entry_is(&c.entries[0], 0x83, 0, 0x1234) &&
+               entry_is(&c.entries[1], 0x05, 0, 0xABCD),
+           "carrier wide");
+    expect(codec_chain_flag_carrier_encode_to_buf(&c, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof WIDE && memcmp(out, WIDE, sizeof WIDE) == 0,
+           "carrier wide round trip");
+
+    expect(forward_decode(FWD_NARROW, sizeof FWD_NARROW, 0, &f), "forward narrow decode");
+    expect(f.entries_len == 2 && entry_is(&f.entries[0], 0x83, 0x11, 0) &&
+               entry_is(&f.entries[1], 0x05, 0x22, 0),
+           "forward narrow");
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 0) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof FWD_NARROW && memcmp(out, FWD_NARROW, sizeof FWD_NARROW) == 0,
+           "forward narrow round trip");
+
+    expect(forward_decode(WIDE, sizeof WIDE, 1, &f), "forward wide decode");
+    expect(f.entries_len == 2 && entry_is(&f.entries[0], 0x83, 0, 0x1234) &&
+               entry_is(&f.entries[1], 0x05, 0, 0xABCD),
+           "forward wide");
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof WIDE && memcmp(out, WIDE, sizeof WIDE) == 0,
+           "forward wide round trip");
+
+    /* The same bytes under the other answer: the caller's value reached the
+     * entries, and they are not read as wide. */
+    expect(forward_decode(WIDE, sizeof WIDE, 0, &f), "forward flag decode");
+    expect(f.entries_len >= 1 && f.entries[0].long_value == 0 && f.entries[0].short_value == 0x12,
+           "forward flag ignored");
+
+    expect(forward_decode(FWD_ABSENT, sizeof FWD_ABSENT, 1, &f), "forward absent decode");
+    expect(f.entries_len == 0, "forward chain without its gate");
+    expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof FWD_ABSENT && memcmp(out, FWD_ABSENT, sizeof FWD_ABSENT) == 0,
+           "forward absent round trip");
+
+    /* A repeat hands its elements the same value, plain and gated. */
+    expect(repeat_decode(REP_NARROW, sizeof REP_NARROW, &r), "repeat narrow decode");
+    expect(r.entries_len == 2 && entry_is(&r.entries[0], 0x83, 0x11, 0) &&
+               entry_is(&r.entries[1], 0x05, 0x22, 0),
+           "repeat narrow");
+    expect(codec_repeat_flag_carrier_encode_to_buf(&r, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof REP_NARROW && memcmp(out, REP_NARROW, sizeof REP_NARROW) == 0,
+           "repeat narrow round trip");
+
+    expect(repeat_decode(REP_WIDE, sizeof REP_WIDE, &r), "repeat wide decode");
+    expect(r.entries_len == 2 && entry_is(&r.entries[0], 0x83, 0, 0x1234) &&
+               entry_is(&r.entries[1], 0x05, 0, 0xABCD),
+           "repeat wide");
+    expect(codec_repeat_flag_carrier_encode_to_buf(&r, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof REP_WIDE && memcmp(out, REP_WIDE, sizeof REP_WIDE) == 0,
+           "repeat wide round trip");
+
+    expect(gated_decode(GATED_NARROW, sizeof GATED_NARROW, &g), "gated repeat narrow decode");
+    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x83, 0x11, 0) &&
+               entry_is(&g.entries[1], 0x05, 0x22, 0),
+           "gated repeat narrow");
+    expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof GATED_NARROW &&
+               memcmp(out, GATED_NARROW, sizeof GATED_NARROW) == 0,
+           "gated repeat narrow round trip");
+
+    expect(gated_decode(GATED_WIDE, sizeof GATED_WIDE, &g), "gated repeat wide decode");
+    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x83, 0, 0x1234) &&
+               entry_is(&g.entries[1], 0x05, 0, 0xABCD),
+           "gated repeat wide");
+    expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof GATED_WIDE && memcmp(out, GATED_WIDE, sizeof GATED_WIDE) == 0,
+           "gated repeat wide round trip");
+
+    expect(gated_decode(GATED_ABSENT, sizeof GATED_ABSENT, &g), "gated repeat absent decode");
+    expect(g.entries_len == 0, "gated repeat without its gate");
+    expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
+                   SCE_FORGE_CODEC_OK &&
+               out_len == sizeof GATED_ABSENT &&
+               memcmp(out, GATED_ABSENT, sizeof GATED_ABSENT) == 0,
+           "gated repeat absent round trip");
+
+    return failures == 0 ? 0 : 1;
+}
+"#,
+    )
+}
+
+fn chain_flag_cpp_program() -> String {
+    flag_frames_in(
+        r#"#include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+#include "codec_chain_flag_carrier.h"
+#include "codec_chain_flag_forward.h"
+#include "codec_repeat_flag_carrier.h"
+#include "codec_repeat_flag_gated.h"
+
+using Carrier = ::SCE::Generated::CodecChainFlagCarrier::CodecChainFlagCarrier;
+using Forward = ::SCE::Generated::CodecChainFlagForward::CodecChainFlagForward;
+using Repeat = ::SCE::Generated::CodecRepeatFlagCarrier::CodecRepeatFlagCarrier;
+using Gated = ::SCE::Generated::CodecRepeatFlagGated::CodecRepeatFlagGated;
+using Entry = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry;
+
+namespace {
+const std::vector<std::uint8_t> NARROW = {@NARROW@};
+const std::vector<std::uint8_t> WIDE = {@WIDE@};
+const std::vector<std::uint8_t> FWD_NARROW = {@FWD_NARROW@};
+const std::vector<std::uint8_t> FWD_ABSENT = {@FWD_ABSENT@};
+const std::vector<std::uint8_t> REP_NARROW = {@REP_NARROW@};
+const std::vector<std::uint8_t> REP_WIDE = {@REP_WIDE@};
+const std::vector<std::uint8_t> GATED_NARROW = {@GATED_NARROW@};
+const std::vector<std::uint8_t> GATED_WIDE = {@GATED_WIDE@};
+const std::vector<std::uint8_t> GATED_ABSENT = {@GATED_ABSENT@};
+
+int failures = 0;
+
+void expect(bool ok, const char* what) {
+    if (!ok) {
+        std::fprintf(stderr, "FAIL %s\n", what);
+        ++failures;
+    }
+}
+
+bool entry_is(const Entry& e, std::uint8_t header, std::optional<std::uint8_t> s,
+              std::optional<std::uint16_t> l) {
+    return e.header == header && e.short_value == s && e.long_value == l;
+}
+
+std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Carrier::decode(cursor);
+}
+
+std::optional<Forward> forward(const std::vector<std::uint8_t>& frame, std::uint8_t wide) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Forward::decode(cursor, wide);
+}
+
+std::optional<Repeat> repeat(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Repeat::decode(cursor);
+}
+
+std::optional<Gated> gated(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Gated::decode(cursor);
+}
+}  // namespace
+
+int main() {
+    const std::optional<std::uint8_t> none8;
+    const std::optional<std::uint16_t> none16;
+
+    auto c = carrier(NARROW);
+    expect(c.has_value(), "carrier narrow decode");
+    if (c) {
+        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, 0x11, none16) &&
+                   entry_is(c->entries[1], 0x05, 0x22, none16),
+               "carrier narrow");
+        expect(c->encode_to_vec() == NARROW, "carrier narrow round trip");
+    }
+
+    c = carrier(WIDE);
+    expect(c.has_value(), "carrier wide decode");
+    if (c) {
+        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(c->entries[1], 0x05, none8, 0xABCD),
+               "carrier wide");
+        expect(c->encode_to_vec() == WIDE, "carrier wide round trip");
+    }
+
+    auto f = forward(FWD_NARROW, 0);
+    expect(f.has_value() && f->entries.has_value(), "forward narrow decode");
+    if (f && f->entries) {
+        expect(f->entries->size() == 2 && entry_is((*f->entries)[0], 0x83, 0x11, none16) &&
+                   entry_is((*f->entries)[1], 0x05, 0x22, none16),
+               "forward narrow");
+        expect(f->encode_to_vec(0) == FWD_NARROW, "forward narrow round trip");
+    }
+
+    f = forward(WIDE, 1);
+    expect(f.has_value() && f->entries.has_value(), "forward wide decode");
+    if (f && f->entries) {
+        expect(f->entries->size() == 2 && entry_is((*f->entries)[0], 0x83, none8, 0x1234) &&
+                   entry_is((*f->entries)[1], 0x05, none8, 0xABCD),
+               "forward wide");
+        expect(f->encode_to_vec(1) == WIDE, "forward wide round trip");
+    }
+
+    // The same bytes under the other answer: the caller's value reached the
+    // entries, and they are not read as wide.
+    f = forward(WIDE, 0);
+    expect(f.has_value() && f->entries.has_value() && !f->entries->empty(), "forward flag decode");
+    if (f && f->entries && !f->entries->empty()) {
+        expect(!(*f->entries)[0].long_value && (*f->entries)[0].short_value == 0x12,
+               "forward flag ignored");
+    }
+
+    f = forward(FWD_ABSENT, 1);
+    expect(f.has_value() && !f->entries.has_value(), "forward chain without its gate");
+    if (f) {
+        expect(f->encode_to_vec(1) == FWD_ABSENT, "forward absent round trip");
+    }
+
+    // A repeat hands its elements the same value, plain and gated.
+    auto r = repeat(REP_NARROW);
+    expect(r.has_value(), "repeat narrow decode");
+    if (r) {
+        expect(r->entries.size() == 2 && entry_is(r->entries[0], 0x83, 0x11, none16) &&
+                   entry_is(r->entries[1], 0x05, 0x22, none16),
+               "repeat narrow");
+        expect(r->encode_to_vec() == REP_NARROW, "repeat narrow round trip");
+    }
+
+    r = repeat(REP_WIDE);
+    expect(r.has_value(), "repeat wide decode");
+    if (r) {
+        expect(r->entries.size() == 2 && entry_is(r->entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(r->entries[1], 0x05, none8, 0xABCD),
+               "repeat wide");
+        expect(r->encode_to_vec() == REP_WIDE, "repeat wide round trip");
+    }
+
+    auto g = gated(GATED_NARROW);
+    expect(g.has_value() && g->entries.has_value(), "gated repeat narrow decode");
+    if (g && g->entries) {
+        expect(g->entries->size() == 2 && entry_is((*g->entries)[0], 0x83, 0x11, none16) &&
+                   entry_is((*g->entries)[1], 0x05, 0x22, none16),
+               "gated repeat narrow");
+        expect(g->encode_to_vec() == GATED_NARROW, "gated repeat narrow round trip");
+    }
+
+    g = gated(GATED_WIDE);
+    expect(g.has_value() && g->entries.has_value(), "gated repeat wide decode");
+    if (g && g->entries) {
+        expect(g->entries->size() == 2 && entry_is((*g->entries)[0], 0x83, none8, 0x1234) &&
+                   entry_is((*g->entries)[1], 0x05, none8, 0xABCD),
+               "gated repeat wide");
+        expect(g->encode_to_vec() == GATED_WIDE, "gated repeat wide round trip");
+    }
+
+    g = gated(GATED_ABSENT);
+    expect(g.has_value() && !g->entries.has_value(), "gated repeat without its gate");
+    if (g) {
+        expect(g->encode_to_vec() == GATED_ABSENT, "gated repeat absent round trip");
+    }
+    return failures == 0 ? 0 : 1;
+}
+"#,
+    )
+}
+
+/// What a chain or a repeat does with an entry codec that takes a flag, on the
+/// backends that can be run from here: every entry is handed the value its
+/// import binds — the parent's carrier flag, or the flag the parent was itself
+/// given, on a plain chain, a gated one, and a plain and a gated repeat — and
+/// encode hands the entries the same. One that called the entry with too few
+/// arguments is a compile error in four of them and a `TypeError` in Python,
+/// which is what this replaces; one that handed the entries a CONSTANT would
+/// pass the compile gate and fail here, as the same bytes decode differently
+/// under the other answer.
+///
+/// Only C11 can show the encode half: its encoder reads the carrier bit as the
+/// truth for an entry's optional value, so a constant there writes the wrong
+/// layout back. Every other backend's entry encoder writes by the presence of
+/// the value it holds and ignores the flag, so there the encode argument is
+/// held by the compile gate and the goldens, not by a round trip.
+///
+/// Rust is run by `entries_are_handed_the_flag_their_import_binds_in_rust`;
+/// Kotlin is held to its golden and, where the runtime jar is built, the
+/// compile gate.
+#[test]
+fn entries_are_handed_the_flag_their_import_binds_on_every_runnable_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+
+    if let Err(e) = run_python_program(
+        &dir,
+        FLAG_ENTRY_SET,
+        "flag_pkg",
+        chain_flag_python_program(),
+    ) {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = run_go_program(
+        &dir,
+        FLAG_ENTRY_SET,
+        "chain_flag_exec",
+        chain_flag_go_program(),
+    ) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    let native = [
+        (
+            "Cpp",
+            NativeMarkerBackend {
+                tool: "g++",
+                language: sce_build::generator::Language::Cpp,
+                runtime_includes: &["../backends/cpp/forge-runtime/include"],
+                header_extensions: &["h", "hpp"],
+                standard: "c++17",
+                source_name: "marker_exec.cpp",
+                set: FLAG_ENTRY_SET,
+                program: chain_flag_cpp_program,
+            },
+        ),
+        (
+            "C11",
+            NativeMarkerBackend {
+                tool: "gcc",
+                language: sce_build::generator::Language::C11,
+                runtime_includes: &[
+                    "../backends/c/forge-runtime/include",
+                    "../backends/c/runtime/include",
+                ],
+                header_extensions: &["h"],
+                standard: "c11",
+                source_name: "marker_exec.c",
+                set: FLAG_ENTRY_SET,
+                program: chain_flag_c_program,
+            },
+        ),
+    ];
+    for (label, backend) in &native {
+        if let Err(e) = run_marker_native(&dir, backend) {
+            failures.push(format!("{label}:\n{e}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "a chain or a repeat must hand each entry the flag its import binds on every backend that runs. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+/// The Rust half of the test above: the same frames and the same answers,
+/// run as `cargo test` over the generated crate.
+#[test]
+fn entries_are_handed_the_flag_their_import_binds_in_rust() {
+    const HARNESS: &str = r#"// Injected by entries_are_handed_the_flag_their_import_binds_in_rust.
+#[cfg(test)]
+mod tests {
+    use crate::codec_chain_flag_carrier::CodecChainFlagCarrier;
+    use crate::codec_chain_flag_forward::CodecChainFlagForward;
+    use crate::codec_repeat_flag_carrier::CodecRepeatFlagCarrier;
+    use crate::codec_repeat_flag_gated::CodecRepeatFlagGated;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    const NARROW: [u8; 5] = [@NARROW@];
+    const WIDE: [u8; 7] = [@WIDE@];
+    const FWD_NARROW: [u8; 5] = [@FWD_NARROW@];
+    const FWD_ABSENT: [u8; 1] = [@FWD_ABSENT@];
+    const REP_NARROW: [u8; 6] = [@REP_NARROW@];
+    const REP_WIDE: [u8; 8] = [@REP_WIDE@];
+    const GATED_NARROW: [u8; 6] = [@GATED_NARROW@];
+    const GATED_WIDE: [u8; 8] = [@GATED_WIDE@];
+    const GATED_ABSENT: [u8; 1] = [@GATED_ABSENT@];
+
+    fn carrier(frame: &[u8]) -> CodecChainFlagCarrier {
+        CodecChainFlagCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn forward(frame: &[u8], wide: u8) -> CodecChainFlagForward {
+        CodecChainFlagForward::decode(&mut SceCursor::new(frame), wide).expect("decode")
+    }
+
+    type Shape = (u8, Option<u8>, Option<u16>);
+
+    fn shapes(entries: &[crate::codec_chain_flag_entry::CodecChainFlagEntry]) -> Vec<Shape> {
+        entries
+            .iter()
+            .map(|e| (e.header, e.short_value, e.long_value))
+            .collect()
+    }
+
+    const NARROW_ENTRIES: [Shape; 2] = [(0x83, Some(0x11), None), (0x05, Some(0x22), None)];
+    const WIDE_ENTRIES: [Shape; 2] = [(0x83, None, Some(0x1234)), (0x05, None, Some(0xABCD))];
+
+    #[test]
+    fn a_clear_bit_of_the_parent_carrier_gives_every_entry_the_short_layout() {
+        let v = carrier(&NARROW);
+        assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), NARROW.to_vec());
+    }
+
+    #[test]
+    fn a_set_bit_of_the_parent_carrier_gives_every_entry_the_wide_layout() {
+        let v = carrier(&WIDE);
+        assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), WIDE.to_vec());
+    }
+
+    #[test]
+    fn the_flag_a_parent_is_given_reaches_every_entry_of_a_gated_chain() {
+        let v = forward(&FWD_NARROW, 0);
+        assert_eq!(shapes(v.entries.as_ref().expect("chain")), NARROW_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(0), FWD_NARROW.to_vec());
+
+        let v = forward(&WIDE, 1);
+        assert_eq!(shapes(v.entries.as_ref().expect("chain")), WIDE_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(1), WIDE.to_vec());
+    }
+
+    #[test]
+    fn the_same_bytes_decode_differently_under_the_other_answer() {
+        // A chain that handed its entries a constant would read both alike.
+        let wide = forward(&WIDE, 1);
+        let narrow = forward(&WIDE, 0);
+        let wide_first = &wide.entries.as_ref().expect("chain")[0];
+        let narrow_first = &narrow.entries.as_ref().expect("chain")[0];
+        assert_eq!((wide_first.short_value, wide_first.long_value), (None, Some(0x1234)));
+        assert_eq!((narrow_first.short_value, narrow_first.long_value), (Some(0x12), None));
+    }
+
+    #[test]
+    fn a_gated_chain_without_its_gate_holds_no_entries() {
+        let v = forward(&FWD_ABSENT, 1);
+        assert!(v.entries.is_none());
+        assert_eq!(v.encode_to_vec(1), FWD_ABSENT.to_vec());
+    }
+
+    fn repeat(frame: &[u8]) -> CodecRepeatFlagCarrier {
+        CodecRepeatFlagCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn gated(frame: &[u8]) -> CodecRepeatFlagGated {
+        CodecRepeatFlagGated::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    #[test]
+    fn a_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
+        let v = repeat(&REP_NARROW);
+        assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), REP_NARROW.to_vec());
+
+        let v = repeat(&REP_WIDE);
+        assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), REP_WIDE.to_vec());
+    }
+
+    #[test]
+    fn a_gated_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
+        let v = gated(&GATED_NARROW);
+        assert_eq!(shapes(v.entries.as_ref().expect("list")), NARROW_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), GATED_NARROW.to_vec());
+
+        let v = gated(&GATED_WIDE);
+        assert_eq!(shapes(v.entries.as_ref().expect("list")), WIDE_ENTRIES.to_vec());
+        assert_eq!(v.encode_to_vec(), GATED_WIDE.to_vec());
+    }
+
+    #[test]
+    fn a_gated_repeat_without_its_gate_holds_no_elements() {
+        let v = gated(&GATED_ABSENT);
+        assert!(v.entries.is_none());
+        assert_eq!(v.encode_to_vec(), GATED_ABSENT.to_vec());
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        FLAG_ENTRY_SET,
+        &[("chain_flag_behaviour.rs", &flag_frames_in(HARNESS))],
+        "chain_flag_behaviour",
+    )
+    .expect("a chain or a repeat must hand each entry the flag its import binds");
 }
 
 /// What to tell a developer whose tree has no Kotlin forge-runtime jar.

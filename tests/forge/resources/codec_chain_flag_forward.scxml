@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a gated chain whose entry flag-input is the parent's
+     own flag-input, forwarded.
+
+     The caller of this codec decides `wide`; the codec hands it on to every
+     entry of the chain. The chain exists only when the head says so
+     (`head.E`), which is the gated shape of the chain statements.
+
+     Wire shape:
+       byte 0 : head  (E at bit 0)
+       byte 1+: entries, present only when E is set -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_flag_forward">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="wide"/>
+  </sce:import>
+  <sce:flag-inputs>
+    <sce:flag-input name="wide" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="E" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   sce:present-if="head.E"/>
+  </datamodel>
+</scxml>

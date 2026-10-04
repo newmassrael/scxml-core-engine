@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a repeat whose element takes a flag from its parent.
+
+     A repeat decodes and encodes one element codec `count` times. When that
+     codec declares a `<sce:flag-input>`, the parent binds it where it imports
+     the codec, exactly as it does for an embed, a variant arm or a TLV chain,
+     and the repeat has to hand the value to every element. The element is
+     `codec_chain_flag_entry`: a header byte, then a one-byte value when `wide`
+     is clear and a two-byte value when it is set.
+
+     Wire shape:
+       byte 0 : head  (bit 0 = W, the flag handed to every element as `wide`)
+       byte 1 : count (uint8)
+       byte 2..: `count` elements, each laid out by W -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_flag_carrier">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+    </sce:flags>
+    <sce:field id="count" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="2"
+                count="count" max-count="4"/>
+  </datamodel>
+</scxml>

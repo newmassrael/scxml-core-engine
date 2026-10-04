@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain entry that takes a flag from its parent.
+
+     A TLV chain repeats one entry codec. When that codec declares a
+     `<sce:flag-input>`, the parent binds it where it imports the codec, exactly
+     as it does for an embed or a variant arm, and the chain has to hand the
+     value to the entry every time it decodes or encodes one. This is the entry:
+     a header byte carrying a four-bit kind and the continuation flag Z, then a
+     value laid out one way when `wide` is set and another when it is not.
+
+     Wire shape of one entry:
+       byte 0 : header  (kind:4 at bit 0, Z at bit 7 — set on all but the last)
+       wide=0 : byte 1  short_value (uint8)
+       wide=1 : byte 1..2  long_value (uint16, big endian) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_flag_entry">
+  <sce:flag-inputs>
+    <sce:flag-input name="wide" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="4"/>
+      <sce:flag name="Z"    bit="7"/>
+    </sce:flags>
+    <sce:field id="short_value" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="!wide"/>
+    <sce:field id="long_value" sce:type="uint16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="wide"/>
+  </datamodel>
+</scxml>

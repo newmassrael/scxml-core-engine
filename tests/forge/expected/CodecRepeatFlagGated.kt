@@ -1,0 +1,136 @@
+// SCE-MAP: codec_repeat_flag_gated:14 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.codec_repeat_flag_gated
+
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
+import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
+import com.sce.generated.codec_chain_flag_entry.*
+
+// Default-valued primary constructor: the generated procedure_l2 code
+// holds codec instances as owned members and initializes them with
+// `CodecRepeatFlagGated()` before any encode()/decode() call. Each default
+// is a value of that field's own type, which decode() then fills in on
+// success — the carrier's zero for a number, and for an enum the first
+// variant its document declares, since a closed set does not hold a
+// value it never declared.
+data class CodecRepeatFlagGated(
+    var head: UByte = 0.toUByte(),
+    var count: UByte? = null,
+    var entries: MutableList<CodecChainFlagEntry>? = null
+) {
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
+    // the carrier field. Single-bit (width=1) reads as Boolean; multi-
+    // bit (width>=2) reads as the smallest unsigned Kotlin type that
+    // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
+    // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
+    // ops; the result narrows back via the carrier's `toU*` ctor.
+    fun W(): Boolean = (this.head.toInt() and 0x01) != 0
+
+    fun setW(v: Boolean) {
+        this.head = if (v) {
+            (this.head.toInt() or 0x01).toUByte()
+        } else {
+            (this.head.toInt() and 0x01.inv()).toUByte()
+        }
+    }
+
+    fun L(): Boolean = (this.head.toInt() and 0x02) != 0
+
+    fun setL(v: Boolean) {
+        this.head = if (v) {
+            (this.head.toInt() or 0x02).toUByte()
+        } else {
+            (this.head.toInt() and 0x02.inv()).toUByte()
+        }
+    }
+
+    /// RFC §synth-5-B encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when null, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`.
+        w.writeU8(this.head.toByte())?.let { return it }
+        this.count?.let { _v ->
+            w.writeU8(_v.toByte())?.let { return it }
+        }
+        this.entries?.let { _list ->
+            for (_e in _list) {
+                _e.encode(w, (((this.head.toInt() shr 0) and 0x1).toUByte()))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
+    }
+
+    companion object {
+        /// Decode the next frame from `cursor`. On success the cursor
+        /// advances past the consumed bytes; returns `null` when the
+        /// cursor's tail is shorter than the declared minimum frame
+        /// (RFC §synth-5-B L494-519).
+        fun decode(cursor: SceCursor): CodecRepeatFlagGated? {
+            // Streaming cursor decode (SSOT selection: `needs_streaming`).
+            // The positional `raw[byte_off]` path is valid only when every
+            // field's absolute offset is fixed at codegen time; this branch
+            // handles every codec where it is not — present-if-gated fields
+            // (runtime presence), VLE / repeat / TLV-chain / embed fields
+            // (runtime width), string fields (UTF-8 decode), and a fixed
+            // field after a variable-length payload (offset depends on the
+            // payload length). Each field reads its own bytes from the
+            // cursor and advances past what it consumed. Per-field
+            // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+            // dedicated helpers; every other field flows through
+            // `present_if_decode_stmt`.
+            val head = run {
+                val raw = cursor.peekSlice(1) ?: return null
+                val _v = raw[0].toUByte()
+                if (!cursor.advance(1)) return null
+                _v
+            }
+            val count = if ((head.toInt() and 0x02) != 0) {
+                val raw = cursor.peekSlice(1) ?: return null
+                val _v = raw[0].toUByte()
+                if (!cursor.advance(1)) return null
+                _v
+            } else {
+                null
+            }
+            val entries: MutableList<CodecChainFlagEntry>? = if ((head.toInt() and 0x02) != 0) {
+                val _n = count!!
+                mutableListOf<CodecChainFlagEntry>().apply {
+                    repeat(_n.toInt()) {
+                        add(CodecChainFlagEntry.decode(cursor, (((head.toInt() shr 0) and 0x1).toUByte())) ?: return null)
+                    }
+                }
+            } else null
+            return CodecRepeatFlagGated(
+                head = head,
+                count = count,
+                entries = entries
+            )
+        }
+    }
+}

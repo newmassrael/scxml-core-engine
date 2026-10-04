@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain whose entry flag-input is bound to a flag of
+     the parent's own carrier.
+
+     `wide` of every entry is the parent's `head.W`, read once from the byte
+     before the chain, so a frame whose head has W set carries wide entries
+     throughout and one without it carries short ones. The chain is plain
+     (not gated); `codec_chain_flag_forward` is the gated shape.
+
+     Wire shape:
+       byte 0 : head  (W at bit 0)
+       byte 1+: entries (codec_chain_flag_entry), ending on the entry whose Z is clear -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_flag_carrier">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+  </datamodel>
+</scxml>

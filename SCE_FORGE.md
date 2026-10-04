@@ -1147,6 +1147,39 @@ refuse.
 A chain that ends only when the frame does (`terminate-on` not `entry-flag`)
 leaves nothing after it to gate, so `entry-id` on one is refused.
 
+#### 4.6.3 An entry codec that takes a flag
+
+A chain applies one entry codec to every entry, and a `<sce:repeat>` applies one
+element codec to every element. That codec can declare `<sce:flag-inputs>` the
+way the body of an `<sce:embed>` does, and the parent binds each one where it
+imports the codec:
+
+```xml
+<sce:import src="entry.scxml" kind="codec" as="entry">
+  <sce:flag-bind input="wide" source="head.W"/>
+</sce:import>
+<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+  <sce:flag name="W" bit="0"/>
+</sce:flags>
+<sce:tlv-chain id="entries" type="entry" sce:byte="1" max-depth="4"
+               on-overflow="reject" terminate-on="entry-flag"
+               entry-flag-name="Z"/>
+```
+
+`source` is a flag of a carrier of the parent (`head.W`) or, as a bare name, a
+flag-input the parent was itself given. The generated code hands the bound
+value to the entry at every decode and every encode, on every backend, and the
+entry lays itself out by it (`sce:present-if="wide"` and `"!wide"` in the entry).
+A chain and a repeat, plain or gated, hand it alike. Every flag-input an entry
+codec declares must be bound (`codec/flag-input-unbound`), and a carrier the
+bind names has to be declared before the first field that consumes the import —
+the decoder reads the carrier byte before it reaches the entries
+(`codec/flag-bind-carrier-after-embed`, which also covers a repeat and a chain).
+
+The value is one value for the whole chain or repeat: every entry is handed the
+same flag. A layout that changes from one entry to the next because of an entry
+before it is not expressed by it.
+
 ### 4.7 validator
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).
