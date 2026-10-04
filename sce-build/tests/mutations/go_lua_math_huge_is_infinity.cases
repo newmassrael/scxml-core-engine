@@ -1,0 +1,31 @@
+# Mutation cases for "an infinity is Infinity on the Go Lua engine, and the
+# largest finite double is not" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/go_lua_math_huge_is_infinity.cases`.
+#
+# The shared `ecma_semantics.lua` and `json_builtins.lua` name the infinity by
+# `math.huge`, and go-lua defines that as `math.MaxFloat64` where Lua 5.2 defines
+# it as HUGE_VAL. The oracle is `an_infinity_is_infinity_test.go`: with go-lua's
+# own value `1/0` is spelled `+Inf`, `ToUint32` of it is NaN, `parseFloat` of
+# `"Infinity"` is the largest finite double, and `JSON.stringify` writes that
+# double as `null`. The shared ECMA-262 table asks none of it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/lua .
+mutation_runtime_targets backends/go/lua/lua_engine.go
+mutation_oracles backends/go/lua/an_infinity_is_infinity_test.go
+
+mutation_case "math.huge is go-lua's largest finite double again" <<'PY'
+edit("backends/go/lua/lua_engine.go",
+     "l.PushNumber(math.Inf(1))",
+     "l.PushNumber(math.MaxFloat64)")
+PY
+
+mutation_case "math.huge is never replaced" <<'PY'
+edit("backends/go/lua/lua_engine.go",
+     'l.SetField(-2, "huge")',
+     'l.SetField(-2, "huge_")')
+PY

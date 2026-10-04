@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 
@@ -74,6 +75,16 @@ func (e *LuaEngine) CreateSession(sessionID string) error {
 
 	l := lua.NewState()
 	lua.OpenLibraries(l)
+	// go-lua defines `math.huge` as the largest finite double
+	// (`math.MaxFloat64`), where Lua 5.2 defines it as HUGE_VAL. The shared
+	// Lua names the infinity by it (`String(Infinity)`, `ToUint32`,
+	// `parseFloat("Infinity")`), so with go-lua's value an infinity went
+	// through as an ordinary number and the largest finite double was spelled
+	// as one: a number is Infinity here only if it is.
+	l.Global("math")
+	l.PushNumber(math.Inf(1))
+	l.SetField(-2, "huge")
+	l.Pop(1)
 
 	sess := &session{
 		l:            l,
