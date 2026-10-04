@@ -154,6 +154,67 @@ pub fn push_escaped(out: &mut String, text: &str) {
     }
 }
 
+/// A 64-bit float as ECMAScript's `Number::toString` spells it, radix 10.
+///
+/// The one spelling SCE writes on every engine (ARCHITECTURE.md, "JSON Number
+/// Text (Single Source of Truth)"): the fewest digits that read back as the
+/// same double, in decimal notation when `1e-6 <= |x| < 1e21` and as
+/// `d[.ddd]e[+-]n` otherwise, no fraction on a whole value and `0` for either
+/// zero. A value that is not finite is spelled `NaN`, `Infinity` or
+/// `-Infinity`, as `String(x)` does; a JSON writer, which has no spelling for
+/// those, tests [`f64::is_finite`] before it calls this.
+/// tests/json_text/real_text.json holds the cases.
+pub fn number_text(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+    // `{:e}` of a finite double is the shortest round-trip digits, `d[.ddd]e<n>`.
+    let scientific = format!("{:e}", value.abs());
+    let (mantissa, exponent) = scientific
+        .split_once('e')
+        .expect("a finite `{:e}` has an exponent");
+    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    let exponent: i32 = exponent
+        .parse()
+        .expect("a `{:e}` exponent is a whole number");
+    // The value is `0.<digits> * 10^point`; the spec's `k` and `n`.
+    let k = digits.len() as i32;
+    let point = exponent + 1;
+    let mut out = String::new();
+    if value < 0.0 {
+        out.push('-');
+    }
+    if k <= point && point <= 21 {
+        out.push_str(&digits);
+        out.push_str(&"0".repeat((point - k) as usize));
+    } else if 0 < point && point <= 21 {
+        out.push_str(&digits[..point as usize]);
+        out.push('.');
+        out.push_str(&digits[point as usize..]);
+    } else if -6 < point && point <= 0 {
+        out.push_str("0.");
+        out.push_str(&"0".repeat((-point) as usize));
+        out.push_str(&digits);
+    } else {
+        let power = point - 1;
+        out.push_str(&digits[..1]);
+        if k > 1 {
+            out.push('.');
+            out.push_str(&digits[1..]);
+        }
+        out.push('e');
+        out.push(if power < 0 { '-' } else { '+' });
+        out.push_str(&power.abs().to_string());
+    }
+    out
+}
+
 struct Reader<'a> {
     text: &'a str,
     at: usize,

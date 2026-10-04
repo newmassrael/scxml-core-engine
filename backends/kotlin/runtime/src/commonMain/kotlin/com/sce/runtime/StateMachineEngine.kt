@@ -4384,10 +4384,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // runtime's to say, so the text is read back and written again.
         is EngineHeldValue -> Json.writeCanonical(Json.parse(value.toJson()))
         is Boolean -> value.toString()
+        // A whole-number type is its digits, which no double can carry past
+        // 2^53; a float is spelled as ECMAScript spells it, and JSON has no
+        // spelling for one that is not finite (ARCHITECTURE.md, "JSON Number
+        // Text").
+        is Long, is Int, is Short, is Byte -> value.toString()
         is Number -> {
             val d = value.toDouble()
-            if (d == d.toLong().toDouble() && !d.isInfinite()) d.toLong().toString()
-            else d.toString()
+            if (d.isFinite()) Json.numberText(d) else "null"
         }
         is String -> Json.quote(value)
         is Map<*, *> -> objectToJson(value)
@@ -4426,16 +4430,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected fun valueToWireString(value: Any?): String = when (value) {
         null -> ""
         is Boolean -> value.toString()
-        is Number -> {
-            val d = value.toDouble()
-            when {
-                d.isNaN() -> "NaN"
-                d == Double.POSITIVE_INFINITY -> "Infinity"
-                d == Double.NEGATIVE_INFINITY -> "-Infinity"
-                d == d.toLong().toDouble() -> d.toLong().toString()
-                else -> d.toString()
-            }
-        }
+        is Long, is Int, is Short, is Byte -> value.toString()
+        is Number -> Json.numberText(value.toDouble())
         // Already text: quoting it would deliver characters the document
         // never wrote.
         is String -> value

@@ -1,0 +1,59 @@
+# Mutation cases for "the Kotlin runtime writes a float the one way every engine
+# writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_float_number_text.cases`.
+#
+# The oracle is `RealTextTest`, which reads `tests/json_text/real_text.json` and
+# writes each double through `Json.numberText`. The digits come from
+# `shortestDigits`, which on the JVM is `BigDecimal` rather than
+# `Double.toString` because JDK 17's is not always the shortest (JDK-4511638);
+# the layout around them is `Json.numberText`'s. Each case below puts one rule
+# back the way a platform spells it.
+#
+# ⚠ Every edit has to compile warning-free: this runtime builds with
+# `allWarningsAsErrors`, and a case that fails to compile is INCONCLUSIVE, not
+# a verdict.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.runtime.RealTextTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/runtime/RealTextTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt backends/kotlin/runtime/src/jvmMain/kotlin/com/sce/runtime/ShortestDigits.jvm.kt
+
+# ── The digits ─────────────────────────────────────────────────────
+#
+# Below a power of two the neighbouring double is half as far, so the nearest
+# decimal of the fewest digits can fall outside the interval that reads back
+# (2^-44). Only the rounding to nearest is tried here, which is what a search
+# that rounds first and checks after does.
+
+mutation_case "the neighbours of the nearest rounding are not tried" <<'PY'
+edit("backends/kotlin/runtime/src/jvmMain/kotlin/com/sce/runtime/ShortestDigits.jvm.kt",
+     "val modes = arrayOf(RoundingMode.HALF_EVEN, RoundingMode.FLOOR, RoundingMode.CEILING)",
+     "val modes = arrayOf(RoundingMode.HALF_EVEN)")
+PY
+
+# ── The layout ─────────────────────────────────────────────────────
+
+mutation_case "an infinity is written as Kotlin writes it" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     """if (value.isInfinite()) return if (value > 0) "Infinity" else "-Infinity\"""",
+     """if (value.isInfinite()) return "Infinity\"""")
+PY
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     """if (value == 0.0) return "0\"""",
+     """if (value == 0.0) return if (1.0 / value < 0) "-0" else "0\"""")
+PY
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     "point in k..21 ->",
+     "point in k..20 ->")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+     "point in -5..0 ->",
+     "point in -6..0 ->")
+PY

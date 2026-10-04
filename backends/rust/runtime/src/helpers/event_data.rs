@@ -58,13 +58,11 @@ pub fn script_value_to_json(value: &ScriptValue) -> String {
         ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         ScriptValue::Int(i) => i.to_string(),
         ScriptValue::Double(f) => {
-            if f.is_nan() || f.is_infinite() {
+            if f.is_finite() {
+                crate::json::number_text(*f)
+            } else {
                 // RFC 8259 has no spelling for either.
                 "null".to_string()
-            } else if f.fract() == 0.0 && f.abs() < 1e15 {
-                format!("{}", *f as i64)
-            } else {
-                format!("{}", f)
             }
         }
         ScriptValue::String(s) => format!("\"{}\"", escape_json_string(s)),
@@ -131,19 +129,9 @@ pub fn script_value_to_wire_string(value: &ScriptValue) -> String {
         ScriptValue::Null | ScriptValue::Undefined => String::new(),
         ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         ScriptValue::Int(i) => i.to_string(),
-        ScriptValue::Double(f) => {
-            if f.is_nan() {
-                "NaN".to_string()
-            } else if f.is_infinite() {
-                if *f > 0.0 { "Infinity" } else { "-Infinity" }.to_string()
-            } else if f.fract() == 0.0 && f.abs() < 1e15 {
-                // ECMAScript `String(5)` is "5". A `.0` tail is the Rust
-                // spelling of the number, not the document's.
-                format!("{}", *f as i64)
-            } else {
-                format!("{}", f)
-            }
-        }
+        // ECMAScript `String(5)` is "5", and a `.0` tail or a run of
+        // zeros is the Rust spelling of the number, not the document's.
+        ScriptValue::Double(f) => crate::json::number_text(*f),
         // Already text. Quoting it here would deliver characters the document
         // never wrote, and the trim that used to undo such quotes ate the
         // ones the value itself carried.
@@ -381,6 +369,60 @@ mod tests {
                     .push(held(value));
             }
             assert_eq!(&build_json_from_typed_params(&evaluated), data, "{name}");
+        }
+    }
+
+    /// tests/json_text/real_text.json: the one spelling every engine gives a
+    /// finite 64-bit float (ARCHITECTURE.md, "JSON Number Text"), read here
+    /// with this runtime's own parser and checked through each writer that
+    /// spells one.
+    #[test]
+    fn a_float_is_spelled_as_ecmascript_spells_it_by_every_writer() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/json_text/real_text.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared real-text table");
+        let table = parse(&table).expect("the table is JSON");
+        let Some(Value::Array(cases)) = table.member("cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 40, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let (Some(Value::Text(name)), Some(Value::Text(bits)), Some(Value::Text(text))) = (
+                case.member("name"),
+                case.member("bits"),
+                case.member("text"),
+            ) else {
+                panic!("a case has a name, bits and text");
+            };
+            let value = f64::from_bits(u64::from_str_radix(bits, 16).expect("sixteen hex digits"));
+            assert_eq!(&crate::json::number_text(value), text, "{name}");
+            assert_eq!(
+                &script_value_to_json(&ScriptValue::Double(value)),
+                text,
+                "{name}: as JSON"
+            );
+            assert_eq!(
+                &script_value_to_wire_string(&ScriptValue::Double(value)),
+                text,
+                "{name}: as an untyped param"
+            );
+        }
+    }
+
+    #[test]
+    fn a_float_that_is_not_finite_has_no_json_spelling_and_a_wire_one() {
+        for (value, wire) in [
+            (f64::NAN, "NaN"),
+            (f64::INFINITY, "Infinity"),
+            (f64::NEG_INFINITY, "-Infinity"),
+        ] {
+            assert_eq!(script_value_to_json(&ScriptValue::Double(value)), "null");
+            assert_eq!(
+                script_value_to_wire_string(&ScriptValue::Double(value)),
+                wire
+            );
         }
     }
 }

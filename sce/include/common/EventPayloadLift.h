@@ -4,6 +4,7 @@
 
 #include "common/JsonText.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -200,9 +201,11 @@ public:
             // See readBytes for why Latin-1.
             return quote(name) + ":" + quote(std::string(value.begin(), value.end()));
         } else if constexpr (std::is_floating_point_v<T>) {
-            char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%.17g", static_cast<double>(value));
-            return quote(name) + ":" + buffer;
+            // The one spelling of a float (ARCHITECTURE.md, "JSON Number
+            // Text"); `%.17g` wrote 0.1 as `0.10000000000000001`. JSON has no
+            // spelling for one that is not finite.
+            const auto number = static_cast<double>(value);
+            return quote(name) + ":" + (std::isfinite(number) ? JsonText::numberText(number) : "null");
         } else if constexpr (std::is_signed_v<T>) {
             return quote(name) + ":" + std::to_string(static_cast<long long>(value));
         } else {

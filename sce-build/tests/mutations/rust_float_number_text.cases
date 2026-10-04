@@ -1,0 +1,53 @@
+# Mutation cases for "the Rust runtime writes a float the one way every engine
+# writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/rust_float_number_text.cases`.
+#
+# The oracle is `helpers::event_data::tests`, which reads
+# `tests/json_text/real_text.json` and writes each double through
+# `json::number_text`, `script_value_to_json` and `script_value_to_wire_string`.
+# The digits are `{:e}`'s, which Rust already writes as the shortest that read
+# back, so no case touches them; the layout around them is this file's, and each
+# case below puts one of its rules back the way a platform spells it.
+
+mutation_tests -p sce-rust-runtime --lib
+mutation_targets backends/rust/runtime/src/json.rs
+mutation_oracles backends/rust/runtime/src/helpers/event_data.rs
+
+mutation_case "an infinity is written as Rust's Display writes it" <<'PY'
+edit("backends/rust/runtime/src/json.rs",
+     """        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();""",
+     """        return value.to_string();""")
+PY
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("backends/rust/runtime/src/json.rs",
+     """    if value == 0.0 {
+        return "0".to_string();
+    }""",
+     """    if value == 0.0 {
+        return if value.is_sign_negative() { "-0" } else { "0" }.to_string();
+    }""")
+PY
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("backends/rust/runtime/src/json.rs",
+     "    if k <= point && point <= 21 {",
+     "    if k <= point && point <= 20 {")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("backends/rust/runtime/src/json.rs",
+     "    } else if -6 < point && point <= 0 {",
+     "    } else if -7 < point && point <= 0 {")
+PY
+
+mutation_case "a whole value keeps a fraction" <<'PY'
+edit("backends/rust/runtime/src/json.rs",
+     """        out.push_str(&"0".repeat((point - k) as usize));
+    } else if 0 < point""",
+     """        out.push_str(&"0".repeat((point - k) as usize));
+        out.push_str(".0");
+    } else if 0 < point""")
+PY

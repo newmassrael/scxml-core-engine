@@ -1,0 +1,61 @@
+# Mutation cases for "the Lua JSON.stringify writes a float the one way every
+# engine writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/lua_json_stringify_spells_a_float_as_ecmascript_does.cases`.
+#
+# `json_builtins.lua` is one file for every Lua engine, so the oracle is the C++
+# build's: `JsonTextOnLuaEngine.JsonBuiltinsStringifiesAFloatTheSameWay` hands
+# each double of `tests/json_text/real_text.json` to the Lua engine and asks
+# `JSON.stringify` for its text. That engine is real Lua 5.4; the same table is
+# read on go-lua by `backends/go/lua/json_number_text_test.go`.
+#
+# The digits come from a `%e` precision search, which has a hole the table was
+# written to find: below a power of two the neighbouring double is half as far,
+# so the nearest decimal of the fewest digits can fall outside the interval that
+# reads back (2^-44 is `5.684341886080802e-14`, not `...801e-14`). The first
+# case puts that hole back.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^JsonText$'
+mutation_targets sce/include/scripting/json_builtins.lua
+mutation_oracles tests/common/JsonTextTest.cpp
+
+# ── The digits ─────────────────────────────────────────────────────
+
+mutation_case "the decimal one unit above the rounded one is never tried" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     "        if tonumber(JSON._decimal_text(above, above_exponent)) == v then",
+     "        if false then")
+PY
+
+mutation_case "a number is written the way tostring writes it" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     "        return JSON._number_text(v)",
+     "        return tostring(v)")
+PY
+
+# ── The layout ─────────────────────────────────────────────────────
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     "    if k <= point and point <= 21 then",
+     "    if k <= point and point <= 20 then")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     "    elseif -6 < point and point <= 0 then",
+     "    elseif -7 < point and point <= 0 then")
+PY
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     """    if v == 0 then return "0" end""",
+     """    if v == 0 then
+        if 1 / v < 0 then return "-0" end
+        return "0"
+    end""")
+PY

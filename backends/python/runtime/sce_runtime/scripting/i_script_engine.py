@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from ..io_processors import IoProcessorDescriptor
+from ..number_text import number_text
 from ..payload_reading import PayloadReading
 
 
@@ -170,18 +171,9 @@ class ScriptValue:
         if self.kind is ScriptValueKind.INT:
             return str(self.int_val)
         if self.kind is ScriptValueKind.DOUBLE:
-            value = self.double_val
-            if value != value:
-                return "NaN"
-            if value == float("inf"):
-                return "Infinity"
-            if value == float("-inf"):
-                return "-Infinity"
-            if value == int(value) and abs(value) < 1e15:
-                # ECMAScript String(5) is "5"; a `.0` tail is Python's
-                # spelling of the number, not the document's.
-                return str(int(value))
-            return repr(value)
+            # ECMAScript String(5) is "5"; a `.0` tail is Python's spelling
+            # of the number, not the document's.
+            return number_text(self.double_val)
         if self.kind is ScriptValueKind.STRING:
             # Already text: quoting it would deliver characters the
             # document never wrote.
@@ -226,9 +218,7 @@ class ScriptValue:
             if value != value or value in (float("inf"), float("-inf")):
                 # RFC 8259 has no spelling for NaN or the infinities.
                 return "null"
-            if value == int(value) and abs(value) < 1e15:
-                return str(int(value))
-            return repr(value)
+            return number_text(value)
         if self.kind is ScriptValueKind.STRING:
             return _json_string(self.string_val)
         if self.kind is ScriptValueKind.ARRAY:

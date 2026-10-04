@@ -201,7 +201,11 @@ object EventPayload {
         is Boolean -> value.toString()
         is UByte, is UShort, is UInt, is ULong -> value.toString()
         is Byte, is Short, is Int, is Long -> value.toString()
-        is Float, is Double -> value.toString()
+        // JSON has no spelling for a double that is not finite. A float32 is
+        // still written as the platform spells it: the contract pins the
+        // 64-bit spelling (ARCHITECTURE.md, "JSON Number Text").
+        is Double -> if (value.isFinite()) Json.numberText(value) else "null"
+        is Float -> value.toString()
         is ByteArray -> Json.quote(bytesAsText(value))
         else -> Json.quote(value.toString())
     }

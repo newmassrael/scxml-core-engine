@@ -226,19 +226,17 @@ def _coerce_event_data_str(data: Any) -> str:
         return data
     if isinstance(data, bool):
         return "true" if data else "false"
-    if isinstance(data, (int, float)):
+    if isinstance(data, int):
         return str(data)
-    if isinstance(data, (dict, list)):
-        import json
-        try:
-            # Compact and UTF-8, the form every engine writes JSON text in
-            # (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"):
-            # `json.dumps`'s defaults space the separators and escape every
-            # non-ASCII character, so the same payload differed byte for
-            # byte from the one another backend sent.
-            return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(data)
+    if isinstance(data, (float, dict, list)):
+        # The one writer of JSON text this backend has (ARCHITECTURE.md,
+        # "JSON Text", "JSON Number Text" and "JSON Object Key Order"):
+        # compact, UTF-8, members in byte order, a float as ECMAScript
+        # spells it. `json.dumps` did none of the last two — it spells a
+        # float with Python's `repr` (`1.0`, `1e-07`) and keeps the order
+        # a dict was built in — so the same payload differed byte for byte
+        # from the one another backend sent.
+        return _ScriptValue.of(data).to_json_literal()
     return str(data)
 
 

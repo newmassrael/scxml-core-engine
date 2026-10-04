@@ -452,7 +452,8 @@ add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_
 # JSON.stringify, each held to tests/json_text/string_escape.json — the table
 # every engine's writer reads. The same target holds the core's writer of an
 # object's members to tests/json_text/object_key_order.json (ARCHITECTURE.md,
-# "JSON Object Key Order").
+# "JSON Object Key Order") and its writers of a float to
+# tests/json_text/real_text.json ("JSON Number Text").
 # ============================================================================
 add_executable(json_text_test
     common/JsonTextTest.cpp
@@ -476,6 +477,7 @@ target_compile_definitions(json_text_test
     PRIVATE
         SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json"
         SCE_JSON_KEY_ORDER_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/object_key_order.json"
+        SCE_JSON_REAL_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/real_text.json"
 )
 
 apply_sce_test_policies(json_text_test)

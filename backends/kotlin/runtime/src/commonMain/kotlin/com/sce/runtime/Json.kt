@@ -159,6 +159,44 @@ object Json {
     }
 
     /**
+     * A 64-bit float as ECMAScript's `Number::toString` spells it, radix 10.
+     *
+     * The one spelling SCE writes on every engine (ARCHITECTURE.md, "JSON
+     * Number Text (Single Source of Truth)"): the fewest digits that read back
+     * as the same double, in decimal notation when `1e-6 <= |x| < 1e21` and as
+     * `d[.ddd]e[+-]n` otherwise, no fraction on a whole value and `0` for
+     * either zero. A value that is not finite is spelled `NaN`, `Infinity` or
+     * `-Infinity`, as `String(x)` does; a JSON writer, which has no spelling for
+     * those, tests [Double.isFinite] before it calls this.
+     * tests/json_text/real_text.json holds the cases.
+     *
+     * `Double.toString` is neither this layout (`5.0`, `1.0E21`) nor, before
+     * JDK 19, always the shortest digits, so the digits come from
+     * [shortestDigits] and the layout is the specification's.
+     */
+    fun numberText(value: Double): String {
+        if (value.isNaN()) return "NaN"
+        if (value.isInfinite()) return if (value > 0) "Infinity" else "-Infinity"
+        if (value == 0.0) return "0"
+        val shortest = shortestDigits(kotlin.math.abs(value))
+        // The value is `0.<digits> * 10^point`; the specification's `k` and `n`.
+        val digits = shortest.digits
+        val point = shortest.point
+        val k = digits.length
+        val sign = if (value < 0) "-" else ""
+        return when {
+            point in k..21 -> sign + digits + "0".repeat(point - k)
+            point in 1..21 -> sign + digits.substring(0, point) + "." + digits.substring(point)
+            point in -5..0 -> sign + "0." + "0".repeat(-point) + digits
+            else -> {
+                val power = point - 1
+                val head = digits.substring(0, 1) + if (k > 1) "." + digits.substring(1) else ""
+                sign + head + "e" + (if (power < 0) "-" else "+") + kotlin.math.abs(power)
+            }
+        }
+    }
+
+    /**
      * It reads the whole grammar rather than only an object of scalars: a
      * payload may carry fields a document's schema does not name, and a nested
      * one still has to be walked past to reach the fields that follow.

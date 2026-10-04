@@ -6,6 +6,7 @@ package sce
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -221,6 +222,12 @@ func PayloadJSON(fields ...PayloadPair) string {
 			b.WriteByte('"')
 			b.WriteString(EscapeJSONString(text))
 			b.WriteByte('"')
+			continue
+		}
+		// encoding/json spells a float as ES6 does but keeps the sign of a
+		// negative zero; the one spelling is [NumberText].
+		if number, ok := field.value.(float64); ok && !math.IsNaN(number) && !math.IsInf(number, 0) {
+			b.WriteString(NumberText(number))
 			continue
 		}
 		encoded, err := json.Marshal(field.value)

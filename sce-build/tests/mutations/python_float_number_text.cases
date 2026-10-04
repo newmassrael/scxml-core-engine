@@ -1,0 +1,42 @@
+# Mutation cases for "the Python runtime writes a float the one way every engine
+# writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_float_number_text.cases`.
+#
+# The oracle is `test_real_text.py`, which reads `tests/json_text/real_text.json`
+# and writes each double through `number_text`, `ScriptValue.to_json_literal`
+# and the untyped wire text. The digits are `repr`'s, which is the shortest that
+# reads back, so no case touches them; the layout around them is this file's,
+# and each case below puts one of its rules back the way a platform spells it.
+#
+# Python compiles nothing, so the module on disk is the artifact every run
+# reads — the edit is a `mutation_runtime_targets`.
+
+mutation_pytest backends/python/tests json_text/
+mutation_runtime_targets backends/python/runtime/sce_runtime/number_text.py
+mutation_oracles backends/python/tests/json_text/test_real_text.py
+
+mutation_case "an infinity is written as Python's repr writes it" <<'PY'
+edit("backends/python/runtime/sce_runtime/number_text.py",
+     'return "Infinity"',
+     'return "inf"')
+PY
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("backends/python/runtime/sce_runtime/number_text.py",
+     "    if value == 0:",
+     "    if value == 0 and repr(value)[0] != '-':")
+PY
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("backends/python/runtime/sce_runtime/number_text.py",
+     "    if k <= point <= 21:",
+     "    if k <= point <= 20:")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("backends/python/runtime/sce_runtime/number_text.py",
+     "    if -6 < point <= 0:",
+     "    if -7 < point <= 0:")
+PY

@@ -1,0 +1,40 @@
+# Mutation cases for "the Go runtime writes a float the one way every engine
+# writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/go_float_number_text.cases`.
+#
+# The oracle is `TestAFloatIsSpelledAsEcmascriptSpellsItByEveryWriter`, which
+# reads `tests/json_text/real_text.json` and writes each double through
+# `NumberText`, `ScriptValueToJSON`, `ToWireString` and `PayloadJSON`. The digits
+# are `strconv`'s shortest, so no case touches them; the layout around them is
+# this file's, and each case below puts one of its rules back the way a platform
+# spells it.
+
+mutation_go backends/go/runtime .
+mutation_runtime_targets backends/go/runtime/number_text.go
+mutation_oracles backends/go/runtime/json_text_test.go
+
+mutation_case "an infinity is written as Go's Inf" <<'PY'
+edit("backends/go/runtime/number_text.go",
+     'return "Infinity"',
+     'return "+Inf"')
+PY
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("backends/go/runtime/number_text.go",
+     "case value == 0:",
+     "case value == 0 && !math.Signbit(value):")
+PY
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("backends/go/runtime/number_text.go",
+     "case k <= point && point <= 21:",
+     "case k <= point && point <= 20:")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("backends/go/runtime/number_text.go",
+     "case -6 < point && point <= 0:",
+     "case -7 < point && point <= 0:")
+PY

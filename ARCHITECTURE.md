@@ -691,6 +691,59 @@ with its own engine's JSON parser:
 
 Do NOT write a new escaper; call the engine's writer above.
 
+### JSON Number Text (Single Source of Truth)
+
+A finite 64-bit float written into JSON text, or into the text of an untyped
+`<param>`, is written the way ECMAScript's Number::toString writes it in radix
+10 (ECMA-262), so the same value is the same bytes whichever engine — or which
+peer over Mesh — wrote it:
+
+| Rule | Example |
+|------|---------|
+| the fewest digits that read back as the same double; of that many, the nearest to the value | `0.1`, not `0.10000000000000001` |
+| decimal notation when `1e-6 <= \|x\| < 1e21`, otherwise `d[.ddd]e[+-]n` | `1e21`, `1.5e-7`, `0.000001` |
+| a whole value has no fraction, and no integer type is in between | `5`, not `5.0`; `9223372036854775808` for 2^63 |
+| either zero is `0` | `-0` is `0` |
+| a value that is not finite is `null` in JSON, and `NaN` / `Infinity` / `-Infinity` in the text of an untyped `<param>` | |
+
+The nearest decimal of the fewest digits is not always one that reads back.
+Below a power of two the neighbouring double is half as far, so the nearest
+decimal can fall outside the interval that reads as the value while the one
+unit above it lies inside: 2^-44 is `5.6843418860808014...e-14`, which reads
+back as `5.684341886080802e-14` and not as `...801e-14`. An engine that
+rounds to a precision and then checks it writes seventeen digits there.
+
+Measured 2026-10-04, the engines disagreed on the same value. The C++ payload
+writer used `%.17g` (`0.1` came out as `0.10000000000000001`), the C++ result
+text used the stream's default precision (pi came out as `3.14159`), Kotlin
+used `Double.toString` (`1.0E21`, `5.0`), Rust and Go wrote `1e21` as twenty-two
+digits and `1e-7` as `0.0000001`, and a whole double went through an `int64`
+cast, which is wrong above 2^63. Nothing pinned any of them.
+
+`tests/json_text/real_text.json` holds the cases (each value is its IEEE 754
+bits, so no engine's float parser is the one deciding), checked against Node's
+`String(x)` and `JSON.stringify`, and every writer is held to it:
+
+| Engine | Writer | Reader of the table |
+|--------|--------|---------------------|
+| C++ | `SCE::JsonText::numberText` (`sce/include/common/JsonText.h`) — `JsonUtils::toCompactString`, `ScriptResultUtils`, `EventPayloadFields::field` | `tests/common/JsonTextTest.cpp` |
+| Lua (all engines) | `JSON._number_text` in `json_builtins.lua`: the first `%e` precision that `tonumber` reads back, or the decimal one unit above it | `tests/common/JsonTextTest.cpp`, through the C++ build's Lua engine |
+| Rust | `json::number_text`; `script_value_to_json` and `script_value_to_wire_string` use it | `backends/rust/runtime/src/helpers/event_data.rs` |
+| Go | `NumberText` (`number_text.go`); `ScriptValueToJSON`, `ToWireString`, `PayloadJSON` use it | `backends/go/runtime/json_text_test.go` |
+| Python | `sce_runtime.number_text.number_text`; `ScriptValue.to_json_literal` and its wire text use it, and a generated machine writes `_event.data` through them | `backends/python/tests/json_text/test_real_text.py` |
+| Kotlin | `Json.numberText` over `shortestDigits` (`expect`, `BigDecimal` on the JVM); `valueToJson`, `valueToWireString`, `EventPayload.literal` use it | `backends/kotlin/tests/.../runtime/RealTextTest.kt` |
+| C11 | a script-engine machine writes through `JSON.stringify` of the shared Lua above; a `sce-static` machine writes no float yet and refuses it by name | the Lua row's test |
+
+What the contract does not fix:
+
+- A `float32` is written as its platform spells it; only the 64-bit form is pinned.
+- A real held in a saved machine's state (Rust `saved_real!` in `saved_state.rs`, Kotlin `SavedState.kt`) is written with the platform's own round-trip form and is read back by the same backend.
+- A value shown to a person (a log line, a debug message, `getValueAsString`) is not wire text and keeps its engine's spelling.
+- A script engine's own `JSON.stringify` is not a writer of SCE's wire text. The C++ test still holds the engine this build selected to the table, with one measured exception: QuickJS writes 2^-44 as `5.6843418860808015e-14`, and a power of two it writes with one digit more is accepted when that text reads back as the same value.
+
+Do NOT write a new float spelling, and do NOT cast a double to an integer type
+to drop its fraction; call the engine's writer above.
+
 ### JSON Object Key Order (Single Source of Truth)
 
 The members of a JSON object written into `_event.data` come in one order on

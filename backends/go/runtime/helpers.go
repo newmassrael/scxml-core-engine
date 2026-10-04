@@ -80,21 +80,9 @@ func ToWireString(value interface{}) string {
 	case int64:
 		return fmt.Sprintf("%d", v)
 	case float64:
-		if math.IsNaN(v) {
-			return "NaN"
-		}
-		if math.IsInf(v, 1) {
-			return "Infinity"
-		}
-		if math.IsInf(v, -1) {
-			return "-Infinity"
-		}
-		if v == float64(int64(v)) {
-			// ECMAScript String(5) is "5"; a .0 tail is Go's spelling of the
-			// number, not the document's.
-			return fmt.Sprintf("%d", int64(v))
-		}
-		return fmt.Sprintf("%g", v)
+		// ECMAScript String(5) is "5"; a .0 tail is Go's spelling of the
+		// number, not the document's.
+		return NumberText(v)
 	case string:
 		// Already text. Quoting it here would deliver characters the document
 		// never wrote, and the trim that used to undo such quotes ate the ones
@@ -147,10 +135,7 @@ func ScriptValueToJSON(value interface{}) string {
 			// RFC 8259 has no spelling for either.
 			return "null"
 		}
-		if v == float64(int64(v)) && math.Abs(v) < 1e15 {
-			return fmt.Sprintf("%d", int64(v))
-		}
-		return fmt.Sprintf("%g", v)
+		return NumberText(v)
 	case string:
 		return `"` + EscapeJSONString(v) + `"`
 	case []interface{}:

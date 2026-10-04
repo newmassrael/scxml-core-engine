@@ -11,15 +11,134 @@
 
 JSON = {}
 
+-- A finite number as ECMAScript's Number::toString spells it, radix 10 (the one
+-- spelling SCE writes on every engine: ARCHITECTURE.md, "JSON Number Text
+-- (Single Source of Truth)", cases in tests/json_text/real_text.json): the
+-- fewest digits that read back as the same double, in decimal notation when
+-- 1e-6 <= |x| < 1e21 and as d[.ddd]e[+-]n otherwise, no fraction on a whole
+-- value and "0" for either zero. `tostring` is not it: %.14g writes pi as
+-- 3.1415926535898 and 1e15 as 1e+15.
+--
+-- The digits are those of the first precision at which a decimal reads back,
+-- and `%e` rounds the exact value to nearest, so of the decimals of that length
+-- this is the nearest. The nearest is not always the one that reads back: below
+-- a power of two the neighbouring double is half as far, so the nearest decimal
+-- there can fall outside the interval that reads as the value while the one
+-- unit above it lies inside (2^-44 is 5.6843418860808014...e-14, which reads
+-- back as 5.684341886080802e-14 but not as ...801e-14). Each precision therefore
+-- tries the rounded decimal and then the next one up. Only `sub`, `format`,
+-- `tonumber` and `table.concat` are used, for the reason the string arm below
+-- gives. The helpers are `JSON._` members rather than file-local functions
+-- because the C11 embed loads this file one chunk at a time and a local would
+-- not be visible to the chunk after it.
+
+-- d[.ddd]e[+-]dd as its digit characters and its decimal exponent.
+function JSON._split_decimal(text)
+    local digit_list = {}
+    local mark = #text
+    for i = 1, #text do
+        local c = string.sub(text, i, i)
+        if c == "e" then
+            mark = i
+            break
+        elseif c ~= "." then
+            digit_list[#digit_list + 1] = c
+        end
+    end
+    return digit_list, tonumber(string.sub(text, mark + 1))
+end
+
+-- The decimal of the same digit count one unit higher in its last place.
+function JSON._next_decimal_above(digit_list, exponent)
+    local above = {}
+    for i = 1, #digit_list do above[i] = digit_list[i] end
+    local i = #above
+    while i >= 1 and above[i] == "9" do
+        above[i] = "0"
+        i = i - 1
+    end
+    if i >= 1 then
+        above[i] = string.format("%d", tonumber(above[i]) + 1)
+    else
+        -- All nines carry out of the first digit: 1 followed by zeros.
+        above[1] = "1"
+        exponent = exponent + 1
+    end
+    return above, exponent
+end
+
+function JSON._decimal_text(digit_list, exponent)
+    local head = digit_list[1]
+    if #digit_list > 1 then head = head .. "." .. table.concat(digit_list, "", 2) end
+    return head .. "e" .. string.format("%d", exponent)
+end
+
+function JSON._number_text(v)
+    if v == 0 then return "0" end
+    local sign = ""
+    if v < 0 then
+        sign = "-"
+        v = -v
+    end
+    -- Seventeen digits always read back, so the search below has an answer.
+    local digit_list, exponent = JSON._split_decimal(string.format("%.16e", v))
+    for p = 0, 15 do
+        local rounded, rounded_exponent = JSON._split_decimal(string.format("%." .. p .. "e", v))
+        if tonumber(JSON._decimal_text(rounded, rounded_exponent)) == v then
+            digit_list, exponent = rounded, rounded_exponent
+            break
+        end
+        local above, above_exponent = JSON._next_decimal_above(rounded, rounded_exponent)
+        if tonumber(JSON._decimal_text(above, above_exponent)) == v then
+            digit_list, exponent = above, above_exponent
+            break
+        end
+    end
+    local digits = table.concat(digit_list)
+    local k = #digits
+    -- The value is 0.<digits> * 10^point; the specification's `k` and `n`.
+    local point = exponent + 1
+    local function zeros(n)
+        local z = {}
+        for i = 1, n do z[i] = "0" end
+        return table.concat(z)
+    end
+    local out
+    if k <= point and point <= 21 then
+        out = digits .. zeros(point - k)
+    elseif 0 < point and point <= 21 then
+        out = string.sub(digits, 1, point) .. "." .. string.sub(digits, point + 1)
+    elseif -6 < point and point <= 0 then
+        out = "0." .. zeros(-point) .. digits
+    else
+        local power = point - 1
+        local head = string.sub(digits, 1, 1)
+        if k > 1 then head = head .. "." .. string.sub(digits, 2) end
+        local power_sign = "+"
+        if power < 0 then
+            power_sign = "-"
+            power = -power
+        end
+        out = head .. "e" .. power_sign .. string.format("%d", power)
+    end
+    return sign .. out
+end
+
 function JSON.stringify(v, indent)
     local t = type(v)
     if v == nil then return "null"
     elseif t == "boolean" then return v and "true" or "false"
     elseif t == "number" then
         if v ~= v then return "null" end
-        if v == math.huge or v == -math.huge then return "null" end
-        if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
-        return tostring(v)
+        -- Not `v == math.huge`: go-lua defines `math.huge` as the largest
+        -- finite double, which would write that value as `null`. `v - v` is 0
+        -- for every finite value and NaN for an infinity.
+        if v - v ~= 0 then return "null" end
+        -- A whole number of Lua's integer subtype (5.3 and later; the
+        -- engines without `math.type` have none) is its digits, which no
+        -- double carries past 2^53.
+        if math.type and math.type(v) == "integer" then return string.format("%d", v) end
+        return JSON._number_text(v)
     elseif t == "string" then
         -- Escaped character by character rather than with `gsub`, because the
         -- Lua behind the six backends is not one Lua: go-lua ships no `gsub`

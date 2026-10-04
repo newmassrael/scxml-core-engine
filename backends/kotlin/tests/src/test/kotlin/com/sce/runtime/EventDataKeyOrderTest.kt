@@ -19,12 +19,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private object OrderState : State
+internal object OrderState : State
 
-private object OrderEvent : Event
+internal object OrderEvent : Event
 
 /** The smallest machine that can be asked what a `<send>` writes. */
-private class SendProbe : StateMachineEngine<OrderState, OrderEvent>() {
+internal class SendProbe : StateMachineEngine<OrderState, OrderEvent>() {
     override val initialState: OrderState = OrderState
 
     override fun firstEnabledTransition(state: OrderState, event: OrderEvent?): EnabledTransition<OrderState, HistoryId>? =
@@ -45,6 +45,9 @@ private class SendProbe : StateMachineEngine<OrderState, OrderEvent>() {
 
     /** What a send writes for one value, as generated code asks for it. */
     fun valueJson(value: Any?): String = valueToJson(value)
+
+    /** What an untyped `<param>` writes for one value on a form-encoded wire. */
+    fun valueWire(value: Any?): String = valueToWireString(value)
 }
 
 /** A value a script engine keeps to itself; all it can say is its own JSON. */
