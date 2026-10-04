@@ -3744,11 +3744,10 @@ impl StaticTarget for CTarget {
             let Some(schema) = model.imported_records.get(alias) else {
                 continue;
             };
-            if let Some(field) = schema
-                .fields
-                .iter()
-                .find(|f| !held_scalar(&f.sce_type) && !matches!(f.sce_type, SceType::Enum(_)))
-            {
+            if let Some(field) = schema.fields.iter().find(|f| {
+                !held_scalar(&f.sce_type)
+                    && !matches!(f.sce_type, SceType::Enum(_) | SceType::Float64)
+            }) {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",
                     field.id,

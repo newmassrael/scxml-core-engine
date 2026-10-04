@@ -49,6 +49,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
@@ -74,6 +75,18 @@ func daysJSON[R dayRecord](days []R) any {
 		out[i] = dayJSON(day)
 	}
 	return out
+}
+
+// readingRecord is a `record:Reading` as a host reads it: a small integer and a
+// 64-bit real.
+type readingRecord interface {
+	Sensor() uint8
+	Value() float64
+}
+
+// readingJSON is a reading as a scenario states it: its fields by the schema's ids.
+func readingJSON(reading readingRecord) any {
+	return map[string]any{"sensor": reading.Sensor(), "value": reading.Value()}
 }
 
 // scenarioDir is where the scenarios live, from this package's directory.
@@ -430,6 +443,17 @@ func TestAListHoldsRecordsAndAForeachWalksThem(t *testing.T) {
 		"last":   func() any { return dayJSON(policy.Last()) },
 		"total":  func() any { return policy.Total() },
 		"errors": func() any { return policy.Errors() },
+	}))
+}
+
+// A record with a 64-bit real field is built whole, written a field at a time,
+// and replaced from a typed payload without losing a bit of the real it carried.
+func TestARecordHoldsARealFieldToTheBit(t *testing.T) {
+	policy := static_record_real.NewStaticRecordRealPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_real", drive[static_record_real.StaticRecordRealState, static_record_real.StaticRecordRealEvent](&policy, map[string]func() any{
+		"last": func() any { return readingJSON(policy.Last()) },
+		"sum":  func() any { return policy.Sum() },
 	}))
 }
 

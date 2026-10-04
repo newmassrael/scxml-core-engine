@@ -90,6 +90,11 @@ typedef struct {
     // and how many it holds in `*len`. False for a name the machine publishes no
     // list of reals of. A driver with no list of reals may leave this unset.
     bool (*real_list)(void *sm, const char *name, double *out, size_t cap, size_t *len);
+    // The real a record's `field` holds, addressed as `record_field` is. False for
+    // a name or a field the machine publishes no real of. A scenario states such a
+    // field with a fraction or an exponent, and a driver with no record that holds
+    // a real may leave this unset.
+    bool (*record_real)(void *sm, const char *name, size_t index, const char *field, double *out);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -458,6 +463,20 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
                 bad |= sce_scenario_fail(d, step, message);
             } else if (strcmp(got_text, want_text) != 0) {
                 (void)snprintf(message, sizeof(message), "%s is `%s`, want `%s`", where, got_text, want_text);
+                bad |= sce_scenario_fail(d, step, message);
+            }
+        } else if (sce_scenario_is_real(c)) {
+            // A real field, compared as the 64 bits it is.
+            double want_real = 0;
+            double got_real = 0;
+            if (!sce_scenario_real(c, &want_real)) {
+                return sce_scenario_fail(d, step, "a record field's real is not a number");
+            }
+            if (d->record_real == NULL || !d->record_real(d->sm, name, index, field, &got_real)) {
+                (void)snprintf(message, sizeof(message), "the machine publishes no real field %s", where);
+                bad |= sce_scenario_fail(d, step, message);
+            } else if (!sce_scenario_same_real(got_real, want_real)) {
+                (void)snprintf(message, sizeof(message), "%s is %.17g, want %.17g", where, got_real, want_real);
                 bad |= sce_scenario_fail(d, step, message);
             }
         } else {

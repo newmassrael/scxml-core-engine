@@ -2,68 +2,64 @@
 // source-hash: beedc2048323f9a322dc34271f814a055429b2b93b0a344c01337e1cb073d66d
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_record_real.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record.scxml:13 :: _machine
+// SCE-MAP: static_record_real.scxml:15 :: _machine
 
-package com.sce.integration.static_record
+package com.sce.integration.static_record_real
 
 import com.sce.runtime.*
-import com.sce.generated.days_in_month.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticRecordState : State {
-    data object Showing : StaticRecordState
+sealed interface StaticRecordRealState : State {
+    data object Idle : StaticRecordRealState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticRecordEvent : Event {
-    sealed interface Day : StaticRecordEvent {
-        data object Picked : Day
+sealed interface StaticRecordRealEvent : Event {
+    data object Bump : StaticRecordRealEvent
+    sealed interface Reading : StaticRecordRealEvent {
+        data object Taken : Reading
     }
-    sealed interface Error : StaticRecordEvent {
-        data object Execution : Error
-    }
-    data object Next : StaticRecordEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StaticRecordPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StaticRecordRealPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StaticRecordDayPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `day.picked`. Consumers inject it via the `raiseDayPicked` seam
+// StaticRecordRealReadingTakenPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `reading.taken`. Consumers inject it via the `raiseReadingTaken` seam
 // on the machine — they never name this class directly.
-data class StaticRecordDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
+data class StaticRecordRealReadingTakenPayload(val sensor: UByte, val value: Double)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
-/** SCE Accepted Subset §2.15: a `record:Day` datamodel value. */
-data class StaticRecordDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte) {
+/** SCE Accepted Subset §2.15: a `record:Reading` datamodel value. */
+data class StaticRecordRealReadingRecord(val sensor: UByte, val value: Double) {
     /** This value as a saved state writes it. */
-    fun toSaved(): Any = linkedMapOf("year" to SavedValues.of(year), "month" to SavedValues.of(month), "dayOfMonth" to SavedValues.of(dayOfMonth))
+    fun toSaved(): Any = linkedMapOf("sensor" to SavedValues.of(sensor), "value" to SavedValues.of(value))
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): StaticRecordDayRecord = StaticRecordDayRecord(year = SavedValues.uint16(SavedValues.field(value, what, "year"), "$what.year"), month = SavedValues.uint8(SavedValues.field(value, what, "month"), "$what.month"), dayOfMonth = SavedValues.uint8(SavedValues.field(value, what, "dayOfMonth"), "$what.dayOfMonth"))
+        fun fromSaved(value: Any?, what: String): StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor = SavedValues.uint8(SavedValues.field(value, what, "sensor"), "$what.sensor"), value = SavedValues.float64(SavedValues.field(value, what, "value"), "$what.value"))
     }
 }
 // --- State Machine (W3C SCXML) ---
 
-class StaticRecordStateMachine(
-) : StateMachineEngine<StaticRecordState, StaticRecordEvent>() {
+class StaticRecordRealStateMachine(
+) : StateMachineEngine<StaticRecordRealState, StaticRecordRealEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticRecordDayRecord = StaticRecordDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
+    /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
+    var last: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor = 1.toUByte(), value = 0.5)
         private set
-    /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`). */
+    var sum: Double = 0.0
         private set
 
     /**
@@ -72,18 +68,18 @@ class StaticRecordStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
-        var refusals: UInt? = null
+        var sum: Double? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.refusals?.let { refusals = it }
+        params.sum?.let { sum = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
-        val shown: StaticRecordDayRecord,
-        val refusals: UInt,
+        val last: StaticRecordRealReadingRecord,
+        val sum: Double,
     )
 
     /**
@@ -94,14 +90,14 @@ class StaticRecordStateMachine(
      * configuration is not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticRecordState>,
+        val configuration: Set<StaticRecordRealState>,
         val data: Data,
         val truncated: Boolean,
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        refusals = refusals,
+        last = last,
+        sum = sum,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -128,7 +124,7 @@ class StaticRecordStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba"
+    val savedShape: String = "0b5a0c00317d882447142f0a5b7a92abd2451fbaa917cdadf8c12dbd38a54544"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -144,8 +140,8 @@ class StaticRecordStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
-            "refusals" to SavedValues.of(refusals),
+            "last" to last.toSaved(),
+            "sum" to SavedValues.of(sum),
         ),
         wallNowMs,
     )
@@ -171,10 +167,10 @@ class StaticRecordStateMachine(
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
-        val saved1 = StaticRecordDayRecord.fromSaved(saved.variable("shown"), "shown")
-        val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        shown = saved1
-        refusals = saved2
+        val saved1 = StaticRecordRealReadingRecord.fromSaved(saved.variable("last"), "last")
+        val saved2 = SavedValues.float64(saved.variable("sum"), "sum")
+        last = saved1
+        sum = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -184,7 +180,7 @@ class StaticRecordStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingDayPickedPayload: StaticRecordDayPickedPayload? = null
+    private var pendingReadingTakenPayload: StaticRecordRealReadingTakenPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -194,16 +190,16 @@ class StaticRecordStateMachine(
     // EventPayload.Refusal, which the engine reports as error.execution. Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(event: StaticRecordEvent, metadata: EventMetadata) {
-        pendingDayPickedPayload = null
+    override fun populateTypedPayload(event: StaticRecordRealEvent, metadata: EventMetadata) {
+        pendingReadingTakenPayload = null
         when (val tp = metadata.typedPayload) {
-            is StaticRecordDayPickedPayload -> pendingDayPickedPayload = tp
+            is StaticRecordRealReadingTakenPayload -> pendingReadingTakenPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == StaticRecordEvent.Day.Picked) {
+                if (event == StaticRecordRealEvent.Reading.Taken) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDayPickedPayload = StaticRecordDayPickedPayload(fields.uint16("year"), fields.uint8("month"), fields.uint8("dayOfMonth"))
+                    pendingReadingTakenPayload = StaticRecordRealReadingTakenPayload(fields.uint8("sensor"), fields.float64("value"))
                 }
             }
         }
@@ -211,24 +207,24 @@ class StaticRecordStateMachine(
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `day.picked` — binds the event name and the payload field values in one call.
-    fun raiseDayPicked(year: UShort, month: UByte, dayOfMonth: UByte) {
+    // `reading.taken` — binds the event name and the payload field values in one call.
+    fun raiseReadingTaken(sensor: UByte, value: Double) {
         send(
-            StaticRecordEvent.Day.Picked,
+            StaticRecordRealEvent.Reading.Taken,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticRecordDayPickedPayload(year, month, dayOfMonth),
+                typedPayload = StaticRecordRealReadingTakenPayload(sensor, value),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("year" to year, "month" to month, "dayOfMonth" to dayOfMonth))
+                data = EventPayload.encode(mapOf("sensor" to sensor, "value" to value))
             )
         )
     }
 
 
-    override val initialState: StaticRecordState = StaticRecordState.Showing
+    override val initialState: StaticRecordRealState = StaticRecordRealState.Idle
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -247,70 +243,59 @@ class StaticRecordStateMachine(
 
     // W3C SCXML 3.2: the target of the document's own initial transition, as
     // written.
-    override val documentInitialTargets: List<EntryTarget<StaticRecordState, HistoryId>>
+    override val documentInitialTargets: List<EntryTarget<StaticRecordRealState, HistoryId>>
         get() = documentInitialTargetList
 
     private companion object {
-        val documentInitialTargetList: List<EntryTarget<StaticRecordState, HistoryId>> =
-            listOf(StateTarget(StaticRecordState.Showing))
+        val documentInitialTargetList: List<EntryTarget<StaticRecordRealState, HistoryId>> =
+            listOf(StateTarget(StaticRecordRealState.Idle))
 
-        // W3C SCXML 3.13: showing's transition 0, as the microstep reads it.
-        val transitionShowingAt0 = EnabledTransition<StaticRecordState, HistoryId>(
-            StaticRecordState.Showing,
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<StaticRecordRealState, HistoryId>(
+            StaticRecordRealState.Idle,
             emptyList(),
             0,
             hasActions = true,
             isInternal = true,
         )
 
-        // W3C SCXML 3.13: showing's transition 1, as the microstep reads it.
-        val transitionShowingAt1 = EnabledTransition<StaticRecordState, HistoryId>(
-            StaticRecordState.Showing,
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<StaticRecordRealState, HistoryId>(
+            StaticRecordRealState.Idle,
             emptyList(),
             1,
-            hasActions = true,
-            isInternal = true,
-        )
-
-        // W3C SCXML 3.13: showing's transition 2, as the microstep reads it.
-        val transitionShowingAt2 = EnabledTransition<StaticRecordState, HistoryId>(
-            StaticRecordState.Showing,
-            emptyList(),
-            2,
             hasActions = true,
             isInternal = true,
         )
     }
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticRecordState? = when (stateId) {
-        "showing" -> StaticRecordState.Showing
+    override fun resolveState(stateId: String): StaticRecordRealState? = when (stateId) {
+        "idle" -> StaticRecordRealState.Idle
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticRecordState): String = when (state) {
-        is StaticRecordState.Showing -> "showing"
+    override fun stateIdOf(state: StaticRecordRealState): String = when (state) {
+        is StaticRecordRealState.Idle -> "idle"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
-    override fun documentOrderOf(state: StaticRecordState): Int = when (state) {
-        is StaticRecordState.Showing -> 0
+    override fun documentOrderOf(state: StaticRecordRealState): Int = when (state) {
+        is StaticRecordRealState.Idle -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticRecordEvent? = when (name) {
-        "day.picked" -> StaticRecordEvent.Day.Picked
-        "error.execution" -> StaticRecordEvent.Error.Execution
-        "next" -> StaticRecordEvent.Next
+    override fun resolveEventByName(name: String): StaticRecordRealEvent? = when (name) {
+        "bump" -> StaticRecordRealEvent.Bump
+        "reading.taken" -> StaticRecordRealEvent.Reading.Taken
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticRecordEvent): String? = when (event) {
-        is StaticRecordEvent.Day.Picked -> "day.picked"
-        is StaticRecordEvent.Error.Execution -> "error.execution"
-        is StaticRecordEvent.Next -> "next"
+    override fun eventNameOf(event: StaticRecordRealEvent): String? = when (event) {
+        is StaticRecordRealEvent.Bump -> "bump"
+        is StaticRecordRealEvent.Reading.Taken -> "reading.taken"
     }
 
 
@@ -323,69 +308,59 @@ class StaticRecordStateMachine(
     // transition whose guard holds. The runtime walks the atomic states and
     // their ancestors and keeps the ordered set.
     override fun firstEnabledTransition(
-        state: StaticRecordState,
-        event: StaticRecordEvent?
-    ): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
-        is StaticRecordState.Showing -> when {
-            event is StaticRecordEvent.Next && shown.dayOfMonth < daysInMonth(shown.year, shown.month) -> transitionShowingAt0
-            event is StaticRecordEvent.Day.Picked -> transitionShowingAt1
-            event is StaticRecordEvent.Error.Execution -> transitionShowingAt2
+        state: StaticRecordRealState,
+        event: StaticRecordRealEvent?
+    ): EnabledTransition<StaticRecordRealState, HistoryId>? = when (state) {
+        is StaticRecordRealState.Idle -> when {
+            event is StaticRecordRealEvent.Bump -> transitionIdleAt0
+            event is StaticRecordRealEvent.Reading.Taken -> transitionIdleAt1
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record.scxml:13 :: _machine
-    override fun onEntry(state: StaticRecordState, isDefaultEntry: Boolean) {
+    // SCE-MAP: static_record_real.scxml:15 :: _machine
+    override fun onEntry(state: StaticRecordRealState, isDefaultEntry: Boolean) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
+            is StaticRecordRealState.Idle -> {
+                // SCE-MAP: static_record_real.scxml:25 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record.scxml:13 :: _machine
-    override fun onExit(state: StaticRecordState) {
+    // SCE-MAP: static_record_real.scxml:15 :: _machine
+    override fun onExit(state: StaticRecordRealState) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
+            is StaticRecordRealState.Idle -> {
+                // SCE-MAP: static_record_real.scxml:25 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_record.scxml:13 :: _machine
-    override fun executeTransitionContent(source: StaticRecordState, transitionIndex: Int) {
+    // SCE-MAP: static_record_real.scxml:15 :: _machine
+    override fun executeTransitionContent(source: StaticRecordRealState, transitionIndex: Int) {
         when (source) {
-        is StaticRecordState.Showing -> when (transitionIndex) {
+        is StaticRecordRealState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
+                // SCE-MAP: static_record_real.scxml:26 :: idle :: _transition_0
 
-            if (try { shown = shown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(shown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            last = last.copy(value = last.value * 2.0 + 1.5)
+
+            sum = sum + last.value
             }
             1 -> {
-                // SCE-MAP: static_record.scxml:29 :: showing :: _transition_1
-                if (pendingDayPickedPayload == null) {
+                // SCE-MAP: static_record_real.scxml:30 :: idle :: _transition_1
+                if (pendingReadingTakenPayload == null) {
                     return
                 }
 
-            shown = shown.copy(year = pendingDayPickedPayload!!.year)
+            last = last.copy(sensor = pendingReadingTakenPayload!!.sensor)
 
-            shown = shown.copy(month = pendingDayPickedPayload!!.month)
-
-            shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
-            }
-            2 -> {
-                // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
-
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            last = last.copy(value = pendingReadingTakenPayload!!.value)
             }
             else -> {}
         }

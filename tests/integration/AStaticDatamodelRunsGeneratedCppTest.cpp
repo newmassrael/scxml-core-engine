@@ -44,6 +44,7 @@
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
+#include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -173,6 +174,11 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
 /// A `record:Day` value as a scenario states it: its fields by the schema's ids.
 template <typename Day> json dayJson(const Day &day) {
     return json{{"year", day.year}, {"month", day.month}, {"dayOfMonth", day.dayOfMonth}};
+}
+
+/// A `record:Reading` value as a scenario states it: its fields by the schema's ids.
+template <typename Reading> json readingJson(const Reading &reading) {
+    return json{{"sensor", reading.sensor}, {"value", reading.value}};
 }
 
 /// A list of such values, in order.
@@ -341,6 +347,17 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordIsBuiltWholeAndUpdatedAFieldAt
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_record_fields", driver);
+}
+
+// A record with a 64-bit real field is built whole, written a field at a time,
+// and replaced from a typed payload without losing a bit of the real it carried.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsARealFieldToTheBit) {
+    using Machine = G::static_record_real::static_record_real;
+    Driver<Machine> driver({
+        {"last", [](const Machine &m) { return readingJson(m.last()); }},
+        {"sum", [](const Machine &m) { return json(m.sum()); }},
+    });
+    replay("static_record_real", driver);
 }
 
 // A top-level final's `<donedata>` params are computed from the machine's own

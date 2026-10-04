@@ -3274,7 +3274,7 @@ is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
 `static_block_ends`, `static_payload`, `static_enum`, `static_list`, `static_foreach`,
-`static_real` and `static_block_ends_list` against the generated machines (an
+`static_real`, `static_record_real` and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
@@ -3342,7 +3342,7 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record`, `sync_client`, `static_donedata` (the done event's pairs are
+`static_record_real`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
 read back from `DonedataAtFinal`) and `static_send_params` against them (an event's `data` goes in as the
 JSON text every other producer fills; a
 variable the machine keeps to itself is read by reflection, which only reads),
@@ -3416,7 +3416,7 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record`, `sync_client`, `static_send_params` and `static_donedata` (the
+`static_record_real`, `static_record`, `sync_client`, `static_send_params` and `static_donedata` (the
 done event's pairs are read back from the engine's `done_data`) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
@@ -3431,7 +3431,7 @@ variables of the integer types, `bool`, an enum, a string and a 64-bit real, a t
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools and strings, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
-record whose fields are numbers, bools and enums, a list of integers, bools, 64-bit
+record whose fields are numbers, bools, 64-bit reals and enums, a list of integers, bools, 64-bit
 reals or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor or to one the host serves (`--host-processor`) with its `<param>`s or its
@@ -3440,7 +3440,7 @@ event's data, as on every other backend), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
 the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real and a list of
-them, bytes and a record with a string field, a record's real field, a `<send>` to
+them, bytes and a record with a string field or a 32-bit real field, a `<send>` to
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>`, a final's
@@ -3558,6 +3558,8 @@ from the call, as it does for a guard that is only `In()`.
 `double` field, compared as the 64 bits it is), `static_block_ends_list`,
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
+`static_record_real` (a record's real field is read by a reader of its own and
+compared as the 64 bits it is, after a payload carried it),
 `static_string_capacity`, `static_donedata` (the done data read through
 `_done_data` and held to the pairs it states and no others), `static_send_params`
 (a string carried by a `<send>` and read back through a typed payload),

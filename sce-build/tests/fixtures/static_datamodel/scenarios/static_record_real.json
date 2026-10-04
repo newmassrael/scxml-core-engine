@@ -1,0 +1,20 @@
+{
+  "machine": "static_record_real",
+  "about": "A record with a 64-bit real field: built whole from its <sce:set>s, doubled and added to a running sum a field at a time, and replaced from a typed event payload without losing a bit of the real the payload carried. Whole-valued reals are written with a fraction (9.0) so that a reader which tells an integer from a real reads the expectation as the real it is. Expected values are derived from the document with an IEEE 754 reference (0.1 * 2 + 1.5 is 1.7, 9.0 + 1.7 is 10.7), not observed from a backend.",
+  "steps": [
+    { "note": "built whole from its <sce:set>s",
+      "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "value": 0.5 }, "sum": 0.0 } } },
+
+    { "note": "0.5 * 2 + 1.5, added to the sum",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 1, "value": 2.5 }, "sum": 2.5 } } },
+    { "note": "2.5 * 2 + 1.5",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 1, "value": 6.5 }, "sum": 9.0 } } },
+
+    { "note": "the payload replaces the record field by field: 0.1 is held as the double 0.1 is",
+      "event": "reading.taken", "data": { "sensor": 7, "value": 0.1 },
+      "expect": { "variables": { "last": { "sensor": 7, "value": 0.1 }, "sum": 9.0 } } },
+
+    { "note": "0.1 * 2 + 1.5 is 1.7, and 9.0 + 1.7 is 10.7",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 7, "value": 1.7 }, "sum": 10.7 } } }
+  ]
+}

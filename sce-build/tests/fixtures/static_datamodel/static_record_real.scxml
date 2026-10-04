@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a record with a
+  64-bit real field, built whole from its <sce:set>s, read and written a field at
+  a time, and replaced field by field from a typed event payload.
+
+  `bump` doubles the shown value and adds 1.5, and adds the result to `sum`.
+  `reading.taken` takes the value from the event's payload: the real a peer sent
+  is the real the record holds, to the bit — 0.1 stays 0.1, not a neighbour of it
+  that a reader which rounded on the way in would hold.
+
+  Replayed by every backend that lowers the model
+  (sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real.json).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_record_real">
+  <sce:import kind="event-schema" src="schema_reading.scxml" as="Reading"/>
+  <datamodel>
+    <data id="last" sce:type="record:Reading" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="value" expr="0.5"/>
+    </data>
+    <data id="sum" sce:type="float64" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="bump" type="internal">
+      <assign location="last.value" expr="last.value * 2 + 1.5"/>
+      <assign location="sum" expr="sum + last.value"/>
+    </transition>
+    <transition event="reading.taken" type="internal">
+      <assign location="last.sensor" expr="_event.data.sensor"/>
+      <assign location="last.value" expr="_event.data.value"/>
+    </transition>
+  </state>
+</scxml>

@@ -90,6 +90,7 @@
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
+#include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -237,7 +238,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // variable by its, the lists and records by theirs, and the replay of its
 // scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
 // that has one.
-#define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST)                        \
+#define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -325,7 +326,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               M##_read_record_count,                                                   \
                                               DONE,                                                                    \
                                               REAL,                                                                    \
-                                              REAL_LIST};                                                              \
+                                              REAL_LIST,                                                               \
+                                              RECORD_REAL};                                                            \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -339,10 +341,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return bad;                                                                                                    \
     }
 
-// A machine that publishes no real: DONE as above, and REAL and REAL_LIST — the
-// readers of a real variable and of a list of reals — left unset.
+// A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
+// RECORD_REAL — the readers of a real variable, of a list of reals and of a real
+// field of a record — left unset.
 #define STATIC_SCENARIO_DONE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE)                                         \
-    STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, NULL, NULL)
+    STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, NULL, NULL, NULL)
 
 // A machine with no `<donedata>`.
 #define STATIC_SCENARIO(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                                    \
@@ -671,7 +674,7 @@ static const variable_t real_variables[] = {
     {"errors", static_real_read_errors},
 };
 STATIC_SCENARIO_FULL(static_real, real_states, real_variables, NULL, no_lists, no_records, NULL, static_real_read_real,
-                     static_real_read_real_list)
+                     static_real_read_real_list, NULL)
 
 // static_block_ends_list: a full list ends the block it is appended to.
 VARIABLE_READER(static_block_ends_list, afterAppend)
@@ -706,6 +709,40 @@ static const record_variable_t record_fields_records[] = {RECORD_ROW(static_reco
                                                           {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_fields, record_fields_states, record_fields_variables, NULL, no_lists,
                 record_fields_records)
+
+// static_record_real: a record with a 64-bit real field. Its integer field is read
+// as every record's is, and its real through `record_real`, which answers the
+// double itself for the scenario to compare as the 64 bits it is; `sum` is the
+// real variable the record's value is added to.
+#define READING_FIELDS(N, E) N(sensor)
+RECORD_READER(static_record_real, last, static_record_real_record_reading_t, READING_FIELDS)
+
+static bool static_record_real_read_real(void *sm, const char *name, double *out) {
+    if (strcmp(name, "sum") != 0) {
+        return false;
+    }
+    *out = static_record_real_get_sum((const static_record_real_t *)sm);
+    return true;
+}
+
+static bool static_record_real_read_record_real(void *sm, const char *name, size_t index, const char *field,
+                                                double *out) {
+    if (index != SCE_SCENARIO_WHOLE || strcmp(name, "last") != 0 || strcmp(field, "value") != 0) {
+        return false;
+    }
+    *out = static_record_real_get_last((const static_record_real_t *)sm).value;
+    return true;
+}
+
+static const name_value_t record_real_states[] = {
+    {"idle", STATIC_RECORD_REAL_STATE_IDLE},
+};
+// The machine publishes no integer variable: the one row has a name no scenario
+// states, so a lookup finds nothing rather than dereferencing a null name.
+static const variable_t record_real_variables[] = {{"", NULL}};
+static const record_variable_t record_real_records[] = {RECORD_ROW(static_record_real, last), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_FULL(static_record_real, record_real_states, record_real_variables, NULL, no_lists, record_real_records,
+                     NULL, static_record_real_read_real, NULL, static_record_real_read_record_real)
 
 // static_record: the same record, with a guard that calls an imported algorithm
 // over two of its fields.
@@ -832,6 +869,7 @@ int main(void) {
     bad |= static_list_scenario("static_list", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_real_scenario("static_real", 13);
+    bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);

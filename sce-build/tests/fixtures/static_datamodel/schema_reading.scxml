@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The payload and the record of `static_record_real.scxml`: a small integer and
+  a 64-bit real. The event it names is the one a reading arrives as; the record
+  a machine holds under this schema has the same two fields.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_reading"
+       sce:event-name="reading.taken">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="value" sce:type="float64" sce:direction="in"/>
+  </datamodel>
+</scxml>

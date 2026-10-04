@@ -198,6 +198,12 @@ def test_a_record_is_built_whole_and_updated_a_field_at_a_time() -> None:
     replay("static_record_fields")
 
 
+# A record with a 64-bit real field is built whole, written a field at a time,
+# and replaced from a typed payload without losing a bit of the real it carried.
+def test_a_record_holds_a_real_field_to_the_bit() -> None:
+    replay("static_record_real")
+
+
 # A list of records is filled by name from a record variable or a loop's item,
 # walked by a `<foreach>`, and a record is taken whole.
 def test_a_list_holds_records_and_a_foreach_walks_them() -> None:

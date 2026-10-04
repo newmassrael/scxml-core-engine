@@ -2408,6 +2408,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             STAGE_ALSO schema_day.scxml
         )
     endforeach()
+    # A record with a 64-bit real field, replaced field by field from a typed
+    # payload that carries the real.
+    sce_generate_static_integration_c_test(static_record_real
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_real.scxml"
+        STAGE_ALSO schema_reading.scxml
+    )
     # A guard over two fields of the record calls an algorithm of the fixtures'
     # own, whose header is generated once beside the machines that include it.
     set(_DAYS_IN_MONTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/days_in_month.h")
@@ -2481,6 +2488,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_params_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}

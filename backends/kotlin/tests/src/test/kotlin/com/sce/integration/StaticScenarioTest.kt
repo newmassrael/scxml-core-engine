@@ -36,6 +36,7 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
+import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
@@ -352,6 +353,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRecordRealHoldsARealFieldToTheBit() {
+        val sm = StaticRecordRealStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_real"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

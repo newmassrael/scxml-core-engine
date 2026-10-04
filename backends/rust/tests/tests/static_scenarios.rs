@@ -62,6 +62,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_list_sm::{
     StaticRecordListPersist, StaticRecordListPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_real_sm::{
+    StaticRecordRealPersist, StaticRecordRealPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
@@ -312,6 +315,17 @@ fn static_record_enum_holds_an_enum_in_a_field_of_a_record() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_enum.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_real_holds_a_real_field_to_the_bit() {
+    replay(
+        Engine::new(StaticRecordRealPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real.json"
         ),
     );
 }
