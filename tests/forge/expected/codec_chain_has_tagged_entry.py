@@ -29,13 +29,13 @@ class CodecChainHasTaggedEntry:
             raw = cursor.peek_slice(3)
         except NeedMoreBytes:
             return None
-        entry_type = raw[0]
-        ctl = raw[1]
-        body = raw[2]
+        f_entry_type = raw[0]
+        f_ctl = raw[1]
+        f_body = raw[2]
         value = cls(
-            entry_type=entry_type,
-            ctl=ctl,
-            body=body,
+            entry_type=f_entry_type,
+            ctl=f_ctl,
+            body=f_body,
         )
         try:
             cursor.advance(3)

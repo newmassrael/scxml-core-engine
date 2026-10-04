@@ -31,11 +31,11 @@ class CodecExtAttachment:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
-        length = raw[0]
-        body = raw[1:1 + length]
+        f_length = raw[0]
+        f_body = raw[1:1 + f_length]
         value = cls(
-            length=length,
-            body=body,
+            length=f_length,
+            body=f_body,
         )
         try:
             cursor.advance(_frame_len)

@@ -16314,8 +16314,11 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
             lang: sce_build::generator::Language::Python,
             parent_stem: "codec_axis1_embed_disp_parent",
             dispatcher_stem: "codec_axis1_embed_disp.py",
-            caller_positive: "((header >> 5) & 0x1), ((header >> 6) & 0x1)",
-            caller_negative: "((header >> 6) & 0x1), ((header >> 5) & 0x1)",
+            // The carrier is read as the decoder bound it: a Python decode's
+            // local for a field is `f_<field>`. Both orders are spelled so, or
+            // the negative would stay absent for the wrong reason.
+            caller_positive: "((f_header >> 5) & 0x1), ((f_header >> 6) & 0x1)",
+            caller_negative: "((f_header >> 6) & 0x1), ((f_header >> 5) & 0x1)",
             callee_positive: "def decode(cls, cursor: SceCursor, n: int, tag: int)",
             callee_negative: "def decode(cls, cursor: SceCursor, tag: int, n: int)",
         },

@@ -40,32 +40,32 @@ class CodecPresentIfString:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            carrier = raw[0]
+            f_carrier = raw[0]
             cursor.advance(1)
-            if (carrier & 0x01) != 0:
+            if (f_carrier & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                text_len = _v
+                f_text_len = _v
             else:
-                text_len = None
-            if (carrier & 0x01) != 0:
-                _n = text_len
+                f_text_len = None
+            if (f_carrier & 0x01) != 0:
+                _n = f_text_len
                 raw = cursor.peek_slice(_n)
                 try:
                     _v = bytes(raw).decode('utf-8')
                 except UnicodeDecodeError as exc:
                     raise InvalidUtf8() from exc
                 cursor.advance(_n)
-                text = _v
+                f_text = _v
             else:
-                text = None
+                f_text = None
         except CodecError:
             return None
         return cls(
-            carrier=carrier,
-            text_len=text_len,
-            text=text,
+            carrier=f_carrier,
+            text_len=f_text_len,
+            text=f_text,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

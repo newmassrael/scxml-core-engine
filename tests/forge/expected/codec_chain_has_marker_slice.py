@@ -39,18 +39,18 @@ class CodecChainHasMarkerSlice:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            kind = cursor.read_vle_u16()
-            size = cursor.read_vle_u64()
-            _n = size
+            f_kind = cursor.read_vle_u16()
+            f_size = cursor.read_vle_u64()
+            _n = f_size
             raw = cursor.peek_slice(_n)
-            data = bytes(raw)
+            f_data = bytes(raw)
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            kind=kind,
-            size=size,
-            data=data,
+            kind=f_kind,
+            size=f_size,
+            data=f_data,
         )
 
     def encode(self, w: SceSink) -> None:

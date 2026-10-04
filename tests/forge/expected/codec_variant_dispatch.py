@@ -52,7 +52,7 @@ class CodecVariantDispatch:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        msg_id = raw[0]
+        f_msg_id = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -62,13 +62,13 @@ class CodecVariantDispatch:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecVariantDispatchVariant()
-        if msg_id == 1:
+        if f_msg_id == 1:
             body.kind = "CodecVariantSessionOpen"
             _arm = CodecVariantSessionOpen.decode(cursor)
             if _arm is None:
                 return None
             body.codec_variant_session_open = _arm
-        elif msg_id == 2:
+        elif f_msg_id == 2:
             body.kind = "CodecVariantSessionClose"
             _arm = CodecVariantSessionClose.decode(cursor)
             if _arm is None:
@@ -76,13 +76,13 @@ class CodecVariantDispatch:
             body.codec_variant_session_close = _arm
         else:
             body.kind = "Default"
-            body.default_tag = msg_id
+            body.default_tag = f_msg_id
             _arm = CodecVariantSessionClose.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            msg_id=msg_id,
+            msg_id=f_msg_id,
             body=body,
         )
 

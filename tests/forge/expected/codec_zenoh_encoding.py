@@ -39,29 +39,29 @@ class CodecZenohEncoding:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            packed_id = cursor.read_vle_u32()
-            if (packed_id & 0x00000001) != 0:
+            f_packed_id = cursor.read_vle_u32()
+            if (f_packed_id & 0x00000001) != 0:
                 _v = cursor.read_vle_u64()
-                schema_len = _v
+                f_schema_len = _v
             else:
-                schema_len = None
-            if (packed_id & 0x00000001) != 0:
-                _n = schema_len
+                f_schema_len = None
+            if (f_packed_id & 0x00000001) != 0:
+                _n = f_schema_len
                 raw = cursor.peek_slice(_n)
                 try:
                     _v = bytes(raw).decode('utf-8')
                 except UnicodeDecodeError as exc:
                     raise InvalidUtf8() from exc
                 cursor.advance(_n)
-                schema = _v
+                f_schema = _v
             else:
-                schema = None
+                f_schema = None
         except CodecError:
             return None
         return cls(
-            packed_id=packed_id,
-            schema_len=schema_len,
-            schema=schema,
+            packed_id=f_packed_id,
+            schema_len=f_schema_len,
+            schema=f_schema,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

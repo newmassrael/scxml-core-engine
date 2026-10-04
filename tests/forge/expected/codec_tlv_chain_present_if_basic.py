@@ -40,26 +40,26 @@ class CodecTlvChainPresentIfBasic:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            carrier = raw[0]
+            f_carrier = raw[0]
             cursor.advance(1)
-            if (carrier & 0x01) != 0:
-                entries = []
+            if (f_carrier & 0x01) != 0:
+                f_entries = []
                 for _ in range(4):
                     if cursor.remaining() == 0:
                         break
                     _elem = CodecTlvEntry.decode(cursor)
                     if _elem is None:
                         return None
-                    entries.append(_elem)
+                    f_entries.append(_elem)
                 if cursor.remaining() > 0:
                     raise TlvChainOverflow()
             else:
-                entries = None
+                f_entries = None
         except CodecError:
             return None
         return cls(
-            carrier=carrier,
-            entries=entries,
+            carrier=f_carrier,
+            entries=f_entries,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

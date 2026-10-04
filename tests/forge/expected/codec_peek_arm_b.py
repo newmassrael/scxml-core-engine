@@ -28,11 +28,11 @@ class CodecPeekArmB:
             raw = cursor.peek_slice(3)
         except NeedMoreBytes:
             return None
-        header = raw[0]
-        payload = (raw[1] << 8) | raw[2]
+        f_header = raw[0]
+        f_payload = (raw[1] << 8) | raw[2]
         value = cls(
-            header=header,
-            payload=payload,
+            header=f_header,
+            payload=f_payload,
         )
         try:
             cursor.advance(3)

@@ -27,9 +27,9 @@ class CodecOriginScalar:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        value = raw[0]
+        f_value = raw[0]
         value = cls(
-            value=value,
+            value=f_value,
         )
         try:
             cursor.advance(1)

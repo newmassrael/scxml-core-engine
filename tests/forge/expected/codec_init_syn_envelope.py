@@ -50,7 +50,7 @@ class CodecInitSynEnvelope:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        header = raw[0]
+        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -60,21 +60,21 @@ class CodecInitSynEnvelope:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecInitSynEnvelopeVariant()
-        if ((header >> 0) & 0x1F) == 1:
+        if ((f_header >> 0) & 0x1F) == 1:
             body.kind = "CodecInitSynBody"
-            _arm = CodecInitSynBody.decode(cursor, ((header >> 6) & 0x1))
+            _arm = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
             if _arm is None:
                 return None
             body.codec_init_syn_body = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 0) & 0x1F)
-            _arm = CodecInitSynBody.decode(cursor, ((header >> 6) & 0x1))
+            body.default_tag = ((f_header >> 0) & 0x1F)
+            _arm = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
+            header=f_header,
             body=body,
         )
 

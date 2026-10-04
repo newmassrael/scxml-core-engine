@@ -52,7 +52,7 @@ class CodecOriginChoice:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        tag = raw[0]
+        f_tag = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -62,13 +62,13 @@ class CodecOriginChoice:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecOriginChoiceVariant()
-        if tag == 1:
+        if f_tag == 1:
             body.kind = "CodecOriginLeaf"
             _arm = CodecOriginLeaf.decode(cursor)
             if _arm is None:
                 return None
             body.codec_origin_leaf = _arm
-        elif tag == 2:
+        elif f_tag == 2:
             body.kind = "CodecOriginScalar"
             _arm = CodecOriginScalar.decode(cursor)
             if _arm is None:
@@ -76,13 +76,13 @@ class CodecOriginChoice:
             body.codec_origin_scalar = _arm
         else:
             body.kind = "Default"
-            body.default_tag = tag
+            body.default_tag = f_tag
             _arm = CodecOriginScalar.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            tag=tag,
+            tag=f_tag,
             body=body,
         )
 

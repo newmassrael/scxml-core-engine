@@ -2587,6 +2587,31 @@ mismatch at the rest. A statechart's
 reader is escaped or withheld instead (`unreadable_variables`,
 `SCE_ERROR_CONTRACT.md` §10.1).
 
+Python has a second kind of refusal, for a name that is no keyword and
+still cannot be the author's. A generated Python decoder is one function
+that reads from `cursor`, calls `bytes(…)` and `range(…)`, builds its
+result with `cls(…)` and binds a local per field in that scope, so an
+author's names and the generator's own met there: a field called `bytes`
+made `bytes = bytes(raw)` an `UnboundLocalError`, one called `cursor`
+replaced the cursor, one called `cls` made `cls(…)` a call on an integer —
+accepted, generated, and wrong. The decoder now binds a field's value under
+`f_<field>`, a prefix nothing the generator writes begins with, so a field
+called `len`, `bytes`, `list`, `body`, `value` or `raw` works and nothing
+about it is refused. What cannot be kept apart that way is a name that is
+itself the public name: a codec field is the dataclass attribute, a flag
+its accessor, a flag-input a parameter of `decode` and `encode`. Those are
+refused, as `validation/reserved-code-identifier` with the reason in the
+message, when the generated class or call already uses the name for
+something else: `decode`, `encode` and `encode_to_bytes` (methods every
+generated codec class defines), `classmethod`, `field` and `list` (what the
+class body evaluates while it is built), any `__x__` name, and for a
+flag-input `cls`, `cursor`, `self`, `w`, `tag`, `parent_flags` or a name
+beginning `f_`. The lists are not written by hand:
+`a_python_codec_keeps_an_authors_names_apart_from_its_own` derives each
+from the committed Python output and fails when a template change makes one
+stale, and runs every Python builtin and every name that output uses as a
+field of each shape that binds a local.
+
 This is the narrowing §1 draws for W3C's identifiers, drawn for the
 names SCE owns, and it is narrower than an XML Name in the same
 direction for the same reason: `-` and `.` are operators in every target

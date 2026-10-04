@@ -4941,6 +4941,10 @@ fn render_codec(
         .map(|f| -> Result<serde_json::Value, ForgeError> {
             let mut obj = serde_json::Map::new();
             obj.insert("id".into(), l.codec_field_id(&f.id).into());
+            // What a decode binds the value read to. The field's own name in
+            // every language but Python, whose decoder shares one scope with
+            // the builtins it calls (`python_field_local`).
+            obj.insert("local".into(), l.codec_field_decode_local(&f.id).into());
             // Borrowed zero-copy codec round (Rust only): a scalar
             // `Bytes` / `String` codec field decodes as a zero-copy view
             // over the cursor buffer (`&'a [u8]` / `&'a str`) per the
@@ -5051,7 +5055,8 @@ fn render_codec(
                     obj.insert("bit_size_kind".into(), "vle".into());
                     obj.insert(
                         "vle_decode_stmt".into(),
-                        vle_decode_stmt(&l.codec_field_id(&f.id), *width_bits, lang).into(),
+                        vle_decode_stmt(&l.codec_field_decode_local(&f.id), *width_bits, lang)
+                            .into(),
                     );
                     // VLE encode reads from the self-prefixed struct
                     // member at the non-gated callsite; per-language
@@ -6679,7 +6684,9 @@ fn render_codec(
                 .tag_field
                 .as_ref()
                 .expect("non-β + non-peek implies tag_field is Some");
-            l.codec_field_id(tag_field_name)
+            // The tag is read as the decoder holds it: the local its field was
+            // bound to, which is not the field's own name in Python.
+            l.codec_field_decode_local(tag_field_name)
         };
         // C11 own-field mode reads from `out->{field}` (the codec's
         // output struct member); peek mode and caller-tag mode read
@@ -8575,7 +8582,10 @@ fn repeat_streaming_decode_stmt(
     // resolve to the same identifier the template emits at struct
     // declaration. See `present_if_decode_fixed` for the parent
     // rationale.
-    let id_owned = codec_field_local_name(&field.id, lang);
+    //
+    // A decode binds the value to the decode local, which is the field's own
+    // name in every language but Python (`python_field_local`).
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let count_ref = match &field.bit_size {
         BitSize::Repeat { count_ref } => count_ref,
@@ -8768,8 +8778,9 @@ fn repeat_streaming_decode_stmt(
         // 12-space indent context (class + method + try); inner
         // statements at 12 + 4 = 16 spaces.
         (Language::Python, CountRef::LengthField(len_field)) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            let py_len = filters::to_snake_case(len_field.clone());
+            // `id` is already the decode local; the count is a sibling's.
+            let py_id = id;
+            let py_len = python_field_local(len_field);
             format!(
                 "{py_id} = []\n            \
                  for _ in range({py_len}):\n                \
@@ -8780,7 +8791,7 @@ fn repeat_streaming_decode_stmt(
             )
         }
         (Language::Python, CountRef::UntilEof) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             format!(
                 "{py_id} = []\n            \
                  while cursor.remaining() > 0:\n                \
@@ -8907,7 +8918,7 @@ fn embed_streaming_decode_stmt(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let len_from = field.embed_length_from.as_deref();
     let test_lit = field
@@ -8934,7 +8945,7 @@ fn embed_streaming_decode_stmt(
             Language::Cpp | Language::Kotlin => sibling.to_string(),
             Language::Go => filters::to_pascal_case(sibling.to_string()),
             Language::C11 => format!("out->{}", filters::to_snake_case(sibling.to_string())),
-            Language::Python => filters::to_snake_case(sibling.to_string()),
+            Language::Python => python_field_local(sibling),
         })
     };
 
@@ -9172,7 +9183,7 @@ fn embed_streaming_decode_stmt(
             }
         }
         Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             match (&test_lit, len_expr(Language::Python)) {
                 (None, None) => format!(
                     "{py_id} = {body_type}.decode(cursor{thread_arg})\n            \
@@ -9551,10 +9562,13 @@ fn embed_flag_bind_thread_args(
                         )
                     }
                     Language::Python => {
-                        let snake = filters::to_snake_case(carrier.clone());
+                        // Decode reads the carrier as the decoder bound it;
+                        // encode reads the attribute the type carries.
+                        let local = python_field_local(carrier);
+                        let attribute = filters::to_snake_case(carrier.clone());
                         (
-                            format!(", (({snake} >> {bit}) & 0x{mask:X})"),
-                            format!(", ((self.{snake} >> {bit}) & 0x{mask:X})"),
+                            format!(", (({local} >> {bit}) & 0x{mask:X})"),
+                            format!(", ((self.{attribute} >> {bit}) & 0x{mask:X})"),
                         )
                     }
                 };
@@ -9787,8 +9801,9 @@ fn caller_tag_arg_decode(
                             snake = filters::to_snake_case(carrier_name.to_string())
                         ),
                         Language::Python => {
-                            let snake = filters::to_snake_case(carrier_name.to_string());
-                            format!(", (({snake} >> {bit}) & 0x{mask:X})")
+                            // The just-decoded carrier, as the decoder bound it.
+                            let local = python_field_local(carrier_name);
+                            format!(", (({local} >> {bit}) & 0x{mask:X})")
                         }
                     };
                 }
@@ -9864,7 +9879,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         max_count,
         lang,
     } = ctx;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let test = present_if_test_literal(fields, pred, lang);
 
@@ -10079,8 +10094,8 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         // local is the just-decoded `Optional[T]`, sound to read
         // unwrapped inside the True arm by validator.
         (Language::Python, CountRef::LengthField(len_field)) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            let py_len = filters::to_snake_case(len_field.clone());
+            let py_id = id;
+            let py_len = python_field_local(len_field);
             format!(
                 "if {test}:\n                \
                      {py_id} = []\n                \
@@ -10094,7 +10109,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             )
         }
         (Language::Python, CountRef::UntilEof) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             format!(
                 "if {test}:\n                \
                      {py_id} = []\n                \
@@ -10409,7 +10424,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         terminate_on,
         lang,
     } = ctx;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     // RFC §synth-5-B — entry-flag termination accessor, per-language. The
     // body codec's flags-bearing carrier (typically the entry's outer
@@ -10627,7 +10642,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // accessor as a method (the codec_zenoh_ext_entry codec's
         // flag accessor pattern in py_codec template).
         Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
             let body = match &entry_flag_acc {
@@ -10776,7 +10791,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         terminate_on,
         lang,
     } = ctx;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let pred = field
         .present_if
@@ -10959,7 +10974,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             )
         }
         Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let overflow_check = tlv_chain_guard(
                 lang,
                 on_overflow,
@@ -11302,12 +11317,58 @@ fn build_flag_ctx(
 /// `LangCtx::codec_field_id` so callers outside `LangCtx` (e.g. the
 /// free-standing `generate_decode_expr`) resolve identifiers the same
 /// way: Go PascalCase, Rust/Python/C11 snake_case, Cpp/Kotlin as-is.
+///
+/// ⚠ This is the name of the field as the GENERATED TYPE carries it — what a
+/// caller writes (`value.len`, `cls(len=…)`) and what `self.<name>` reads on
+/// an encode. It is not, for Python, the name a decode binds the value read to:
+/// that is [`python_field_local`], which keeps an author's names from meeting
+/// the builtins and the names the generated function itself uses.
 fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     match lang {
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
         _ => id.to_string(),
+    }
+}
+
+/// The local a generated Python function binds a codec field's decoded value
+/// to, and reads it back from.
+///
+/// The decoder is one function: it reads from `cursor`, calls `bytes(raw)` and
+/// `range(…)`, builds the result with `cls(…)`, and binds a local per field in
+/// that same scope. With the local named as the field is, an author's field
+/// called `bytes` made `bytes = bytes(raw)` an `UnboundLocalError`, one called
+/// `cursor` replaced the cursor the next field is read from, and one called
+/// `cls` made `cls(…)` a call on an integer — each accepted by the parser and
+/// generated without a word.
+///
+/// Refusing the names is not the answer: a wire specification calls its
+/// fields `len`, `bytes`, `list`, `data`, and a generator whose output works
+/// only while the author's names keep clear of its own has restricted the
+/// author for its own convenience. So the two kinds of name are kept in
+/// different places. Whatever the generator itself writes into a function — a
+/// builtin, a parameter, a temporary such as `raw`, `value` or `_n` — has a
+/// name that does not begin `f_`; the local an author's field becomes always
+/// does. There is nothing to list and nothing to keep up to date, and
+/// `a_python_codec_keeps_an_authors_names_apart_from_its_own` runs every name
+/// that could be in the way, and checks that no name of the generator's own
+/// begins `f_`, to hold it so.
+///
+/// The prefix is private to the function body. The dataclass attribute, the
+/// keyword in `cls(len=f_len)`, the accessor and the encode's `self.len` are
+/// the field's own name, unchanged.
+pub(crate) fn python_field_local(id: &str) -> String {
+    format!("f_{}", filters::to_snake_case(id.to_string()))
+}
+
+/// [`codec_field_local_name`] for a function that DECODES: the name a value
+/// read off the wire is bound to and read back by a later field. Every
+/// language but Python binds it under the field's own name.
+fn codec_field_decode_local(id: &str, lang: crate::generator::Language) -> String {
+    match lang {
+        crate::generator::Language::Python => python_field_local(id),
+        _ => codec_field_local_name(id, lang),
     }
 }
 
@@ -11457,9 +11518,11 @@ fn present_if_decode_fixed(
     // compilable Rust (E0425 on the decoder local, E0609 on the encoder
     // `self.` access). Idempotent for Cpp/Kotlin (identity), Go
     // (pascal-case re-derived inside the per-language arm — same
-    // pascal-case input passes through unchanged), C11/Python (re-
-    // snake_case'd inside their arms — same input passes through).
-    let id_owned = codec_field_local_name(&field.id, lang);
+    // pascal-case input passes through unchanged), C11 (re-snake_case'd
+    // inside its arm — same input passes through). A decode binds the
+    // decode local, which only Python spells differently
+    // (`python_field_local`).
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
@@ -11635,7 +11698,7 @@ fn present_if_decode_fixed(
         // method + try); continuation lines render at 12 spaces and
         // gated inner blocks at 16.
         (Language::Python, None) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             format!(
                 "raw = cursor.peek_slice({n})\n            \
                  {conv12}{py_id} = {body12}\n            \
@@ -11643,7 +11706,7 @@ fn present_if_decode_fixed(
             )
         }
         (Language::Python, Some(p)) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
@@ -11671,7 +11734,7 @@ fn present_if_decode_tail(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
@@ -11829,7 +11892,7 @@ fn present_if_decode_tail(
         // the cursor's view (which is a memoryview); the codec
         // instance can hold it without aliasing the cursor.
         (Language::Python, None) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             format!(
                 "_n = cursor.remaining()\n            \
                  raw = cursor.peek_slice(_n)\n            \
@@ -11838,7 +11901,7 @@ fn present_if_decode_tail(
             )
         }
         (Language::Python, Some(p)) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
@@ -11882,7 +11945,7 @@ fn present_if_decode_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     let len_field = field
         .length_field
@@ -12059,7 +12122,7 @@ fn present_if_decode_length_ref(
             )
         }
         (Language::Python, None) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             format!(
                 "_n = {n_python}\n            \
                  raw = cursor.peek_slice(_n)\n            \
@@ -12068,7 +12131,7 @@ fn present_if_decode_length_ref(
             )
         }
         (Language::Python, Some(p)) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "if {test}:\n                \
@@ -12111,7 +12174,7 @@ fn present_if_decode_string_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => {
@@ -12256,7 +12319,7 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Python, None) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             format!(
                 "_n = {n_python}\n            \
@@ -12269,7 +12332,7 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::Python, Some(p)) => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
@@ -12488,15 +12551,17 @@ fn compute_n_python(
     arith: i32,
 ) -> String {
     let _ = sibling_gated;
+    // Every caller is a decode: the length is read from the local the sibling
+    // was bound to, not from an attribute.
     let base = if let Some((c, f)) = dotted_length_field(len_field) {
         let (shift, mask) = dotted_length_resolve(c, f, fields);
-        let py_c = filters::to_snake_case(c.to_string());
+        let py_c = python_field_local(c);
         format!("(({py_c} >> {shift}) & 0x{mask:X})")
     } else {
         // Python: gated sibling is Optional[int]; inside the if-branch
         // the local is guaranteed non-None by the same predicate. No
         // unwrap syntax needed (int operations work transparently).
-        filters::to_snake_case(len_field.to_string())
+        python_field_local(len_field)
     };
     apply_arith_signed(&base, arith)
 }
@@ -12598,7 +12663,7 @@ fn present_if_decode_vle(
     width_bits: u32,
 ) -> String {
     use crate::generator::Language;
-    let id_owned = codec_field_local_name(&field.id, lang);
+    let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     // Non-gated path: reuse the existing VLE decode helper that emits
     // the per-language streaming loop and binds the carrier-typed
@@ -12614,9 +12679,9 @@ fn present_if_decode_vle(
         // PascalCase, Rust/Python/C11 use snake_case, others as-is).
         let local_id = match lang {
             Language::Go => filters::to_pascal_case(id.to_string()),
-            Language::Rust | Language::Python | Language::C11 => {
-                filters::to_snake_case(id.to_string())
-            }
+            Language::Rust | Language::C11 => filters::to_snake_case(id.to_string()),
+            // `id` is already the decode local.
+            Language::Python => id.to_string(),
             _ => id.to_string(),
         };
         // C11: the present-if-style streaming branch writes results
@@ -12709,7 +12774,7 @@ fn present_if_decode_vle(
             )
         }
         Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
+            let py_id = id;
             // vle_decode_stmt for Python binds `_v` as an int local.
             format!(
                 "if {test}:\n                \
@@ -14018,13 +14083,16 @@ fn present_if_test_literal_clause(
         // require them and the operator precedence of `&` is tighter
         // than `!=` so disambiguation isn't necessary either.
         Language::Python => {
-            let snake = filters::to_snake_case(id.to_string());
-            let py_id =
-                if site == PresentIfSite::Encode && matches!(carrier, PresentIfCarrier::Local(_)) {
-                    format!("self.{snake}")
-                } else {
-                    snake
-                };
+            let py_id = match (&carrier, site) {
+                // The encode site reads the attribute the type carries; the
+                // decode site reads the local the carrier was bound to.
+                (PresentIfCarrier::Local(_), PresentIfSite::Encode) => {
+                    format!("self.{}", filters::to_snake_case(id.to_string()))
+                }
+                (PresentIfCarrier::Local(_), PresentIfSite::Decode) => python_field_local(id),
+                // A flag-input is a function parameter on both sites.
+                (PresentIfCarrier::Input, _) => filters::to_snake_case(id.to_string()),
+            };
             format!("({py_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
         Language::Kotlin => {
@@ -14302,7 +14370,13 @@ fn chain_has_decl_lines(
             ]
         }
         Language::Python => {
-            let list = if encode { format!("self.{id}") } else { id };
+            // The decode site reads the local the chain was bound to; the
+            // encode site, the attribute the type carries.
+            let list = if encode {
+                format!("self.{id}")
+            } else {
+                python_field_local(&chain.id)
+            };
             let found = test("_e");
             vec![if gated {
                 format!("{has} = {list} is not None and any({found} for _e in {list})")
@@ -14723,7 +14797,7 @@ fn generate_decode_expr(
                 },
                 None => unreachable!("LengthRef bit_size requires sce:length-field attribute"),
             };
-            let sibling_local = codec_field_local_name(sibling_id, lang);
+            let sibling_local = codec_field_decode_local(sibling_id, lang);
             let len_value_cpp = match (shift_opt, mask_opt) {
                 (Some(shift), Some(mask)) => {
                     format!("(({sibling_local} >> {shift}) & 0x{mask:X})")
@@ -21800,6 +21874,13 @@ impl LangCtx {
             | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
             _ => id.to_string(),
         }
+    }
+
+    /// [`Self::codec_field_id`] for the function that DECODES: the name the
+    /// value read off the wire is bound to, and read back by a later field.
+    /// See [`python_field_local`] for why Python's differs.
+    pub(crate) fn codec_field_decode_local(&self, id: &str) -> String {
+        codec_field_decode_local(id, self.lang)
     }
 
     /// Self/receiver prefix for codec encode field references.

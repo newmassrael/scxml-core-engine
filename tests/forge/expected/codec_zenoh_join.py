@@ -45,43 +45,43 @@ class CodecZenohJoin:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            cbyte = raw[0]
+            f_cbyte = raw[0]
             cursor.advance(1)
-            _n = (((cbyte >> 4) & 0xF) + 1)
+            _n = (((f_cbyte >> 4) & 0xF) + 1)
             raw = cursor.peek_slice(_n)
-            zid = bytes(raw)
+            f_zid = bytes(raw)
             cursor.advance(_n)
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                sn_res = _v
+                f_sn_res = _v
             else:
-                sn_res = None
+                f_sn_res = None
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(2)
                 _v = raw[0] | (raw[1] << 8)
                 cursor.advance(2)
-                batch_size = _v
+                f_batch_size = _v
             else:
-                batch_size = None
-            lease = cursor.read_vle_u64()
-            next_sn_reliable = cursor.read_vle_u64()
-            next_sn_best_effort = cursor.read_vle_u64()
+                f_batch_size = None
+            f_lease = cursor.read_vle_u64()
+            f_next_sn_reliable = cursor.read_vle_u64()
+            f_next_sn_best_effort = cursor.read_vle_u64()
         except CodecError:
             return None
         return cls(
-            version=version,
-            cbyte=cbyte,
-            zid=zid,
-            sn_res=sn_res,
-            batch_size=batch_size,
-            lease=lease,
-            next_sn_reliable=next_sn_reliable,
-            next_sn_best_effort=next_sn_best_effort,
+            version=f_version,
+            cbyte=f_cbyte,
+            zid=f_zid,
+            sn_res=f_sn_res,
+            batch_size=f_batch_size,
+            lease=f_lease,
+            next_sn_reliable=f_next_sn_reliable,
+            next_sn_best_effort=f_next_sn_best_effort,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

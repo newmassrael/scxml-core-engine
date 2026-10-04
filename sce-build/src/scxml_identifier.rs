@@ -395,6 +395,36 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
         .map(|&(_, _, grammar)| grammar)
 }
 
+/// What the generated Python makes of the name `node`'s attribute `attr`
+/// declares, when it is a name of the class or call the codec generates:
+/// a field, flag, chain, repeat or embed is the dataclass attribute or its
+/// accessor, a flag-input is a parameter of `decode` and `encode`. `None` for a
+/// name that is only ever a local of a function body, which the generator
+/// keeps apart from an author's names itself, and for one that is not
+/// declared in a codec.
+fn python_declaration(
+    node: &roxmltree::Node,
+    attr: &str,
+) -> Option<crate::reader_names::PythonDeclaration> {
+    use crate::reader_names::PythonDeclaration::{CallParameter, ClassAttribute};
+    if node.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
+        return None;
+    }
+    match (node.tag_name().name(), attr) {
+        ("field" | "flags" | "repeat" | "tlv-chain" | "embed", "id") => Some(ClassAttribute),
+        // Inside `<sce:peek-byte>` a flag is only a mask lookup.
+        ("flag", "name")
+            if !node
+                .parent_element()
+                .is_some_and(|p| p.tag_name().name() == "peek-byte") =>
+        {
+            Some(ClassAttribute)
+        }
+        ("flag-input", "name") => Some(CallParameter),
+        _ => None,
+    }
+}
+
 /// How each backend spells the name `node`'s attribute `attr` declares, for
 /// the reserved-word check — the folds a keyword could equal, in
 /// [`crate::generator::Language::ALL`] order (Rust, C++, Kotlin, Go,
@@ -572,10 +602,21 @@ pub fn reject_malformed(
                 // declare it. A path only references names declared
                 // elsewhere, and those are refused where they are declared.
                 if grammar == Grammar::CodeIdentifier {
-                    if let Some((language, spelled)) = crate::reader_names::reserved_in(
+                    // A keyword is not the only thing Python cannot take: a
+                    // field is the generated class's attribute, a flag its
+                    // accessor, a flag-input a parameter of its calls, and the
+                    // class already uses a few names for itself.
+                    let reserved = crate::reader_names::reserved_in(
                         attribute.value(),
                         spellings_of(dialect, &node, attribute.name()),
-                    ) {
+                    )
+                    .or_else(|| {
+                        let kind = python_declaration(&node, attribute.name())?;
+                        let spelled = crate::reader_names::Case::Snake.spell(attribute.value());
+                        crate::reader_names::python_name_clash(kind, &spelled)?;
+                        Some((crate::generator::Language::Python, spelled))
+                    });
+                    if let Some((language, spelled)) = reserved {
                         return Err(Located::new(
                             ValidationError::ReservedCodeIdentifier {
                                 element,

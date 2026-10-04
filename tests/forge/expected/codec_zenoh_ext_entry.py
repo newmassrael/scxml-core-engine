@@ -54,7 +54,7 @@ class CodecZenohExtEntry:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        header = raw[0]
+        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -64,19 +64,19 @@ class CodecZenohExtEntry:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecZenohExtEntryVariant()
-        if ((header >> 5) & 0x03) == 0:
+        if ((f_header >> 5) & 0x03) == 0:
             body.kind = "CodecZenohExtUnit"
             _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_ext_unit = _arm
-        elif ((header >> 5) & 0x03) == 1:
+        elif ((f_header >> 5) & 0x03) == 1:
             body.kind = "CodecZenohExtZint"
             _arm = CodecZenohExtZint.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_ext_zint = _arm
-        elif ((header >> 5) & 0x03) == 2:
+        elif ((f_header >> 5) & 0x03) == 2:
             body.kind = "CodecZenohExtZbuf"
             _arm = CodecZenohExtZbuf.decode(cursor)
             if _arm is None:
@@ -84,13 +84,13 @@ class CodecZenohExtEntry:
             body.codec_zenoh_ext_zbuf = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 5) & 0x03)
+            body.default_tag = ((f_header >> 5) & 0x03)
             _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
+            header=f_header,
             body=body,
         )
 

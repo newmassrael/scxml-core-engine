@@ -39,18 +39,18 @@ class CodecPresentIfVle:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            flags = raw[0]
+            f_flags = raw[0]
             cursor.advance(1)
-            if (flags & 0x01) != 0:
+            if (f_flags & 0x01) != 0:
                 _v = cursor.read_vle_u64()
-                optional_id = _v
+                f_optional_id = _v
             else:
-                optional_id = None
+                f_optional_id = None
         except CodecError:
             return None
         return cls(
-            flags=flags,
-            optional_id=optional_id,
+            flags=f_flags,
+            optional_id=f_optional_id,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

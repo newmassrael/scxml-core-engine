@@ -37,11 +37,11 @@ class CodecZenohExtZint:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            value = cursor.read_vle_u64()
+            f_value = cursor.read_vle_u64()
         except CodecError:
             return None
         return cls(
-            value=value,
+            value=f_value,
         )
 
     def encode(self, w: SceSink) -> None:

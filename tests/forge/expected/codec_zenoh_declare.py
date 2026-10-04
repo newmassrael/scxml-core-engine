@@ -43,15 +43,15 @@ class CodecZenohDeclare:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x20) != 0:
+            if (f_header & 0x20) != 0:
                 _v = cursor.read_vle_u32()
-                interest_id = _v
+                f_interest_id = _v
             else:
-                interest_id = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_interest_id = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -60,7 +60,7 @@ class CodecZenohDeclare:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -68,17 +68,17 @@ class CodecZenohDeclare:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
-            declaration = CodecZenohDeclaration.decode(cursor)
-            if declaration is None:
+                f_extensions = None
+            f_declaration = CodecZenohDeclaration.decode(cursor)
+            if f_declaration is None:
                 return None
         except CodecError:
             return None
         return cls(
-            header=header,
-            interest_id=interest_id,
-            extensions=extensions,
-            declaration=declaration,
+            header=f_header,
+            interest_id=f_interest_id,
+            extensions=f_extensions,
+            declaration=f_declaration,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

@@ -44,16 +44,16 @@ class CodecZenohErr:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x40) != 0:
-                encoding = CodecZenohEncoding.decode(cursor)
-                if encoding is None:
+            if (f_header & 0x40) != 0:
+                f_encoding = CodecZenohEncoding.decode(cursor)
+                if f_encoding is None:
                     return None
             else:
-                encoding = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_encoding = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -62,7 +62,7 @@ class CodecZenohErr:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -70,20 +70,20 @@ class CodecZenohErr:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
-            payload_len = cursor.read_vle_u64()
-            _n = payload_len
+                f_extensions = None
+            f_payload_len = cursor.read_vle_u64()
+            _n = f_payload_len
             raw = cursor.peek_slice(_n)
-            payload = bytes(raw)
+            f_payload = bytes(raw)
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            header=header,
-            encoding=encoding,
-            extensions=extensions,
-            payload_len=payload_len,
-            payload=payload,
+            header=f_header,
+            encoding=f_encoding,
+            extensions=f_extensions,
+            payload_len=f_payload_len,
+            payload=f_payload,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

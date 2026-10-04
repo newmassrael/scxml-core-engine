@@ -50,7 +50,7 @@ class CodecZenohPush:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        header = raw[0]
+        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -60,7 +60,7 @@ class CodecZenohPush:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecZenohPushVariant()
-        if ((header >> 0) & 0x1F) == 29:
+        if ((f_header >> 0) & 0x1F) == 29:
             body.kind = "CodecZenohPushBody"
             _arm = CodecZenohPushBody.decode(cursor)
             if _arm is None:
@@ -68,13 +68,13 @@ class CodecZenohPush:
             body.codec_zenoh_push_body = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 0) & 0x1F)
+            body.default_tag = ((f_header >> 0) & 0x1F)
             _arm = CodecZenohPushBody.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
+            header=f_header,
             body=body,
         )
 

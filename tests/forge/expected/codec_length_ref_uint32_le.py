@@ -31,11 +31,11 @@ class CodecLengthRefUint32Le:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
-        payload_len = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
-        payload = raw[4:4 + payload_len]
+        f_payload_len = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
+        f_payload = raw[4:4 + f_payload_len]
         value = cls(
-            payload_len=payload_len,
-            payload=payload,
+            payload_len=f_payload_len,
+            payload=f_payload,
         )
         try:
             cursor.advance(_frame_len)

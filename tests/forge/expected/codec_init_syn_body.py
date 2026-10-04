@@ -40,28 +40,28 @@ class CodecInitSynBody:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                sn_res = _v
+                f_sn_res = _v
             else:
-                sn_res = None
+                f_sn_res = None
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(2)
                 _v = (raw[0] << 8) | raw[1]
                 cursor.advance(2)
-                batch_size = _v
+                f_batch_size = _v
             else:
-                batch_size = None
+                f_batch_size = None
         except CodecError:
             return None
         return cls(
-            version=version,
-            sn_res=sn_res,
-            batch_size=batch_size,
+            version=f_version,
+            sn_res=f_sn_res,
+            batch_size=f_batch_size,
         )
 
     def encode(self, w: SceSink, s: int) -> None:

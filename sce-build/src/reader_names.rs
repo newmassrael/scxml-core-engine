@@ -164,6 +164,121 @@ const PYTHON_KEYWORDS: &[&str] = &[
     "with", "yield",
 ];
 
+/// Why the generated Python cannot take a name an author declares, besides it
+/// being a keyword.
+///
+/// A decoder's locals are not on this list. They are the generator's to keep
+/// apart from an author's names (`forge::generator::python_field_local`), and
+/// a wire specification's `len`, `bytes`, `body`, `value` and `raw` all work.
+/// What follows are the names that cannot be kept apart, because the author's
+/// name IS the public name: a field is the dataclass attribute, a flag is an
+/// accessor method, a flag-input is a parameter. Each is a name the generated
+/// class or call already uses for something else, and declaring it would
+/// replace that — silently, since Python lets a class body rebind any name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PythonNameClash {
+    /// A method every generated codec class defines (`decode`, `encode`,
+    /// `encode_to_bytes`). A field or flag of that name is a class attribute
+    /// bound before or after the method, and one of them wins.
+    ClassMethod,
+    /// A name the class body evaluates while the class is being built: the
+    /// `@classmethod` on `decode`, `field(…)` and `default_factory=list` on a
+    /// list or a variant body. A field of that name binds it in the class
+    /// scope first, and the next default is a call on the field's default.
+    ClassBody,
+    /// A `__x__` name. Python reserves the form: `__debug__` cannot be
+    /// assigned, and `__init__` or `__doc__` replaces what the class is made of.
+    Dunder,
+    /// A parameter of the generated `decode` or `encode` (`cls`, `cursor`,
+    /// `self`, `w`, the `tag` and `parent_flags` a variant threads). A
+    /// flag-input is one more parameter of the same call.
+    CallParameter,
+    /// A name in the decoder's own local namespace, `f_<field>`. A flag-input
+    /// parameter spelled so would be read as the local of the field it spells.
+    DecodeLocal,
+}
+
+/// The methods every generated Python codec class defines.
+///
+/// Read off the committed output, not invented: the names of the methods that
+/// each class in `tests/forge/expected/*.py` has, which
+/// `a_python_codec_keeps_an_authors_names_apart_from_its_own` recomputes and
+/// compares, so a method added to the template is on this list by the same
+/// edit.
+pub const PYTHON_CODEC_METHODS: &[&str] = &["decode", "encode", "encode_to_bytes"];
+
+/// The names a generated class body evaluates. See [`PythonNameClash::ClassBody`];
+/// derived and compared in the same test.
+pub const PYTHON_CLASS_BODY_NAMES: &[&str] = &["classmethod", "field", "list"];
+
+/// The parameters of the generated `decode` and `encode` calls: `cls` and
+/// `cursor`, `self` and `w`, and the `tag` and `parent_flags` a variant arm's
+/// `decode` also takes.
+pub const PYTHON_CALL_PARAMETERS: &[&str] = &["cls", "cursor", "parent_flags", "self", "tag", "w"];
+
+/// What kind of Python name a declaration is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PythonDeclaration {
+    /// A codec field, flag, chain, repeat or embed: a class attribute or an
+    /// accessor method of the generated class.
+    ClassAttribute,
+    /// A `<sce:flag-input>`: a parameter of the generated call.
+    CallParameter,
+}
+
+/// Whether the generated Python cannot take `spelled` for a declaration of
+/// `kind`, and which of the reasons above it is.
+pub fn python_name_clash(kind: PythonDeclaration, spelled: &str) -> Option<PythonNameClash> {
+    let dunder = spelled.len() > 4 && spelled.starts_with("__") && spelled.ends_with("__");
+    match kind {
+        PythonDeclaration::ClassAttribute => {
+            if dunder {
+                Some(PythonNameClash::Dunder)
+            } else if PYTHON_CODEC_METHODS.contains(&spelled) {
+                Some(PythonNameClash::ClassMethod)
+            } else if PYTHON_CLASS_BODY_NAMES.contains(&spelled) {
+                Some(PythonNameClash::ClassBody)
+            } else {
+                None
+            }
+        }
+        PythonDeclaration::CallParameter => {
+            if dunder {
+                Some(PythonNameClash::Dunder)
+            } else if PYTHON_CALL_PARAMETERS.contains(&spelled) {
+                Some(PythonNameClash::CallParameter)
+            } else if spelled.starts_with("f_") {
+                Some(PythonNameClash::DecodeLocal)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Why `spelled` is refused as a Python name, as the clause a refusal carries
+/// after the name.
+pub fn python_name_clash_reason(clash: PythonNameClash) -> &'static str {
+    match clash {
+        PythonNameClash::ClassMethod => {
+            "a method every generated python codec class defines, so a field or \
+             flag of that name would replace it"
+        }
+        PythonNameClash::ClassBody => {
+            "a name the generated python class body evaluates while it is built, \
+             so a field of that name would be called in its place"
+        }
+        PythonNameClash::Dunder => "a name of the form __x__, which python reserves for itself",
+        PythonNameClash::CallParameter => {
+            "a parameter of the generated python decode and encode calls"
+        }
+        PythonNameClash::DecodeLocal => {
+            "spelled as the local a generated python decoder binds a field to \
+             (f_<field>)"
+        }
+    }
+}
+
 /// C++20 keywords and alternative tokens (ISO/IEC 14882:2020 [lex.key],
 /// [lex.digraph]), plus the standard-library macros a generated header's
 /// includes define with lowercase names, which a member function of the

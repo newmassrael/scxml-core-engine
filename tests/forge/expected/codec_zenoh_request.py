@@ -61,14 +61,14 @@ class CodecZenohRequest:
         # without advancing — arm body decoder reads it as own header.
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            rid = cursor.read_vle_u64()
-            keyexpr = CodecZenohWireexpr.decode(cursor, ((header >> 5) & 0x1))
-            if keyexpr is None:
+            f_rid = cursor.read_vle_u64()
+            f_keyexpr = CodecZenohWireexpr.decode(cursor, ((f_header >> 5) & 0x1))
+            if f_keyexpr is None:
                 return None
-            if (header & 0x80) != 0:
-                extensions = []
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -77,7 +77,7 @@ class CodecZenohRequest:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -85,7 +85,7 @@ class CodecZenohRequest:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
+                f_extensions = None
             _peek = cursor.peek_slice(1)[0]
         except NeedMoreBytes:
             return None
@@ -120,10 +120,10 @@ class CodecZenohRequest:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
-            rid=rid,
-            keyexpr=keyexpr,
-            extensions=extensions,
+            header=f_header,
+            rid=f_rid,
+            keyexpr=f_keyexpr,
+            extensions=f_extensions,
             body=body,
         )
 

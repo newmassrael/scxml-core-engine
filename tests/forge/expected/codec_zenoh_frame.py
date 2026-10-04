@@ -38,16 +38,16 @@ class CodecZenohFrame:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            sn = cursor.read_vle_u64()
+            f_sn = cursor.read_vle_u64()
             _n = cursor.remaining()
             raw = cursor.peek_slice(_n)
-            payload = bytes(raw)
+            f_payload = bytes(raw)
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            sn=sn,
-            payload=payload,
+            sn=f_sn,
+            payload=f_payload,
         )
 
     def encode(self, w: SceSink) -> None:

@@ -40,23 +40,23 @@ class CodecZenohDeclExtKeyexprInner:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            inner_header = raw[0]
+            f_inner_header = raw[0]
             cursor.advance(1)
-            id = cursor.read_vle_u64()
-            if (inner_header & 0x01) != 0:
+            f_id = cursor.read_vle_u64()
+            if (f_inner_header & 0x01) != 0:
                 _n = cursor.remaining()
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                suffix = _v
+                f_suffix = _v
             else:
-                suffix = None
+                f_suffix = None
         except CodecError:
             return None
         return cls(
-            inner_header=inner_header,
-            id=id,
-            suffix=suffix,
+            inner_header=f_inner_header,
+            id=f_id,
+            suffix=f_suffix,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

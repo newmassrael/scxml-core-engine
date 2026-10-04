@@ -66,7 +66,7 @@ class CodecZenohDeclaration:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        header = raw[0]
+        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -76,55 +76,55 @@ class CodecZenohDeclaration:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecZenohDeclarationVariant()
-        if ((header >> 0) & 0x1F) == 0:
+        if ((f_header >> 0) & 0x1F) == 0:
             body.kind = "CodecZenohDeclKexpr"
-            _arm = CodecZenohDeclKexpr.decode(cursor, ((header >> 5) & 0x1))
+            _arm = CodecZenohDeclKexpr.decode(cursor, ((f_header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_decl_kexpr = _arm
-        elif ((header >> 0) & 0x1F) == 1:
+        elif ((f_header >> 0) & 0x1F) == 1:
             body.kind = "CodecZenohUndeclKexpr"
             _arm = CodecZenohUndeclKexpr.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_kexpr = _arm
-        elif ((header >> 0) & 0x1F) == 2:
+        elif ((f_header >> 0) & 0x1F) == 2:
             body.kind = "CodecZenohDeclSubscriber"
-            _arm = CodecZenohDeclSubscriber.decode(cursor, ((header >> 5) & 0x1))
+            _arm = CodecZenohDeclSubscriber.decode(cursor, ((f_header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_decl_subscriber = _arm
-        elif ((header >> 0) & 0x1F) == 3:
+        elif ((f_header >> 0) & 0x1F) == 3:
             body.kind = "CodecZenohUndeclSubscriber"
-            _arm = CodecZenohUndeclSubscriber.decode(cursor, ((header >> 7) & 0x1))
+            _arm = CodecZenohUndeclSubscriber.decode(cursor, ((f_header >> 7) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_subscriber = _arm
-        elif ((header >> 0) & 0x1F) == 4:
+        elif ((f_header >> 0) & 0x1F) == 4:
             body.kind = "CodecZenohDeclQueryable"
-            _arm = CodecZenohDeclQueryable.decode(cursor, ((header >> 5) & 0x1), ((header >> 7) & 0x1))
+            _arm = CodecZenohDeclQueryable.decode(cursor, ((f_header >> 5) & 0x1), ((f_header >> 7) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_decl_queryable = _arm
-        elif ((header >> 0) & 0x1F) == 5:
+        elif ((f_header >> 0) & 0x1F) == 5:
             body.kind = "CodecZenohUndeclQueryable"
-            _arm = CodecZenohUndeclQueryable.decode(cursor, ((header >> 7) & 0x1))
+            _arm = CodecZenohUndeclQueryable.decode(cursor, ((f_header >> 7) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_queryable = _arm
-        elif ((header >> 0) & 0x1F) == 6:
+        elif ((f_header >> 0) & 0x1F) == 6:
             body.kind = "CodecZenohDeclToken"
-            _arm = CodecZenohDeclToken.decode(cursor, ((header >> 5) & 0x1))
+            _arm = CodecZenohDeclToken.decode(cursor, ((f_header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_decl_token = _arm
-        elif ((header >> 0) & 0x1F) == 7:
+        elif ((f_header >> 0) & 0x1F) == 7:
             body.kind = "CodecZenohUndeclToken"
-            _arm = CodecZenohUndeclToken.decode(cursor, ((header >> 7) & 0x1))
+            _arm = CodecZenohUndeclToken.decode(cursor, ((f_header >> 7) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_token = _arm
-        elif ((header >> 0) & 0x1F) == 26:
+        elif ((f_header >> 0) & 0x1F) == 26:
             body.kind = "CodecZenohDeclFinal"
             _arm = CodecZenohDeclFinal.decode(cursor)
             if _arm is None:
@@ -132,13 +132,13 @@ class CodecZenohDeclaration:
             body.codec_zenoh_decl_final = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 0) & 0x1F)
+            body.default_tag = ((f_header >> 0) & 0x1F)
             _arm = CodecZenohDeclFinal.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
+            header=f_header,
             body=body,
         )
 

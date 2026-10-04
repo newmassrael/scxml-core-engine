@@ -43,37 +43,37 @@ class CodecZenohHello:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            cbyte = raw[0]
+            f_cbyte = raw[0]
             cursor.advance(1)
-            _n = (((cbyte >> 4) & 0xF) + 1)
+            _n = (((f_cbyte >> 4) & 0xF) + 1)
             raw = cursor.peek_slice(_n)
-            zid = bytes(raw)
+            f_zid = bytes(raw)
             cursor.advance(_n)
             if (l & 0x01) != 0:
                 _v = cursor.read_vle_u64()
-                num_locators = _v
+                f_num_locators = _v
             else:
-                num_locators = None
+                f_num_locators = None
             if (l & 0x01) != 0:
-                locators = []
-                for _ in range(num_locators):
+                f_locators = []
+                for _ in range(f_num_locators):
                     _elem = CodecZenohLocator.decode(cursor)
                     if _elem is None:
                         return None
-                    locators.append(_elem)
+                    f_locators.append(_elem)
             else:
-                locators = None
+                f_locators = None
         except CodecError:
             return None
         return cls(
-            version=version,
-            cbyte=cbyte,
-            zid=zid,
-            num_locators=num_locators,
-            locators=locators,
+            version=f_version,
+            cbyte=f_cbyte,
+            zid=f_zid,
+            num_locators=f_num_locators,
+            locators=f_locators,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

@@ -39,24 +39,24 @@ class CodecExtEncodingInfo:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            combined_id = cursor.read_vle_u32()
+            f_combined_id = cursor.read_vle_u32()
             raw = cursor.peek_slice(1)
-            schema_size = raw[0]
+            f_schema_size = raw[0]
             cursor.advance(1)
-            if (combined_id & 0x00000001) != 0:
-                _n = schema_size
+            if (f_combined_id & 0x00000001) != 0:
+                _n = f_schema_size
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                schema = _v
+                f_schema = _v
             else:
-                schema = None
+                f_schema = None
         except CodecError:
             return None
         return cls(
-            combined_id=combined_id,
-            schema_size=schema_size,
-            schema=schema,
+            combined_id=f_combined_id,
+            schema_size=f_schema_size,
+            schema=f_schema,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

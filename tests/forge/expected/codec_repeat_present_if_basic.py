@@ -41,30 +41,30 @@ class CodecRepeatPresentIfBasic:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            carrier = raw[0]
+            f_carrier = raw[0]
             cursor.advance(1)
-            if (carrier & 0x01) != 0:
+            if (f_carrier & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                num_elems = _v
+                f_num_elems = _v
             else:
-                num_elems = None
-            if (carrier & 0x01) != 0:
-                elems = []
-                for _ in range(num_elems):
+                f_num_elems = None
+            if (f_carrier & 0x01) != 0:
+                f_elems = []
+                for _ in range(f_num_elems):
                     _elem = CodecRepeatElem.decode(cursor)
                     if _elem is None:
                         return None
-                    elems.append(_elem)
+                    f_elems.append(_elem)
             else:
-                elems = None
+                f_elems = None
         except CodecError:
             return None
         return cls(
-            carrier=carrier,
-            num_elems=num_elems,
-            elems=elems,
+            carrier=f_carrier,
+            num_elems=f_num_elems,
+            elems=f_elems,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

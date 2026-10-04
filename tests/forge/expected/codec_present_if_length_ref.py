@@ -40,25 +40,25 @@ class CodecPresentIfLengthRef:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            flags = raw[0]
+            f_flags = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            payload_size = raw[0]
+            f_payload_size = raw[0]
             cursor.advance(1)
-            if (flags & 0x01) != 0:
-                _n = payload_size
+            if (f_flags & 0x01) != 0:
+                _n = f_payload_size
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                payload = _v
+                f_payload = _v
             else:
-                payload = None
+                f_payload = None
         except CodecError:
             return None
         return cls(
-            flags=flags,
-            payload_size=payload_size,
-            payload=payload,
+            flags=f_flags,
+            payload_size=f_payload_size,
+            payload=f_payload,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

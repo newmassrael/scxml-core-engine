@@ -59,11 +59,11 @@ class CodecZenohOam:
         # without advancing — arm body decoder reads it as own header.
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            id = cursor.read_vle_u16()
-            if (header & 0x80) != 0:
-                extensions = []
+            f_id = cursor.read_vle_u16()
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -72,7 +72,7 @@ class CodecZenohOam:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -80,7 +80,7 @@ class CodecZenohOam:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
+                f_extensions = None
         except NeedMoreBytes:
             return None
         # Dispatch on the tag field; each arm decodes its body codec
@@ -88,19 +88,19 @@ class CodecZenohOam:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecZenohOamVariant()
-        if ((header >> 5) & 0x03) == 0:
+        if ((f_header >> 5) & 0x03) == 0:
             body.kind = "CodecZenohExtUnit"
             _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_ext_unit = _arm
-        elif ((header >> 5) & 0x03) == 1:
+        elif ((f_header >> 5) & 0x03) == 1:
             body.kind = "CodecZenohExtZint"
             _arm = CodecZenohExtZint.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_ext_zint = _arm
-        elif ((header >> 5) & 0x03) == 2:
+        elif ((f_header >> 5) & 0x03) == 2:
             body.kind = "CodecZenohExtZbuf"
             _arm = CodecZenohExtZbuf.decode(cursor)
             if _arm is None:
@@ -108,15 +108,15 @@ class CodecZenohOam:
             body.codec_zenoh_ext_zbuf = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 5) & 0x03)
+            body.default_tag = ((f_header >> 5) & 0x03)
             _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
-            id=id,
-            extensions=extensions,
+            header=f_header,
+            id=f_id,
+            extensions=f_extensions,
             body=body,
         )
 

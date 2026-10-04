@@ -41,29 +41,29 @@ class CodecZenohDeclQueryable:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            id = cursor.read_vle_u32()
-            wireexpr = CodecZenohWireexpr.decode(cursor, n)
-            if wireexpr is None:
+            f_id = cursor.read_vle_u32()
+            f_wireexpr = CodecZenohWireexpr.decode(cursor, n)
+            if f_wireexpr is None:
                 return None
             if (z & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                ext_type = _v
+                f_ext_type = _v
             else:
-                ext_type = None
+                f_ext_type = None
             if (z & 0x01) != 0:
                 _v = cursor.read_vle_u64()
-                ext_value = _v
+                f_ext_value = _v
             else:
-                ext_value = None
+                f_ext_value = None
         except CodecError:
             return None
         return cls(
-            id=id,
-            wireexpr=wireexpr,
-            ext_type=ext_type,
-            ext_value=ext_value,
+            id=f_id,
+            wireexpr=f_wireexpr,
+            ext_type=f_ext_type,
+            ext_value=f_ext_value,
         )
 
     def encode(self, w: SceSink, n: int, z: int) -> None:

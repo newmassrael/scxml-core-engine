@@ -40,19 +40,19 @@ class CodecRepeatBasic:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            num_frags = raw[0]
+            f_num_frags = raw[0]
             cursor.advance(1)
-            frags = []
-            for _ in range(num_frags):
+            f_frags = []
+            for _ in range(f_num_frags):
                 _elem = CodecRepeatElem.decode(cursor)
                 if _elem is None:
                     return None
-                frags.append(_elem)
+                f_frags.append(_elem)
         except CodecError:
             return None
         return cls(
-            num_frags=num_frags,
-            frags=frags,
+            num_frags=f_num_frags,
+            frags=f_frags,
         )
 
     def encode(self, w: SceSink) -> None:

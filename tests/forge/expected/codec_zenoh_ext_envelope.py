@@ -40,9 +40,9 @@ class CodecZenohExtEnvelope:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header_flags = raw[0]
+            f_header_flags = raw[0]
             cursor.advance(1)
-            extensions = []
+            f_extensions = []
             _more = False
             for _ in range(8):
                 if cursor.remaining() == 0:
@@ -51,7 +51,7 @@ class CodecZenohExtEnvelope:
                 if _elem is None:
                     return None
                 _more = _elem.z()
-                extensions.append(_elem)
+                f_extensions.append(_elem)
                 if not _more:
                     break
             if _more and cursor.remaining() == 0:
@@ -61,8 +61,8 @@ class CodecZenohExtEnvelope:
         except CodecError:
             return None
         return cls(
-            header_flags=header_flags,
-            extensions=extensions,
+            header_flags=f_header_flags,
+            extensions=f_extensions,
         )
 
     def encode(self, w: SceSink) -> None:

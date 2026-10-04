@@ -44,52 +44,52 @@ class CodecZenohInitBody:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            cbyte = raw[0]
+            f_cbyte = raw[0]
             cursor.advance(1)
-            _n = (((cbyte >> 4) & 0xF) + 1)
+            _n = (((f_cbyte >> 4) & 0xF) + 1)
             raw = cursor.peek_slice(_n)
-            zid = bytes(raw)
+            f_zid = bytes(raw)
             cursor.advance(_n)
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                sn_res = _v
+                f_sn_res = _v
             else:
-                sn_res = None
+                f_sn_res = None
             if (s & 0x01) != 0:
                 raw = cursor.peek_slice(2)
                 _v = raw[0] | (raw[1] << 8)
                 cursor.advance(2)
-                batch_size = _v
+                f_batch_size = _v
             else:
-                batch_size = None
+                f_batch_size = None
             if (a & 0x01) != 0:
                 _v = cursor.read_vle_u64()
-                cookie_len = _v
+                f_cookie_len = _v
             else:
-                cookie_len = None
+                f_cookie_len = None
             if (a & 0x01) != 0:
-                _n = cookie_len
+                _n = f_cookie_len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                cookie = _v
+                f_cookie = _v
             else:
-                cookie = None
+                f_cookie = None
         except CodecError:
             return None
         return cls(
-            version=version,
-            cbyte=cbyte,
-            zid=zid,
-            sn_res=sn_res,
-            batch_size=batch_size,
-            cookie_len=cookie_len,
-            cookie=cookie,
+            version=f_version,
+            cbyte=f_cbyte,
+            zid=f_zid,
+            sn_res=f_sn_res,
+            batch_size=f_batch_size,
+            cookie_len=f_cookie_len,
+            cookie=f_cookie,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

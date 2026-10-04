@@ -43,34 +43,34 @@ class CodecNestedParent:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            hdr = raw[0]
+            f_hdr = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            m = raw[0]
+            f_m = raw[0]
             cursor.advance(1)
-            required_body = CodecNestedBody.decode(cursor)
-            if required_body is None:
+            f_required_body = CodecNestedBody.decode(cursor)
+            if f_required_body is None:
                 return None
-            if (hdr & 0x01) != 0:
-                optional_body = CodecNestedBody.decode(cursor)
-                if optional_body is None:
+            if (f_hdr & 0x01) != 0:
+                f_optional_body = CodecNestedBody.decode(cursor)
+                if f_optional_body is None:
                     return None
             else:
-                optional_body = None
-            body_list = []
-            for _ in range(m):
+                f_optional_body = None
+            f_body_list = []
+            for _ in range(f_m):
                 _elem = CodecNestedBody.decode(cursor)
                 if _elem is None:
                     return None
-                body_list.append(_elem)
+                f_body_list.append(_elem)
         except CodecError:
             return None
         return cls(
-            hdr=hdr,
-            m=m,
-            required_body=required_body,
-            optional_body=optional_body,
-            body_list=body_list,
+            hdr=f_hdr,
+            m=f_m,
+            required_body=f_required_body,
+            optional_body=f_optional_body,
+            body_list=f_body_list,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

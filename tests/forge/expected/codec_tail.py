@@ -32,13 +32,13 @@ class CodecTail:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
-        msg_id = raw[0]
-        status = raw[1]
-        payload = raw[2:]
+        f_msg_id = raw[0]
+        f_status = raw[1]
+        f_payload = raw[2:]
         value = cls(
-            msg_id=msg_id,
-            status=status,
-            payload=payload,
+            msg_id=f_msg_id,
+            status=f_status,
+            payload=f_payload,
         )
         try:
             cursor.advance(_frame_len)

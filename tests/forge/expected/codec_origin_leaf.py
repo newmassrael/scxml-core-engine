@@ -31,11 +31,11 @@ class CodecOriginLeaf:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
-        len = raw[0]
-        data = raw[1:1 + len]
+        f_len = raw[0]
+        f_data = raw[1:1 + f_len]
         value = cls(
-            len=len,
-            data=data,
+            len=f_len,
+            data=f_data,
         )
         try:
             cursor.advance(_frame_len)

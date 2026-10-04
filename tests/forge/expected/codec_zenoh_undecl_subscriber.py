@@ -39,18 +39,18 @@ class CodecZenohUndeclSubscriber:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            id = cursor.read_vle_u32()
+            f_id = cursor.read_vle_u32()
             if (z & 0x01) != 0:
-                ext_keyexpr = CodecZenohDeclExtKeyexpr.decode(cursor)
-                if ext_keyexpr is None:
+                f_ext_keyexpr = CodecZenohDeclExtKeyexpr.decode(cursor)
+                if f_ext_keyexpr is None:
                     return None
             else:
-                ext_keyexpr = None
+                f_ext_keyexpr = None
         except CodecError:
             return None
         return cls(
-            id=id,
-            ext_keyexpr=ext_keyexpr,
+            id=f_id,
+            ext_keyexpr=f_ext_keyexpr,
         )
 
     def encode(self, w: SceSink, z: int) -> None:

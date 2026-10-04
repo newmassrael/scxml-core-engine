@@ -62,7 +62,7 @@ class CodecTransportEnvelope:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        header = raw[0]
+        f_header = raw[0]
         try:
             cursor.advance(1)
         except NeedMoreBytes:
@@ -72,57 +72,57 @@ class CodecTransportEnvelope:
         # runtime tag value so encode can round-trip it back onto the
         # wire.
         body = CodecTransportEnvelopeVariant()
-        if ((header >> 0) & 0x1F) == 1:
+        if ((f_header >> 0) & 0x1F) == 1:
             body.kind = "CodecZenohInitBody"
-            _arm = CodecZenohInitBody.decode(cursor, ((header >> 6) & 0x1), ((header >> 5) & 0x1))
+            _arm = CodecZenohInitBody.decode(cursor, ((f_header >> 6) & 0x1), ((f_header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_init_body = _arm
-        elif ((header >> 0) & 0x1F) == 2:
+        elif ((f_header >> 0) & 0x1F) == 2:
             body.kind = "CodecZenohOpenBody"
-            _arm = CodecZenohOpenBody.decode(cursor, ((header >> 5) & 0x1))
+            _arm = CodecZenohOpenBody.decode(cursor, ((f_header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_open_body = _arm
-        elif ((header >> 0) & 0x1F) == 3:
+        elif ((f_header >> 0) & 0x1F) == 3:
             body.kind = "CodecZenohClose"
             _arm = CodecZenohClose.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_close = _arm
-        elif ((header >> 0) & 0x1F) == 4:
+        elif ((f_header >> 0) & 0x1F) == 4:
             body.kind = "CodecZenohKeepAlive"
             _arm = CodecZenohKeepAlive.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_keep_alive = _arm
-        elif ((header >> 0) & 0x1F) == 5:
+        elif ((f_header >> 0) & 0x1F) == 5:
             body.kind = "CodecZenohFrame"
             _arm = CodecZenohFrame.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_frame = _arm
-        elif ((header >> 0) & 0x1F) == 6:
+        elif ((f_header >> 0) & 0x1F) == 6:
             body.kind = "CodecZenohFragment"
             _arm = CodecZenohFragment.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_fragment = _arm
-        elif ((header >> 0) & 0x1F) == 7:
+        elif ((f_header >> 0) & 0x1F) == 7:
             body.kind = "CodecZenohJoin"
-            _arm = CodecZenohJoin.decode(cursor, ((header >> 6) & 0x1))
+            _arm = CodecZenohJoin.decode(cursor, ((f_header >> 6) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_join = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((header >> 0) & 0x1F)
+            body.default_tag = ((f_header >> 0) & 0x1F)
             _arm = CodecZenohClose.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
+            header=f_header,
             body=body,
         )
 

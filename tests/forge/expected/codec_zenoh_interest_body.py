@@ -40,19 +40,19 @@ class CodecZenohInterestBody:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x10) != 0:
-                keyexpr = CodecZenohWireexpr.decode(cursor, ((header >> 5) & 0x1))
-                if keyexpr is None:
+            if (f_header & 0x10) != 0:
+                f_keyexpr = CodecZenohWireexpr.decode(cursor, ((f_header >> 5) & 0x1))
+                if f_keyexpr is None:
                     return None
             else:
-                keyexpr = None
+                f_keyexpr = None
         except CodecError:
             return None
         return cls(
-            header=header,
-            keyexpr=keyexpr,
+            header=f_header,
+            keyexpr=f_keyexpr,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

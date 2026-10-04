@@ -41,21 +41,21 @@ class CodecZenohSourceInfo:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            _n = (((header >> 4) & 0xF) + 1)
+            _n = (((f_header >> 4) & 0xF) + 1)
             raw = cursor.peek_slice(_n)
-            zid = bytes(raw)
+            f_zid = bytes(raw)
             cursor.advance(_n)
-            eid = cursor.read_vle_u32()
-            sn = cursor.read_vle_u32()
+            f_eid = cursor.read_vle_u32()
+            f_sn = cursor.read_vle_u32()
         except CodecError:
             return None
         return cls(
-            header=header,
-            zid=zid,
-            eid=eid,
-            sn=sn,
+            header=f_header,
+            zid=f_zid,
+            eid=f_eid,
+            sn=f_sn,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

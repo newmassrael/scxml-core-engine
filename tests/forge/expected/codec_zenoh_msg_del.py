@@ -42,16 +42,16 @@ class CodecZenohMsgDel:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x20) != 0:
-                timestamp = CodecZenohTimestamp.decode(cursor)
-                if timestamp is None:
+            if (f_header & 0x20) != 0:
+                f_timestamp = CodecZenohTimestamp.decode(cursor)
+                if f_timestamp is None:
                     return None
             else:
-                timestamp = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_timestamp = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(8):
                     if cursor.remaining() == 0:
@@ -60,7 +60,7 @@ class CodecZenohMsgDel:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -68,13 +68,13 @@ class CodecZenohMsgDel:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
+                f_extensions = None
         except CodecError:
             return None
         return cls(
-            header=header,
-            timestamp=timestamp,
-            extensions=extensions,
+            header=f_header,
+            timestamp=f_timestamp,
+            extensions=f_extensions,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

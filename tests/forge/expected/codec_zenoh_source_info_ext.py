@@ -39,21 +39,21 @@ class CodecZenohSourceInfoExt:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            ext_size = cursor.read_vle_u64()
-            _len = int(ext_size)
+            f_ext_size = cursor.read_vle_u64()
+            _len = int(f_ext_size)
             _raw = cursor.peek_slice(_len)
             if _raw is None:
                 return None
             _inner = SceCursor(bytes(_raw))
-            info = CodecZenohSourceInfo.decode(_inner)
-            if info is None:
+            f_info = CodecZenohSourceInfo.decode(_inner)
+            if f_info is None:
                 return None
             cursor.advance(_len)
         except CodecError:
             return None
         return cls(
-            ext_size=ext_size,
-            info=info,
+            ext_size=f_ext_size,
+            info=f_info,
         )
 
     def encode(self, w: SceSink) -> None:

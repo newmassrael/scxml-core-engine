@@ -39,21 +39,21 @@ class CodecZenohTimestampExt:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            ext_size = cursor.read_vle_u64()
-            _len = int(ext_size)
+            f_ext_size = cursor.read_vle_u64()
+            _len = int(f_ext_size)
             _raw = cursor.peek_slice(_len)
             if _raw is None:
                 return None
             _inner = SceCursor(bytes(_raw))
-            ts = CodecZenohTimestamp.decode(_inner)
-            if ts is None:
+            f_ts = CodecZenohTimestamp.decode(_inner)
+            if f_ts is None:
                 return None
             cursor.advance(_len)
         except CodecError:
             return None
         return cls(
-            ext_size=ext_size,
-            ts=ts,
+            ext_size=f_ext_size,
+            ts=f_ts,
         )
 
     def encode(self, w: SceSink) -> None:

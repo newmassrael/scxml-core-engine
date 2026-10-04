@@ -45,10 +45,10 @@ class CodecChainHasMarker:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x80) != 0:
-                extensions = []
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -57,7 +57,7 @@ class CodecChainHasMarker:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -65,44 +65,44 @@ class CodecChainHasMarker:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
-            _has_extensions_18 = extensions is not None and any((_e.header & 127) == 18 for _e in extensions)
+                f_extensions = None
+            _has_extensions_18 = f_extensions is not None and any((_e.header & 127) == 18 for _e in f_extensions)
             if not _has_extensions_18:
                 _v = cursor.read_vle_u64()
-                payload_len = _v
+                f_payload_len = _v
             else:
-                payload_len = None
+                f_payload_len = None
             if not _has_extensions_18:
-                _n = payload_len
+                _n = f_payload_len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                payload = _v
+                f_payload = _v
             else:
-                payload = None
+                f_payload = None
             if _has_extensions_18:
                 _v = cursor.read_vle_u32()
-                slice_count = _v
+                f_slice_count = _v
             else:
-                slice_count = None
+                f_slice_count = None
             if _has_extensions_18:
-                slices = []
-                for _ in range(slice_count):
+                f_slices = []
+                for _ in range(f_slice_count):
                     _elem = CodecChainHasMarkerSlice.decode(cursor)
                     if _elem is None:
                         return None
-                    slices.append(_elem)
+                    f_slices.append(_elem)
             else:
-                slices = None
+                f_slices = None
         except CodecError:
             return None
         return cls(
-            header=header,
-            extensions=extensions,
-            payload_len=payload_len,
-            payload=payload,
-            slice_count=slice_count,
-            slices=slices,
+            header=f_header,
+            extensions=f_extensions,
+            payload_len=f_payload_len,
+            payload=f_payload,
+            slice_count=f_slice_count,
+            slices=f_slices,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

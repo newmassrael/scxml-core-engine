@@ -38,16 +38,16 @@ class CodecUntilEofBasic:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            msgs = []
+            f_msgs = []
             while cursor.remaining() > 0:
                 _elem = CodecRepeatElem.decode(cursor)
                 if _elem is None:
                     return None
-                msgs.append(_elem)
+                f_msgs.append(_elem)
         except CodecError:
             return None
         return cls(
-            msgs=msgs,
+            msgs=f_msgs,
         )
 
     def encode(self, w: SceSink) -> None:

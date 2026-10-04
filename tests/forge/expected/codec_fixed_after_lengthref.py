@@ -41,25 +41,25 @@ class CodecFixedAfterLengthref:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(2)
-            payload_len = raw[0] | (raw[1] << 8)
+            f_payload_len = raw[0] | (raw[1] << 8)
             cursor.advance(2)
-            _n = payload_len
+            _n = f_payload_len
             raw = cursor.peek_slice(_n)
-            payload = bytes(raw)
+            f_payload = bytes(raw)
             cursor.advance(_n)
             raw = cursor.peek_slice(4)
-            crc32 = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
+            f_crc32 = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
             cursor.advance(4)
         except CodecError:
             return None
         return cls(
-            header=header,
-            payload_len=payload_len,
-            payload=payload,
-            crc32=crc32,
+            header=f_header,
+            payload_len=f_payload_len,
+            payload=f_payload,
+            crc32=f_crc32,
         )
 
     def encode(self, w: SceSink) -> None:

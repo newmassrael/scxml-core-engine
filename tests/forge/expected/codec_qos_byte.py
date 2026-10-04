@@ -27,9 +27,9 @@ class CodecQosByte:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        qos = raw[0]
+        f_qos = raw[0]
         value = cls(
-            qos=qos,
+            qos=f_qos,
         )
         try:
             cursor.advance(1)

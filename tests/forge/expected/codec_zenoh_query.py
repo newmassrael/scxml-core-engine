@@ -43,49 +43,49 @@ class CodecZenohQuery:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x20) != 0:
+            if (f_header & 0x20) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                consolidation = _v
+                f_consolidation = _v
             else:
-                consolidation = None
-            if (header & 0x40) != 0:
+                f_consolidation = None
+            if (f_header & 0x40) != 0:
                 _v = cursor.read_vle_u64()
-                parameters_len = _v
+                f_parameters_len = _v
             else:
-                parameters_len = None
-            if (header & 0x40) != 0:
-                _n = parameters_len
+                f_parameters_len = None
+            if (f_header & 0x40) != 0:
+                _n = f_parameters_len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                parameters = _v
+                f_parameters = _v
             else:
-                parameters = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_parameters = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 for _ in range(8):
                     if cursor.remaining() == 0:
                         break
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                 if cursor.remaining() > 0:
                     raise TlvChainOverflow()
             else:
-                extensions = None
+                f_extensions = None
         except CodecError:
             return None
         return cls(
-            header=header,
-            consolidation=consolidation,
-            parameters_len=parameters_len,
-            parameters=parameters,
-            extensions=extensions,
+            header=f_header,
+            consolidation=f_consolidation,
+            parameters_len=f_parameters_len,
+            parameters=f_parameters,
+            extensions=f_extensions,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

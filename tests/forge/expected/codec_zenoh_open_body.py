@@ -40,28 +40,28 @@ class CodecZenohOpenBody:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            lease = cursor.read_vle_u64()
-            initial_sn = cursor.read_vle_u64()
+            f_lease = cursor.read_vle_u64()
+            f_initial_sn = cursor.read_vle_u64()
             if (a & 0x01) == 0:
                 _v = cursor.read_vle_u64()
-                cookie_len = _v
+                f_cookie_len = _v
             else:
-                cookie_len = None
+                f_cookie_len = None
             if (a & 0x01) == 0:
-                _n = cookie_len
+                _n = f_cookie_len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                cookie = _v
+                f_cookie = _v
             else:
-                cookie = None
+                f_cookie = None
         except CodecError:
             return None
         return cls(
-            lease=lease,
-            initial_sn=initial_sn,
-            cookie_len=cookie_len,
-            cookie=cookie,
+            lease=f_lease,
+            initial_sn=f_initial_sn,
+            cookie_len=f_cookie_len,
+            cookie=f_cookie,
         )
 
     def encode(self, w: SceSink, a: int) -> None:

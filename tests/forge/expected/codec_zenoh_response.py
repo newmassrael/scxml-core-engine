@@ -60,28 +60,28 @@ class CodecZenohResponse:
         # without advancing — arm body decoder reads it as own header.
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            request_id = cursor.read_vle_u64()
-            key_id = cursor.read_vle_u32()
-            if (header & 0x20) != 0:
+            f_request_id = cursor.read_vle_u64()
+            f_key_id = cursor.read_vle_u32()
+            if (f_header & 0x20) != 0:
                 _v = cursor.read_vle_u64()
-                suffix_len = _v
+                f_suffix_len = _v
             else:
-                suffix_len = None
-            if (header & 0x20) != 0:
-                _n = suffix_len
+                f_suffix_len = None
+            if (f_header & 0x20) != 0:
+                _n = f_suffix_len
                 raw = cursor.peek_slice(_n)
                 try:
                     _v = bytes(raw).decode('utf-8')
                 except UnicodeDecodeError as exc:
                     raise InvalidUtf8() from exc
                 cursor.advance(_n)
-                suffix = _v
+                f_suffix = _v
             else:
-                suffix = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_suffix = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -90,7 +90,7 @@ class CodecZenohResponse:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -98,7 +98,7 @@ class CodecZenohResponse:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
+                f_extensions = None
             _peek = cursor.peek_slice(1)[0]
         except NeedMoreBytes:
             return None
@@ -127,12 +127,12 @@ class CodecZenohResponse:
                 return None
             body.default_body = _arm
         return cls(
-            header=header,
-            request_id=request_id,
-            key_id=key_id,
-            suffix_len=suffix_len,
-            suffix=suffix,
-            extensions=extensions,
+            header=f_header,
+            request_id=f_request_id,
+            key_id=f_key_id,
+            suffix_len=f_suffix_len,
+            suffix=f_suffix,
+            extensions=f_extensions,
             body=body,
         )
 

@@ -39,29 +39,29 @@ class CodecZenohWireexpr:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            id = cursor.read_vle_u64()
+            f_id = cursor.read_vle_u64()
             if (n & 0x01) != 0:
                 _v = cursor.read_vle_u64()
-                suffix_len = _v
+                f_suffix_len = _v
             else:
-                suffix_len = None
+                f_suffix_len = None
             if (n & 0x01) != 0:
-                _n = suffix_len
+                _n = f_suffix_len
                 raw = cursor.peek_slice(_n)
                 try:
                     _v = bytes(raw).decode('utf-8')
                 except UnicodeDecodeError as exc:
                     raise InvalidUtf8() from exc
                 cursor.advance(_n)
-                suffix = _v
+                f_suffix = _v
             else:
-                suffix = None
+                f_suffix = None
         except CodecError:
             return None
         return cls(
-            id=id,
-            suffix_len=suffix_len,
-            suffix=suffix,
+            id=f_id,
+            suffix_len=f_suffix_len,
+            suffix=f_suffix,
         )
 
     def encode(self, w: SceSink, n: int) -> None:

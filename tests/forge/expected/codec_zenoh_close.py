@@ -27,9 +27,9 @@ class CodecZenohClose:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        reason = raw[0]
+        f_reason = raw[0]
         value = cls(
-            reason=reason,
+            reason=f_reason,
         )
         try:
             cursor.advance(1)

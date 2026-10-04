@@ -42,9 +42,9 @@ class CodecChainHasTagged:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            entries = []
+            f_entries = []
             _more = False
             for _ in range(3):
                 if cursor.remaining() == 0:
@@ -53,36 +53,36 @@ class CodecChainHasTagged:
                 if _elem is None:
                     return None
                 _more = _elem.more()
-                entries.append(_elem)
+                f_entries.append(_elem)
                 if not _more:
                     break
             if _more and cursor.remaining() == 0:
                 raise NeedMoreBytes()
             if _more:
                 raise TlvChainOverflow()
-            _has_entries_7 = any(_e.entry_type == 7 for _e in entries)
-            _has_entries_9 = any(_e.entry_type == 9 for _e in entries)
-            if _has_entries_7 or (header & 0x01) != 0:
+            _has_entries_7 = any(_e.entry_type == 7 for _e in f_entries)
+            _has_entries_9 = any(_e.entry_type == 9 for _e in f_entries)
+            if _has_entries_7 or (f_header & 0x01) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                priority = _v
+                f_priority = _v
             else:
-                priority = None
+                f_priority = None
             if not _has_entries_9:
                 raw = cursor.peek_slice(2)
                 _v = (raw[0] << 8) | raw[1]
                 cursor.advance(2)
-                checksum = _v
+                f_checksum = _v
             else:
-                checksum = None
+                f_checksum = None
         except CodecError:
             return None
         return cls(
-            header=header,
-            entries=entries,
-            priority=priority,
-            checksum=checksum,
+            header=f_header,
+            entries=f_entries,
+            priority=f_priority,
+            checksum=f_checksum,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

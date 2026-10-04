@@ -43,17 +43,17 @@ class CodecZenohReply:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            header = raw[0]
+            f_header = raw[0]
             cursor.advance(1)
-            if (header & 0x20) != 0:
+            if (f_header & 0x20) != 0:
                 raw = cursor.peek_slice(1)
                 _v = raw[0]
                 cursor.advance(1)
-                consolidation = _v
+                f_consolidation = _v
             else:
-                consolidation = None
-            if (header & 0x80) != 0:
-                extensions = []
+                f_consolidation = None
+            if (f_header & 0x80) != 0:
+                f_extensions = []
                 _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
@@ -62,7 +62,7 @@ class CodecZenohReply:
                     if _elem is None:
                         return None
                     _more = _elem.z()
-                    extensions.append(_elem)
+                    f_extensions.append(_elem)
                     if not _more:
                         break
                 if _more and cursor.remaining() == 0:
@@ -70,17 +70,17 @@ class CodecZenohReply:
                 if _more:
                     raise TlvChainOverflow()
             else:
-                extensions = None
-            body = CodecZenohPushBody.decode(cursor)
-            if body is None:
+                f_extensions = None
+            f_body = CodecZenohPushBody.decode(cursor)
+            if f_body is None:
                 return None
         except CodecError:
             return None
         return cls(
-            header=header,
-            consolidation=consolidation,
-            extensions=extensions,
-            body=body,
+            header=f_header,
+            consolidation=f_consolidation,
+            extensions=f_extensions,
+            body=f_body,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

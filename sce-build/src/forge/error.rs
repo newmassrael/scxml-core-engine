@@ -4322,6 +4322,11 @@ pub enum ValidationError {
 /// when the backend folds the name, because the author wrote `self` and the
 /// word Rust refuses is `Self` — a message quoting only the first would send
 /// them looking for a keyword they never typed.
+///
+/// A Python name that is no keyword is refused for a different reason, and the
+/// message says that one: `decode` is not a reserved word, it is a method every
+/// generated codec class defines, and "a reserved word in python" would send
+/// the author to a keyword list that does not contain it.
 fn reserved_code_identifier_message(
     element: &str,
     attr: &str,
@@ -4329,6 +4334,26 @@ fn reserved_code_identifier_message(
     spelled: &str,
     language: &str,
 ) -> String {
+    use crate::reader_names::{python_name_clash, python_name_clash_reason, PythonDeclaration};
+    if language == "python" {
+        let kind = if element.ends_with("flag-input") {
+            PythonDeclaration::CallParameter
+        } else {
+            PythonDeclaration::ClassAttribute
+        };
+        if let Some(clash) = python_name_clash(kind, spelled) {
+            let reason = python_name_clash_reason(clash);
+            let word = if spelled == value {
+                format!("'{value}' is {reason}")
+            } else {
+                format!("python spells '{value}' as '{spelled}', which is {reason}")
+            };
+            return format!(
+                "<{element} {attr}=\"{value}\">: {word}, so the generated python code \
+                 cannot declare it — rename it"
+            );
+        }
+    }
     let word = if spelled == value {
         format!("'{value}' is a reserved word in {language}")
     } else {

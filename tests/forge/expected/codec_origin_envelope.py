@@ -45,46 +45,46 @@ class CodecOriginEnvelope:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            hdr = raw[0]
+            f_hdr = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            note_len = raw[0]
+            f_note_len = raw[0]
             cursor.advance(1)
-            _n = note_len
+            _n = f_note_len
             raw = cursor.peek_slice(_n)
             try:
-                note = bytes(raw).decode('utf-8')
+                f_note = bytes(raw).decode('utf-8')
             except UnicodeDecodeError as exc:
                 raise InvalidUtf8() from exc
             cursor.advance(_n)
             raw = cursor.peek_slice(1)
-            m = raw[0]
+            f_m = raw[0]
             cursor.advance(1)
-            required = CodecOriginLeaf.decode(cursor)
-            if required is None:
+            f_required = CodecOriginLeaf.decode(cursor)
+            if f_required is None:
                 return None
-            if (hdr & 0x01) != 0:
-                optional = CodecOriginLeaf.decode(cursor)
-                if optional is None:
+            if (f_hdr & 0x01) != 0:
+                f_optional = CodecOriginLeaf.decode(cursor)
+                if f_optional is None:
                     return None
             else:
-                optional = None
-            items = []
-            for _ in range(m):
+                f_optional = None
+            f_items = []
+            for _ in range(f_m):
                 _elem = CodecOriginLeaf.decode(cursor)
                 if _elem is None:
                     return None
-                items.append(_elem)
+                f_items.append(_elem)
         except CodecError:
             return None
         return cls(
-            hdr=hdr,
-            note_len=note_len,
-            note=note,
-            m=m,
-            required=required,
-            optional=optional,
-            items=items,
+            hdr=f_hdr,
+            note_len=f_note_len,
+            note=f_note,
+            m=f_m,
+            required=f_required,
+            optional=f_optional,
+            items=f_items,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

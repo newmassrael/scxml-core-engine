@@ -42,33 +42,33 @@ class CodecRepeatUnconditionalCount:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            options = raw[0]
+            f_options = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            links_len = raw[0]
+            f_links_len = raw[0]
             cursor.advance(1)
-            links = []
-            for _ in range(links_len):
+            f_links = []
+            for _ in range(f_links_len):
                 _elem = CodecRepeatElem.decode(cursor)
                 if _elem is None:
                     return None
-                links.append(_elem)
-            if (options & 0x01) != 0:
-                weights = []
-                for _ in range(links_len):
+                f_links.append(_elem)
+            if (f_options & 0x01) != 0:
+                f_weights = []
+                for _ in range(f_links_len):
                     _elem = CodecRepeatElem.decode(cursor)
                     if _elem is None:
                         return None
-                    weights.append(_elem)
+                    f_weights.append(_elem)
             else:
-                weights = None
+                f_weights = None
         except CodecError:
             return None
         return cls(
-            options=options,
-            links_len=links_len,
-            links=links,
-            weights=weights,
+            options=f_options,
+            links_len=f_links_len,
+            links=f_links,
+            weights=f_weights,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

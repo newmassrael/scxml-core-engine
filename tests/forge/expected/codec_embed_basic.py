@@ -40,16 +40,16 @@ class CodecEmbedBasic:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            tag = raw[0]
+            f_tag = raw[0]
             cursor.advance(1)
-            locator = CodecZenohLocator.decode(cursor)
-            if locator is None:
+            f_locator = CodecZenohLocator.decode(cursor)
+            if f_locator is None:
                 return None
         except CodecError:
             return None
         return cls(
-            tag=tag,
-            locator=locator,
+            tag=f_tag,
+            locator=f_locator,
         )
 
     def encode(self, w: SceSink) -> None:

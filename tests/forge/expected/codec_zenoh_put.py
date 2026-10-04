@@ -27,9 +27,9 @@ class CodecZenohPut:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
-        payload = raw[0]
+        f_payload = raw[0]
         value = cls(
-            payload=payload,
+            payload=f_payload,
         )
         try:
             cursor.advance(1)

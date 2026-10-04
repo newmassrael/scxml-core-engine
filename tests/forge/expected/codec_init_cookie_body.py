@@ -40,27 +40,27 @@ class CodecInitCookieBody:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             if (a & 0x01) != 0:
                 _v = cursor.read_vle_u16()
-                cookie_size = _v
+                f_cookie_size = _v
             else:
-                cookie_size = None
+                f_cookie_size = None
             if (a & 0x01) != 0:
-                _n = cookie_size
+                _n = f_cookie_size
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                cookie = _v
+                f_cookie = _v
             else:
-                cookie = None
+                f_cookie = None
         except CodecError:
             return None
         return cls(
-            version=version,
-            cookie_size=cookie_size,
-            cookie=cookie,
+            version=f_version,
+            cookie_size=f_cookie_size,
+            cookie=f_cookie,
         )
 
     def encode(self, w: SceSink, a: int) -> None:

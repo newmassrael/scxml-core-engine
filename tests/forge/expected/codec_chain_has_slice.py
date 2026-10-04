@@ -39,18 +39,18 @@ class CodecChainHasSlice:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            kind = cursor.read_vle_u16()
-            len = cursor.read_vle_u64()
-            _n = len
+            f_kind = cursor.read_vle_u16()
+            f_len = cursor.read_vle_u64()
+            _n = f_len
             raw = cursor.peek_slice(_n)
-            bytes = bytes(raw)
+            f_bytes = bytes(raw)
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            kind=kind,
-            len=len,
-            bytes=bytes,
+            kind=f_kind,
+            len=f_len,
+            bytes=f_bytes,
         )
 
     def encode(self, w: SceSink) -> None:

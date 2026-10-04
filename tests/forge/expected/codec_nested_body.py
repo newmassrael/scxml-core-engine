@@ -40,19 +40,19 @@ class CodecNestedBody:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            n = raw[0]
+            f_n = raw[0]
             cursor.advance(1)
-            locs = []
-            for _ in range(n):
+            f_locs = []
+            for _ in range(f_n):
                 _elem = CodecZenohLocator.decode(cursor)
                 if _elem is None:
                     return None
-                locs.append(_elem)
+                f_locs.append(_elem)
         except CodecError:
             return None
         return cls(
-            n=n,
-            locs=locs,
+            n=f_n,
+            locs=f_locs,
         )
 
     def encode(self, w: SceSink) -> None:

@@ -39,20 +39,20 @@ class CodecExtTimestamp:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            time = cursor.read_vle_u64()
+            f_time = cursor.read_vle_u64()
             raw = cursor.peek_slice(1)
-            zid_size = raw[0]
+            f_zid_size = raw[0]
             cursor.advance(1)
-            _n = zid_size
+            _n = f_zid_size
             raw = cursor.peek_slice(_n)
-            zid = bytes(raw)
+            f_zid = bytes(raw)
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            time=time,
-            zid_size=zid_size,
-            zid=zid,
+            time=f_time,
+            zid_size=f_zid_size,
+            zid=f_zid,
         )
 
     def encode(self, w: SceSink) -> None:

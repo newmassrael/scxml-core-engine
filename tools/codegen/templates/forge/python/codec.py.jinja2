@@ -11,13 +11,13 @@
     own indentation because the three call sites below share it. #}
 {% macro decode_field(field) %}
 {% if field.is_enum and field.enum_is_open %}
-        {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
+        {{ field.local }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
 {%- elif field.is_enum %}
-        {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
-        if {{ field.id }} is None:
+        {{ field.local }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
+        if {{ field.local }} is None:
             raise UndeclaredEnumValue("{{ field.id }}")
 {%- else %}
-        {{ field.id }} = {{ field.decode_expr }}
+        {{ field.local }} = {{ field.decode_expr }}
 {%- endif %}
 {% endmacro %}
 {{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -191,7 +191,7 @@ class {{ struct_name }}:
 {% endif %}
         return cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.id }},
+            {{ field.id }}={{ field.local }},
 {% endfor %}
             body=body,
         )
@@ -225,7 +225,7 @@ class {{ struct_name }}:
             return None
         return cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.id }},
+            {{ field.id }}={{ field.local }},
 {% endfor %}
         )
 {% elif has_variable_fields %}
@@ -241,7 +241,7 @@ class {{ struct_name }}:
 {% endfor %}
         value = cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.id }},
+            {{ field.id }}={{ field.local }},
 {% endfor %}
         )
         try:
@@ -259,7 +259,7 @@ class {{ struct_name }}:
 {% endfor %}
         value = cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.id }},
+            {{ field.id }}={{ field.local }},
 {% endfor %}
         )
         try:

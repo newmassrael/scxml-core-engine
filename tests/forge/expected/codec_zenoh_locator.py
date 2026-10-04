@@ -38,19 +38,19 @@ class CodecZenohLocator:
         # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
         # subclass, so this is behaviour-identical for them).
         try:
-            locator_len = cursor.read_vle_u64()
-            _n = locator_len
+            f_locator_len = cursor.read_vle_u64()
+            _n = f_locator_len
             raw = cursor.peek_slice(_n)
             try:
-                locator = bytes(raw).decode('utf-8')
+                f_locator = bytes(raw).decode('utf-8')
             except UnicodeDecodeError as exc:
                 raise InvalidUtf8() from exc
             cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            locator_len=locator_len,
-            locator=locator,
+            locator_len=f_locator_len,
+            locator=f_locator,
         )
 
     def encode(self, w: SceSink) -> None:

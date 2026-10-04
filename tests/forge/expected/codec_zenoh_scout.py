@@ -40,25 +40,25 @@ class CodecZenohScout:
         # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
-            version = raw[0]
+            f_version = raw[0]
             cursor.advance(1)
             raw = cursor.peek_slice(1)
-            cbyte = raw[0]
+            f_cbyte = raw[0]
             cursor.advance(1)
-            if (cbyte & 0x08) != 0:
-                _n = (((cbyte >> 4) & 0xF) + 1)
+            if (f_cbyte & 0x08) != 0:
+                _n = (((f_cbyte >> 4) & 0xF) + 1)
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
                 cursor.advance(_n)
-                zid = _v
+                f_zid = _v
             else:
-                zid = None
+                f_zid = None
         except CodecError:
             return None
         return cls(
-            version=version,
-            cbyte=cbyte,
-            zid=zid,
+            version=f_version,
+            cbyte=f_cbyte,
+            zid=f_zid,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
