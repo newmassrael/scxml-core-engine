@@ -839,6 +839,16 @@ path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_c_machines_event_data_follows_the_shared_key_order"
+path = "tests/a_c_machines_event_data_follows_the_shared_key_order.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "an_import_the_parser_cannot_resolve_is_reported_where_it_is"
+path = "tests/an_import_the_parser_cannot_resolve_is_reported_where_it_is.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_foreach_walks_a_list_variable"
 path = "tests/a_foreach_walks_a_list_variable.rs"
 required-features = ["cli"]

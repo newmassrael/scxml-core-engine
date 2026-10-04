@@ -1819,6 +1819,13 @@ struct MeshRpcInvokeAttrs {
     idlocation: String,
 }
 
+/// The event schemas and enums a document imports, by the alias it imports
+/// them under, as `SCXMLParser::parse_imported_forge_siblings` resolves them.
+type ImportedSiblings = (
+    BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    BTreeMap<String, crate::forge::model::EnumModel>,
+);
+
 impl SCXMLParser {
     pub fn new() -> Self {
         Self {
@@ -2037,13 +2044,8 @@ impl SCXMLParser {
         model: &SCXMLModel,
         base_dir: &Path,
         diag_label: &str,
-    ) -> Result<
-        (
-            std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
-            std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
-        ),
-        crate::forge::error::Located<crate::forge::error::ForgeError>,
-    > {
+    ) -> Result<ImportedSiblings, crate::forge::error::Located<crate::forge::error::ForgeError>>
+    {
         use crate::forge::error::{ImportError, Located};
         use crate::forge::model::{ForgeDocument, ForgeKind};
         let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> =
