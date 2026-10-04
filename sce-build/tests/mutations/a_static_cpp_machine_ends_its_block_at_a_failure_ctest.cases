@@ -26,7 +26,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/invoke_methods.jinja2
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp tests/integration/StaticHostParamsAotTest.cpp sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── A failed statement ends its block ──────────────────────────────
 
@@ -95,4 +95,27 @@ mutation_case "a child is not handed the values its invoke names" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
      "                            {{ slot }}->acceptParams(seed);",
      "                            (void)seed;")
+PY
+
+# ── A host is handed the values the fields hold ────────────────────
+#
+# `statechart_static_host_params`: a `<param>` of a host-served `<send>` and
+# `<invoke>` is native code over the machine's fields, read when the element runs
+# and handed to the host as text (`params`) and as the pairs' JSON (`eventData`).
+# `boom` is a multiplication a 32-bit field cannot hold: that pair is the
+# evaluation that failed, so it is reported and left out while the message still
+# goes. A pair written with a failed value is a request that still looks
+# complete; a send whose text params were never filled is one a host that reads
+# `params` meets empty — only the JSON carried the values.
+
+mutation_case "an invoke's param that failed is written into the request" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "                            if (sce_failure_.failed()) SCE_UNLIKELY {\n                                engine.raise(typename Engine::EventWithMetadata(\n                                    Event::Error_execution,\n                                    \"<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate\"));\n                            } else",
+     "                            if (false) SCE_UNLIKELY {\n                                engine.raise(typename Engine::EventWithMetadata(\n                                    Event::Error_execution,\n                                    \"<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate\"));\n                            } else")
+PY
+
+mutation_case "a send's param reaches the host as the pairs' JSON alone" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "{% else %}\n    params[\"{{ param.name | escape_cpp }}\"].push_back(\n        ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));\n    typedParams",
+     "{% else %}\n    typedParams")
 PY

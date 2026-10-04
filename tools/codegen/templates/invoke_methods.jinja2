@@ -558,7 +558,9 @@
                         // the request (SCE_MESH.md §mesh-9.5) is in `params` only.
                         [[maybe_unused]] std::map<std::string, std::vector<std::string>> payloadText;
                         [[maybe_unused]] std::map<std::string, std::vector<ScriptValue>> payloadTyped;
-{% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or invoke_info.idlocation or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{# A `datamodel="sce-static"` param is native code (`Param::native_value`) over
+   the machine's own fields, so it asks no script engine for its value. #}
+{% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or invoke_info.idlocation or (invoke_info.params | rejectattr('is_static_literal') | rejectattr('native_value') | list | length > 0) %}
 {% if host_evaluates %}
                         // W3C SCXML 6.4.1: what the request says is evaluated
                         // now, when the invocation starts, by the rules the
@@ -636,6 +638,35 @@
                         payloadText["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
                         payloadTyped["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("{{ param.static_value | escape_cpp }}")));
                         {% endif %}
+                        {% elif param.native_value %}
+                        {
+                            // `datamodel="sce-static"` (SCE Accepted Subset
+                            // §2.15): the value is native code over the machine's
+                            // own fields, read now, with no script engine to ask.
+                            // A checked operation that fails is the evaluation
+                            // that failed: reported and its pair left out, while
+                            // the invocation still starts (W3C SCXML 5.7.1).
+                            {% if param.native_fails %}
+                            SCE::Forge::AlgorithmFailure sce_failure_;
+                            {% endif %}
+                            ScriptValue paramValue = {{ param.native_value }};
+                            {% if param.native_fails %}
+                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                                engine.raise(typename Engine::EventWithMetadata(
+                                    Event::Error_execution,
+                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
+                            } else
+                            {% endif %}
+                            {
+                                const std::string paramText =
+                                    ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue));
+                                hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(paramText);
+                                {% if not param.envelope_metadata %}
+                                payloadText["{{ param.name | escape_cpp }}"].push_back(paramText);
+                                payloadTyped["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
+                                {% endif %}
+                            }
+                        }
                         {% elif request_checks and param.name in request_checks %}
                         {
                             // SCE Accepted Subset 2.12: `sce:request` makes the

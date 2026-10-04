@@ -96,9 +96,12 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("
 {# `datamodel="sce-static"`: the value is native code (`Param::native_value`)
    reading the machine's own fields, so no script engine is asked for it. A
    checked operation that fails is reported and its pair left out, and the
-   message still goes (§scxml-5.7.1): `paramFailed` ends the block after it. Only
-   the typed map is filled — the JSON every non-HTTP delivery carries — and a
-   BasicHTTP send with a param is refused by name where the machine is lowered. #}
+   message still goes (§scxml-5.7.1): `paramFailed` ends the block after it. Both
+   maps are filled, as a literal's are: the typed one is the JSON every delivery
+   carries, and the text one is what a host-served processor's request holds as
+   its `params` — a host that read only the JSON would get a pair the other
+   backends also hand it as text. A BasicHTTP send with a param is refused by name
+   where the machine is lowered. #}
 {
 {% if param.native_fails %}
     SCE::Forge::AlgorithmFailure sce_failure_;
@@ -108,9 +111,13 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("
     if (sce_failure_.failed()) SCE_UNLIKELY {
 {{ param_eval_failed(param, '        ') }}
     } else {
+        params["{{ param.name | escape_cpp }}"].push_back(
+            ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));
         typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
     }
 {% else %}
+    params["{{ param.name | escape_cpp }}"].push_back(
+        ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));
     typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
 {% endif %}
 }

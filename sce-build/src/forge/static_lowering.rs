@@ -2284,7 +2284,7 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, false) {
+            if let Some(other) = unlowered_invoke(&state.invokes, true) {
                 return Some(other);
             }
         }

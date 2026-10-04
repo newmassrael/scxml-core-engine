@@ -3106,8 +3106,14 @@ record variable, and a list of numbers, bools or records with `<sce:append>`,
 `<sce:clear>` and `<foreach>`, a call of an imported algorithm, and the
 `<param>`s of a `<final>`'s `<donedata>`, and an `<invoke type="scxml">` — the
 child is one more generated machine the parent starts with its own invoke code,
-after handing it the values through `acceptParams`. A bytes variable and an
-`<invoke>` the host runs, a hybrid one and a mesh one are not lowered yet. A call is the
+after handing it the values through `acceptParams`, and an `<invoke>` the host
+runs, whose `<param>`s are read from the policy's fields into the request's
+`params` (as text) and `eventData` (as the pairs' JSON) when the invocation
+starts — as a host-served `<send>`'s are, which carry the same two renderings.
+`tests/integration/StaticHostParamsAotTest.cpp` drives
+`statechart_static_host_params` and holds the value on the wire and the pair a
+failed computation leaves out. A bytes variable, a hybrid invoke and a mesh one
+are not lowered yet. A call is the
 algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
 `Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
 is received as any failed operation is; the machine's header includes the

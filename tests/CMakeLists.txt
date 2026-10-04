@@ -374,6 +374,7 @@ endif()
 # ============================================================================
 add_executable(static_datamodel_generated_cpp_test
     integration/AStaticDatamodelRunsGeneratedCppTest.cpp
+    integration/StaticHostParamsAotTest.cpp
 )
 
 target_include_directories(static_datamodel_generated_cpp_test
@@ -428,6 +429,19 @@ endforeach()
 sce_add_state_machine(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/static_host_call_arguments.scxml
+)
+
+# The typed `<param>` of a host-served `<send>` and `<invoke>`: the one fixture
+# that needs BOTH host declarations, because it sends to the host and invokes it.
+# The same document the Rust, Go and Kotlin channels drive, compiled here with the
+# declarations `scripts/regen_host_processor.sh` passes there — codegen decides at
+# compile time whether a host-typed element dispatches or refuses, so the flags
+# are spelled here and not only in the test.
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+    HOST_PROCESSOR x-sce-host
+    HOST_INVOKER x-sce-host
 )
 
 add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_cpp_test)
