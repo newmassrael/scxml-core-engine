@@ -95,8 +95,12 @@ written for, the model's text is left unstated (the screen's word for it is
 `behind`, never `current`) rather than taken from the last of them, and the first save
 that works settles it and writes the pointer in the form above. A save into an older
 folder names the place first, so a save that fails leaves nothing in the log. What an
-older folder cannot give back is the history of two such disagreeing saves: it may list
-the one that failed.
+older folder cannot give back is the history of two such disagreeing saves: it may hold
+the one that failed. `history` and `model_history` say so on that entry, with
+`"unconfirmed": true` (a key present only where it is true). The mark is a reading of
+the log, not something written into it, and it stays on the entry after a later save has
+made the model current: the save of today does not make the one of the past knowable.
+The model's screen does not show a model history; a client that does should show the mark.
 
 ### Removing a work
 

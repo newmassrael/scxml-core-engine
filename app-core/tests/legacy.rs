@@ -172,6 +172,66 @@ fn two_older_saves_of_one_model_that_disagree_leave_its_text_unstated_until_it_i
     assert_eq!(w.pointer_lines("model"), 2);
 }
 
+/// The same older folder, read through its history. Which of two saves of one model took
+/// effect cannot be told, and the history says so on the save it cannot vouch for, instead of
+/// listing it as one that took effect -- before the save that settles the model's text, and
+/// after it: a save of today does not make a save of the past knowable.
+#[test]
+fn a_save_an_older_build_may_have_failed_is_marked_in_the_history_and_stays_marked() {
+    let w = older("legacy-history");
+    let log = w.dir().join("model.log");
+    let mut text = fs::read_to_string(&log).unwrap();
+    text.push_str(
+        &json!({
+            "revision": w.model,
+            "parent": w.model,
+            "saved_at": "2026-10-03T09:00:09Z",
+            "written_for": w.s2,
+        })
+        .to_string(),
+    );
+    text.push('\n');
+    fs::write(&log, text).unwrap();
+
+    let unconfirmed = |w: &Older| -> Vec<bool> {
+        w.store
+            .model_history(&w.id)
+            .unwrap()
+            .iter()
+            .map(|e| e.unconfirmed)
+            .collect()
+    };
+    assert_eq!(
+        unconfirmed(&w),
+        vec![false, true],
+        "the save the pointer may not have moved to was listed as one that took effect"
+    );
+
+    let kept = w
+        .store
+        .save_model(&w.id, MODEL, Some(&w.model), Some(&w.s2))
+        .unwrap();
+    assert!(matches!(kept, Saved::Saved { .. }), "{kept:?}");
+    assert_eq!(
+        unconfirmed(&w),
+        vec![false, true, false],
+        "the save that worked was marked, or the one that may have failed lost its mark"
+    );
+
+    // What a client reads: the mark is in the response, and only where it is set.
+    let answer = call(
+        &w.store,
+        &FakeRenderer,
+        "model_history",
+        json!({"id": w.id.as_str()}),
+    )
+    .unwrap();
+    let entries = answer["entries"].as_array().unwrap();
+    assert_eq!(entries[1]["unconfirmed"], json!(true));
+    assert!(entries[0].get("unconfirmed").is_none());
+    assert!(entries[2].get("unconfirmed").is_none());
+}
+
 /// One save of each, nothing in doubt: older data reads as it always did.
 #[test]
 fn older_data_with_nothing_in_doubt_reads_as_it_always_did() {
@@ -187,6 +247,16 @@ fn older_data_with_nothing_in_doubt_reads_as_it_always_did() {
             .collect::<Vec<_>>(),
         vec![w.s1.clone(), w.s2.clone()]
     );
+    assert!(
+        history.iter().all(|e| !e.unconfirmed),
+        "a save nothing puts in doubt was marked"
+    );
+    assert!(w
+        .store
+        .model_history(&w.id)
+        .unwrap()
+        .iter()
+        .all(|e| !e.unconfirmed));
 }
 
 /// The first save into older data brings it to the form this build writes, and what it

@@ -53,7 +53,9 @@
 //! write stops it before the log holds a line, and the first save that works leaves the
 //! folder in the form this build writes. A read takes the pointer, the log, and the pointer
 //! again, and starts over if it moved, so a save landing between the two reads is not read
-//! against the pointer it replaced.
+//! against the pointer it replaced. Where the walk had to pick one of such saves by position,
+//! the entry it lists says so (`HistoryEntry::unconfirmed`), because a history is read as a
+//! record of saves that took effect and cannot be given back for these.
 //!
 //! The text, the model, the owner's answers, the requirement list and the acceptances are
 //! five chains kept by ONE implementation
@@ -352,6 +354,15 @@ pub struct HistoryEntry {
     /// source, and from a log written before models existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub written_for: Option<Revision>,
+    /// Set only on an entry the log cannot vouch for. A folder written before places were
+    /// kept cannot say which of two saves of one revision took effect (a save that failed
+    /// leaves the same line a save that worked does), and where those saves disagree about
+    /// the text they were written for, the one listed here may be a save that failed. It is
+    /// a reading of the log and is never written into it, and it stays on the entry after a
+    /// later save has made the model current: a save of today does not make one of the past
+    /// knowable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unconfirmed: bool,
 }
 
 /// What a save did.
@@ -906,7 +917,8 @@ impl<C: Clock> WorkStore<C> {
         // say it either (two saves that disagree, or none): a guess pinned into the
         // pointer would turn a save that failed into the one that took effect.
         if let Some(older) = pointer.as_ref().filter(|p| p.entry.is_none()) {
-            let pinned = chain_to(&dir, artifact, Some(older)).is_ok_and(|chain| !chain.doubtful);
+            let pinned =
+                chain_to(&dir, artifact, Some(older)).is_ok_and(|chain| !chain.head_unconfirmed());
             if pinned {
                 pointer = Some(name_the_place(&dir, artifact, older)?);
             }
@@ -934,6 +946,7 @@ impl<C: Clock> WorkStore<C> {
                 parent: current.clone(),
                 saved_at: self.clock.now(),
                 written_for: written_for.cloned(),
+                unconfirmed: false,
             },
             // The save this one follows is the one the pointer names, which is not
             // always the last line of its revision.
@@ -965,6 +978,10 @@ impl<C: Clock> WorkStore<C> {
     /// because a revision can recur (the text saved, changed, then saved again),
     /// and a failed save of a text that is later saved successfully leaves two
     /// lines for it, of which the later one is the save that took effect.
+    ///
+    /// In a folder written before places were kept that cannot be told, and where the saves of
+    /// one revision disagree about the text they were written for, the one picked is marked
+    /// `unconfirmed` and stays marked.
     ///
     /// A final line without its newline that does not parse is a save that was
     /// interrupted while it was being logged and is left out. Any other line that
@@ -1041,25 +1058,40 @@ fn read_chain(
 
 /// The saves that took effect up to the one a pointer names, oldest first.
 struct Chain {
+    /// Each entry says whether the log can vouch for it (`HistoryEntry::unconfirmed`).
     entries: Vec<HistoryEntry>,
-    /// The pointer names no place, and the saves of its revision in the log disagree about
-    /// the text it was written for. Which of them took effect cannot be told -- a save that
-    /// failed leaves the same line a save that worked does -- so what the last one says is
-    /// a claim nobody can vouch for, and `claim` does not give it.
-    doubtful: bool,
 }
 
 impl Chain {
+    /// Whether the save the chain ends at is one the log cannot vouch for.
+    fn head_unconfirmed(&self) -> bool {
+        self.entries.last().is_some_and(|entry| entry.unconfirmed)
+    }
+
     /// The source revision the save the chain ends at was written for, or `None` when it
-    /// says none or when it cannot be vouched for.
+    /// says none or when it cannot be vouched for: what the last of two saves that
+    /// disagree says is a claim nobody can vouch for.
     fn claim(&self) -> Option<Revision> {
-        if self.doubtful {
+        if self.head_unconfirmed() {
             return None;
         }
         self.entries
             .last()
             .and_then(|entry| entry.written_for.clone())
     }
+}
+
+/// Whether the saves of `revision` among `lines` disagree about the text they were written
+/// for. Where the log names no place (an older folder), they are candidates for one save the
+/// walk has to pick by position, and a pick between saves that disagree is a guess.
+fn saves_disagree(lines: &[LogLine], revision: &Revision) -> bool {
+    let mut claims = lines
+        .iter()
+        .filter(|l| l.entry.revision == *revision)
+        .map(|l| &l.entry.written_for);
+    claims
+        .next()
+        .is_some_and(|first| claims.any(|other| other != first))
 }
 
 /// The log's saves in the order they were appended. A final line cut short is left out.
@@ -1109,7 +1141,6 @@ fn chain_to(
     let Some(pointer) = pointer else {
         return Ok(Chain {
             entries: Vec::new(),
-            doubtful: false,
         });
     };
     let missing = |revision: &Revision| {
@@ -1141,37 +1172,34 @@ fn chain_to(
             .rposition(|l| l.entry.revision == pointer.revision)
             .ok_or_else(|| missing(&pointer.revision))?,
     };
-    let doubtful = named_by_place.is_none() && {
-        let mut claims = lines
-            .iter()
-            .filter(|l| l.entry.revision == pointer.revision)
-            .map(|l| &l.entry.written_for);
-        claims
-            .next()
-            .is_some_and(|first| claims.any(|other| other != first))
-    };
+    // A save picked by position among several that disagree is one the log cannot vouch for;
+    // one named by a place is vouched for by the pointer or the save that followed it.
+    let mut unconfirmed = named_by_place.is_none() && saves_disagree(&lines, &pointer.revision);
     let mut chain = Vec::new();
     loop {
         let line = &lines[at];
-        chain.push(line.entry.clone());
+        chain.push(HistoryEntry {
+            unconfirmed,
+            ..line.entry.clone()
+        });
         let Some(parent) = line.entry.parent.as_ref() else {
             break;
         };
         // The save this one followed, by its place; failing that, the last line of
         // that revision before this one, as a log from before places were kept needs.
-        at = match line.parent_at {
-            Some(place) if place < at && lines[place].entry.revision == *parent => place,
-            _ => lines[..at]
-                .iter()
-                .rposition(|l| l.entry.revision == *parent)
-                .ok_or_else(|| missing(parent))?,
+        (at, unconfirmed) = match line.parent_at {
+            Some(place) if place < at && lines[place].entry.revision == *parent => (place, false),
+            _ => (
+                lines[..at]
+                    .iter()
+                    .rposition(|l| l.entry.revision == *parent)
+                    .ok_or_else(|| missing(parent))?,
+                saves_disagree(&lines[..at], parent),
+            ),
         };
     }
     chain.reverse();
-    Ok(Chain {
-        entries: chain,
-        doubtful,
-    })
+    Ok(Chain { entries: chain })
 }
 
 /// Where the default works folder is: `SCE_WORKS_DIR` when set, otherwise the
@@ -1329,7 +1357,7 @@ fn pointer_file_text(revision: &Revision, place: usize) -> String {
 /// An older folder's pointer written again with the place of the save it meant: the last
 /// line the log holds for its revision, which is the line it has always been read as.
 ///
-/// Only for a pointer whose revision the log leaves no doubt about (`Chain::doubtful`):
+/// Only for a pointer whose revision the log leaves no doubt about (`Chain::head_unconfirmed`):
 /// a place pinned for a line that may be a save which failed would make that save the one
 /// that took effect.
 fn name_the_place(dir: &Path, artifact: Artifact, older: &Pointer) -> Result<Pointer, StoreError> {
@@ -1519,6 +1547,7 @@ mod tests {
                     parent: Some(b.clone()),
                     saved_at: store.now(),
                     written_for: None,
+                    unconfirmed: false,
                 },
                 parent_at: Some(1),
             };
