@@ -20,8 +20,8 @@ class ValidatorRpmCheck:
     def validate(self, rpm: int, engine_state: str) -> ValidationResult:
         if rpm > 8000:
             return ValidationResult(False, "rpm_out_of_range")
-        delta = abs(rpm - self.prev_rpm)
-        if delta > 500:
+        _delta = abs(rpm - self.prev_rpm)
+        if _delta > 500:
             return ValidationResult(False, "rpm_rate_of_change_exceeded")
         if not (rpm == 0 or engine_state != 'STOP'):
             return ValidationResult(False, "plausibility_failed")

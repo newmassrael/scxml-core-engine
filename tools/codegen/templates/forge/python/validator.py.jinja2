@@ -61,8 +61,8 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
-        delta = abs({{ rule.id }} - self.{{ rule.prev_name }})
-        if delta > {{ rule.max_delta }}:
+        _delta = abs({{ rule.id }} - self.{{ rule.prev_name }})
+        if _delta > {{ rule.max_delta }}:
             return ValidationResult(False, "{{ rule.reason_id }}_rate_of_change_exceeded")
 {% endfor %}
 {% if plausibility_expr %}

@@ -21646,8 +21646,11 @@ impl LangCtx {
                 format!("{ty} {}", filters::to_snake_case(id.to_string()))
             }
             crate::generator::Language::Kotlin => format!("{id}: {ty}"),
-            crate::generator::Language::Rust | crate::generator::Language::Python => {
+            crate::generator::Language::Rust => {
                 format!("{}: {ty}", filters::to_snake_case(id.to_string()))
+            }
+            crate::generator::Language::Python => {
+                format!("{}: {ty}", python_local_spelling(id))
             }
         }
     }
@@ -22031,6 +22034,11 @@ fn render_interpolation(
                 // through `param_str`. The template references this only when
                 // lang=C11 — other backends ignore the field.
                 "input_id_snake": filters::to_snake_case(a.input_id.clone()),
+                // The name the signature declared the input with (`param_str`
+                // spells it through `place_param`), which is what the body must
+                // read. The Python template read `input_id` as written, so a
+                // camelCase or capitalised input was a `NameError` there.
+                "input_local": l.local_id(&a.input_id),
                 "var_name": var_name,
                 "breakpoints": a.breakpoints,
                 "size": a.breakpoints.len(),
@@ -24815,9 +24823,87 @@ pub(crate) fn forge_transform_holder_symbols(
 pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> String {
     use crate::generator::Language;
     match language {
-        Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
+        Language::Rust | Language::C11 => filters::to_snake_case(id.to_string()),
+        Language::Python => python_local_spelling(id),
         Language::Go => go_escape_builtin(id),
         Language::Cpp | Language::Kotlin => id.to_string(),
+    }
+}
+
+/// The names a generated Python function of a forge kind (algorithm,
+/// validator, transform, interpolation, condition, filter, lookup, observer)
+/// reaches for that are not the author's: a builtin its code calls, and the
+/// module-level names its template or runtime defines.
+///
+/// A name an author gives a parameter or a variable is a LOCAL of the function
+/// that also calls `len(…)`, `abs(…)`, `bytes(…)`, so a local of that spelling
+/// hides what the next line calls — and says nothing: `abs = abs(x - prev)`
+/// is an `UnboundLocalError` or a call on a number, `bytes(out)` after a local
+/// `bytes` is a call on a bytes object, and a validator input called `delta`
+/// was overwritten by the template's own `delta` and stored the difference as
+/// its previous value. A wire or sensor specification calls things `len`,
+/// `bytes`, `str`; a generator that is right only when the author's names keep
+/// clear of its own has put its convenience on the author.
+///
+/// Lowercase, because a local is always spelled by [`filters::to_snake_case`]
+/// and so can only meet a lowercase name; `ValidationResult` and `State`
+/// cannot be one.
+///
+/// The underscore-led temporaries a template writes (`_lookup`, `_delta`,
+/// `_events`) are here too. They are the generator's by convention, and an
+/// author may write a name that begins with `_`; the convention keeps the
+/// generator's names out of the way of the author's only when the author's
+/// do not begin that way, which nothing promises.
+///
+/// The list is what the output shows, not a guess:
+/// `a_python_codec_keeps_an_authors_names_apart_from_its_own` (codec) and
+/// `a_python_kind_keeps_an_authors_names_apart_from_its_own` (the other kinds)
+/// derive every name the committed Python uses, run each as the author's
+/// name, and fail on the one that breaks — so a template that starts using one
+/// more builtin extends this list or fails there.
+pub const PYTHON_GENERATED_NAMES: &[&str] = &[
+    "_delta",
+    "_events",
+    "_lookup",
+    "abs",
+    "abstractmethod",
+    "bilinear",
+    "bool",
+    "bytearray",
+    "bytes",
+    "dataclass",
+    "float",
+    "frozenset",
+    "int",
+    "len",
+    "linear",
+    "lookup",
+    "sce_algorithm",
+    "str",
+    "super",
+    "tuple",
+];
+
+/// How a Python function of a forge kind spells a name the author gave a
+/// parameter, a variable or a datum: snake_case, and a trailing `_` (PEP 8's
+/// spelling for a name that would otherwise hide a builtin) when the result is
+/// one of [`PYTHON_GENERATED_NAMES`].
+///
+/// One function for the declaration, every read and every call: a parameter
+/// declared `abs_` and read as `abs` is the same defect from the other side.
+///
+/// The escape is a SHIFT, not a suffix: a name whose stem (the name without its
+/// trailing underscores) is on the list gets one more underscore, so `len` is
+/// `len_` and an author's own `len_` is `len__`. A plain "append `_` to a listed
+/// name" would send `len` and `len_` to the same spelling, and two variables
+/// that the document keeps apart would be one in the generated code; the shift
+/// is injective, so no pair of names can meet and nothing has to be refused.
+pub(crate) fn python_local_spelling(id: &str) -> String {
+    let snake = filters::to_snake_case(id.to_string());
+    if PYTHON_GENERATED_NAMES.contains(&snake.trim_end_matches('_')) {
+        format!("{snake}_")
+    } else {
+        snake
     }
 }
 
@@ -24826,12 +24912,20 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
 /// and a host reads the record from another package, so the field is
 /// PascalCase there; on every other backend it is the field id's local
 /// spelling ([`forge_local_id`]).
+///
+/// Python is the exception: a record field is an ATTRIBUTE of the holder's
+/// dataclass, which no builtin can hide (`outputs.abs` and the keyword in
+/// `Outputs(abs=…)` are in a namespace of their own), so it keeps the
+/// author's snake_case name and only the LOCAL the output is computed into is
+/// escaped. A public name changed to dodge a collision it was never in is a
+/// break for a host that reads the record by that name.
 pub(crate) fn forge_transform_output_field(
     output_id: &str,
     language: crate::generator::Language,
 ) -> String {
     match language {
         crate::generator::Language::Go => filters::to_pascal_case(output_id.to_string()),
+        crate::generator::Language::Python => filters::to_snake_case(output_id.to_string()),
         _ => forge_local_id(output_id, language),
     }
 }

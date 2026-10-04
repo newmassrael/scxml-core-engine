@@ -2612,6 +2612,34 @@ from the committed Python output and fails when a template change makes one
 stale, and runs every Python builtin and every name that output uses as a
 field of each shape that binds a local.
 
+The other forge kinds whose Python is a function — algorithm, condition,
+filter, interpolation, lookup, observer, transform, validator — meet the
+same question with the author's names as the function's own locals, and
+refuse nothing for it. A name that the function's code would otherwise hide
+is spelled with a trailing `_` (PEP 8's spelling), and only that name: an
+algorithm variable called `len` is `len_`, so `n = len(data)` still calls the
+builtin; a validator input called `abs` is `abs_`, and `delta` no longer meets
+the template's own temporary, which is `_delta` now. The escape is a shift, so
+an author's own `len_` is `len__` and two names never meet at one spelling.
+One function spells the declaration, every read and every call, so a name
+cannot be escaped in one place and not another — an interpolation input
+written `engineRpm` was declared `engine_rpm` and read as `engineRpm`, a
+`NameError`, until its body was spelled by the same function. A record field
+of a transform's outputs is an attribute and is not escaped: a host reading
+`outputs.abs` by name still finds it. The names escaped are
+`PYTHON_GENERATED_NAMES` in `sce-build/src/forge/generator.rs`, and
+`a_python_kind_keeps_an_authors_names_apart_from_its_own` runs every document
+of those kinds with each name it declares renamed to each builtin and each
+name the kind's committed Python uses, and compares what the generated module
+does — about 15 000 renamings — and a second test fails when the committed
+output starts to use a name that list does not carry.
+
+Two of an author's own names that snake-case to one spelling (`minRpm` and
+`min_rpm`) are still accepted and are one parameter to the generated Python,
+which the interpreter refuses as a duplicate argument. That is not a name the
+generator wrote, the oracle counts it and leaves it out, and it is recorded as
+open rather than closed here.
+
 This is the narrowing §1 draws for W3C's identifiers, drawn for the
 names SCE owns, and it is narrower than an XML Name in the same
 direction for the same reason: `-` and `.` are operators in every target

@@ -54,18 +54,18 @@ class {{ struct_name }}:
 {% endfor %}
 
     def update(self, {{ params }}) -> EventQueue[ForgeDomainTag]:
-        events: EventQueue[ForgeDomainTag] = EventQueue()
+        _events: EventQueue[ForgeDomainTag] = EventQueue()
 {% for mon in monitors %}
         if self._{{ mon.id }}.enter_if({{ mon.enter_expr }}):
-            events.push(ForgeDomainTag.{{ mon.event_enter }})
+            _events.push(ForgeDomainTag.{{ mon.event_enter }})
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
         elif self._{{ mon.id }}.leave_if({{ mon.leave_expr }}):
-            events.push(ForgeDomainTag.{{ mon.event_leave }})
+            _events.push(ForgeDomainTag.{{ mon.event_leave }})
 {% else %}
         else:
             self._{{ mon.id }}.leave_if({{ mon.leave_expr }})
 {% endif %}
 {% endif %}
 {% endfor %}
-        return events
+        return _events

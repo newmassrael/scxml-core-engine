@@ -6615,7 +6615,10 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
-        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        // The spelling the function DECLARED the name with: the same function
+        // spells its parameter and its variable, so a name that hides a
+        // builtin is escaped in the read as it was in the declaration.
+        ExprKind::Ident(s) => crate::forge::generator::python_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);

@@ -32,9 +32,9 @@ def {{ member_symbol }}({{ params }}) -> {{ output_type }}:
 {% if is_bilinear %}
     return bilinear(
         {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
-        float({{ axes[0].input_id }}), float({{ axes[1].input_id }}))
+        float({{ axes[0].input_local }}), float({{ axes[1].input_local }}))
 {% else %}
     return linear(
         {{ axes[0].var_name }}, VALUES,
-        float({{ axes[0].input_id }}))
+        float({{ axes[0].input_local }}))
 {% endif %}

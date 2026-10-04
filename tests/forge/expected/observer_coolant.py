@@ -30,13 +30,13 @@ class ObserverCoolant:
         self._critical = ThresholdState()
 
     def update(self, coolant_temp: float) -> EventQueue[ForgeDomainTag]:
-        events: EventQueue[ForgeDomainTag] = EventQueue()
+        _events: EventQueue[ForgeDomainTag] = EventQueue()
         if self._warning.enter_if(coolant_temp > 110.0):
-            events.push(ForgeDomainTag.EMIT_WARNING)
+            _events.push(ForgeDomainTag.EMIT_WARNING)
         elif self._warning.leave_if(coolant_temp < 100.0):
-            events.push(ForgeDomainTag.CLEAR_WARNING)
+            _events.push(ForgeDomainTag.CLEAR_WARNING)
         if self._critical.enter_if(coolant_temp > 120.0):
-            events.push(ForgeDomainTag.EMERGENCY_SHUTDOWN)
+            _events.push(ForgeDomainTag.EMERGENCY_SHUTDOWN)
         else:
             self._critical.leave_if(coolant_temp < 105.0)
-        return events
+        return _events
