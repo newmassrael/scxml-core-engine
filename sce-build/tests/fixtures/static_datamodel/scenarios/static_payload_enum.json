@@ -1,0 +1,36 @@
+{
+  "machine": "static_payload_enum",
+  "about": "An event's payload carries an enum field, the variant's declared name as a JSON string. A guard compares it with `===` to a variant and an assignment stores it in a variable of the same enum, so a screen shown as a week is held as a week and one shown as an agenda, a variant spelled with an underscore, is saved as the name the document wrote. A name the enum does not declare, or a value that is no name, does not fit the schema: the delivery is refused and writes nothing. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "each variable starts at the value its expr names",
+      "expect": { "state": "browsing", "variables": { "layout": "month", "zoom": 0, "agenda": false, "shown": 0 } } },
+
+    { "note": "a week: the guard on the agenda is false, the second transition stores the layout and the zoom",
+      "event": "view.shown", "data": { "layout": "week", "zoom": 2 },
+      "expect": { "variables": { "layout": "week", "zoom": 2, "agenda": false, "shown": 1 } } },
+
+    { "note": "an agenda: the variant named with an underscore takes the first transition",
+      "event": "view.shown", "data": { "layout": "agenda_list", "zoom": 5 },
+      "expect": { "variables": { "layout": "agenda_list", "zoom": 5, "agenda": true, "shown": 2 } } },
+
+    { "note": "a day after an agenda: the agenda flag is written again",
+      "event": "view.shown", "data": { "layout": "day", "zoom": 1 },
+      "expect": { "variables": { "layout": "day", "zoom": 1, "agenda": false, "shown": 3 } } },
+
+    { "note": "the month it started at, from the payload this time",
+      "event": "view.shown", "data": { "layout": "month", "zoom": 0 },
+      "expect": { "variables": { "layout": "month", "zoom": 0, "agenda": false, "shown": 4 } } },
+
+    { "note": "a name the enum does not declare is no value of it: the delivery is refused as a payload that does not fit its schema, and nothing is written",
+      "event": "view.shown", "data": { "layout": "fortnight", "zoom": 9 },
+      "expect": { "variables": { "layout": "month", "zoom": 0, "agenda": false, "shown": 4 } } },
+
+    { "note": "a number is no name: refused the same way",
+      "event": "view.shown", "data": { "layout": 2, "zoom": 9 },
+      "expect": { "variables": { "layout": "month", "zoom": 0, "agenda": false, "shown": 4 } } },
+
+    { "note": "a well formed payload after a refused one is read as any other",
+      "event": "view.shown", "data": { "layout": "week", "zoom": 3 },
+      "expect": { "variables": { "layout": "week", "zoom": 3, "agenda": false, "shown": 5 } } }
+  ]
+}

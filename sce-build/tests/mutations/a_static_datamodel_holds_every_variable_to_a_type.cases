@@ -178,13 +178,14 @@ edit("tools/codegen/templates/entry_exit_actions.jinja2",
 PY
 
 # A transition that reads the payload of an event whose schema declares an enum
-# field is refused by name, whatever the target. Without the refusal the five
-# generators that carry the typed channel stop on the field with a panic (exit
-# 101), and only C refuses.
+# field has the enum declared in the machine's unit, or is refused by name when
+# the document does not import it, whatever the target. Without the step the
+# five generators that carry the typed channel stop on the field with a panic
+# (exit 101), and only C refuses.
 mutation_case "a payload read of an event with an enum field reaches the generator" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        if !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {\n",
-     "        if false && !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {\n")
+     "        if crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {\n            continue;\n        }\n",
+     "        if true {\n            continue;\n        }\n")
 PY
 
 # C's arm for it is the one that stops copying the text into the buffer the done

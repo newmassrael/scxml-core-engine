@@ -2380,6 +2380,7 @@ pub fn build_rust_event_payload(
     policy_generics_decl: &str,
     policy_generics_use: &str,
     no_std: bool,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> RustEventPayload {
     let schemaless = || RustEventPayload {
         defs: String::new(),
@@ -2437,12 +2438,14 @@ pub fn build_rust_event_payload(
     }
 
     // Emit one payload struct + one enum variant per payload event.
-    // Field types resolve through `LangCtx::type_name`; payload
-    // eligibility above guarantees every field is primitive, so this
-    // never hits the enum-alias arm (which would need an out-of-scope
-    // `use`). Primitive by construction: `schema_is_native_payload_eligible`
-    // refuses an enum-typed schema before any payload struct is built.
-    let l = LangCtx::primitive(crate::generator::Language::Rust);
+    // Field types resolve through `LangCtx::type_name`. Under any data model
+    // but `sce-static` payload eligibility guarantees every field is
+    // primitive, so the enum-alias arm (which would need an out-of-scope
+    // `use`) is never hit: `schema_is_native_payload_eligible` refuses an
+    // enum-typed schema before any payload struct is built. A `sce-static`
+    // machine declares the enums its variables hold in its own unit, and a
+    // payload field of one is held in that type (`static_enums`).
+    let l = LangCtx::with_static_enums(crate::generator::Language::Rust, static_enums);
     let mut structs = String::new();
     let mut variant_lines = String::new();
     let mut entry_fns = String::new();
@@ -2501,14 +2504,11 @@ pub fn build_rust_event_payload(
                 SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
                 SceType::String => format!("fields.text(\"{}\")?", f.id),
                 SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
-                SceType::Enum(_) => unreachable!(
-                    "payload eligibility admits only primitive fields, so no \
-                     enum-typed field reaches the lift"
-                ),
+                SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
             };
             lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
         }
-        let data = rust_record_wire(&schema.fields, "payload", "        ");
+        let data = rust_record_wire_of(&schema.fields, "payload", "        ", static_enums);
         // The inject seam fills both carriers under std: the typed payload a
         // native guard reads, and the `data` wire the script engine binds
         // `_event.data` from. Filling only the first left an
@@ -2543,8 +2543,20 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
                 "    fn {method}(&mut self, payload: {struct_name}) {{\n{inject_body}    }}\n"
             ));
         }
+        // A struct that holds an enum has no default: the enum is the machine's
+        // own, with no value that is the one to start from, and the payload
+        // enum's `None` is what stands for a payload nothing has bound.
+        let derives = if schema
+            .fields
+            .iter()
+            .any(|f| matches!(f.sce_type, SceType::Enum(_)))
+        {
+            "Clone, Debug, PartialEq"
+        } else {
+            "Clone, Debug, Default, PartialEq"
+        };
         structs.push_str(&format!(
-            "#[derive(Clone, Debug, Default, PartialEq)]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
+            "#[derive({derives})]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
         variant_lines.push_str(&format!("    {variant}({struct_name}),\n"));
     }
@@ -2633,6 +2645,52 @@ fn rust_record_field_type(l: &LangCtx, f: &ForgeField) -> String {
     }
 }
 
+/// The enum a `sce-static` machine declares for the alias a payload field is
+/// typed with. A document whose payload names an enum it does not import is
+/// refused where it is lowered ([`crate::forge::static_lowering::lower`]), so a
+/// field that reaches a builder without one is a routing defect.
+fn static_enum_of<'e>(
+    enums: &'e [crate::forge::static_lowering::StaticEnumType],
+    alias: &str,
+) -> &'e crate::forge::static_lowering::StaticEnumType {
+    enums.iter().find(|e| e.alias == alias).unwrap_or_else(|| {
+        panic!(
+            "a payload field of enum `{alias}` reached a builder that was given no \
+             declaration of it: the static lowering declares an enum a payload holds \
+             before the payload is built"
+        )
+    })
+}
+
+/// What the Rust lift reads an enum-typed payload field as: the variant whose
+/// declared name the wire carries, as a saved state names it. A name the enum
+/// does not declare is a payload that does not fit its schema, which the lift
+/// refuses as it refuses a number out of range.
+fn rust_enum_lift(
+    enums: &[crate::forge::static_lowering::StaticEnumType],
+    alias: &str,
+    field: &str,
+) -> String {
+    let e = static_enum_of(enums, alias);
+    let arms: String = e
+        .variants
+        .iter()
+        .map(|v| {
+            format!(
+                "\"{}\" => {}::{}, ",
+                filters::escape_rust(v.declared.clone()),
+                e.ty,
+                v.ident
+            )
+        })
+        .collect();
+    format!(
+        "match fields.text(\"{field}\")?.as_str() {{ {arms}other => return \
+         Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(format!(\
+         \"{field} ({{other}}) is not a variant of {alias}\"))) }}"
+    )
+}
+
 /// [`rust_record_field_type`] for a caller outside this module.
 pub(crate) fn rust_record_type(f: &ForgeField) -> String {
     rust_record_field_type(&LangCtx::primitive(crate::generator::Language::Rust), f)
@@ -2646,6 +2704,18 @@ pub(crate) fn rust_record_type(f: &ForgeField) -> String {
 /// Latin-1 text (`PayloadFields::bytes` reads it back the same way), and a
 /// text is quoted and escaped.
 pub(crate) fn rust_record_wire(fields: &[ForgeField], receiver: &str, indent: &str) -> String {
+    rust_record_wire_of(fields, receiver, indent, &[])
+}
+
+/// [`rust_record_wire`] over fields that may hold an enum the machine declares
+/// (`static_enums`): it rides as the variant's declared name, quoted, as a
+/// saved state holds it.
+fn rust_record_wire_of(
+    fields: &[ForgeField],
+    receiver: &str,
+    indent: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
     let mut items = String::new();
     let mut args = String::new();
     for f in fields {
@@ -2659,6 +2729,25 @@ pub(crate) fn rust_record_wire(fields: &[ForgeField], receiver: &str, indent: &s
                 "::sce_rust_runtime::event_payload::quote(&{receiver}.{})",
                 f.id
             ),
+            SceType::Enum(r) => {
+                let e = static_enum_of(static_enums, &r.alias);
+                let arms: String = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            "{}::{} => \"{}\", ",
+                            e.ty,
+                            v.ident,
+                            filters::escape_rust(v.declared.clone())
+                        )
+                    })
+                    .collect();
+                format!(
+                    "::sce_rust_runtime::event_payload::quote(match {receiver}.{} {{ {arms}}})",
+                    f.id
+                )
+            }
             _ => format!("{receiver}.{}", f.id),
         };
         if !items.is_empty() {
@@ -3186,7 +3275,11 @@ pub struct GoEventPayload {
 /// The width travels in the type argument rather than in the function name so
 /// a field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
-fn go_payload_reader(f: &ForgeField, obj: &str) -> String {
+fn go_payload_reader(
+    f: &ForgeField,
+    obj: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
     let id = &f.id;
     match &f.sce_type {
         SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => format!(
@@ -3206,12 +3299,30 @@ fn go_payload_reader(f: &ForgeField, obj: &str) -> String {
         SceType::Bool => format!("sce.PayloadBool({obj}, \"{id}\")"),
         SceType::String => format!("sce.PayloadString({obj}, \"{id}\")"),
         SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\")"),
-        // Payload eligibility keeps an enum-typed field out of this channel;
-        // `go_type` says the same thing by refusing to answer for one.
-        SceType::Enum(_) => unreachable!(
-            "go_payload_reader called on SceType::Enum — payload eligibility \
-             admits only primitive fields"
-        ),
+        // An enum is the machine's own, lifted from the variant's declared
+        // name; a name the enum does not declare is a payload that does not
+        // fit its schema, refused as a number out of range is.
+        SceType::Enum(r) => {
+            let e = static_enum_of(static_enums, &r.alias);
+            let arms: String = e
+                .variants
+                .iter()
+                .map(|v| {
+                    format!(
+                        "case \"{}\": return {}, nil; ",
+                        filters::escape_go(v.declared.clone()),
+                        v.ident
+                    )
+                })
+                .collect();
+            format!(
+                "func() ({ty}, error) {{ name, err := sce.PayloadString({obj}, \"{id}\"); \
+                 if err != nil {{ return 0, err }}; switch name {{ {arms}}}; \
+                 return 0, fmt.Errorf(\"%q (%s) is not a variant of {alias}\", \"{id}\", name) }}()",
+                ty = e.ty,
+                alias = r.alias
+            )
+        }
     }
 }
 
@@ -3221,10 +3332,12 @@ fn go_payload_reader(f: &ForgeField, obj: &str) -> String {
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text and `sce.PayloadBytes` reads it back the same way.
 fn go_payload_data_value(f: &ForgeField) -> String {
-    if matches!(f.sce_type, SceType::Bytes) {
-        format!("sce.BytesAsPayloadText({})", f.id)
-    } else {
-        f.id.clone()
+    match f.sce_type {
+        SceType::Bytes => format!("sce.BytesAsPayloadText({})", f.id),
+        // The name the enum document declares for the value, which is what
+        // the enum's `String` answers.
+        SceType::Enum(_) => format!("{}.String()", f.id),
+        _ => f.id.clone(),
     }
 }
 
@@ -3239,6 +3352,7 @@ fn go_payload_data_value(f: &ForgeField) -> String {
 pub fn build_go_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> GoEventPayload {
     let inactive = || GoEventPayload {
         defs: String::new(),
@@ -3295,9 +3409,11 @@ pub fn build_go_event_payload(
 
     // Field types resolve through `LangCtx::type_name`; payload
     // eligibility guarantees every field is primitive, so this never hits
-    // the enum-alias arm (which would need an out-of-scope import).
-    // Primitive by construction — see the Rust payload builder.
-    let l = LangCtx::primitive(crate::generator::Language::Go);
+    // the enum-alias arm (which would need an out-of-scope import) — except
+    // under `sce-static`, whose machine declares the enums its variables hold
+    // in its own unit, and a payload field of one is held in that type. See
+    // the Rust payload builder.
+    let l = LangCtx::with_static_enums(crate::generator::Language::Go, static_enums);
     let mut structs = String::new();
     let mut raise_fns = String::new();
     let mut tag_consts = format!("\t{tag_none} {tag_type} = iota\n");
@@ -3336,7 +3452,7 @@ pub fn build_go_event_payload(
             field_reads.push_str(&format!(
                 "\t\tif payload.{}, err = {}; err != nil {{\n\t\t\treturn err\n\t\t}}\n",
                 f.id,
-                go_payload_reader(f, "fields")
+                go_payload_reader(f, "fields", static_enums)
             ));
             // In schema order, as every other engine writes the same payload.
             data_items.push_str(&format!(
@@ -3496,14 +3612,38 @@ fn cpp_payload_reader(f: &ForgeField, target: &str) -> String {
         SceType::Bool => "readBool",
         SceType::String => "readString",
         SceType::Bytes => "readBytes",
-        // Payload eligibility keeps an enum-typed field out of this channel;
-        // `cpp_type` says the same thing by refusing to answer for one.
-        SceType::Enum(_) => unreachable!(
-            "cpp_payload_reader called on SceType::Enum — payload eligibility \
-             admits only primitive fields"
-        ),
+        // An enum is read through its own statements ([`cpp_enum_lift`]),
+        // since it is lifted from a name and not read at a width.
+        SceType::Enum(_) => unreachable!("an enum field is lifted by `cpp_enum_lift`"),
     };
     format!("fields.{call}(\"{id}\", {target}.{id})")
+}
+
+/// The statements that lift an enum-typed payload field into `target`: the
+/// variant whose declared name the wire carries, as a saved state names it. A
+/// name the enum does not declare is a payload that does not fit its schema,
+/// refused as a number out of range is.
+fn cpp_enum_lift(
+    id: &str,
+    target: &str,
+    e: &crate::forge::static_lowering::StaticEnumType,
+    alias: &str,
+) -> String {
+    let mut arms = String::new();
+    for v in &e.variants {
+        arms.push_str(&format!(
+            "                if (name == \"{}\") {{\n                    {target}.{id} = {}::{};\n                }} else ",
+            filters::escape_cpp(v.declared.clone()),
+            e.ty,
+            v.ident
+        ));
+    }
+    format!(
+        "            {{\n                ::std::string name;\n                \
+refusal = fields.readString(\"{id}\", name);\n                \
+if (!refusal.empty()) {{\n                    return refusal;\n                }}\n{arms}\
+{{\n                    return ::std::string(\"'{id}' (\") + name + \") is not a variant of {alias}\";\n                }}\n            }}\n"
+    )
 }
 
 /// Build the [`CppEventPayload`] for `model`. Same SSOT guard selection
@@ -3511,6 +3651,7 @@ fn cpp_payload_reader(f: &ForgeField, target: &str) -> String {
 pub fn build_cpp_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> CppEventPayload {
     let inactive = || CppEventPayload {
         defs: String::new(),
@@ -3558,8 +3699,9 @@ pub fn build_cpp_event_payload(
         return inactive();
     }
 
-    // Primitive by construction — see the Rust payload builder.
-    let l = LangCtx::primitive(crate::generator::Language::Cpp);
+    // Primitive by construction, but for the enums a `sce-static` machine
+    // declares in its own unit — see the Rust payload builder.
+    let l = LangCtx::with_static_enums(crate::generator::Language::Cpp, static_enums);
     let mut structs = String::new();
     let mut tag_values = String::from("    None = 0,\n");
     // `mutable` mirrors the existing `pendingEvent*_` fields — the transition
@@ -3605,11 +3747,19 @@ pendingPayloadTag_ = {TAG}::None;\n",
             }
             params.push_str(&format!("{ty} {}", f.id));
             struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
-            field_reads.push_str(&format!(
-                "            refusal = {};\n            \
+            match &f.sce_type {
+                SceType::Enum(r) => field_reads.push_str(&cpp_enum_lift(
+                    &f.id,
+                    "payload",
+                    static_enum_of(static_enums, &r.alias),
+                    &r.alias,
+                )),
+                _ => field_reads.push_str(&format!(
+                    "            refusal = {};\n            \
 if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
-                cpp_payload_reader(f, "payload")
-            ));
+                    cpp_payload_reader(f, "payload")
+                )),
+            }
             // ⚠ The wire is built by the same header the lift reads it with,
             // and by nothing else: a generated C++ machine LINKS against
             // `sce/include` alone (`event_schema_bytes_guard.rs` builds one
@@ -3617,9 +3767,16 @@ if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
             // that property away. Each field's spelling follows its declared
             // type — a `bytes` field as its byte-exact Latin-1 text, because
             // JSON has no byte string.
+            // An enum rides as the name its document declares for the value,
+            // which the enum's `sceLogName` answers.
+            let written = if matches!(f.sce_type, SceType::Enum(_)) {
+                format!("::std::string(sceLogName({}))", f.id)
+            } else {
+                f.id.clone()
+            };
             data_items.push_str(&format!(
-                "::SCE::Common::EventPayloadFields::field(\"{}\", {})",
-                f.id, f.id
+                "::SCE::Common::EventPayloadFields::field(\"{}\", {written})",
+                f.id
             ));
         }
         lift_cases.push_str(&format!(
@@ -3728,8 +3885,19 @@ pub struct KotlinEventPayload {
 /// The width is in the method name rather than in a cast, so a field that was
 /// widened in its schema cannot keep being read at the old width — the
 /// generated call stops compiling instead.
-fn kotlin_payload_reader(f: &ForgeField) -> String {
+fn kotlin_payload_reader(f: &ForgeField, l: &LangCtx) -> String {
     let id = &f.id;
+    // An enum is the machine's own, lifted from the variant's declared name; a
+    // name the enum does not declare is a payload that does not fit its schema,
+    // refused as a number out of range is.
+    if let SceType::Enum(r) = &f.sce_type {
+        return format!(
+            "fields.string(\"{id}\").let {{ name -> {ty}.entries.firstOrNull {{ it.declaredName == name }} \
+             ?: throw EventPayload.Refusal(\"'{id}' ($name) is not a variant of {alias}\") }}",
+            ty = l.type_name(&f.sce_type),
+            alias = r.alias
+        );
+    }
     let reader = match &f.sce_type {
         SceType::Uint8 => "uint8",
         SceType::Uint16 => "uint16",
@@ -3744,12 +3912,7 @@ fn kotlin_payload_reader(f: &ForgeField) -> String {
         SceType::Bool => "boolean",
         SceType::String => "string",
         SceType::Bytes => "bytes",
-        // Payload eligibility keeps an enum-typed field out of this channel;
-        // `kotlin_type` says the same thing by refusing to answer for one.
-        SceType::Enum(_) => unreachable!(
-            "kotlin_payload_reader called on SceType::Enum — payload \
-             eligibility admits only primitive fields"
-        ),
+        SceType::Enum(_) => unreachable!("an enum field is lifted above"),
     };
     format!("fields.{reader}(\"{id}\")")
 }
@@ -3759,6 +3922,7 @@ fn kotlin_payload_reader(f: &ForgeField) -> String {
 pub fn build_kotlin_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> KotlinEventPayload {
     let inactive = || KotlinEventPayload {
         defs: String::new(),
@@ -3813,8 +3977,9 @@ pub fn build_kotlin_event_payload(
         return inactive();
     }
 
-    // Primitive by construction — see the Rust payload builder.
-    let l = LangCtx::primitive(crate::generator::Language::Kotlin);
+    // Primitive by construction, but for the enums a `sce-static` machine
+    // declares in its own unit — see the Rust payload builder.
+    let l = LangCtx::with_static_enums(crate::generator::Language::Kotlin, static_enums);
     let mut data_classes = String::new();
     let mut policy_fields = String::new();
     let mut inject = String::new();
@@ -3869,8 +4034,14 @@ pub fn build_kotlin_event_payload(
                 data_items.push_str(", ");
             }
             call_args.push_str(&f.id);
-            lift_args.push_str(&kotlin_payload_reader(f));
-            data_items.push_str(&format!("\"{}\" to {}", f.id, f.id));
+            lift_args.push_str(&kotlin_payload_reader(f, &l));
+            // An enum rides as the name its document declares for the value.
+            let written = if matches!(f.sce_type, SceType::Enum(_)) {
+                format!("{}.declaredName", f.id)
+            } else {
+                f.id.clone()
+            };
+            data_items.push_str(&format!("\"{}\" to {written}", f.id));
         }
         // ⚠ The decode is INSIDE the branch, not above the chain: an event
         // whose name this document schema'd is the only one whose data must
@@ -4000,6 +4171,7 @@ pub struct PythonEventPayload {
 pub fn build_python_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> PythonEventPayload {
     let inactive = || PythonEventPayload {
         defs: String::new(),
@@ -4048,8 +4220,9 @@ pub fn build_python_event_payload(
         return inactive();
     }
 
-    // Primitive by construction — see the Rust payload builder.
-    let l = LangCtx::primitive(crate::generator::Language::Python);
+    // Primitive by construction, but for the enums a `sce-static` machine
+    // declares in its own unit — see the Rust payload builder.
+    let l = LangCtx::with_static_enums(crate::generator::Language::Python, static_enums);
     let mut data_classes = String::new();
     let mut init = String::new();
     let mut inject = String::new();
@@ -4099,6 +4272,9 @@ pub fn build_python_event_payload(
             // guard compares — is the same characters either way.
             if matches!(f.sce_type, SceType::Bytes) {
                 data_items.push_str(&format!("\"{}\": {}.decode(\"latin-1\")", f.id, f.id));
+            } else if matches!(f.sce_type, SceType::Enum(_)) {
+                // An enum rides as the name its document declares for the value.
+                data_items.push_str(&format!("\"{}\": {}.sce_name", f.id, f.id));
             } else {
                 data_items.push_str(&format!("\"{}\": {}", f.id, f.id));
             }
@@ -21489,6 +21665,35 @@ impl LangCtx {
             lang,
             enum_types: Vec::new(),
             origin: "LangCtx::primitive",
+        }
+    }
+
+    /// A context for the typed payload of a `sce-static` machine: its fields
+    /// are primitive, or an enum the machine declares in its own unit
+    /// ([`crate::forge::static_lowering::StaticEnumType`]) — the type a
+    /// variable of that enum is held in, which the payload's field is too.
+    ///
+    /// The enum is not the enum document's own emission, so nothing here is
+    /// read of it but the type's name: the field is lifted and written through
+    /// the variants' declared names, which the payload builders spell.
+    fn with_static_enums(
+        lang: crate::generator::Language,
+        enums: &[crate::forge::static_lowering::StaticEnumType],
+    ) -> Self {
+        Self {
+            lang,
+            enum_types: enums
+                .iter()
+                .map(|e| EnumImport {
+                    alias: e.alias.clone(),
+                    qualified: e.ty.clone(),
+                    snake: String::new(),
+                    is_open: false,
+                    source_name: String::new(),
+                    first_variant: String::new(),
+                })
+                .collect(),
+            origin: "LangCtx::with_static_enums",
         }
     }
 

@@ -173,6 +173,15 @@
       fail('the event data has no ' + name);
     }
     var value = data[name];
+    if (Array.isArray(type)) {
+      if (typeof value !== 'string') {
+        fail(name + ' is not text');
+      }
+      if (type.indexOf(value) < 0) {
+        fail(name + ' (' + value + ') is not a variant of its enum');
+      }
+      return value;
+    }
     var range = RANGES[type];
     if (range !== undefined) {
       if (typeof value !== 'number') {

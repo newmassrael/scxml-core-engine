@@ -165,6 +165,12 @@ def test_an_events_typed_payload_is_read_in_a_guard_and_in_content() -> None:
     replay("static_payload")
 
 
+# An event's payload carries an enum field, the variant's declared name: a guard
+# compares it to a variant and an assignment stores it in a variable of the enum.
+def test_an_events_payload_carries_an_enum_field() -> None:
+    replay("static_payload_enum")
+
+
 # An enum variable holds a variant of its enum, read back by the name the enum
 # document declares.
 def test_an_enum_variable_holds_a_variant_of_its_enum() -> None:

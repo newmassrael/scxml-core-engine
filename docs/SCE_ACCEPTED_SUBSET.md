@@ -2806,16 +2806,31 @@ own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
 
-A transition that reads `_event.data` of an event whose schema declares an enum
-field is refused by name on every backend
-(`generate/unsupported-feature`, "an event whose payload carries `<field>` of type
-enum:<Alias> has no <backend> lowering yet"). The typed channel holds every field
-its schema declares and an enum has no spelling in it; under any other data model
-the guard keeps the script engine, which this one has none of. Measured 2026-10-04,
-Rust, Go, Kotlin, Python and C++ stopped on such a read with a panic (exit 101) and
-only C refused, and C refused every transition on such an event, read or not; a
-transition that reads nothing from it still generates on the five. Reading an enum
-field of a payload is an extension of its own, not written yet.
+**An enum field of a payload.** An event whose schema declares an enum field
+(`<data id="layout" sce:type="enum:ViewMode" sce:direction="in"/>`) is read as
+`_event.data.layout`, a value of the enum as a variable of it is: compared with `===`
+and `!==` to a variant or to another value of the same enum, stored in a variable
+of it, taking no number and no arithmetic. It travels as the variant's declared
+name, a JSON string, as a saved state holds it, and a name the enum does not
+declare — or a value that is no text — does not fit the schema: the delivery is
+refused as any payload that does not is, and writes nothing. The typed channel holds
+the field in the machine's own type for the enum, so the document imports the enum
+under the alias the schema writes, as it does for a record's field; one that does not
+is refused naming the alias (`generate/unsupported-feature`, "this document does not
+import it under that alias"). Rust, Go, Kotlin, Python and C++ lift the field into
+that type and write it back as the variant's declared name (Rust's `match`, Go's
+function literal over the name, Kotlin's `declaredName`, Python's `sce_name` and
+C++'s `sceLogName`); the Interpreter reads it through the library's `field`, given
+the variants the enum declares. C11 has no lowering for it yet and refuses every
+transition on such an event by name. `static_payload_enum` holds every backend to it,
+`a_payload_holds_an_enum_field.rs` holds what the judge knows of it, and
+`a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_lowers_it`
+reads the generated machines. Measured 2026-10-04, Rust, Go, Kotlin, Python and C++
+had stopped on such a read with a panic (exit 101, "reached a context built by
+`LangCtx::primitive`") and only C refused; the payload structs of a machine that
+holds an enum derive no `Default` in Rust, since the enum has no value to start from.
+A conditional whose branches are a payload's enum field and a variant has no type Go
+can name and is refused there as it was for any value of no type.
 
 **Params.** A `<param>` of a `<send>`, of an `<invoke>` the host runs
 (§2.12) and of a `<final>`'s `<donedata>` is a typed expression read from the
@@ -3295,7 +3310,7 @@ the host is called only when none of them failed; otherwise `error.execution`
 is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_payload`, `static_enum`, `static_list`, `static_foreach`,
+`static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`, `static_list`, `static_foreach`,
 `static_real`, `static_record_real` and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
@@ -3361,7 +3376,7 @@ generator lowers for Go — asked of it, not listed — and one per algorithm th
 machines import, read from their `<sce:import kind="algorithm">`, and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
-`static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
+`static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
@@ -3435,7 +3450,7 @@ their `<sce:import kind="algorithm">`, and `scripts/gates/w3c-python.sh` runs it
 before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
-`static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
+`static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the

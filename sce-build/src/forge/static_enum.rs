@@ -20,7 +20,7 @@
 // ordering, no arithmetic, no argument to a call.
 
 use crate::forge::error::ExprError;
-use crate::forge::expr::{parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr};
+use crate::forge::expr::{dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr};
 use crate::forge::types::TypeCtx;
 
 /// The enum alias `expr` is a value of, or `None` when it is not an enum
@@ -63,6 +63,11 @@ fn class_of(
                 if let Some(held) = var_alias(&format!("{alias}.{property}")) {
                     return Ok(Some(held));
                 }
+            }
+            // `_event.data.<field>`: a field of the payload that holds one — a
+            // path of more than two names, which the arm above does not read.
+            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {
+                return Ok(Some(held));
             }
             nothing_but(node, ctx, var_alias)
         }

@@ -50,6 +50,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_payload_enum_sm::{
+    StaticPayloadEnumPersist, StaticPayloadEnumPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
 };
@@ -415,6 +418,19 @@ fn static_string_capacity_holds_a_string_to_its_bytes() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_string_capacity.json"
+        ),
+    );
+}
+
+// An event's payload carries an enum field, the variant's declared name: a guard
+// compares it to a variant and an assignment stores it in a variable of the enum.
+#[test]
+fn static_payload_enum_reads_a_variant_the_event_names() {
+    replay(
+        Engine::new(StaticPayloadEnumPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_enum.json"
         ),
     );
 }

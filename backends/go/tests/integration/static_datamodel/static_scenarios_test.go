@@ -45,6 +45,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
@@ -323,6 +324,19 @@ func TestAnEventsTypedPayloadIsReadInAGuardAndInContent(t *testing.T) {
 		"late":       func() any { return policy.Late() },
 		"sinceEpoch": func() any { return policy.SinceEpoch() },
 		"refusals":   func() any { return policy.Refusals() },
+	}))
+}
+
+// An event's payload carries an enum field, the variant's declared name: a guard
+// compares it to a variant and an assignment stores it in a variable of the enum.
+func TestAnEventsPayloadCarriesAnEnumField(t *testing.T) {
+	policy := static_payload_enum.NewStaticPayloadEnumPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_payload_enum", drive[static_payload_enum.StaticPayloadEnumState, static_payload_enum.StaticPayloadEnumEvent](&policy, map[string]func() any{
+		"layout": func() any { return policy.Layout().String() },
+		"zoom":   func() any { return policy.Zoom() },
+		"agenda": func() any { return policy.Agenda() },
+		"shown":  func() any { return policy.Shown() },
 	}))
 }
 

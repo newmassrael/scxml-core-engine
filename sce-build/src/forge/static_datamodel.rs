@@ -113,6 +113,7 @@ pub fn check(
         loop_names: Default::default(),
         enum_vars: enum_variables(&scope, &model.imported_records),
         loop_enum_paths: Default::default(),
+        payload_enum_paths: Default::default(),
         diag_label,
         read: Default::default(),
     };
@@ -169,8 +170,12 @@ pub fn check(
         for transition in &state.transitions {
             // The payload is the triggering event's, so each transition
             // judges against its own.
-            let paths = scope.paths(model.imported_event_schemas.get(&transition.event));
+            let schema = model.imported_event_schemas.get(&transition.event);
+            let paths = scope.paths(schema);
             let ctx = judge.ctx(&paths);
+            // An enum field of the payload is a value of the enum the schema
+            // names, as a record's field is.
+            judge.open_payload_enums(schema);
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
@@ -184,6 +189,7 @@ pub fn check(
             }
             judge.actions(&ctx, &transition.actions, &state.id)?;
         }
+        judge.open_payload_enums(None);
         for invoke in &state.invokes {
             judge.invoke(&plain, invoke, &state.id)?;
         }
@@ -318,6 +324,9 @@ struct Judge<'a> {
     /// The enum fields of the record items of the `<foreach>`es the walk is
     /// inside, by `<item>.<field>` path with the alias of the enum each holds.
     loop_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
+    /// The enum fields of the payload of the transition the walk is in, by
+    /// `_event.data.<field>` path with the alias of the enum each holds.
+    payload_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
     /// Every item and index of the `<foreach>`es the walk is inside: values
     /// the loop binds and the body reads, and does not write.
     loop_names: std::cell::RefCell<Vec<String>>,
@@ -390,16 +399,32 @@ impl<'a> Judge<'a> {
         crate::forge::static_enum::value_enum(expr, ctx, &|name| self.enum_of(name))
     }
 
-    /// The alias of the enum the variable, record field or loop's record
-    /// item's field at `path` holds, if it holds one.
+    /// The alias of the enum the variable, record field, loop's record item's
+    /// field or the payload's field at `path` holds, if it holds one.
     fn enum_of(&self, path: &str) -> Option<String> {
-        self.enum_vars.get(path).cloned().or_else(|| {
-            self.loop_enum_paths
+        let held_at = |paths: &std::cell::RefCell<Vec<(String, String)>>| {
+            paths
                 .borrow()
                 .iter()
                 .find(|(held, _)| held == path)
                 .map(|(_, alias)| alias.clone())
-        })
+        };
+        self.enum_vars
+            .get(path)
+            .cloned()
+            .or_else(|| held_at(&self.loop_enum_paths))
+            .or_else(|| held_at(&self.payload_enum_paths))
+    }
+
+    /// Opens the walk of a transition, whose event's payload `schema` is
+    /// declared, to the enum fields that payload holds, each a value of the
+    /// enum the schema names. Whether the document imports that enum under the
+    /// alias the schema writes is asked where the payload is read, which is
+    /// where the lowering knows it is.
+    fn open_payload_enums(&self, schema: Option<&crate::forge::model::EventSchemaModel>) {
+        *self.payload_enum_paths.borrow_mut() = schema
+            .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
+            .unwrap_or_default();
     }
 
     /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant

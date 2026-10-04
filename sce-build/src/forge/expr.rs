@@ -3183,14 +3183,27 @@ impl<'a> Parser<'a> {
 // Rename pass — applied before inference
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/// The names of a chain of member reads over an identifier, joined by dots —
+/// `_event.data` or `_event.data.layout` — or `None` when the node is anything
+/// else (a call, an index, a literal).
+pub(crate) fn dotted_path(node: &TypedExpr) -> Option<String> {
+    match &node.kind {
+        ExprKind::Ident(name) => Some(name.clone()),
+        ExprKind::Member { object, property } => {
+            Some(format!("{}.{property}", dotted_path(object)?))
+        }
+        _ => None,
+    }
+}
+
 /// Apply an identifier rename map to the AST.
 ///
 /// Handles two cases:
 /// 1. Bare `Ident` nodes: renamed via the `renames` map
 ///    (e.g., `retryCount` → `retryCount_`).
-/// 2. `Member{Ident(x), prop}` patterns: if the full `x.prop` path is in
-///    `renames`, the entire Member node collapses to a single `Ident`
-///    (e.g., `_event.data` → `pendingEventData_`).
+/// 2. `Member` chains over an identifier (`x.prop`, `x.a.b`): if the full
+///    dotted path is in `renames`, the entire Member node collapses to a
+///    single `Raw` (e.g., `_event.data` → `pendingEventData_`).
 ///
 /// Property names in Member access are NOT renamed — they represent struct
 /// fields. Function call names (`Call.callee`) ARE subject to renaming if
@@ -3223,8 +3236,11 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             rename_identifiers(alternate, renames);
         }
         ExprKind::Member { object, property } => {
-            if let ExprKind::Ident(obj_name) = &object.kind {
-                let full_path = format!("{}.{}", obj_name, property);
+            // The whole chain of names the member reads, `a.b` or `a.b.c`: a
+            // longer path wins over the shorter one it begins with, so the
+            // outer member is asked before the object it reads through.
+            if let Some(object_path) = dotted_path(object) {
+                let full_path = format!("{object_path}.{property}");
                 if let Some(renamed) = renames.get(full_path.as_str()) {
                     // The type stays: inference ran before rename
                     // (`resolve_then_rename`), and the emitter still needs it
@@ -10153,6 +10169,36 @@ mod tests {
         assert_eq!(
             lower("_event.data.dayOfMonth + 1"),
             "SceStatic.U8.add(SceStatic.field(_event.data, 'dayOfMonth', 'uint8'), 1)"
+        );
+    }
+
+    /// A rename may name a whole path, not only an identifier and one property:
+    /// the payload's enum field is read through a call that holds it to the
+    /// enum's variants, and that call replaces the three names `_event.data.layout`,
+    /// the longer path winning over the `_event.data` it begins with.
+    #[test]
+    fn a_rename_may_name_a_path_of_three_names() {
+        let mut ctx = js_ctx();
+        ctx.insert_var("_event.data.layout", InferredType::Unknown);
+        ctx.insert_var("_event.data.zoom", int(false, 8));
+        let renames: HashMap<&str, &str> = HashMap::from([
+            ("_event.data", "_event.data"),
+            (
+                "_event.data.layout",
+                "SceStatic.field(_event.data, 'layout', ['month', 'week'])",
+            ),
+        ]);
+        let lower = |expr: &str| {
+            transpile_typed(expr, ExprTarget::Js, &ctx, &renames, InferredType::Unknown).unwrap()
+        };
+        assert_eq!(
+            lower("_event.data.layout"),
+            "SceStatic.field(_event.data, 'layout', ['month', 'week'])"
+        );
+        // A sibling the rename does not name is read as it was.
+        assert_eq!(
+            lower("_event.data.zoom"),
+            "SceStatic.field(_event.data, 'zoom', 'uint8')"
         );
     }
 

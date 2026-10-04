@@ -32,6 +32,7 @@ import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
+import com.sce.integration.static_payload_enum.StaticPayloadEnumStateMachine
 import com.sce.integration.static_real.StaticRealStateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
@@ -500,6 +501,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_string_capacity"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // An event's payload carries an enum field, the variant's declared name: a
+    // guard compares it to a variant and an assignment stores it in a variable of
+    // the enum.
+    @Test
+    fun staticPayloadEnumReadsAVariantTheEventNames() {
+        val sm = StaticPayloadEnumStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_payload_enum"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

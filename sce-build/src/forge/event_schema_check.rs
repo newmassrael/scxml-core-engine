@@ -74,7 +74,7 @@ use crate::model::{Action, Param, SCXMLModel, Transition};
 /// AST by [`cond_references_event_data`], and on the token stream — for
 /// expressions that do not parse — by
 /// [`crate::forge::expr::references_event_data_lexically`].
-const EVENT_DATA_PATH: &str = "_event.data";
+pub(crate) const EVENT_DATA_PATH: &str = "_event.data";
 
 /// Per-statechart schema-visibility resolution — resolve
 /// a statechart's `<sce:import>` declarations into the per-statechart

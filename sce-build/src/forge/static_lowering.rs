@@ -300,6 +300,26 @@ pub trait StaticTarget {
     fn unsupported(&self, _model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         None
     }
+    /// Whether a transition may read the payload of an event whose schema
+    /// declares an enum field: the target holds the field in the machine's own
+    /// type for the enum and reads it off the wire as the variant's declared
+    /// name. A target that does not is refused where it would otherwise stop on
+    /// the field ([`lower`]).
+    fn payload_enum_fields(&self) -> bool {
+        false
+    }
+    /// How a target whose payload is untyped data reads the enum field `field`
+    /// of it — `accessor` is what [`Self::payload_accessor`] answers — as a
+    /// call that refuses a value none of `variants` names. `None` for a target
+    /// that holds the payload in a struct whose field has the enum's own type.
+    fn payload_enum_read(
+        &self,
+        _accessor: &str,
+        _field: &str,
+        _variants: &[&str],
+    ) -> Option<String> {
+        None
+    }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -906,6 +926,12 @@ impl StaticTarget for KotlinTarget {
     fn condition_failed_flag(&self, if_ordinal: u32) -> String {
         format!("ifCondFailed{if_ordinal} = true")
     }
+    // An enum field of the payload is held in the machine's own enum, lifted
+    // from the variant's declared name and written back as it
+    // (`build_kotlin_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1026,6 +1052,12 @@ impl StaticTarget for RustTarget {
     }
     fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::Rust, enum_name, variant)
+    }
+    // The payload struct holds the field in the machine's own enum, lifted from
+    // the variant's declared name and written back as it
+    // (`forge::generator::build_rust_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
     // repr-tagged enum takes. Its saved form is written beside the machine's
@@ -1665,7 +1697,13 @@ pub fn lower(
             let paths = scope.paths(schema);
             let ctx = scope.ctx(&paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
-            let renames = renames(&names, schema.map(|_| accessor.as_str()), target);
+            let payload_reads = payload_enum_reads(target, schema, &accessor, &imported_enums);
+            let mut renames = renames(&names, schema.map(|_| accessor.as_str()), target);
+            renames.extend(
+                payload_reads
+                    .iter()
+                    .map(|(path, read)| (path.as_str(), read.as_str())),
+            );
             // A pure `In()` predicate is lowered like any other condition, so
             // a guard and an `<if>` of one document spell it alike; the guard
             // macros read `native_guard` before their own `In()` arm.
@@ -1747,31 +1785,47 @@ pub fn lower(
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
     // A payload that is read rides the typed channel, whose struct holds every
-    // field its schema declares. An enum field has no spelling there — the
-    // enum's type is the enum document's, which the payload's unit does not
-    // import — so the channel would name a type it does not have. Under any
-    // other data model the guard keeps the script engine instead; this one has
-    // none, and a generator that reached the field would stop on it rather than
-    // refuse, so the read is refused by name here, whatever the target.
+    // field its schema declares. An enum field is held there in the machine's
+    // own type for the enum, so the document imports the enum under the alias
+    // the schema writes, as it does for a record's field; a target that has not
+    // written that spelling yet is refused here, by name, because a generator
+    // that reached the field would stop on it. Under any other data model the
+    // guard keeps the script engine instead, and this one has none.
     // [`crate::forge::event_schema_check::schema_is_native_payload_eligible`] is
-    // the one rule for what the channel holds.
+    // the one rule for what the channel holds without it.
     for event in &payload_events {
         let Some(schema) = schemas.get(event) else {
             continue;
         };
-        if !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
-            let carried = schema
-                .fields
-                .iter()
-                .find(|f| matches!(f.sce_type, SceType::Enum(_)))
-                .map_or_else(
-                    || "a field it cannot carry".to_string(),
-                    |f| format!("`{}` of type {}", f.id, f.sce_type.as_attr()),
-                );
+        if crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
+            continue;
+        }
+        let enum_fields = || {
+            schema.fields.iter().filter_map(|f| match &f.sce_type {
+                SceType::Enum(reference) => Some((f, reference.alias.as_str())),
+                _ => None,
+            })
+        };
+        if !target.payload_enum_fields() {
+            let carried = enum_fields().next().map_or_else(
+                || "a field it cannot carry".to_string(),
+                |(f, _)| format!("`{}` of type {}", f.id, f.sce_type.as_attr()),
+            );
             return Err(GenerateError::unsupported(format!(
                 "a transition that reads the payload of `{event}`, an event whose payload \
                  carries {carried} has no {lang} lowering yet"
             )));
+        }
+        for (field, alias) in enum_fields() {
+            declarations.enum_type(alias).map_err(|enum_alias| {
+                GenerateError::unsupported(format!(
+                    "a transition that reads the payload of `{event}`, whose field `{}` holds \
+                     the enum `{enum_alias}`: this document does not import it under that alias \
+                     (<sce:import kind=\"enum\" as=\"{enum_alias}\">) or {lang} has no enum type \
+                     for it",
+                    field.id
+                ))
+            })?;
         }
     }
     Ok(StaticLowering {
@@ -2597,6 +2651,12 @@ impl StaticTarget for CppTarget {
     fn condition_failed_flag(&self, if_ordinal: u32) -> String {
         format!("ifCondFailed{if_ordinal} = true;")
     }
+    // An enum field of the payload is held in the machine's own enum, lifted
+    // from the variant's declared name and written back as `sceLogName` answers
+    // it (`build_cpp_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3076,6 +3136,12 @@ impl StaticTarget for GoTarget<'_> {
     fn condition_failed_flag(&self, if_ordinal: u32) -> String {
         format!("ifCondFailed{if_ordinal} = true")
     }
+    // An enum field of the payload is held in the machine's own enum, lifted
+    // from the variant's declared name and written back as the enum's `String`
+    // answers it (`build_go_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3481,6 +3547,12 @@ impl StaticTarget for PythonTarget {
     // The list `emit_if` declares for the `<if>` numbered `if_ordinal`.
     fn condition_failed_flag(&self, if_ordinal: u32) -> String {
         format!("_if_cond_failed_{if_ordinal}")
+    }
+    // An enum field of the payload is held in the machine's own enum, lifted
+    // from the variant's declared name and written back as its `sce_name`
+    // (`build_python_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
     }
     // The attribute the payload channel fills when the engine dequeues an
     // event of this name (`build_python_event_payload`).
@@ -4475,6 +4547,46 @@ fn renames<'a>(
         map.insert("_event.data", accessor);
     }
     map
+}
+
+/// How `target` reads each enum field of the payload `schema` declares, keyed by
+/// the `_event.data.<field>` path an expression names it by — for a target
+/// whose payload is untyped data, which it reads a field of through a call
+/// that holds the value to the variants the enum declares. A target that holds
+/// the payload in a struct of its own reads the field off it and asks for none.
+fn payload_enum_reads(
+    target: &dyn StaticTarget,
+    schema: Option<&EventSchemaModel>,
+    accessor: &str,
+    enums: &std::collections::BTreeMap<String, EnumModel>,
+) -> Vec<(String, String)> {
+    let Some(schema) = schema else {
+        return Vec::new();
+    };
+    schema
+        .fields
+        .iter()
+        .filter_map(|field| {
+            let SceType::Enum(reference) = &field.sce_type else {
+                return None;
+            };
+            let variants: Vec<&str> = enums
+                .get(&reference.alias)?
+                .variants
+                .iter()
+                .map(|v| v.name.as_str())
+                .collect();
+            let read = target.payload_enum_read(accessor, &field.id, &variants)?;
+            Some((
+                format!(
+                    "{}.{}",
+                    crate::forge::event_schema_check::EVENT_DATA_PATH,
+                    field.id
+                ),
+                read,
+            ))
+        })
+        .collect()
 }
 
 /// What runs in place of a statement or condition whose expression failed

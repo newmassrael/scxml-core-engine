@@ -2389,6 +2389,7 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
                 "",
                 "",
                 false,
+                &[],
             );
             for part in [payload.defs, payload.entries, payload.lift] {
                 out.push_str(&part);
@@ -2402,8 +2403,11 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             ));
         }
         Language::Cpp => {
-            let payload =
-                crate::forge::generator::build_cpp_event_payload(&model, &native.payload_events);
+            let payload = crate::forge::generator::build_cpp_event_payload(
+                &model,
+                &native.payload_events,
+                &[],
+            );
             for part in [payload.defs, payload.policy_members, payload.inject_methods] {
                 out.push_str(&part);
             }
@@ -2432,8 +2436,11 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             out.push_str(&host.defs);
         }
         Language::Go => {
-            let payload =
-                crate::forge::generator::build_go_event_payload(&model, &native.payload_events);
+            let payload = crate::forge::generator::build_go_event_payload(
+                &model,
+                &native.payload_events,
+                &[],
+            );
             for part in [
                 payload.defs,
                 payload.policy_fields,
@@ -2452,14 +2459,19 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             // static datamodel's together; a document the static lowering
             // refuses is refused at render, and reserves only the rest here.
             let mut payload_events = native.payload_events.clone();
+            let mut static_enums = Vec::new();
             if let Ok(lowering) =
                 crate::forge::static_lowering::lower_kotlin(&mut lowered, &machine_name)
             {
                 payload_events.extend(lowering.payload_events);
                 out.push_str(&lowering.type_defs.join("\n"));
+                static_enums = lowering.enums;
             }
-            let payload =
-                crate::forge::generator::build_kotlin_event_payload(&model, &payload_events);
+            let payload = crate::forge::generator::build_kotlin_event_payload(
+                &model,
+                &payload_events,
+                &static_enums,
+            );
             for part in [
                 payload.defs,
                 payload.policy_fields,
@@ -2473,8 +2485,11 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             out.push_str(&host.members);
         }
         Language::Python => {
-            let payload =
-                crate::forge::generator::build_python_event_payload(&model, &native.payload_events);
+            let payload = crate::forge::generator::build_python_event_payload(
+                &model,
+                &native.payload_events,
+                &[],
+            );
             for part in [payload.defs, payload.init, payload.populate, payload.inject] {
                 out.push_str(&part);
             }
@@ -2544,6 +2559,7 @@ fn render_rust(
         &policy_generics_decl,
         &policy_generics_use,
         options.no_std,
+        &static_lowering.enums,
     );
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
@@ -2753,7 +2769,11 @@ fn render_cpp(
         .chain(static_lowering.payload_events.iter())
         .cloned()
         .collect();
-    let payload = crate::forge::generator::build_cpp_event_payload(model, &payload_events);
+    let payload = crate::forge::generator::build_cpp_event_payload(
+        model,
+        &payload_events,
+        &static_lowering.enums,
+    );
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
     if model.datamodel != crate::model::Datamodel::SceStatic {
@@ -3206,7 +3226,11 @@ fn render_kotlin(
         .union(&static_lowering.payload_events)
         .cloned()
         .collect();
-    let payload = crate::forge::generator::build_kotlin_event_payload(model, &payload_events);
+    let payload = crate::forge::generator::build_kotlin_event_payload(
+        model,
+        &payload_events,
+        &static_lowering.enums,
+    );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
@@ -3582,7 +3606,11 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         .chain(static_lowering.payload_events.iter())
         .cloned()
         .collect();
-    let payload = crate::forge::generator::build_python_event_payload(model, &payload_events);
+    let payload = crate::forge::generator::build_python_event_payload(
+        model,
+        &payload_events,
+        &static_lowering.enums,
+    );
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
     if model.datamodel != crate::model::Datamodel::SceStatic {
@@ -3673,7 +3701,11 @@ fn render_go(
         .chain(static_lowering.payload_events.iter())
         .cloned()
         .collect();
-    let payload = crate::forge::generator::build_go_event_payload(model, &payload_events);
+    let payload = crate::forge::generator::build_go_event_payload(
+        model,
+        &payload_events,
+        &static_lowering.enums,
+    );
     // Under `sce-static` the static lowering wrote every guard; the typed
     // guards lowered here would be a second writer of the same slot.
     if model.datamodel != crate::model::Datamodel::SceStatic {

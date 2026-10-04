@@ -434,18 +434,21 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
-fn a_payload_read_of_an_event_that_carries_an_enum_field_is_refused_in_every_language() {
+fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every_language() {
     // Measured 2026-10-04: Rust, Go, Kotlin, Python and C++ stopped with a panic
     // (exit 101, "SceType::Enum(alias='ViewMode') reached a context built by
     // LangCtx::primitive") on a transition that reads `_event.data.zoom` of an
-    // event whose schema also declares `layout`, an enum, and only C refused by
-    // name — and C refused every transition on such an event, read or not. The
-    // typed channel holds every field its schema declares, and an enum has no
-    // spelling in it; under any other data model the guard keeps the script
-    // engine, which this one has none of.
+    // event whose schema also declares `layout`, an enum. The typed channel
+    // holds every field its schema declares, in the machine's own type for the
+    // enum, so the document imports the enum under the alias the schema writes,
+    // as it does for a record's field; one that does not is refused naming the
+    // alias where it is lowered, and not left to stop the generator.
     //
-    // A transition on the event that reads nothing from it still generates on the
-    // five that carry no channel for it, so the refusal is of the READ.
+    // C11 has no lowering for the field and says so first, whatever the
+    // document imports.
+    //
+    // A transition on the event that reads nothing from it still generates, so
+    // the refusal is of the READ.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
     let siblings: Vec<(String, String)> = ["schema_view.scxml", "enum_view_mode.scxml"]
         .iter()
@@ -500,10 +503,98 @@ fn a_payload_read_of_an_event_that_carries_an_enum_field_is_refused_in_every_lan
             "{language}: a refusal, not a panic:\n{out}"
         );
         assert!(
-            out.contains("generate/unsupported-feature")
-                && out.contains(&format!("has no {name} lowering yet"))
-                && out.contains("`layout` of type enum:ViewMode"),
-            "{language}: it names the enum field and the backend:\n{out}"
+            out.contains("generate/unsupported-feature"),
+            "{language}: an unsupported feature:\n{out}"
+        );
+        if language == "c" {
+            assert!(
+                out.contains(&format!("has no {name} lowering yet"))
+                    && out.contains("`layout` of type enum:ViewMode"),
+                "{language}: it names the enum field and the backend:\n{out}"
+            );
+        } else {
+            assert!(
+                out.contains("`layout`")
+                    && out.contains("the enum `ViewMode`")
+                    && out.contains("<sce:import kind=\\\"enum\\\" as=\\\"ViewMode\\\">"),
+                "{language}: it names the field and the import the document lacks:\n{out}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_lowers_it() {
+    // The five backends that carry the typed channel hold the field in the type
+    // the machine declares for the enum (here named by a payload alone: no
+    // variable of the machine holds it), lift it from the variant's declared
+    // name and refuse a name the enum does not declare; the scenario
+    // `static_payload_enum` runs the machines. What is read is the generated
+    // text, since a machine that did not hold the enum would stop on it.
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let siblings: Vec<(String, String)> = ["schema_view.scxml", "enum_view_mode.scxml"]
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_string(),
+                std::fs::read_to_string(fixtures.join(name)).expect("a fixture"),
+            )
+        })
+        .collect();
+    let siblings: Vec<(&str, &str)> = siblings
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
+    let document = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel><data id="zoom" sce:type="uint8" expr="0" sce:direction="out"/></datamodel>
+  <state id="s">
+    <transition event="view.shown" type="internal">
+      <assign location="zoom" expr="_event.data.zoom"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+    for (language, extension, held) in [
+        ("kotlin", "kt", "declaredName == name"),
+        ("rust", "rs", "is not a variant of ViewMode"),
+        // The policy's members, the lift among them, are in the header.
+        ("cpp", "h", "is not a variant of ViewMode"),
+        ("go", "go", "is not a variant of ViewMode"),
+        ("python", "py", "ViewModeEnum), (\"zoom\", int)"),
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run_beside(
+            &[
+                "generate",
+                "-l",
+                language,
+                "--go-module-prefix",
+                "x/y",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            document,
+            &siblings,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: an enum payload field needs no engine:\n{out}"
+        );
+        let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == extension))
+            .collect();
+        assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
+        let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+        assert!(
+            source.contains(held),
+            "{language}: the payload field is lifted into the machine's enum"
         );
     }
 }

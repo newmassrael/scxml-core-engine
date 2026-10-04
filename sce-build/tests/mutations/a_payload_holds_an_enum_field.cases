@@ -1,0 +1,51 @@
+# Mutation cases for "a payload holds an enum field"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_payload_holds_an_enum_field.cases
+#
+# An enum field is typed `Unknown` by the expression typer, so what keeps
+# `_event.data.speed + 1`, `_event.data.speed === 0` and `unit = _event.data.speed`
+# out of generated code that does not compile is the judge's knowledge of which
+# paths hold an enum: here the payload's, a path of three names, and the import
+# the machine's own type for the enum rests on. Each case takes one away and has
+# to turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test a_payload_holds_an_enum_field
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/a_payload_holds_an_enum_field.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_lowering.rs
+
+# A `_event.data.<field>` path is no enum value: the comparison of the field with
+# a number, and the field in arithmetic, pass the judge.
+mutation_case "a payload's field is not an enum value" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {\n",
+     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)).filter(|_| false) {\n")
+PY
+
+# The judge does not ask the payload's paths which enum they hold.
+mutation_case "a payload's enum fields are unknown" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            .or_else(|| held_at(&self.payload_enum_paths))\n",
+     "")
+PY
+
+# A transition's payload is not opened to the judge: its enum fields are never
+# entered as enum paths.
+mutation_case "a transition's payload enum fields are never entered" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        *self.payload_enum_paths.borrow_mut() = schema\n            .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))\n            .unwrap_or_default();\n",
+     "        let _ = schema;\n")
+PY
+
+# The enum a payload field holds is not required to be imported: the machine has
+# no type to hold it in, and the generator stops on the field with a panic where
+# the author cannot see.
+mutation_case "the enum a payload field holds need not be imported" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            declarations.enum_type(alias).map_err(|enum_alias| {\n",
+     "            Ok::<String, String>(String::new()).map_err(|enum_alias| {\n")
+PY

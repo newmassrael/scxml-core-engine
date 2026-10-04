@@ -29,6 +29,7 @@
 
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/invoke_methods.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/generator.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
@@ -57,6 +58,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_en
 mutation_targets backends/go/tests/integration/static_datamodel/static_list/static_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_overflow/static_overflow_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_payload/static_payload_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_payload_enum/static_payload_enum_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_real/static_real_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record/static_record_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_enum/static_record_enum_sm.go
@@ -165,4 +167,17 @@ mutation_case "a string is assigned past its capacity" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "format!(\"scealgorithm.Bounded(&sceFailure, {value}, {capacity})\")",
      "format!(\"scealgorithm.Bounded(&sceFailure, {value}, {capacity} + 1000000)\")")
+PY
+
+# ── A payload's enum field holds a variant of its enum ─────────────
+#
+# `static_payload_enum`: `view.shown` carries a `layout` named as the enum
+# document declares it. A name no variant declares (`fortnight`) is a payload that
+# does not fit its schema, and the delivery must be refused with nothing written
+# — a name taken for the enum's first value writes the `zoom` beside it.
+
+mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                 return 0, fmt.Errorf(\\\"%q (%s) is not a variant of {alias}\\\", \\\"{id}\\\", name) }}()\",\n",
+     "                 return 0, nil }}()\",\n")
 PY

@@ -120,6 +120,18 @@ def _as(name: str, declared: type, value: Any) -> Any:
                     f"{name!r} carries a character above U+00FF, which no "
                     f"single byte spells") from exc
         raise TypedPayloadError(f"{name!r} is not a byte string ({value!r})")
+    if isinstance(declared, type) and hasattr(declared, "sce_name"):
+        # An enum a `sce-static` machine declares: the wire carries the name its
+        # document declares for the value (`sce_name`), as a saved state does,
+        # and a name the enum does not declare is a payload that does not fit
+        # its schema.
+        if not isinstance(value, str):
+            raise TypedPayloadError(f"{name!r} is not a text ({value!r})")
+        for member in declared:
+            if member.sce_name == value:
+                return member
+        raise TypedPayloadError(
+            f"{name!r} ({value!r}) is not a variant of {declared.__name__}")
     raise TypedPayloadError(
         f"{name!r} is declared {declared!r}, and this module has no reading "
         f"for it")

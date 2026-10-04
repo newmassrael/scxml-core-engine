@@ -40,6 +40,7 @@
 #include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_enum_sm.h"
 #include "static_payload_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
@@ -281,6 +282,22 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumVariableHoldsAVariantOfItsEnum)
         {"changes", [](const Probe &m) { return json(m.changes()); }},
     });
     replay("static_enum", driver);
+}
+
+// An event's payload carries an enum field, the variant's declared name: a guard
+// compares it to a variant and an assignment stores it in a variable of the enum.
+// The scenario names a value as the enum document does, so the host's enum is
+// read back by `sceLogName`.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEventsPayloadCarriesAnEnumField) {
+    namespace E = G::static_payload_enum;
+    using Machine = E::static_payload_enum;
+    Driver<Machine> driver({
+        {"layout", [](const Machine &m) { return json(std::string(E::sceLogName(m.layout()))); }},
+        {"zoom", [](const Machine &m) { return json(m.zoom()); }},
+        {"agenda", [](const Machine &m) { return json(m.agenda()); }},
+        {"shown", [](const Machine &m) { return json(m.shown()); }},
+    });
+    replay("static_payload_enum", driver);
 }
 
 // A list is a bounded `std::vector`: appended to while it has room, and a full

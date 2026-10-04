@@ -218,6 +218,19 @@ impl StaticTarget for JsTarget {
     fn lowers_host_action_arguments(&self) -> bool {
         true
     }
+    // The payload is the engine's `_event.data`, read as the JSON it arrived
+    // as, and an enum value is the variant's declared name there as it is in
+    // the data model: the field needs no type of its own.
+    fn payload_enum_fields(&self) -> bool {
+        true
+    }
+    fn payload_enum_read(&self, accessor: &str, field: &str, variants: &[&str]) -> Option<String> {
+        let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
+        Some(format!(
+            "{RUNTIME_GLOBAL}.field({accessor}, '{field}', [{}])",
+            names.join(", ")
+        ))
+    }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         let symbol = self.algorithms.get(document_name)?;
         Some(Callee {

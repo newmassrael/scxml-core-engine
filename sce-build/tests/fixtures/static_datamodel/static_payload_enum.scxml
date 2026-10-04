@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): an event's typed
+  payload that carries an enum field, read in a guard and in assignments.
+  `view.shown` carries the fields of schema_view.scxml, so
+  `_event.data.layout` is a value of the enum `ViewMode` — the enum the document
+  imports under the alias the schema writes — and `_event.data.zoom` a uint8.
+
+  The enum travels as the variant's declared name, a JSON string, as a saved
+  state holds it; a guard compares it with `===` to a variant, and an assignment
+  stores it in a variable of the same enum. A name the enum does not declare is
+  not a value of it: the delivery is refused, as any payload that does not fit
+  its schema is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="browsing" datamodel="sce-static" name="static_payload_enum">
+  <sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="zoom" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="agenda" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="shown" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="browsing">
+    <transition event="view.shown" cond="_event.data.layout === ViewMode.agenda_list" type="internal">
+      <assign location="agenda" expr="true"/>
+      <assign location="layout" expr="_event.data.layout"/>
+      <assign location="zoom" expr="_event.data.zoom"/>
+      <assign location="shown" expr="shown + 1"/>
+    </transition>
+    <transition event="view.shown" type="internal">
+      <assign location="agenda" expr="false"/>
+      <assign location="layout" expr="_event.data.layout"/>
+      <assign location="zoom" expr="_event.data.zoom"/>
+      <assign location="shown" expr="shown + 1"/>
+    </transition>
+  </state>
+</scxml>

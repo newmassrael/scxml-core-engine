@@ -30,6 +30,7 @@
 
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/event_payload.py
 mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/native_action.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py backends/python/tests/integration/static_datamodel/test_a_static_host_action.py
 
@@ -162,4 +163,17 @@ mutation_case "a string is assigned past its capacity" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "format!(\"sce_algorithm.bounded({value}, {capacity})\")",
      "format!(\"sce_algorithm.bounded({value}, {capacity} + 1000000)\")")
+PY
+
+# ── A payload's enum field holds a variant of its enum ─────────────
+#
+# `static_payload_enum`: `view.shown` carries a `layout` named as the enum
+# document declares it. A name no variant declares (`fortnight`) is a payload that
+# does not fit its schema, and the delivery must be refused with nothing written
+# — a name taken for the enum's first value writes the `zoom` beside it.
+
+mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
+edit("backends/python/runtime/sce_runtime/event_payload.py",
+     "        raise TypedPayloadError(\n            f\"{name!r} ({value!r}) is not a variant of {declared.__name__}\")\n",
+     "        return next(iter(declared))\n")
 PY
