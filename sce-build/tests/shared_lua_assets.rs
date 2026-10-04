@@ -100,27 +100,14 @@ fn every_lua_engine_loads_the_shared_semantics() {
     );
 }
 
-/// The C11 embed loads the shared assets in pieces — and the pieces work.
-///
-/// C11 cannot open a file at runtime, so codegen carries the same Lua as a
-/// sequence of `luaL_dostring` calls, one per chunk, because ISO C99
-/// guarantees only 4095 characters in a string literal. Two things could go
-/// wrong there and neither is loud: a boundary could fall inside a function
-/// body, and the generated code discards every `luaL_dostring` result, so a
-/// chunk that failed to compile would leave its definitions simply absent.
-/// The C11 suite would stay green — no W3C fixture calls `'a'.substring(0,1)`
-/// — and a consumer's document would fail at runtime instead.
-///
-/// So the split is executed here rather than reviewed: the chunks go into one
-/// interpreter one at a time, in order, and then the definitions are called.
-#[test]
-fn the_c11_embed_chunks_load_and_define_what_they_claim() {
+/// An interpreter holding both shared assets, loaded the way the generated C11
+/// bootstrap loads them: in pieces, one `execute_script` each. The tests below
+/// ask it different questions, so the loading is written once.
+fn an_engine_loaded_the_way_c11_loads_the_assets(session: &str) -> sce_rust_lua::LuaEngine {
     use sce_build::filters::c11_lua_chunks;
-    use sce_rust_lua::LuaEngine;
-    use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+    use sce_rust_runtime::scripting::IScriptEngine;
 
-    let engine = LuaEngine::new();
-    let session = "c11-embed-probe";
+    let engine = sce_rust_lua::LuaEngine::new();
     engine.create_session(session);
 
     // Loaded the way the generated C11 bootstrap loads them: separately, in
@@ -163,6 +150,28 @@ fn the_c11_embed_chunks_load_and_define_what_they_claim() {
                 .unwrap_or_else(|e| panic!("{name} chunk {i} does not load on its own: {e}"));
         }
     }
+    engine
+}
+
+/// The C11 embed loads the shared assets in pieces — and the pieces work.
+///
+/// C11 cannot open a file at runtime, so codegen carries the same Lua as a
+/// sequence of `luaL_dostring` calls, one per chunk, because ISO C99
+/// guarantees only 4095 characters in a string literal. Two things could go
+/// wrong there and neither is loud: a boundary could fall inside a function
+/// body, and the generated code discards every `luaL_dostring` result, so a
+/// chunk that failed to compile would leave its definitions simply absent.
+/// The C11 suite would stay green — no W3C fixture calls `'a'.substring(0,1)`
+/// — and a consumer's document would fail at runtime instead.
+///
+/// So the split is executed here rather than reviewed: the chunks go into one
+/// interpreter one at a time, in order, and then the definitions are called.
+#[test]
+fn the_c11_embed_chunks_load_and_define_what_they_claim() {
+    use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+
+    let session = "c11-embed-probe";
+    let engine = an_engine_loaded_the_way_c11_loads_the_assets(session);
 
     // Named one by one rather than by counting definitions: what matters is
     // that the call works, and a count would pass against a chunk that
@@ -192,4 +201,54 @@ fn the_c11_embed_chunks_load_and_define_what_they_claim() {
              way C11 loads them"
         );
     }
+}
+
+/// A float the chunked file writes is the one the table says
+/// (ARCHITECTURE.md, "JSON Number Text").
+///
+/// A C11 machine that holds a script engine writes through the `JSON.stringify`
+/// of the shared Lua, loaded in the pieces above, and no C11 test reads the
+/// table through it. The helpers of the digit search are `JSON._` members rather
+/// than file-locals only because of this split, so the split is what is measured
+/// here: each double of `tests/json_text/real_text.json`, given as its IEEE 754
+/// bits, goes to the chunk-loaded interpreter and what it writes must be the
+/// table's text.
+#[test]
+fn the_c11_embed_chunks_write_a_float_as_ecmascript_spells_it() {
+    use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+
+    let session = "c11-embed-real-text";
+    let engine = an_engine_loaded_the_way_c11_loads_the_assets(session);
+    let table_path = repo_root().join("tests/json_text/real_text.json");
+    let table: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&table_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", table_path.display())),
+    )
+    .expect("the real-text table is JSON");
+    let cases = table["cases"].as_array().expect("the table has cases");
+    // A floor, not an equality: adding a case must not have to touch it, but a
+    // table that stopped being read must not pass either.
+    assert!(cases.len() >= 40, "the table lost cases: {}", cases.len());
+
+    let mut disagreements = Vec::new();
+    for case in cases {
+        let name = case["name"].as_str().expect("a case has a name");
+        let bits = u64::from_str_radix(case["bits"].as_str().expect("a case has bits"), 16)
+            .expect("bits are hexadecimal");
+        let text = case["text"].as_str().expect("a case has text");
+        engine
+            .set_variable(session, "v", ScriptValue::Double(f64::from_bits(bits)))
+            .unwrap_or_else(|e| panic!("{name}: the value was not handed to the engine: {e}"));
+        match engine.evaluate_expression(session, "JSON.stringify(v)") {
+            Ok(ScriptValue::String(written)) if written == text => {}
+            other => disagreements.push(format!(
+                "{name}: JSON.stringify wrote {other:?}, the table says {text}"
+            )),
+        }
+    }
+    assert!(
+        disagreements.is_empty(),
+        "the chunk-loaded JSON.stringify disagrees with the float table:\n{}",
+        disagreements.join("\n")
+    );
 }

@@ -5,9 +5,9 @@
 // in a `datamodel="sce-static"` machine, carries the value of a typed expression
 // read from the machine's own fields when the invocation starts. C11 compile+run
 // gate; the Rust, Kotlin, Go, C++ and Python twins drive `statechart_static_host_params`
-// (a `<send>` and an `<invoke>` both), where this one drives the invoke-only
-// document the saved-state suites use: C11 serves the invoke and not yet a host
-// `<send>`.
+// (a `<send>` and an `<invoke>` both), and so does C11, in `test_static_host_params.c`.
+// This one drives the invoke-only document the saved-state suites use, and the
+// invoke's own overflow case.
 //
 // The machine is built with NO script engine: its variables are fields, and a
 // `<param>` that needed an engine to be read would not have one to ask. Linked

@@ -866,6 +866,79 @@
       "form": "value",
       "expect": {"bool": false},
       "clause": "15.6.1.1 Boolean(value) is ToBoolean"
+    },
+    {
+      "group": "infinity",
+      "note": "An engine that names the infinity by a library constant and defines that constant as the largest FINITE double (go-lua's `math.huge` is `math.MaxFloat64`) reads every infinity as an ordinary number: `1 / 0` is spelled by the platform, and the largest finite double is written as `Infinity`. No row asked, so nothing said so.",
+      "setup": "",
+      "source": "String(1 / 0)",
+      "form": "value",
+      "expect": {"string": "Infinity"},
+      "clause": "9.8.1 ToString of the Number +Infinity is \"Infinity\""
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "String(-1 / 0)",
+      "form": "value",
+      "expect": {"string": "-Infinity"},
+      "clause": "9.8.1 ToString of the Number -Infinity is \"-Infinity\""
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "String(parseFloat('Infinity'))",
+      "form": "value",
+      "expect": {"string": "Infinity"},
+      "clause": "15.1.2.3 parseFloat reads the StrDecimalLiteral Infinity"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "parseFloat('Infinity') > 1.7976931348623157e308",
+      "form": "value",
+      "expect": {"bool": true},
+      "clause": "11.8.2 +Infinity is greater than the largest finite Number"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "(1 / 0) | 0",
+      "form": "value",
+      "expect": {"number": 0},
+      "clause": "9.5 ToInt32 of an infinity is +0"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "(1 / 0) >>> 0",
+      "form": "value",
+      "expect": {"number": 0},
+      "clause": "9.6 ToUint32 of an infinity is +0"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "String(Math.round(1 / 0))",
+      "form": "value",
+      "expect": {"string": "Infinity"},
+      "clause": "15.8.2.15 Math.round(+Infinity) is +Infinity"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "JSON.stringify(1.7976931348623157e308)",
+      "form": "value",
+      "expect": {"string": "1.7976931348623157e+308"},
+      "clause": "15.12.3 JSON.stringify of a finite Number is its ToString"
+    },
+    {
+      "group": "infinity",
+      "setup": "",
+      "source": "JSON.stringify(1 / 0)",
+      "form": "value",
+      "expect": {"string": "null"},
+      "clause": "15.12.3 JSON.stringify of a non-finite Number is null"
     }
   ]
 }

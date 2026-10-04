@@ -506,6 +506,51 @@
       "expression": "Boolean(0)",
       "setup": "",
       "source": "Boolean(0)"
+    },
+    {
+      "expression": "String((1 / 0))",
+      "setup": "",
+      "source": "String(1 / 0)"
+    },
+    {
+      "expression": "String(((-1) / 0))",
+      "setup": "",
+      "source": "String(-1 / 0)"
+    },
+    {
+      "expression": "String(parseFloat(\"Infinity\"))",
+      "setup": "",
+      "source": "String(parseFloat('Infinity'))"
+    },
+    {
+      "expression": "(parseFloat(\"Infinity\") > 1.7976931348623157e308)",
+      "setup": "",
+      "source": "parseFloat('Infinity') > 1.7976931348623157e308"
+    },
+    {
+      "expression": "_scxml_bitor((1 / 0), 0)",
+      "setup": "",
+      "source": "(1 / 0) | 0"
+    },
+    {
+      "expression": "_scxml_ushr((1 / 0), 0)",
+      "setup": "",
+      "source": "(1 / 0) >>> 0"
+    },
+    {
+      "expression": "String(_scxml_round((1 / 0)))",
+      "setup": "",
+      "source": "String(Math.round(1 / 0))"
+    },
+    {
+      "expression": "JSON.stringify(1.7976931348623157e308)",
+      "setup": "",
+      "source": "JSON.stringify(1.7976931348623157e308)"
+    },
+    {
+      "expression": "JSON.stringify((1 / 0))",
+      "setup": "",
+      "source": "JSON.stringify(1 / 0)"
     }
   ]
 }
