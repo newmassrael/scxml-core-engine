@@ -2634,6 +2634,31 @@ name the kind's committed Python uses, and compares what the generated module
 does — about 15 000 renamings — and a second test fails when the committed
 output starts to use a name that list does not carry.
 
+A procedure and a timer are classes, and an author's names meet different
+names there. A procedure stores each input, internal and helper as
+`self._<name>` on a subclass of `ProcedureStateMachine`, so an input called
+`is_final` hid the method `run_to_completion` calls (`self._is_final(state)`,
+a call on a bool), one called `done_data` replaced the dictionary a `donedata`
+writes and one called `service_handler` replaced the handler. The storage is
+private, so it is spelled under the same shift as a local (`is_final_`) when the
+name is one the class or its base owns (`PYTHON_PROCEDURE_MEMBERS`), and
+nothing is refused for it. The generated `execute(handler, …)` wrapper binds
+`handler` and `sm` itself, so an input called either was a duplicate argument
+or was overwritten by the machine, and its parameters are spelled under the
+same shift (`PYTHON_PROCEDURE_WRAPPER_NAMES`). One name cannot be kept apart:
+each input and helper has a public setter `set_<name>`, and the base class has
+`set_service_handler`, which the wrapper calls to hand the service handler
+over, so an input or helper of that name is refused
+(`validation/reserved-code-identifier`, the reason in the message). A timer
+spells its events and its state into method names behind a prefix
+(`fire_<event>`, `on_reset_<event>`, `on_cancel_<state>_exit`), where nothing
+of the class's own can meet them, and the same oracle runs it against a
+recording timer and handler and compares what they were asked. A transition's
+`ok` and `fail` are not names an author chooses: they are the two answers a
+service gives, which the generated code wires to `Event.Ok` and `Event.Fail`.
+The three lists are read off the committed output and the runtime's base class
+by `the_names_a_generated_procedure_keeps_for_itself_are_the_ones_its_output_shows`.
+
 Two of an author's own names that a backend spells as one are a different
 fault: `minRpm` beside `min_rpm` is two names in the document and one
 parameter to the generated Python, which the interpreter refuses as a

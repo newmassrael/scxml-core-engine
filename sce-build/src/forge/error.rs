@@ -4371,12 +4371,22 @@ fn reserved_code_identifier_message(
 ) -> String {
     use crate::reader_names::{python_name_clash, python_name_clash_reason, PythonDeclaration};
     if language == "python" {
-        let kind = if element.ends_with("flag-input") {
-            PythonDeclaration::CallParameter
+        // The element says which kind of name it declared: a flag-input is a
+        // parameter, and any other is a class attribute or, in a procedure, an
+        // input or helper with a public setter. No name clashes as both of the
+        // last two, so asking each in turn names the one that refused it.
+        let kinds: &[PythonDeclaration] = if element.ends_with("flag-input") {
+            &[PythonDeclaration::CallParameter]
         } else {
-            PythonDeclaration::ClassAttribute
+            &[
+                PythonDeclaration::ClassAttribute,
+                PythonDeclaration::ProcedureSetter,
+            ]
         };
-        if let Some(clash) = python_name_clash(kind, spelled) {
+        if let Some(clash) = kinds
+            .iter()
+            .find_map(|kind| python_name_clash(*kind, spelled))
+        {
             let reason = python_name_clash_reason(clash);
             let word = if spelled == value {
                 format!("'{value}' is {reason}")

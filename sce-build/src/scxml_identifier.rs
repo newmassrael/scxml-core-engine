@@ -398,19 +398,35 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
 /// What the generated Python makes of the name `node`'s attribute `attr`
 /// declares, when it is a name of the class or call the codec generates:
 /// a field, flag, chain, repeat or embed is the dataclass attribute or its
-/// accessor, a flag-input is a parameter of `decode` and `encode`. `None` for a
-/// name that is only ever a local of a function body, which the generator
-/// keeps apart from an author's names itself, and for one that is not
-/// declared in a codec.
+/// accessor, a flag-input is a parameter of `decode` and `encode`; and a
+/// procedure's input or helper is given a public setter `set_<name>`, which the
+/// base class already has for the service handler. `None` for a name that is
+/// only ever a local of a function body, which the generator keeps apart from
+/// an author's names itself, and for one that is not declared in a codec or a
+/// procedure.
 fn python_declaration(
     node: &roxmltree::Node,
     attr: &str,
 ) -> Option<crate::reader_names::PythonDeclaration> {
-    use crate::reader_names::PythonDeclaration::{CallParameter, ClassAttribute};
+    use crate::reader_names::PythonDeclaration::{CallParameter, ClassAttribute, ProcedureSetter};
+    let in_a_procedure = node
+        .document()
+        .root_element()
+        .attribute((crate::forge::model::SCE_NAMESPACE, "kind"))
+        == Some("procedure");
+    // A procedure's `<data>` is an input, and has a setter, when it declares
+    // `sce:direction="in"`; an internal has none.
+    if node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE) {
+        let an_input = node.tag_name().name() == "data"
+            && attr == "id"
+            && node.attribute((crate::forge::model::SCE_NAMESPACE, "direction")) == Some("in");
+        return (in_a_procedure && an_input).then_some(ProcedureSetter);
+    }
     if node.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
         return None;
     }
     match (node.tag_name().name(), attr) {
+        ("helper", "name") if in_a_procedure => Some(ProcedureSetter),
         ("field" | "flags" | "repeat" | "tlv-chain" | "embed", "id") => Some(ClassAttribute),
         // Inside `<sce:peek-byte>` a flag is only a mask lookup.
         ("flag", "name")

@@ -196,6 +196,12 @@ pub enum PythonNameClash {
     /// A name in the decoder's own local namespace, `f_<field>`. A flag-input
     /// parameter spelled so would be read as the local of the field it spells.
     DecodeLocal,
+    /// `service_handler`, for a procedure's input or helper. Each gets a public
+    /// setter `set_<name>`, and the procedure base class already has
+    /// `set_service_handler`, which the generated wrapper calls to hand the
+    /// service handler over: the author's setter would replace it, and the
+    /// handler would be set to nothing.
+    InheritedSetter,
 }
 
 /// The methods every generated Python codec class defines.
@@ -216,6 +222,12 @@ pub const PYTHON_CLASS_BODY_NAMES: &[&str] = &["classmethod", "field", "list"];
 /// `decode` also takes.
 pub const PYTHON_CALL_PARAMETERS: &[&str] = &["cls", "cursor", "parent_flags", "self", "tag", "w"];
 
+/// The names a procedure's input or helper cannot take because its public
+/// setter, `set_<name>`, would be one the procedure base class defines. Read off
+/// the runtime's `ProcedureStateMachine`, and compared with it by
+/// `a_python_kind_keeps_an_authors_names_apart_from_its_own`.
+pub const PYTHON_PROCEDURE_SETTERS: &[&str] = &["service_handler"];
+
 /// What kind of Python name a declaration is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PythonDeclaration {
@@ -224,6 +236,8 @@ pub enum PythonDeclaration {
     ClassAttribute,
     /// A `<sce:flag-input>`: a parameter of the generated call.
     CallParameter,
+    /// A procedure's input or helper: a public setter `set_<name>`.
+    ProcedureSetter,
 }
 
 /// Whether the generated Python cannot take `spelled` for a declaration of
@@ -253,6 +267,9 @@ pub fn python_name_clash(kind: PythonDeclaration, spelled: &str) -> Option<Pytho
                 None
             }
         }
+        PythonDeclaration::ProcedureSetter => PYTHON_PROCEDURE_SETTERS
+            .contains(&spelled)
+            .then_some(PythonNameClash::InheritedSetter),
     }
 }
 
@@ -275,6 +292,11 @@ pub fn python_name_clash_reason(clash: PythonNameClash) -> &'static str {
         PythonNameClash::DecodeLocal => {
             "spelled as the local a generated python decoder binds a field to \
              (f_<field>)"
+        }
+        PythonNameClash::InheritedSetter => {
+            "the name of a setter every generated python procedure class \
+             inherits (set_service_handler), so an input or helper of that name \
+             would replace it"
         }
     }
 }

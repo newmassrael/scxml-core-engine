@@ -21178,7 +21178,7 @@ fn render_procedure_python(
         .map(|name| {
             (
                 name.as_str(),
-                format!("self._{}", filters::to_snake_case(name.clone())),
+                format!("self._{}", python_procedure_member(name)),
             )
         })
         .collect();
@@ -21211,7 +21211,7 @@ fn render_procedure_python(
         .map(|h| {
             (
                 h.name.clone(),
-                format!("self._{}", filters::to_snake_case(h.name.clone())),
+                format!("self._{}", python_procedure_member(&h.name)),
             )
         })
         .collect();
@@ -21232,6 +21232,11 @@ fn render_procedure_python(
             let snake_id = filters::to_snake_case(f.id.clone());
             serde_json::json!({
                 "snake_id": snake_id,
+                // `self._<member>` storage and the wrapper's parameter: two
+                // spellings, because each meets a different set of the
+                // generator's own names.
+                "member": python_procedure_member(&f.id),
+                "param": python_procedure_wrapper_param(&f.id),
                 "py_type": l.type_name(&f.sce_type),
                 "default_value": l.default_expr(&f.sce_type),
             })
@@ -21257,6 +21262,8 @@ fn render_procedure_python(
             let default_impl = format!("_unset_helper_raiser({:?}, {:?})", h.name, setter_name,);
             serde_json::json!({
                 "snake_id": snake,
+                "member": python_procedure_member(&h.name),
+                "param": python_procedure_wrapper_param(&h.name),
                 "setter_name": setter_name,
                 "callable_type": callable_type,
                 "default_impl": default_impl,
@@ -21286,6 +21293,7 @@ fn render_procedure_python(
             };
             Ok(serde_json::json!({
                 "snake_id": snake_id,
+                "member": python_procedure_member(&f.id),
                 "py_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
             }))
@@ -25056,12 +25064,77 @@ pub const PYTHON_GENERATED_NAMES: &[&str] = &[
 /// that the document keeps apart would be one in the generated code; the shift
 /// is injective, so no pair of names can meet and nothing has to be refused.
 pub(crate) fn python_local_spelling(id: &str) -> String {
-    let snake = filters::to_snake_case(id.to_string());
-    if PYTHON_GENERATED_NAMES.contains(&snake.trim_end_matches('_')) {
+    shift_escape(
+        filters::to_snake_case(id.to_string()),
+        PYTHON_GENERATED_NAMES,
+    )
+}
+
+/// `snake` with one more trailing `_` when its stem is one of `reserved`: the
+/// shift every Python name an author can meet a generator name in is escaped by.
+fn shift_escape(snake: String, reserved: &[&str]) -> String {
+    if reserved.contains(&snake.trim_end_matches('_')) {
         format!("{snake}_")
     } else {
         snake
     }
+}
+
+/// The members a generated Python procedure class has besides the values its
+/// author declares, spelled without the leading `_` they are stored under:
+/// `_service_handler`, `_done_data` and `_pending_event_data` of the base
+/// class, and the methods the template defines (`_is_final`,
+/// `_process_transition`, …).
+///
+/// An author's input, internal or helper is stored as `self._<name>`, so one
+/// called `is_final` would be an attribute in the instance dictionary that
+/// hides the method `run_to_completion` calls (`self._is_final(state)` is a call
+/// on a bool), one called `service_handler` would overwrite the handler, and
+/// one called `done_data` the dictionary `donedata` writes. The storage is
+/// private, so its spelling is the generator's to choose and a name on this
+/// list is stored under the shift ([`python_procedure_member`]).
+///
+/// Read off the committed output, not invented:
+/// `a_python_kind_keeps_an_authors_names_apart_from_its_own` derives every
+/// attribute and method name the procedure and timer templates use, and runs
+/// each as the author's name.
+pub const PYTHON_PROCEDURE_MEMBERS: &[&str] = &[
+    "done_data",
+    "execute_entry_actions",
+    "execute_transition_actions",
+    "final_state_name",
+    "initial_state",
+    "is_final",
+    "none_event",
+    "pending_event_data",
+    "process_transition",
+    "service_handler",
+];
+
+/// The names the generated `execute(…)` wrapper binds itself, in the scope its
+/// author's inputs and helpers are parameters of: the service handler it is
+/// handed and the machine it builds.
+pub const PYTHON_PROCEDURE_WRAPPER_NAMES: &[&str] = &["handler", "sm"];
+
+/// How a generated procedure class stores the value an author named `id`:
+/// `self._<this>`. snake_case, shifted when it would meet one of
+/// [`PYTHON_PROCEDURE_MEMBERS`].
+pub(crate) fn python_procedure_member(id: &str) -> String {
+    shift_escape(
+        filters::to_snake_case(id.to_string()),
+        PYTHON_PROCEDURE_MEMBERS,
+    )
+}
+
+/// How the generated `execute(…)` wrapper spells the parameter that carries
+/// the value an author named `id`: snake_case, shifted when it would be one of
+/// [`PYTHON_PROCEDURE_WRAPPER_NAMES`] — otherwise an input called `handler` is a
+/// duplicate argument, and one called `sm` is overwritten by the machine.
+pub(crate) fn python_procedure_wrapper_param(id: &str) -> String {
+    shift_escape(
+        filters::to_snake_case(id.to_string()),
+        PYTHON_PROCEDURE_WRAPPER_NAMES,
+    )
 }
 
 /// W1 symbol-name SSOT for one field of a transform holder's outputs

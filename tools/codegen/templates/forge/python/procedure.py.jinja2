@@ -77,10 +77,10 @@ class {{ class_name }}(ProcedureStateMachine):
     def __init__(self) -> None:
         super().__init__()
 {% for f in input_fields %}
-        self._{{ f.snake_id }}: {{ f.py_type }} = {{ f.default_value }}
+        self._{{ f.member }}: {{ f.py_type }} = {{ f.default_value }}
 {% endfor %}
 {% for f in internal_fields %}
-        self._{{ f.snake_id }}: {{ f.py_type }} = {{ f.default_value }}
+        self._{{ f.member }}: {{ f.py_type }} = {{ f.default_value }}
 {% endfor %}
 {% if has_imports %}
         # Imported kinds (cross-file composition)
@@ -94,18 +94,18 @@ class {{ class_name }}(ProcedureStateMachine):
         # raise RuntimeError with the helper name + setter name baked in.
         # Matches the Rust / C++ / Go / Kotlin fail-fast rationale.
 {% for h in helper_fields %}
-        self._{{ h.snake_id }}: {{ h.callable_type }} = {{ h.default_impl }}
+        self._{{ h.member }}: {{ h.callable_type }} = {{ h.default_impl }}
 {% endfor %}
 {% endif %}
 
 {% for h in helper_fields %}
     def {{ h.setter_name }}(self, fn: {{ h.callable_type }}) -> None:
-        self._{{ h.snake_id }} = fn
+        self._{{ h.member }} = fn
 
 {% endfor %}
 {% for f in input_fields %}
     def set_{{ f.snake_id }}(self, value: {{ f.py_type }}) -> None:
-        self._{{ f.snake_id }} = value
+        self._{{ f.member }} = value
 
 {% endfor %}
     def _none_event(self) -> int:
@@ -218,19 +218,19 @@ class {{ class_name }}(ProcedureStateMachine):
 def execute(
     handler: Callable[[ProcedureServiceRequest], ProcedureServiceResponse],
 {% for h in helper_fields %}
-    {{ h.snake_id }}: {{ h.callable_type }},
+    {{ h.param }}: {{ h.callable_type }},
 {% endfor %}
 {% for f in input_fields %}
-    {{ f.snake_id }}: {{ f.py_type }},
+    {{ f.param }}: {{ f.py_type }},
 {% endfor %}
 ) -> ProcedureRunResult:
     sm = {{ class_name }}()
     sm.set_service_handler(handler)
 {% for h in helper_fields %}
-    sm.{{ h.setter_name }}({{ h.snake_id }})
+    sm.{{ h.setter_name }}({{ h.param }})
 {% endfor %}
 {% for f in input_fields %}
-    sm.set_{{ f.snake_id }}({{ f.snake_id }})
+    sm.set_{{ f.snake_id }}({{ f.param }})
 {% endfor %}
     return sm.run_to_completion()
 
