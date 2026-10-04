@@ -1056,11 +1056,69 @@ def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
     return out
 
 
+# How many addresses a refusal names before it says how many more there are.
+_UNREAD_LISTED = 8
+
+
+def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Finding]:
+    """Inputs the product's own cases drive and the specification names, that no binding rule reads.
+
+    ⚠ Measured 2026-10-04 over 386 stored documents: on one component every
+    document read NONE of eighteen inputs that its specification names and that
+    the product's cases drive, and its run said so only at `verify`, which the
+    writer does not have -- "no input the binding reads changed, so the host ran
+    nothing". Those documents failed 140 cases on average where the rest failed
+    11. `check` could not say it: `unread_preconditions` asks about the
+    conditions the prose WRITES AS PRECONDITIONS, and an input named in a table
+    row or a clause that is not one is read by nothing it asks about.
+
+    Three things must all hold, so that a refusal is not a guess: the cases drive
+    the address (the product does something with it), the specification names it
+    (the writer had it in front of them), and no binding rule reads it. Of 386
+    documents it flagged 16, and 15 of those failed cases.
+
+    An address the pack lists as plumbing (`infrastructure`) is never asked for,
+    and a pack with no cases asks nothing: with nothing driven there is no
+    evidence the product reads anything. This is the one answer to "which
+    inputs does the document never listen to", beside `addresses_of`, which is
+    the one answer to "which addresses does this binding read".
+    """
+    driven = pack.examples.driven
+    if not driven:
+        return []
+    body = prose.text
+    read: set = set()
+    for rule in declared_inputs.values():
+        if isinstance(rule, dict):
+            read |= addresses_of(rule)
+    plumbing = pack.conventions.infrastructure
+    missing = [entry for entry in pack.model.entries
+               if entry.role == "input"
+               and entry.address in driven
+               and entry.address not in read
+               and not any(entry.address.startswith(p) for p in plumbing)
+               and any(name in body for name in entry.names)]
+    if not missing:
+        return []
+    listed = "; ".join(f"{e.address} (named {e.names[0]!r})" for e in missing[:_UNREAD_LISTED])
+    more = len(missing) - _UNREAD_LISTED
+    return [Finding(
+        "binding",
+        f"reads none of {len(missing)} input(s) the specification names and the "
+        f"product's cases drive: {listed}{f'; and {more} more' if more > 0 else ''}. "
+        f"A host delivers a change only to an address a binding reads, so a case "
+        f"that drives one of these runs nothing and the output it was meant to "
+        f"move stays at its default. Read each where the specification uses it. "
+        f"If one is plumbing the specification only mentions, the pack says so "
+        f"under `infrastructure`.")]
+
+
 def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     """Refusals for this document and binding against the pack.
 
     With `prose` -- the specification -- every precondition it states is
-    also asked for (`unread_preconditions`).
+    also asked for (`unread_preconditions`), and so is every input it names that
+    the pack's cases drive and no rule reads (`unread_driven_inputs`).
     """
     binding = read_binding(binding_path)
     document = read_document((binding_path.parent / binding["document"]).resolve())
@@ -1444,6 +1502,7 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
 
     if prose is not None:
         out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
+        out.extend(unread_driven_inputs(pack, prose, declared_inputs))
 
     # ⚠ Every recorded guess says what else it could have been. A guess that
     # does not cannot be tried when a case fails on it -- `gaps` can only say
