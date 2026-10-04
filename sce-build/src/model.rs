@@ -1198,6 +1198,16 @@ pub struct DoneData {
     /// [`Transition::cond_spelling`] gives. `None` without one.
     #[serde(skip)]
     pub content_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// Codegen-internal: the done event's data when a `sce-static` document's
+    /// `<donedata>` carries inline `<content>`, as the wire text
+    /// ([`crate::filters::static_content_wire`]) — the JSON string the text
+    /// spells, or the XML as written. When set, the backend's `<final>` template
+    /// hands it to the event as it stands, with no script engine to evaluate the
+    /// text. Transient and outside the AST contract, as
+    /// [`Action::native_content`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content: String,
 }
 
 /// §scxml-5.5: `<content>` body semantics.

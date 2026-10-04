@@ -35,6 +35,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
@@ -189,7 +190,7 @@ func replay(t *testing.T, name string, m machine) {
 			Expect  struct {
 				State     *string        `json:"state"`
 				Ended     bool           `json:"ended"`
-				Donedata  map[string]any `json:"donedata"`
+				Donedata  any            `json:"donedata"`
 				Variables map[string]any `json:"variables"`
 			} `json:"expect"`
 		} `json:"steps"`
@@ -217,12 +218,13 @@ func replay(t *testing.T, name string, m machine) {
 				t.Errorf("%s: the machine ended in a top-level <final>", where())
 			}
 			// What its <donedata> left for the invoking parent, as the JSON the
-			// parent reads: the pairs that were carried, and no other.
+			// parent reads: the pairs that were carried, and no other, or the
+			// string an inline <content> spells.
 			if step.Expect.Donedata != nil {
 				var got any
 				if err := json.Unmarshal([]byte(m.donedata()), &got); err != nil {
 					t.Errorf("%s: the donedata %q is not JSON: %v", where(), m.donedata(), err)
-				} else if !reflect.DeepEqual(got, any(step.Expect.Donedata)) {
+				} else if !reflect.DeepEqual(got, step.Expect.Donedata) {
 					t.Errorf("%s: the donedata is %v, not %v", where(), got, step.Expect.Donedata)
 				}
 			}
@@ -487,6 +489,16 @@ func TestAFinalHandsItsDoneEventItsParams(t *testing.T) {
 	policy := static_donedata.NewStaticDonedataPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata", drive[static_donedata.StaticDonedataState, static_donedata.StaticDonedataEvent](&policy, map[string]func() any{
+		"count": func() any { return policy.Count() },
+	}))
+}
+
+// A top-level final whose <donedata> is inline <content> hands its done event the
+// text as the string it spells, with no script engine to read it as a number.
+func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
+	policy := static_donedata_content.NewStaticDonedataContentPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_donedata_content", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
 	}))
 }

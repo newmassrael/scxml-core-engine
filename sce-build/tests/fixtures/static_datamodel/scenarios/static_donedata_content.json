@@ -1,0 +1,14 @@
+{
+  "machine": "static_donedata_content",
+  "about": "A top-level final whose <donedata> carries inline <content> hands its done event the text as the string it spells. `42` is the string \"42\", not the number an engine would read it as, so a backend that carried a script engine and one that carried none cannot answer differently. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the counter starts at its declared value",
+      "expect": { "state": "counting", "variables": { "count": 0 } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1 } } },
+
+    { "note": "the final is entered: the done event's data is the string \"42\"",
+      "event": "finish",
+      "expect": { "ended": true, "donedata": "42" } }
+  ]
+}

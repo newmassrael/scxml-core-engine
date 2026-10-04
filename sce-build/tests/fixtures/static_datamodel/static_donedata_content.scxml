@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the <donedata> of
+  a top-level <final> that carries inline <content> in place of <param>s. The
+  text is the done event's data as the build finished it, the string it spells:
+  `<content>42</content>` is the string "42" on every backend, not the number an
+  engine would read it as, and no script engine is asked for it (§scxml-5.5).
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticScenarioTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_donedata_content">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="tick" type="internal">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <content>42</content>
+    </donedata>
+  </final>
+</scxml>

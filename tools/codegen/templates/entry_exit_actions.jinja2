@@ -547,6 +547,15 @@
                         &typedData
                     );
 {% endif %}
+{% elif state.donedata.native_content %}
+{# `datamodel="sce-static"` (`DoneData::native_content`): the data is the wire
+   text the build finished — the JSON string the inline `<content>` spells, or
+   the XML as written — so no script engine is asked for it (SCE Accepted
+   Subset §2.15). The typed value is what that text parses as, which the
+   engine's own dequeue reads it back as when it is not given. #}
+                    // W3C SCXML 5.5: inline text is the content value, finished at build time.
+                    eventData = "{{ state.donedata.native_content | escape_cpp }}";
+                    typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.

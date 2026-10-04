@@ -248,3 +248,9 @@ def test_a_string_is_held_to_its_bytes() -> None:
 # is left out and the others cross.
 def test_a_final_hands_its_done_event_the_pairs_of_its_donedata() -> None:
     replay("static_donedata")
+
+
+# A top-level final whose `<donedata>` is inline `<content>` hands its done event
+# the text as the string it spells, with no script engine to read it as a number.
+def test_a_final_hands_its_done_event_the_text_its_content_spells() -> None:
+    replay("static_donedata_content")

@@ -114,7 +114,10 @@ pub enum ScriptEngineCauseKind {
     /// expression must be evaluated before the `done.state` event is raised.
     /// `<content>literal</content>` does **not** trigger this cause: per
     /// §scxml-5.5 the children are used as the value directly (see
-    /// [`DoneDataContent::Literal`]).
+    /// [`DoneDataContent::Literal`]). Inline text under a data model with a
+    /// value expression language does, since its first reading is an
+    /// evaluation — except under `sce-static`, which has no engine and takes the
+    /// text as the string it spells ([`Self::is_typed_under_static`]).
     DonedataContent { state_id: String },
     /// §scxml-6.4 — a static `<invoke>` targets a child SCXML whose
     /// own analyzer output declared `needs_script_engine = true`; the
@@ -166,6 +169,10 @@ impl ScriptEngineCauseKind {
             | C::LogExpr { .. }
             | C::HostInvokeExpr { .. }
             | C::DonedataParam { .. }
+            // A `<donedata>`'s inline `<content>` is the text it spells,
+            // finished at build time (`static_lowering`); the model refuses a
+            // `<content expr>`, so this cause is the inline text alone here.
+            | C::DonedataContent { .. }
             // A `<foreach>` the model admits walks a list variable, and is
             // lowered to a native loop over its typed elements.
             | C::ForeachAction { .. }
@@ -182,7 +189,6 @@ impl ScriptEngineCauseKind {
             | C::HybridInvoke { .. }
             | C::MeshRpcSrcExpr { .. }
             | C::MeshRpcRequestExpr { .. }
-            | C::DonedataContent { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
         }
     }

@@ -1653,6 +1653,12 @@ pub fn lower(
         // machine's fields when the state is entered (§scxml-5.5).
         if let Some(done) = &mut state.donedata {
             lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
+            // Inline `<content>` is the event's data as written, finished here
+            // ([`crate::filters::static_content_wire`]) as a `<send>`'s is: the
+            // machine has no engine to evaluate the text with (§scxml-5.5).
+            if let crate::model::DoneDataContent::InlineText(text) = &done.content {
+                done.native_content = crate::filters::static_content_wire(text);
+            }
         }
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
@@ -3674,10 +3680,10 @@ impl StaticTarget for CTarget {
         // A string is a buffer of the bound its variable declares, which the
         // document requires of every one ([`Self::string_storage`]). A bytes
         // value needs a capacity the C11 contract does not carry yet. A 64-bit
-        // real is a `double`, written to the wire as ECMAScript spells it; a
-        // 32-bit one, a list of reals and a record's real field are not held to a
-        // scenario yet. A record is a struct the machine's own header declares,
-        // of fields held as those are.
+        // real is a `double`, written to the wire as ECMAScript spells it, alone,
+        // in a list and as a record's field; a 32-bit one is refused, since the
+        // contract pins only the 64-bit spelling. A record is a struct the
+        // machine's own header declares, of fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -3801,14 +3807,20 @@ impl StaticTarget for CTarget {
                 return Some(other);
             }
             // The pairs of a `<donedata>` are written as the JSON object of the
-            // done event's data from the machine's own fields; its `<content>` is
-            // not spelled yet, and nor is a name that repeats.
-            if state
-                .donedata
-                .as_ref()
-                .is_some_and(|done| !matches!(done.content, crate::model::DoneDataContent::None))
-            {
-                return Some("a <donedata> with a <content>".to_string());
+            // done event's data from the machine's own fields, and its inline
+            // `<content>` is the text it spells, finished at build time
+            // ([`crate::filters::static_content_wire`]) and copied into that
+            // data. A name that repeats is not spelled yet. The model refuses
+            // an evaluated `<content expr>`; one that reached here is refused
+            // again rather than read as text.
+            if state.donedata.as_ref().is_some_and(|done| {
+                !matches!(
+                    done.content,
+                    crate::model::DoneDataContent::None
+                        | crate::model::DoneDataContent::InlineText(_)
+                )
+            }) {
+                return Some("a <donedata> with a <content> that is not inline text".to_string());
             }
             if let Some(name) = state
                 .donedata

@@ -3086,6 +3086,7 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
         content: crate::model::DoneDataContent::None,
         content_location: None,
         content_spelling: None,
+        native_content: String::new(),
     };
     for (k, sub) in group(kids) {
         if let Some(rest) = k.text.strip_prefix("param ") {

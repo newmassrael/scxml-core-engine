@@ -375,7 +375,7 @@
 {# `datamodel="sce-static"`: each param's value is native code
    (`DoneDataParam::native_value`), read from the machine's own fields, so no
    script engine is asked for any of them. #}
-{% set done_native = state.donedata and (state.donedata.params | selectattr("native_value") | list | length > 0) %}
+{% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content) %}
 {% if state.is_final and state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
                 // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
                 // Delegates to the SSoT helper shared with C++/Rust/Go backends.
@@ -399,7 +399,14 @@
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
                     var doneEventData = ""
-{% if state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
+{% if state.donedata.native_content %}
+{# `datamodel="sce-static"` (`DoneData::native_content`): the data is the wire
+   text the build finished — the JSON string the inline `<content>` spells, or
+   the XML as written — so no script engine is asked for it (SCE Accepted
+   Subset §2.15). #}
+                    // W3C SCXML 5.5: inline text is the content value, finished at build time.
+                    doneEventData = "{{ state.donedata.native_content | escape_kotlin }}"
+{% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
 {% set donedata_content = state.donedata.content.text | to_script_source_expr %}

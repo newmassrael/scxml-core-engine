@@ -59,6 +59,9 @@
 //   * `static_donedata`: a top-level final writes the pairs of its `<donedata>`, each
 //     read from the machine's own fields, as the JSON object of the done event's
 //     data; a pair whose value failed to compute is left out and the others cross.
+//   * `static_donedata_content`: a top-level final whose `<donedata>` is inline
+//     `<content>` writes the text as the JSON string it spells (`42` is the string
+//     "42"), with no script engine to read it as a number.
 //   * `static_string_capacity`: a string is a buffer of the UTF-8 bytes its variable
 //     declares, and an assignment past it is refused by bytes, not characters.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
@@ -78,6 +81,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_donedata_content_sm.h"
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
@@ -534,6 +538,26 @@ static const variable_t donedata_variables[] = {
 STATIC_SCENARIO_DONE(static_donedata, donedata_states, donedata_variables, NULL, no_lists, no_records,
                      static_donedata_done)
 
+// static_donedata_content: a top-level final whose `<donedata>` is inline
+// `<content>` hands its done event the text as the JSON string it spells, finished
+// when the machine was generated; `42` is the string "42", not the number a script
+// engine would read it as.
+VARIABLE_READER(static_donedata_content, count)
+
+static const char *static_donedata_content_done(void *sm) {
+    return static_donedata_content_done_data((const static_donedata_content_t *)sm);
+}
+
+static const name_value_t donedata_content_states[] = {
+    {"counting", STATIC_DONEDATA_CONTENT_STATE_COUNTING},
+    {"done", STATIC_DONEDATA_CONTENT_STATE_DONE},
+};
+static const variable_t donedata_content_variables[] = {
+    {"count", static_donedata_content_read_count},
+};
+STATIC_SCENARIO_DONE(static_donedata_content, donedata_content_states, donedata_content_variables, NULL, no_lists,
+                     no_records, static_donedata_content_done)
+
 // static_send_params: a `<send>` hands its event the pairs of its `<param>`s, read
 // from the machine's own fields when the send runs; the machine sends itself the
 // event and reads the pairs back through the schemas it imports. A pair whose value
@@ -879,6 +903,7 @@ int main(void) {
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 5);
+    bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();

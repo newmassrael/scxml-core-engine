@@ -2667,6 +2667,20 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% endif %}
             }
         }
+        {% elif static_datamodel and state.donedata.native_content %}
+        /* SCE Accepted Subset §2.15 + §scxml-5.5: under `sce-static` an inline
+           `<content>` is the done event's data as the build finished it
+           (`DoneData::native_content`) — the JSON string the text spells, or the
+           XML as written — so a `<content>123</content>` is the string `"123"`
+           and no script engine reads it. It is copied into the buffer the done
+           event is built from or a host reads, which a literal too long for it
+           refuses at compile time. */
+        {
+            static const char sce_lit_[] = "{{ state.donedata.native_content | escape_c }}";
+            _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
+                           "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
+            memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
+        }
         {% elif state.donedata.params %}
         /* W3C SCXML 5.5: build _sce_donedata as a table of
            name:value pairs. §scxml-5.7: a pair whose location is not
@@ -2752,9 +2766,9 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
                     (size_t)SCE_MAX_DATA_LEN - 1u);
             _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
-            {% elif static_datamodel and state.donedata and state.donedata.params %}
-            /* §scxml-5.5: the pairs written above ride on this event's data,
-               a buffer of the size `done_data` is. */
+            {% elif static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content) %}
+            /* §scxml-5.5: the pairs or the text written above ride on this
+               event's data, a buffer of the size `done_data` is. */
             memcpy(_done_evt.data, sm->done_data, sizeof(_done_evt.data));
             {% elif state.donedata and model.needs_script_engine %}
             /* W3C SCXML 5.5: the evaluated donedata rides on THIS event, as

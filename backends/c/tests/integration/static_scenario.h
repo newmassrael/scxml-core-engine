@@ -78,8 +78,9 @@ typedef struct {
     // machine publishes no list of records of.
     bool (*record_count)(void *sm, const char *name, size_t *len);
     // The data the done event of the final the run ended at carries — the JSON
-    // object of its `<donedata>` pairs. A scenario states it as an object, and a
-    // driver whose machine has no `<donedata>` may leave this unset.
+    // object of its `<donedata>` pairs, or the JSON string an inline `<content>`
+    // spells. A scenario states it as the one or the other, and a driver whose
+    // machine has no `<donedata>` may leave this unset.
     const char *(*done_data)(void *sm);
     // The value of a real variable, as the double it is. False for a name the
     // machine publishes no real of. A scenario states such a value with a
@@ -367,14 +368,32 @@ static bool sce_scenario_find_member(const char *json, const char *key, sce_scen
     }
 }
 
-// The pairs a step states of the done event's data, against what the machine's
-// final wrote: each stated pair is there and equal, and nothing else is.
+// What a step states of the done event's data, against what the machine's final
+// wrote: the string an inline `<content>` spells, or the pairs of a `<donedata>`,
+// each stated pair there and equal and nothing else.
 static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
     int bad = 0;
     char key[64];
     char message[256];
     size_t stated = 0;
     const char *got = d->done_data == NULL ? NULL : d->done_data(d->sm);
+    sce_scenario_space(c);
+    if (*c->at == '"') {
+        sce_scenario_value_t want;
+        sce_scenario_value_t have;
+        sce_scenario_cursor_t written = {got == NULL ? "" : got};
+        if (!sce_scenario_read_value(c, &want)) {
+            return sce_scenario_fail(d, step, "`donedata` is not a well formed string");
+        }
+        if (got == NULL) {
+            return sce_scenario_fail(d, step, "the machine publishes no done data");
+        }
+        if (!sce_scenario_read_value(&written, &have) || !have.is_text || strcmp(have.text, want.text) != 0) {
+            (void)snprintf(message, sizeof(message), "the done data `%s` is not the string `%s`", got, want.text);
+            bad |= sce_scenario_fail(d, step, message);
+        }
+        return bad;
+    }
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "`donedata` is not an object");
     }

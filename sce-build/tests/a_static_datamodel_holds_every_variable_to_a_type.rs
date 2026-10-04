@@ -307,14 +307,14 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
     // numbers, bools and strings, a call of an imported algorithm, a host action
     // whose arguments are typed expressions of them, the `<param>`s of a final's
-    // `<donedata>` and of a `<send>` to the machine's own processor or to one
-    // the host is declared to serve (and the literal `<content>` of one), an
-    // `<invoke type="scxml">` handing numbers,
+    // `<donedata>` (and its inline `<content>`) and of a `<send>` to the machine's
+    // own processor or to one the host is declared to serve (and the literal
+    // `<content>` of one), an `<invoke type="scxml">` handing numbers,
     // bools and strings, and an `<invoke>` the host is declared to serve. What is
     // past that — a 32-bit real, a list of them, a record with a string field, a bytes
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
-    // repeats, a final's `<donedata>` with a `<content>`, a payload field that
+    // repeats, a payload field that
     // is bytes or an enum — is refused by
     // name where the document is read, not left as an undefined name in the
     // generated code.
@@ -386,14 +386,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
   <final id="fin"><donedata><param name="k" expr="count"/><param name="k" expr="count + 1"/></donedata></final>"#,
             ),
             "a <donedata> that names <param name=\"k\"> twice",
-        ),
-        (
-            "a <donedata> with a <content>",
-            machine(
-                r#"<state id="s"><transition event="go" target="fin"/></state>
-  <final id="fin"><donedata><content>hello</content></donedata></final>"#,
-            ),
-            "a <donedata> with a <content>",
         ),
         (
             "a typed payload with an enum field",
@@ -1747,6 +1739,96 @@ fn a_send_content_is_the_text_it_spells_and_no_engine_reads_it() {
         assert!(
             !source.contains(engine),
             "{language}: no script engine reads a send content"
+        );
+    }
+}
+
+#[test]
+fn a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it() {
+    // Measured 2026-10-04: Rust, Go, Kotlin, Python and C++ accepted an inline
+    // `<content>` in a final's `<donedata>` and generated a call to the script
+    // engine for it, which made `needs_script_engine` true for a machine that was
+    // to have none, and C refused it by name. A `<send>`'s literal content had
+    // been finished at build time since 2026-10-03.
+    //
+    // Under a data model with no engine the text is the value: the string it
+    // spells, whitespace-normalised and JSON-quoted, or the XML as written. What
+    // is read is the generated machine, as for a `<send>`'s content, and the
+    // scenario `static_donedata_content` runs it on every backend.
+    let document = machine(
+        r#"<state id="s">
+    <transition event="go" target="fin"/>
+  </state>
+  <final id="fin"><donedata><content>two   words</content></donedata></final>"#,
+    );
+    for (language, extension, native, engine) in [
+        (
+            "kotlin",
+            "kt",
+            r##"doneEventData = "\"two words\"""##,
+            "engineDD.evaluateExpr(",
+        ),
+        (
+            "rust",
+            "rs",
+            r##"String::from("\"two words\"")"##,
+            "evaluate_expression",
+        ),
+        (
+            "go",
+            "go",
+            r##"doneEventData = "\"two words\"""##,
+            "EvaluateExpression",
+        ),
+        (
+            "python",
+            "py",
+            r##"_done_data = "\"two words\"""##,
+            "_done_data = engine._script_engine.evaluate_expression(",
+        ),
+        (
+            "cpp",
+            "inl",
+            r##"eventData = "\"two words\"";"##,
+            "DoneDataHelper::evaluateContent(",
+        ),
+        (
+            "c",
+            "c",
+            r##"static const char sce_lit_[] = "\"two words\"";"##,
+            "luaL_dostring(",
+        ),
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &document,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a sce-static machine's donedata content needs no engine:\n{out}"
+        );
+        let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == extension))
+            .collect();
+        assert_eq!(generated.len(), 1, "{language}: one machine: {generated:?}");
+        let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+        assert!(
+            source.contains(native),
+            "{language}: the done event's data is the text the content spells"
+        );
+        assert!(
+            !source.contains(engine),
+            "{language}: no script engine reads a donedata content"
         );
     }
 }

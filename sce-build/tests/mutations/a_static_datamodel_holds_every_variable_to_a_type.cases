@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -128,4 +128,66 @@ mutation_case "C refuses a send content again" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "                    if !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());",
      "                    if !action.content.is_empty() || !action.contentexpr.is_empty() {\n                        return Some(\"a <send> with a <content expr>\".to_string());")
+PY
+
+# A `<donedata>`'s inline `<content>` is finished at build time the way a `<send>`'s
+# literal one is. Without it every backend falls back to the arm that asks a script
+# engine for the text, which the machine was never given; the manifest still says it
+# needs none, so only the generated machine shows it. What is read is
+# `a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it`.
+#
+# Not reached here: the copy of that text into the done event of a COMPOUND final in
+# C (`static_done_data`, and the `native_content` clause beside `params` where the
+# event is built). No scenario hands a `done.state.<parent>` event's data to a guard,
+# which no `sce-static` expression can read untyped, so a mutation there survives.
+
+mutation_case "a donedata content is left for an engine to evaluate" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                done.native_content = crate::filters::static_content_wire(text);\n",
+     "                let _ = (text, crate::filters::static_content_wire);\n")
+PY
+
+mutation_case "a Go donedata content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/go/entry_exit_actions.go.jinja2",
+     "{% elif state.donedata.native_content %}",
+     "{% elif false and state.donedata.native_content %}")
+PY
+
+mutation_case "a Rust donedata content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/rust/entry_exit_actions.rs.jinja2",
+     "{% elif state.donedata.native_content %}",
+     "{% elif false and state.donedata.native_content %}")
+PY
+
+mutation_case "a Python donedata content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/python/entry_exit_actions.py.jinja2",
+     "{% elif state.donedata.native_content %}",
+     "{% elif false and state.donedata.native_content %}")
+PY
+
+mutation_case "a Kotlin donedata content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "{% if state.donedata.native_content %}",
+     "{% if false and state.donedata.native_content %}")
+PY
+
+mutation_case "a C++ donedata content is read by the engine again" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "{% elif state.donedata.native_content %}",
+     "{% elif false and state.donedata.native_content %}")
+PY
+
+# C's arm for it is the one that stops copying the text into the buffer the done
+# event is built from, and writes nothing there.
+mutation_case "a C donedata content is not written" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{% elif static_datamodel and state.donedata.native_content %}",
+     "{% elif false and static_datamodel and state.donedata.native_content %}")
+PY
+
+# C stops lowering the text and refuses the final by name again.
+mutation_case "C refuses a donedata content again" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    crate::model::DoneDataContent::None\n                        | crate::model::DoneDataContent::InlineText(_)\n",
+     "                    crate::model::DoneDataContent::None\n")
 PY

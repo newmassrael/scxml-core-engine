@@ -24,6 +24,7 @@ import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
+import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
@@ -216,6 +217,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_donedata"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A top-level final whose <donedata> is inline <content> hands its done event
+    // the text as the string it spells, with no script engine to read it as a number.
+    @Test
+    fun staticDonedataContentIsTheTextItSpells() {
+        val sm = StaticDonedataContentStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_donedata_content"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

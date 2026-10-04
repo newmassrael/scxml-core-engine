@@ -26,6 +26,9 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_donedata_content_sm::{
+    StaticDonedataContentPersist, StaticDonedataContentPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_donedata_sm::{
     StaticDonedataPersist, StaticDonedataPolicy,
 };
@@ -227,6 +230,19 @@ fn static_donedata_hands_the_done_event_its_params() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata.json"
+        ),
+    );
+}
+
+// A top-level final whose <donedata> is inline <content> hands its done event the
+// text as the string it spells, with no script engine to read it as a number.
+#[test]
+fn static_donedata_content_is_the_text_it_spells() {
+    replay(
+        Engine::new(StaticDonedataContentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content.json"
         ),
     );
 }

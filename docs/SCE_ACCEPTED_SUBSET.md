@@ -2862,6 +2862,17 @@ pairs that survive to `DoneDataHelper::collectParams`, which writes the object w
 the one writer `evaluateParams` uses for the pairs an engine evaluated. A
 `<content expr>` has no typed form and is refused at parse, as it was.
 
+A `<donedata>` that carries inline `<content>` in place of `<param>`s hands its done
+event the text as the string it spells, finished at build time as a `<send>`'s
+literal content is (the JSON string, whitespace-normalised, or the XML as written)
+and copied into the event's data: `<content>42</content>` is the string `"42"` on
+every backend, never the number an engine would read, and no script engine reads it.
+Measured 2026-10-04, Rust, Go, Kotlin, Python and C++ generated a call to one for it,
+which made `needs_script_engine` true for a machine that was to have none, and C
+refused it by name. `static_donedata_content` holds every backend to it, and
+`a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it` reads the generated
+machines.
+
 Rust writes a string into a variable owned — `"busy".to_string()`, and a read
 of another variable cloned — because a string inside an expression is borrowed
 and a field holds a `String`; a string handed to a host action stays borrowed
@@ -3343,7 +3354,7 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
-read back from `DonedataAtFinal`) and `static_send_params` against them (an event's `data` goes in as the
+read back from `DonedataAtFinal`), `static_donedata_content` (its text, the same way) and `static_send_params` against them (an event's `data` goes in as the
 JSON text every other producer fills; a
 variable the machine keeps to itself is read by reflection, which only reads),
 and drives `static_host_call` and `static_host_call_arguments` with a recording
@@ -3416,8 +3427,9 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record_real`, `static_record`, `sync_client`, `static_send_params` and `static_donedata` (the
-done event's pairs are read back from the engine's `done_data`) against
+`static_record_real`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the
+done event's pairs are read back from the engine's `done_data`) and `static_donedata_content` (its text,
+the same way) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
 variable the machine keeps to itself is read from its attribute, which only
 reads), and `test_a_static_child_is_handed_its_params.py` drives
@@ -3443,8 +3455,7 @@ the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real and a list
 them, bytes and a record with a string field or a 32-bit real field, a `<send>` to
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
-`<send>`, an `<invoke>` or a `<donedata>`, a final's
-`<donedata>` with a `<content>` and a
+`<send>`, an `<invoke>` or a `<donedata>` and a
 transition on an event whose payload carries a bytes or enum field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
 not carry yet, and a 32-bit real has no wire spelling every engine shares (the
@@ -3561,7 +3572,8 @@ two of its fields), `static_record_list`, `static_record_enum`,
 `static_record_real` (a record's real field is read by a reader of its own and
 compared as the 64 bits it is, after a payload carried it),
 `static_string_capacity`, `static_donedata` (the done data read through
-`_done_data` and held to the pairs it states and no others), `static_send_params`
+`_done_data` and held to the pairs it states and no others), `static_donedata_content`
+(the same buffer, held to the string an inline `<content>` spells), `static_send_params`
 (a string carried by a `<send>` and read back through a typed payload),
 `static_payload`, `static_enum` (a value stated as the
 name its document declares) and `sync_client` (four standard sync algorithms

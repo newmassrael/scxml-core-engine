@@ -239,6 +239,15 @@
                     done_event_data.push_str(&json_parts.join(","));
                     done_event_data.push('}');
                 }
+{% elif state.donedata.native_content %}
+                {
+{# `datamodel="sce-static"` (`DoneData::native_content`): the data is the wire
+   text the build finished — the JSON string the inline `<content>` spells, or
+   the XML as written — so no script engine is asked for it (SCE Accepted
+   Subset §2.15). #}
+                    // W3C SCXML 5.5: inline text is the content value, finished at build time.
+                    done_event_data = String::from("{{ state.donedata.native_content | escape_rust }}");
+                }
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
                 {
 {% if state.donedata.content.kind == "expression" %}

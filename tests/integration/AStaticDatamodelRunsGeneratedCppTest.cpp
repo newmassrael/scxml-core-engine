@@ -28,6 +28,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
+#include "static_donedata_content_sm.h"
 #include "static_donedata_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
@@ -368,6 +369,16 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventItsPar
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata", driver);
+}
+
+// A top-level final whose `<donedata>` is inline `<content>` hands its done event
+// the text as the string it spells, with no script engine to read it as a number.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTextItsContentSpells) {
+    using Machine = G::static_donedata_content::static_donedata_content;
+    Driver<Machine> driver({
+        {"count", [](const Machine &m) { return json(m.count()); }},
+    });
+    replay("static_donedata_content", driver);
 }
 
 // A `<send>` hands its event the pairs of its `<param>`s, each computed from the
