@@ -869,6 +869,13 @@
         {
           "description": "RFC §synth-5-B B3 TLV chain primitive — bounded extension list (Type-Length-Value). Iteratively decodes entries up to `max_depth` (RFC: \"iterative, never recursive\"); residual bytes after the cap are handled per [`TlvOverflowPolicy`]. Entry body codec is resolved via [`CodecField::tlv_chain_body_alias`] (mirrors `repeat_body_alias`). MCU-class — emits only on Rust + C11; cpp/kotlin/go/python codecs containing this field type are rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language` (the existing kind-class diagnostic is repurposed at the codec-content granularity, see RFC §synth-5-B \"MCU-only codec sub-features\").",
           "properties": {
+            "entry_binds": {
+              "description": "The entry codec's flag-inputs this chain supplies entry by entry ([`TlvEntryFlagBind`]), in the order the author wrote them. Needs `entry_id`, which is what each value is read from. Absent from the serialized form when empty, so a document that does not use it keeps its AST.",
+              "items": {
+                "$ref": "#/definitions/TlvEntryFlagBind"
+              },
+              "type": "array"
+            },
             "entry_id": {
               "anyOf": [
                 {
@@ -6017,6 +6024,26 @@
         "enter_expr",
         "id",
         "on_enter"
+      ],
+      "type": "object"
+    },
+    "TlvEntryFlagBind": {
+      "description": "A flag-input of a chain's entry codec that the chain itself supplies, one value per entry, from the entry decoded just before it.\n\nThe parent binds an entry codec's `<sce:flag-input>`s where it imports the codec, and every value so bound is one value for the whole chain: a flag of a carrier the parent has already read. Some wires lay an entry out by what came before it instead — an extension that is a marker, followed by one whose body is not the one it has without the marker. That value exists only while the chain is being read, so it is the chain that names it: `previous_entry_id` is the identifier (the chain's `entry-id`) the entry decoded immediately before this one must have, and the input is 1 for an entry that follows such an entry and 0 for every other, the first included. \"Immediately before\" is adjacency, not membership: an entry two places after the marker does not follow it.",
+      "properties": {
+        "input": {
+          "description": "The entry codec's `<sce:flag-input>` this supplies.",
+          "type": "string"
+        },
+        "previous_entry_id": {
+          "description": "The identifier the entry before must have for the input to be 1.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "previous_entry_id"
       ],
       "type": "object"
     },

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain entry laid out by the entry before it.
+
+     Some wires let an entry's body depend on the entry that came just before
+     it: an extension that is only a marker, and the extension after it, whose
+     body is not the one it has without the marker. The body is chosen by a
+     flag-input, as any entry codec's can be, but the value is not one the
+     parent can fix for the whole chain — it changes from entry to entry, and
+     only the chain, while it reads, can know it. This is that entry codec:
+     `after_marker` is supplied by the chain (`codec_chain_prev_carrier`,
+     `codec_chain_prev_gated`), and `tagged` by the parent's own carrier, so a
+     chain hands its entry both kinds of input at once.
+
+     Wire shape of one entry:
+       byte 0   : header  (ext_id:4 at bit 0, Z at bit 7 — set on all but the last)
+       after_marker=0 : byte 1..1  short_value (uint8)
+       after_marker=1 : byte 1..2  long_value (uint16, big endian)
+       tagged=1       : one more byte, tag (uint8) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_entry">
+  <sce:flag-inputs>
+    <sce:flag-input name="after_marker" width="1"/>
+    <sce:flag-input name="tagged" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="ext_id" bit="0" width="4"/>
+      <sce:flag name="Z"      bit="7"/>
+    </sce:flags>
+    <sce:field id="short_value" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="!after_marker"/>
+    <sce:field id="long_value" sce:type="uint16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="after_marker"/>
+    <sce:field id="tag" sce:type="uint8" sce:byte="4" sce:bit-size="8"
+               sce:present-if="tagged"/>
+  </datamodel>
+</scxml>

@@ -1039,6 +1039,12 @@
 
   <xs:element name="tlv-chain">
     <xs:complexType>
+      <xs:sequence>
+        <!-- Entry-by-entry flag-input binds: a flag-input of the entry codec
+             whose value is not one value for the whole chain but depends on
+             the entry decoded just before. See `entry-flag-bind`. -->
+        <xs:element ref="sce:entry-flag-bind" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
       <xs:attribute name="id" type="xs:string" use="required"/>
       <!-- Imported entry codec alias (matches an `<sce:import as=...>`
            in the same document); resolved at codegen time. Mirrors
@@ -1098,6 +1104,29 @@
            network MID bodies whose ext chain is Z-bit-gated on the
            per-MID header. -->
       <xs:attribute ref="sce:present-if"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- `<sce:entry-flag-bind input="X" previous-entry-id="V"/>`, a child of
+       `<sce:tlv-chain>`: the chain supplies the entry codec's
+       `<sce:flag-input name="X">` itself, entry by entry. The input is 1 for
+       an entry whose immediately preceding entry has the identifier `V` (the
+       chain's `entry-id`; decimal, 0x or 0b) and 0 for every other entry, the
+       first included. It is adjacency and not membership: an entry two places
+       after an entry with that identifier does not follow it.
+
+       `<sce:flag-bind>` on the import supplies a value that is one for the
+       whole chain (a flag of a carrier the parent has already read, or the
+       parent's own flag-input); this supplies the value that only the chain,
+       while it reads, can know. An input is bound by one or the other, never
+       both, and every input the entry codec declares is bound by one of them.
+       The chain must declare `entry-id`; sce-build checks that the entry codec
+       declares the input, that it is one bit wide, that nothing else binds it,
+       and that `V` is a value the identifier can hold. -->
+  <xs:element name="entry-flag-bind">
+    <xs:complexType>
+      <xs:attribute name="input" type="xs:NCName" use="required"/>
+      <xs:attribute name="previous-entry-id" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
 

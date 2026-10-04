@@ -4561,6 +4561,65 @@ fn parse_codec_tlv_chain_from_node(
         identifier.except = except;
     }
 
+    // `<sce:entry-flag-bind input="X" previous-entry-id="V"/>` supplies a
+    // flag-input of the entry codec that no value fixed for the whole chain can:
+    // 1 for an entry whose immediately preceding entry has the identifier `V`.
+    // The identifier is the chain's `entry-id`, so a chain that binds one has
+    // to declare it. Whether the entry codec has the input, how wide it is, and
+    // whether `V` is a value the identifier can hold are facts about another
+    // document, judged where the import is resolved.
+    let mut entry_binds: Vec<TlvEntryFlagBind> = Vec::new();
+    for child in sce_children(node, "entry-flag-bind") {
+        let input = child.attribute("input").unwrap_or_default().trim();
+        let element = format!("<sce:entry-flag-bind input='{input}'>");
+        let refuse_bind = |attr: &str, raw: &str, rule: String| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element: element.clone(),
+                    attr: attr.into(),
+                    value: raw.to_string(),
+                    rule,
+                },
+            )
+        };
+        if entry_id.is_none() {
+            return Err(refuse_bind(
+                "input",
+                input,
+                format!(
+                    "the chain '{id}' must declare entry-id: an entry-flag-bind compares \
+                     the identifier of the entry before with a value, and entry-id says \
+                     where an entry keeps its identifier"
+                ),
+            ));
+        }
+        if entry_binds.iter().any(|seen| seen.input == input) {
+            return Err(refuse_bind(
+                "input",
+                input,
+                format!("the chain '{id}' binds the input '{input}' more than once"),
+            ));
+        }
+        let raw = child.attribute("previous-entry-id").unwrap_or_default();
+        let Some(previous_entry_id) = parse_int_u64(raw) else {
+            return Err(refuse_bind(
+                "previous-entry-id",
+                raw,
+                "an unsigned integer (decimal, 0x or 0b): the identifier the entry before \
+                 must have for the input to be 1"
+                    .into(),
+            ));
+        };
+        entry_binds.push(TlvEntryFlagBind {
+            input: input.to_string(),
+            previous_entry_id,
+            previous_entry_id_text: raw.trim().to_string(),
+            line: Some(row_of(&child)),
+        });
+    }
+
     Ok(CodecField {
         id,
         line: Some(row_of(node)),
@@ -4572,6 +4631,7 @@ fn parse_codec_tlv_chain_from_node(
             on_overflow,
             terminate_on,
             entry_id,
+            entry_binds,
         },
         endian: None,
         max_size: None,

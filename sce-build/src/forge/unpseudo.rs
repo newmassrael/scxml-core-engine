@@ -45,7 +45,7 @@ use crate::forge::model::{
     DecodedValue, Endian, FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate,
     PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
     ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
-    TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
+    TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -2191,9 +2191,11 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
                     })
                 }
             },
-            // The identifier is a clause line of its own (`entry-id …`),
-            // filled in by `parse_codec_field`.
+            // The identifier and the binds are clause lines of their own
+            // (`entry-id …`, `entry-flag-bind …`), filled in by
+            // `parse_codec_field`.
             entry_id: None,
+            entry_binds: Vec::new(),
         },
         other => {
             return Err(ParseError {
@@ -2472,6 +2474,37 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
                     });
                 }
                 identifier.except.push(undo(flag, k.number)?);
+            }
+            // One flag-input the chain supplies entry by entry per line, in
+            // the order the author wrote them.
+            Some("entry-flag-bind") => {
+                let BitSize::TlvChain { entry_binds, .. } = &mut f.bit_size else {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: "`entry-flag-bind` belongs to a tlv-chain field".to_string(),
+                    });
+                };
+                let (Some(input), Some("previous-entry-id"), Some(value)) =
+                    (kw.get(1), kw.get(2).copied(), kw.get(3))
+                else {
+                    return Err(ParseError {
+                        line: k.number,
+                        why: "`entry-flag-bind` needs `<input> previous-entry-id <value>`"
+                            .to_string(),
+                    });
+                };
+                let previous_entry_id =
+                    crate::source_literal::read_unsigned(value).ok_or_else(|| ParseError {
+                        line: k.number,
+                        why: format!("`{value}` is not an unsigned number"),
+                    })?;
+                entry_binds.push(TlvEntryFlagBind {
+                    input: undo(input, k.number)?,
+                    previous_entry_id,
+                    previous_entry_id_text: (*value).to_string(),
+                    // A pseudocode line is not a row of the SCXML document.
+                    line: None,
+                });
             }
             Some("embed-body") => f.embed_body_alias = Some(undo(tail(1), k.number)?),
             Some("embed-length-from") => f.embed_length_from = Some(undo(tail(1), k.number)?),

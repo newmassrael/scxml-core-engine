@@ -3031,15 +3031,17 @@ fn bit_size_words(b: &BitSize) -> String {
             CountRef::LengthField(f) => format!("repeat length-field {}", text(f)),
             CountRef::UntilEof => "repeat until-eof".to_string(),
         },
-        // The entry identifier is a clause line of its own (`entry-id …`,
-        // `render_codec_field`), not a word here: the words after `size` are
-        // read back by position, and an optional word in the middle would
-        // make every later one ambiguous.
+        // The entry identifier and the flag-inputs the chain supplies entry by
+        // entry are clause lines of their own (`entry-id …`,
+        // `entry-flag-bind …`; `render_codec_field`), not words here: the
+        // words after `size` are read back by position, and an optional word
+        // in the middle would make every later one ambiguous.
         BitSize::TlvChain {
             max_depth,
             on_overflow,
             terminate_on,
             entry_id: _,
+            entry_binds: _,
         } => {
             let overflow = match on_overflow {
                 TlvOverflowPolicy::Reject => "reject",
@@ -3209,6 +3211,21 @@ fn render_codec_field(f: &CodecField, out: &mut Out<'_>) {
                     "entry-id-except {}.{}",
                     text(&id.name),
                     text(flag)
+                ));
+            }
+        }
+        // One bind per line, in the order the author wrote them, after the
+        // identifier each reads its value from. The value as the author
+        // wrote it: an identifier is written in hex.
+        if let BitSize::TlvChain { entry_binds, .. } = &f.bit_size {
+            for bind in entry_binds {
+                out.line(&format!(
+                    "entry-flag-bind {} previous-entry-id {}",
+                    text(&bind.input),
+                    crate::source_literal::as_written(
+                        &bind.previous_entry_id_text,
+                        bind.previous_entry_id
+                    )
                 ));
             }
         }

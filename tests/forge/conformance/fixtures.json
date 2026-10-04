@@ -2085,6 +2085,41 @@
       "fields": []
     },
     {
+      "name": "codec_chain_prev_entry",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_chain_prev_carrier",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_chain_prev_gated",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_chain_prev_tail",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_chain_prev_tail_gated",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
       "name": "codec_dma_aligned_basic",
       "kind": "codec",
       "ref_section": "codecs",

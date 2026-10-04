@@ -1145,7 +1145,9 @@ decides what `encode` writes, as a flag does, and there is no mismatch to
 refuse.
 
 A chain that ends only when the frame does (`terminate-on` not `entry-flag`)
-leaves nothing after it to gate, so `entry-id` on one is refused.
+leaves nothing after it to gate, so `entry-id` on one is refused — unless it has
+an `<sce:entry-flag-bind>` (§4.6.3), which reads the identifier and needs no field
+after the chain.
 
 #### 4.6.3 An entry codec that takes a flag
 
@@ -1176,9 +1178,43 @@ bind names has to be declared before the first field that consumes the import �
 the decoder reads the carrier byte before it reaches the entries
 (`codec/flag-bind-carrier-after-embed`, which also covers a repeat and a chain).
 
-The value is one value for the whole chain or repeat: every entry is handed the
-same flag. A layout that changes from one entry to the next because of an entry
-before it is not expressed by it.
+A value bound at the import is one value for the whole chain or repeat: every
+entry is handed the same flag.
+
+**An input that depends on the entry before.** Some wires lay an entry out by
+what came just before it: an extension that is only a marker, and the extension
+after it, whose body is not the one it has without the marker. No carrier the
+parent has read says so; only the chain, while it reads, can know. The chain
+supplies such an input itself, with a child element:
+
+```xml
+<sce:tlv-chain id="entries" type="entry" sce:byte="1" max-depth="4"
+               on-overflow="reject" terminate-on="entry-flag"
+               entry-flag-name="Z" entry-id="header.ext_id">
+  <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+</sce:tlv-chain>
+```
+
+`after_marker` is a flag-input of the entry codec (`sce:present-if="after_marker"`
+and `"!after_marker"` in the entry, as for any other). It is 1 for an entry whose
+immediately preceding entry has the identifier `0x4` — the identifier the chain's
+`entry-id` names, with the flags `entry-id-except` leaves out left out — and 0 for
+every other entry, the first included. It is adjacency and not membership: the
+entry two places after the marker is not after it. The generated decoder rewrites
+the value from each entry it has just read, and the encoder walks the same values
+over the entries it writes.
+
+An input has one source: the `<sce:flag-bind>` on the import, or an
+`<sce:entry-flag-bind>` of the chain, never both, and the same input twice is
+refused; both kinds can be used for different inputs of one entry codec. The
+chain must declare `entry-id`, whose width the value has to fit and whose
+left-out bits it cannot carry, which is what makes a value no entry can have a
+refusal and not a bind that is never 1. A chain that ends only with the frame
+(`terminate-on` not `entry-flag`) may declare `entry-id` when it has such a bind:
+the bind reads the identifier, and it needs no field after the chain. An input
+that only the chain supplies is unbound for any other consumer of the same entry
+codec — an embed, a repeat, another chain, a variant arm — and is refused there
+as `codec/flag-input-unbound`.
 
 ### 4.7 validator
 

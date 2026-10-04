@@ -1904,6 +1904,40 @@ pub struct TlvEntryId {
     pub except: Vec<String>,
 }
 
+/// A flag-input of a chain's entry codec that the chain itself supplies, one
+/// value per entry, from the entry decoded just before it.
+///
+/// The parent binds an entry codec's `<sce:flag-input>`s where it imports the
+/// codec, and every value so bound is one value for the whole chain: a flag of
+/// a carrier the parent has already read. Some wires lay an entry out by what
+/// came before it instead — an extension that is a marker, followed by one
+/// whose body is not the one it has without the marker. That value exists only
+/// while the chain is being read, so it is the chain that names it:
+/// `previous_entry_id` is the identifier (the chain's `entry-id`) the entry
+/// decoded immediately before this one must have, and the input is 1 for an
+/// entry that follows such an entry and 0 for every other, the first included.
+/// "Immediately before" is adjacency, not membership: an entry two places
+/// after the marker does not follow it.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TlvEntryFlagBind {
+    /// The entry codec's `<sce:flag-input>` this supplies.
+    pub input: String,
+    /// The identifier the entry before must have for the input to be 1.
+    pub previous_entry_id: u64,
+    /// How the author spelled [`Self::previous_entry_id`]: the value alone puts
+    /// `4` on the pseudocode review surface where the author wrote `0x4` — see
+    /// [`crate::source_literal`]. Empty when no source document is where the
+    /// bind came from.
+    #[serde(skip, default)]
+    pub previous_entry_id_text: String,
+    /// 1-based row of the `<sce:entry-flag-bind>` element, so a refusal of
+    /// this bind names the row it is written on. Skipped from serialization,
+    /// as every `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
+}
+
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1957,6 +1991,13 @@ pub enum BitSize {
         /// `None`, so a document that does not use it keeps its AST.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         entry_id: Option<TlvEntryId>,
+        /// The entry codec's flag-inputs this chain supplies entry by entry
+        /// ([`TlvEntryFlagBind`]), in the order the author wrote them. Needs
+        /// `entry_id`, which is what each value is read from. Absent from the
+        /// serialized form when empty, so a document that does not use it keeps
+        /// its AST.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        entry_binds: Vec<TlvEntryFlagBind>,
     },
     /// RFC §synth-5-B embed primitive — single imported-codec field embedded inline.
     /// The host language emits a nested struct of the imported codec's

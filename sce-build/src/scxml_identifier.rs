@@ -258,6 +258,7 @@ pub const SCE_IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
     ("arg", "name", Grammar::CodeIdentifier),
     // ── References to one name of this document or its imports. ──
     ("flag-bind", "input", Grammar::CodeIdentifier),
+    ("entry-flag-bind", "input", Grammar::CodeIdentifier),
     ("decoded", "field", Grammar::CodeIdentifier),
     ("cycle", "of", Grammar::CodeIdentifier),
     ("step", "name", Grammar::CodeIdentifier),

@@ -2979,6 +2979,153 @@ fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
     }
 }
 
+/// Every way an `<sce:entry-flag-bind>` can be wrong is a refusal that names
+/// what is wrong and where, and none of them reaches the host compiler: a bind
+/// with no identifier to read, an input the entry codec does not declare, an
+/// input with two sources, a value no entry can have, a value the identifier
+/// leaves a bit out of, an input bound twice, a value that is not a number,
+/// an input of the entry codec that nothing binds, and an input that only one
+/// of the codec's consumers of the entry codec is given. Each is a document
+/// that differs from a valid one in one place; the expected text is a phrase of
+/// the rule it breaks, so a refusal that stops saying why is as much a
+/// regression as one that stops happening.
+#[test]
+fn an_entry_flag_bind_that_cannot_hold_is_refused_with_its_reason() {
+    const BIND_TAGGED: &str = r#"<sce:flag-bind input="tagged" source="head.T"/>"#;
+    const BIND_AFTER: &str =
+        r#"<sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>"#;
+    const ENTRY_ID: &str = r#"entry-id="header.ext_id""#;
+    // (case, the flag-binds on the import, the chain's own attributes after
+    //  its termination, the chain's children, what follows the chain, a phrase
+    //  the refusal must contain)
+    const CASES: &[(&str, &str, &str, &str, &str, &str)] = &[
+        (
+            "a bind on a chain that declares no identifier",
+            BIND_TAGGED,
+            "",
+            BIND_AFTER,
+            "",
+            "must declare entry-id",
+        ),
+        (
+            "an input the entry codec does not declare",
+            BIND_TAGGED,
+            ENTRY_ID,
+            r#"<sce:entry-flag-bind input="missing" previous-entry-id="0x4"/>"#,
+            "",
+            "declares no <sce:flag-input> 'missing'",
+        ),
+        (
+            "an input the import binds as well",
+            r#"<sce:flag-bind input="tagged" source="head.T"/>
+    <sce:flag-bind input="after_marker" source="head.T"/>"#,
+            ENTRY_ID,
+            BIND_AFTER,
+            "",
+            "an input has one source",
+        ),
+        (
+            "an identifier wider than the one the chain reads",
+            BIND_TAGGED,
+            ENTRY_ID,
+            r#"<sce:entry-flag-bind input="after_marker" previous-entry-id="0x10"/>"#,
+            "",
+            "no entry can have it",
+        ),
+        (
+            "an identifier with a bit the chain leaves out",
+            BIND_TAGGED,
+            r#"entry-id="header" entry-id-except="header.Z""#,
+            r#"<sce:entry-flag-bind input="after_marker" previous-entry-id="0x84"/>"#,
+            "",
+            "leaves out",
+        ),
+        (
+            "the same input bound twice",
+            BIND_TAGGED,
+            ENTRY_ID,
+            r#"<sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x5"/>"#,
+            "",
+            "more than once",
+        ),
+        (
+            "an identifier that is not a number",
+            BIND_TAGGED,
+            ENTRY_ID,
+            r#"<sce:entry-flag-bind input="after_marker" previous-entry-id="four"/>"#,
+            "",
+            "an unsigned integer",
+        ),
+        (
+            "an input of the entry codec that nothing binds",
+            "",
+            ENTRY_ID,
+            BIND_AFTER,
+            "",
+            r#"no matching <sce:flag-bind input="tagged"/>"#,
+        ),
+        (
+            "an input only the chain supplies, left unbound for another consumer",
+            BIND_TAGGED,
+            ENTRY_ID,
+            BIND_AFTER,
+            r#"<sce:field id="n" sce:type="uint8" sce:byte="20" sce:bit-size="8"/>
+    <sce:repeat id="more" type="codec_chain_prev_entry" sce:byte="21"
+                count="n" max-count="2"/>"#,
+            r#"no matching <sce:flag-bind input="after_marker"/>"#,
+        ),
+        (
+            "an input only the chain supplies, left unbound for a variant arm",
+            BIND_TAGGED,
+            ENTRY_ID,
+            BIND_AFTER,
+            r#"<sce:variant tag="head.T">
+      <sce:arm value="0" type="codec_chain_prev_entry"/>
+      <sce:arm value="1" type="codec_chain_prev_entry" default="true"/>
+    </sce:variant>"#,
+            r#"no matching <sce:flag-bind input="after_marker"/>"#,
+        ),
+    ];
+    for (case, import_binds, id_attrs, children, after, phrase) in CASES {
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="prev_bind_refusal">
+  <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
+    {import_binds}
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="T" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_prev_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z" {id_attrs}>
+      {children}
+    </sce:tlv-chain>
+    {after}
+  </datamodel>
+</scxml>"#
+        );
+        let message = match sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("prev_bind_refusal"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        ) {
+            Ok(_) => panic!("{case}: the document must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            message.contains(phrase),
+            "{case}: the refusal must contain `{phrase}`; got: {message}"
+        );
+    }
+}
+
 #[test]
 fn forge_codec_chain_flag_entry_cpp() {
     assert_standalone_forge("codec_chain_flag_entry", "codec_chain_flag_entry.h");
@@ -3127,6 +3274,218 @@ fn forge_codec_repeat_flag_gated_python() {
 #[test]
 fn forge_c11_codec_repeat_flag_gated() {
     assert_standalone_forge_c("codec_repeat_flag_gated", "codec_repeat_flag_gated.c.h");
+}
+
+/// The entry codec, then the parents that tell its entries what came before
+/// them: a plain chain and a gated one that leaves a flag out of its identifier,
+/// each ending on an entry flag and each ending with the frame.
+const PREV_ENTRY_SET: &[&str] = &[
+    "codec_chain_prev_entry.scxml",
+    "codec_chain_prev_carrier.scxml",
+    "codec_chain_prev_gated.scxml",
+    "codec_chain_prev_tail.scxml",
+    "codec_chain_prev_tail_gated.scxml",
+];
+
+/// A flag-input only the chain can know — 1 for an entry whose immediately
+/// preceding entry has a given identifier — is a local the chain's loop
+/// declares, hands to every `decode` and `encode`, and rewrites from each entry.
+/// Text that looks right is not the gate: the local's type has to be the
+/// parameter's, the rewrite has to read the identifier the way the chain
+/// declares it, and the argument has to land in the callee's declared position
+/// beside the input bound at the import. This is the gate that it is a program.
+#[test]
+fn a_chain_that_tells_its_entries_what_came_before_them_compiles_on_every_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+    if let Err(e) = rustc_compile_codec_set(&dir, PREV_ENTRY_SET, "prev_entry_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(&dir, PREV_ENTRY_SET, "prev_entry_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(&dir, PREV_ENTRY_SET, "prev_entry_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(&dir, PREV_ENTRY_SET, "prev_entry_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(&dir, PREV_ENTRY_SET, "prev_entry_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(&dir, PREV_ENTRY_SET, "prev_entry_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+    assert!(
+        failures.is_empty(),
+        "a chain that tells its entries what came before them must compile on every backend. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+#[test]
+fn forge_codec_chain_prev_entry_cpp() {
+    assert_standalone_forge("codec_chain_prev_entry", "codec_chain_prev_entry.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_entry_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_prev_entry", "CodecChainPrevEntry.kt");
+}
+
+#[test]
+fn forge_codec_chain_prev_entry_rust() {
+    assert_standalone_forge_rust("codec_chain_prev_entry", "codec_chain_prev_entry.rs");
+}
+
+#[test]
+fn forge_codec_chain_prev_entry_go() {
+    assert_standalone_forge_go("codec_chain_prev_entry", "codec_chain_prev_entry.go");
+}
+
+#[test]
+fn forge_codec_chain_prev_entry_python() {
+    assert_standalone_forge_python("codec_chain_prev_entry", "codec_chain_prev_entry.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_prev_entry() {
+    assert_standalone_forge_c("codec_chain_prev_entry", "codec_chain_prev_entry.c.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_cpp() {
+    assert_standalone_forge("codec_chain_prev_carrier", "codec_chain_prev_carrier.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_prev_carrier", "CodecChainPrevCarrier.kt");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_rust() {
+    assert_standalone_forge_rust("codec_chain_prev_carrier", "codec_chain_prev_carrier.rs");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_go() {
+    assert_standalone_forge_go("codec_chain_prev_carrier", "codec_chain_prev_carrier.go");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_python() {
+    assert_standalone_forge_python("codec_chain_prev_carrier", "codec_chain_prev_carrier.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_prev_carrier() {
+    assert_standalone_forge_c("codec_chain_prev_carrier", "codec_chain_prev_carrier.c.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_cpp() {
+    assert_standalone_forge("codec_chain_prev_gated", "codec_chain_prev_gated.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_prev_gated", "CodecChainPrevGated.kt");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_rust() {
+    assert_standalone_forge_rust("codec_chain_prev_gated", "codec_chain_prev_gated.rs");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_go() {
+    assert_standalone_forge_go("codec_chain_prev_gated", "codec_chain_prev_gated.go");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_python() {
+    assert_standalone_forge_python("codec_chain_prev_gated", "codec_chain_prev_gated.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_prev_gated() {
+    assert_standalone_forge_c("codec_chain_prev_gated", "codec_chain_prev_gated.c.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_cpp() {
+    assert_standalone_forge("codec_chain_prev_tail", "codec_chain_prev_tail.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_prev_tail", "CodecChainPrevTail.kt");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_rust() {
+    assert_standalone_forge_rust("codec_chain_prev_tail", "codec_chain_prev_tail.rs");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_go() {
+    assert_standalone_forge_go("codec_chain_prev_tail", "codec_chain_prev_tail.go");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_python() {
+    assert_standalone_forge_python("codec_chain_prev_tail", "codec_chain_prev_tail.py");
+}
+
+#[test]
+fn forge_c11_codec_chain_prev_tail() {
+    assert_standalone_forge_c("codec_chain_prev_tail", "codec_chain_prev_tail.c.h");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_gated_cpp() {
+    assert_standalone_forge(
+        "codec_chain_prev_tail_gated",
+        "codec_chain_prev_tail_gated.h",
+    );
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_gated_kotlin() {
+    assert_standalone_forge_kotlin("codec_chain_prev_tail_gated", "CodecChainPrevTailGated.kt");
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_gated_rust() {
+    assert_standalone_forge_rust(
+        "codec_chain_prev_tail_gated",
+        "codec_chain_prev_tail_gated.rs",
+    );
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_gated_go() {
+    assert_standalone_forge_go(
+        "codec_chain_prev_tail_gated",
+        "codec_chain_prev_tail_gated.go",
+    );
+}
+
+#[test]
+fn forge_codec_chain_prev_tail_gated_python() {
+    assert_standalone_forge_python(
+        "codec_chain_prev_tail_gated",
+        "codec_chain_prev_tail_gated.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_chain_prev_tail_gated() {
+    assert_standalone_forge_c(
+        "codec_chain_prev_tail_gated",
+        "codec_chain_prev_tail_gated.c.h",
+    );
 }
 
 /// Every way a chain-membership predicate or its `entry-id` can be wrong is
@@ -15269,6 +15628,995 @@ mod tests {
         "chain_flag_behaviour",
     )
     .expect("a chain or a repeat must hand each entry the flag its import binds");
+}
+
+// ── A chain that tells its entries what came before them: what the code DOES ─
+//
+// The entry (`codec_chain_prev_entry`) is a header byte — `ext_id` in bits 0..3,
+// Z at bit 7 on all but the last — then one byte when `after_marker` is 0 or two
+// bytes big endian when it is 1, then one more byte, `tag`, when `tagged`. The
+// marker is an entry whose identifier is 4. `after_marker` is the chain's: 1 for
+// an entry whose immediately preceding entry is the marker. `tagged` is bound at
+// the import to `head.T`, bit 0 of the byte before the chain.
+
+/// The marker, then an entry after it: the second entry is wide.
+const PREV_AFTER_MARKER: &[u8] = &[0x00, 0x84, 0x11, 0x03, 0x12, 0x34];
+/// No marker: the second entry is as short as the first.
+const PREV_NO_MARKER: &[u8] = &[0x00, 0x83, 0x11, 0x03, 0x22];
+/// The marker, a wide entry, then one more: only the entry right after the
+/// marker is wide, the third is short. A walk that asked "was there a marker
+/// before" instead of "is the one before a marker" reads the third as wide.
+const PREV_ADJACENT: &[u8] = &[0x00, 0x84, 0x11, 0x83, 0x12, 0x34, 0x03, 0x77];
+/// T set: every entry carries a tag, and the input bound at the import and the
+/// one the chain supplies reach the entry in its declared order.
+const PREV_TAGGED: &[u8] = &[0x01, 0x84, 0x11, 0xA1, 0x03, 0x12, 0x34, 0xA2];
+/// A chain of the marker alone: the first entry has no entry before it.
+const PREV_ONLY: &[u8] = &[0x00, 0x04, 0x11];
+/// The gated parent, E set (bit 1), the marker with its Z set and then a wide entry.
+const PREV_GATED_AFTER: &[u8] = &[0x02, 0x84, 0x11, 0x03, 0x12, 0x34];
+/// The marker in the middle of the chain, with Z set because it is not the last,
+/// then a wide entry: the identifier without Z is still 4.
+const PREV_GATED_MIDDLE: &[u8] = &[0x02, 0x83, 0x11, 0x84, 0x22, 0x03, 0x12, 0x34];
+/// The gated parent with T and E both set.
+const PREV_GATED_TAGGED: &[u8] = &[0x03, 0x84, 0x11, 0xA1, 0x03, 0x12, 0x34, 0xA2];
+/// E clear: no chain on the wire.
+const PREV_GATED_ABSENT: &[u8] = &[0x00];
+
+/// `program` with each `@NAME@` of the frames above replaced by its bytes.
+fn prev_frames_in(program: &str) -> String {
+    program
+        .replace("@P_AFTER@", &flag_hex(PREV_AFTER_MARKER))
+        .replace("@P_NONE@", &flag_hex(PREV_NO_MARKER))
+        .replace("@P_ADJ@", &flag_hex(PREV_ADJACENT))
+        .replace("@P_TAGGED@", &flag_hex(PREV_TAGGED))
+        .replace("@P_ONLY@", &flag_hex(PREV_ONLY))
+        .replace("@G_AFTER@", &flag_hex(PREV_GATED_AFTER))
+        .replace("@G_MIDDLE@", &flag_hex(PREV_GATED_MIDDLE))
+        .replace("@G_TAGGED@", &flag_hex(PREV_GATED_TAGGED))
+        .replace("@G_ABSENT@", &flag_hex(PREV_GATED_ABSENT))
+}
+
+fn chain_prev_python_program() -> String {
+    prev_frames_in(
+        r#"from prev_pkg.codec_chain_prev_carrier import CodecChainPrevCarrier
+from prev_pkg.codec_chain_prev_gated import CodecChainPrevGated
+from prev_pkg.codec_chain_prev_tail import CodecChainPrevTail
+from prev_pkg.codec_chain_prev_tail_gated import CodecChainPrevTailGated
+from sce_forge_runtime.codec import SceCursor
+
+AFTER = bytes([@P_AFTER@])
+NONE = bytes([@P_NONE@])
+ADJ = bytes([@P_ADJ@])
+TAGGED = bytes([@P_TAGGED@])
+ONLY = bytes([@P_ONLY@])
+G_AFTER = bytes([@G_AFTER@])
+G_MIDDLE = bytes([@G_MIDDLE@])
+G_TAGGED = bytes([@G_TAGGED@])
+G_ABSENT = bytes([@G_ABSENT@])
+
+def shape(e):
+    return (e.header, e.short_value, e.long_value, e.tag)
+
+def entries_of(codec, frame, label):
+    v = codec.decode(SceCursor(frame))
+    assert v is not None, label + " decode"
+    return v
+
+def check(codec, frame, expected, label):
+    v = entries_of(codec, frame, label)
+    assert [shape(e) for e in v.entries] == expected, label
+    assert v.encode_to_bytes() == frame, label + " round trip"
+
+check(CodecChainPrevCarrier, AFTER,
+      [(0x84, 0x11, None, None), (0x03, None, 0x1234, None)], "after the marker")
+check(CodecChainPrevCarrier, NONE,
+      [(0x83, 0x11, None, None), (0x03, 0x22, None, None)], "no marker")
+check(CodecChainPrevCarrier, ADJ,
+      [(0x84, 0x11, None, None), (0x83, None, 0x1234, None), (0x03, 0x77, None, None)],
+      "only the entry right after the marker")
+check(CodecChainPrevCarrier, TAGGED,
+      [(0x84, 0x11, None, 0xA1), (0x03, None, 0x1234, 0xA2)], "tagged")
+check(CodecChainPrevCarrier, ONLY,
+      [(0x04, 0x11, None, None)], "the marker alone")
+
+check(CodecChainPrevGated, G_AFTER,
+      [(0x84, 0x11, None, None), (0x03, None, 0x1234, None)], "gated after the marker")
+check(CodecChainPrevGated, G_MIDDLE,
+      [(0x83, 0x11, None, None), (0x84, 0x22, None, None), (0x03, None, 0x1234, None)],
+      "gated marker with Z set")
+check(CodecChainPrevGated, G_TAGGED,
+      [(0x84, 0x11, None, 0xA1), (0x03, None, 0x1234, 0xA2)], "gated tagged")
+v = entries_of(CodecChainPrevGated, G_ABSENT, "gated absent")
+assert v.entries is None, "gated chain without its gate"
+assert v.encode_to_bytes() == G_ABSENT, "gated absent round trip"
+
+# A chain that ends with the frame is told the same, with no flag to end on.
+check(CodecChainPrevTail, AFTER,
+      [(0x84, 0x11, None, None), (0x03, None, 0x1234, None)], "tail after the marker")
+check(CodecChainPrevTail, ADJ,
+      [(0x84, 0x11, None, None), (0x83, None, 0x1234, None), (0x03, 0x77, None, None)],
+      "tail only the entry right after the marker")
+check(CodecChainPrevTail, TAGGED,
+      [(0x84, 0x11, None, 0xA1), (0x03, None, 0x1234, 0xA2)], "tail tagged")
+check(CodecChainPrevTailGated, G_AFTER,
+      [(0x84, 0x11, None, None), (0x03, None, 0x1234, None)], "tail gated after the marker")
+check(CodecChainPrevTailGated, G_MIDDLE,
+      [(0x83, 0x11, None, None), (0x84, 0x22, None, None), (0x03, None, 0x1234, None)],
+      "tail gated marker with Z set")
+v = entries_of(CodecChainPrevTailGated, G_ABSENT, "tail gated absent")
+assert v.entries is None, "tail gated chain without its gate"
+assert v.encode_to_bytes() == G_ABSENT, "tail gated absent round trip"
+"#,
+    )
+}
+
+fn chain_prev_go_program() -> String {
+    prev_frames_in(&format!(
+        r#"package chain_prev_exec
+
+import (
+	"bytes"
+	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	carrier "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_carrier"
+	gated "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_gated"
+	entrypkg "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_entry"
+	tail "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_tail"
+	tailgated "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_tail_gated"
+)
+
+var (
+	after       = []byte{{@P_AFTER@}}
+	none        = []byte{{@P_NONE@}}
+	adj         = []byte{{@P_ADJ@}}
+	tagged      = []byte{{@P_TAGGED@}}
+	only        = []byte{{@P_ONLY@}}
+	gAfter      = []byte{{@G_AFTER@}}
+	gMiddle     = []byte{{@G_MIDDLE@}}
+	gTagged     = []byte{{@G_TAGGED@}}
+	gAbsent     = []byte{{@G_ABSENT@}}
+)
+
+// u8 and u16 read an optional value as -1 when it is absent.
+func u8(p *uint8) int {{
+	if p == nil {{
+		return -1
+	}}
+	return int(*p)
+}}
+
+func u16(p *uint16) int {{
+	if p == nil {{
+		return -1
+	}}
+	return int(*p)
+}}
+
+type entry struct {{
+	header uint8
+	short  int
+	long   int
+	tag    int
+}}
+
+func shapes(list []entrypkg.CodecChainPrevEntry) []entry {{
+	var out []entry
+	for _, e := range list {{
+		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue), u8(e.Tag)}})
+	}}
+	return out
+}}
+
+func same(a, b []entry) bool {{
+	if len(a) != len(b) {{
+		return false
+	}}
+	for i := range a {{
+		if a[i] != b[i] {{
+			return false
+		}}
+	}}
+	return true
+}}
+
+func checkCarrier(t *testing.T, frame []byte, expected []entry, label string) {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := carrier.DecodeCodecChainPrevCarrier(&cursor)
+	if err != nil {{
+		t.Fatalf("%s decode: %v", label, err)
+	}}
+	if !same(shapes(v.Entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(v.Entries))
+	}}
+	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+		t.Errorf("%s round trip", label)
+	}}
+}}
+
+func checkGated(t *testing.T, frame []byte, expected []entry, label string) {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := gated.DecodeCodecChainPrevGated(&cursor)
+	if err != nil {{
+		t.Fatalf("%s decode: %v", label, err)
+	}}
+	if !same(shapes(v.Entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(v.Entries))
+	}}
+	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+		t.Errorf("%s round trip", label)
+	}}
+}}
+
+func checkTail(t *testing.T, frame []byte, expected []entry, label string) {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := tail.DecodeCodecChainPrevTail(&cursor)
+	if err != nil {{
+		t.Fatalf("%s decode: %v", label, err)
+	}}
+	if !same(shapes(v.Entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(v.Entries))
+	}}
+	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+		t.Errorf("%s round trip", label)
+	}}
+}}
+
+func checkTailGated(t *testing.T, frame []byte, expected []entry, label string) {{
+	t.Helper()
+	cursor := codec.NewSceCursor(frame)
+	v, err := tailgated.DecodeCodecChainPrevTailGated(&cursor)
+	if err != nil {{
+		t.Fatalf("%s decode: %v", label, err)
+	}}
+	if expected == nil {{
+		if v.Entries != nil {{
+			t.Errorf("%s: a chain without its gate holds %v", label, shapes(v.Entries))
+		}}
+	}} else if !same(shapes(v.Entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(v.Entries))
+	}}
+	if !bytes.Equal(v.EncodeToBytes(), frame) {{
+		t.Errorf("%s round trip", label)
+	}}
+}}
+
+func TestAChainTellsItsEntriesWhatCameBeforeThem(t *testing.T) {{
+	checkCarrier(t, after, []entry{{{{0x84, 0x11, -1, -1}}, {{0x03, -1, 0x1234, -1}}}}, "after the marker")
+	checkCarrier(t, none, []entry{{{{0x83, 0x11, -1, -1}}, {{0x03, 0x22, -1, -1}}}}, "no marker")
+	checkCarrier(t, adj, []entry{{{{0x84, 0x11, -1, -1}}, {{0x83, -1, 0x1234, -1}}, {{0x03, 0x77, -1, -1}}}},
+		"only the entry right after the marker")
+	checkCarrier(t, tagged, []entry{{{{0x84, 0x11, -1, 0xA1}}, {{0x03, -1, 0x1234, 0xA2}}}}, "tagged")
+	checkCarrier(t, only, []entry{{{{0x04, 0x11, -1, -1}}}}, "the marker alone")
+
+	checkGated(t, gAfter, []entry{{{{0x84, 0x11, -1, -1}}, {{0x03, -1, 0x1234, -1}}}}, "gated after the marker")
+	checkGated(t, gMiddle, []entry{{{{0x83, 0x11, -1, -1}}, {{0x84, 0x22, -1, -1}}, {{0x03, -1, 0x1234, -1}}}},
+		"gated marker with Z set")
+	checkGated(t, gTagged, []entry{{{{0x84, 0x11, -1, 0xA1}}, {{0x03, -1, 0x1234, 0xA2}}}}, "gated tagged")
+
+	cursor := codec.NewSceCursor(gAbsent)
+	v, err := gated.DecodeCodecChainPrevGated(&cursor)
+	if err != nil {{
+		t.Fatalf("gated absent decode: %v", err)
+	}}
+	if v.Entries != nil {{
+		t.Errorf("gated chain without its gate: %v", shapes(v.Entries))
+	}}
+	if !bytes.Equal(v.EncodeToBytes(), gAbsent) {{
+		t.Errorf("gated absent round trip")
+	}}
+
+	// A chain that ends with the frame is told the same, with no flag to end on.
+	checkTail(t, after, []entry{{{{0x84, 0x11, -1, -1}}, {{0x03, -1, 0x1234, -1}}}}, "tail after the marker")
+	checkTail(t, adj, []entry{{{{0x84, 0x11, -1, -1}}, {{0x83, -1, 0x1234, -1}}, {{0x03, 0x77, -1, -1}}}},
+		"tail only the entry right after the marker")
+	checkTail(t, tagged, []entry{{{{0x84, 0x11, -1, 0xA1}}, {{0x03, -1, 0x1234, 0xA2}}}}, "tail tagged")
+	checkTailGated(t, gAfter, []entry{{{{0x84, 0x11, -1, -1}}, {{0x03, -1, 0x1234, -1}}}}, "tail gated after the marker")
+	checkTailGated(t, gMiddle, []entry{{{{0x83, 0x11, -1, -1}}, {{0x84, 0x22, -1, -1}}, {{0x03, -1, 0x1234, -1}}}},
+		"tail gated marker with Z set")
+	checkTailGated(t, gAbsent, nil, "tail gated absent")
+}}
+"#
+    ))
+}
+
+fn chain_prev_c_program() -> String {
+    prev_frames_in(
+        r#"#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "codec_chain_prev_carrier.h"
+#include "codec_chain_prev_gated.h"
+#include "codec_chain_prev_tail.h"
+#include "codec_chain_prev_tail_gated.h"
+
+static const uint8_t AFTER[] = {@P_AFTER@};
+static const uint8_t NONE[] = {@P_NONE@};
+static const uint8_t ADJ[] = {@P_ADJ@};
+static const uint8_t TAGGED[] = {@P_TAGGED@};
+static const uint8_t ONLY[] = {@P_ONLY@};
+static const uint8_t G_AFTER[] = {@G_AFTER@};
+static const uint8_t G_MIDDLE[] = {@G_MIDDLE@};
+static const uint8_t G_TAGGED[] = {@G_TAGGED@};
+static const uint8_t G_ABSENT[] = {@G_ABSENT@};
+
+static int failures = 0;
+
+static void expect(int ok, const char *what) {
+    if (!ok) {
+        fprintf(stderr, "FAIL %s\n", what);
+        ++failures;
+    }
+}
+
+/* An absent optional entry value is 0 in a C struct that was zeroed first. */
+static int entry_is(const codec_chain_prev_entry_t *e, uint8_t header, uint8_t s, uint16_t l,
+                    uint8_t tag) {
+    return e->header == header && e->short_value == s && e->long_value == l && e->tag == tag;
+}
+
+static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_prev_carrier_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_prev_carrier_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int gated_decode(const uint8_t *bytes, size_t len, codec_chain_prev_gated_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_prev_gated_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int carrier_round_trips(const codec_chain_prev_carrier_t *v, const uint8_t *frame,
+                               size_t len) {
+    uint8_t out[64];
+    size_t out_len = 0;
+    return codec_chain_prev_carrier_encode_to_buf(v, out, sizeof out, &out_len) ==
+               SCE_FORGE_CODEC_OK &&
+           out_len == len && memcmp(out, frame, len) == 0;
+}
+
+static int gated_round_trips(const codec_chain_prev_gated_t *v, const uint8_t *frame,
+                             size_t len) {
+    uint8_t out[64];
+    size_t out_len = 0;
+    return codec_chain_prev_gated_encode_to_buf(v, out, sizeof out, &out_len) ==
+               SCE_FORGE_CODEC_OK &&
+           out_len == len && memcmp(out, frame, len) == 0;
+}
+
+static int tail_decode(const uint8_t *bytes, size_t len, codec_chain_prev_tail_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_prev_tail_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int tail_round_trips(const codec_chain_prev_tail_t *v, const uint8_t *frame, size_t len) {
+    uint8_t out[64];
+    size_t out_len = 0;
+    return codec_chain_prev_tail_encode_to_buf(v, out, sizeof out, &out_len) ==
+               SCE_FORGE_CODEC_OK &&
+           out_len == len && memcmp(out, frame, len) == 0;
+}
+
+static int tail_gated_decode(const uint8_t *bytes, size_t len, codec_chain_prev_tail_gated_t *v) {
+    memset(v, 0, sizeof *v);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(bytes, len);
+    return codec_chain_prev_tail_gated_decode(&cursor, v) == SCE_FORGE_CODEC_OK;
+}
+
+static int tail_gated_round_trips(const codec_chain_prev_tail_gated_t *v, const uint8_t *frame,
+                                  size_t len) {
+    uint8_t out[64];
+    size_t out_len = 0;
+    return codec_chain_prev_tail_gated_encode_to_buf(v, out, sizeof out, &out_len) ==
+               SCE_FORGE_CODEC_OK &&
+           out_len == len && memcmp(out, frame, len) == 0;
+}
+
+int main(void) {
+    codec_chain_prev_carrier_t c;
+    codec_chain_prev_gated_t g;
+    codec_chain_prev_tail_t t;
+    codec_chain_prev_tail_gated_t tg;
+
+    expect(carrier_decode(AFTER, sizeof AFTER, &c), "after the marker decode");
+    expect(c.entries_len == 2 && entry_is(&c.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&c.entries[1], 0x03, 0, 0x1234, 0),
+           "after the marker");
+    expect(carrier_round_trips(&c, AFTER, sizeof AFTER), "after the marker round trip");
+
+    expect(carrier_decode(NONE, sizeof NONE, &c), "no marker decode");
+    expect(c.entries_len == 2 && entry_is(&c.entries[0], 0x83, 0x11, 0, 0) &&
+               entry_is(&c.entries[1], 0x03, 0x22, 0, 0),
+           "no marker");
+    expect(carrier_round_trips(&c, NONE, sizeof NONE), "no marker round trip");
+
+    expect(carrier_decode(ADJ, sizeof ADJ, &c), "adjacent decode");
+    expect(c.entries_len == 3 && entry_is(&c.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&c.entries[1], 0x83, 0, 0x1234, 0) &&
+               entry_is(&c.entries[2], 0x03, 0x77, 0, 0),
+           "only the entry right after the marker");
+    expect(carrier_round_trips(&c, ADJ, sizeof ADJ), "adjacent round trip");
+
+    expect(carrier_decode(TAGGED, sizeof TAGGED, &c), "tagged decode");
+    expect(c.entries_len == 2 && entry_is(&c.entries[0], 0x84, 0x11, 0, 0xA1) &&
+               entry_is(&c.entries[1], 0x03, 0, 0x1234, 0xA2),
+           "tagged");
+    expect(carrier_round_trips(&c, TAGGED, sizeof TAGGED), "tagged round trip");
+
+    expect(carrier_decode(ONLY, sizeof ONLY, &c), "the marker alone decode");
+    expect(c.entries_len == 1 && entry_is(&c.entries[0], 0x04, 0x11, 0, 0), "the marker alone");
+    expect(carrier_round_trips(&c, ONLY, sizeof ONLY), "the marker alone round trip");
+
+    expect(gated_decode(G_AFTER, sizeof G_AFTER, &g), "gated after the marker decode");
+    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&g.entries[1], 0x03, 0, 0x1234, 0),
+           "gated after the marker");
+    expect(gated_round_trips(&g, G_AFTER, sizeof G_AFTER), "gated after the marker round trip");
+
+    expect(gated_decode(G_MIDDLE, sizeof G_MIDDLE, &g), "gated marker with Z set decode");
+    expect(g.entries_len == 3 && entry_is(&g.entries[0], 0x83, 0x11, 0, 0) &&
+               entry_is(&g.entries[1], 0x84, 0x22, 0, 0) &&
+               entry_is(&g.entries[2], 0x03, 0, 0x1234, 0),
+           "gated marker with Z set");
+    expect(gated_round_trips(&g, G_MIDDLE, sizeof G_MIDDLE), "gated marker with Z set round trip");
+
+    expect(gated_decode(G_TAGGED, sizeof G_TAGGED, &g), "gated tagged decode");
+    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x84, 0x11, 0, 0xA1) &&
+               entry_is(&g.entries[1], 0x03, 0, 0x1234, 0xA2),
+           "gated tagged");
+    expect(gated_round_trips(&g, G_TAGGED, sizeof G_TAGGED), "gated tagged round trip");
+
+    expect(gated_decode(G_ABSENT, sizeof G_ABSENT, &g), "gated absent decode");
+    expect(g.entries_len == 0, "gated chain without its gate");
+    expect(gated_round_trips(&g, G_ABSENT, sizeof G_ABSENT), "gated absent round trip");
+
+    /* A chain that ends with the frame is told the same, with no flag to end on. */
+    expect(tail_decode(AFTER, sizeof AFTER, &t), "tail after the marker decode");
+    expect(t.entries_len == 2 && entry_is(&t.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&t.entries[1], 0x03, 0, 0x1234, 0),
+           "tail after the marker");
+    expect(tail_round_trips(&t, AFTER, sizeof AFTER), "tail after the marker round trip");
+
+    expect(tail_decode(ADJ, sizeof ADJ, &t), "tail adjacent decode");
+    expect(t.entries_len == 3 && entry_is(&t.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&t.entries[1], 0x83, 0, 0x1234, 0) &&
+               entry_is(&t.entries[2], 0x03, 0x77, 0, 0),
+           "tail only the entry right after the marker");
+    expect(tail_round_trips(&t, ADJ, sizeof ADJ), "tail adjacent round trip");
+
+    expect(tail_decode(TAGGED, sizeof TAGGED, &t), "tail tagged decode");
+    expect(t.entries_len == 2 && entry_is(&t.entries[0], 0x84, 0x11, 0, 0xA1) &&
+               entry_is(&t.entries[1], 0x03, 0, 0x1234, 0xA2),
+           "tail tagged");
+    expect(tail_round_trips(&t, TAGGED, sizeof TAGGED), "tail tagged round trip");
+
+    expect(tail_gated_decode(G_AFTER, sizeof G_AFTER, &tg), "tail gated after the marker decode");
+    expect(tg.entries_len == 2 && entry_is(&tg.entries[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&tg.entries[1], 0x03, 0, 0x1234, 0),
+           "tail gated after the marker");
+    expect(tail_gated_round_trips(&tg, G_AFTER, sizeof G_AFTER),
+           "tail gated after the marker round trip");
+
+    expect(tail_gated_decode(G_MIDDLE, sizeof G_MIDDLE, &tg), "tail gated marker with Z set decode");
+    expect(tg.entries_len == 3 && entry_is(&tg.entries[0], 0x83, 0x11, 0, 0) &&
+               entry_is(&tg.entries[1], 0x84, 0x22, 0, 0) &&
+               entry_is(&tg.entries[2], 0x03, 0, 0x1234, 0),
+           "tail gated marker with Z set");
+    expect(tail_gated_round_trips(&tg, G_MIDDLE, sizeof G_MIDDLE),
+           "tail gated marker with Z set round trip");
+
+    expect(tail_gated_decode(G_ABSENT, sizeof G_ABSENT, &tg), "tail gated absent decode");
+    expect(tg.entries_len == 0, "tail gated chain without its gate");
+    expect(tail_gated_round_trips(&tg, G_ABSENT, sizeof G_ABSENT),
+           "tail gated absent round trip");
+
+    return failures == 0 ? 0 : 1;
+}
+"#,
+    )
+}
+
+fn chain_prev_cpp_program() -> String {
+    prev_frames_in(
+        r#"#include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+#include "codec_chain_prev_carrier.h"
+#include "codec_chain_prev_gated.h"
+#include "codec_chain_prev_tail.h"
+#include "codec_chain_prev_tail_gated.h"
+
+using Carrier = ::SCE::Generated::CodecChainPrevCarrier::CodecChainPrevCarrier;
+using Gated = ::SCE::Generated::CodecChainPrevGated::CodecChainPrevGated;
+using Tail = ::SCE::Generated::CodecChainPrevTail::CodecChainPrevTail;
+using TailGated = ::SCE::Generated::CodecChainPrevTailGated::CodecChainPrevTailGated;
+using Entry = ::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry;
+
+namespace {
+const std::vector<std::uint8_t> AFTER = {@P_AFTER@};
+const std::vector<std::uint8_t> NONE = {@P_NONE@};
+const std::vector<std::uint8_t> ADJ = {@P_ADJ@};
+const std::vector<std::uint8_t> TAGGED = {@P_TAGGED@};
+const std::vector<std::uint8_t> ONLY = {@P_ONLY@};
+const std::vector<std::uint8_t> G_AFTER = {@G_AFTER@};
+const std::vector<std::uint8_t> G_MIDDLE = {@G_MIDDLE@};
+const std::vector<std::uint8_t> G_TAGGED = {@G_TAGGED@};
+const std::vector<std::uint8_t> G_ABSENT = {@G_ABSENT@};
+
+int failures = 0;
+
+void expect(bool ok, const char* what) {
+    if (!ok) {
+        std::fprintf(stderr, "FAIL %s\n", what);
+        ++failures;
+    }
+}
+
+using Bytes = std::optional<std::uint8_t>;
+using Wide = std::optional<std::uint16_t>;
+
+bool entry_is(const Entry& e, std::uint8_t header, Bytes s, Wide l, Bytes tag) {
+    return e.header == header && e.short_value == s && e.long_value == l && e.tag == tag;
+}
+
+std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Carrier::decode(cursor);
+}
+
+std::optional<Gated> gated(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Gated::decode(cursor);
+}
+
+std::optional<Tail> tail(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return Tail::decode(cursor);
+}
+
+std::optional<TailGated> tail_gated(const std::vector<std::uint8_t>& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return TailGated::decode(cursor);
+}
+}  // namespace
+
+int main() {
+    const Bytes none8;
+    const Wide none16;
+
+    auto c = carrier(AFTER);
+    expect(c.has_value(), "after the marker decode");
+    if (c) {
+        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(c->entries[1], 0x03, none8, 0x1234, none8),
+               "after the marker");
+        expect(c->encode_to_vec() == AFTER, "after the marker round trip");
+    }
+
+    c = carrier(NONE);
+    expect(c.has_value(), "no marker decode");
+    if (c) {
+        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, 0x11, none16, none8) &&
+                   entry_is(c->entries[1], 0x03, 0x22, none16, none8),
+               "no marker");
+        expect(c->encode_to_vec() == NONE, "no marker round trip");
+    }
+
+    c = carrier(ADJ);
+    expect(c.has_value(), "adjacent decode");
+    if (c) {
+        expect(c->entries.size() == 3 && entry_is(c->entries[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(c->entries[1], 0x83, none8, 0x1234, none8) &&
+                   entry_is(c->entries[2], 0x03, 0x77, none16, none8),
+               "only the entry right after the marker");
+        expect(c->encode_to_vec() == ADJ, "adjacent round trip");
+    }
+
+    c = carrier(TAGGED);
+    expect(c.has_value(), "tagged decode");
+    if (c) {
+        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x84, 0x11, none16, 0xA1) &&
+                   entry_is(c->entries[1], 0x03, none8, 0x1234, 0xA2),
+               "tagged");
+        expect(c->encode_to_vec() == TAGGED, "tagged round trip");
+    }
+
+    c = carrier(ONLY);
+    expect(c.has_value(), "the marker alone decode");
+    if (c) {
+        expect(c->entries.size() == 1 && entry_is(c->entries[0], 0x04, 0x11, none16, none8),
+               "the marker alone");
+        expect(c->encode_to_vec() == ONLY, "the marker alone round trip");
+    }
+
+    auto g = gated(G_AFTER);
+    expect(g.has_value() && g->entries.has_value(), "gated after the marker decode");
+    if (g && g->entries) {
+        const auto& list = *g->entries;
+        expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(list[1], 0x03, none8, 0x1234, none8),
+               "gated after the marker");
+        expect(g->encode_to_vec() == G_AFTER, "gated after the marker round trip");
+    }
+
+    g = gated(G_MIDDLE);
+    expect(g.has_value() && g->entries.has_value(), "gated marker with Z set decode");
+    if (g && g->entries) {
+        const auto& list = *g->entries;
+        expect(list.size() == 3 && entry_is(list[0], 0x83, 0x11, none16, none8) &&
+                   entry_is(list[1], 0x84, 0x22, none16, none8) &&
+                   entry_is(list[2], 0x03, none8, 0x1234, none8),
+               "gated marker with Z set");
+        expect(g->encode_to_vec() == G_MIDDLE, "gated marker with Z set round trip");
+    }
+
+    g = gated(G_TAGGED);
+    expect(g.has_value() && g->entries.has_value(), "gated tagged decode");
+    if (g && g->entries) {
+        const auto& list = *g->entries;
+        expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, 0xA1) &&
+                   entry_is(list[1], 0x03, none8, 0x1234, 0xA2),
+               "gated tagged");
+        expect(g->encode_to_vec() == G_TAGGED, "gated tagged round trip");
+    }
+
+    g = gated(G_ABSENT);
+    expect(g.has_value() && !g->entries.has_value(), "gated chain without its gate");
+    if (g) {
+        expect(g->encode_to_vec() == G_ABSENT, "gated absent round trip");
+    }
+
+    // A chain that ends with the frame is told the same, with no flag to end on.
+    auto t = tail(AFTER);
+    expect(t.has_value(), "tail after the marker decode");
+    if (t) {
+        expect(t->entries.size() == 2 && entry_is(t->entries[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(t->entries[1], 0x03, none8, 0x1234, none8),
+               "tail after the marker");
+        expect(t->encode_to_vec() == AFTER, "tail after the marker round trip");
+    }
+
+    t = tail(ADJ);
+    expect(t.has_value(), "tail adjacent decode");
+    if (t) {
+        expect(t->entries.size() == 3 && entry_is(t->entries[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(t->entries[1], 0x83, none8, 0x1234, none8) &&
+                   entry_is(t->entries[2], 0x03, 0x77, none16, none8),
+               "tail only the entry right after the marker");
+        expect(t->encode_to_vec() == ADJ, "tail adjacent round trip");
+    }
+
+    t = tail(TAGGED);
+    expect(t.has_value(), "tail tagged decode");
+    if (t) {
+        expect(t->entries.size() == 2 && entry_is(t->entries[0], 0x84, 0x11, none16, 0xA1) &&
+                   entry_is(t->entries[1], 0x03, none8, 0x1234, 0xA2),
+               "tail tagged");
+        expect(t->encode_to_vec() == TAGGED, "tail tagged round trip");
+    }
+
+    auto tg = tail_gated(G_AFTER);
+    expect(tg.has_value() && tg->entries.has_value(), "tail gated after the marker decode");
+    if (tg && tg->entries) {
+        const auto& list = *tg->entries;
+        expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(list[1], 0x03, none8, 0x1234, none8),
+               "tail gated after the marker");
+        expect(tg->encode_to_vec() == G_AFTER, "tail gated after the marker round trip");
+    }
+
+    tg = tail_gated(G_MIDDLE);
+    expect(tg.has_value() && tg->entries.has_value(), "tail gated marker with Z set decode");
+    if (tg && tg->entries) {
+        const auto& list = *tg->entries;
+        expect(list.size() == 3 && entry_is(list[0], 0x83, 0x11, none16, none8) &&
+                   entry_is(list[1], 0x84, 0x22, none16, none8) &&
+                   entry_is(list[2], 0x03, none8, 0x1234, none8),
+               "tail gated marker with Z set");
+        expect(tg->encode_to_vec() == G_MIDDLE, "tail gated marker with Z set round trip");
+    }
+
+    tg = tail_gated(G_ABSENT);
+    expect(tg.has_value() && !tg->entries.has_value(), "tail gated chain without its gate");
+    if (tg) {
+        expect(tg->encode_to_vec() == G_ABSENT, "tail gated absent round trip");
+    }
+    return failures == 0 ? 0 : 1;
+}
+"#,
+    )
+}
+
+/// What a chain does with an input only it can know, on the backends that can
+/// be run from here: each entry decodes by the entry before it — wide right
+/// after the marker and short everywhere else, however far down the chain —
+/// and encodes back to the bytes it came from. A chain that handed its entries a
+/// CONSTANT, or that rewrote the value from the wrong entry (the one it had
+/// just decoded, not the one it had just decoded BEFORE handing it on), or that
+/// asked whether a marker was ever seen instead of whether one came just
+/// before, reads some frame here differently.
+///
+/// Only C11 can show the encode half, for the reason the flag-input test gives:
+/// its encoder reads the value as the truth about an entry's optional field. On
+/// every other backend the encode argument is held by the compile gate and the
+/// goldens, which is why the walk's rewrite is mutation-checked on C11.
+///
+/// Rust is run by `a_chain_tells_its_entries_what_came_before_them_in_rust`;
+/// Kotlin is held to its golden and, where the runtime jar is built, the compile
+/// gate.
+#[test]
+fn a_chain_tells_its_entries_what_came_before_them_on_every_runnable_backend() {
+    let dir = resource_dir();
+    let mut failures: Vec<String> = Vec::new();
+
+    if let Err(e) = run_python_program(
+        &dir,
+        PREV_ENTRY_SET,
+        "prev_pkg",
+        chain_prev_python_program(),
+    ) {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = run_go_program(
+        &dir,
+        PREV_ENTRY_SET,
+        "chain_prev_exec",
+        chain_prev_go_program(),
+    ) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    let native = [
+        (
+            "Cpp",
+            NativeMarkerBackend {
+                tool: "g++",
+                language: sce_build::generator::Language::Cpp,
+                runtime_includes: &["../backends/cpp/forge-runtime/include"],
+                header_extensions: &["h", "hpp"],
+                standard: "c++17",
+                source_name: "marker_exec.cpp",
+                set: PREV_ENTRY_SET,
+                program: chain_prev_cpp_program,
+            },
+        ),
+        (
+            "C11",
+            NativeMarkerBackend {
+                tool: "gcc",
+                language: sce_build::generator::Language::C11,
+                runtime_includes: &[
+                    "../backends/c/forge-runtime/include",
+                    "../backends/c/runtime/include",
+                ],
+                header_extensions: &["h"],
+                standard: "c11",
+                source_name: "marker_exec.c",
+                set: PREV_ENTRY_SET,
+                program: chain_prev_c_program,
+            },
+        ),
+    ];
+    for (label, backend) in &native {
+        if let Err(e) = run_marker_native(&dir, backend) {
+            failures.push(format!("{label}:\n{e}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "a chain must tell its entries what came before them on every backend that runs. Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}
+
+/// The Rust half of the test above: the same frames and the same answers, run
+/// as `cargo test` over the generated crate.
+#[test]
+fn a_chain_tells_its_entries_what_came_before_them_in_rust() {
+    const HARNESS: &str = r#"// Injected by a_chain_tells_its_entries_what_came_before_them_in_rust.
+#[cfg(test)]
+mod tests {
+    use crate::codec_chain_prev_carrier::CodecChainPrevCarrier;
+    use crate::codec_chain_prev_entry::CodecChainPrevEntry;
+    use crate::codec_chain_prev_gated::CodecChainPrevGated;
+    use crate::codec_chain_prev_tail::CodecChainPrevTail;
+    use crate::codec_chain_prev_tail_gated::CodecChainPrevTailGated;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    const AFTER: [u8; 6] = [@P_AFTER@];
+    const NONE: [u8; 5] = [@P_NONE@];
+    const ADJ: [u8; 8] = [@P_ADJ@];
+    const TAGGED: [u8; 8] = [@P_TAGGED@];
+    const ONLY: [u8; 3] = [@P_ONLY@];
+    const G_AFTER: [u8; 6] = [@G_AFTER@];
+    const G_MIDDLE: [u8; 8] = [@G_MIDDLE@];
+    const G_TAGGED: [u8; 8] = [@G_TAGGED@];
+    const G_ABSENT: [u8; 1] = [@G_ABSENT@];
+
+    type Shape = (u8, Option<u8>, Option<u16>, Option<u8>);
+
+    fn shapes(entries: &[CodecChainPrevEntry]) -> Vec<Shape> {
+        entries
+            .iter()
+            .map(|e| (e.header, e.short_value, e.long_value, e.tag))
+            .collect()
+    }
+
+    fn carrier(frame: &[u8]) -> CodecChainPrevCarrier {
+        CodecChainPrevCarrier::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn gated(frame: &[u8]) -> CodecChainPrevGated {
+        CodecChainPrevGated::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    #[test]
+    fn an_entry_right_after_the_marker_is_wide() {
+        let v = carrier(&AFTER);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
+        );
+        assert_eq!(v.encode_to_vec(), AFTER.to_vec());
+    }
+
+    #[test]
+    fn without_a_marker_every_entry_is_short() {
+        let v = carrier(&NONE);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![(0x83, Some(0x11), None, None), (0x03, Some(0x22), None, None)]
+        );
+        assert_eq!(v.encode_to_vec(), NONE.to_vec());
+    }
+
+    #[test]
+    fn only_the_entry_right_after_the_marker_is_wide() {
+        let v = carrier(&ADJ);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![
+                (0x84, Some(0x11), None, None),
+                (0x83, None, Some(0x1234), None),
+                (0x03, Some(0x77), None, None),
+            ]
+        );
+        assert_eq!(v.encode_to_vec(), ADJ.to_vec());
+    }
+
+    #[test]
+    fn the_input_bound_at_the_import_and_the_one_the_chain_supplies_both_arrive() {
+        let v = carrier(&TAGGED);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
+        );
+        assert_eq!(v.encode_to_vec(), TAGGED.to_vec());
+    }
+
+    #[test]
+    fn the_first_entry_has_no_entry_before_it() {
+        let v = carrier(&ONLY);
+        assert_eq!(shapes(&v.entries), vec![(0x04, Some(0x11), None, None)]);
+        assert_eq!(v.encode_to_vec(), ONLY.to_vec());
+    }
+
+    #[test]
+    fn a_gated_chain_tells_its_entries_the_same() {
+        let v = gated(&G_AFTER);
+        assert_eq!(
+            shapes(v.entries.as_ref().expect("chain")),
+            vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
+        );
+        assert_eq!(v.encode_to_vec(), G_AFTER.to_vec());
+
+        let v = gated(&G_TAGGED);
+        assert_eq!(
+            shapes(v.entries.as_ref().expect("chain")),
+            vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
+        );
+        assert_eq!(v.encode_to_vec(), G_TAGGED.to_vec());
+    }
+
+    #[test]
+    fn a_marker_with_its_continuation_flag_set_is_still_the_marker() {
+        // 0x84 is the marker with Z set; the identifier leaves Z out, so the
+        // entry after it is wide although its byte is not 0x04.
+        let v = gated(&G_MIDDLE);
+        assert_eq!(
+            shapes(v.entries.as_ref().expect("chain")),
+            vec![
+                (0x83, Some(0x11), None, None),
+                (0x84, Some(0x22), None, None),
+                (0x03, None, Some(0x1234), None),
+            ]
+        );
+        assert_eq!(v.encode_to_vec(), G_MIDDLE.to_vec());
+    }
+
+    #[test]
+    fn a_gated_chain_without_its_gate_holds_no_entries() {
+        let v = gated(&G_ABSENT);
+        assert!(v.entries.is_none());
+        assert_eq!(v.encode_to_vec(), G_ABSENT.to_vec());
+    }
+
+    fn tail(frame: &[u8]) -> CodecChainPrevTail {
+        CodecChainPrevTail::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    fn tail_gated(frame: &[u8]) -> CodecChainPrevTailGated {
+        CodecChainPrevTailGated::decode(&mut SceCursor::new(frame)).expect("decode")
+    }
+
+    #[test]
+    fn a_chain_that_ends_with_the_frame_is_told_what_came_before_each_entry() {
+        let v = tail(&AFTER);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
+        );
+        assert_eq!(v.encode_to_vec(), AFTER.to_vec());
+
+        let v = tail(&ADJ);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![
+                (0x84, Some(0x11), None, None),
+                (0x83, None, Some(0x1234), None),
+                (0x03, Some(0x77), None, None),
+            ]
+        );
+        assert_eq!(v.encode_to_vec(), ADJ.to_vec());
+
+        let v = tail(&TAGGED);
+        assert_eq!(
+            shapes(&v.entries),
+            vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
+        );
+        assert_eq!(v.encode_to_vec(), TAGGED.to_vec());
+    }
+
+    #[test]
+    fn a_gated_chain_that_ends_with_the_frame_is_told_the_same() {
+        let v = tail_gated(&G_AFTER);
+        assert_eq!(
+            shapes(v.entries.as_ref().expect("chain")),
+            vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
+        );
+        assert_eq!(v.encode_to_vec(), G_AFTER.to_vec());
+
+        let v = tail_gated(&G_MIDDLE);
+        assert_eq!(
+            shapes(v.entries.as_ref().expect("chain")),
+            vec![
+                (0x83, Some(0x11), None, None),
+                (0x84, Some(0x22), None, None),
+                (0x03, None, Some(0x1234), None),
+            ]
+        );
+        assert_eq!(v.encode_to_vec(), G_MIDDLE.to_vec());
+
+        let v = tail_gated(&G_ABSENT);
+        assert!(v.entries.is_none());
+        assert_eq!(v.encode_to_vec(), G_ABSENT.to_vec());
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        PREV_ENTRY_SET,
+        &[("chain_prev_behaviour.rs", &prev_frames_in(HARNESS))],
+        "chain_prev_behaviour",
+    )
+    .expect("a chain must tell its entries what came before them");
 }
 
 /// What to tell a developer whose tree has no Kotlin forge-runtime jar.

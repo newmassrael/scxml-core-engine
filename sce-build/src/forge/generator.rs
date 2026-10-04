@@ -5570,10 +5570,15 @@ fn render_codec(
                     // chain imports it, and every entry it decodes or encodes is
                     // handed the same values: a parent's carrier flag or its own
                     // flag-input, neither of which changes from entry to entry.
-                    let entry_thread = embed_flag_bind_thread_args(
+                    // The ones the chain names in an `<sce:entry-flag-bind>`
+                    // are the exception — each entry gets the value its loop
+                    // holds for it, in the local the loop declares.
+                    let entry_binds = ChainEntryBinds::of(f, &chain_masks);
+                    let entry_thread = embed_flag_bind_thread_args_supplying(
                         imports.iter().find(|i| i.alias == alias),
                         m,
                         lang,
+                        |input| ChainEntryBinds::local_of(f, input),
                     );
                     let decode_stmt = if f.present_if.is_some() {
                         tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
@@ -5583,6 +5588,7 @@ fn render_codec(
                             body_lt,
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
+                            entry_binds: &entry_binds,
                             max_depth: *max_depth,
                             on_overflow: *on_overflow,
                             terminate_on,
@@ -5595,6 +5601,7 @@ fn render_codec(
                             body_lt,
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
+                            entry_binds: &entry_binds,
                             max_depth: *max_depth,
                             on_overflow: *on_overflow,
                             terminate_on,
@@ -5609,11 +5616,20 @@ fn render_codec(
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     let encode_block = if f.present_if.is_some() {
                         tlv_chain_streaming_encode_block_gated(
-                            f, &body_encoder, &entry_thread.encode_arg, &m.fields, lang,
+                            f,
+                            &body_encoder,
+                            &entry_thread.encode_arg,
+                            &entry_binds,
+                            &m.fields,
+                            lang,
                         )
                     } else {
                         tlv_chain_streaming_encode_block(
-                            f, &body_encoder, &entry_thread.encode_arg, lang,
+                            f,
+                            &body_encoder,
+                            &entry_thread.encode_arg,
+                            &entry_binds,
+                            lang,
                         )
                     };
                     obj.insert("tlv_chain_encode_block".into(), encode_block.into());
@@ -7596,6 +7612,7 @@ fn validate_cross_codec_chain_entry_id(
         let BitSize::TlvChain {
             entry_id: Some(identifier),
             terminate_on,
+            entry_binds,
             ..
         } = &chain.bit_size
         else {
@@ -7622,13 +7639,15 @@ fn validate_cross_codec_chain_entry_id(
         };
         let refuse = |rule: String| refuse_attr("entry-id", &spelled, rule);
 
-        // (4) Nothing follows a chain that ends only with the wire.
-        if matches!(terminate_on, TlvTerminateStrategy::ExhaustOrDepth) {
+        // (4) Nothing follows a chain that ends only with the wire, so there
+        // is no field for a '.has(…)' predicate to gate — unless an
+        // entry-flag-bind reads the identifier, which needs no field after.
+        if matches!(terminate_on, TlvTerminateStrategy::ExhaustOrDepth) && entry_binds.is_empty() {
             return Err(refuse(format!(
                 "the chain '{}' ends only when the frame does (terminate-on is not \
                  \"entry-flag\"), so no field follows it for a '.has(…)' predicate \
-                 to gate; either end the chain on a flag of its entries or drop \
-                 entry-id",
+                 to gate; either end the chain on a flag of its entries, give it an \
+                 <sce:entry-flag-bind> that reads the identifier, or drop entry-id",
                 chain.id
             )));
         }
@@ -7669,8 +7688,83 @@ fn validate_cross_codec_chain_entry_id(
 
         // (3) Every value some predicate looks for is one an entry can have.
         for value in chain_has_values(&parent.fields, &chain.id) {
-            if let Some(rule) = resolved.why_no_entry_has(value, &chain.id, &spelled) {
+            if let Some(rule) = resolved.why_no_entry_has(value, "a predicate", &chain.id, &spelled)
+            {
                 return Err(refuse(rule));
+            }
+        }
+
+        // (5) What the chain itself supplies, entry by entry, to the entry
+        // codec's flag-inputs. Each is refused on its own row: the author
+        // chooses which input, which entry and which value, so there is no
+        // repair a tool could apply.
+        for bind in entry_binds {
+            let refuse_bind = |attr: &str, value: &str, rule: String| {
+                ForgeError::Validation(Box::new(ValidationError::AttributeRuleViolated {
+                    element: format!("<sce:entry-flag-bind input='{}'>", bind.input),
+                    attr: attr.into(),
+                    value: value.to_string(),
+                    rule,
+                }))
+                .at_line(bind.line)
+            };
+            let entry_name = &entry_codec.document_name;
+            // A flag-input is one bit wide (the parser fixes it, v1), so the 0
+            // or 1 a bind supplies is the whole of its value.
+            if !entry_codec
+                .codec_flag_inputs
+                .iter()
+                .any(|input| input.name == bind.input)
+            {
+                let declared: Vec<&str> = entry_codec
+                    .codec_flag_inputs
+                    .iter()
+                    .map(|input| input.name.as_str())
+                    .collect();
+                let declared = if declared.is_empty() {
+                    "it declares none".to_string()
+                } else {
+                    format!("flag-inputs: {}", declared.join(", "))
+                };
+                return Err(refuse_bind(
+                    "input",
+                    &bind.input,
+                    format!(
+                        "the entry codec '{entry_name}' of the chain '{}' declares no \
+                         <sce:flag-input> '{}' ({declared})",
+                        chain.id, bind.input
+                    ),
+                ));
+            }
+            if entry_codec
+                .flag_binds
+                .iter()
+                .any(|import_bind| import_bind.input == bind.input)
+            {
+                return Err(refuse_bind(
+                    "input",
+                    &bind.input,
+                    format!(
+                        "the input '{}' is bound by the <sce:flag-bind> on the import of \
+                         '{entry_name}' as well, and an input has one source: bind it \
+                         there when the value is one for the whole chain, here when it \
+                         depends on the entry before",
+                        bind.input
+                    ),
+                ));
+            }
+            let who = format!("the entry-flag-bind of '{}'", bind.input);
+            if let Some(rule) =
+                resolved.why_no_entry_has(bind.previous_entry_id, &who, &chain.id, &spelled)
+            {
+                return Err(refuse_bind(
+                    "previous-entry-id",
+                    &crate::source_literal::as_written(
+                        &bind.previous_entry_id_text,
+                        bind.previous_entry_id,
+                    ),
+                    rule,
+                ));
             }
         }
     }
@@ -7705,13 +7799,21 @@ struct ResolvedEntryIdentifier {
 
 impl ResolvedEntryIdentifier {
     /// Why no entry can have `value` as its identifier, or `None` when one
-    /// can. A value no entry can have makes the predicate false for every
-    /// message and the field it gates unreachable.
-    fn why_no_entry_has(&self, value: u64, chain: &str, spelled: &str) -> Option<String> {
+    /// can. A value no entry can have makes what looks for it — `who`, "a
+    /// predicate" or an entry-flag-bind — never find it: the predicate is false
+    /// for every message and the field it gates unreachable, the bind's input
+    /// is 0 for every entry.
+    fn why_no_entry_has(
+        &self,
+        value: u64,
+        who: &str,
+        chain: &str,
+        spelled: &str,
+    ) -> Option<String> {
         let bits = self.bits;
         if bits < 64 && value >> bits != 0 {
             return Some(format!(
-                "a predicate looks for the identifier {value} in the chain '{chain}', but \
+                "{who} looks for the identifier {value} in the chain '{chain}', but \
                  '{spelled}' holds {bits} bits (0..={}), so no entry can have it",
                 (1u64 << bits) - 1
             ));
@@ -7727,7 +7829,7 @@ impl ResolvedEntryIdentifier {
             .map(|(name, bit, _)| format!("{}.{name} (bit {bit})", self.field))
             .collect();
         Some(format!(
-            "a predicate looks for the identifier {value} in the chain '{chain}', but \
+            "{who} looks for the identifier {value} in the chain '{chain}', but \
              '{spelled}' leaves out {} and {value} has {} set, so no entry can have it; \
              the identifier without those bits is {}",
             self.left_out
@@ -8345,11 +8447,47 @@ fn validate_cross_codec_flag_bind(
                 .at_line(bind.line));
             }
         }
-        // Check 1b: every leaf input has a matching bind.
+        // Check 1b: every leaf input has a matching bind — on the import, or,
+        // for an input only a chain can know (`<sce:entry-flag-bind>`), at
+        // every consumer of the import. A consumer that is not a chain, and a
+        // variant arm, are handed the import's binds and nothing else, so an
+        // input bound only by one chain is unbound for them.
         let bound_inputs: std::collections::BTreeSet<&str> =
             binds.iter().map(|b| b.input.as_str()).collect();
+        let consumers: Vec<&CodecField> = parent
+            .fields
+            .iter()
+            .filter(|f| {
+                [
+                    f.embed_body_alias.as_deref(),
+                    f.repeat_body_alias.as_deref(),
+                    f.tlv_chain_body_alias.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .any(|alias| alias == imp.alias)
+            })
+            .collect();
+        let used_as_variant_arm = parent.variant.iter().any(|v| {
+            v.arms
+                .iter()
+                .chain(v.default_arm.iter())
+                .any(|arm| arm.body_alias == imp.alias)
+        });
+        let supplied_by_every_consumer = |input: &str| {
+            !used_as_variant_arm
+                && !consumers.is_empty()
+                && consumers.iter().all(|consumer| match &consumer.bit_size {
+                    BitSize::TlvChain { entry_binds, .. } => {
+                        entry_binds.iter().any(|bind| bind.input == input)
+                    }
+                    _ => false,
+                })
+        };
         for input in leaf_inputs {
-            if !bound_inputs.contains(input.name.as_str()) {
+            if !bound_inputs.contains(input.name.as_str())
+                && !supplied_by_every_consumer(&input.name)
+            {
                 return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecFlagInputUnbound {
                         parent_codec: parent.name.clone(),
@@ -9800,6 +9938,20 @@ fn embed_flag_bind_thread_args(
     parent: &CodecModel,
     lang: crate::generator::Language,
 ) -> EmbedThreadArgs {
+    embed_flag_bind_thread_args_supplying(imp, parent, lang, |_| None)
+}
+
+/// [`embed_flag_bind_thread_args`] for a caller that supplies some of the
+/// inputs itself: `supplied` answers, for an input name, the expression to
+/// pass in place of one bound at the import — a chain's per-entry local — or
+/// `None` to read the import's bind as usual. The args stay in the callee's
+/// declared input order whichever way each is supplied.
+fn embed_flag_bind_thread_args_supplying(
+    imp: Option<&ImportContext>,
+    parent: &CodecModel,
+    lang: crate::generator::Language,
+    supplied: impl Fn(&str) -> Option<String>,
+) -> EmbedThreadArgs {
     use crate::generator::Language;
     let imp = match imp {
         Some(i) => i,
@@ -9819,6 +9971,11 @@ fn embed_flag_bind_thread_args(
     let mut decode_out = String::new();
     let mut encode_out = String::new();
     for input in &imp.codec_flag_inputs {
+        if let Some(arg) = supplied(&input.name) {
+            decode_out.push_str(&format!(", {arg}"));
+            encode_out.push_str(&format!(", {arg}"));
+            continue;
+        }
         let bind = match imp.flag_binds.iter().find(|b| b.input == input.name) {
             Some(b) => b,
             // Validator should have raised `flag-input-unbound`; skip
@@ -10580,6 +10737,9 @@ struct TlvChainDecode<'a> {
     /// leading `, ` (see [`embed_flag_bind_thread_args`]); empty when it
     /// declares none.
     decode_arg: &'a str,
+    /// The flag-inputs the chain supplies entry by entry; `decode_arg` names
+    /// their locals, and the loop declares and rewrites them.
+    entry_binds: &'a ChainEntryBinds,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
@@ -10663,12 +10823,16 @@ fn tlv_chain_more_decl(lang: crate::generator::Language) -> &'static str {
 fn more_decl_line(
     lang: crate::generator::Language,
     entry_flag_acc: &Option<String>,
+    entry_binds: &ChainEntryBinds,
     indent: &str,
 ) -> String {
-    match entry_flag_acc {
+    let more = match entry_flag_acc {
         None => String::new(),
         Some(_) => format!("{}\n{indent}", tlv_chain_more_decl(lang)),
-    }
+    };
+    // The per-entry flag locals sit with `_more`: both are state the loop
+    // carries from one entry to the next.
+    format!("{}{more}", entry_binds.decls(lang, indent))
 }
 
 /// RFC §synth-5-B — the post-loop guards for one tlv-chain decode, rendered
@@ -10756,6 +10920,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         body_lt,
         body_decoder,
         decode_arg,
+        entry_binds,
         max_depth,
         on_overflow,
         terminate_on,
@@ -10783,21 +10948,35 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         Language::Rust => {
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
-                Some(acc) => format!(
-                    "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     let _entry = {body_type}::decode(cursor{decode_arg})?;\n                \
-                     _more = _entry.{acc}();\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
-                     if !_more {{ break; }}\n            "
-                ),
+                // The entry is bound to a local when the loop reads something
+                // off it: the flag that ends the chain, the identifier a
+                // per-entry flag-input is waiting for.
+                (acc, _) => {
+                    let indent = "                ";
+                    let mut lines = vec![
+                        "if cursor.remaining() == 0 { break; }".to_string(),
+                        format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _entry.{acc}();"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+                    lines.push(format!(
+                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;"
+                    ));
+                    if acc.is_some() {
+                        lines.push("if !_more { break; }".to_string());
+                    }
+                    chain_loop_body(indent, Some("            "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "let {id} = {{\n            \
                      let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
@@ -10825,24 +11004,39 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // name (used as the accessor's free-function prefix per
             // c/codec.h.jinja2 line 444 / 455).
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
                      sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                      out->{id_snake}_len++;\n        "
                 ),
-                Some(acc) => format!(
-                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
-                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                     size_t _just = out->{id_snake}_len;\n            \
-                     out->{id_snake}_len++;\n            \
-                     _more = {entry_struct_snake}_{acc}(&out->{id_snake}[_just]);\n            \
-                     if (!_more) break;\n        "
-                ),
+                // The entry is read through the slot it was just decoded into
+                // when the loop reads something off it: the flag that ends the
+                // chain, the identifier a per-entry flag-input waits for.
+                (acc, _) => {
+                    let indent = "            ";
+                    let entry = format!("out->{id_snake}[_just]");
+                    let mut lines = vec![
+                        "if (sce_forge_cursor_remaining(cursor) == 0) break;".to_string(),
+                        format!(
+                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
+                        ),
+                        "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
+                        format!("size_t _just = out->{id_snake}_len;"),
+                        format!("out->{id_snake}_len++;"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, &entry, lang, indent));
+                    if acc.is_some() {
+                        lines.push("if (!_more) break;".to_string());
+                    }
+                    chain_loop_body(indent, Some("        "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "        ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "        ");
             format!(
                 "{{\n        \
                      out->{id_snake}_len = 0;\n        \
@@ -10862,23 +11056,34 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         Language::Cpp => {
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "        ");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
                      if (!_elem.has_value()) return std::nullopt;\n            \
                      {id}.push_back(*_elem);\n        "
                 ),
-                Some(acc) => format!(
-                    "            if (cursor.remaining() == 0) break;\n            \
-                     auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                     if (!_elem.has_value()) return std::nullopt;\n            \
-                     _more = _elem->{acc}();\n            \
-                     {id}.push_back(*_elem);\n            \
-                     if (!_more) break;\n        "
-                ),
+                // The decoded entry is read off its optional when the loop
+                // reads something off it, before it moves into the list.
+                (acc, _) => {
+                    let indent = "            ";
+                    let mut lines = vec![
+                        "if (cursor.remaining() == 0) break;".to_string(),
+                        format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
+                        "if (!_elem.has_value()) return std::nullopt;".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem->{acc}();"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "(*_elem)", lang, indent));
+                    lines.push(format!("{id}.push_back(*_elem);"));
+                    if acc.is_some() {
+                        lines.push("if (!_more) break;".to_string());
+                    }
+                    chain_loop_body(indent, Some("        "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "        ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "        ");
             format!(
                 "std::vector<{body_type}> {id};\n        \
                  {id}.reserve({max_depth});\n        \
@@ -10905,20 +11110,31 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 entry_flag_acc.is_some(),
                 "                ",
             );
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
                      it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
                 ),
-                Some(acc) => format!(
-                    "                    if (cursor.remaining() == 0) break\n                    \
-                     val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null\n                    \
-                     _more = _entry.{acc}()\n                    \
-                     it.add(_entry)\n                    \
-                     if (!_more) break\n                "
-                ),
+                // The entry is bound to a local when the loop reads something
+                // off it, before it goes into the list.
+                (acc, _) => {
+                    let indent = "                    ";
+                    let mut lines = vec![
+                        "if (cursor.remaining() == 0) break".to_string(),
+                        format!("val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _entry.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+                    lines.push("it.add(_entry)".to_string());
+                    if acc.is_some() {
+                        lines.push("if (!_more) break".to_string());
+                    }
+                    chain_loop_body(indent, Some("                "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "                ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
                      {more_decl}for (_i in 0 until {max_depth}) {{\n{body}\
@@ -10936,8 +11152,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             let overflow_check = tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "\t");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
                          break\n\t\t\
                      }}\n\t\t\
@@ -10947,22 +11163,28 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                      }}\n\t\t\
                      {go_id} = append({go_id}, *_elem)\n\t"
                 ),
-                Some(acc) => format!(
-                    "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
-                         break\n\t\t\
-                     }}\n\t\t\
-                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\
-                     if err != nil {{\n\t\t\t\
-                         return nil, err\n\t\t\
-                     }}\n\t\t\
-                     _more = _elem.{acc}()\n\t\t\
-                     {go_id} = append({go_id}, *_elem)\n\t\t\
-                     if !_more {{\n\t\t\t\
-                         break\n\t\t\
-                     }}\n\t"
-                ),
+                // `_elem` is read when the loop reads something off the
+                // entry, before it is appended: the flag that ends the chain,
+                // the identifier a per-entry flag-input waits for.
+                (acc, _) => {
+                    let indent = "\t\t";
+                    let mut lines = vec![
+                        "if cursor.Remaining() == 0 {\n\t\t\tbreak\n\t\t}".to_string(),
+                        format!("_elem, err := {body_decoder}(cursor{decode_arg})"),
+                        "if err != nil {\n\t\t\treturn nil, err\n\t\t}".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
+                    lines.push(format!("{go_id} = append({go_id}, *_elem)"));
+                    if acc.is_some() {
+                        lines.push("if !_more {\n\t\t\tbreak\n\t\t}".to_string());
+                    }
+                    chain_loop_body(indent, Some("\t"), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "\t");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "\t");
             format!(
                 "{go_id} := make([]{body_type}, 0, {max_depth})\n\t\
                  {more_decl}for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
@@ -10982,8 +11204,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let py_id = id;
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                if cursor.remaining() == 0:\n                    \
                          break\n                \
                      _elem = {body_type}.decode(cursor{decode_arg})\n                \
@@ -10991,19 +11213,27 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                          return None\n                \
                      {py_id}.append(_elem)"
                 ),
-                Some(acc) => format!(
-                    "                if cursor.remaining() == 0:\n                    \
-                         break\n                \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
-                     if _elem is None:\n                    \
-                         return None\n                \
-                     _more = _elem.{acc}()\n                \
-                     {py_id}.append(_elem)\n                \
-                     if not _more:\n                    \
-                         break"
-                ),
+                // `_elem` is read when the loop reads something off the
+                // entry, before it is appended.
+                (acc, _) => {
+                    let indent = "                ";
+                    let mut lines = vec![
+                        "if cursor.remaining() == 0:\n                    break".to_string(),
+                        format!("_elem = {body_type}.decode(cursor{decode_arg})"),
+                        "if _elem is None:\n                    return None".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
+                    lines.push(format!("{py_id}.append(_elem)"));
+                    if acc.is_some() {
+                        lines.push("if not _more:\n                    break".to_string());
+                    }
+                    chain_loop_body(indent, None, &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "{py_id} = []\n            \
                  {more_decl}for _ in range({max_depth}):\n{body}{overflow_check}"
@@ -11026,20 +11256,31 @@ fn tlv_chain_streaming_encode_block(
     // `<sce:flag-input>` the entry codec declares, each with a leading `, `
     // (see `embed_flag_bind_thread_args`); empty when it declares none.
     encode_arg: &str,
+    // The flag-inputs the chain supplies entry by entry: the walk declares
+    // their locals and rewrites them from each entry it has written, as the
+    // decoder did from each it read.
+    entry_binds: &ChainEntryBinds,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match lang {
-        Language::Rust => format!(
-            "        for _e in &self.{id} {{\n            _e.encode(w{encode_arg})?;\n        }}"
-        ),
+        Language::Rust => {
+            let decls = entry_binds.decls(lang, "        ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
+            format!(
+                "        {decls}for _e in &self.{id} {{\n            _e.encode(w{encode_arg})?;{updates}\n        }}"
+            )
+        }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
+            let decls = entry_binds.decls(lang, "    ");
+            let entry = format!("self->{id_snake}[_ti]");
+            let updates = chain_encode_updates(entry_binds, field, &entry, lang, "        ");
             format!(
-                "    for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n        \
-                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));\n    \
+                "    {decls}for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n        \
+                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));{updates}\n    \
                  }}"
             )
         }
@@ -11051,34 +11292,65 @@ fn tlv_chain_streaming_encode_block(
         // holds; the author keeps `len ≤ max_depth` via the host
         // language's list length, mirroring the variant tag/body trust
         // contract).
-        Language::Cpp => format!(
-            "        for (const auto& _e : {id}) {{\n            \
-                 if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n        \
-             }}"
-        ),
-        Language::Kotlin => format!(
-            "        for (_e in this.{id}) {{\n            \
-                 _e.encode(w{encode_arg})?.let {{ return it }}\n        \
-             }}"
-        ),
+        Language::Cpp => {
+            let decls = entry_binds.decls(lang, "        ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
+            format!(
+                "        {decls}for (const auto& _e : {id}) {{\n            \
+                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;{updates}\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let decls = entry_binds.decls(lang, "        ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
+            format!(
+                "        {decls}for (_e in this.{id}) {{\n            \
+                     _e.encode(w{encode_arg})?.let {{ return it }}{updates}\n        \
+                 }}"
+            )
+        }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
+            let decls = entry_binds.decls(lang, "\t");
+            let entry = format!("s.{go_id}[_i]");
+            let updates = chain_encode_updates(entry_binds, field, &entry, lang, "\t\t");
             format!(
-                "\tfor _i := range s.{go_id} {{\n\t\t\
+                "\t{decls}for _i := range s.{go_id} {{\n\t\t\
                      if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
                          return err\n\t\t\
-                     }}\n\t\
+                     }}{updates}\n\t\
                  }}"
             )
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
+            let decls = entry_binds.decls(lang, "        ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
             format!(
-                "        for _e in self.{py_id}:\n            \
-                     _e.encode(w{encode_arg})"
+                "        {decls}for _e in self.{py_id}:\n            \
+                     _e.encode(w{encode_arg}){updates}"
             )
         }
     }
+}
+
+/// The statements that follow an entry's `encode` in a chain walk, each on a
+/// line of its own at `indent` after a newline, so the caller splices them
+/// straight onto the `encode` statement — nothing at all when the chain
+/// supplies no flag-input entry by entry. `entry` is the entry just written.
+fn chain_encode_updates(
+    entry_binds: &ChainEntryBinds,
+    chain: &CodecField,
+    entry: &str,
+    lang: crate::generator::Language,
+    indent: &str,
+) -> String {
+    entry_binds
+        .update_lines(chain, entry, lang, indent)
+        .iter()
+        .map(|line| format!("\n{indent}{line}"))
+        .collect()
 }
 
 /// Codec-emit inputs grouped for [`tlv_chain_streaming_decode_stmt_gated`]
@@ -11096,6 +11368,8 @@ struct TlvChainDecodeGated<'a> {
     body_decoder: &'a str,
     /// See [`TlvChainDecode::decode_arg`].
     decode_arg: &'a str,
+    /// See [`TlvChainDecode::entry_binds`].
+    entry_binds: &'a ChainEntryBinds,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
@@ -11130,6 +11404,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         body_lt,
         body_decoder,
         decode_arg,
+        entry_binds,
         max_depth,
         on_overflow,
         terminate_on,
@@ -11157,21 +11432,32 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // if the guard were inside the loop.
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
-                Some(acc) => format!(
-                    "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     let _entry = {body_type}::decode(cursor{decode_arg})?;\n                \
-                     _more = _entry.{acc}();\n                \
-                     {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
-                     if !_more {{ break; }}\n            "
-                ),
+                (acc, _) => {
+                    let indent = "                ";
+                    let mut lines = vec![
+                        "if cursor.remaining() == 0 { break; }".to_string(),
+                        format!("let _entry = {body_type}::decode(cursor{decode_arg})?;"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _entry.{acc}();"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+                    lines.push(format!(
+                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;"
+                    ));
+                    if acc.is_some() {
+                        lines.push("if !_more { break; }".to_string());
+                    }
+                    chain_loop_body(indent, Some("            "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "let {id} = if {test} {{\n            \
                      let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
@@ -11186,23 +11472,32 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         Language::Cpp => {
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
                      if (!_elem.has_value()) return std::nullopt;\n                \
                      _list.push_back(*_elem);\n            "
                 ),
-                Some(acc) => format!(
-                    "                if (cursor.remaining() == 0) break;\n                \
-                     auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
-                     if (!_elem.has_value()) return std::nullopt;\n                \
-                     _more = _elem->{acc}();\n                \
-                     _list.push_back(*_elem);\n                \
-                     if (!_more) break;\n            "
-                ),
+                (acc, _) => {
+                    let indent = "                ";
+                    let mut lines = vec![
+                        "if (cursor.remaining() == 0) break;".to_string(),
+                        format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
+                        "if (!_elem.has_value()) return std::nullopt;".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem->{acc}();"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "(*_elem)", lang, indent));
+                    lines.push("_list.push_back(*_elem);".to_string());
+                    if acc.is_some() {
+                        lines.push("if (!_more) break;".to_string());
+                    }
+                    chain_loop_body(indent, Some("            "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "std::optional<std::vector<{body_type}>> {id};\n        \
                  if ({test}) {{\n            \
@@ -11221,20 +11516,29 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 entry_flag_acc.is_some(),
                 "                ",
             );
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
                      it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
                 ),
-                Some(acc) => format!(
-                    "                    if (cursor.remaining() == 0) break\n                    \
-                     val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null\n                    \
-                     _more = _entry.{acc}()\n                    \
-                     it.add(_entry)\n                    \
-                     if (!_more) break\n                "
-                ),
+                (acc, _) => {
+                    let indent = "                    ";
+                    let mut lines = vec![
+                        "if (cursor.remaining() == 0) break".to_string(),
+                        format!("val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _entry.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+                    lines.push("it.add(_entry)".to_string());
+                    if acc.is_some() {
+                        lines.push("if (!_more) break".to_string());
+                    }
+                    chain_loop_body(indent, Some("                "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "                ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "val {id}: MutableList<{body_type}>? = if ({test}) {{\n            \
                      mutableListOf<{body_type}>().also {{\n                \
@@ -11250,8 +11554,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let go_id = filters::to_pascal_case(id.to_string());
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "\t\t");
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
                          break\n\t\t\t\
                      }}\n\t\t\t\
@@ -11261,22 +11565,25 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                      }}\n\t\t\t\
                      {go_id} = append({go_id}, *_elem)\n\t\t"
                 ),
-                Some(acc) => format!(
-                    "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
-                         break\n\t\t\t\
-                     }}\n\t\t\t\
-                     _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
-                     if err != nil {{\n\t\t\t\t\
-                         return nil, err\n\t\t\t\
-                     }}\n\t\t\t\
-                     _more = _elem.{acc}()\n\t\t\t\
-                     {go_id} = append({go_id}, *_elem)\n\t\t\t\
-                     if !_more {{\n\t\t\t\t\
-                         break\n\t\t\t\
-                     }}\n\t\t"
-                ),
+                (acc, _) => {
+                    let indent = "\t\t\t";
+                    let mut lines = vec![
+                        "if cursor.Remaining() == 0 {\n\t\t\t\tbreak\n\t\t\t}".to_string(),
+                        format!("_elem, err := {body_decoder}(cursor{decode_arg})"),
+                        "if err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
+                    lines.push(format!("{go_id} = append({go_id}, *_elem)"));
+                    if acc.is_some() {
+                        lines.push("if !_more {\n\t\t\t\tbreak\n\t\t\t}".to_string());
+                    }
+                    chain_loop_body(indent, Some("\t\t"), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "\t\t");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "\t\t");
             format!(
                 "var {go_id} []{body_type}\n\t\
                  if {test} {{\n\t\t\
@@ -11291,24 +11598,36 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
                      sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n                \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
                      out->{id_snake}_len++;\n            "
                 ),
-                Some(acc) => format!(
-                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n                \
-                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
-                     size_t _just = out->{id_snake}_len;\n                \
-                     out->{id_snake}_len++;\n                \
-                     _more = {entry_struct_snake}_{acc}(&out->{id_snake}[_just]);\n                \
-                     if (!_more) break;\n            "
-                ),
+                (acc, _) => {
+                    let indent = "                ";
+                    let entry = format!("out->{id_snake}[_just]");
+                    let mut lines = vec![
+                        "if (sce_forge_cursor_remaining(cursor) == 0) break;".to_string(),
+                        format!(
+                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
+                        ),
+                        "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
+                        format!("size_t _just = out->{id_snake}_len;"),
+                        format!("out->{id_snake}_len++;"),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, &entry, lang, indent));
+                    if acc.is_some() {
+                        lines.push("if (!_more) break;".to_string());
+                    }
+                    chain_loop_body(indent, Some("            "), &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "out->{id_snake}_len = 0;\n        \
                  if ({test}) {{\n            \
@@ -11325,8 +11644,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 entry_flag_acc.is_some(),
                 "                ",
             );
-            let body = match &entry_flag_acc {
-                None => format!(
+            let body = match (&entry_flag_acc, entry_binds.is_empty()) {
+                (None, true) => format!(
                     "                    if cursor.remaining() == 0:\n                        \
                          break\n                    \
                      _elem = {body_type}.decode(cursor{decode_arg})\n                    \
@@ -11334,19 +11653,25 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                          return None\n                    \
                      {py_id}.append(_elem)"
                 ),
-                Some(acc) => format!(
-                    "                    if cursor.remaining() == 0:\n                        \
-                         break\n                    \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                    \
-                     if _elem is None:\n                        \
-                         return None\n                    \
-                     _more = _elem.{acc}()\n                    \
-                     {py_id}.append(_elem)\n                    \
-                     if not _more:\n                        \
-                         break"
-                ),
+                (acc, _) => {
+                    let indent = "                    ";
+                    let mut lines = vec![
+                        "if cursor.remaining() == 0:\n                        break".to_string(),
+                        format!("_elem = {body_type}.decode(cursor{decode_arg})"),
+                        "if _elem is None:\n                        return None".to_string(),
+                    ];
+                    if let Some(acc) = acc {
+                        lines.push(format!("_more = _elem.{acc}()"));
+                    }
+                    lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
+                    lines.push(format!("{py_id}.append(_elem)"));
+                    if acc.is_some() {
+                        lines.push("if not _more:\n                        break".to_string());
+                    }
+                    chain_loop_body(indent, None, &lines)
+                }
             };
-            let more_decl = more_decl_line(lang, &entry_flag_acc, "                ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "if {test}:\n                \
                      {py_id} = []\n                \
@@ -11368,6 +11693,8 @@ fn tlv_chain_streaming_encode_block_gated(
     body_encoder: &str,
     // See `tlv_chain_streaming_encode_block`.
     encode_arg: &str,
+    // See `tlv_chain_streaming_encode_block`.
+    entry_binds: &ChainEntryBinds,
     fields: &[CodecField],
     lang: crate::generator::Language,
 ) -> String {
@@ -11380,56 +11707,76 @@ fn tlv_chain_streaming_encode_block_gated(
         .expect("tlv_chain_streaming_encode_block_gated: caller guarantees present_if is Some");
     let test = present_if_test_literal_encode(fields, pred, lang);
     match lang {
-        Language::Rust => format!(
-            "        if let Some(_list) = &self.{id} {{\n            \
-                 for _e in _list {{\n                \
-                     _e.encode(w{encode_arg})?;\n            \
-                 }}\n        \
-             }}"
-        ),
-        Language::Cpp => format!(
-            "        if (this->{id}.has_value()) {{\n            \
-                 for (const auto& _e : *this->{id}) {{\n                \
-                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n            \
-                 }}\n        \
-             }}"
-        ),
-        Language::Kotlin => format!(
-            "        this.{id}?.let {{ _list ->\n            \
-                 for (_e in _list) {{\n                \
-                     _e.encode(w{encode_arg})?.let {{ return it }}\n            \
-                 }}\n        \
-             }}"
-        ),
+        Language::Rust => {
+            let decls = entry_binds.decls(lang, "            ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
+            format!(
+                "        if let Some(_list) = &self.{id} {{\n            \
+                     {decls}for _e in _list {{\n                \
+                         _e.encode(w{encode_arg})?;{updates}\n            \
+                     }}\n        \
+                 }}"
+            )
+        }
+        Language::Cpp => {
+            let decls = entry_binds.decls(lang, "            ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
+            format!(
+                "        if (this->{id}.has_value()) {{\n            \
+                     {decls}for (const auto& _e : *this->{id}) {{\n                \
+                         if (auto _se = _e.encode(w{encode_arg}); _se) return _se;{updates}\n            \
+                     }}\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let decls = entry_binds.decls(lang, "            ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
+            format!(
+                "        this.{id}?.let {{ _list ->\n            \
+                     {decls}for (_e in _list) {{\n                \
+                         _e.encode(w{encode_arg})?.let {{ return it }}{updates}\n            \
+                     }}\n        \
+                 }}"
+            )
+        }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
+            let decls = entry_binds.decls(lang, "\t");
+            let entry = format!("s.{go_id}[_i]");
+            let updates = chain_encode_updates(entry_binds, field, &entry, lang, "\t\t");
             format!(
-                "\tfor _i := range s.{go_id} {{\n\t\t\
+                "\t{decls}for _i := range s.{go_id} {{\n\t\t\
                      if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
                          return err\n\t\t\
-                     }}\n\t\
+                     }}{updates}\n\t\
                  }}"
             )
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
+            let decls = entry_binds.decls(lang, "        ");
+            let entry = format!("self->{id_snake}[_ti]");
+            let updates = chain_encode_updates(entry_binds, field, &entry, lang, "            ");
             // C11 carrier-bit-as-truth: same loop body as plain
             // (walks `_len` entries), but wrap in a presence test
             // so absent gates skip the write entirely.
             format!(
                 "    if ({test}) {{\n        \
-                     for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));\n        \
+                     {decls}for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));{updates}\n        \
                      }}\n    \
                  }}"
             )
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
+            let decls = entry_binds.decls(lang, "            ");
+            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     for _e in self.{py_id}:\n                \
-                         _e.encode(w{encode_arg})"
+                     {decls}for _e in self.{py_id}:\n                \
+                         _e.encode(w{encode_arg}){updates}"
             )
         }
     }
@@ -14618,6 +14965,156 @@ fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> Str
         Language::Cpp | Language::C11 => format!("{value}ULL"),
         Language::Kotlin => format!("{value}UL"),
         Language::Go | Language::Python => value.to_string(),
+    }
+}
+
+// ── Entry-by-entry flag-inputs: `<sce:entry-flag-bind>` ────────────────────
+//
+// A flag-input bound at the import is one value for the whole chain. One bound
+// by `<sce:entry-flag-bind>` is not: it is 1 for an entry whose immediately
+// preceding entry has a given identifier, and 0 for every other entry, the
+// first included. Only the loop that reads the chain can know it, so the loop
+// carries it in a local of its own, hands the local to the entry's `decode` /
+// `encode`, and rewrites it from the entry it has just handled — decode from
+// the entry it decoded, encode from the entry it wrote, so the two walk the
+// same values over the same entries.
+
+/// One flag-input the chain supplies to its entry codec entry by entry.
+struct ChainEntryBind {
+    /// The local that carries the value into the entry's `decode` / `encode`.
+    local: String,
+    /// The identifier the entry before must have for the input to be 1.
+    previous_entry_id: u64,
+}
+
+/// What the loops of one chain need of its `<sce:entry-flag-bind>`s: the locals
+/// to declare, the statements that rewrite them, and how to read an entry's
+/// identifier. Empty — and then every rendered fragment is empty — for a chain
+/// that binds nothing entry by entry, so its generated code is what it was
+/// before the element existed.
+struct ChainEntryBinds {
+    /// The bits of an entry's value that are its identifier, when the chain
+    /// leaves flags out of it (`entry-id-except`); see [`chain_entry_identifier`].
+    mask: Option<u64>,
+    binds: Vec<ChainEntryBind>,
+}
+
+impl ChainEntryBinds {
+    fn of(chain: &CodecField, masks: &ChainIdentifierMasks) -> Self {
+        let binds = match &chain.bit_size {
+            BitSize::TlvChain { entry_binds, .. } => entry_binds
+                .iter()
+                .map(|bind| ChainEntryBind {
+                    local: Self::local_name(chain, &bind.input),
+                    previous_entry_id: bind.previous_entry_id,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        Self {
+            mask: masks.get(&chain.id).copied(),
+            binds,
+        }
+    }
+
+    /// Chain and input are both in the name, so two chains of one codec that
+    /// bind the same input do not share a local on a backend whose loop has no
+    /// scope of its own.
+    fn local_name(chain: &CodecField, input: &str) -> String {
+        format!(
+            "_prev_{}_{}",
+            filters::to_snake_case(chain.id.clone()),
+            filters::to_snake_case(input.to_string())
+        )
+    }
+
+    fn is_empty(&self) -> bool {
+        self.binds.is_empty()
+    }
+
+    /// The local that carries `input`'s value, when the chain supplies it.
+    fn local_of(chain: &CodecField, input: &str) -> Option<String> {
+        match &chain.bit_size {
+            BitSize::TlvChain { entry_binds, .. } => entry_binds
+                .iter()
+                .any(|bind| bind.input == input)
+                .then(|| Self::local_name(chain, input)),
+            _ => None,
+        }
+    }
+
+    /// The declarations, one per bind, each as a source line followed by
+    /// `indent`, ready to prefix the loop they belong to — or nothing. The
+    /// first entry has no entry before it, so every local starts at 0. The
+    /// type is the flag-input parameter's (`u8` and its spelling elsewhere), so
+    /// the local is passed as it is.
+    fn decls(&self, lang: crate::generator::Language, indent: &str) -> String {
+        use crate::generator::Language;
+        self.binds
+            .iter()
+            .map(|bind| {
+                let local = &bind.local;
+                let decl = match lang {
+                    Language::Rust => format!("let mut {local}: u8 = 0;"),
+                    Language::Cpp => format!("std::uint8_t {local} = 0;"),
+                    Language::Kotlin => format!("var {local}: UByte = 0.toUByte()"),
+                    Language::Go => format!("var {local} byte"),
+                    Language::Python => format!("{local} = 0"),
+                    Language::C11 => format!("uint8_t {local} = 0;"),
+                };
+                format!("{decl}\n{indent}")
+            })
+            .collect()
+    }
+
+    /// The statements, one list per bind in order, that rewrite every local
+    /// from `entry`, the entry just handled: 1 when its identifier is the one
+    /// the next entry is waiting for, 0 otherwise. `entry` is an expression
+    /// that [`chain_entry_identifier`] can read a flag or a field from, and
+    /// `indent` the column the statements sit at, which a statement of several
+    /// lines needs to indent the lines after its first.
+    fn update_lines(
+        &self,
+        chain: &CodecField,
+        entry: &str,
+        lang: crate::generator::Language,
+        indent: &str,
+    ) -> Vec<String> {
+        use crate::generator::Language;
+        let mut lines = Vec::new();
+        for bind in &self.binds {
+            let local = &bind.local;
+            let test = format!(
+                "{} == {}",
+                chain_entry_identifier(chain, entry, self.mask, lang),
+                chain_identifier_literal(bind.previous_entry_id, lang)
+            );
+            lines.push(match lang {
+                Language::Rust => format!("{local} = u8::from({test});"),
+                Language::Cpp => format!("{local} = static_cast<std::uint8_t>({test});"),
+                Language::Kotlin => format!("{local} = if ({test}) 1.toUByte() else 0.toUByte()"),
+                // Go has no conditional expression, and the block is one
+                // statement to the caller, so its lines travel together.
+                Language::Go => {
+                    format!("{local} = 0\n{indent}if {test} {{\n{indent}\t{local} = 1\n{indent}}}")
+                }
+                Language::Python => format!("{local} = 1 if {test} else 0"),
+                Language::C11 => format!("{local} = (uint8_t)(({test}) ? 1 : 0);"),
+            });
+        }
+        lines
+    }
+}
+
+/// A chain loop's body: `lines` as statements at `indent`, then the line that
+/// closes the block at `closing` — or no closing line, for Python, whose block
+/// ends with its last statement. A statement that spans several lines carries
+/// the indentation of those after its first itself.
+fn chain_loop_body(indent: &str, closing: Option<&str>, lines: &[String]) -> String {
+    let body = format!("{indent}{}", lines.join(&format!("\n{indent}")));
+    match closing {
+        Some(closing) => format!("{body}\n{closing}"),
+        None => body,
     }
 }
 

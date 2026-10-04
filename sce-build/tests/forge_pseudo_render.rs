@@ -25,8 +25,8 @@ use sce_build::forge::model::{
     PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
     ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
     RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
-    TimerModel, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
-    ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
+    TimerModel, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy,
+    TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -890,6 +890,23 @@ fn a_codec_renders_every_field_it_can_carry() {
                 name: "kind".to_string(),
                 except: Vec::new(),
             }),
+            // Two binds, in the order the author wrote them: the first with
+            // its hex spelling, the second as the model computes it, which is
+            // what the fallback prints when no spelling is kept.
+            entry_binds: vec![
+                TlvEntryFlagBind {
+                    input: "after_marker".to_string(),
+                    previous_entry_id: 4,
+                    previous_entry_id_text: "0x4".to_string(),
+                    line: None,
+                },
+                TlvEntryFlagBind {
+                    input: "after_pad".to_string(),
+                    previous_entry_id: 7,
+                    previous_entry_id_text: String::new(),
+                    line: None,
+                },
+            ],
         },
         endian: Some(Endian::Little),
         max_size: Some(64),
@@ -1017,6 +1034,8 @@ terminate entry-flag more
     repeat-body rb
     tlv-body tb
     entry-id ctl.kind
+    entry-flag-bind after_marker previous-entry-id 0x4
+    entry-flag-bind after_pad previous-entry-id 7
     embed-body eb
     embed-length-from len
     dma-align 16
@@ -1056,6 +1075,7 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
                 name: "header".to_string(),
                 except: vec!["Z".to_string(), "M".to_string()],
             }),
+            entry_binds: Vec::new(),
         },
         endian: None,
         max_size: None,

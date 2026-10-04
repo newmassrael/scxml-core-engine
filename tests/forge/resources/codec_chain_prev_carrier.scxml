@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain that tells its entries what came before them.
+
+     `after_marker` is not a value the parent can read off a carrier: it is 1
+     for an entry whose immediately preceding entry has the identifier 0x4 (the
+     marker) and 0 for every other entry, the first included. The chain
+     supplies it with an `<sce:entry-flag-bind>`, from the identifier its
+     `entry-id` names. `tagged` is the other kind of input, one value for the
+     whole chain, bound where the entry codec is imported, from a flag of the
+     carrier this codec has already read.
+
+     "Immediately before" is adjacency: an entry two places after the marker is
+     not after it, which is what the second frame of the behaviour test holds.
+
+     Wire shape:
+       byte 0  : head  (T at bit 0, handed to every entry as `tagged`)
+       byte 1..: entries, each laid out as `codec_chain_prev_entry` says -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_carrier">
+  <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
+    <sce:flag-bind input="tagged" source="head.T"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="T" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_prev_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+  </datamodel>
+</scxml>
