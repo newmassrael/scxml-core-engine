@@ -633,26 +633,48 @@ class Enclosed:
         return lines
 
 
+_EMBEDDINGS = "word/embeddings/"
+
+
+def _names_of(parts: list[str]) -> dict[str, str]:
+    """The name each enclosed file is carried and marked under: part path -> name.
+
+    ⚠ The base name, and where two files share one, the path under the embeddings folder. Keying by
+    base name alone let the second `Book.xlsx` replace the first -- both objects in the body then read
+    `Book.xlsx`, one table was gone, and nothing was said (a review, 2026-10-05). EVERY file that shares
+    a name is renamed, not only the later ones: which of two is "the" `Book.xlsx` is an accident of
+    the order the zip lists them, and a name that depends on it would move when the zip is rewritten.
+    A name that is unique stays the plain base name, so nothing else changes.
+    """
+    bases = [posixpath.basename(p) for p in parts]
+    return {part: (part[len(_EMBEDDINGS):] if bases.count(posixpath.basename(part)) > 1
+                   else posixpath.basename(part))
+            for part in parts}
+
+
 def read_enclosed(archive: zipfile.ZipFile) -> Enclosed:
     """Open every workbook and presentation a word document encloses, and say which object is which."""
-    embedded = sorted(n for n in archive.namelist() if n.startswith("word/embeddings/"))
+    embedded = sorted(n for n in archive.namelist()
+                      # A folder entry has no base name, and is not a file to read.
+                      if n.startswith(_EMBEDDINGS) and posixpath.basename(n))
+    names = _names_of(embedded)
     # Which enclosed file each object in the body refers to, by the name the file is carried
     # under below.
-    attached = {rid: posixpath.basename(part)
+    attached = {rid: names[part]
                 for rid, (_kind, part) in _related(archive, "word/document.xml").items()
-                if part in embedded}
+                if part in names}
     rows: dict[str, list[str]] = {}
     notes: list[str] = []
     for part in embedded:
         if not part.lower().endswith((".xlsx", ".pptx")):
             continue
-        name = posixpath.basename(part)
+        name = names[part]
         opened, trouble = (_read_enclosed_sheet(archive.read(part)) if part.lower().endswith(".xlsx")
                            else _read_enclosed_deck(archive.read(part)))
         notes.extend(f"{name}: {t}" for t in trouble)
         if opened:
             rows[name] = opened
-    unopened = [name for name in map(posixpath.basename, embedded) if name not in rows]
+    unopened = [names[part] for part in embedded if names[part] not in rows]
     return Enclosed(attached, rows, unopened, notes)
 
 
