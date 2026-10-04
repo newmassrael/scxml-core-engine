@@ -1,0 +1,67 @@
+# Mutation cases for "the C wire writer writes a real the one way every engine
+# writes it" (ARCHITECTURE.md, "JSON Number Text").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c_wire_writes_a_real_as_ecmascript_spells_it.cases`.
+#
+# `sce_forge_wire_number_text` (`sce/forge/wire.h`) is what a `sce-static` C11
+# machine writes a `float64` with, in a data object's pair and in the text a
+# host request carries a param as. Two oracles hold it: `c11_unit_json_text`
+# reads `tests/json_text/real_text.json` and writes each double through the
+# writer, and `c11_integration_static_host_params` drives
+# `statechart_static_host_params`, whose `ratio` is a real the machine holds.
+#
+# `printf` has no shortest form, so the digits are a precision search that has a
+# hole the table was written to find: below a power of two the neighbouring
+# double is half as far, so the nearest decimal of the fewest digits can fall
+# outside the interval that reads back (2^-44 is `5.684341886080802e-14`). The
+# first case puts that hole back.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(c11_unit_json_text|c11_integration_static_host_params)$'
+mutation_targets backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/unit/json_text_test.c backends/c/tests/integration/test_static_host_params.c
+
+# ── The digits ─────────────────────────────────────────────────────
+
+mutation_case "the decimal one unit above the rounded one is never tried" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "            if (sce_forge_wire_reads_back(above, k, above_exponent, magnitude)) {",
+     "            if (false) {")
+PY
+
+# ── The layout ─────────────────────────────────────────────────────
+
+mutation_case "negative zero keeps its sign" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     """        n = (size_t)snprintf(out, sizeof(out), "0");""",
+     """        n = (size_t)snprintf(out, sizeof(out), "%s", 1.0 / value < 0.0 ? "-0" : "0");""")
+PY
+
+mutation_case "decimal notation ends at 1e20" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        if (k <= point && point <= 21) {",
+     "        if (k <= point && point <= 20) {")
+PY
+
+mutation_case "decimal notation of a small value reaches 1e-7" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        } else if (-6 < point && point <= 0) {",
+     "        } else if (-7 < point && point <= 0) {")
+PY
+
+# ── The two places a value is written ──────────────────────────────
+
+mutation_case "a value that is not finite is written as its text in a data object" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        if (value.as.r - value.as.r != 0.0) {",
+     "        if (false) {")
+PY
+
+mutation_case "a request carries a real as printf's %g writes it" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        return sce_forge_wire_number_text(value.as.r, buf, cap) != 0u;",
+     "        written = snprintf(buf, cap, \"%g\", value.as.r);\n        break;")
+PY

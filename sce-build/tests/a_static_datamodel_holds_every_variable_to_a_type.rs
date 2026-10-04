@@ -301,8 +301,8 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
 
 #[test]
 fn c11_names_each_construct_it_does_not_lower_yet() {
-    // C lowers integer, bool, enum and bounded string variables, records of
-    // numbers, bools and enums, lists of integers, bools and such records with
+    // C lowers integer, bool, enum, bounded string and 64-bit real variables,
+    // records of numbers, bools and enums, lists of integers, bools and such records with
     // `<sce:append>`, `<sce:clear>` and `<foreach>`, guards, `<assign>`,
     // `<if>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an event's typed payload of
     // numbers, bools and strings, a call of an imported algorithm, a host action
@@ -311,7 +311,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // the host is declared to serve (and the literal `<content>` of one), an
     // `<invoke type="scxml">` handing numbers,
     // bools and strings, and an `<invoke>` the host is declared to serve. What is
-    // past that — a real, a list of reals, a record with a string field, a bytes
+    // past that — a 32-bit real, a list of reals, a record with a string field, a bytes
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a final's `<donedata>` with a `<content>`, a payload field that
@@ -322,9 +322,9 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     let variable = |data: &str| doc("sce-static", data);
     let cases = [
         (
-            "a real variable",
-            variable(r#"<data id="ratio" sce:type="float64" expr="0.5"/>"#),
-            r#"<data id="ratio" sce:type="float64">"#,
+            "a 32-bit real variable",
+            variable(r#"<data id="ratio" sce:type="float32" expr="0.5"/>"#),
+            r#"<data id="ratio" sce:type="float32">"#,
         ),
         (
             "a bytes variable",

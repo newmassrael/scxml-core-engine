@@ -2822,6 +2822,42 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15: the one document every channel drives for what a
+    # typed `<param>` of a host-served `<send>` and `<invoke>` puts on the wire,
+    # a real among them (ARCHITECTURE.md, "JSON Number Text"). Generated with both
+    # host declarations, as the Rust, Kotlin and Go channels pass them. Linked
+    # WITHOUT `sce_c_scripting` and `lua54`: the machine has no script engine, so
+    # the link is the proof.
+    sce_generate_static_integration_c_test(statechart_static_host_params
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml"
+        HOST_PROCESSOR x-sce-host
+        HOST_INVOKER x-sce-host
+    )
+    add_executable(sce_c_integration_static_host_params
+        integration/test_static_host_params.c
+        ${INTEGRATION_C_TEST_statechart_static_host_params_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_params PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_params PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_host_params PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_params
+        COMMAND sce_c_integration_static_host_params
+    )
+    set_tests_properties(c11_integration_static_host_params PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.2.4 + §scxml-6.3: the delay side of the same surface. A separate
     # document rather than a `delay` added to the one above, because that one is
     # driven with `_step` and this one can only be driven with `_tick`: folding
@@ -3518,12 +3554,17 @@ endif()
 #
 # The event payload's JSON string reader and writer, measured against
 # tests/json_text/string_escape.json — the table every engine's writer reads
-# (ARCHITECTURE.md, "JSON Text (Single Source of Truth)"). Header-only code,
-# so the test needs nothing a configuration can leave out.
+# (ARCHITECTURE.md, "JSON Text (Single Source of Truth)") — and the `sce-static`
+# wire writer's float, measured against tests/json_text/real_text.json
+# ("JSON Number Text"). Header-only code, so the test needs nothing a
+# configuration can leave out.
 add_executable(sce_c_json_text_unit_test unit/json_text_test.c)
 target_link_libraries(sce_c_json_text_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_json_text_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 target_compile_definitions(sce_c_json_text_unit_test PRIVATE
-    SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json")
+    SCE_JSON_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/string_escape.json"
+    SCE_JSON_REAL_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/real_text.json")
 set_target_properties(sce_c_json_text_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON

@@ -3673,9 +3673,11 @@ impl StaticTarget for CTarget {
         // buffer of its bound, which every list declares ([`Self::bounded_list`]).
         // A string is a buffer of the bound its variable declares, which the
         // document requires of every one ([`Self::string_storage`]). A bytes
-        // value needs a capacity the C11 contract does not carry yet, and a real
-        // is not yet held to a scenario. A record is a struct the machine's own
-        // header declares, of fields held as those are.
+        // value needs a capacity the C11 contract does not carry yet. A 64-bit
+        // real is a `double`, written to the wire as ECMAScript spells it; a
+        // 32-bit one, a list of reals and a record's real field are not held to a
+        // scenario yet. A record is a struct the machine's own header declares,
+        // of fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -3709,7 +3711,7 @@ impl StaticTarget for CTarget {
             !matches!(
                 value_type.scalar(),
                 Some(ty) if held_scalar(ty)
-                    || matches!(ty, SceType::Enum(_))
+                    || matches!(ty, SceType::Enum(_) | SceType::Float64)
                     || (matches!(ty, SceType::String) && v.capacity.is_some())
             )
         }) {
@@ -4258,7 +4260,9 @@ impl StaticTarget for CTarget {
     }
     // The runtime's typed wire value (`sce/forge/wire.h`), which a pair's JSON
     // is written from: a number crosses as the widest of its signedness, which
-    // is exact. A real is not spelled yet ([`Self::wire_admits`]).
+    // is exact; a 64-bit real is written as ECMAScript spells it
+    // (ARCHITECTURE.md, "JSON Number Text"). A 32-bit real is not spelled
+    // ([`Self::wire_admits`]).
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
             InferredType::Bool => format!("sce_forge_wire_bool({value})"),
@@ -4269,13 +4273,19 @@ impl StaticTarget for CTarget {
             InferredType::Int { signed: false, .. } => {
                 format!("sce_forge_wire_uint((uint64_t)({value}))")
             }
+            InferredType::Float { bits: 64 } => format!("sce_forge_wire_real((double)({value}))"),
             other => unreachable!("a C11 wire value of {other:?} is refused by `wire_admits`"),
         }
     }
+    // The contract fixes only the 64-bit spelling of a real, so a 32-bit one has
+    // no wire form every engine shares.
     fn wire_admits(&self, ty: InferredType) -> bool {
         matches!(
             ty,
-            InferredType::Bool | InferredType::Str | InferredType::Int { .. }
+            InferredType::Bool
+                | InferredType::Str
+                | InferredType::Int { .. }
+                | InferredType::Float { bits: 64 }
         )
     }
 }

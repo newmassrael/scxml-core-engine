@@ -3374,7 +3374,7 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
-variables of the integer types, `bool`, an enum and a string, a transition's
+variables of the integer types, `bool`, an enum, a string and a 64-bit real, a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools and strings, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
@@ -3386,7 +3386,7 @@ literal `<content>` (the text it spells, finished at build time and copied into 
 event's data, as on every other backend), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
-the host serves (`--host-invoker`) with its `<param>`s. A real, bytes and a record
+the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real, bytes and a record
 with a string field, a list of reals, a `<send>` to
 another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
@@ -3394,8 +3394,9 @@ type the host was not declared to serve, a `<param>` name that repeats in a
 `<donedata>` with a `<content>` and a
 transition on an event whose payload carries a bytes or enum field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
-not carry yet, and a real is not yet held to a scenario — a `<param>` whose
-value is one is refused with it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
+not carry yet, and a 32-bit real has no wire spelling every engine shares (the
+contract fixes the 64-bit form only) — a `<param>` whose value is one is refused
+with it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
 an event carries as its data, by the header-only wire writer of the forge runtime
 (`sce/forge/wire.h`), in the one order every engine writes the members in —
 ascending by the name's UTF-8 bytes, whatever order the document declared its
@@ -3415,8 +3416,12 @@ owns the clock (`<machine>_init_with_clock`, `<machine>_advance_time_ms`) has
 the sends that fall due together delivered in the order they were made, and a
 `<cancel>` removes the one whose id it names; `test_static_timers.c` drives
 `static_timers` so. A value is a bool, a string — its `"`,
-`\` and control characters escaped, its UTF-8 as it is — or an integer, at the
-widest of its signedness. A pair whose value failed to compute, or whose
+`\` and control characters escaped, its UTF-8 as it is — an integer, at the
+widest of its signedness, or a 64-bit real, written as ECMAScript spells it
+(ARCHITECTURE.md, "JSON Number Text"): a JSON number, `null` where it is not
+finite, and `NaN` / `Infinity` / `-Infinity` where a request carries it as text.
+`test_static_host_params.c` drives `statechart_static_host_params` so. A pair whose
+value failed to compute, or whose
 location is empty, raises `error.execution` and is left out, every other pair
 still crosses (5.7.1) — a `<send>`'s message still goes, and the error ends its
 block (4.9) — and an object that does not fit the buffer is `{}` and raises it

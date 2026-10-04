@@ -732,7 +732,7 @@ bits, so no engine's float parser is the one deciding), checked against Node's
 | Go | `NumberText` (`number_text.go`); `ScriptValueToJSON`, `ToWireString`, `PayloadJSON` use it | `backends/go/runtime/json_text_test.go` |
 | Python | `sce_runtime.number_text.number_text`; `ScriptValue.to_json_literal` and its wire text use it, and a generated machine writes `_event.data` through them | `backends/python/tests/json_text/test_real_text.py` |
 | Kotlin | `Json.numberText` over `shortestDigits` (`expect`, `BigDecimal` on the JVM); `valueToJson`, `valueToWireString`, `EventPayload.literal` use it | `backends/kotlin/tests/.../runtime/RealTextTest.kt` |
-| C11 | a script-engine machine writes through `JSON.stringify` of the shared Lua above; a `sce-static` machine writes no float yet and refuses it by name | the Lua row's test |
+| C11 | a script-engine machine writes through `JSON.stringify` of the shared Lua above; a `sce-static` machine writes through `sce_forge_wire_number_text` (`sce/forge/wire.h`), which the pair and the request's param text use; no C11 test reads the table through the Lua half, which is that file loaded in chunks | `backends/c/tests/unit/json_text_test.c`, and `test_static_host_params.c` for the machine's own wire |
 
 What the contract does not fix:
 
