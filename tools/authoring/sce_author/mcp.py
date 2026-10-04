@@ -1532,6 +1532,22 @@ TOOLS = [
                         "this product ships as another."
                     ),
                 },
+                "explain": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "description": (
+                        "Names, or pieces of names, of cases to SHOW as well as "
+                        "judge. Use it on a case that fails and that you cannot "
+                        "explain from the specification and your own expressions: "
+                        "each matching case comes back with `shown` -- the inputs "
+                        "the binding handed the document, every value the document "
+                        "returned that round, and what it kept. Reading those says "
+                        "WHY a position got the value it did (which condition was "
+                        "false, which input never arrived), which a failure line "
+                        "cannot. Verdicts are unchanged; cases you do not name carry "
+                        "nothing."
+                    ),
+                },
             },
         },
     },
@@ -1653,10 +1669,26 @@ def verification_payload(result) -> dict:
                           for a, w, g in case.failures],
              "unchecked": case.unchecked,
              "unwritten": case.unwritten,
-             "undetermined": case.undetermined}
+             "undetermined": case.undetermined,
+             # ⚠ Present only for a case the caller asked to see (`explain`), so the payload does
+             # not grow with the suite. Each value is carried as the document's own value when it
+             # is plain JSON and as its `repr` otherwise: a generated holder can keep objects.
+             **({"shown": {part: {k: _plain(v) for k, v in values.items()}
+                           for part, values in case.shown.items()}} if case.shown else {})}
             for case in result.results
         ],
     }
+
+
+def _plain(value):
+    """A value as JSON can carry it, or its repr, never an exception."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    return repr(value)
 
 
 def _text(payload: str) -> dict:
@@ -3274,7 +3306,12 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
             if not isinstance(backend, str):
                 raise ToolArgumentError("'backend' has to be a language name, "
                                         "as a string")
-            result = run_verify(pack, pathlib.Path(binding), None, backend)
+            explain = args.get("explain", [])
+            if (not isinstance(explain, list)
+                    or not all(isinstance(part, str) and part for part in explain)):
+                raise ToolArgumentError("'explain' has to be a list of non-empty strings, each "
+                                        "a piece of a case's name")
+            result = run_verify(pack, pathlib.Path(binding), None, backend, tuple(explain))
             if not result.ran:
                 return _failure(result.refusal)
             payload = verification_payload(result)

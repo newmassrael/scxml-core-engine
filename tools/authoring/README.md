@@ -1226,6 +1226,22 @@ the one it can import and refuses the rest, rather than reporting on a program
 nobody started. `--codegen` names the generator, defaulting to the one built
 in this tree.
 
+**`--explain TEXT` shows what the document did in a case, not only whether it
+was right.** A failure says what was expected and what was written at one
+position; the reason is in the values between the inputs and that position, and
+an author cannot see them from outside the document. Every case whose name
+contains `TEXT` (repeat the flag for several) is printed with three parts: the
+inputs the binding handed the document, every value it returned that round, and
+what it kept afterwards. Measured 2026-10-04 while tracing one failing case by
+hand: the specification and the document's expressions side by side did not say
+why the wrong event was written, and running the document on that case did --
+every event condition was false in that round, so the identifier stayed on the
+first branch of a fallback chain. A document that keeps values (it reads
+`previous()`) returns every variable it declares; a pure computation shows the
+outputs its binding names and says it kept nothing. Asking changes no verdict,
+costs nothing for the cases not asked about, and a `TEXT` matching no case shows
+nothing and is not an error.
+
 It drives two shapes, and they have nothing in common. A pure computation is
 CALLED: one function per output, this round's inputs by name. A **statechart
 is DRIVEN** -- the machine is built once, the cases are replayed through it in

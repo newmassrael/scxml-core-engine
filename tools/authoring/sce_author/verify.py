@@ -156,6 +156,12 @@ class CaseResult:
     # and never one only a record's planted value stood at. What a guess is
     # credited or blamed by (`CaseJudge.attribute`).
     compared: list[str] = field(default_factory=list)
+    # ⚠ What the document did in the round this case ran, kept ONLY when the caller asked to see
+    # this case (`explain`): the inputs the binding handed it, every value it returned, and what
+    # it kept afterwards. A failure says what was expected and what was written at one position;
+    # it cannot say WHY, and the why lives in the values in between, which an author cannot see
+    # from outside the document. Empty for every case nobody asked about.
+    shown: dict = field(default_factory=dict)
 
     @property
     def judged(self) -> bool:
@@ -3007,8 +3013,13 @@ def _under(path, root: pathlib.Path) -> bool:
 
 def verify(pack: Pack, binding_path: pathlib.Path,
            codegen: pathlib.Path | None = None,
-           backend: str = "python") -> Verification:
+           backend: str = "python", explain: tuple = ()) -> Verification:
     """Run every example case against the bound document.
+
+    `explain` names cases to be SHOWN, not only judged: every case whose name contains one of
+    these strings carries, on its result, the inputs the binding handed the document, every value
+    the document returned that round, and what it kept afterwards (`CaseResult.shown`). Judging is
+    unchanged by it.
 
     ⚠ The document's machine is not started in this process. The generated
     module is imported by a worker (`sandbox`) that `process.reaping` closes when
@@ -3018,7 +3029,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     not about the document: a second run may differ."""
     with process.reaping(), _scratch() as root:
         try:
-            return _verify(pack, binding_path, codegen, backend, root)
+            return _verify(pack, binding_path, codegen, backend, root, explain)
         except sandbox.WorkerStopped as stopped:
             return Verification(refusal=(
                 f"{stopped}. That is a fact about the machine that played the document, "
@@ -3027,7 +3038,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
 
 def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None,
-            backend: str, root: pathlib.Path) -> Verification:
+            backend: str, root: pathlib.Path, explain: tuple = ()) -> Verification:
     from .check import read_document  # local: only verification needs it
 
     if backend not in DRIVEN_BACKENDS:
@@ -3402,12 +3413,22 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
                     f"({exc})"))
             # What each world kept, copied out of the process that holds it.
             kept = [sandbox.state_of(w) for w in worlds]
+            if explain and any(part in owner.name for part in explain if owner.name):
+                # ⚠ Only for a case somebody asked to see, because each copy crosses a process
+                # boundary. The first world: with no unresolved input there is exactly one.
+                result.shown = {
+                    "inputs": dict(values),
+                    "returned": sandbox.state_of(records[0]),
+                    "kept": kept[0],
+                }
             if any(state != kept[0] for state in kept[1:]):
                 lost = (f"after round {case.name!r} what the document kept "
                         f"depends on unresolved input(s) {', '.join(unknown)}, "
                         f"so no later round starts from a known state")
         produced: dict = {}
         undetermined: set = set()
+        shown_outputs: dict = {}
+        wanted = bool(explain) and any(part in owner.name for part in explain if owner.name)
         for name, rule in outputs.items():
             if rule.get("unresolved"):
                 # It has nowhere to land yet. The document still computes it,
@@ -3442,6 +3463,10 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
                          for a in assignments])
                 computed = runs[0]
                 settled = all(r == computed for r in runs[1:])
+                if wanted:
+                    # A pure computation exposes only the outputs the binding names, each by its
+                    # own function, so that is all there is to show of it.
+                    shown_outputs[name] = computed
                 if history is not None:
                     # ⚠ Remembered RAW, before the binding maps it. What a
                     # later round feeds back is the document's own value, not
@@ -3485,6 +3510,11 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             verification.results.append(result)
             failed.add(id(owner))
             continue
+        if wanted and not result.shown:
+            # A pure computation has no holder, so what it returned is the outputs the binding
+            # names, and it keeps nothing. Said as an empty `kept`, not left out: "it keeps
+            # nothing" is a fact the reader should be told rather than left to infer.
+            result.shown = {"inputs": dict(values), "returned": dict(shown_outputs), "kept": {}}
         # Computed either way, so what the document keeps moves on as the
         # platform's would; only the claim about this case is withheld.
         stood_in = planted.stand_in(produced, undetermined)

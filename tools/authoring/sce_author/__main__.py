@@ -161,7 +161,7 @@ def cmd_verify(args) -> int:
     pack = _pack(args)
     result = run_verify(pack, pathlib.Path(args.binding),
                         pathlib.Path(args.codegen) if args.codegen else None,
-                        args.backend)
+                        args.backend, tuple(args.explain))
     if not result.ran:
         # The product's own refusal, whole. It names the placeholder and the
         # reason the author wrote beside it, and that reason is the message.
@@ -175,6 +175,15 @@ def cmd_verify(args) -> int:
             print(f"  FAIL  {case.name}")
             for address, want, got in case.failures:
                 print(f"          {address}: expected {want!r}, got {got!r}")
+        if case.shown:
+            # Beside the verdict it explains, and printed for a passing case too: a case somebody
+            # asked to see is shown whether or not it failed.
+            print(f"  SHOW  {case.name}")
+            for part in ("inputs", "returned", "kept"):
+                values = case.shown.get(part) or {}
+                print(f"          {part} ({len(values)}):")
+                for key in sorted(values):
+                    print(f"            {key} = {values[key]!r}")
         if case.unchecked:
             print(f"  ----  {case.name}: no rule of this binding writes "
                   f"{', '.join(case.unchecked)}")
@@ -503,6 +512,10 @@ def main(argv=None) -> int:
                         "emits six; this drives the one it can import, and "
                         "refuses the rest rather than reporting on a program "
                         "nobody started")
+    v.add_argument("--explain", action="append", default=[], metavar="TEXT",
+                   help="also SHOW every case whose name contains TEXT: the inputs the "
+                        "binding handed the document, every value it returned that round, "
+                        "and what it kept. Judging is unchanged. May be repeated")
     v.set_defaults(fn=cmd_verify)
 
     g = with_pack(sub.add_parser(

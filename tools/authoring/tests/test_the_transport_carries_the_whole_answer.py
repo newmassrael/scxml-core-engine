@@ -127,6 +127,58 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
     def test_a_refusal_is_sent_instead_of_counts_rather_than_beside_them(self):
         self.assertFalse(Verification(refusal="the pack has no examples").ran)
 
+    # ------------------------------------------------------------ one case
+
+    def test_every_field_of_a_case_is_placed(self):
+        """The same guard one level down: a field added to `CaseResult` and carried nowhere would
+        reach the command line and not MCP, which is the drift this file exists to prevent.
+        `passed` and `judged` are properties, so they are listed beside the stored fields."""
+        carried = {
+            "name": "name", "failures": "failures", "unchecked": "unchecked",
+            "refusal": "refusal", "undetermined": "undetermined", "unwritten": "unwritten",
+            # Not carried: it is what a position was credited or blamed by (`CaseJudge.attribute`),
+            # which reaches a caller as `assumptions`, not as a per-case list.
+            "compared": None,
+            "shown": "shown",
+        }
+        declared = {f.name for f in dataclasses.fields(CaseResult)}
+        self.assertEqual(declared, set(carried),
+                         "a field of CaseResult is neither carried over MCP nor deliberately "
+                         "left off -- decide which, and say so here")
+
+    def test_what_a_case_showed_travels_with_it(self):
+        case = CaseResult(name="a case", shown={
+            "inputs": {"approaching": True},
+            "returned": {"road_signal": 1, "lowering_due": False},
+            "kept": {"previous_road_signal": 0}})
+        payload = verification_payload(Verification(backend="python", results=[case]))
+        self.assertEqual({"inputs": {"approaching": True},
+                          "returned": {"road_signal": 1, "lowering_due": False},
+                          "kept": {"previous_road_signal": 0}},
+                         payload["cases"][0]["shown"])
+
+    def test_a_case_nobody_asked_about_adds_no_key(self):
+        """So the payload does not grow with the suite: the key is absent, not empty."""
+        payload = verification_payload(Verification(backend="python",
+                                                    results=[CaseResult(name="a case")]))
+        self.assertNotIn("shown", payload["cases"][0])
+
+    def test_a_value_json_cannot_carry_is_sent_as_its_repr_not_as_an_exception(self):
+        """A generated holder can keep objects; one of them must not take the whole answer down."""
+        class Opaque:
+            def __repr__(self):
+                return "<opaque thing>"
+
+        case = CaseResult(name="a case", shown={"inputs": {}, "returned": {"x": Opaque()},
+                                                 "kept": {"y": [Opaque(), 3], "z": {"k": Opaque()}}})
+        payload = verification_payload(Verification(backend="python", results=[case]))
+        import json
+        json.dumps(payload)      # must not raise
+        shown = payload["cases"][0]["shown"]
+        self.assertEqual("<opaque thing>", shown["returned"]["x"])
+        self.assertEqual(["<opaque thing>", 3], shown["kept"]["y"])
+        self.assertEqual({"k": "<opaque thing>"}, shown["kept"]["z"])
+
 
 if __name__ == "__main__":
     unittest.main()
