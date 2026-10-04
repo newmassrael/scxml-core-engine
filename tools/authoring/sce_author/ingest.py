@@ -156,6 +156,67 @@ def _clauses_carried_by_a_picture(body) -> tuple[list[str], int, int, int]:
 
 _XL = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _related(archive: zipfile.ZipFile, part: str) -> dict[str, tuple[str, str]]:
+    """What a part of an office package points at: relationship id -> (type, path).
+
+    The path is the part's name inside the zip, resolved from where the
+    relationship was declared. A link that leaves the package, or a package
+    that declares none, answers nothing rather than raising: a part whose
+    relationships cannot be read is a part whose neighbours are unknown, and
+    the callers say so where it matters.
+    """
+    folder, name = posixpath.split(part)
+    declared = posixpath.join(folder, "_rels", name + ".rels")
+    try:
+        root = ET.parse(io.BytesIO(archive.read(declared))).getroot()
+    except (KeyError, ET.ParseError):
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for rel in root.iter(f"{_PKG}Relationship"):
+        if rel.get("TargetMode") == "External" or not rel.get("Id"):
+            continue
+        target = rel.get("Target") or ""
+        resolved = (target.lstrip("/") if target.startswith("/")
+                    else posixpath.normpath(posixpath.join(folder, target)))
+        out[rel.get("Id")] = ((rel.get("Type") or "").rsplit("/", 1)[-1], resolved)
+    return out
+
+
+def _sheets_in_order(book: zipfile.ZipFile, inner: set[str]) -> list[tuple[str, str, bool]]:
+    """The sheets of a workbook as (name, part, hidden), in the order the workbook lists them.
+
+    ⚠ A workbook's sheets are told apart by their NAMES and ordered by the
+    workbook, not by the file names they happen to be stored under. Sorting the
+    files puts `sheet10` before `sheet2` and drops every name, so a reader of
+    nine concatenated grids could not say which table it was reading -- and
+    "which sheet applies to this product" is a question for a person, who can
+    only be asked about a sheet by its name.
+
+    A sheet the workbook does not list, or a workbook whose list cannot be
+    read, falls back to the stored file names in file-name order, which is
+    what was always read.
+    """
+    stored = sorted(n for n in inner if n.startswith("xl/worksheets/sheet"))
+    listed: list[tuple[str, str, bool]] = []
+    if "xl/workbook.xml" in inner:
+        try:
+            root = ET.parse(io.BytesIO(book.read("xl/workbook.xml"))).getroot()
+        except ET.ParseError:
+            root = None
+        if root is not None:
+            related = _related(book, "xl/workbook.xml")
+            for sheet in root.iter(f"{_XL}sheet"):
+                part = related.get(sheet.get(f"{_R}id") or "", ("", ""))[1]
+                if part in inner:
+                    hidden = sheet.get("state") in ("hidden", "veryHidden")
+                    listed.append((sheet.get("name") or posixpath.basename(part), part, hidden))
+    named = {part for _, part, _ in listed}
+    listed += [(posixpath.basename(part), part, False) for part in stored if part not in named]
+    return listed
 
 
 def _column(reference: str) -> int:
@@ -188,9 +249,9 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             shared = ["".join(t.text or "" for t in si.iter(f"{_XL}t"))
                       for si in root.iter(f"{_XL}si")]
         lines: list[str] = []
-        sheets = sorted(n for n in inner if n.startswith("xl/worksheets/sheet"))
-        for sheet in sheets:
+        for name, sheet, hidden in _sheets_in_order(book, inner):
             root = ET.parse(io.BytesIO(book.read(sheet))).getroot()
+            rows: list[str] = []
             # ⚠ A merged cell holds its value in the top-left of the range and
             # leaves the rest empty, so the columns a reader sees are not the
             # columns a person saw. Counted rather than un-merged: guessing
@@ -199,7 +260,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             merges = len(list(root.iter(f"{_XL}mergeCell")))
             if merges:
                 notes.append(f"{merges} merged cell range(s) in "
-                             f"{posixpath.basename(sheet)}"
+                             f"sheet \"{name}\""
                              " were left as the file stores them -- the value"
                              " sits in the first cell and the rest are empty")
             for row in root.iter(f"{_XL}row"):
@@ -220,8 +281,14 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                         cells[_column(cell.get("r") or "")] = text.strip()
                 if cells:
                     width = max(cells)
-                    lines.append("| " + " | ".join(cells.get(i + 1, "")
-                                                   for i in range(width)) + " |")
+                    rows.append("| " + " | ".join(cells.get(i + 1, "")
+                                                  for i in range(width)) + " |")
+            if rows:
+                # A hidden sheet is still the author's sheet, and carried; it is
+                # said to be hidden because "the sheet nobody sees on screen"
+                # is the one a person is likelier to have meant to leave out.
+                lines.append(f"--- sheet: {name}" + (" (hidden)" if hidden else ""))
+                lines.extend(rows)
         return lines, notes
     except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
         return [], [f"an enclosed workbook could not be opened ({exc})"]

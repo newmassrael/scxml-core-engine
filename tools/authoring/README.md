@@ -1412,6 +1412,10 @@ column its reference names; a sparse row omits its empty cells, and reading
 positionally turns "condition A gives X" into "condition A gives Y" with no
 sign that it happened. A merged range is **counted and left as stored** --
 inventing which rows it covered would manufacture rules nobody wrote.
+Each sheet is headed `--- sheet: <name>` and comes in the order the workbook
+lists them (not the order of the file names it is stored under), a hidden one is
+carried and said to be hidden: which sheet applies to a product is a question for
+a person, and a sheet can only be asked about by its name.
 
 **A picture is not read, and the report says where the unread ones sit.** This
 core makes no model calls, so it cannot say what an image shows. But the count
