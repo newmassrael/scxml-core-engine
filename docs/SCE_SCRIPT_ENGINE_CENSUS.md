@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 266
+engine-documents 267
 native-prefix-documents 2
 datamodel-variable-init 466
 transition-guard 244
 assign-action 404
-child-invoke-needs-script-engine 55
+child-invoke-needs-script-engine 56
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 88
@@ -367,6 +367,14 @@ never spelled correctly.
   `transition-guard` by two (242 to 244) and `send-dynamic-attr` by two (67 to
   69). It landed without this entry, so `main` read red until this one; the
   block was re-derived from this test's output, not merged.
+  ⚠ **2026-10-04, deliberately:**
+  `integration_resources/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under.scxml`
+  (one engine document, and it has to be one: the child's guard reads
+  `_event.name`, the name an event arrived under, which no `sce-static` machine
+  has — the stem exists to hold that name on seven channels) raised
+  `engine-documents` and `child-invoke-needs-script-engine` by one each (266 to
+  267 and 55 to 56). It landed without this entry, so `main` read red until
+  this one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
