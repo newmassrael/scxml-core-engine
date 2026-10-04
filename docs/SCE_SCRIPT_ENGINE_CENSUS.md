@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 267
+engine-documents 269
 native-prefix-documents 2
 datamodel-variable-init 466
-transition-guard 244
+transition-guard 250
 assign-action 404
-child-invoke-needs-script-engine 56
+child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 88
+send-dynamic-attr 94
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -375,6 +375,20 @@ never spelled correctly.
   `engine-documents` and `child-invoke-needs-script-engine` by one each (266 to
   267 and 55 to 56). It landed without this entry, so `main` read red until
   this one.
+  ⚠ **2026-10-04, deliberately, again:** two documents of the arrival-name
+  work, each of which has to be an engine document because its point is a name
+  `sce-static` cannot hold. `backends/c/tests/integration_resources/autoforward_keeps_the_arrival_name/`
+  (an autoforwarding inline child whose two guards read `_event.name`; the
+  child is split out and not tracked, but needs an engine) raised
+  `engine-documents` and `child-invoke-needs-script-engine` by one each (267
+  to 268 and 56 to 57).
+  `integration_resources/a_computed_event_name_is_matched_like_any_other/`
+  (six `<send eventexpr>`, over the external and the internal queue, now and
+  after a delay, and the six guards that take each only when `_event.name` is
+  the whole name sent) raised `engine-documents` by one (268 to 269),
+  `transition-guard` by six (244 to 250) and `send-dynamic-attr` by six (88 to
+  94). The block was re-derived from this test's output, not merged; the two
+  floors are a sweep-shrink guard, not a ceiling, and stay where they were.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

@@ -769,8 +769,8 @@ fn positive_enum_literal_at_receive_side_boundary_accepts() {
     let staged = stage_fixtures(
         dir.path(),
         &[
-            "result.scxml",
-            "schema_job_completed_with_enum.scxml",
+            "result_open.scxml",
+            "schema_job_completed_with_open_enum.scxml",
             "positive_statechart_enum_literal_within_width.scxml",
         ],
     );
@@ -792,8 +792,8 @@ fn positive_enum_literal_at_send_side_boundary_accepts() {
     let staged = stage_fixtures(
         dir.path(),
         &[
-            "result.scxml",
-            "schema_job_completed_with_enum.scxml",
+            "result_open.scxml",
+            "schema_job_completed_with_open_enum.scxml",
             "positive_statechart_send_enum_literal_within_width.scxml",
         ],
     );
