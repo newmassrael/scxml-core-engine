@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
+// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_wire_enum.scxml:19 :: _machine
+// SCE-MAP: static_wire_enum.scxml:20 :: _machine
 
 package com.sce.integration.static_wire_enum
 
@@ -401,38 +401,38 @@ class StaticWireEnumStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
+    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
     override fun onEntry(state: StaticWireEnumState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticWireEnumState.Viewing -> {
-                // SCE-MAP: static_wire_enum.scxml:32 :: viewing :: _state_body
+                // SCE-MAP: static_wire_enum.scxml:33 :: viewing :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
+    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
     override fun onExit(state: StaticWireEnumState) {
         when (state) {
             is StaticWireEnumState.Viewing -> {
-                // SCE-MAP: static_wire_enum.scxml:32 :: viewing :: _state_body
+                // SCE-MAP: static_wire_enum.scxml:33 :: viewing :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
+    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
     override fun executeTransitionContent(source: StaticWireEnumState, transitionIndex: Int) {
         when (source) {
         is StaticWireEnumState.Viewing -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_wire_enum.scxml:33 :: viewing :: _transition_0
+                // SCE-MAP: static_wire_enum.scxml:34 :: viewing :: _transition_0
 
             layout = StaticWireEnumViewModeEnum.AGENDA_LIST
             }
             1 -> {
-                // SCE-MAP: static_wire_enum.scxml:36 :: viewing :: _transition_1
+                // SCE-MAP: static_wire_enum.scxml:37 :: viewing :: _transition_1
 
 
             if (run send@{
@@ -452,7 +452,7 @@ class StaticWireEnumStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: static_wire_enum.scxml:42 :: viewing :: _transition_2
+                // SCE-MAP: static_wire_enum.scxml:43 :: viewing :: _transition_2
 
 
             if (run send@{
@@ -472,7 +472,7 @@ class StaticWireEnumStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             3 -> {
-                // SCE-MAP: static_wire_enum.scxml:48 :: viewing :: _transition_3
+                // SCE-MAP: static_wire_enum.scxml:49 :: viewing :: _transition_3
 
 
             if (run send@{
@@ -492,7 +492,7 @@ class StaticWireEnumStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             4 -> {
-                // SCE-MAP: static_wire_enum.scxml:54 :: viewing :: _transition_4
+                // SCE-MAP: static_wire_enum.scxml:55 :: viewing :: _transition_4
                 if (pendingViewShownPayload == null) {
                     return
                 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
+// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_send_params.scxml:18 :: _machine"]
-// SCE-MAP: static_send_params.scxml:18 :: _machine
+#![doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
+// SCE-MAP: static_send_params.scxml:23 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -322,7 +322,7 @@ pub trait StaticSendParamsPersist: Sized {
 impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
     type Policy = StaticSendParamsPolicy;
 
-    const SHAPE: &'static str = "665b75402cd2fe9606265886540f864b992f01be2f8146d33be2d03a0a9e3168";
+    const SHAPE: &'static str = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -367,6 +367,10 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
                 (
                     "partialTotal".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.partial_total),
+                ),
+                (
+                    "partialPart".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.partial_part),
                 ),
                 (
                     "refusals".to_string(),
@@ -414,6 +418,10 @@ impl StaticSendParamsPersist for Engine<StaticSendParamsPolicy> {
             saved.variable("partialTotal")?,
             "partialTotal",
         )?;
+        policy.partial_part = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("partialPart")?,
+            "partialPart",
+        )?;
         policy.refusals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
             "refusals",
@@ -434,6 +442,7 @@ pub struct StaticSendParamsInvokeParams {
     pub ok: Option<bool>,
     pub tag: Option<String>,
     pub partial_total: Option<u32>,
+    pub partial_part: Option<u8>,
     pub refusals: Option<u32>,
 }
 
@@ -460,6 +469,8 @@ pub struct StaticSendParamsPolicy {
     tag: String,
     /// W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`).
     partial_total: u32,
+    /// W3C SCXML 5.2: the `partialPart` datamodel variable.
+    partial_part: u8,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     refusals: u32,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
@@ -493,6 +504,7 @@ impl StaticSendParamsPolicy {
         let ok: bool = false;
         let tag: String = "".to_string();
         let partial_total: u32 = 0;
+        let partial_part: u8 = 0;
         let refusals: u32 = 0;
         Self {
             pending_payload: StaticSendParamsPayload::default(),
@@ -503,6 +515,7 @@ impl StaticSendParamsPolicy {
             ok,
             tag,
             partial_total,
+            partial_part,
             refusals,
             session_id: None,
             parent_external_queue: None,
@@ -534,6 +547,9 @@ impl StaticSendParamsPolicy {
         }
         if let Some(value) = params.partial_total {
             self.partial_total = value;
+        }
+        if let Some(value) = params.partial_part {
+            self.partial_part = value;
         }
         if let Some(value) = params.refusals {
             self.refusals = value;
@@ -805,8 +821,8 @@ impl StatePolicy for StaticSendParamsPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_send_params.scxml:18 :: _machine"]
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -822,8 +838,8 @@ impl StatePolicy for StaticSendParamsPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_send_params.scxml:18 :: _machine"]
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -839,8 +855,8 @@ impl StatePolicy for StaticSendParamsPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_send_params.scxml:18 :: _machine"]
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -912,8 +928,8 @@ impl StatePolicy for StaticSendParamsPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_send_params.scxml:18 :: _machine"]
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    #[doc = "SCE-MAP: static_send_params.scxml:23 :: _machine"]
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -924,7 +940,7 @@ impl StatePolicy for StaticSendParamsPolicy {
             StaticSendParamsState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_send_params.scxml:33 :: idle :: _transition_0
+                        // SCE-MAP: static_send_params.scxml:39 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1006,7 +1022,7 @@ impl StatePolicy for StaticSendParamsPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_send_params.scxml:40 :: idle :: _transition_1
+                        // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1093,7 +1109,7 @@ impl StatePolicy for StaticSendParamsPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_2
+                        // SCE-MAP: static_send_params.scxml:52 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             StaticSendParamsPayload::Echo(ev) => ev.clone(),
@@ -1124,7 +1140,7 @@ impl StatePolicy for StaticSendParamsPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_send_params.scxml:51 :: idle :: _transition_3
+                        // SCE-MAP: static_send_params.scxml:57 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             StaticSendParamsPayload::Partial(ev) => ev.clone(),
@@ -1132,12 +1148,15 @@ impl StatePolicy for StaticSendParamsPolicy {
                         };
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
+                            // W3C SCXML 5.3: <assign location="partialPart">
+                            self.partial_part = ev.part;
+
                             // W3C SCXML 5.3: <assign location="partialTotal">
                             self.partial_total = ev.total;
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_send_params.scxml:54 :: idle :: _transition_4
+                        // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

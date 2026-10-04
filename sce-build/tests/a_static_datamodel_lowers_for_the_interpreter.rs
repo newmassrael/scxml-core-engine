@@ -101,14 +101,24 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         }
     }
     // Floor: a scan that found nothing to lower would pass. What is lowered
-    // today — scalars, checked integers, the typed payload, lists, records and
-    // calls of scalar algorithms — is at least these nine machines, and the
-    // floor rises as the lowering grows.
+    // today — scalars, checked integers, the typed payload, lists, records,
+    // calls of scalar algorithms and a `<send>`'s `<param>`s — is at least these
+    // twenty-five machines, and the floor rises as the lowering grows.
     assert!(
-        lowered.len() >= 9,
+        lowered.len() >= 25,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
+    // The pairs of a `<send>` are expressions the walk lowers, in the attribute
+    // each is written in, and the Interpreter's own `<send>` reads them once when
+    // it runs: so the two fixtures that send themselves their `<param>`s lower,
+    // an enum value among them as the name its enum declares.
+    for name in ["static_send_params", "static_wire_enum"] {
+        assert!(
+            lowered.iter().any(|lowered_name| lowered_name == name),
+            "{name} is lowered for the Interpreter: lowered {lowered:?}"
+        );
+    }
     // A host operation is performed by the host installed on the machine
     // (`INativeActionHost`), so `static_host_call` lowers: its arguments are
     // expressions, lowered as any are.

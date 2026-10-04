@@ -2869,9 +2869,10 @@ lowering yet and is refused with the values that have no spelling. A value read
 from the triggering event's payload is refused too, an enum field of it
 included: reading it needs the payload channel's guard around the whole
 element, which a `<param>` does not yet get. `scenarios/static_wire_enum.json`
-holds a `<send>` to it on the six generated backends and `static_donedata` a
-`<donedata>`; the Interpreter has no lowering for a `<send>` that carries a
-`<param>` or for a `<donedata>`, so it replays neither.
+holds a `<send>` to it on the six generated backends and the Interpreter, whose
+lowering leaves the name its enum declares as the variant lowered it, and
+`static_donedata` a `<donedata>` on the six generated backends: the Interpreter
+has no lowering for a `<donedata>` yet, so it does not replay that one.
 
 A value that cannot be computed — a checked integer operation that overflows —
 is the evaluation that failed (W3C SCXML 5.7.1): `error.execution` is raised
@@ -3980,12 +3981,17 @@ machine reads through the event's schema. So a read of a schema field is a call
 of the library's `field`, at the type the schema declares, and it refuses what
 the generated machines' lift of a payload refuses — no data, a bare value, a
 missing field, a value of another type, a value beyond the field's width — by
-throwing, so the expression that read it fails as an overflow does. Two
-differences stand, both for a malformed delivery only: a generated machine
+throwing, so the expression that read it fails as an overflow does. Three
+differences stand, all for a malformed delivery only: a generated machine
 lifts the payload once when the event is dequeued and raises `error.execution`
 once, where the Interpreter raises one for each expression that reads a field;
-and JSON reaches the Interpreter already parsed, so `5.0` and `5` are one
-value there, where the generated lift refuses the first as not a whole number.
+a generated machine refuses a delivery that lacks a field of the schema that no
+expression reads, where the Interpreter, which reads a field only when an
+expression does, runs the transition; and JSON reaches the Interpreter already
+parsed, so `5.0` and `5` are one value there, where the generated lift refuses
+the first as not a whole number. A scenario that a malformed delivery is part
+of reads every field it lacks, so that the engines answer it alike
+(`static_send_params`).
 
 A list is an array and a record a plain object, and neither is changed in
 place: `<sce:append>` becomes the `<assign>` of the list written again with the

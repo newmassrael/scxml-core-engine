@@ -12,9 +12,10 @@
   variant, and the wire must carry the name the document wrote. What a
   <donedata> carries of an enum value is held by `static_donedata`.
 
-  The Interpreter has no lowering for a <send> that carries a <param>, nor for
-  a final's <donedata>, so it replays neither this machine nor those; the six
-  generated backends do.
+  The Interpreter replays this machine as well: an enum value lowers to the
+  name its enum declares, which is already what a variant is there. It has no
+  lowering for a final's <donedata> yet, so `static_donedata` is replayed by
+  the six generated backends only.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="viewing" datamodel="sce-static" name="static_wire_enum">

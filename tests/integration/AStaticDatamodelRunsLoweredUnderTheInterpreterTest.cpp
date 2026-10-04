@@ -26,6 +26,10 @@
 // constructs have no lowering yet is refused with a typed diagnostic naming
 // the construct, and starts being replayed the day the lowering covers it.
 
+#include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
+#include "events/EventTargetFactoryImpl.h"
+#include "runtime/EventRaiserImpl.h"
 #include "runtime/INativeActionHost.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -150,8 +154,26 @@ protected:
     /// once lowered.
     void replay(const std::string &document, const nlohmann::json &scenario) {
         const auto machine = std::make_shared<StateMachine>(*engine_);
+        // A `<send>` is handed to a dispatcher: without one the Interpreter raises
+        // error.execution for it, as for a send with nowhere to go. The events a
+        // machine sends itself are queued, and run once the step's event has.
+        auto scheduler = std::make_shared<EventSchedulerImpl>(
+            [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
+                try {
+                    return target->send(event).get().isSuccess;
+                } catch (...) {
+                    return false;
+                }
+            });
+        auto eventRaiser = std::make_shared<EventRaiserImpl>();
+        eventRaiser->setScheduler(scheduler);
+        eventRaiser->setImmediateMode(false);
+        machine->setEventRaiser(eventRaiser);
+        machine->setEventDispatcher(
+            std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
         ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
+        eventRaiser->processQueuedEvents();
 
         const auto &steps = scenario.at("steps");
         ASSERT_FALSE(steps.empty()) << "a scenario with no steps judges nothing";
@@ -162,6 +184,7 @@ protected:
             if (step.contains("event")) {
                 const std::string data = step.contains("data") ? step.at("data").dump() : std::string{};
                 machine->processEvent(step.at("event").get<std::string>(), data);
+                eventRaiser->processQueuedEvents();
             }
             const auto &expect = step.at("expect");
             // A machine that ended in a top-level <final> has no saved state

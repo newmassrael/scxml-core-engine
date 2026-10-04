@@ -337,10 +337,13 @@ if(NOT EMSCRIPTEN)
         integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp
     )
 
+    # `sce/src` for the event dispatcher a machine that `<send>`s is given: the
+    # lowered documents the replay runs include ones that send to themselves.
     target_include_directories(static_datamodel_lowered_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/sce/src
             ${CMAKE_SOURCE_DIR}/tests
     )
 

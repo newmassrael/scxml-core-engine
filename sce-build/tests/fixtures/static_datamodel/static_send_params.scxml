@@ -9,11 +9,16 @@
   A param whose value does not fit its type (`small + small` overflows a
   uint8) is not carried: error.execution is raised, that pair is left out and
   the message still goes with the others (§scxml-5.7.1, §scxml-6.2). The
-  receiver reads the event through its schema, finds a field missing, and that
-  is an error.execution of its own and no transition: so `bad` ends with two
+  receiver reads the missing field first, finds it missing, and that is an
+  error.execution of its own that ends its block: so `bad` ends with two
   refusals and `partialTotal` still 0. A pair carried as a zero would have been
   one refusal and `partialTotal` 6; a message not sent, one refusal and
   `partialTotal` 0.
+
+  The receiver reads `part` itself because a delivery that lacks a field its
+  content never reads is not one every engine answers alike: a generated
+  machine lifts the whole payload when the event is dequeued and refuses it,
+  where the Interpreter fails only an expression that reads the field.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_send_params">
@@ -27,6 +32,7 @@
     <data id="ok" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="tag" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
     <data id="partialTotal" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="partialPart" sce:type="uint8" expr="0"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -49,6 +55,7 @@
       <assign location="tag" expr="_event.data.tag"/>
     </transition>
     <transition event="partial" type="internal">
+      <assign location="partialPart" expr="_event.data.part"/>
       <assign location="partialTotal" expr="_event.data.total"/>
     </transition>
     <transition event="error.execution" type="internal">

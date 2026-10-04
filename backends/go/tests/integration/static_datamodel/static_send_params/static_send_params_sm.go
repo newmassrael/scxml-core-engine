@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
+// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_send_params.scxml:18 :: _machine
+// SCE-MAP: static_send_params.scxml:23 :: _machine
 
 package static_send_params
 
@@ -266,6 +266,8 @@ type StaticSendParamsPolicy struct {
 	vTag string
 	// W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`).
 	vPartialTotal uint32
+	// W3C SCXML 5.2: the `partialPart` datamodel variable.
+	vPartialPart uint8
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
 	vRefusals uint32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
@@ -287,6 +289,7 @@ func NewStaticSendParamsPolicy() StaticSendParamsPolicy {
 		vOk: false,
 		vTag: "",
 		vPartialTotal: 0,
+		vPartialPart: 0,
 		vRefusals: 0,
 	}
 }
@@ -332,6 +335,7 @@ type StaticSendParamsInvokeParams struct {
 	VOk *bool
 	VTag *string
 	VPartialTotal *uint32
+	VPartialPart *uint8
 	VRefusals *uint32
 }
 
@@ -358,6 +362,9 @@ func (p *StaticSendParamsPolicy) AcceptParams(params StaticSendParamsInvokeParam
 	}
 	if params.VPartialTotal != nil {
 		p.vPartialTotal = *params.VPartialTotal
+	}
+	if params.VPartialPart != nil {
+		p.vPartialPart = *params.VPartialPart
 	}
 	if params.VRefusals != nil {
 		p.vRefusals = *params.VRefusals
@@ -647,7 +654,7 @@ func (p *StaticSendParamsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) ExecuteEntryActions(state StaticSendParamsState, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -660,7 +667,7 @@ func (p *StaticSendParamsPolicy) ExecuteEntryActions(state StaticSendParamsState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -668,7 +675,7 @@ func (p *StaticSendParamsPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) ExecuteExitActions(state StaticSendParamsState, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], configurationBeforeExit []StaticSendParamsState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -685,7 +692,7 @@ func (p *StaticSendParamsPolicy) ExecuteExitActions(state StaticSendParamsState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) BindCurrentEvent(event StaticSendParamsEvent, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -695,7 +702,7 @@ func (p *StaticSendParamsPolicy) BindCurrentEvent(event StaticSendParamsEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) FirstEnabledTransition(state StaticSendParamsState, event StaticSendParamsEvent, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent]) (sce.EnabledTransition[StaticSendParamsState, sce.HistoryID], bool) {
 	switch state {
 	case StaticSendParamsStateIdle:
@@ -755,13 +762,13 @@ func (p *StaticSendParamsPolicy) FirstEnabledTransition(state StaticSendParamsSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_send_params.scxml:18
+//line static_send_params.scxml:23
 func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParamsState, transitionIndex int, engine *sce.Engine[StaticSendParamsState, StaticSendParamsEvent]) {
 	switch source {
 	case StaticSendParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_params.scxml:33
+			//line static_send_params.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -814,7 +821,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 	}
 			}()
 		case 1:
-			//line static_send_params.scxml:40
+			//line static_send_params.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -869,7 +876,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 	}
 			}()
 		case 2:
-			//line static_send_params.scxml:46
+			//line static_send_params.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendParamsPayloadTagEcho {
@@ -891,7 +898,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 
 			}()
 		case 3:
-			//line static_send_params.scxml:51
+			//line static_send_params.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendParamsPayloadTagPartial {
@@ -899,11 +906,15 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 				}
 
 
+	p.vPartialPart = p.pendingPartialPayload.part
+
+
+
 	p.vPartialTotal = p.pendingPartialPayload.total
 
 			}()
 		case 4:
-			//line static_send_params.scxml:54
+			//line static_send_params.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

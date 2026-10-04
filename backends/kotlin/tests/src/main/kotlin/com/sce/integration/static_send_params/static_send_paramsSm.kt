@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8dd802c10f8676acb4937bc300831eb5cad0099c08a419ebe1fd277996ce3f2c
+// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_send_params.scxml:18 :: _machine
+// SCE-MAP: static_send_params.scxml:23 :: _machine
 
 package com.sce.integration.static_send_params
 
@@ -70,6 +70,8 @@ class StaticSendParamsStateMachine(
     /** W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`). */
     var partialTotal: UInt = 0.toUInt()
         private set
+    /** W3C SCXML 5.2: the `partialPart` datamodel variable, the machine's own. */
+    private var partialPart: UByte = 0.toUByte()
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
     var refusals: UInt = 0.toUInt()
         private set
@@ -87,6 +89,7 @@ class StaticSendParamsStateMachine(
         var ok: Boolean? = null
         var tag: String? = null
         var partialTotal: UInt? = null
+        var partialPart: UByte? = null
         var refusals: UInt? = null
     }
 
@@ -99,6 +102,7 @@ class StaticSendParamsStateMachine(
         params.ok?.let { ok = it }
         params.tag?.let { tag = it }
         params.partialTotal?.let { partialTotal = it }
+        params.partialPart?.let { partialPart = it }
         params.refusals?.let { refusals = it }
     }
 
@@ -156,7 +160,7 @@ class StaticSendParamsStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "665b75402cd2fe9606265886540f864b992f01be2f8146d33be2d03a0a9e3168"
+    val savedShape: String = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -179,6 +183,7 @@ class StaticSendParamsStateMachine(
             "ok" to SavedValues.of(ok),
             "tag" to SavedValues.of(tag),
             "partialTotal" to SavedValues.of(partialTotal),
+            "partialPart" to SavedValues.of(partialPart),
             "refusals" to SavedValues.of(refusals),
         ),
         wallNowMs,
@@ -212,7 +217,8 @@ class StaticSendParamsStateMachine(
         val saved5 = SavedValues.bool(saved.variable("ok"), "ok")
         val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
         val saved7 = SavedValues.uint32(saved.variable("partialTotal"), "partialTotal")
-        val saved8 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        val saved8 = SavedValues.uint8(saved.variable("partialPart"), "partialPart")
+        val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         count = saved1
         small = saved2
         label = saved3
@@ -220,7 +226,8 @@ class StaticSendParamsStateMachine(
         ok = saved5
         tag = saved6
         partialTotal = saved7
-        refusals = saved8
+        partialPart = saved8
+        refusals = saved9
         enterSaved(saved, wallNowMs)
     }
 
@@ -428,33 +435,33 @@ class StaticSendParamsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun onEntry(state: StaticSendParamsState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticSendParamsState.Idle -> {
-                // SCE-MAP: static_send_params.scxml:32 :: idle :: _state_body
+                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun onExit(state: StaticSendParamsState) {
         when (state) {
             is StaticSendParamsState.Idle -> {
-                // SCE-MAP: static_send_params.scxml:32 :: idle :: _state_body
+                // SCE-MAP: static_send_params.scxml:38 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_send_params.scxml:18 :: _machine
+    // SCE-MAP: static_send_params.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticSendParamsState, transitionIndex: Int) {
         when (source) {
         is StaticSendParamsState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_send_params.scxml:33 :: idle :: _transition_0
+                // SCE-MAP: static_send_params.scxml:39 :: idle :: _transition_0
 
 
             if (run send@{
@@ -482,7 +489,7 @@ class StaticSendParamsStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: static_send_params.scxml:40 :: idle :: _transition_1
+                // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_1
 
 
             if (run send@{
@@ -513,7 +520,7 @@ class StaticSendParamsStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: static_send_params.scxml:46 :: idle :: _transition_2
+                // SCE-MAP: static_send_params.scxml:52 :: idle :: _transition_2
                 if (pendingEchoPayload == null) {
                     return
                 }
@@ -527,15 +534,17 @@ class StaticSendParamsStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: static_send_params.scxml:51 :: idle :: _transition_3
+                // SCE-MAP: static_send_params.scxml:57 :: idle :: _transition_3
                 if (pendingPartialPayload == null) {
                     return
                 }
 
+            partialPart = pendingPartialPayload!!.part
+
             partialTotal = pendingPartialPayload!!.total
             }
             4 -> {
-                // SCE-MAP: static_send_params.scxml:54 :: idle :: _transition_4
+                // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
 
             if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

@@ -1,0 +1,41 @@
+# Mutation cases for "a sce-static document lowers for the Interpreter"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_datamodel_lowers_for_the_interpreter.cases`.
+#
+# The Interpreter replays the scenarios the generated backends replay, on the
+# documents `sce-codegen lower` makes of the fixtures, and what it cannot lower it
+# refuses by name and leaves out of the replay. A refusal that grows back therefore
+# leaves the replay green with a fixture silently missing from it, so the scan this
+# test makes of every fixture holds, by name, the two that send themselves their
+# `<param>`s: `static_send_params` and `static_wire_enum`.
+#
+# Each case below puts one of those refusals back and must make the scan red.
+#
+# ⚠ A mutated tree is built under `-D warnings`: a case keeps every binding it had
+# in use, so that it is a verdict and not an unused-variable error that leaves the
+# tree uncompiled and the result INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_static_datamodel_lowers_for_the_interpreter
+mutation_targets sce-build/src/forge/static_js.rs
+mutation_oracles sce-build/tests/a_static_datamodel_lowers_for_the_interpreter.rs
+
+# A `<send>` that carries a `<param>` is refused again, as it was before the
+# pairs were lowered: both fixtures leave the replay.
+mutation_case "a send's params are refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        \"send\" if !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <content expr>\".to_string())\n        }\n",
+     "        \"send\" if !action.params.is_empty() || !action.contentexpr.is_empty() => {\n            Some(\"a <send> that carries <param> or <content expr>\".to_string())\n        }\n")
+PY
+
+# An enum value has no name to cross as: a `<param>` that holds one is refused by
+# the walk, and the fixture that sends one leaves the replay.
+mutation_case "an enum value has no wire name" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {\n        Some(value.to_string())\n    }\n",
+     "    fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {\n        None\n    }\n")
+PY

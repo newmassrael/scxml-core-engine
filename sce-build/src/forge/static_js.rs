@@ -424,6 +424,11 @@ impl StaticTarget for JsTarget {
     fn wire_value(&self, _ty: InferredType, value: &str) -> String {
         value.to_string()
     }
+    // An enum value is already the name its enum declares: a variant lowers to
+    // that string, and a variable holds it.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
 }
 
 /// The first action of `actions`, or of anything nested in one, that is not
@@ -452,9 +457,12 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // declares the item and the index; only its body's expressions are
         // lowered, typed by what the loop variables are.
         "assign" | "if" | "log" | "raise" | "cancel" | "foreach" => None,
-        "send" if !action.params.is_empty() || !action.contentexpr.is_empty() => {
-            Some("a <send> that carries <param> or <content expr>".to_string())
+        "send" if !action.contentexpr.is_empty() => {
+            Some("a <send> that carries <content expr>".to_string())
         }
+        // The pairs of its `<param>`s are expressions the walk lowers, in the
+        // attribute each is written in, and the Interpreter's own `<send>` reads
+        // them once, when it runs.
         "send" => None,
         "sce_append" | "sce_clear" => None,
         // A host operation: the Interpreter performs it through its host, and
