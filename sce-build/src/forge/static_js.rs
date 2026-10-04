@@ -83,6 +83,7 @@ use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::forge::types::InferredType;
+use crate::model::DoneDataContent;
 use crate::model::{Action, Datamodel, SCXMLModel};
 
 /// The global of the script engine the library is bound to, so every lowered
@@ -248,8 +249,29 @@ impl StaticTarget for JsTarget {
             return Some("<invoke>".to_string());
         }
         for state in model.states.values() {
-            if state.donedata.is_some() {
-                return Some(format!("the <donedata> of state `{}`", state.id));
+            // The pairs of a `<donedata>` are expressions the walk lowers, in
+            // the attribute each is written in, and its inline text is finished
+            // to the string it spells, at the place it is written. A
+            // `<content expr>` is handed to the script engine as text, which the
+            // model refuses beforehand and this refuses again; a `<content>` that
+            // holds an element has no text to finish and is read by the engine as
+            // a document, where the generated backends carry it as a string.
+            if let Some(done) = &state.donedata {
+                match &done.content {
+                    DoneDataContent::Expression(_) => {
+                        return Some(format!(
+                            "the <donedata><content expr> of state `{}`",
+                            state.id
+                        ));
+                    }
+                    DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {
+                        return Some(format!(
+                            "the <donedata> <content> holding an element, of state `{}`",
+                            state.id
+                        ));
+                    }
+                    _ => {}
+                }
             }
             let lists = state
                 .on_entry_blocks

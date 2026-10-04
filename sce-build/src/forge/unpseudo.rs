@@ -3119,6 +3119,7 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
         content: crate::model::DoneDataContent::None,
         content_location: None,
         content_spelling: None,
+        content_text_spelling: None,
         native_content: String::new(),
     };
     for (k, sub) in group(kids) {

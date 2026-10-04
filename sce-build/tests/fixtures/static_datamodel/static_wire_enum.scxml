@@ -13,9 +13,8 @@
   <donedata> carries of an enum value is held by `static_donedata`.
 
   The Interpreter replays this machine as well: an enum value lowers to the
-  name its enum declares, which is already what a variant is there. It has no
-  lowering for a final's <donedata> yet, so `static_donedata` is replayed by
-  the six generated backends only.
+  name its enum declares, which is already what a variant is there. The same
+  holds for what a final's <donedata> carries, which `static_donedata` replays.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="viewing" datamodel="sce-static" name="static_wire_enum">

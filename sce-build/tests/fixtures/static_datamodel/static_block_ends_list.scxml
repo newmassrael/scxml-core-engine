@@ -11,9 +11,8 @@
   `afterAppend`; the third finds the list full, so `afterAppend` stays at two
   and `errors` says why.
 
-  The list has no ecmascript lowering yet, so the Interpreter does not replay
-  this machine's scenario: it is refused by name, and is replayed the day the
-  lowering covers a list.
+  A list lowers to an array and the Interpreter replays this machine's scenario
+  as it does the generated backends'.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="waiting" datamodel="sce-static" name="static_block_ends_list">

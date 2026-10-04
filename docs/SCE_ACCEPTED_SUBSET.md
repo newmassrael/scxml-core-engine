@@ -2871,8 +2871,14 @@ included: reading it needs the payload channel's guard around the whole
 element, which a `<param>` does not yet get. `scenarios/static_wire_enum.json`
 holds a `<send>` to it on the six generated backends and the Interpreter, whose
 lowering leaves the name its enum declares as the variant lowered it, and
-`static_donedata` a `<donedata>` on the six generated backends: the Interpreter
-has no lowering for a `<donedata>` yet, so it does not replay that one.
+`static_donedata` a `<donedata>` the same way. The Interpreter's lowering
+rewrites the pairs of a `<donedata>` where each is written, and finishes an
+inline `<content>` to the string it spells at the place it is written —
+`<content>42</content>` becomes `<content>&quot;42&quot;</content>`, which an
+engine reads as the string `"42"` where it would read the first as a number —
+so the done event carries what the generated backends carry. A `<content>` that
+holds an element is refused by name there, since an engine reads it as a
+document and the generated backends carry it as a string.
 
 A value that cannot be computed — a checked integer operation that overflows —
 is the evaluation that failed (W3C SCXML 5.7.1): `error.execution` is raised

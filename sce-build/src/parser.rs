@@ -4834,6 +4834,7 @@ impl SCXMLParser {
                 let value = inline_data_value(&content_elem);
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
+                    dd.content_text_spelling = AttributeSpelling::of_character_data(&content_elem);
                     dd.content = if datamodel == Datamodel::Null {
                         crate::model::DoneDataContent::Literal(trimmed.to_string())
                     } else {

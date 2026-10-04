@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
+// source-hash: ddf322a2d86adb9f2998ed7efed706d94ed4cd422b0bd733db6c4dec67dfe813
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_wire_enum.scxml:20 :: _machine"]
-// SCE-MAP: static_wire_enum.scxml:20 :: _machine
+#![doc = "SCE-MAP: static_wire_enum.scxml:19 :: _machine"]
+// SCE-MAP: static_wire_enum.scxml:19 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -807,8 +807,8 @@ impl StatePolicy for StaticWireEnumPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_wire_enum.scxml:20 :: _machine"]
-    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
+    #[doc = "SCE-MAP: static_wire_enum.scxml:19 :: _machine"]
+    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -824,8 +824,8 @@ impl StatePolicy for StaticWireEnumPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_wire_enum.scxml:20 :: _machine"]
-    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
+    #[doc = "SCE-MAP: static_wire_enum.scxml:19 :: _machine"]
+    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -841,8 +841,8 @@ impl StatePolicy for StaticWireEnumPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_wire_enum.scxml:20 :: _machine"]
-    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
+    #[doc = "SCE-MAP: static_wire_enum.scxml:19 :: _machine"]
+    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -914,8 +914,8 @@ impl StatePolicy for StaticWireEnumPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_wire_enum.scxml:20 :: _machine"]
-    // SCE-MAP: static_wire_enum.scxml:20 :: _machine
+    #[doc = "SCE-MAP: static_wire_enum.scxml:19 :: _machine"]
+    // SCE-MAP: static_wire_enum.scxml:19 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -926,7 +926,7 @@ impl StatePolicy for StaticWireEnumPolicy {
             StaticWireEnumState::Viewing => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_wire_enum.scxml:34 :: viewing :: _transition_0
+                        // SCE-MAP: static_wire_enum.scxml:33 :: viewing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -935,7 +935,7 @@ impl StatePolicy for StaticWireEnumPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_wire_enum.scxml:37 :: viewing :: _transition_1
+                        // SCE-MAP: static_wire_enum.scxml:36 :: viewing :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -995,7 +995,7 @@ impl StatePolicy for StaticWireEnumPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_wire_enum.scxml:43 :: viewing :: _transition_2
+                        // SCE-MAP: static_wire_enum.scxml:42 :: viewing :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1056,7 +1056,7 @@ impl StatePolicy for StaticWireEnumPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_wire_enum.scxml:49 :: viewing :: _transition_3
+                        // SCE-MAP: static_wire_enum.scxml:48 :: viewing :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1122,7 +1122,7 @@ impl StatePolicy for StaticWireEnumPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_wire_enum.scxml:55 :: viewing :: _transition_4
+                        // SCE-MAP: static_wire_enum.scxml:54 :: viewing :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             StaticWireEnumPayload::ViewShown(ev) => ev.clone(),

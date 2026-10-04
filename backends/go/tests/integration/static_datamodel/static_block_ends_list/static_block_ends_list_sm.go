@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
+// source-hash: ddf322a2d86adb9f2998ed7efed706d94ed4cd422b0bd733db6c4dec67dfe813
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_block_ends_list.scxml:18 :: _machine
+// SCE-MAP: static_block_ends_list.scxml:17 :: _machine
 
 package static_block_ends_list
 
@@ -443,7 +443,7 @@ func (p *StaticBlockEndsListPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) ExecuteEntryActions(state StaticBlockEndsListState, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -456,7 +456,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteEntryActions(state StaticBlockEndsLis
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -464,7 +464,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteHistoryDefaultContent(history sce.His
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) ExecuteExitActions(state StaticBlockEndsListState, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent], configurationBeforeExit []StaticBlockEndsListState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -481,7 +481,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteExitActions(state StaticBlockEndsList
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) BindCurrentEvent(event StaticBlockEndsListEvent, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -491,7 +491,7 @@ func (p *StaticBlockEndsListPolicy) BindCurrentEvent(event StaticBlockEndsListEv
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) FirstEnabledTransition(state StaticBlockEndsListState, event StaticBlockEndsListEvent, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent]) (sce.EnabledTransition[StaticBlockEndsListState, sce.HistoryID], bool) {
 	switch state {
 	case StaticBlockEndsListStateWaiting:
@@ -521,13 +521,13 @@ func (p *StaticBlockEndsListPolicy) FirstEnabledTransition(state StaticBlockEnds
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_block_ends_list.scxml:18
+//line static_block_ends_list.scxml:17
 func (p *StaticBlockEndsListPolicy) ExecuteTransitionContent(source StaticBlockEndsListState, transitionIndex int, engine *sce.Engine[StaticBlockEndsListState, StaticBlockEndsListEvent]) {
 	switch source {
 	case StaticBlockEndsListStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_block_ends_list.scxml:26
+			//line static_block_ends_list.scxml:25
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -545,7 +545,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteTransitionContent(source StaticBlockE
 
 			}()
 		case 1:
-			//line static_block_ends_list.scxml:30
+			//line static_block_ends_list.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

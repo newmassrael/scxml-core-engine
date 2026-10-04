@@ -1731,6 +1731,15 @@ pub fn lower(
             // machine has no engine to evaluate the text with (§scxml-5.5).
             if let crate::model::DoneDataContent::InlineText(text) = &done.content {
                 done.native_content = crate::filters::static_content_wire(text);
+                // Where the text is written, for a backend that runs the
+                // document's own `<content>`: the same finished text, which an
+                // engine then reads as the string it spells and not as the value
+                // it could be read as.
+                rewrites.note(
+                    text,
+                    done.content_text_spelling.as_ref(),
+                    &done.native_content,
+                );
             }
         }
         for transition in &mut state.transitions {

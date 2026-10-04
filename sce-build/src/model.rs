@@ -1198,6 +1198,13 @@ pub struct DoneData {
     /// [`Transition::cond_spelling`] gives. `None` without one.
     #[serde(skip)]
     pub content_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// The character data of an inline `<content>` as written and where, for
+    /// the reason [`Transition::cond_spelling`] gives: the place a lowering that
+    /// finishes the text to another spelling rewrites it at. `None` without
+    /// inline text, and for a `<content>` holding an element, whose text around
+    /// the element is not followed.
+    #[serde(skip)]
+    pub content_text_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Codegen-internal: the done event's data when a `sce-static` document's
     /// `<donedata>` carries inline `<content>`, as the wire text
     /// ([`crate::filters::static_content_wire`]) — the JSON string the text

@@ -9,9 +9,12 @@
 # refuses by name and leaves out of the replay. A refusal that grows back therefore
 # leaves the replay green with a fixture silently missing from it, so the scan this
 # test makes of every fixture holds, by name, the two that send themselves their
-# `<param>`s: `static_send_params` and `static_wire_enum`.
+# `<param>`s (`static_send_params`, `static_wire_enum`) and the two whose final
+# hands its done event its `<donedata>` (`static_donedata`,
+# `static_donedata_content`), and two tests hold what a `<donedata>` is lowered to.
 #
-# Each case below puts one of those refusals back and must make the scan red.
+# Each case below puts one of those refusals back, or takes one of those
+# rewrites away, and must make a test red.
 #
 # ⚠ A mutated tree is built under `-D warnings`: a case keeps every binding it had
 # in use, so that it is a verdict and not an unused-variable error that leaves the
@@ -21,7 +24,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --test a_static_datamodel_lowers_for_the_interpreter
-mutation_targets sce-build/src/forge/static_js.rs
+mutation_targets sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs
 mutation_oracles sce-build/tests/a_static_datamodel_lowers_for_the_interpreter.rs
 
 # A `<send>` that carries a `<param>` is refused again, as it was before the
@@ -38,4 +41,28 @@ mutation_case "an enum value has no wire name" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
      "    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {\n        Some(value.to_string())\n    }\n",
      "    fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {\n        None\n    }\n")
+PY
+
+# A `<final>` that carries a `<donedata>` is refused again, as it was before its
+# pairs were lowered: both donedata fixtures leave the replay.
+mutation_case "a final's donedata is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            if let Some(done) = &state.donedata {\n                match &done.content {\n",
+     "            if let Some(done) = &state.donedata {\n                if done.params.len() < usize::MAX {\n                    return Some(format!(\"the <donedata> of state `{}`\", state.id));\n                }\n                match &done.content {\n")
+PY
+
+# The text of an inline `<content>` is left as the author wrote it: an engine
+# reads `42` as a number, where every generated backend carries the string.
+mutation_case "a donedata text is not finished to its string" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                rewrites.note(\n                    text,\n                    done.content_text_spelling.as_ref(),\n                    &done.native_content,\n                );\n",
+     "")
+PY
+
+# A `<content>` that holds an element is no longer refused: the engine would read
+# it as a document where the generated backends carry it as a string.
+mutation_case "a content holding an element is lowered" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "                    DoneDataContent::InlineText(_) if done.content_text_spelling.is_none() => {\n",
+     "                    DoneDataContent::InlineText(_) if false => {\n")
 PY

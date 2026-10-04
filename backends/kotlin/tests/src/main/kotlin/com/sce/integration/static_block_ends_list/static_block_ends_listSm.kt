@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
+// source-hash: ddf322a2d86adb9f2998ed7efed706d94ed4cd422b0bd733db6c4dec67dfe813
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_block_ends_list.scxml:18 :: _machine
+// SCE-MAP: static_block_ends_list.scxml:17 :: _machine
 
 package com.sce.integration.static_block_ends_list
 
@@ -259,33 +259,33 @@ class StaticBlockEndsListStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_block_ends_list.scxml:18 :: _machine
+    // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun onEntry(state: StaticBlockEndsListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticBlockEndsListState.Waiting -> {
-                // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _state_body
+                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_block_ends_list.scxml:18 :: _machine
+    // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun onExit(state: StaticBlockEndsListState) {
         when (state) {
             is StaticBlockEndsListState.Waiting -> {
-                // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _state_body
+                // SCE-MAP: static_block_ends_list.scxml:24 :: waiting :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_block_ends_list.scxml:18 :: _machine
+    // SCE-MAP: static_block_ends_list.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticBlockEndsListState, transitionIndex: Int) {
         when (source) {
         is StaticBlockEndsListState.Waiting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_block_ends_list.scxml:26 :: waiting :: _transition_0
+                // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _transition_0
 
             if (if (picked.size < 2) { picked = picked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
                 return
@@ -296,7 +296,7 @@ class StaticBlockEndsListStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: static_block_ends_list.scxml:30 :: waiting :: _transition_1
+                // SCE-MAP: static_block_ends_list.scxml:29 :: waiting :: _transition_1
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

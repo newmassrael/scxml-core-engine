@@ -102,18 +102,25 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     }
     // Floor: a scan that found nothing to lower would pass. What is lowered
     // today — scalars, checked integers, the typed payload, lists, records,
-    // calls of scalar algorithms and a `<send>`'s `<param>`s — is at least these
-    // twenty-five machines, and the floor rises as the lowering grows.
+    // calls of scalar algorithms, a `<send>`'s `<param>`s and a `<final>`'s
+    // `<donedata>` — is at least these twenty-seven machines, and the floor
+    // rises as the lowering grows.
     assert!(
-        lowered.len() >= 25,
+        lowered.len() >= 27,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
-    // The pairs of a `<send>` are expressions the walk lowers, in the attribute
-    // each is written in, and the Interpreter's own `<send>` reads them once when
-    // it runs: so the two fixtures that send themselves their `<param>`s lower,
-    // an enum value among them as the name its enum declares.
-    for name in ["static_send_params", "static_wire_enum"] {
+    // The pairs of a `<send>` and of a `<donedata>` are expressions the walk
+    // lowers, in the attribute each is written in, and the Interpreter's own
+    // elements read them once when they run: so the fixtures that send
+    // themselves their `<param>`s or hand their done event its pairs lower, an
+    // enum value among them as the name its enum declares.
+    for name in [
+        "static_send_params",
+        "static_wire_enum",
+        "static_donedata",
+        "static_donedata_content",
+    ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),
             "{name} is lowered for the Interpreter: lowered {lowered:?}"
@@ -243,4 +250,40 @@ fn a_document_under_another_data_model_is_returned_as_written() {
   <state id="s"/>
 </scxml>"#;
     assert_eq!(lower_source(ecmascript, "plain").unwrap(), ecmascript);
+}
+
+/// The text a `<final>`'s `<donedata>` carries is the string it spells on every
+/// backend, so it is finished in the document: an engine reads `42` as a number
+/// and `"42"` as the string, and the lowered `<content>` is the second.
+#[test]
+fn a_donedata_text_is_finished_to_the_string_it_spells() {
+    let lowered = lowered_fixture("static_donedata_content");
+    assert!(
+        lowered.contains("<content>&quot;42&quot;</content>"),
+        "the text is written as the JSON string it spells: {lowered}"
+    );
+    // The pairs are expressions the walk lowers where each is written.
+    let pairs = lowered_fixture("static_donedata");
+    assert!(
+        pairs.contains(r#"<param name="total" expr="SceStatic.U32.mul(count, 2)"/>"#),
+        "a pair's checked operation is a library call: {pairs}"
+    );
+}
+
+/// A `<content>` that holds an element is read by an engine as a document, where
+/// the generated backends carry it as a string: refused by name, not lowered to
+/// something that answers differently.
+#[test]
+fn a_donedata_content_holding_an_element_is_refused_by_name() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="go" target="d"/></state>
+  <final id="d"><donedata><content><result code="7">finished</result></content></donedata></final>
+</scxml>"#;
+    let refusal = lower_source(document, "xml_content").expect_err("a document it cannot lower");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("holding an element"),
+        "the refusal names the construct: {text}"
+    );
 }

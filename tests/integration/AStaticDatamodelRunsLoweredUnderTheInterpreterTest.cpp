@@ -195,6 +195,15 @@ protected:
                 EXPECT_FALSE(expect.contains("state") || expect.contains("variables"))
                     << "an ended machine has no state or variables to read";
                 EXPECT_TRUE(machine->isInFinalState()) << "the machine ended in a top-level <final>";
+                // What its `<donedata>` left for the invoking parent is read as
+                // the generated backends read it: the JSON of the done event's
+                // data, compared as JSON so that the members' order is no part
+                // of the answer.
+                if (expect.contains("donedata")) {
+                    const auto got = nlohmann::json::parse(machine->donedataAtFinal(), nullptr, false);
+                    EXPECT_FALSE(got.is_discarded()) << "the donedata is JSON: " << machine->donedataAtFinal();
+                    EXPECT_EQ(got, expect.at("donedata")) << "the data the final's <donedata> left";
+                }
                 continue;
             }
             if (expect.contains("state")) {

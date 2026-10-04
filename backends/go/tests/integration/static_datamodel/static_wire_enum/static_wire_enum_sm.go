@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a66c166eaef194f18ac8dd5e0ac2597a5946d548ab583f319bb3da11c0f2a051
+// source-hash: ddf322a2d86adb9f2998ed7efed706d94ed4cd422b0bd733db6c4dec67dfe813
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_wire_enum.scxml:20 :: _machine
+// SCE-MAP: static_wire_enum.scxml:19 :: _machine
 
 package static_wire_enum
 
@@ -598,7 +598,7 @@ func (p *StaticWireEnumPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) ExecuteEntryActions(state StaticWireEnumState, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -611,7 +611,7 @@ func (p *StaticWireEnumPolicy) ExecuteEntryActions(state StaticWireEnumState, en
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -619,7 +619,7 @@ func (p *StaticWireEnumPolicy) ExecuteHistoryDefaultContent(history sce.HistoryI
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) ExecuteExitActions(state StaticWireEnumState, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent], configurationBeforeExit []StaticWireEnumState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -636,7 +636,7 @@ func (p *StaticWireEnumPolicy) ExecuteExitActions(state StaticWireEnumState, eng
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) BindCurrentEvent(event StaticWireEnumEvent, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -646,7 +646,7 @@ func (p *StaticWireEnumPolicy) BindCurrentEvent(event StaticWireEnumEvent, engin
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) FirstEnabledTransition(state StaticWireEnumState, event StaticWireEnumEvent, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent]) (sce.EnabledTransition[StaticWireEnumState, sce.HistoryID], bool) {
 	switch state {
 	case StaticWireEnumStateViewing:
@@ -706,13 +706,13 @@ func (p *StaticWireEnumPolicy) FirstEnabledTransition(state StaticWireEnumState,
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_wire_enum.scxml:20
+//line static_wire_enum.scxml:19
 func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumState, transitionIndex int, engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent]) {
 	switch source {
 	case StaticWireEnumStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_wire_enum.scxml:34
+			//line static_wire_enum.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -721,7 +721,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 
 			}()
 		case 1:
-			//line static_wire_enum.scxml:37
+			//line static_wire_enum.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -764,7 +764,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 2:
-			//line static_wire_enum.scxml:43
+			//line static_wire_enum.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -807,7 +807,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 3:
-			//line static_wire_enum.scxml:49
+			//line static_wire_enum.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -850,7 +850,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 4:
-			//line static_wire_enum.scxml:55
+			//line static_wire_enum.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireEnumPayloadTagViewShown {
