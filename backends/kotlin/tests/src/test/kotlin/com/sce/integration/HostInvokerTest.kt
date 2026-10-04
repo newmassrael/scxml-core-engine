@@ -731,6 +731,13 @@ class HostInvokerTest {
                 // at that moment tells those two apart, so it is taken before the
                 // nudge and carried in the message.
                 val workers = dispatcherWorkers()
+                // The second hosted failure said the same, with every worker
+                // parked: no thread was running the loop, so it had ended or sat
+                // suspended. Whether the machine had reached a final state, which
+                // ends the loop, and how many events it had turned away, tell
+                // those two apart; they are read before the nudge adds its own.
+                val machine = "state ${sm.currentState.value}, isInFinalState=${sm.isInFinalState}, " +
+                    "${sm.unseenExternalEvents()} unseen external events"
                 sm.send(StatechartHostInvokerEvent.Time)
                 val afterWake = withTimeoutOrNull(2_000) { cancelled.await() }
                 fail<Unit>(
@@ -738,6 +745,7 @@ class HostInvokerTest {
                         "an event sent then " +
                         (if (afterWake != null) "WOKE the loop into performing it (the loop slept past the deadline)"
                         else "did not (the deadline was never armed, or the loop is not running)") +
+                        "; the machine at that moment: $machine" +
                         "; the default dispatcher at that moment: $workers",
                 )
             }
