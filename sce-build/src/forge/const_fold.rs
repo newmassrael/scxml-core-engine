@@ -313,6 +313,25 @@ fn iter_var_type(elem_type: &SceType, _iter_value: u32) -> SceType {
 // Per-language array-literal serialisation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/// Render one evaluated value as the initializer of a scalar constant.
+///
+/// The array form wraps a Kotlin `UByte` or `UShort` element as `(N).toUByte()`
+/// for the factory's `vararg`, which is a call and so not a constant: a
+/// `const val` of that initializer is `const 'val' initializer must be a
+/// constant value`. An unsigned literal (`7u`) is one, and takes the declared
+/// type when it fits it, so a Kotlin scalar of those two widths is written so.
+/// Every other value, and every other language, is the array element's.
+pub(crate) fn serialize_scalar_literal(
+    value: &ConstValue,
+    lang: crate::generator::Language,
+) -> String {
+    match (value, lang) {
+        (ConstValue::U8(v), crate::generator::Language::Kotlin) => format!("{v}u"),
+        (ConstValue::U16(v), crate::generator::Language::Kotlin) => format!("{v}u"),
+        _ => serialize_array_literal_body(std::slice::from_ref(value), lang),
+    }
+}
+
 /// Render an evaluated `Vec<ConstValue>` as a per-language array
 /// literal body — the contents inside the brackets/braces. Caller
 /// wraps with `[N]T{...}` (Go), `[T; N]` (Rust), `std::array<T, N>{

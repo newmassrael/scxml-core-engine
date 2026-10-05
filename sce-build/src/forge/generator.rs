@@ -27199,19 +27199,25 @@ impl<'a> AlgorithmTypes<'a> {
         // Cpp / C11 rely on the host language's strict-type checker to
         // resolve the access at compile time.
         for c in &m.consts {
-            if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
-                type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
+            match &c.sce_type {
+                crate::forge::model::AlgorithmConstType::Array { elem, .. } => {
+                    type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
+                    // ⚠ The NAME is declared too, not only an array's element
+                    // type. Registering only the element left `CRC16_TABLE`
+                    // undeclared as a value, which nothing noticed until names
+                    // were checked (measured 2026-09-21: 29 refusals, every one
+                    // a committed fixture). An array's name is `Unknown` as a
+                    // value: what inference makes of it is `lookup_array_elem`'s.
+                    type_ctx.insert_var(c.name.as_str(), InferredType::Unknown);
+                }
+                // A scalar is a value of its declared type, like a parameter:
+                // typed `Unknown` it was never converted where it meets a wider
+                // operand, so a Kotlin `UShort` constant beside an `Int` was
+                // `Int and UShort`, a compile error.
+                crate::forge::model::AlgorithmConstType::Scalar(ty) => {
+                    type_ctx.insert_var(c.name.as_str(), InferredType::from_sce_type(ty));
+                }
             }
-            // ⚠ The NAME is declared too, not only an array's element type.
-            // Registering only the element left `CRC16_TABLE` undeclared as a
-            // value, which nothing noticed until names were checked (measured
-            // 2026-09-21: 29 refusals, every one a committed fixture). It is
-            // registered `Unknown` on purpose: this pass declares the name,
-            // and what inference makes of a const's value is
-            // `lookup_array_elem`'s for an array and was never claimed for a
-            // scalar — claiming it here would change emitted code under the
-            // cover of a name check.
-            type_ctx.insert_var(c.name.as_str(), InferredType::Unknown);
         }
 
         // RFC c7-wildcard W-project: register each cross-algorithm import's
@@ -28612,7 +28618,7 @@ fn lower_algorithm_const(
         }
         (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
             let value = const_fold::evaluate_scalar_init(init_expr, ty, site)?;
-            let lit = const_fold::serialize_array_literal_body(std::slice::from_ref(&value), lang);
+            let lit = const_fold::serialize_scalar_literal(&value, lang);
             Ok(emit_scalar_const(lang, l, &upper, ty, &lit))
         }
         // Parser invariants: scalar consts are paired with `init`

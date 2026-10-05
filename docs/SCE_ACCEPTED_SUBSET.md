@@ -2886,11 +2886,16 @@ one did. `a_kotlin_kind_keeps_an_authors_names_apart_from_its_own` compiles the
 renamings against the forge runtime built once from this tree, hundreds in a run
 because `kotlinc` is a JVM that takes seconds to start, and tells each error back
 to the renaming whose file it names. The first run built 15 456 accepted
-renamings and 73 did not; the last built 15 757 and none failed. Three controls
+renamings and 73 did not; the last built 15 863 and none failed. Two controls
 are not renamed because they do not build alone: one reads a record type the host
-supplies, one is a test file that imports `kotlin.test`, and one is a defect of
-its own that is not about a name, a scalar `<sce:const>` of an unsigned type
-written as a `const val` whose initializer is not a constant.
+supplies and one is a test file that imports `kotlin.test`. A third did not build
+either, for a reason that is not a name and is fixed: a scalar `<sce:const>` of an
+unsigned type was written `const val POLY: UShort = (4129).toUShort()`, a call and
+so not a constant, and was read in `word.toInt() and POLY`, an `Int` beside a
+`UShort`, because a scalar constant was typed `Unknown` and so never converted. It
+is now an unsigned literal (`4129u`) typed by its declared type like a parameter,
+and `a_kotlin_scalar_const_of_an_unsigned_type_compiles` compiles it, which no
+committed output did.
 
 What each oracle asks was widened when Kotlin showed what a list of committed
 outputs leaves out. The candidates of a renaming are the identifiers of the
