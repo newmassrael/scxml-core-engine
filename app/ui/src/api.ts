@@ -20,6 +20,7 @@ import {
   parseSaved,
   parseWork,
   parseWorkAndHead,
+  parseWorkSnapshot,
   type Answers,
   type Basis,
   type Described,
@@ -36,6 +37,7 @@ import {
   type SourceText,
   type Work,
   type WorkAndHead,
+  type WorkSnapshot,
 } from "./contract";
 import type { Transport } from "./ipc";
 
@@ -92,6 +94,14 @@ export interface Api {
    * both nothing is accepted.
    */
   accept(id: string, expect: Basis): Promise<Saved>;
+  /**
+   * The work and its text, model, answers, requirement list and acceptance as they
+   * stood together. A screen that is told something changed reads this, not one
+   * command for each chain: a save landing between those reads would show a text of
+   * one moment beside a model of another. It does not say whether the acceptance
+   * still holds; that is SCE's answer (`readAcceptance`).
+   */
+  readWorkSnapshot(id: string): Promise<WorkSnapshot>;
   /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
@@ -160,6 +170,9 @@ export function apiOver(transport: Transport): Api {
     },
     async accept(id, expect) {
       return parseSaved(await transport.call("accept", { id, expect }));
+    },
+    async readWorkSnapshot(id) {
+      return parseWorkSnapshot(await transport.call("read_work_snapshot", { id }));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

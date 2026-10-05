@@ -57,6 +57,6 @@ pub use review::{
 pub use revision::Revision;
 pub use store::{
     default_root, AcceptanceText, AnswersText, HistoryEntry, Listing, ModelText, RequirementsText,
-    Saved, SourceText, Unreadable, Work, WorkId, WorkStore, MAX_ACCEPTANCE_BYTES,
+    Saved, SourceText, Unreadable, Work, WorkId, WorkSnapshot, WorkStore, MAX_ACCEPTANCE_BYTES,
     MAX_ANSWERS_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
 };

@@ -87,6 +87,10 @@ fn replies() -> Value {
         answer(&store, "read_work", json!({"id": id})),
     );
     answers.insert(
+        "read_work_snapshot_empty".into(),
+        answer(&store, "read_work_snapshot", json!({"id": id})),
+    );
+    answers.insert(
         "read_source_none".into(),
         answer(&store, "read_source", json!({"id": id})),
     );
@@ -218,6 +222,12 @@ fn replies() -> Value {
     answers.insert(
         "read_answers".into(),
         answer(&store, "read_answers", json!({"id": id})),
+    );
+    // The work as one state: this one has a text, a model and answers, and no
+    // requirement list and no acceptance.
+    answers.insert(
+        "read_work_snapshot".into(),
+        answer(&store, "read_work_snapshot", json!({"id": id})),
     );
     refusals.insert(
         "invalid-answers".into(),
@@ -406,6 +416,11 @@ fn replies() -> Value {
     answers.insert(
         "read_acceptance".into(),
         answer(&store, "read_acceptance", json!({"id": accepted_id})),
+    );
+    // This one has a text, a model, a requirement list and an acceptance, and no answers.
+    answers.insert(
+        "read_work_snapshot_accepted".into(),
+        answer(&store, "read_work_snapshot", json!({"id": accepted_id})),
     );
     refusals.insert(
         "invalid-requirements".into(),

@@ -102,6 +102,26 @@ the log, not something written into it, and it stays on the entry after a later 
 made the model current: the save of today does not make the one of the past knowable.
 The model's screen does not show a model history; a client that does should show the mark.
 
+### Reading a work as one state
+
+A screen that reads a work with a command for each chain (`read_work`, `read_source`,
+`read_model`, `read_answers`, `read_requirements`, `read_acceptance`) can be handed a
+text of one moment beside a model of another: a save lands between two of the reads.
+`read_work_snapshot` reads the work and its five chains as one state. The pointers of
+all five are read, then what they name, then the pointers again, and the read starts
+over when any of them moved; what is answered is the folder as the second look found it.
+
+It takes no lock, so a screen that reads on every change never makes a save wait. That
+holds because a pointer is replaced by one atomic rename and a revision's file is never
+rewritten. A folder written to between every look cannot be read that way, and after five
+tries the read takes the lock a save takes, so the answer is one state there too.
+
+Each part of the answer is what the command that reads that chain answers, in the same
+words: `source`, `model` with `model_standing`, `answers`, `requirements` with
+`requirements_standing`, and `acceptance` as it was saved. It does not say whether the
+acceptance still holds. That is the product's to say and asking it is not a read of the
+folder, so the screen still asks `read_acceptance` for it.
+
 ### Removing a work
 
 `remove_work` (the screen's "Remove this work", after it asks) takes a work out
@@ -318,6 +338,7 @@ else: it has no file-system, shell or network permission.
 | Works folder and command layer | `cargo test -p sce-app-core --features cli` |
 | The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
 | Removing a work, and a save racing it | `--test removal` of the same package |
+| A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
 | What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |

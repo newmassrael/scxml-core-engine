@@ -344,6 +344,22 @@ pub struct AcceptanceText {
     pub text: String,
 }
 
+/// A work as it stood at one moment: each of its five chains at its head, the heads
+/// read so that they belong together (see [`WorkStore::read_work_snapshot`]).
+///
+/// What is here is what is kept and nothing the product says of it: whether an
+/// acceptance still holds is the product's to answer, and asking it is not a read
+/// of the folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkSnapshot {
+    pub work: Work,
+    pub source: Option<SourceText>,
+    pub model: Option<ModelText>,
+    pub answers: Option<AnswersText>,
+    pub requirements: Option<RequirementsText>,
+    pub acceptance: Option<AcceptanceText>,
+}
+
 /// One line of a work's history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -537,6 +553,102 @@ impl<C: Clock> WorkStore<C> {
     pub fn read_work(&self, id: &WorkId) -> Result<Work, StoreError> {
         self.existing(id)?;
         self.read_work_file(id)
+    }
+
+    /// The work and every chain at its head, as ONE state of the work.
+    ///
+    /// A screen that reads a work with a command for each chain can be handed a text
+    /// and a model the work never held together: a save lands between two of the reads.
+    /// Here the pointer of every chain is read, then what the pointers name, then the
+    /// pointers again, and the read starts over when any of them moved. What is returned
+    /// is the folder as the second look at the pointers found it.
+    ///
+    /// No lock is taken, so a screen that reads on every change never makes a save wait.
+    /// That is sound for the reason [`read_chain`] is: a pointer is replaced by one atomic
+    /// rename and a revision's file is never rewritten. A folder that is written to
+    /// between every look cannot be read that way, and after [`READ_TRIES`] the read takes
+    /// the lock a save takes, so the answer is one state in that case too.
+    pub fn read_work_snapshot(&self, id: &WorkId) -> Result<WorkSnapshot, StoreError> {
+        self.snapshot_between(id, || {})
+    }
+
+    /// [`Self::read_work_snapshot`], with `between_reads` run after the first look at the
+    /// pointers and before what they name is read: a seam for the test that makes writers
+    /// land exactly there. It never runs while the lock is held, because a save made from
+    /// it would wait for the reader to finish.
+    fn snapshot_between(
+        &self,
+        id: &WorkId,
+        mut between_reads: impl FnMut(),
+    ) -> Result<WorkSnapshot, StoreError> {
+        let dir = self.existing(id)?;
+        for _ in 0..READ_TRIES {
+            let pointers = read_pointers(&dir)?;
+            between_reads();
+            let snapshot = self.read_state(&dir, id, &pointers)?;
+            if read_pointers(&dir)? == pointers {
+                return Ok(snapshot);
+            }
+        }
+        let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
+        // A removal that came first, while this read waited for the lock.
+        if is_removed(&dir) {
+            return Err(removed_work(id));
+        }
+        let pointers = read_pointers(&dir)?;
+        self.read_state(&dir, id, &pointers)
+    }
+
+    /// The work and what each of `pointers` names. The two chains whose saves say which
+    /// source they were written for carry that claim, read from the chain the pointer
+    /// ends, as [`Self::read_claimed`] reads it.
+    fn read_state(
+        &self,
+        dir: &Path,
+        id: &WorkId,
+        pointers: &Pointers,
+    ) -> Result<WorkSnapshot, StoreError> {
+        let [source, model, answers, requirements, acceptance] = pointers;
+        let text = |artifact: Artifact, pointer: &Option<Pointer>| {
+            pointer
+                .as_ref()
+                .map(|p| self.read_revision(dir, artifact, id, p.revision.clone(), false))
+                .transpose()
+        };
+        let claimed = |artifact: Artifact, pointer: &Option<Pointer>| {
+            pointer
+                .as_ref()
+                .map(|p| {
+                    let (revision, text) =
+                        self.read_revision(dir, artifact, id, p.revision.clone(), false)?;
+                    let written_for = chain_to(dir, artifact, Some(p))?.claim();
+                    Ok::<_, StoreError>((revision, written_for, text))
+                })
+                .transpose()
+        };
+        Ok(WorkSnapshot {
+            work: self.read_work_file(id)?,
+            source: text(Artifact::Source, source)?
+                .map(|(revision, text)| SourceText { revision, text }),
+            model: claimed(Artifact::Model, model)?.map(|(revision, written_for, text)| {
+                ModelText {
+                    revision,
+                    written_for,
+                    text,
+                }
+            }),
+            answers: text(Artifact::Answers, answers)?
+                .map(|(revision, text)| AnswersText { revision, text }),
+            requirements: claimed(Artifact::Requirements, requirements)?.map(
+                |(revision, written_for, text)| RequirementsText {
+                    revision,
+                    written_for,
+                    text,
+                },
+            ),
+            acceptance: text(Artifact::Acceptances, acceptance)?
+                .map(|(revision, text)| AcceptanceText { revision, text }),
+        })
     }
 
     fn read_work_file(&self, id: &WorkId) -> Result<Work, StoreError> {
@@ -1320,6 +1432,20 @@ struct Pointer {
 /// The second line of a pointer file: `log <n>`, the save's place in the log.
 const POINTER_ENTRY_PREFIX: &str = "log ";
 
+/// The pointer of each chain, in the order a [`WorkSnapshot`] lists them: the text, the
+/// model, the answers, the requirement list, the acceptances.
+type Pointers = [Option<Pointer>; 5];
+
+fn read_pointers(dir: &Path) -> Result<Pointers, StoreError> {
+    Ok([
+        read_pointer(dir, Artifact::Source)?,
+        read_pointer(dir, Artifact::Model)?,
+        read_pointer(dir, Artifact::Answers)?,
+        read_pointer(dir, Artifact::Requirements)?,
+        read_pointer(dir, Artifact::Acceptances)?,
+    ])
+}
+
 fn read_pointer(dir: &Path, artifact: Artifact) -> Result<Option<Pointer>, StoreError> {
     let path = dir.join(artifact.head_file());
     let text = match fs::read_to_string(&path) {
@@ -1587,5 +1713,128 @@ mod tests {
 
         assert_eq!(looks, READ_TRIES);
         assert!(snapshot.pointer.is_some());
+    }
+
+    /// A work nothing was saved to is a work, not a failure: each chain is absent.
+    #[test]
+    fn a_snapshot_of_a_work_nothing_was_saved_to_holds_no_chain() {
+        let scratch = Scratch::new("snapshot-empty");
+        let store = WorkStore::at(&scratch.root);
+        let work = store.create_work("Empty").unwrap();
+
+        let snapshot = store.read_work_snapshot(&work.id).unwrap();
+
+        assert_eq!(snapshot.work, work);
+        assert!(snapshot.source.is_none());
+        assert!(snapshot.model.is_none());
+        assert!(snapshot.answers.is_none());
+        assert!(snapshot.requirements.is_none());
+        assert!(snapshot.acceptance.is_none());
+    }
+
+    /// Every chain at its head, and the source each of the two that are written for a
+    /// source says it was written for: the text moved on, so they are of the one before.
+    #[test]
+    fn a_snapshot_holds_each_chain_at_its_head_with_what_the_model_and_the_list_were_written_for() {
+        let scratch = Scratch::new("snapshot-all");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("All").unwrap().id;
+        let t1 = Revision::of(b"T1");
+        let t2 = Revision::of(b"T2");
+        store.save_source(&id, "T1", None).unwrap();
+        store.save_model(&id, "M1", None, Some(&t1)).unwrap();
+        store.save_requirements(&id, "R1", None, Some(&t1)).unwrap();
+        store.save_answers(&id, "A1", None).unwrap();
+        store.save_acceptance(&id, "C1", None).unwrap();
+        store.save_source(&id, "T2", Some(&t1)).unwrap();
+
+        let snapshot = store.read_work_snapshot(&id).unwrap();
+
+        let source = snapshot.source.unwrap();
+        assert_eq!(source.revision, t2);
+        assert_eq!(source.text, "T2");
+        let model = snapshot.model.unwrap();
+        assert_eq!(model.text, "M1");
+        assert_eq!(model.written_for, Some(t1.clone()));
+        let list = snapshot.requirements.unwrap();
+        assert_eq!(list.text, "R1");
+        assert_eq!(list.written_for, Some(t1));
+        assert_eq!(snapshot.answers.unwrap().text, "A1");
+        assert_eq!(snapshot.acceptance.unwrap().text, "C1");
+    }
+
+    /// Two saves that landed after the reader looked at the pointers: the source it
+    /// holds is the old one, and a read that stopped there would answer a state the
+    /// folder has left. The pointers are looked at again, found moved, and the read
+    /// starts over, so what is answered is the folder as the second look found it.
+    #[test]
+    fn a_snapshot_whose_pointers_moved_while_it_was_read_answers_the_state_after_the_saves() {
+        let scratch = Scratch::new("snapshot-seam");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let t1 = Revision::of(b"T1");
+        let t2 = Revision::of(b"T2");
+        let m1 = Revision::of(b"M1");
+        store.save_source(&id, "T1", None).unwrap();
+        store.save_model(&id, "M1", None, Some(&t1)).unwrap();
+
+        let mut looks = 0;
+        let snapshot = store
+            .snapshot_between(&id, || {
+                looks += 1;
+                if looks == 1 {
+                    store.save_source(&id, "T2", Some(&t1)).unwrap();
+                    store.save_model(&id, "M2", Some(&m1), Some(&t2)).unwrap();
+                }
+            })
+            .unwrap();
+
+        assert_eq!(
+            looks, 2,
+            "the read starts over once, and the second look holds"
+        );
+        assert_eq!(snapshot.source.unwrap().revision, t2);
+        let model = snapshot.model.unwrap();
+        assert_eq!(model.text, "M2");
+        assert_eq!(model.written_for, Some(t2));
+    }
+
+    /// A folder written to between every look cannot be read without a lock, and the
+    /// answer is still one state: after the tries are spent the read takes the lock a
+    /// save takes, and no save lands while it reads. The seam runs only while the reader
+    /// holds no lock, because a save made under it would wait for the reader to finish.
+    #[test]
+    fn a_snapshot_of_a_folder_that_never_holds_still_is_read_under_the_lock() {
+        let scratch = Scratch::new("snapshot-bound");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let dir = store.existing(&id).unwrap();
+        store.save_source(&id, "T0", None).unwrap();
+
+        let mut looks = 0;
+        let snapshot = store
+            .snapshot_between(&id, || {
+                looks += 1;
+                let base = read_head(&dir, Artifact::Source).unwrap();
+                store
+                    .save_source(&id, &format!("T{looks}"), base.as_ref())
+                    .unwrap();
+            })
+            .unwrap();
+
+        assert_eq!(looks, READ_TRIES);
+        assert_eq!(snapshot.source.unwrap().text, format!("T{READ_TRIES}"));
+    }
+
+    #[test]
+    fn a_snapshot_of_a_removed_work_is_refused_as_every_other_read_is() {
+        let scratch = Scratch::new("snapshot-removed");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Gone").unwrap().id;
+        store.remove_work(&id).unwrap();
+
+        let refused = store.read_work_snapshot(&id).unwrap_err();
+
+        assert_eq!(refused.kind(), "not-found");
     }
 }

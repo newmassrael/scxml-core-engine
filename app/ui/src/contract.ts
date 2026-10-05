@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 7;
+export const SUPPORTED_COMMAND_SET_VERSION = 8;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -248,6 +248,25 @@ export interface WorkAndHead {
   readonly head: Revision | null;
 }
 
+/**
+ * `read_work_snapshot`: the work and its five chains as they stood together. Each part
+ * is what the command that reads that chain answers, in the same words, taken from one
+ * state of the work and not from six reads a save can land between. Whether the
+ * acceptance still holds is not here: that is SCE's to say (`read_acceptance`).
+ */
+export interface WorkSnapshot {
+  readonly work: Work;
+  readonly source: SourceText | null;
+  readonly model: ModelText | null;
+  /** `null` exactly when there is no model. */
+  readonly model_standing: Standing | null;
+  readonly answers: Answers | null;
+  readonly requirements: RequirementsList | null;
+  /** `null` exactly when there is no list. */
+  readonly requirements_standing: Standing | null;
+  readonly acceptance: AcceptanceRecord | null;
+}
+
 /** A command that did not do what was asked, as the core words it. */
 export interface CommandErrorBody {
   readonly kind: string;
@@ -373,6 +392,36 @@ function standing(value: unknown, where: string): Standing {
   throw new ContractError(where, '"current", "behind" or "unstated"');
 }
 
+/** A standing that is `null` exactly when the part it is about is absent. */
+function partStanding(value: unknown, absent: boolean, where: string): Standing | null {
+  if (absent) {
+    if (value !== null) throw new ContractError(where, "null when there is none");
+    return null;
+  }
+  return standing(value, where);
+}
+
+/** A saved model as `read_model` and `read_work_snapshot` both give it. */
+function parseModelText(value: unknown, where: string): ModelText {
+  const m = record(value, where);
+  const documents = list(m, "documents", where).map((d, i) => {
+    const at = `${where}.documents[${i}]`;
+    const document = record(d, at);
+    return { name: text(document, "name", at), text: text(document, "text", at) };
+  });
+  const entry = text(m, "entry", where);
+  if (!documents.some((d) => d.name === entry)) {
+    throw new ContractError(`${where}.entry`, "the name of one of its documents");
+  }
+  return {
+    revision: revision(m["revision"], `${where}.revision`),
+    written_for: nullableRevision(m["written_for"], `${where}.written_for`),
+    text: text(m, "text", where),
+    entry,
+    documents,
+  };
+}
+
 /** `read_model`. */
 export function parseReadModel(value: unknown): ReadModel {
   const r = record(value, "read_model");
@@ -382,24 +431,8 @@ export function parseReadModel(value: unknown): ReadModel {
     if (r["standing"] !== null) throw new ContractError("read_model.standing", "null when there is no model");
     return { model: null, source_head, standing: null };
   }
-  const m = record(model, "read_model.model");
-  const documents = list(m, "documents", "read_model.model").map((d, i) => {
-    const where = `read_model.model.documents[${i}]`;
-    const document = record(d, where);
-    return { name: text(document, "name", where), text: text(document, "text", where) };
-  });
-  const entry = text(m, "entry", "read_model.model");
-  if (!documents.some((d) => d.name === entry)) {
-    throw new ContractError("read_model.model.entry", "the name of one of its documents");
-  }
   return {
-    model: {
-      revision: revision(m["revision"], "read_model.model.revision"),
-      written_for: nullableRevision(m["written_for"], "read_model.model.written_for"),
-      text: text(m, "text", "read_model.model"),
-      entry,
-      documents,
-    },
+    model: parseModelText(model, "read_model.model"),
     source_head,
     standing: standing(r["standing"], "read_model.standing"),
   };
@@ -509,13 +542,9 @@ function parsePageRefusal(value: unknown, where: string): PageRefusal | null {
   return { code: text(entry, "code", where), message: text(entry, "message", where) };
 }
 
-/** `read_answers`: the owner's answers, or `null` when they have answered nothing. */
-export function parseReadAnswers(value: unknown): Answers | null {
-  const r = record(value, "read_answers");
-  const answers = r["answers"];
-  if (answers === null) return null;
-  const where = "read_answers.answers";
-  const a = record(answers, where);
+/** The owner's answers as `read_answers` and `read_work_snapshot` both give them. */
+function parseAnswers(value: unknown, where: string): Answers {
+  const a = record(value, where);
   const entries = record(a["entries"], `${where}.entries`);
   const parsed: Record<string, AnswerEntry> = {};
   for (const [id, entry] of Object.entries(entries)) {
@@ -524,6 +553,13 @@ export function parseReadAnswers(value: unknown): Answers | null {
     parsed[id] = { answer: text(e, "answer", at), answered_at: text(e, "answered_at", at) };
   }
   return { revision: revision(a["revision"], `${where}.revision`), entries: parsed };
+}
+
+/** `read_answers`: the owner's answers, or `null` when they have answered nothing. */
+export function parseReadAnswers(value: unknown): Answers | null {
+  const r = record(value, "read_answers");
+  const answers = r["answers"];
+  return answers === null ? null : parseAnswers(answers, "read_answers.answers");
 }
 
 function parseBasis(value: unknown, where: string): Basis {
@@ -544,6 +580,17 @@ function stringList(value: Obj, key: string, where: string): string[] {
   });
 }
 
+/** A requirement list as `read_requirements` and `read_work_snapshot` both give it. */
+function parseRequirementsList(value: unknown, where: string): RequirementsList {
+  const entry = record(value, where);
+  return {
+    revision: revision(entry["revision"], `${where}.revision`),
+    written_for: nullableRevision(entry["written_for"], `${where}.written_for`),
+    manifest: text(entry, "manifest", where),
+    sidecar: nullableText(entry, "sidecar", where),
+  };
+}
+
 /** `read_requirements`. */
 export function parseReadRequirements(value: unknown): ReadRequirements {
   const where = "read_requirements";
@@ -554,15 +601,8 @@ export function parseReadRequirements(value: unknown): ReadRequirements {
     if (r["standing"] !== null) throw new ContractError(`${where}.standing`, "null when there is no list");
     return { requirements: null, source_head, standing: null };
   }
-  const at = `${where}.requirements`;
-  const entry = record(held, at);
   return {
-    requirements: {
-      revision: revision(entry["revision"], `${at}.revision`),
-      written_for: nullableRevision(entry["written_for"], `${at}.written_for`),
-      manifest: text(entry, "manifest", at),
-      sidecar: nullableText(entry, "sidecar", at),
-    },
+    requirements: parseRequirementsList(held, `${where}.requirements`),
     source_head,
     standing: standing(r["standing"], `${where}.standing`),
   };
@@ -598,6 +638,18 @@ export function parseRequirementsReport(value: unknown): RequirementsReport {
   };
 }
 
+/** An acceptance as `read_acceptance` and `read_work_snapshot` both give it. */
+function parseAcceptanceRecord(value: unknown, where: string): AcceptanceRecord {
+  const entry = record(value, where);
+  return {
+    revision: revision(entry["revision"], `${where}.revision`),
+    accepted_at: text(entry, "accepted_at", where),
+    channel: text(entry, "channel", where),
+    basis: parseBasis(entry["basis"], `${where}.basis`),
+    open: stringList(entry, "open", where),
+  };
+}
+
 /** `read_acceptance`. */
 export function parseReadAcceptance(value: unknown): ReadAcceptance {
   const where = "read_acceptance";
@@ -612,23 +664,40 @@ export function parseReadAcceptance(value: unknown): ReadAcceptance {
     return { acceptance: null, standing: state, lapse: null, now: null };
   }
   if (state === "none") throw new ContractError(`${where}.standing`, "holds or lapsed when there is an acceptance");
-  const at = `${where}.acceptance`;
-  const entry = record(held, at);
   const lapse = nullableText(r, "lapse", where);
   if ((state === "lapsed") !== (lapse !== null)) {
     throw new ContractError(`${where}.lapse`, "SCE's sentence exactly when the acceptance lapsed");
   }
   return {
-    acceptance: {
-      revision: revision(entry["revision"], `${at}.revision`),
-      accepted_at: text(entry, "accepted_at", at),
-      channel: text(entry, "channel", at),
-      basis: parseBasis(entry["basis"], `${at}.basis`),
-      open: stringList(entry, "open", at),
-    },
+    acceptance: parseAcceptanceRecord(held, `${where}.acceptance`),
     standing: state,
     lapse,
     now: parseBasis(r["now"], `${where}.now`),
+  };
+}
+
+/** `read_work_snapshot`. */
+export function parseWorkSnapshot(value: unknown): WorkSnapshot {
+  const where = "read_work_snapshot";
+  const r = record(value, where);
+  const source = r["source"];
+  const model = r["model"];
+  const answers = r["answers"];
+  const requirements = r["requirements"];
+  const acceptance = r["acceptance"];
+  return {
+    work: parseWork(r["work"], `${where}.work`),
+    source: source === null ? null : parseSourceText(source, `${where}.source`),
+    model: model === null ? null : parseModelText(model, `${where}.model`),
+    model_standing: partStanding(r["model_standing"], model === null, `${where}.model_standing`),
+    answers: answers === null ? null : parseAnswers(answers, `${where}.answers`),
+    requirements: requirements === null ? null : parseRequirementsList(requirements, `${where}.requirements`),
+    requirements_standing: partStanding(
+      r["requirements_standing"],
+      requirements === null,
+      `${where}.requirements_standing`,
+    ),
+    acceptance: acceptance === null ? null : parseAcceptanceRecord(acceptance, `${where}.acceptance`),
   };
 }
 

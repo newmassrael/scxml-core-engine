@@ -28,7 +28,7 @@ use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, ReviewRequest};
 use crate::revision::Revision;
-use crate::store::{ModelText, WorkId, WorkStore};
+use crate::store::{AnswersText, ModelText, RequirementsText, WorkId, WorkStore};
 
 /// Every command, in the order a person would meet them.
 pub const COMMANDS: &[&str] = &[
@@ -52,6 +52,7 @@ pub const COMMANDS: &[&str] = &[
     "requirements_report",
     "accept",
     "read_acceptance",
+    "read_work_snapshot",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -79,7 +80,13 @@ pub const COMMANDS: &[&str] = &[
 /// `read_requirements`), measured against the model (`requirements_report`), and the
 /// owner can accept a design against them (`accept`) and ask whether the acceptance
 /// still holds (`read_acceptance`).
-pub const COMMAND_SET_VERSION: u32 = 7;
+///
+/// 8: a work can be read as one state (`read_work_snapshot`): the text, the model, the
+/// answers, the requirement list and the acceptance as they stood together, for a screen
+/// that is told something changed and must not show a text of one moment beside a model
+/// of another. A screen written for 7 has no use for it, and a screen written for 8
+/// cannot run on a core of 7.
+pub const COMMAND_SET_VERSION: u32 = 8;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -402,6 +409,40 @@ fn model_json(model: &ModelText, files: &ModelFiles) -> Value {
     })
 }
 
+/// The owner's answers as the screens read them: the revision, and each answer with the
+/// time its words last changed.
+fn answers_json(saved: &AnswersText) -> Result<Value, CommandError> {
+    Ok(json!({
+        "revision": saved.revision,
+        "entries": Answers::parse(&saved.text)?.entries(),
+    }))
+}
+
+/// A saved requirement list as the screens read it: its revision, the source it was
+/// written for, the manifest and the sidecar of quoted sentences.
+fn requirements_json(saved: &RequirementsText) -> Result<Value, CommandError> {
+    let list = Requirements::parse(&saved.text)?;
+    Ok(json!({
+        "revision": saved.revision,
+        "written_for": saved.written_for,
+        "manifest": list.manifest,
+        "sidecar": list.sidecar,
+    }))
+}
+
+/// An acceptance as the screens read it, without the product's word on whether it still
+/// holds: when it was made and on which channel, what it was taken from, and what the
+/// design left open.
+fn acceptance_json(revision: &Revision, acceptance: &Acceptance) -> Value {
+    json!({
+        "revision": revision,
+        "accepted_at": acceptance.accepted_at,
+        "channel": acceptance.channel,
+        "basis": acceptance.basis,
+        "open": acceptance.open,
+    })
+}
+
 /// The model of `id` as the product is asked about it: parsed into its documents,
 /// the staging that goes with it, and the save it came from.
 fn read_model_files<C: Clock>(
@@ -577,10 +618,7 @@ pub fn call<C: Clock>(
             let read = store.read_answers(&id, revision.as_ref())?;
             let answers = match read {
                 None => Value::Null,
-                Some(saved) => json!({
-                    "revision": saved.revision,
-                    "entries": Answers::parse(&saved.text)?.entries(),
-                }),
+                Some(saved) => answers_json(&saved)?,
             };
             Ok(json!({ "answers": answers }))
         }
@@ -625,17 +663,8 @@ pub fn call<C: Clock>(
             let (requirements, standing) = match saved {
                 None => (None, None),
                 Some(saved) => {
-                    let list = Requirements::parse(&saved.text)?;
                     let standing = standing(saved.written_for.as_ref(), source_head.as_ref());
-                    (
-                        Some(json!({
-                            "revision": saved.revision,
-                            "written_for": saved.written_for,
-                            "manifest": list.manifest,
-                            "sidecar": list.sidecar,
-                        })),
-                        Some(standing),
-                    )
+                    (Some(requirements_json(&saved)?), Some(standing))
                 }
             };
             Ok(json!({
@@ -746,16 +775,53 @@ pub fn call<C: Clock>(
                     CheckOutcome::Lapsed { says } => ("lapsed", Value::String(says)),
                 };
             Ok(json!({
-                "acceptance": {
-                    "revision": saved.revision,
-                    "accepted_at": acceptance.accepted_at,
-                    "channel": acceptance.channel,
-                    "basis": acceptance.basis,
-                    "open": acceptance.open,
-                },
+                "acceptance": acceptance_json(&saved.revision, &acceptance),
                 "standing": standing,
                 "lapse": lapse,
                 "now": now.basis,
+            }))
+        }
+        "read_work_snapshot" => {
+            let OneWork { id } = arguments(args)?;
+            let snapshot = store.read_work_snapshot(&work_id(&id)?)?;
+            // The parts are the answers of the commands that read one chain, in their
+            // words, so the screen holds one definition of each; what differs is that
+            // they were read as one state of the work and not as six.
+            let source_head = snapshot.source.as_ref().map(|s| &s.revision);
+            let (model, model_standing) = match &snapshot.model {
+                None => (None, None),
+                Some(model) => {
+                    let files = ModelFiles::parse(&model.text)?;
+                    (
+                        Some(model_json(model, &files)),
+                        Some(standing(model.written_for.as_ref(), source_head)),
+                    )
+                }
+            };
+            let (requirements, requirements_standing) = match &snapshot.requirements {
+                None => (None, None),
+                Some(saved) => (
+                    Some(requirements_json(saved)?),
+                    Some(standing(saved.written_for.as_ref(), source_head)),
+                ),
+            };
+            let answers = snapshot.answers.as_ref().map(answers_json).transpose()?;
+            let acceptance = match &snapshot.acceptance {
+                None => None,
+                Some(saved) => Some(acceptance_json(
+                    &saved.revision,
+                    &Acceptance::parse(&saved.text)?,
+                )),
+            };
+            Ok(json!({
+                "work": snapshot.work,
+                "source": snapshot.source,
+                "model": model,
+                "model_standing": model_standing,
+                "answers": answers,
+                "requirements": requirements,
+                "requirements_standing": requirements_standing,
+                "acceptance": acceptance,
             }))
         }
         "remove_work" => {

@@ -31,6 +31,7 @@ import {
   parseSaved,
   parseWork,
   parseWorkAndHead,
+  parseWorkSnapshot,
   SUPPORTED_COMMAND_SET_VERSION,
 } from "../src/contract";
 
@@ -65,6 +66,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   requirements_report: parseRequirementsReport,
   accept: parseSaved,
   read_acceptance: parseReadAcceptance,
+  read_work_snapshot: parseWorkSnapshot,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -212,6 +214,33 @@ describe("the replies the core gives", () => {
     expect(lapsed.now?.model).not.toBe(lapsed.acceptance?.basis.model);
   });
 
+  it("give a work as one state, in the words of the commands that read one chain", () => {
+    const empty = parseWorkSnapshot(replies.answers["read_work_snapshot_empty"]);
+    expect(empty).toMatchObject({
+      source: null,
+      model: null,
+      model_standing: null,
+      answers: null,
+      requirements: null,
+      requirements_standing: null,
+      acceptance: null,
+    });
+    // A work with a text, a model and answers, and no list and no acceptance.
+    const door = parseWorkSnapshot(replies.answers["read_work_snapshot"]);
+    expect(door.work.title).toBe("Door lock");
+    expect(door.model_standing).toBe("current");
+    expect(door.model).toEqual(parseReadModel(replies.answers["read_model_kept"]).model);
+    expect(door.answers).toEqual(parseReadAnswers(replies.answers["read_answers"]));
+    expect(door.requirements).toBeNull();
+    expect(door.acceptance).toBeNull();
+    // A work with a text, a model, a list and an acceptance, and no answers.
+    const garage = parseWorkSnapshot(replies.answers["read_work_snapshot_accepted"]);
+    expect(garage.answers).toBeNull();
+    expect(garage.requirements_standing).toBe("current");
+    expect(garage.requirements).toEqual(parseReadRequirements(replies.answers["read_requirements"]).requirements);
+    expect(garage.acceptance).toEqual(parseReadAcceptance(replies.answers["read_acceptance"]).acceptance);
+  });
+
   it("refuse an acceptance of what moved, or of a design for an earlier text, and say which", () => {
     const moved = asCommandError(replies.refusals["moved"]);
     expect(moved?.kind).toBe("moved");
@@ -294,6 +323,17 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
     expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
+    // A snapshot that leaves a chain out says which, and a standing must agree with
+    // whether the part it is about is there.
+    const snapshot = replies.answers["read_work_snapshot"] as Record<string, unknown>;
+    const { answers: _answers, ...withoutAnswers } = snapshot;
+    expect(() => parseWorkSnapshot(withoutAnswers)).toThrow(/read_work_snapshot\.answers/);
+    expect(() => parseWorkSnapshot({ ...snapshot, model_standing: null })).toThrow(
+      /read_work_snapshot\.model_standing/,
+    );
+    expect(() => parseWorkSnapshot({ ...snapshot, requirements_standing: "current" })).toThrow(
+      /read_work_snapshot\.requirements_standing: expected null/,
+    );
     const set = replies.answers["read_model_set"] as { model: Record<string, unknown> } & Record<string, unknown>;
     expect(() => parseReadModel({ ...set, model: { ...set.model, entry: "gone.scxml" } })).toThrow(
       /read_model\.model\.entry/,
