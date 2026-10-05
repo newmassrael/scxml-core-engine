@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2b636e9df9c9e39b6c016df490c4261f68f9ed45cf2751011900f4ec96cffb39
+// source-hash: 244875d17e69c3f5e7e3331d8a43e20ae13a35dfa6077c3f4b8715a65a5926ae
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
