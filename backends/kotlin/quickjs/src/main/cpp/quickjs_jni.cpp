@@ -29,8 +29,20 @@ struct QJSSession {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// A runtime measures its stack limit from the thread whose stack it was last
+// told about, and a session is entered from whichever thread the machine runs
+// on — a coroutine-mode machine runs on `Dispatchers.Default`, and the thread
+// that built its engine is another. Left at the creating thread's address, the
+// limit is judged against a stack elsewhere in memory, and a trivial expression
+// fails with "Maximum call stack size exceeded" for no reason the document
+// gave. So every entry says which stack it is on: the caller may be a different
+// thread each time, and the answer is the same wherever it stands.
 static inline QJSSession *toSession(jlong handle) {
-    return reinterpret_cast<QJSSession *>(handle);
+    auto *session = reinterpret_cast<QJSSession *>(handle);
+    if (session != nullptr && session->rt != nullptr) {
+        JS_UpdateStackTop(session->rt);
+    }
+    return session;
 }
 
 static inline jlong toHandle(QJSSession *session) {
