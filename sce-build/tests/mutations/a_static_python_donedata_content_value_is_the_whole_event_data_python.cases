@@ -1,0 +1,48 @@
+# Mutation cases for the `<content expr>` of a `<final>`'s `<donedata>` that names
+# one value, in a `datamodel="sce-static"` machine generated as Python
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_donedata_content_value_is_the_whole_event_data_python.cases`.
+#
+# The expression is Python the lowering wrote, read from the policy's own
+# attributes when the state is entered, and the template only places it: the
+# value is the done event's whole data as the JSON `to_json_literal` writes (`4`,
+# `"tally"`). A value that cannot be computed — a checked multiplication that
+# overflows — raises `AlgorithmFailure`, and it is the evaluation that failed (W3C
+# SCXML 5.5): `error.execution` is raised and the empty string is the content's
+# value.
+#
+# What is easy to get wrong and reads as success: the zero of a failed value is a
+# done event that looks complete, and the text of a value in place of its JSON is
+# a number that is right and a string that has lost its quotes. The scenarios
+# `static_donedata_content_value`, `_text` and `_lost` tell them apart.
+#
+# Python compiles nothing and its generated machines are gitignored, so the
+# template reaches the tests only through the regeneration declared below. It is a
+# `mutation_runtime_targets` for the reason the other Python casefiles give: what
+# shows a mutation arrived is that the file on disk differed while the tests ran.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_static_scenarios.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/entry_exit_actions.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
+
+# ── A value that cannot be computed is the empty string ────────────
+
+mutation_case "a donedata content value that failed is the zero of its type, not the empty string" <<'PY'
+edit("tools/codegen/templates/python/entry_exit_actions.py.jinja2",
+     "                _done_data = '\"\"'\n{% else %}",
+     "                _done_data = '0'\n{% else %}")
+PY
+
+# ── The value is the JSON it is ────────────────────────────────────
+
+mutation_case "a donedata content value is the text of the value, not its JSON" <<'PY'
+edit("tools/codegen/templates/python/entry_exit_actions.py.jinja2",
+     "{% else %}\n            _done_data = ({{ state.donedata.native_content_value }}).to_json_literal()\n",
+     "{% else %}\n            _done_data = ({{ state.donedata.native_content_value }}).to_wire_string()\n")
+PY

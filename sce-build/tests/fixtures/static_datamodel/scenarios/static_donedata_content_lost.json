@@ -1,0 +1,16 @@
+{
+  "machine": "static_donedata_content",
+  "about": "A top-level final whose <donedata> carries a <content expr> that cannot be computed hands its done event the empty string: `count * 2000000000` over a counter at 3 overflows a uint32, which is the evaluation that failed (W3C SCXML 5.5), so error.execution is raised and the empty string is the content's value. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the counter starts at its declared value",
+      "expect": { "state": "counting", "variables": { "count": 0 } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1 } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 2 } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 3 } } },
+
+    { "note": "the final is entered: the product overflows, so the done event's data is the empty string",
+      "event": "finish_lost",
+      "expect": { "ended": true, "donedata": "" } }
+  ]
+}

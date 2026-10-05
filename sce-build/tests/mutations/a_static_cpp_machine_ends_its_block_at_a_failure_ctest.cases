@@ -61,8 +61,8 @@ PY
 
 mutation_case "a donedata param that failed is carried with its zero" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
-     "                        if (sce_failure_.failed()) SCE_UNLIKELY {",
-     "                        if (false) SCE_UNLIKELY {")
+     "                        if (sce_failure_.failed()) SCE_UNLIKELY {\n                            SCE_LOG_WARN(\"Donedata param '",
+     "                        if (false) SCE_UNLIKELY {\n                            SCE_LOG_WARN(\"Donedata param '")
 PY
 
 mutation_case "the donedata pairs are not handed to the done event" <<'PY'

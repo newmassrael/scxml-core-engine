@@ -2855,6 +2855,37 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                            "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
             memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
         }
+        {% elif static_datamodel and state.donedata.native_content_value %}
+        /* SCE Accepted Subset §2.15 + §scxml-5.5: under `sce-static` a
+           `<content expr>` that names one value is lowered to native code
+           (`DoneData::native_content_value`) and read from the machine's own
+           fields as the state is entered; it is the done event's whole data, as
+           the JSON `sce_forge_wire_json` writes, into the buffer the done event
+           is built from or a host reads. One that failed is the evaluation that
+           failed: error.execution, and the empty string as the value. */
+        {
+        {% if state.donedata.native_content_value_fails %}
+            sce_forge_algorithm_failure_t sce_failure_ = {0};
+        {% endif %}
+            sce_forge_wire_value_t sce_value = {{ state.donedata.native_content_value }};
+        {% if state.donedata.native_content_value_fails %}
+            if (sce_failure_.failed) {
+        {% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<donedata> <content expr> failed to evaluate");
+        {% endif %}
+                sce_value = sce_forge_wire_string("");
+            }
+        {% endif %}
+            if (!sce_forge_wire_json(sce_value, sm->done_data, sizeof(sm->done_data))) {
+        {% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<donedata> does not fit the event's data, so it was left empty");
+        {% endif %}
+            }
+        }
         {% elif state.donedata.params %}
         /* W3C SCXML 5.5: build _sce_donedata as a table of
            name:value pairs. §scxml-5.7: a pair whose location is not
@@ -2940,7 +2971,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
                     (size_t)SCE_MAX_DATA_LEN - 1u);
             _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
-            {% elif static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content) %}
+            {% elif static_datamodel and state.donedata and (state.donedata.params or state.donedata.native_content or state.donedata.native_content_value) %}
             /* §scxml-5.5: the pairs or the text written above ride on this
                event's data, a buffer of the size `done_data` is. */
             memcpy(_done_evt.data, sm->done_data, sizeof(_done_evt.data));

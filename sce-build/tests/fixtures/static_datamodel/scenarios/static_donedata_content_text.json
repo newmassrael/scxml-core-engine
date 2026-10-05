@@ -1,0 +1,14 @@
+{
+  "machine": "static_donedata_content",
+  "about": "A top-level final whose <donedata> carries a <content expr> that names a string variable hands its done event that string as its whole data: the JSON string \"tally\", quoted as data. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the counter starts at its declared value",
+      "expect": { "state": "counting", "variables": { "count": 0 } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1 } } },
+
+    { "note": "the final is entered: the done event's data is the string \"tally\"",
+      "event": "finish_text",
+      "expect": { "ended": true, "donedata": "tally" } }
+  ]
+}

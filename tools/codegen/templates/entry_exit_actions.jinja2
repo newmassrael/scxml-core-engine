@@ -556,6 +556,29 @@
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
                     eventData = "{{ state.donedata.native_content | escape_cpp }}";
                     typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
+{% elif state.donedata.native_content_value %}
+{# `datamodel="sce-static"` (`DoneData::native_content_value`): the `<content
+   expr>` names one value, lowered to native code and read from the machine's
+   own fields as the state is entered; it is the done event's whole data, as the
+   JSON `scriptValueToJsonString` writes (SCE Accepted Subset §2.15). One that
+   cannot be computed is the evaluation that failed: error.execution, and the
+   empty string as the value. #}
+                    // W3C SCXML 5.5: the value of <content expr> is the done event's data.
+                    {
+{% if state.donedata.native_content_value_fails %}
+                        SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                        ScriptValue contentValue = {{ state.donedata.native_content_value }};
+{% if state.donedata.native_content_value_fails %}
+                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                            SCE_LOG_WARN("Donedata content expr overflowed or failed");
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <content expr> failed to evaluate"));
+                            contentValue = ScriptValue(std::string());
+                        }
+{% endif %}
+                        eventData = ::SCE::EventDataHelper::scriptValueToJsonString(contentValue);
+                        typedData = std::move(contentValue);
+                    }
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 860af7978d3b862216839cf8b169c14ab2f1b057aa2d784af873fa0958afaca8
+// source-hash: 8153420d7cf0af90d3fcf1a0988689d0a2d9a01bb414f5c89e80914a42bd4533
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_donedata_content.scxml:12 :: _machine
+// SCE-MAP: static_donedata_content.scxml:22 :: _machine
 
 package static_donedata_content
 
@@ -52,6 +52,9 @@ type StaticDonedataContentState int
 const (
 	StaticDonedataContentStateCounting StaticDonedataContentState = 0
 	StaticDonedataContentStateDone StaticDonedataContentState = 1
+	StaticDonedataContentStateLost StaticDonedataContentState = 2
+	StaticDonedataContentStateNamed StaticDonedataContentState = 3
+	StaticDonedataContentStateValued StaticDonedataContentState = 4
 )
 
 func (s StaticDonedataContentState) String() string {
@@ -60,6 +63,12 @@ func (s StaticDonedataContentState) String() string {
 		return "counting"
 	case StaticDonedataContentStateDone:
 		return "done"
+	case StaticDonedataContentStateLost:
+		return "lost"
+	case StaticDonedataContentStateNamed:
+		return "named"
+	case StaticDonedataContentStateValued:
+		return "valued"
 	}
 	return "unknown"
 }
@@ -86,6 +95,12 @@ func StaticDonedataContentStateFromName(name string) (StaticDonedataContentState
 		return StaticDonedataContentStateCounting, true
 	case "done":
 		return StaticDonedataContentStateDone, true
+	case "lost":
+		return StaticDonedataContentStateLost, true
+	case "named":
+		return StaticDonedataContentStateNamed, true
+	case "valued":
+		return StaticDonedataContentStateValued, true
 	}
 	var zero StaticDonedataContentState
 	return zero, false
@@ -100,6 +115,9 @@ func StaticDonedataContentStateFromName(name string) (StaticDonedataContentState
 var StaticDonedataContentAllStates = []StaticDonedataContentState{
 	StaticDonedataContentStateCounting,
 	StaticDonedataContentStateDone,
+	StaticDonedataContentStateLost,
+	StaticDonedataContentStateNamed,
+	StaticDonedataContentStateValued,
 }
 
 // StaticDonedataContentTarget is one token of a target list, as the document wrote
@@ -117,12 +135,12 @@ type StaticDonedataContentTarget = sce.EntryTarget[StaticDonedataContentState, s
 
 // childStatesOfStaticDonedataContent is §scxml-D-getChildStates per state: its
 // <state>, <parallel> and <final> children, in document order.
-var childStatesOfStaticDonedataContent = [2][]StaticDonedataContentState{
+var childStatesOfStaticDonedataContent = [5][]StaticDonedataContentState{
 }
 
 // initialTargetsOfStaticDonedataContent is each compound state's initial transition
 // target, as written (§scxml-3.3).
-var initialTargetsOfStaticDonedataContent = [2][]StaticDonedataContentTarget{
+var initialTargetsOfStaticDonedataContent = [5][]StaticDonedataContentTarget{
 }
 
 // documentInitialTargetsOfStaticDonedataContent is the target of the document's own
@@ -132,9 +150,12 @@ var documentInitialTargetsOfStaticDonedataContent = []StaticDonedataContentTarge
 // transitionTargetsOfStaticDonedataContent is each transition's target list, as
 // written (§scxml-3.13), by source state and the transition's index among its
 // source's own transitions. A targetless transition's entry is empty.
-var transitionTargetsOfStaticDonedataContent = [2][][]StaticDonedataContentTarget{
+var transitionTargetsOfStaticDonedataContent = [5][][]StaticDonedataContentTarget{
 	StaticDonedataContentStateCounting: {
 		1: {sce.StateTarget[StaticDonedataContentState, sce.HistoryID](StaticDonedataContentStateDone)},
+		2: {sce.StateTarget[StaticDonedataContentState, sce.HistoryID](StaticDonedataContentStateValued)},
+		3: {sce.StateTarget[StaticDonedataContentState, sce.HistoryID](StaticDonedataContentStateNamed)},
+		4: {sce.StateTarget[StaticDonedataContentState, sce.HistoryID](StaticDonedataContentStateLost)},
 	},
 }
 
@@ -147,9 +168,12 @@ type StaticDonedataContentEvent int
 const (
 	StaticDonedataContentEventErrorExecution StaticDonedataContentEvent = 0
 	StaticDonedataContentEventFinish StaticDonedataContentEvent = 1
-	StaticDonedataContentEventTick StaticDonedataContentEvent = 2
+	StaticDonedataContentEventFinishLost StaticDonedataContentEvent = 2
+	StaticDonedataContentEventFinishText StaticDonedataContentEvent = 3
+	StaticDonedataContentEventFinishValue StaticDonedataContentEvent = 4
+	StaticDonedataContentEventTick StaticDonedataContentEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticDonedataContentEventNull StaticDonedataContentEvent = 3
+	StaticDonedataContentEventNull StaticDonedataContentEvent = 6
 )
 
 func (e StaticDonedataContentEvent) String() string {
@@ -158,6 +182,12 @@ func (e StaticDonedataContentEvent) String() string {
 		return "error.execution"
 	case StaticDonedataContentEventFinish:
 		return "finish"
+	case StaticDonedataContentEventFinishLost:
+		return "finish_lost"
+	case StaticDonedataContentEventFinishText:
+		return "finish_text"
+	case StaticDonedataContentEventFinishValue:
+		return "finish_value"
 	case StaticDonedataContentEventTick:
 		return "tick"
 	case StaticDonedataContentEventNull:
@@ -176,6 +206,8 @@ type StaticDonedataContentPolicy struct {
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
 	vCount uint32
+	// W3C SCXML 5.2: the `label` datamodel variable.
+	vLabel string
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -189,6 +221,7 @@ type StaticDonedataContentPolicy struct {
 func NewStaticDonedataContentPolicy() StaticDonedataContentPolicy {
 	return StaticDonedataContentPolicy{
 		vCount: 0,
+		vLabel: "tally",
 	}
 }
 
@@ -203,6 +236,7 @@ func (p *StaticDonedataContentPolicy) Count() uint32 {
 // variable left nil keeps the value its `<data>` gave it.
 type StaticDonedataContentInvokeParams struct {
 	VCount *uint32
+	VLabel *string
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -210,6 +244,9 @@ type StaticDonedataContentInvokeParams struct {
 func (p *StaticDonedataContentPolicy) AcceptParams(params StaticDonedataContentInvokeParams) {
 	if params.VCount != nil {
 		p.vCount = *params.VCount
+	}
+	if params.VLabel != nil {
+		p.vLabel = *params.VLabel
 	}
 }
 
@@ -261,6 +298,12 @@ func (p *StaticDonedataContentPolicy) InitialState() StaticDonedataContentState 
 func (p *StaticDonedataContentPolicy) IsFinalState(state StaticDonedataContentState) bool {
 	switch state {
 	case StaticDonedataContentStateDone:
+		return true
+	case StaticDonedataContentStateLost:
+		return true
+	case StaticDonedataContentStateNamed:
+		return true
+	case StaticDonedataContentStateValued:
 		return true
 	}
 	return false
@@ -321,6 +364,12 @@ func (p *StaticDonedataContentPolicy) GetDocumentOrder(state StaticDonedataConte
 		return 0
 	case StaticDonedataContentStateDone:
 		return 1
+	case StaticDonedataContentStateLost:
+		return 4
+	case StaticDonedataContentStateNamed:
+		return 3
+	case StaticDonedataContentStateValued:
+		return 2
 	}
 	return -1
 }
@@ -337,6 +386,12 @@ func (p *StaticDonedataContentPolicy) GetEventFromName(name string) (StaticDoned
 		return StaticDonedataContentEventErrorExecution, true
 	case "finish":
 		return StaticDonedataContentEventFinish, true
+	case "finish_lost":
+		return StaticDonedataContentEventFinishLost, true
+	case "finish_text":
+		return StaticDonedataContentEventFinishText, true
+	case "finish_value":
+		return StaticDonedataContentEventFinishValue, true
 	case "tick":
 		return StaticDonedataContentEventTick, true
 	}
@@ -438,16 +493,74 @@ func (p *StaticDonedataContentPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataContentState, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticDonedataContentStateDone:
-		//line static_donedata_content.scxml:23
+		//line static_donedata_content.scxml:37
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
 			// W3C SCXML 5.5: inline text is the content value, finished at build time.
 			doneEventData = "\"42\""
+		}
+		_ = doneEventData
+		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+		// invoking parent's RaiseDoneInvoke can lift it onto
+		// done.invoke.<id>._event.data. Mirrors the C++ AOT
+		// stashDonedataAtFinal contract and Rust
+		// Engine::stash_donedata_at_final.
+		engine.StashDonedataAtFinal(doneEventData)
+	case StaticDonedataContentStateLost:
+		//line static_donedata_content.scxml:52
+		// W3C SCXML 5.5: Evaluate donedata for final state
+		doneEventData := ""
+		{
+			// W3C SCXML 5.5: the value of <content expr> is the done event's data.
+			var sceFailure scealgorithm.Failure
+			var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2000000000))
+			if sceFailure.Failed() {
+				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, "<donedata> <content expr> failed to evaluate"))
+				contentValue = ""
+			}
+			doneEventData = sce.ScriptValueToJSON(contentValue)
+		}
+		_ = doneEventData
+		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+		// invoking parent's RaiseDoneInvoke can lift it onto
+		// done.invoke.<id>._event.data. Mirrors the C++ AOT
+		// stashDonedataAtFinal contract and Rust
+		// Engine::stash_donedata_at_final.
+		engine.StashDonedataAtFinal(doneEventData)
+	case StaticDonedataContentStateNamed:
+		//line static_donedata_content.scxml:47
+		// W3C SCXML 5.5: Evaluate donedata for final state
+		doneEventData := ""
+		{
+			// W3C SCXML 5.5: the value of <content expr> is the done event's data.
+			var contentValue interface{} = p.vLabel
+			doneEventData = sce.ScriptValueToJSON(contentValue)
+		}
+		_ = doneEventData
+		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+		// invoking parent's RaiseDoneInvoke can lift it onto
+		// done.invoke.<id>._event.data. Mirrors the C++ AOT
+		// stashDonedataAtFinal contract and Rust
+		// Engine::stash_donedata_at_final.
+		engine.StashDonedataAtFinal(doneEventData)
+	case StaticDonedataContentStateValued:
+		//line static_donedata_content.scxml:42
+		// W3C SCXML 5.5: Evaluate donedata for final state
+		doneEventData := ""
+		{
+			// W3C SCXML 5.5: the value of <content expr> is the done event's data.
+			var sceFailure scealgorithm.Failure
+			var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2))
+			if sceFailure.Failed() {
+				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, "<donedata> <content expr> failed to evaluate"))
+				contentValue = ""
+			}
+			doneEventData = sce.ScriptValueToJSON(contentValue)
 		}
 		_ = doneEventData
 		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
@@ -466,7 +579,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -474,7 +587,7 @@ func (p *StaticDonedataContentPolicy) ExecuteHistoryDefaultContent(history sce.H
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) ExecuteExitActions(state StaticDonedataContentState, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent], configurationBeforeExit []StaticDonedataContentState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -491,7 +604,7 @@ func (p *StaticDonedataContentPolicy) ExecuteExitActions(state StaticDonedataCon
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) BindCurrentEvent(event StaticDonedataContentEvent, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -501,7 +614,7 @@ func (p *StaticDonedataContentPolicy) BindCurrentEvent(event StaticDonedataConte
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) FirstEnabledTransition(state StaticDonedataContentState, event StaticDonedataContentEvent, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) (sce.EnabledTransition[StaticDonedataContentState, sce.HistoryID], bool) {
 	switch state {
 	case StaticDonedataContentStateCounting:
@@ -526,19 +639,52 @@ func (p *StaticDonedataContentPolicy) FirstEnabledTransition(state StaticDonedat
 				}, true
 			}
 		}
+		if event == StaticDonedataContentEventFinishValue {
+			{
+				return sce.EnabledTransition[StaticDonedataContentState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticDonedataContent[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticDonedataContentEventFinishText {
+			{
+				return sce.EnabledTransition[StaticDonedataContentState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticDonedataContent[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticDonedataContentEventFinishLost {
+			{
+				return sce.EnabledTransition[StaticDonedataContentState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticDonedataContent[state][4],
+					TransitionIndex: 4,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StaticDonedataContentState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_donedata_content.scxml:12
+//line static_donedata_content.scxml:22
 func (p *StaticDonedataContentPolicy) ExecuteTransitionContent(source StaticDonedataContentState, transitionIndex int, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) {
 	switch source {
 	case StaticDonedataContentStateCounting:
 		switch transitionIndex {
 		case 0:
-			//line static_donedata_content.scxml:18
+			//line static_donedata_content.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

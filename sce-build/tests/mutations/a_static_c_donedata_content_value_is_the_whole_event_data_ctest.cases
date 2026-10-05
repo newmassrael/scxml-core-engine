@@ -1,0 +1,45 @@
+# Mutation cases for the `<content expr>` of a `<final>`'s `<donedata>` that names
+# one value, in a `datamodel="sce-static"` machine generated as C11
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_donedata_content_value_is_the_whole_event_data_ctest.cases`.
+#
+# The expression is C the lowering wrote, read from the machine's own fields when
+# the state is entered, and the template only places it: the value is the done
+# event's whole data as the JSON `sce_forge_wire_json` writes (`4`, `"tally"`),
+# into the buffer the done event is built from or a host reads. A value that
+# cannot be computed — a checked multiplication that overflows — is the
+# evaluation that failed (W3C SCXML 5.5): `error.execution` is raised and the
+# empty string is the content's value.
+#
+# What is easy to get wrong and reads as success: the zero of a failed value is a
+# done event that looks complete, and the text of a value in place of its JSON is
+# a number that is right and a string that has lost its quotes. The scenarios
+# `static_donedata_content_value`, `_text` and `_lost` tell them apart.
+#
+# The generated machine is built from the template at build time, so the template
+# is the declared target and the build is what carries a mutation into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/tests/integration/static_scenario.h sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
+
+# ── A value that cannot be computed is the empty string ────────────
+
+mutation_case "a donedata content value that failed is the zero of its type, not the empty string" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                sce_value = sce_forge_wire_string(\"\");\n            }\n        {% endif %}\n            if (!sce_forge_wire_json(sce_value, sm->done_data",
+     "                sce_value = sce_forge_wire_int(0);\n            }\n        {% endif %}\n            if (!sce_forge_wire_json(sce_value, sm->done_data")
+PY
+
+# ── The value is the JSON it is ────────────────────────────────────
+
+mutation_case "a donedata content value is the text of the value, not its JSON" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (!sce_forge_wire_json(sce_value, sm->done_data, sizeof(sm->done_data))) {",
+     "            if (!sce_forge_wire_text(sce_value, sm->done_data, sizeof(sm->done_data))) {")
+PY

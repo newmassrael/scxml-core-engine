@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 860af7978d3b862216839cf8b169c14ab2f1b057aa2d784af873fa0958afaca8
+// source-hash: 8153420d7cf0af90d3fcf1a0988689d0a2d9a01bb414f5c89e80914a42bd4533
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_donedata_content.scxml:12 :: _machine"]
-// SCE-MAP: static_donedata_content.scxml:12 :: _machine
+#![doc = "SCE-MAP: static_donedata_content.scxml:22 :: _machine"]
+// SCE-MAP: static_donedata_content.scxml:22 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -88,6 +88,9 @@ pub enum StaticDonedataContentState {
     #[default]
     Counting,
     Done,
+    Lost,
+    Named,
+    Valued,
 }
 
 // ======================================================================
@@ -98,6 +101,9 @@ pub enum StaticDonedataContentState {
 pub enum StaticDonedataContentEvent {
     ErrorExecution,
     Finish,
+    FinishLost,
+    FinishText,
+    FinishValue,
     Tick,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -121,6 +127,9 @@ impl StaticDonedataContentEvent {
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticDonedataContentEvent] = &[
         StaticDonedataContentEvent::Finish,
+        StaticDonedataContentEvent::FinishLost,
+        StaticDonedataContentEvent::FinishText,
+        StaticDonedataContentEvent::FinishValue,
         StaticDonedataContentEvent::Tick,
     ];
 }
@@ -247,7 +256,7 @@ pub trait StaticDonedataContentPersist: Sized {
 impl StaticDonedataContentPersist for Engine<StaticDonedataContentPolicy> {
     type Policy = StaticDonedataContentPolicy;
 
-    const SHAPE: &'static str = "1338ef746484e3cad4377294a89e6faf1dd6df3a9e93d520359ef96699a73532";
+    const SHAPE: &'static str = "e61d59da70b1aa48f4d6540ebd68da5b1b606474d9f1fdd93c9d10c9d2fa90e4";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -264,10 +273,16 @@ impl StaticDonedataContentPersist for Engine<StaticDonedataContentPolicy> {
         ::sce_rust_runtime::saved_state::save(
             self,
             Self::SHAPE,
-            vec![(
-                "count".to_string(),
-                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.count),
-            )],
+            vec![
+                (
+                    "count".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.count),
+                ),
+                (
+                    "label".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.label),
+                ),
+            ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
             wall_now_ms,
         )
@@ -291,6 +306,8 @@ impl StaticDonedataContentPersist for Engine<StaticDonedataContentPolicy> {
             saved.variable("count")?,
             "count",
         )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -301,6 +318,7 @@ impl StaticDonedataContentPersist for Engine<StaticDonedataContentPolicy> {
 #[derive(Default)]
 pub struct StaticDonedataContentInvokeParams {
     pub count: Option<u32>,
+    pub label: Option<String>,
 }
 
 // ======================================================================
@@ -310,6 +328,8 @@ pub struct StaticDonedataContentInvokeParams {
 pub struct StaticDonedataContentPolicy {
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
     count: u32,
+    /// W3C SCXML 5.2: the `label` datamodel variable.
+    label: String,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -335,8 +355,10 @@ pub struct StaticDonedataContentPolicy {
 impl StaticDonedataContentPolicy {
     pub fn new() -> Self {
         let count: u32 = 0;
+        let label: String = "tally".to_string();
         Self {
             count,
+            label,
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -349,6 +371,9 @@ impl StaticDonedataContentPolicy {
     pub fn accept_params(&mut self, params: StaticDonedataContentInvokeParams) {
         if let Some(value) = params.count {
             self.count = value;
+        }
+        if let Some(value) = params.label {
+            self.label = value;
         }
     }
 
@@ -429,6 +454,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
     fn is_final_state(state: Self::State) -> bool {
         match state {
             StaticDonedataContentState::Done => true,
+            StaticDonedataContentState::Lost => true,
+            StaticDonedataContentState::Named => true,
+            StaticDonedataContentState::Valued => true,
             _ => false,
         }
     }
@@ -489,6 +517,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
         match state {
             StaticDonedataContentState::Counting => 0,
             StaticDonedataContentState::Done => 1,
+            StaticDonedataContentState::Lost => 4,
+            StaticDonedataContentState::Named => 3,
+            StaticDonedataContentState::Valued => 2,
         }
     }
 
@@ -496,6 +527,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
         match event {
             StaticDonedataContentEvent::ErrorExecution => "error.execution",
             StaticDonedataContentEvent::Finish => "finish",
+            StaticDonedataContentEvent::FinishLost => "finish_lost",
+            StaticDonedataContentEvent::FinishText => "finish_text",
+            StaticDonedataContentEvent::FinishValue => "finish_value",
             StaticDonedataContentEvent::Tick => "tick",
             StaticDonedataContentEvent::Null => "",
         }
@@ -505,6 +539,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
         match name {
             "error.execution" => Some(StaticDonedataContentEvent::ErrorExecution),
             "finish" => Some(StaticDonedataContentEvent::Finish),
+            "finish_lost" => Some(StaticDonedataContentEvent::FinishLost),
+            "finish_text" => Some(StaticDonedataContentEvent::FinishText),
+            "finish_value" => Some(StaticDonedataContentEvent::FinishValue),
             "tick" => Some(StaticDonedataContentEvent::Tick),
             _ => None,
         }
@@ -514,6 +551,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
         match state {
             StaticDonedataContentState::Counting => "counting",
             StaticDonedataContentState::Done => "done",
+            StaticDonedataContentState::Lost => "lost",
+            StaticDonedataContentState::Named => "named",
+            StaticDonedataContentState::Valued => "valued",
         }
     }
 
@@ -524,6 +564,9 @@ impl StatePolicy for StaticDonedataContentPolicy {
         match name {
             "counting" => Some(StaticDonedataContentState::Counting),
             "done" => Some(StaticDonedataContentState::Done),
+            "lost" => Some(StaticDonedataContentState::Lost),
+            "named" => Some(StaticDonedataContentState::Named),
+            "valued" => Some(StaticDonedataContentState::Valued),
             _ => None,
         }
     }
@@ -547,8 +590,8 @@ impl StatePolicy for StaticDonedataContentPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_donedata_content.scxml:12 :: _machine"]
-    // SCE-MAP: static_donedata_content.scxml:12 :: _machine
+    #[doc = "SCE-MAP: static_donedata_content.scxml:22 :: _machine"]
+    // SCE-MAP: static_donedata_content.scxml:22 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -557,12 +600,85 @@ impl StatePolicy for StaticDonedataContentPolicy {
     ) {
         match state {
             StaticDonedataContentState::Done => {
-                // SCE-MAP: static_donedata_content.scxml:23 :: done :: _state_body
+                // SCE-MAP: static_donedata_content.scxml:37 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
                 {
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
                     done_event_data = String::from("\"42\"");
+                }
+                // W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+                // invoking parent's raise_done_invoke can lift it onto
+                // done.invoke.<id>._event.data. Mirrors the C++ AOT
+                // stashDonedataAtFinal contract and Kotlin
+                // StateMachineEngine.stashDonedataAtFinal.
+                engine.stash_donedata_at_final(done_event_data);
+            }
+            StaticDonedataContentState::Lost => {
+                // SCE-MAP: static_donedata_content.scxml:52 :: lost :: _state_body
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                let mut done_event_data = String::new();
+                {
+                    // W3C SCXML 5.5: the value of <content expr> is the done event's data.
+                    let content_value = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2000000000)?)))
+                    })() {
+                        Ok(val) => val,
+                        Err(_) => {
+                            ::sce_rust_runtime::sce_log_error!("Donedata content expr overflowed or failed");
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticDonedataContentEvent::ErrorExecution, "<donedata> <content expr> failed to evaluate"));
+                            ::sce_rust_runtime::ScriptValue::String(String::new())
+                        }
+                    };
+                    done_event_data = ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                        &content_value,
+                    );
+                }
+                // W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+                // invoking parent's raise_done_invoke can lift it onto
+                // done.invoke.<id>._event.data. Mirrors the C++ AOT
+                // stashDonedataAtFinal contract and Kotlin
+                // StateMachineEngine.stashDonedataAtFinal.
+                engine.stash_donedata_at_final(done_event_data);
+            }
+            StaticDonedataContentState::Named => {
+                // SCE-MAP: static_donedata_content.scxml:47 :: named :: _state_body
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                let mut done_event_data = String::new();
+                {
+                    // W3C SCXML 5.5: the value of <content expr> is the done event's data.
+                    let content_value =
+                        ::sce_rust_runtime::ScriptValue::String(self.label.to_string());
+                    done_event_data = ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                        &content_value,
+                    );
+                }
+                // W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+                // invoking parent's raise_done_invoke can lift it onto
+                // done.invoke.<id>._event.data. Mirrors the C++ AOT
+                // stashDonedataAtFinal contract and Kotlin
+                // StateMachineEngine.stashDonedataAtFinal.
+                engine.stash_donedata_at_final(done_event_data);
+            }
+            StaticDonedataContentState::Valued => {
+                // SCE-MAP: static_donedata_content.scxml:42 :: valued :: _state_body
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                let mut done_event_data = String::new();
+                {
+                    // W3C SCXML 5.5: the value of <content expr> is the done event's data.
+                    let content_value = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2)?)))
+                    })() {
+                        Ok(val) => val,
+                        Err(_) => {
+                            ::sce_rust_runtime::sce_log_error!("Donedata content expr overflowed or failed");
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticDonedataContentEvent::ErrorExecution, "<donedata> <content expr> failed to evaluate"));
+                            ::sce_rust_runtime::ScriptValue::String(String::new())
+                        }
+                    };
+                    done_event_data = ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                        &content_value,
+                    );
                 }
                 // W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
                 // invoking parent's raise_done_invoke can lift it onto
@@ -582,8 +698,8 @@ impl StatePolicy for StaticDonedataContentPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_donedata_content.scxml:12 :: _machine"]
-    // SCE-MAP: static_donedata_content.scxml:12 :: _machine
+    #[doc = "SCE-MAP: static_donedata_content.scxml:22 :: _machine"]
+    // SCE-MAP: static_donedata_content.scxml:22 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -599,8 +715,8 @@ impl StatePolicy for StaticDonedataContentPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_donedata_content.scxml:12 :: _machine"]
-    // SCE-MAP: static_donedata_content.scxml:12 :: _machine
+    #[doc = "SCE-MAP: static_donedata_content.scxml:22 :: _machine"]
+    // SCE-MAP: static_donedata_content.scxml:22 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -633,6 +749,45 @@ impl StatePolicy for StaticDonedataContentPolicy {
                         });
                     }
                 }
+                if event == StaticDonedataContentEvent::FinishValue {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StaticDonedataContentState::Valued,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StaticDonedataContentEvent::FinishText {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StaticDonedataContentState::Named,
+                            )],
+                            transition_index: 3,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StaticDonedataContentEvent::FinishLost {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StaticDonedataContentState::Lost,
+                            )],
+                            transition_index: 4,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -641,8 +796,8 @@ impl StatePolicy for StaticDonedataContentPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_donedata_content.scxml:12 :: _machine"]
-    // SCE-MAP: static_donedata_content.scxml:12 :: _machine
+    #[doc = "SCE-MAP: static_donedata_content.scxml:22 :: _machine"]
+    // SCE-MAP: static_donedata_content.scxml:22 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -653,7 +808,7 @@ impl StatePolicy for StaticDonedataContentPolicy {
             StaticDonedataContentState::Counting => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_donedata_content.scxml:18 :: counting :: _transition_0
+                        // SCE-MAP: static_donedata_content.scxml:29 :: counting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

@@ -286,6 +286,34 @@ class StaticScenarioTest {
         }
     }
 
+    // A top-level final whose <donedata> carries a <content expr> that names one
+    // value hands its done event that value as its whole data: a number as its
+    // digits, a string quoted, and one that cannot be computed as the empty string.
+    @Test
+    fun staticDonedataContentThatNamesAValueIsTheWholeData() {
+        replayDonedataContent(scenario("static_donedata_content_value"))
+        replayDonedataContent(scenario("static_donedata_content_text"))
+        replayDonedataContent(scenario("static_donedata_content_lost"))
+    }
+
+    /** One run of `static_donedata_content`, on a machine of its own. */
+    private fun replayDonedataContent(scenario: JsonObject) {
+        val sm = StaticDonedataContentStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario,
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
     @Test
     fun staticCounterCountsToItsBound() {
         val sm = StaticCounterStateMachine()

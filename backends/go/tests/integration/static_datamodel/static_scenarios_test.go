@@ -605,6 +605,33 @@ func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
 	}))
 }
 
+// A top-level final whose <donedata> carries a <content expr> that names one value
+// hands its done event that value as its whole data: a number as its digits, a
+// string quoted, and one that cannot be computed as the empty string.
+func TestAFinalHandsItsDoneEventTheValueItsContentNames(t *testing.T) {
+	t.Run("a number", func(t *testing.T) {
+		policy := static_donedata_content.NewStaticDonedataContentPolicy()
+		policy.SessionID = sce.GenerateSessionID()
+		replay(t, "static_donedata_content_value", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
+			"count": func() any { return policy.Count() },
+		}))
+	})
+	t.Run("a string", func(t *testing.T) {
+		policy := static_donedata_content.NewStaticDonedataContentPolicy()
+		policy.SessionID = sce.GenerateSessionID()
+		replay(t, "static_donedata_content_text", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
+			"count": func() any { return policy.Count() },
+		}))
+	})
+	t.Run("a value that cannot be computed", func(t *testing.T) {
+		policy := static_donedata_content.NewStaticDonedataContentPolicy()
+		policy.SessionID = sce.GenerateSessionID()
+		replay(t, "static_donedata_content_lost", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
+			"count": func() any { return policy.Count() },
+		}))
+	})
+}
+
 // The `eventexpr` of a <send> is a string computed from the machine's fields when
 // the send runs, and names the event the send delivers.
 func TestASendsEventIsNamedWhenItRuns(t *testing.T) {

@@ -322,12 +322,13 @@ pub trait StaticTarget {
     fn lowers_cancel_expr(&self) -> bool {
         false
     }
-    /// Whether a `<send>`'s `<content expr>` that names one value, not a
-    /// record, is lowered to the typed value the backend's wire helpers take
-    /// ([`Action::native_content_value`]) that the send template carries as the
-    /// event's data and, as text, as a host's `content`. A target that does not
-    /// is refused where the `<send>` is walked, by name, rather than left to
-    /// emit a send with no data.
+    /// Whether the `<content expr>` of a `<send>` or of a `<final>`'s
+    /// `<donedata>` that names one value, not a record, is lowered to the typed
+    /// value the backend's wire helpers take ([`Action::native_content_value`],
+    /// [`crate::model::DoneData::native_content_value`]) that the template
+    /// carries as the event's data and, for a send, as text, as a host's
+    /// `content`. A target that does not is refused where the element is walked,
+    /// by name, rather than left to emit an event with no data.
     fn lowers_scalar_content(&self) -> bool {
         false
     }
@@ -1852,18 +1853,43 @@ pub fn lower(
                 crate::model::DoneDataContent::Expression(expr) => Some(expr.trim().to_string()),
                 _ => None,
             };
+            //
+            // An expression that names no record is the one value the event
+            // carries: it is lowered below as the typed value its own type is
+            // (`DoneData::native_content_value`), as a `<send>`'s is.
             let noted = rewrites.sites.borrow().len();
+            let mut content_value = false;
             if let Some(record) = &record {
-                let fields = rewrites.content_fields(record).ok_or_else(|| {
-                    GenerateError::unsupported(format!(
-                        "`<content expr=\"{record}\">` names no record this {lang} lowering reads"
-                    ))
-                })?;
-                done.fold_content_record_into_params(record, &fields);
+                match rewrites.content_fields(record) {
+                    Some(fields) => done.fold_content_record_into_params(record, &fields),
+                    None if target.lowers_scalar_content() => content_value = true,
+                    None => {
+                        return Err(GenerateError::unsupported(format!(
+                            "a <donedata> whose <content expr=\"{record}\"> names a value has no \
+                             {lang} lowering yet"
+                        )))
+                    }
+                }
             }
             lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
-            if record.is_some() {
+            if record.is_some() && !content_value {
                 rewrites.sites.borrow_mut().truncate(noted);
+            }
+            // The value is read once, as a param's is, when the state is
+            // entered, and the expression is cleared once it is lowered so no
+            // template evaluates it a second time: the machine has no engine to
+            // do it with.
+            if let (true, Some(record)) = (content_value, &record) {
+                let view = crate::forge::static_datamodel::WireParam::of_content(
+                    record,
+                    done.content_spelling.as_ref(),
+                );
+                let lowered = lower_wire_value(&view, &plain_ctx, &plain_renames, &rewrites)?;
+                if let Some((value, fails)) = lowered {
+                    done.native_content_value = value;
+                    done.native_content_value_fails = fails;
+                }
+                done.content = crate::model::DoneDataContent::None;
             }
             // Inline `<content>` is the event's data as written, finished here
             // ([`crate::filters::static_content_wire`]) as a `<send>`'s is: the

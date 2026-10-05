@@ -168,8 +168,8 @@ PY
 # the content hands the templates a donedata with no pairs.
 mutation_case "a donedata content record is not folded into its pairs" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                done.fold_content_record_into_params(record, &fields);\n",
-     "                let _ = &fields;\n")
+     "                    Some(fields) => done.fold_content_record_into_params(record, &fields),\n",
+     "                    Some(fields) => drop(fields),\n")
 PY
 
 # ── A send's delay is a string the machine computes ─────────────────

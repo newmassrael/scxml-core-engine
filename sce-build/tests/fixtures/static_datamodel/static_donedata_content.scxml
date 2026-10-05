@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the <donedata> of
-  a top-level <final> that carries inline <content> in place of <param>s. The
-  text is the done event's data as the build finished it, the string it spells:
-  `<content>42</content>` is the string "42" on every backend, not the number an
-  engine would read it as, and no script engine is asked for it (§scxml-5.5).
+  a top-level <final> that carries <content> in place of <param>s.
+
+  Inline text is the done event's data as the build finished it, the string it
+  spells: `<content>42</content>` is the string "42" on every backend, not the
+  number an engine would read it as, and no script engine is asked for it
+  (§scxml-5.5).
+
+  A `<content expr>` that names one value is the done event's whole data, as the
+  JSON the value is, read from the machine's fields when the final is entered:
+  `valued` is `count * 2` (a number), `named` is `label` (a string, quoted as
+  data), and `lost` is `count * 2000000000`, which a 32-bit field cannot hold
+  once `count` reaches 3: the evaluation failed, so error.execution is raised and
+  the empty string is the content's value (§scxml-5.5). Each final is reached by
+  its own event, and a scenario runs one of them to its end.
 
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
   the generated machine, and StaticScenarioTest.kt drives it.
@@ -13,16 +23,35 @@
        version="1.0" initial="counting" datamodel="sce-static" name="static_donedata_content">
   <datamodel>
     <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'tally'"/>
   </datamodel>
   <state id="counting">
     <transition event="tick" type="internal">
       <assign location="count" expr="count + 1"/>
     </transition>
     <transition event="finish" target="done"/>
+    <transition event="finish_value" target="valued"/>
+    <transition event="finish_text" target="named"/>
+    <transition event="finish_lost" target="lost"/>
   </state>
   <final id="done">
     <donedata>
       <content>42</content>
+    </donedata>
+  </final>
+  <final id="valued">
+    <donedata>
+      <content expr="count * 2"/>
+    </donedata>
+  </final>
+  <final id="named">
+    <donedata>
+      <content expr="label"/>
+    </donedata>
+  </final>
+  <final id="lost">
+    <donedata>
+      <content expr="count * 2000000000"/>
     </donedata>
   </final>
 </scxml>

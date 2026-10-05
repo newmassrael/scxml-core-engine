@@ -194,6 +194,29 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			// W3C SCXML 5.5: inline text is the content value, finished at build time.
 			doneEventData = "{{ state.donedata.native_content | escape_go }}"
 		}
+{% elif state.donedata.native_content_value %}
+		{
+{# `datamodel="sce-static"` (`DoneData::native_content_value`): the `<content
+   expr>` names one value, lowered to native code and read from the machine's
+   own fields as the state is entered; it is the done event's whole data, as the
+   JSON `ScriptValueToJSON` writes (SCE Accepted Subset §2.15). One that cannot
+   be computed is the evaluation that failed: error.execution, and the empty
+   string as the value. #}
+			// W3C SCXML 5.5: the value of <content expr> is the done event's data.
+{% if state.donedata.native_content_value_fails %}
+			var sceFailure scealgorithm.Failure
+			var contentValue interface{} = {{ state.donedata.native_content_value }}
+			if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"))
+{% endif %}
+				contentValue = ""
+			}
+{% else %}
+			var contentValue interface{} = {{ state.donedata.native_content_value }}
+{% endif %}
+			doneEventData = sce.ScriptValueToJSON(contentValue)
+		}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 		{
 {% if state.donedata.content.kind == "expression" %}

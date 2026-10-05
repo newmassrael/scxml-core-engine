@@ -234,10 +234,16 @@ protected:
                 // What its `<donedata>` left for the invoking parent is read as
                 // the generated backends read it: the JSON of the done event's
                 // data, compared as JSON so that the members' order is no part
-                // of the answer.
+                // of the answer. A `<content expr>` that cannot be evaluated has
+                // the empty string as its value (§scxml-5.6.2): the generated
+                // backends write it as the JSON string `""`, and the
+                // Interpreter leaves the event's data as no text at all, which
+                // is the same value.
                 if (expect.contains("donedata")) {
-                    const auto got = nlohmann::json::parse(machine->donedataAtFinal(), nullptr, false);
-                    EXPECT_FALSE(got.is_discarded()) << "the donedata is JSON: " << machine->donedataAtFinal();
+                    const std::string written = machine->donedataAtFinal();
+                    const auto got =
+                        written.empty() ? nlohmann::json("") : nlohmann::json::parse(written, nullptr, false);
+                    EXPECT_FALSE(got.is_discarded()) << "the donedata is JSON: " << written;
                     EXPECT_EQ(got, expect.at("donedata")) << "the data the final's <donedata> left";
                 }
                 continue;

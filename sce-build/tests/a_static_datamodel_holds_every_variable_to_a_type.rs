@@ -2532,25 +2532,106 @@ fn a_donedata_content_that_names_a_record_is_the_pairs_of_its_fields() {
 }
 
 #[test]
-fn a_donedata_content_that_names_no_record_is_refused_on_its_line() {
+fn a_donedata_content_that_names_no_record_or_value_is_refused_on_its_line() {
     for (what, content) in [
-        (
-            "an expression that is no record",
-            r#"<content expr="shown.year + 1"/>"#,
-        ),
         (
             "the payload, which no event has where a state is entered",
             r#"<content expr="_event.data"/>"#,
         ),
         (
+            "a field of the payload, which no event has where a state is entered",
+            r#"<content expr="_event.data.year"/>"#,
+        ),
+        (
             "a record beside a param",
             r#"<content expr="shown"/><param name="k" expr="1"/>"#,
         ),
+        (
+            "a value beside a param",
+            r#"<content expr="shown.year + 1"/><param name="k" expr="1"/>"#,
+        ),
     ] {
         let (ok, out) = run_record(&["check"], &finishing_with_a_record(content));
-        assert!(!ok, "{what}: no record is named alone:\n{out}");
+        assert!(!ok, "{what}: no record or value is named alone:\n{out}");
         assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
     }
+}
+
+#[test]
+fn a_donedata_content_that_names_one_value_is_accepted() {
+    // An expression that is no record is the one value the done event carries,
+    // held to the rule a param's value is, as a `<send>`'s content is.
+    for expr in ["shown.year + 1", "shown.month", "shown.year > 2000"] {
+        let content = format!(r#"<content expr="{expr}"/>"#);
+        let (ok, out) = run_record(&["check"], &finishing_with_a_record(&content));
+        assert!(ok, "`{expr}` is one value the done event carries:\n{out}");
+    }
+    for expr in ["count", "ready", "count * 2"] {
+        let content = format!(r#"<content expr="{expr}"/>"#);
+        let (ok, out) = run(&["check"], &finishing(&content));
+        assert!(ok, "`{expr}` is one value the done event carries:\n{out}");
+    }
+}
+
+#[test]
+fn a_donedata_content_value_is_held_to_the_rule_a_param_is() {
+    // A name nothing declares reads no variable.
+    let (ok, out) = run(&["check"], &finishing(r#"<content expr="missing"/>"#));
+    assert!(!ok, "a name that is no variable is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+
+    // A 64-bit variable has no wire spelling every backend shares, and the
+    // refusal is placed at the attribute and says it is the content it refuses.
+    let document = finishing(r#"<content expr="big"/>"#).replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="big" sce:type="int64" expr="0"/>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    assert!(
+        out.contains("<content expr=\\\"big\\\">"),
+        "it names the content, not a param:\n{out}"
+    );
+}
+
+#[test]
+fn a_donedata_content_value_is_lowered_to_one_typed_value_and_needs_no_engine() {
+    // The value is read from the machine's fields when the state is entered, as
+    // a `<param>`'s is, so no engine evaluates it and the manifest says so; it is
+    // the done event's whole data, so it is written as one value, not as pairs.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &finishing(r#"<content expr="count * 2"/>"#),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a value named by a donedata content needs no script engine:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("doneEventData = sce.ScriptValueToJSON(contentValue)"),
+        "the value is the done event's whole data"
+    );
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no engine reads the value"
+    );
 }
 
 // ── A `<donedata>` param is the same value on the same wire ─────────────

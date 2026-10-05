@@ -299,6 +299,42 @@ fn static_donedata_content_is_the_text_it_spells() {
     );
 }
 
+// A top-level final whose <donedata> carries a <content expr> that names one value
+// hands its done event that value as its whole data: a number as its digits, a
+// string quoted, and one that cannot be computed as the empty string.
+#[test]
+fn static_donedata_content_value_is_the_whole_data() {
+    replay(
+        Engine::new(StaticDonedataContentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json"
+        ),
+    );
+}
+
+#[test]
+fn static_donedata_content_text_is_the_whole_data() {
+    replay(
+        Engine::new(StaticDonedataContentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json"
+        ),
+    );
+}
+
+#[test]
+fn static_donedata_content_that_cannot_be_computed_is_the_empty_string() {
+    replay(
+        Engine::new(StaticDonedataContentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json"
+        ),
+    );
+}
+
 #[test]
 fn static_counter_counts_to_its_bound() {
     replay(

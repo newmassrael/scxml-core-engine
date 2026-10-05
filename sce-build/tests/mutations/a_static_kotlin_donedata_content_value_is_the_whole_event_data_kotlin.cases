@@ -1,0 +1,47 @@
+# Mutation cases for the `<content expr>` of a `<final>`'s `<donedata>` that names
+# one value, in a `datamodel="sce-static"` machine generated as Kotlin
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_donedata_content_value_is_the_whole_event_data_kotlin.cases`.
+#
+# The expression is Kotlin the lowering wrote, read from the machine's own fields
+# when the state is entered, and the template only places it: the value is the
+# done event's whole data as the JSON `valueToJson` writes (`4`, `"tally"`). A
+# value that cannot be computed — a checked multiplication that overflows — is the
+# evaluation that failed (W3C SCXML 5.5): `error.execution` is raised and the
+# empty string is the content's value.
+#
+# What is easy to get wrong and reads as success: the zero of a failed value is a
+# done event that looks complete, and the text of a value in place of its JSON is
+# a number that is right and a string that has lost its quotes. The scenarios
+# `static_donedata_content_value`, `_text` and `_lost` tell them apart.
+#
+# The template reaches the tests only through the committed tree the
+# regeneration writes, so the tree is a declared target and the command is what
+# carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
+mutation_targets tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_donedata_content/static_donedata_contentSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
+
+# ── A value that cannot be computed is the empty string ────────────
+
+mutation_case "a donedata content value that failed is the zero of its type, not the empty string" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "                        valueToJson(\"\")\n                    }\n{% else %}\n                    doneEventData = valueToJson(",
+     "                        valueToJson(0)\n                    }\n{% else %}\n                    doneEventData = valueToJson(")
+PY
+
+# ── The value is the JSON it is ────────────────────────────────────
+
+mutation_case "a donedata content value is the text of the value, not its JSON" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "{% else %}\n                    doneEventData = valueToJson({{ state.donedata.native_content_value }})\n",
+     "{% else %}\n                    doneEventData = valueToWireString({{ state.donedata.native_content_value }})\n")
+PY

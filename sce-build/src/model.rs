@@ -1331,6 +1331,25 @@ pub struct DoneData {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_content: String,
+    /// Codegen-internal: the `<content expr>` of a `sce-static` document's
+    /// `<donedata>` that names a single value — a bool, a string, an integer of
+    /// at most 32 bits, a real or an enum value — as the typed value the
+    /// backend's wire helpers take
+    /// ([`crate::forge::static_lowering::StaticTarget::wire_value`]), read from
+    /// the machine's fields when the state is entered. It is the done event's
+    /// whole data, as JSON. Empty for a `<donedata>` with no such content (a
+    /// record named by one crosses as the pairs of its fields instead).
+    /// Transient and outside the AST contract, as [`Self::native_content`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content_value: String,
+    /// Codegen-internal: whether [`Self::native_content_value`] can fail — a
+    /// checked integer operation in the expression. A failure is the evaluation
+    /// that failed (§scxml-5.5): `error.execution` is raised and the empty string
+    /// is the content's value.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content_value_fails: bool,
 }
 
 impl DoneData {

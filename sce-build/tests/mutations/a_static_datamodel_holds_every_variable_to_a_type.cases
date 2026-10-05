@@ -491,16 +491,37 @@ PY
 # The case lets the value through unjudged, and both are accepted.
 mutation_case "a send content value is not held to the rule a param's value is" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                return self.wire_param(\n                    ctx,\n                    &WireParam::of_content(written, spelling),\n                    element,\n                    state,\n                );",
-     "                return Ok(());")
+     "            return self.wire_param(\n                ctx,\n                &WireParam::of_content(written, spelling),\n                element,\n                state,\n            );",
+     "            return Ok(());")
 PY
 
-# A `<donedata>` carries pairs, so its `<content expr>` stays a record. The case
-# lets a value through it, and the refusal's own test sees a document accepted.
-mutation_case "a donedata content that names a value is admitted" <<'PY'
+# A `<donedata>` carries its data as content or as pairs and never as both, so a
+# `<content expr>` beside a `<param>` is refused, a record or a value alike. The
+# case stops looking for params beside it, and the refusal's own test sees a
+# document accepted.
+mutation_case "a donedata content is admitted beside a param" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                        beside: !done.params.is_empty(),\n                        value_admitted: false,",
-     "                        beside: !done.params.is_empty(),\n                        value_admitted: true,")
+     "                        beside: !done.params.is_empty(),\n",
+     "                        beside: false,\n")
+PY
+
+# A `<final>`'s `<content expr>` that names one value is lowered to the typed value
+# the template carries as the done event's whole data. The case lowers it and
+# keeps nothing, so the final hands its event no data and the generated Go has no
+# value to write.
+mutation_case "a donedata content value is lowered and then dropped" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    done.native_content_value = value;\n                    done.native_content_value_fails = fails;",
+     "                    let _ = (value, fails);")
+PY
+
+# The expression is cleared once it is lowered, so no template evaluates it a
+# second time with an engine the machine does not have. The case leaves it
+# standing, and the machine is then one that needs a script engine.
+mutation_case "a donedata content expression stands after it is lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    done.native_content_value_fails = fails;\n                }\n                done.content = crate::model::DoneDataContent::None;",
+     "                    done.native_content_value_fails = fails;\n                }")
 PY
 
 # The value is lowered to the typed value the send template carries as the event's

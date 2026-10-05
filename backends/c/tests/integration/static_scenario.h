@@ -374,8 +374,9 @@ static bool sce_scenario_find_member(const char *json, const char *key, sce_scen
 }
 
 // What a step states of the done event's data, against what the machine's final
-// wrote: the string an inline `<content>` spells, or the pairs of a `<donedata>`,
-// each stated pair there and equal and nothing else.
+// wrote: one value — the string an inline `<content>` spells, or the bool, integer
+// or string a `<content expr>` names — or the pairs of a `<donedata>`, each stated
+// pair there and equal and nothing else.
 static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
     int bad = 0;
     char key[64];
@@ -383,18 +384,19 @@ static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_sce
     size_t stated = 0;
     const char *got = d->done_data == NULL ? NULL : d->done_data(d->sm);
     sce_scenario_space(c);
-    if (*c->at == '"') {
+    if (*c->at != '{') {
         sce_scenario_value_t want;
         sce_scenario_value_t have;
         sce_scenario_cursor_t written = {got == NULL ? "" : got};
         if (!sce_scenario_read_value(c, &want)) {
-            return sce_scenario_fail(d, step, "`donedata` is not a well formed string");
+            return sce_scenario_fail(d, step, "`donedata` is not a well formed value");
         }
         if (got == NULL) {
             return sce_scenario_fail(d, step, "the machine publishes no done data");
         }
-        if (!sce_scenario_read_value(&written, &have) || !have.is_text || strcmp(have.text, want.text) != 0) {
-            (void)snprintf(message, sizeof(message), "the done data `%s` is not the string `%s`", got, want.text);
+        if (!sce_scenario_read_value(&written, &have) || have.is_text != want.is_text ||
+            (want.is_text ? strcmp(have.text, want.text) != 0 : have.number != want.number)) {
+            (void)snprintf(message, sizeof(message), "the done data `%s` is not the value the step states", got);
             bad |= sce_scenario_fail(d, step, message);
         }
         return bad;

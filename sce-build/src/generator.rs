@@ -3017,10 +3017,12 @@ fn render_c11(
     // SCE Accepted Subset §2.15: a final's `<donedata>` pairs, lowered to native
     // values, are written as JSON into a buffer the machine holds, which a host
     // reads and a compound final's done event is built from. So is an inline
-    // `<content>`, finished at build time as the text it spells.
+    // `<content>`, finished at build time as the text it spells, and a
+    // `<content expr>` that names one value, read from the fields.
     let static_done_data = model_lowered.states.values().any(|state| {
         state.donedata.as_ref().is_some_and(|done| {
             !done.native_content.is_empty()
+                || !done.native_content_value.is_empty()
                 || done.params.iter().any(|p| !p.native_value.is_empty())
         })
     });

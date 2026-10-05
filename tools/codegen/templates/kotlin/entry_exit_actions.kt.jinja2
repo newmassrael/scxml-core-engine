@@ -391,7 +391,7 @@
 {# `datamodel="sce-static"`: each param's value is native code
    (`DoneDataParam::native_value`), read from the machine's own fields, so no
    script engine is asked for any of them. #}
-{% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content) %}
+{% set done_native = state.donedata and ((state.donedata.params | selectattr("native_value") | list | length > 0) or state.donedata.native_content or state.donedata.native_content_value) %}
 {% if state.is_final and state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
                 // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
                 // Delegates to the SSoT helper shared with C++/Rust/Go backends.
@@ -422,6 +422,25 @@
    Subset §2.15). #}
                     // W3C SCXML 5.5: inline text is the content value, finished at build time.
                     doneEventData = "{{ state.donedata.native_content | escape_kotlin }}"
+{% elif state.donedata.native_content_value %}
+{# `datamodel="sce-static"` (`DoneData::native_content_value`): the `<content
+   expr>` names one value, lowered to native code and read from the machine's
+   own fields as the state is entered; it is the done event's whole data, as the
+   JSON it is (SCE Accepted Subset §2.15). One that cannot be computed is the
+   evaluation that failed: error.execution, and the empty string as the value. #}
+                    // W3C SCXML 5.5: the value of <content expr> is the done event's data.
+{% if state.donedata.native_content_value_fails %}
+                    doneEventData = try {
+                        valueToJson({{ state.donedata.native_content_value }})
+                    } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
+{% endif %}
+                        valueToJson("")
+                    }
+{% else %}
+                    doneEventData = valueToJson({{ state.donedata.native_content_value }})
+{% endif %}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>

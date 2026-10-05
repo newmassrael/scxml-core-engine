@@ -360,6 +360,28 @@ fn a_send_content_that_names_a_value_is_lowered_in_its_attribute() {
     );
 }
 
+/// The same for a `<final>`'s `<donedata>`: the Interpreter's own element
+/// evaluates the `<content expr>` when the state is entered, so the expression is
+/// lowered in the attribute it is written in and no pair is made of it.
+#[test]
+fn a_donedata_content_that_names_a_value_is_lowered_in_its_attribute() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="go" target="d"/></state>
+  <final id="d"><donedata><content expr="n + 1"/></donedata></final>
+</scxml>"#;
+    let lowered =
+        lower_source(document, "donedata_value").expect("a content that names a value lowers");
+    assert!(
+        lowered.contains(r#"<content expr=""#),
+        "the value is still the content's expression: {lowered}"
+    );
+    assert!(
+        !lowered.contains("<param"),
+        "a value is not made into a pair: {lowered}"
+    );
+}
+
 /// An inline child is a `sce-static` document of its own, lowered where it stands
 /// in its parent's text, and a string it bounds is handed through that bound: the
 /// Interpreter holds no bound, so the lowered `<param>` carries it.

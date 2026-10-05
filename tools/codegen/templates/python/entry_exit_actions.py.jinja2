@@ -37,7 +37,7 @@
    Mirrors `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2`
    donedata evaluation + done.state branching. #}
 {% for state_id, state in model.states | dictsort %}
-{% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
+{% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.native_content_value or state.donedata.content.kind != 'none') %}
 {% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
 {% set _grandparent = model.states[state.parent].parent if (state.is_final and state.parent) else none %}
 {% set _grandparent_done = _grandparent and model.states[_grandparent].is_parallel and (('done.state.' ~ _grandparent) in model.events) %}
@@ -133,6 +133,23 @@
    Subset §2.15). #}
             # W3C SCXML 5.5: inline text is the content value, finished at build time.
             _done_data = {{ state.donedata.native_content | py_string_literal }}
+{% elif state.donedata.native_content_value %}
+{# `datamodel="sce-static"` (`DoneData::native_content_value`): the `<content
+   expr>` names one value, lowered to native code reading the policy's own
+   attributes as the state is entered; it is the done event's whole data, as the
+   JSON it is (SCE Accepted Subset §2.15). One that cannot be computed raises
+   `AlgorithmFailure`, which is the evaluation that failed: error.execution, and
+   the empty string as the value. #}
+            # W3C SCXML 5.5: the value of <content expr> is the done event's data.
+{% if state.donedata.native_content_value_fails %}
+            try:
+                _done_data = ({{ state.donedata.native_content_value }}).to_json_literal()
+            except sce_algorithm.AlgorithmFailure:
+                self._raise_error_execution(engine, "<donedata> <content expr> failed to evaluate")
+                _done_data = '""'
+{% else %}
+            _done_data = ({{ state.donedata.native_content_value }}).to_json_literal()
+{% endif %}
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
 {% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}

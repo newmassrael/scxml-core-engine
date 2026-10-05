@@ -1,0 +1,15 @@
+{
+  "machine": "static_donedata_content",
+  "about": "A top-level final whose <donedata> carries a <content expr> that names one value hands its done event that value as its whole data, read from the machine's fields when the state is entered: `count * 2` over a counter at 2 is the number 4, as the JSON `4`, not a pair and not the string \"4\". Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the counter starts at its declared value",
+      "expect": { "state": "counting", "variables": { "count": 0 } } },
+
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 1 } } },
+    { "event": "tick", "expect": { "state": "counting", "variables": { "count": 2 } } },
+
+    { "note": "the final is entered: the done event's data is the number 4",
+      "event": "finish_value",
+      "expect": { "ended": true, "donedata": 4 } }
+  ]
+}

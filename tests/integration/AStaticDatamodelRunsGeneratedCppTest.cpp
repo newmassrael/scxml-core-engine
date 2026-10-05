@@ -449,6 +449,31 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTex
     replay("static_donedata_content", driver);
 }
 
+// A top-level final whose `<donedata>` carries a `<content expr>` that names one
+// value hands its done event that value as its whole data: a number as its digits,
+// a string quoted, and one that cannot be computed as the empty string.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheValueItsContentNames) {
+    using Machine = G::static_donedata_content::static_donedata_content;
+    {
+        Driver<Machine> driver({
+            {"count", [](const Machine &m) { return json(m.count()); }},
+        });
+        replay("static_donedata_content_value", driver);
+    }
+    {
+        Driver<Machine> driver({
+            {"count", [](const Machine &m) { return json(m.count()); }},
+        });
+        replay("static_donedata_content_text", driver);
+    }
+    {
+        Driver<Machine> driver({
+            {"count", [](const Machine &m) { return json(m.count()); }},
+        });
+        replay("static_donedata_content_lost", driver);
+    }
+}
+
 // The `eventexpr` of a `<send>` is a string computed from the machine's fields when
 // the send runs, and names the event the send delivers.
 TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsEventIsNamedWhenItRuns) {

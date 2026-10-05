@@ -350,3 +350,12 @@ def test_a_final_hands_its_done_event_the_record_its_content_names() -> None:
 # the text as the string it spells, with no script engine to read it as a number.
 def test_a_final_hands_its_done_event_the_text_its_content_spells() -> None:
     replay("static_donedata_content")
+
+
+# A top-level final whose `<donedata>` carries a `<content expr>` that names one
+# value hands its done event that value as its whole data: a number as its
+# digits, a string quoted, and one that cannot be computed as the empty string.
+def test_a_final_hands_its_done_event_the_value_its_content_names() -> None:
+    replay("static_donedata_content_value")
+    replay("static_donedata_content_text")
+    replay("static_donedata_content_lost")

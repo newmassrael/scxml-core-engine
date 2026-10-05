@@ -640,7 +640,9 @@ STATIC_SCENARIO_DONE(static_donedata, donedata_states, donedata_variables, NULL,
 // static_donedata_content: a top-level final whose `<donedata>` is inline
 // `<content>` hands its done event the text as the JSON string it spells, finished
 // when the machine was generated; `42` is the string "42", not the number a script
-// engine would read it as.
+// engine would read it as. The same machine has finals whose `<content expr>` names
+// one value, which is the done event's whole data as the JSON it is: a number as its
+// digits, a string quoted, and one that cannot be computed as the empty string.
 VARIABLE_READER(static_donedata_content, count)
 
 static const char *static_donedata_content_done(void *sm) {
@@ -648,8 +650,9 @@ static const char *static_donedata_content_done(void *sm) {
 }
 
 static const name_value_t donedata_content_states[] = {
-    {"counting", STATIC_DONEDATA_CONTENT_STATE_COUNTING},
-    {"done", STATIC_DONEDATA_CONTENT_STATE_DONE},
+    {"counting", STATIC_DONEDATA_CONTENT_STATE_COUNTING}, {"done", STATIC_DONEDATA_CONTENT_STATE_DONE},
+    {"valued", STATIC_DONEDATA_CONTENT_STATE_VALUED},     {"named", STATIC_DONEDATA_CONTENT_STATE_NAMED},
+    {"lost", STATIC_DONEDATA_CONTENT_STATE_LOST},
 };
 static const variable_t donedata_content_variables[] = {
     {"count", static_donedata_content_read_count},
@@ -1262,6 +1265,9 @@ int main(void) {
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
+    bad |= static_donedata_content_scenario("static_donedata_content_value", 4);
+    bad |= static_donedata_content_scenario("static_donedata_content_text", 3);
+    bad |= static_donedata_content_scenario("static_donedata_content_lost", 5);
     bad |= static_donedata_record_scenario("static_donedata_record", 3);
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= static_send_namelist_scenario("static_send_namelist", 5);

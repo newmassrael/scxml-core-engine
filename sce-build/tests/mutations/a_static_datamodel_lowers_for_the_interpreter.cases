@@ -75,7 +75,7 @@ PY
 # again, and the fixture that hands its done event a record leaves the replay.
 mutation_case "a donedata record's pairs are noted as rewrites" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            if record.is_some() {\n                rewrites.sites.borrow_mut().truncate(noted);\n            }\n",
+     "            if record.is_some() && !content_value {\n                rewrites.sites.borrow_mut().truncate(noted);\n            }\n",
      "            let _ = (&record, noted);\n")
 PY
 
