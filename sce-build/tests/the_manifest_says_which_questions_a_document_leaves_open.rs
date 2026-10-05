@@ -21,6 +21,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Which scratch directory a call asked for, so that two calls never share one.
+static SCRATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -33,9 +37,16 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// A directory of this call's own. It was named for the label and the process,
+/// and three tests in one process ask for `open` + `check`: the one that
+/// finished removed the directory the others were still reading, and each
+/// began by removing whatever the others had written, so a run passed or
+/// failed on how the threads happened to interleave.
 fn scratch(label: &str) -> PathBuf {
-    let dir =
-        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{label}-{}", std::process::id()));
+    let call = SCRATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("{label}-{}-{call}", std::process::id()));
+    // A recycled process id can leave the last run's directory behind.
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     dir
