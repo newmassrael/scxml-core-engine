@@ -38,6 +38,7 @@ pub mod commands;
 pub mod error;
 pub mod figures;
 pub mod host;
+pub mod installed;
 mod lock;
 pub mod model_set;
 pub mod requests;
@@ -54,8 +55,8 @@ pub use clock::{Clock, FixedClock, ManualClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
 pub use error::StoreError;
 pub use figures::{
-    default_renderer, FigureRenderer, FigureRequest, FigureSet, NoRenderer, RenderError,
-    SceCodegen, Sheet,
+    default_renderer, renderer_with_bundle, FigureRenderer, FigureRequest, FigureSet, NoRenderer,
+    RenderError, SceCodegen, Sheet,
 };
 pub use model_set::{Document, ModelError, ModelFiles};
 pub use requirements::{Requirements, RequirementsError};

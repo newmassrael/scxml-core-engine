@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sce_app_core::host::{start, HostSettings, NotHosted};
+use sce_app_core::installed::Installed;
 use sce_app_core::requests::{Inputs, State};
 use sce_app_core::{ManualClock, Registration, WorkId, WorkStore};
 use serde_json::json;
@@ -63,6 +64,32 @@ fn the_settings_are_read_from_the_names_the_environment_gives() {
     );
     assert_eq!(settings.config.model.as_deref(), Some("sonnet"));
     assert_eq!(settings.config.max_budget_usd, Some(2.5));
+}
+
+#[test]
+fn what_an_installer_carried_is_used_where_the_environment_named_nothing() {
+    let bundle = Installed {
+        author: Some(PathBuf::from("/opt/app/sce-author/bin/sce-author-mcp")),
+        work: Some(PathBuf::from("/opt/app/sce-author/bin/sce-work")),
+        codegen: Some(PathBuf::from("/opt/app/sce-author/bin/sce-codegen")),
+    };
+
+    let settings = HostSettings::from_lookup(
+        "desktop",
+        lookup(&[("SCE_WORK", "/home/dev/target/debug/sce-work")]),
+    )
+    .with_bundle(&bundle);
+
+    assert_eq!(settings.author, bundle.author);
+    assert_eq!(settings.codegen, bundle.codegen);
+    // A developer's word is the developer's: the variable that was set still wins.
+    assert_eq!(
+        settings.work,
+        Some(PathBuf::from("/home/dev/target/debug/sce-work"))
+    );
+    // A bundle that carries nothing changes nothing.
+    let same = HostSettings::from_lookup("desktop", lookup(&[])).with_bundle(&Installed::default());
+    assert_eq!(same.author, None);
 }
 
 #[test]
@@ -257,6 +284,61 @@ mod hosting {
         assert!(NotHosted::NoAuthorServer(tried)
             .to_string()
             .contains("SCE_AUTHOR_MCP"));
+    }
+
+    #[test]
+    fn an_authoring_server_that_would_not_start_says_why_before_the_owner_finds_out_by_waiting() {
+        let (_, store) = store("host-not-ready");
+        let (claude, _) = installed("host-not-ready-bin");
+        let dir = common::scratch("host-not-ready-launcher");
+        let launcher = dir.join("sce-author-mcp");
+        // What a launcher says when Python has no PyYAML, to the standard error, and stops.
+        fs::write(
+            &launcher,
+            "#!/bin/sh\n[ \"$1\" = \"--check\" ] || exit 0\necho 'PyYAML is not installed for this Python: pip install pyyaml' >&2\nexit 1\n",
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(launcher);
+
+        let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+
+        let Some(NotHosted::AuthorServerNotReady(said)) = host.not_hosted().cloned() else {
+            panic!("expected AuthorServerNotReady, got {:?}", host.not_hosted());
+        };
+        assert!(said.contains("pip install pyyaml"), "{said}");
+        // And it is where the screen reads it.
+        let reason = store.host_status().unwrap().hosts[0]
+            .host
+            .reason
+            .clone()
+            .unwrap();
+        assert!(reason.contains("pip install pyyaml"), "{reason}");
+        assert!(reason.contains("cannot start"), "{reason}");
+    }
+
+    #[test]
+    fn the_server_is_asked_with_the_environment_the_client_will_give_it() {
+        let (_, store) = store("host-check-env");
+        let (claude, _) = installed("host-check-env-bin");
+        let dir = common::scratch("host-check-env-launcher");
+        let launcher = dir.join("sce-author-mcp");
+        // Ready only when it is told where the works folder is: the folder of this store.
+        fs::write(
+            &launcher,
+            "#!/bin/sh\n[ \"$1\" = \"--check\" ] || exit 0\n[ -n \"$SCE_WORKS_DIR\" ] || { echo 'no works folder' >&2; exit 1; }\nexit 0\n",
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(launcher);
+
+        let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+
+        assert_eq!(host.not_hosted(), None);
     }
 
     fn ask(store: &WorkStore<Arc<ManualClock>>, id: &WorkId) -> String {

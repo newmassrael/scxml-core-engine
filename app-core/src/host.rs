@@ -29,9 +29,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
+use crate::claude_code::{capture, AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::clock::Clock;
 use crate::figures::{SceCodegen, GENERATOR_ENV};
+use crate::installed::Installed;
 use crate::review::Product;
 use crate::runner::{Cancel, Generator, Runner, RunnerConfig};
 use crate::store::{HostReport, WorkStore};
@@ -99,6 +100,17 @@ impl HostSettings {
     }
 }
 
+impl HostSettings {
+    /// These settings with the programs of an installed bundle where the environment named none: what
+    /// an installer carried is what is used, and a developer's word (a variable set) still wins.
+    pub fn with_bundle(mut self, bundle: &Installed) -> Self {
+        self.author = self.author.or_else(|| bundle.author.clone());
+        self.work = self.work.or_else(|| bundle.work.clone());
+        self.codegen = self.codegen.or_else(|| bundle.codegen.clone());
+        self
+    }
+}
+
 /// Why a shell hosts no executor, in words a person can act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotHosted {
@@ -108,6 +120,9 @@ pub enum NotHosted {
     NoClaude(String),
     /// No launcher for the authoring server was found; says where it looked.
     NoAuthorServer(String),
+    /// The launcher is there and the server would not start (no Python, no PyYAML, no generator);
+    /// says what the server itself said when it was asked.
+    AuthorServerNotReady(String),
 }
 
 impl std::fmt::Display for NotHosted {
@@ -127,6 +142,11 @@ impl std::fmt::Display for NotHosted {
                 f,
                 "no launcher for the SCE authoring server ({tried}): set {AUTHOR_ENV} to it \
                  (a checkout has scripts/sce_author_mcp.sh, an installed bundle bin/sce-author-mcp)"
+            ),
+            NotHosted::AuthorServerNotReady(said) => write!(
+                f,
+                "the SCE authoring server cannot start, so the AI could not check what it writes: \
+                 {said}"
             ),
         }
     }
@@ -251,20 +271,24 @@ fn find_client<C: Clock>(
     }
     let author = author_server(settings, store.root())?;
     let config = settings.config.clone();
-    match &settings.claude {
+    let client = match &settings.claude {
         Some(binary) => {
-            let client = ClaudeCode::new(binary.clone(), author, config);
+            let client = ClaudeCode::new(binary.clone(), author.clone(), config);
             if client.version().is_none() {
                 return Err(NotHosted::NoClaude(format!(
                     "{} did not answer --version",
                     binary.display()
                 )));
             }
-            Ok(client)
+            client
         }
-        None => ClaudeCode::find(author, config)
-            .ok_or_else(|| NotHosted::NoClaude("`claude` is not on the search path".to_string())),
-    }
+        None => ClaudeCode::find(author.clone(), config)
+            .ok_or_else(|| NotHosted::NoClaude("`claude` is not on the search path".to_string()))?,
+    };
+    // Last: a missing client is the plainer thing to say, and the server is asked only when there
+    // is a client to give it to.
+    ready(&author)?;
+    Ok(client)
 }
 
 /// Say what the shell is doing now, and again every [`REPORT_EVERY`], until told to stop.
@@ -333,6 +357,31 @@ fn author_server(settings: &HostSettings, works: &Path) -> Result<AuthorServer, 
         args: Vec::new(),
         env,
     })
+}
+
+/// Ask the authoring server whether it can do its work (`--check`), with the environment the
+/// client will give it. From outside, a server that cannot start is an AI that does not answer;
+/// asked first, what is missing (Python, PyYAML, the generator) is said in the server's own words
+/// where the owner reads it. The server is the authority on what it needs, so nothing is copied here.
+fn ready(server: &AuthorServer) -> Result<(), NotHosted> {
+    let mut command = std::process::Command::new(&server.command);
+    command.arg("--check").envs(server.env.iter().cloned());
+    let outcome = capture(command, Duration::from_secs(30));
+    match outcome {
+        Ok(done) if done.status.success() => Ok(()),
+        Ok(done) => {
+            let said = if done.stderr.trim().is_empty() {
+                done.stdout
+            } else {
+                done.stderr
+            };
+            Err(NotHosted::AuthorServerNotReady(said.trim().to_string()))
+        }
+        Err(why) => Err(NotHosted::NoAuthorServer(format!(
+            "{} could not be run: {why}",
+            server.command.display()
+        ))),
+    }
 }
 
 /// A program of this installation: beside the running program, else on the search path.

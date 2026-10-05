@@ -177,10 +177,28 @@ impl FigureRenderer for NoRenderer {
 /// One definition, so the application, the browser shell and `sce-work` look
 /// in the same places.
 pub fn default_renderer() -> Box<dyn Product> {
-    match SceCodegen::discover() {
+    renderer_with_bundle(None)
+}
+
+/// [`default_renderer`] for an application that carries its own generator: the one in the
+/// bundle comes after what the environment names and before a search (see
+/// [`SceCodegen::discover_in`]).
+pub fn renderer_with_bundle(bundled: Option<&Path>) -> Box<dyn Product> {
+    match SceCodegen::discover_in(bundled) {
         Some(generator) => Box::new(generator),
         None => Box::new(NoRenderer),
     }
+}
+
+/// Which of the places a generator may be is the one used: the environment's, then the bundle's,
+/// then one beside the program, then one on the search path. Pure, so that the order is a test.
+fn choose_generator(
+    environment: Option<PathBuf>,
+    bundled: Option<PathBuf>,
+    beside: Option<PathBuf>,
+    on_path: Option<PathBuf>,
+) -> Option<PathBuf> {
+    environment.or(bundled).or(beside).or(on_path)
 }
 
 /// The product's generator, run as a program.
@@ -228,6 +246,14 @@ impl SceCodegen {
     /// The environment first, because an installed application has no tree: it
     /// ships the generator beside itself, and a developer points at a build.
     pub fn discover() -> Option<Self> {
+        Self::discover_in(None)
+    }
+
+    /// [`Self::discover`], for an application that carries its own generator in a bundle
+    /// (`bundled`: where an installer put it). What the environment names comes first, a
+    /// developer's word; then the bundle's, the one this application was built with and the one
+    /// whose answers it can rely on; then one found beside the program or on `PATH`.
+    pub fn discover_in(bundled: Option<&Path>) -> Option<Self> {
         let named = |value: std::ffi::OsString| {
             if value.is_empty() {
                 None
@@ -235,23 +261,23 @@ impl SceCodegen {
                 Some(PathBuf::from(value))
             }
         };
-        if let Some(path) = std::env::var_os(GENERATOR_ENV).and_then(named) {
-            return Some(SceCodegen::at(path));
-        }
         let file = format!("sce-codegen{}", std::env::consts::EXE_SUFFIX);
         let beside = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|dir| dir.join(&file)))
             .filter(|path| path.is_file());
-        if let Some(path) = beside {
-            return Some(SceCodegen::at(path));
-        }
-        std::env::var_os("PATH").and_then(|paths| {
+        let on_path = std::env::var_os("PATH").and_then(|paths| {
             std::env::split_paths(&paths)
                 .map(|dir| dir.join(&file))
                 .find(|path| path.is_file())
-                .map(SceCodegen::at)
-        })
+        });
+        choose_generator(
+            std::env::var_os(GENERATOR_ENV).and_then(named),
+            bundled.map(Path::to_path_buf),
+            beside,
+            on_path,
+        )
+        .map(SceCodegen::at)
     }
 
     /// The generator's own version line (`sce-codegen --version`), asked once.
@@ -567,6 +593,28 @@ impl Drop for Scratch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_generator_comes_from_the_environment_then_the_bundle_then_a_search() {
+        let p = |s: &str| Some(PathBuf::from(s));
+        let all = |env: Option<PathBuf>, bundled: Option<PathBuf>| {
+            choose_generator(env, bundled, p("/beside"), p("/path"))
+        };
+
+        assert_eq!(
+            all(p("/env"), p("/bundle")),
+            p("/env"),
+            "a developer's word"
+        );
+        assert_eq!(
+            all(None, p("/bundle")),
+            p("/bundle"),
+            "the one it was built with"
+        );
+        assert_eq!(all(None, None), p("/beside"));
+        assert_eq!(choose_generator(None, None, None, p("/path")), p("/path"));
+        assert_eq!(choose_generator(None, None, None, None), None);
+    }
 
     #[test]
     fn a_name_is_a_word_and_never_an_option() {

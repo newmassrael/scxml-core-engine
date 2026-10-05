@@ -588,6 +588,40 @@ fn tail(text: &str, limit: usize) -> String {
     format!("...{kept}")
 }
 
+/// What a program said when it was run to completion.
+pub(crate) struct Captured {
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Run `command` to its end, reading what it says as it says it, and give up on it after
+/// `timeout`. For the short questions asked of a program (`--version`, `--check`).
+pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Captured, String> {
+    let child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    match supervise(child, None, &Cancel::new(), timeout).map_err(|e| e.to_string())? {
+        Ended::Exited {
+            status,
+            stdout,
+            stderr,
+        } => Ok(Captured {
+            status,
+            stdout,
+            stderr,
+        }),
+        Ended::TimedOut => Err(format!(
+            "it did not answer within {} seconds",
+            timeout.as_secs()
+        )),
+        Ended::Cancelled => Err("it was stopped".to_string()),
+    }
+}
+
 /// What `binary --version` says, as the version: `2.1.289 (Claude Code)` is `2.1.289`.
 fn version_of(binary: &Path) -> Option<String> {
     let child = Command::new(binary)
