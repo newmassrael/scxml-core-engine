@@ -11,7 +11,10 @@
 # Gates:
 #   0. cargo fmt --all --check               — mirrors CI rustfmt gate
 #                                              (reproduces the 2026-05-20
-#                                              fmt-drift CI fail-mode)
+#                                              fmt-drift CI fail-mode); and,
+#                                              when Rust under app/ is staged,
+#                                              the same check of the app
+#                                              workspace the `app` gate runs
 #   1. clang-format staged C/C++ check       — mirrors CI clang-format
 #                                              gate via the shared
 #                                              scripts/check_clang_format.sh
@@ -98,6 +101,27 @@ fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `
 log_step "Stage 0/3 — cargo fmt --all -- --check (mirrors CI fmt gate)"
 cargo fmt --all -- --check \
     || fail_step "Stage 0 (cargo fmt --all --check)"
+
+# The workbench's own Cargo workspace. `app/` has a `Cargo.toml` of its own, which `cargo fmt --all`
+# above never reads from the repository root, and its format is judged by the `app` gate
+# (scripts/gates/app.sh): a gate that only CI runs, so a drifted `use` line there was first seen
+# as a red Windows lane (2026-10-06) and not at the commit that wrote it. Run for a commit that
+# stages Rust under `app/`, so a drifted file nobody touched never blocks an unrelated commit
+# (the clang-format stage below keeps the same doctrine). The command is the gate's own, and
+# `gate_registry_contract` holds the two to each other: it names the two packages and not `--all`,
+# which would hand rustfmt the root workspace's files too and overrun the command line Windows
+# allows.
+mapfile -t staged_app_rs < <(git diff --cached --name-only --diff-filter=ACMR -- 'app/*.rs')
+if [[ ${#staged_app_rs[@]} -eq 0 ]]; then
+    echo "pre-commit: no staged Rust under app/ — the app workspace's rustfmt check skipped." >&2
+else
+    log_step "Stage 0/3 — cargo fmt for the app workspace (mirrors the app gate's fmt step)"
+    cargo fmt --manifest-path app/Cargo.toml -p sce-workbench -p sce-web-shell --check \
+        || {
+            printf '\nERROR pre-commit: Stage 0 (cargo fmt, app workspace) FAILED — commit aborted.\n  Run `cargo fmt --manifest-path app/Cargo.toml -p sce-workbench -p sce-web-shell`,\n  re-stage the touched files, and retry.\n  Bypass with SKIP_PRECOMMIT=1 for emergencies.\n' >&2
+            exit 1
+        }
+fi
 
 # ── Stage 1: clang-format on staged C/C++ files ───────────────────
 # Mirror CI's clang-format-check.yml at commit time, scoped to the

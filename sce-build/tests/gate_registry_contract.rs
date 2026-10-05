@@ -2097,6 +2097,46 @@ fn the_commit_hook_runs_the_staged_citation_stage() {
 }
 
 #[test]
+fn the_commit_hook_checks_the_app_workspace_with_the_app_gates_own_command() {
+    // `app/` is a Cargo workspace of its own, so the hook's `cargo fmt --all` from the root never
+    // reads it, and the only judge of its format was the `app` gate, which only CI runs: a drifted
+    // `use` line reached CI and turned the Windows lane red (2026-10-06). The hook now runs the
+    // gate's own fmt command for a commit that stages Rust under `app/`. The command is written in
+    // both places on purpose (the gate names two packages and not `--all`, which overruns the
+    // command line Windows allows, and a shared script would move that line out of the gate that
+    // other contract tests read), so this holds the copy to the original.
+    let root = repo_root();
+    let command =
+        "cargo fmt --manifest-path app/Cargo.toml -p sce-workbench -p sce-web-shell --check";
+    let gate = std::fs::read_to_string(root.join("scripts/gates/app.sh"))
+        .expect("read scripts/gates/app.sh");
+    assert!(
+        gate.lines()
+            .map(|l| l.trim())
+            .any(|l| l.starts_with(command)),
+        "the app gate no longer runs `{command}`: this test, and the hook's copy of it, name a \
+         command the gate does not run"
+    );
+    let hook = std::fs::read_to_string(root.join("tools/git-hooks/pre-commit"))
+        .expect("read tools/git-hooks/pre-commit");
+    // An INVOCATION, not a mention: the comment above the stage and the progress line name the
+    // command too, and either one would keep this green after the call was deleted.
+    let runs = hook
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.starts_with('#'))
+        .filter(|l| {
+            !(l.starts_with("log_step") || l.starts_with("printf") || l.starts_with("echo"))
+        })
+        .any(|l| l.starts_with(command));
+    assert!(
+        runs,
+        "the commit hook does not run `{command}`: a format drift under app/ is judged only by \
+         CI again (mentions in comments and progress messages do not count)"
+    );
+}
+
+#[test]
 fn the_staged_stage_scope_is_not_bounded_by_path_or_extension() {
     // Measured 2026-08-11: the gate named `web/` among the trees it swept and
     // read 0 of its 46 tracked files, because the checker only read extensions
