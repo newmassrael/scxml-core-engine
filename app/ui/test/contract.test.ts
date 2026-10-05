@@ -23,6 +23,7 @@ import {
   parseCompletedRequest,
   parseDescribed,
   parseGenerationRequest,
+  parseHostListing,
   parseRequestCandidateTexts,
   parseRegisteredRequest,
   parseRequestList,
@@ -92,6 +93,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   cancel_request: parseRequestReply,
   report_adapter: parseAdapterReport,
   read_adapter_status: parseAdapterListing,
+  read_host_status: parseHostListing,
   read_bundle: parseBundleRead,
   bundle_history: parseHistory,
 };
@@ -321,6 +323,14 @@ describe("the replies the core gives", () => {
     const listed = parseRequestList(replies.answers["list_requests"]);
     expect(listed.map((r) => r.seq)).toEqual([...listed.map((r) => r.seq)].sort((a, b) => b - a));
     expect(listed.filter((r) => isOpenRequest(r.state))).toHaveLength(0);
+  });
+
+  it("say whether a shell hosts an executor and, when it does not, why", () => {
+    expect(parseHostListing(replies.answers["read_host_status_none"]).hosts).toEqual([]);
+    const listing = parseHostListing(replies.answers["read_host_status"]);
+    expect(listing.hosts).toHaveLength(1);
+    expect(listing.hosts[0]).toMatchObject({ name: "desktop", hosting: false, client_version: null, live: true });
+    expect(listing.hosts[0]?.reason).toContain("SCE_CLAUDE");
   });
 
   it("say what an executor wrote for a request, and that it is not the work's until it completes", () => {

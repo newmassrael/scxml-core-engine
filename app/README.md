@@ -20,26 +20,38 @@ judges nothing, it runs `sce-codegen` and shows what the product writes. On top 
 the same folder you **accept a design** against the requirement list your text was
 read into, and the application says whether that acceptance still holds.
 
+You can **ask for a model**: the button saves what you typed and registers a request, and an
+AI executor takes it. The application hosts one when it finds Claude Code (a request is then
+taken, written for and finished with no window of the client open), and an authoring client of
+your own can take it instead (`works_begin_generation`). What the executor writes is kept
+beside the work and becomes the work's model and requirement list together, as one bundle, only
+when SCE accepts the model; the screen says where the request stands, where each answer
+stands, which sentence of your text a question is about, and what a new model changed from the
+one before.
+
 An authoring client reaches the same folder through the MCP (`works_list`,
-`works_read`, `works_save_model`, `works_save_requirements`, in `tools/authoring`):
-it reads the text you saved and your answers, writes the model and the requirement
-list, and saves them back after the product's own check accepts them and your
-answers are kept to. They run `sce-work`, so the application and the MCP cannot
-disagree about the folder because only one thing writes it. The text and the
-answers are yours: no MCP tool writes either, none removes a work, and none
-accepts a design for you.
+`works_read`, `works_save_model`, `works_save_requirements`, and the three that take,
+finish and give up a request, in `tools/authoring`): it reads the text you saved and your
+answers, writes the model and the requirement list, and saves them back after the product's
+own check accepts them and your answers are kept to. They run `sce-work`, so the application
+and the MCP cannot disagree about the folder because only one thing writes it. The text and the
+answers are yours: no MCP tool writes either, none removes a work, and none accepts a design
+for you.
 
 What does not exist yet, so that nothing below is read as done:
 
-- Nothing starts the AI client. You ask it in its own window ("model the work
-  Door lock") and the application shows what it saved when you read again.
+- Installers that carry everything (the generator, `sce-work` and the authoring server) so that
+  nothing has to be installed beside the application. The application finds them beside
+  itself, or through the environment (`SCE_CODEGEN`, `SCE_WORK`, `SCE_AUTHOR_MCP`, `SCE_CLAUDE`),
+  and says what it could not find.
 - The screens for the examples' results. They are designs, not code. The model
   screen shows what SCE drew, what SCE says of the model, where it stands to the
   text, a field for your answer under each question the model leaves open, and
   what you accepted; it does not edit the model (an AI client writes it) and it does
   not write the requirement list (an AI client reads your text into one).
 - Windows has not been run on a window; the lane `windows` in `app.yml` runs the
-  same gate there, and the Linux desktop build and the browser have been run.
+  same gate there, and the Linux desktop build and the browser have been run. The hosted
+  executor is tested against a stand-in client on Unix only.
 
 ## How the parts fit
 
@@ -348,6 +360,15 @@ Code to use the workbench.
 | The authoring server's launcher | `SCE_AUTHOR_MCP` (a checkout has `scripts/sce_author_mcp.sh`) | `sce-author-mcp` beside the program or on the search path |
 | `sce-work`, for the authoring server | `SCE_WORK` | beside the program or on the search path |
 | The product, for the authoring server | `SCE_CODEGEN` | the product's own discovery |
+
+**A shell says what it is doing where the owner looks.** `host::start` never fails: that nothing
+could be hosted is a state, and the shell reports it the way an adapter does (`.sce-hosts/<name>.json`,
+every thirty seconds, counted while recent): that an executor runs and which client, or why none
+does, in words the owner can act on (`no Claude Code to write models with (...): install it, or
+set SCE_CLAUDE to its path`). The screen reads it (`read_host_status`) and, when no AI is
+connected, says why under the generate button. A message on the standard error of a program
+started from a menu is one nobody reads, and an installed application has no terminal. A shell
+that stopped reporting is not counted: what it last said would be about nothing.
 
 `SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses, and
 `SCE_CLAUDE_BUDGET_USD` bounds what one run may cost (anything that is not a positive number is

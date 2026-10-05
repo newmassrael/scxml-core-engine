@@ -46,17 +46,16 @@ struct Works {
 struct Executor(Mutex<Option<ExecutorHost>>);
 
 /// Host the application's own executor, or say why it does not. Not having Claude Code is not
-/// an error: the application shows that no AI is connected and works as it always did.
+/// an error: the application shows that no AI is connected, and why, and works as it always did.
+/// What it could not do is said to the works folder, where the screen reads it, and also here.
 fn host_the_executor(root: std::path::PathBuf) -> Executor {
     let store = Arc::new(WorkStore::at(root));
     let product: Arc<dyn Product> = Arc::from(default_renderer());
-    match host::start(store, product, HostSettings::from_environment("desktop")) {
-        Ok(running) => Executor(Mutex::new(Some(running))),
-        Err(why) => {
-            eprintln!("sce-workbench: {why}");
-            Executor(Mutex::new(None))
-        }
+    let running = host::start(store, product, HostSettings::from_environment("desktop"));
+    if let Some(why) = running.not_hosted() {
+        eprintln!("sce-workbench: {why}");
     }
+    Executor(Mutex::new(Some(running)))
 }
 
 /// Run one of the store's commands. The screen's only way to anything.

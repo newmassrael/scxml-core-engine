@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { AdapterListing, AdapterStatus, GenerationRequest, RequestHead, RequestState } from "../src/contract";
+import type {
+  AdapterListing,
+  AdapterStatus,
+  GenerationRequest,
+  HostListing,
+  HostStatus,
+  RequestHead,
+  RequestState,
+} from "../src/contract";
 import {
   connectedNames,
   controlsOf,
@@ -11,6 +19,7 @@ import {
   pressKey,
   savingEndsARequest,
   statusOf,
+  whyNoAi,
 } from "../src/generation_model";
 
 const head = (state: RequestState, attempt = 1, id = "req-1"): RequestHead => ({ id, state, attempt });
@@ -58,6 +67,34 @@ describe("whether an AI is there", () => {
     expect(isConnected(listing(adapter({ live: false })))).toBe(false);
     expect(isConnected(listing(adapter({ capabilities: ["cancel"] })))).toBe(false);
     expect(connectedNames(listing(adapter({ live: false })))).toEqual([]);
+  });
+});
+
+describe("why no AI is hosted", () => {
+  const host = (over: Partial<HostStatus> = {}): HostStatus => ({
+    name: "desktop",
+    hosting: false,
+    reason: "no Claude Code to write models with: install it, or set SCE_CLAUDE",
+    client_version: null,
+    seen_at: "2026-10-05T09:00:00Z",
+    live: true,
+    ...over,
+  });
+  const hosts = (...list: HostStatus[]): HostListing => ({ hosts: list, unreadable: [] });
+
+  it("is what each shell that is there said, with its name", () => {
+    expect(whyNoAi(hosts(host(), host({ name: "web-shell", reason: "the executor is off" })))).toEqual([
+      "desktop: no Claude Code to write models with: install it, or set SCE_CLAUDE",
+      "web-shell: the executor is off",
+    ]);
+  });
+
+  it("is nothing for a shell that hosts, one that stopped saying so, one that gave no reason, or nobody", () => {
+    expect(whyNoAi(hosts(host({ hosting: true, reason: null })))).toEqual([]);
+    expect(whyNoAi(hosts(host({ live: false })))).toEqual([]);
+    expect(whyNoAi(hosts(host({ reason: null })))).toEqual([]);
+    expect(whyNoAi(hosts())).toEqual([]);
+    expect(whyNoAi(null)).toEqual([]);
   });
 });
 

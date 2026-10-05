@@ -716,6 +716,23 @@ fn replies() -> Value {
         "read_adapter_status".into(),
         answer(&store, "read_adapter_status", json!({})),
     );
+    // Whether a shell hosts an executor, and why not: nothing yet, then a shell that could not.
+    answers.insert(
+        "read_host_status_none".into(),
+        answer(&store, "read_host_status", json!({})),
+    );
+    store
+        .report_host(sce_app_core::HostReport {
+            name: "desktop",
+            hosting: false,
+            reason: Some("no Claude Code to write models with: install it, or set SCE_CLAUDE"),
+            client_version: None,
+        })
+        .unwrap();
+    answers.insert(
+        "read_host_status".into(),
+        answer(&store, "read_host_status", json!({})),
+    );
     refusals.insert(
         "bad-adapter".into(),
         refusal(

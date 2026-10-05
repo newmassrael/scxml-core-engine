@@ -626,6 +626,42 @@ fn an_adapter_reports_and_is_read_back_as_there_for_as_long_as_it_is_recent() {
 }
 
 #[test]
+fn a_shell_says_whether_it_hosts_an_executor_and_the_screen_reads_it_back() {
+    let f = fixture("request-commands-hosts");
+    assert_eq!(
+        f.run("read_host_status", json!({})),
+        json!({"hosts": [], "unreadable": []})
+    );
+    f.store
+        .report_host(sce_app_core::HostReport {
+            name: "desktop",
+            hosting: false,
+            reason: Some("no Claude Code to write models with"),
+            client_version: None,
+        })
+        .unwrap();
+
+    let status = f.run("read_host_status", json!({}));
+
+    assert_eq!(
+        status["hosts"][0],
+        json!({
+            "name": "desktop",
+            "hosting": false,
+            "reason": "no Claude Code to write models with",
+            "client_version": null,
+            "seen_at": "2026-10-05T09:00:00Z",
+            "live": true,
+        })
+    );
+    f.clock.advance(90);
+    assert_eq!(
+        f.run("read_host_status", json!({}))["hosts"][0]["live"],
+        json!(false)
+    );
+}
+
+#[test]
 fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
     let f = fixture("request-commands-describe");
 
@@ -651,6 +687,7 @@ fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
         "cancel_request",
         "report_adapter",
         "read_adapter_status",
+        "read_host_status",
         "read_bundle",
         "bundle_history",
     ] {

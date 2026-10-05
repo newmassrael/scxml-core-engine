@@ -113,10 +113,34 @@ fn a_shell_that_is_told_not_to_host_hosts_nothing_and_says_why() {
     let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
     settings.enabled = false;
 
-    let refused = start(store, Arc::new(FakeRenderer), settings).err();
+    let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
 
-    assert_eq!(refused, Some(NotHosted::Off));
+    assert_eq!(host.not_hosted(), Some(&NotHosted::Off));
     assert!(NotHosted::Off.to_string().contains("SCE_EXECUTOR"));
+    assert_eq!(host.client_version(), None);
+}
+
+#[test]
+fn what_a_shell_cannot_host_is_said_where_the_owner_looks_and_not_only_to_the_terminal() {
+    let (_, store) = store("host-says-why");
+    let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+    settings.claude = Some(PathBuf::from("/nowhere/claude"));
+    settings.author = Some(PathBuf::from("/bin/sh"));
+
+    let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+
+    // The word is in the works folder at once, for a screen to read: a message on the standard
+    // error of a program started from a menu is one nobody reads.
+    let listing = store.host_status().unwrap();
+    assert_eq!(listing.hosts.len(), 1);
+    let said = &listing.hosts[0];
+    assert_eq!(said.host.name, "desktop");
+    assert!(!said.host.hosting);
+    let reason = said.host.reason.as_deref().expect("a reason");
+    assert!(reason.contains("/nowhere/claude"), "{reason}");
+    assert!(reason.contains("SCE_CLAUDE"), "{reason}");
+    assert!(said.live);
+    drop(host);
 }
 
 #[test]
@@ -126,10 +150,10 @@ fn a_shell_with_no_claude_hosts_nothing_and_says_what_to_install() {
     settings.claude = Some(PathBuf::from("/nowhere/claude"));
     settings.author = Some(PathBuf::from("/bin/sh"));
 
-    let refused = start(store, Arc::new(FakeRenderer), settings).err();
+    let host = start(store, Arc::new(FakeRenderer), settings);
 
-    let Some(NotHosted::NoClaude(tried)) = refused else {
-        panic!("expected NoClaude, got {refused:?}");
+    let Some(NotHosted::NoClaude(tried)) = host.not_hosted().cloned() else {
+        panic!("expected NoClaude, got {:?}", host.not_hosted());
     };
     assert!(tried.contains("/nowhere/claude"), "{tried}");
     assert!(NotHosted::NoClaude(tried)
@@ -190,8 +214,13 @@ mod hosting {
         settings.claude = Some(claude);
         settings.author = Some(author);
 
-        let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings).unwrap();
+        let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+        assert_eq!(host.not_hosted(), None);
         assert_eq!(host.client_version().as_deref(), Some("2.1.289"));
+        // The shell says it hosts, and which client, where the screen reads it.
+        let said = &store.host_status().unwrap().hosts[0];
+        assert!(said.host.hosting);
+        assert_eq!(said.host.client_version.as_deref(), Some("2.1.289"));
         let request = ask(&store, &id);
         within_ten_seconds("the request was not taken", || {
             store.read_request(&id, &request).unwrap().state == State::Completed
@@ -219,10 +248,10 @@ mod hosting {
         settings.claude = Some(claude);
         settings.author = Some(PathBuf::from("/nowhere/sce-author-mcp"));
 
-        let refused = start(store, Arc::new(FakeRenderer), settings).err();
+        let host = start(store, Arc::new(FakeRenderer), settings);
 
-        let Some(NotHosted::NoAuthorServer(tried)) = refused else {
-            panic!("expected NoAuthorServer, got {refused:?}");
+        let Some(NotHosted::NoAuthorServer(tried)) = host.not_hosted().cloned() else {
+            panic!("expected NoAuthorServer, got {:?}", host.not_hosted());
         };
         assert!(tried.contains("/nowhere/sce-author-mcp"), "{tried}");
         assert!(NotHosted::NoAuthorServer(tried)

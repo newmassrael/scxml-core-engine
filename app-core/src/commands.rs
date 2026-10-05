@@ -31,8 +31,8 @@ use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ModelText, Published, Registration,
-    RequestView, RequirementsText, WorkId, WorkStore,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText, Published,
+    Registration, RequestView, RequirementsText, WorkId, WorkStore,
 };
 
 /// Every command, in the order a person would meet them.
@@ -72,6 +72,7 @@ pub const COMMANDS: &[&str] = &[
     "cancel_request",
     "report_adapter",
     "read_adapter_status",
+    "read_host_status",
     "read_bundle",
     "bundle_history",
 ];
@@ -127,7 +128,8 @@ pub const COMMANDS: &[&str] = &[
 /// work's model, and `complete_request` publishes it: the core runs its own check of the
 /// model, and the model and the requirement list become the work's together as one bundle
 /// (`read_bundle`, `bundle_history`). An executor finds the requests it may take across the
-/// works (`list_open_requests`). A request says its `candidate` and, once done, its
+/// works (`list_open_requests`), and a screen asks whether a shell hosts one and, if not, why
+/// (`read_host_status`). A request says its `candidate` and, once done, its
 /// `outcome`; the heads and the snapshot of a work say their `bundle`. A work that keeps
 /// bundles refuses `save_model` and `save_requirements` with `bundled-work`. A screen
 /// written for 11 reads a work's model by the bundle and would be refused by a core of 10.
@@ -531,6 +533,20 @@ fn request_json(work: &WorkId, view: &RequestView) -> Value {
         "outcome": request.outcome,
         "ended_at": request.ended_at,
         "note": request.note,
+    })
+}
+
+/// A shell's word about its executor as the screens read it, and whether the shell is still
+/// saying it.
+fn host_json(status: &HostStatus) -> Value {
+    let host = &status.host;
+    json!({
+        "name": host.name,
+        "hosting": host.hosting,
+        "reason": host.reason,
+        "client_version": host.client_version,
+        "seen_at": host.seen_at,
+        "live": status.live,
     })
 }
 
@@ -1381,6 +1397,12 @@ pub fn call<C: Clock>(
             let listing = store.adapter_status()?;
             let adapters: Vec<Value> = listing.adapters.iter().map(adapter_json).collect();
             Ok(json!({ "adapters": adapters, "unreadable": listing.unreadable }))
+        }
+        "read_host_status" => {
+            arguments::<Empty>(args)?;
+            let listing = store.host_status()?;
+            let hosts: Vec<Value> = listing.hosts.iter().map(host_json).collect();
+            Ok(json!({ "hosts": hosts, "unreadable": listing.unreadable }))
         }
         "remove_work" => {
             let OneWork { id } = arguments(args)?;

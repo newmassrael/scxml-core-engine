@@ -27,13 +27,14 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::clock::Clock;
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::review::Product;
 use crate::runner::{Cancel, Generator, Runner, RunnerConfig};
-use crate::store::WorkStore;
+use crate::store::{HostReport, WorkStore};
 
 /// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_AUTHOR_MCP`, `SCE_WORK`, `SCE_CLAUDE_MODEL`,
 /// `SCE_CLAUDE_BUDGET_USD` in the environment.
@@ -133,19 +134,30 @@ impl std::fmt::Display for NotHosted {
 
 impl std::error::Error for NotHosted {}
 
-/// A runner on a thread of its own, for as long as it is held. Dropping it tells the runner to
-/// stop, kills a client at work, and waits for the thread: closing the window does not leave a
-/// client running.
+/// How often a shell says again what it is doing: a third of the time a word counts for, so that
+/// one that is late is not read as one that went.
+const REPORT_EVERY: Duration = Duration::from_secs(30);
+
+/// What a shell hosts: an executor on a thread of its own, or nothing and the reason. Either way it
+/// says so, again and again, where the owner's screen reads it; dropping it stops both threads,
+/// kills a client at work and waits for them, so closing the window does not leave a client
+/// running.
 pub struct ExecutorHost {
     shutdown: Cancel,
-    thread: Option<thread::JoinHandle<()>>,
+    threads: Vec<thread::JoinHandle<()>>,
     version: Option<String>,
+    not_hosted: Option<NotHosted>,
 }
 
 impl ExecutorHost {
-    /// What the client says its version is.
+    /// What the client says its version is; none when no client is running.
     pub fn client_version(&self) -> Option<String> {
         self.version.clone()
+    }
+
+    /// Why nothing is hosted, when nothing is.
+    pub fn not_hosted(&self) -> Option<&NotHosted> {
+        self.not_hosted.as_ref()
     }
 
     /// Stop now; the same as dropping.
@@ -157,27 +169,89 @@ impl ExecutorHost {
 impl Drop for ExecutorHost {
     fn drop(&mut self) {
         self.shutdown.cancel();
-        if let Some(thread) = self.thread.take() {
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }
 }
 
-/// Host an executor for `store`, if what it needs can be found.
+/// Host an executor for `store` when what it needs can be found, and say what came of it.
+///
+/// Never fails: that nothing could be hosted is a state a screen shows ("no AI is connected, and
+/// here is what to install or set") and not an error that stops the application.
 pub fn start<C>(
     store: Arc<WorkStore<C>>,
     product: Arc<dyn Product>,
     settings: HostSettings,
-) -> Result<ExecutorHost, NotHosted>
+) -> ExecutorHost
 where
     C: Clock + Send + Sync + 'static,
 {
+    let name = settings.name.clone();
+    // One word stops everything the host runs: the runner's own, when there is a runner.
+    let mut shutdown = Cancel::new();
+    let mut threads = Vec::new();
+    let (version, not_hosted) = match find_client(&store, &settings) {
+        Ok(client) => {
+            let version = client.version();
+            let runner = Runner::new(
+                Arc::clone(&store),
+                product,
+                Arc::new(client),
+                RunnerConfig::named(&name),
+            );
+            shutdown = runner.shutdown();
+            let spawned = thread::Builder::new()
+                .name("sce-executor".to_string())
+                .spawn(move || runner.run());
+            match spawned {
+                Ok(thread) => {
+                    threads.push(thread);
+                    (version, None)
+                }
+                Err(e) => (
+                    None,
+                    Some(NotHosted::NoClaude(format!(
+                        "a thread for the executor: {e}"
+                    ))),
+                ),
+            }
+        }
+        Err(why) => (None, Some(why)),
+    };
+    // What is said of it, said now (so that it is in the works folder when this returns) and kept
+    // said.
+    let reason = not_hosted.as_ref().map(ToString::to_string);
+    let said = (version.clone(), reason);
+    say(&store, &name, &said.0, said.1.as_deref());
+    if let Ok(thread) = thread::Builder::new()
+        .name("sce-host-report".to_string())
+        .spawn({
+            let (store, shutdown, name) = (Arc::clone(&store), shutdown.clone(), name.clone());
+            move || report_until_stopped(&store, &shutdown, &name, &said.0, said.1.as_deref())
+        })
+    {
+        threads.push(thread);
+    }
+    ExecutorHost {
+        shutdown,
+        threads,
+        version,
+        not_hosted,
+    }
+}
+
+/// What a shell needs to host an executor, found; or why it is not.
+fn find_client<C: Clock>(
+    store: &WorkStore<C>,
+    settings: &HostSettings,
+) -> Result<ClaudeCode, NotHosted> {
     if !settings.enabled {
         return Err(NotHosted::Off);
     }
-    let author = author_server(&settings, store.root())?;
+    let author = author_server(settings, store.root())?;
     let config = settings.config.clone();
-    let client = match &settings.claude {
+    match &settings.claude {
         Some(binary) => {
             let client = ClaudeCode::new(binary.clone(), author, config);
             if client.version().is_none() {
@@ -186,28 +260,40 @@ where
                     binary.display()
                 )));
             }
-            client
+            Ok(client)
         }
         None => ClaudeCode::find(author, config)
-            .ok_or_else(|| NotHosted::NoClaude("`claude` is not on the search path".to_string()))?,
-    };
-    let version = client.version();
-    let runner = Runner::new(
-        store,
-        product,
-        Arc::new(client),
-        RunnerConfig::named(settings.name),
-    );
-    let shutdown = runner.shutdown();
-    let thread = thread::Builder::new()
-        .name("sce-executor".to_string())
-        .spawn(move || runner.run())
-        .map_err(|e| NotHosted::NoClaude(format!("a thread for the executor: {e}")))?;
-    Ok(ExecutorHost {
-        shutdown,
-        thread: Some(thread),
-        version,
-    })
+            .ok_or_else(|| NotHosted::NoClaude("`claude` is not on the search path".to_string())),
+    }
+}
+
+/// Say what the shell is doing now, and again every [`REPORT_EVERY`], until told to stop.
+fn report_until_stopped<C: Clock>(
+    store: &WorkStore<C>,
+    stop: &Cancel,
+    name: &str,
+    version: &Option<String>,
+    reason: Option<&str>,
+) {
+    // Said once already, by `start`: the next is due a period from then.
+    let mut last = Instant::now();
+    while !stop.is_cancelled() {
+        if last.elapsed() >= REPORT_EVERY {
+            say(store, name, version, reason);
+            last = Instant::now();
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// One report. A folder that could not be written to this time is written to at the next.
+fn say<C: Clock>(store: &WorkStore<C>, name: &str, version: &Option<String>, reason: Option<&str>) {
+    let _ = store.report_host(HostReport {
+        name,
+        hosting: reason.is_none(),
+        reason,
+        client_version: version.as_deref(),
+    });
 }
 
 /// How the client reaches the authoring server: the launcher, and what the server needs to find

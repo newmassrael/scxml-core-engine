@@ -13,6 +13,7 @@ import {
   isOpenRequest,
   type AdapterListing,
   type GenerationRequest,
+  type HostListing,
   type RequestHead,
 } from "./contract";
 
@@ -34,6 +35,18 @@ export type Status =
 /** Whether an AI that can write a model is there now. */
 export function isConnected(adapters: AdapterListing | null): boolean {
   return adapters !== null && adapters.adapters.some((a) => a.live && a.capabilities.includes("generate"));
+}
+
+/**
+ * Why the shells that are there host no executor, in the words they gave, each with the shell's
+ * name. A shell that has stopped saying so is not counted (it may be gone, and what it last said
+ * would then be about nothing), and neither is one that hosts.
+ */
+export function whyNoAi(hosts: HostListing | null): string[] {
+  if (hosts === null) return [];
+  return hosts.hosts
+    .filter((h) => h.live && !h.hosting && h.reason !== null)
+    .map((h) => `${h.name}: ${h.reason}`);
 }
 
 /** The names of the adapters that are there now. */

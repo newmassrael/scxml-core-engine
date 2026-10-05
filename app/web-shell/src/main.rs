@@ -109,23 +109,18 @@ fn run() -> Result<(), String> {
     // The same executor the desktop application hosts, so that the screen being developed here
     // can be pressed "generate" on and be answered. Held to the end of the program: it stops
     // a client at work when the server stops, and `SCE_EXECUTOR=off` hosts nothing.
-    let _executor = match host::start(
+    let _executor = host::start(
         Arc::new(WorkStore::at(root.clone())),
         Arc::from(default_renderer()),
         HostSettings::from_environment("web-shell"),
-    ) {
-        Ok(running) => {
-            eprintln!(
-                "executor:     Claude Code {}",
-                running.client_version().unwrap_or_default()
-            );
-            Some(running)
-        }
-        Err(why) => {
-            eprintln!("executor:     none ({why})");
-            None
-        }
-    };
+    );
+    match _executor.not_hosted() {
+        None => eprintln!(
+            "executor:     Claude Code {}",
+            _executor.client_version().unwrap_or_default()
+        ),
+        Some(why) => eprintln!("executor:     none ({why})"),
+    }
 
     let shell = Arc::new(Shell::new(WorkStore::at(root), figures, token, assets));
     let runtime = tokio::runtime::Builder::new_multi_thread()

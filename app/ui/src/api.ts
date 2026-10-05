@@ -10,6 +10,7 @@ import {
   parseDescribed,
   parseFigures,
   parseHistory,
+  parseHostListing,
   parseListing,
   parseRegisteredRequest,
   parseRequestList,
@@ -35,6 +36,7 @@ import {
   type Figures,
   type GenerationRequest,
   type HistoryEntry,
+  type HostListing,
   type Listing,
   type RegisteredRequest,
   type ReadAcceptance,
@@ -150,6 +152,11 @@ export interface Api {
   /** Which AI adapters are there, and what each can do. */
   readAdapterStatus(): Promise<AdapterListing>;
   /**
+   * Whether each shell hosts an executor and, when it does not, why in words the owner can act on
+   * (what to install, what to set). Said by the shells themselves, and counted while recent.
+   */
+  readHostStatus(): Promise<HostListing>;
+  /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
    */
@@ -246,6 +253,9 @@ export function apiOver(transport: Transport): Api {
     },
     async readAdapterStatus() {
       return parseAdapterListing(await transport.call("read_adapter_status"));
+    },
+    async readHostStatus() {
+      return parseHostListing(await transport.call("read_host_status"));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

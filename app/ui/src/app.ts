@@ -42,6 +42,7 @@ import {
   type Described,
   type GenerationRequest,
   type HistoryEntry,
+  type HostListing,
   type Listing,
   type ReadAcceptance,
   type RequestHead,
@@ -75,6 +76,7 @@ import {
   pressKey,
   savingEndsARequest,
   statusOf,
+  whyNoAi,
   type Status,
 } from "./generation_model";
 import { movedParts, sameHeads, sameRequest, type WorkOnScreen } from "./heads_model";
@@ -218,8 +220,9 @@ export class App {
   /** Where the work's latest request stands, as the core last said, and what was read of it. */
   private requestHead: RequestHead | null = null;
   private requestDetail: GenerationRequest | null = null;
-  /** Which AI adapters are there, as last read. */
+  /** Which AI adapters are there, and whether the shells host one and why not, as last read. */
   private adapters: AdapterListing | null = null;
+  private hosts: HostListing | null = null;
   /** A request being made or called off now: a second press would be a second request. */
   private requestBusy: "making" | "cancelling" | null = null;
   /** Why the last attempt to ask was not made, in words; and whether a request that is open may be replaced. */
@@ -411,6 +414,15 @@ export class App {
       if (session !== this.session) return;
       if (adaptersKey(this.adapters) !== adaptersKey(listing)) changed = true;
       this.adapters = listing;
+    } catch (error) {
+      if (session !== this.session) return;
+      this.askForToken(error);
+    }
+    try {
+      const hosts = await this.api.readHostStatus();
+      if (session !== this.session) return;
+      if (whyNoAi(this.hosts).join("\n") !== whyNoAi(hosts).join("\n")) changed = true;
+      this.hosts = hosts;
     } catch (error) {
       if (session !== this.session) return;
       this.askForToken(error);
@@ -1873,16 +1885,24 @@ export class App {
     }
   }
 
-  /** Whether an AI is there, said when it is not already said by the state of the request. */
+  /**
+   * Whether an AI is there, said when it is not already said by the state of the request. When none
+   * is, why: what the shells that could not host one said of what to install or set, which is
+   * where the owner looks (a message on the standard error of a program started from a menu is not).
+   */
   private aiLine(status: Status): HTMLElement | null {
-    if (status.kind === "queued" || status.kind === "running") return null;
-    if (this.adapters === null) return null;
+    if (status.kind === "running" || this.adapters === null) return null;
+    const connected = isConnected(this.adapters);
+    if (status.kind === "queued" && connected) return null;
+    const reasons = whyNoAi(this.hosts);
     return h(
       "p",
       { id: "generation-ai", class: "muted" },
-      isConnected(this.adapters)
+      connected
         ? this.t("generationAiHere", { names: connectedNames(this.adapters).join(", ") })
-        : this.t("generationNoAi"),
+        : reasons.length === 0
+          ? this.t("generationNoAi")
+          : this.t("generationNoAiBecause", { reasons: reasons.join(" ") }),
     );
   }
 

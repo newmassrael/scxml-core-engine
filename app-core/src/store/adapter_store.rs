@@ -15,14 +15,12 @@
 //!
 //! The folder begins with a dot, which no work id does, so it is never listed as a work.
 
-use std::fs;
-use std::io;
-
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::request_store::valid_name;
-use super::{atomic_write, Unreadable, WorkStore};
+use super::soft_state::{read_records, write_record, Named};
+use super::{Unreadable, WorkStore};
 use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 
@@ -106,13 +104,7 @@ impl<C: Clock> WorkStore<C> {
             seen_at: utc_timestamp(epoch),
             seen_epoch: epoch,
         };
-        let folder = self.root.join(ADAPTERS_DIR);
-        fs::create_dir_all(&folder).map_err(|e| StoreError::io(&folder, e))?;
-        let path = folder.join(format!("{}.json", adapter.name));
-        let mut bytes = serde_json::to_vec_pretty(&adapter)
-            .map_err(|e| StoreError::corrupt(&path, e.to_string()))?;
-        bytes.push(b'\n');
-        atomic_write(&path, &bytes)?;
+        write_record(&self.root.join(ADAPTERS_DIR), &adapter)?;
         Ok(AdapterStatus {
             adapter,
             live: true,
@@ -121,53 +113,24 @@ impl<C: Clock> WorkStore<C> {
 
     /// Every adapter that reported, by name, each with whether it is there now.
     pub fn adapter_status(&self) -> Result<AdapterListing, StoreError> {
-        let folder = self.root.join(ADAPTERS_DIR);
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Ok(AdapterListing {
-                    adapters: Vec::new(),
-                    unreadable: Vec::new(),
-                })
-            }
-            Err(e) => return Err(StoreError::io(&folder, e)),
-        };
+        let (adapters, unreadable) =
+            read_records::<Adapter>(&self.root.join(ADAPTERS_DIR), "adapter")?;
         let now = self.clock.epoch();
-        let mut listing = AdapterListing {
-            adapters: Vec::new(),
-            unreadable: Vec::new(),
-        };
-        for entry in entries {
-            let entry = entry.map_err(|e| StoreError::io(&folder, e))?;
-            let file = entry.file_name().to_string_lossy().into_owned();
-            // What a half-written replacement leaves beside a record is not a record.
-            let Some(name) = file.strip_suffix(".json") else {
-                continue;
-            };
-            let read = fs::read(entry.path())
-                .map_err(|e| e.to_string())
-                .and_then(|bytes| {
-                    serde_json::from_slice::<Adapter>(&bytes).map_err(|e| e.to_string())
-                });
-            match read {
-                Ok(adapter) if adapter.name == name => listing.adapters.push(AdapterStatus {
+        Ok(AdapterListing {
+            adapters: adapters
+                .into_iter()
+                .map(|adapter| AdapterStatus {
                     live: now < adapter.seen_epoch + ADAPTER_LIVE_SECONDS,
                     adapter,
-                }),
-                Ok(adapter) => listing.unreadable.push(Unreadable {
-                    id: name.to_string(),
-                    reason: format!("the record says it is the adapter `{}`", adapter.name),
-                }),
-                Err(reason) => listing.unreadable.push(Unreadable {
-                    id: name.to_string(),
-                    reason,
-                }),
-            }
-        }
-        listing
-            .adapters
-            .sort_by(|a, b| a.adapter.name.cmp(&b.adapter.name));
-        listing.unreadable.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(listing)
+                })
+                .collect(),
+            unreadable,
+        })
+    }
+}
+
+impl Named for Adapter {
+    fn name(&self) -> &str {
+        &self.name
     }
 }

@@ -447,6 +447,27 @@ export interface AdapterStatus {
   readonly live: boolean;
 }
 
+/**
+ * A shell's word about the executor it hosts: that one runs in it, or why none does, in words the
+ * owner can act on (what to install, what to set).
+ */
+export interface HostStatus {
+  /** Which shell: `desktop`, `web-shell`. */
+  readonly name: string;
+  readonly hosting: boolean;
+  readonly reason: string | null;
+  readonly client_version: string | null;
+  readonly seen_at: string;
+  /** The shell said it recently: one that went is not hosting, whatever it last said. */
+  readonly live: boolean;
+}
+
+/** `read_host_status`: every shell that reported, and every record that could not be read. */
+export interface HostListing {
+  readonly hosts: readonly HostStatus[];
+  readonly unreadable: readonly Unreadable[];
+}
+
 /** `read_adapter_status`: every adapter that reported, and every record that could not be read. */
 export interface AdapterListing {
   readonly adapters: readonly AdapterStatus[];
@@ -1094,6 +1115,33 @@ function parseAdapter(value: unknown, where: string): AdapterStatus {
 /** `report_adapter`. */
 export function parseAdapterReport(value: unknown): AdapterStatus {
   return parseAdapter(record(value, "report_adapter")["adapter"], "report_adapter.adapter");
+}
+
+/** `read_host_status`. */
+export function parseHostListing(value: unknown): HostListing {
+  const where = "read_host_status";
+  const r = record(value, where);
+  return {
+    hosts: list(r, "hosts", where).map((h, i) => {
+      const at = `${where}.hosts[${i}]`;
+      const host = record(h, at);
+      if (typeof host["hosting"] !== "boolean") throw new ContractError(`${at}.hosting`, "true or false");
+      if (typeof host["live"] !== "boolean") throw new ContractError(`${at}.live`, "true or false");
+      return {
+        name: text(host, "name", at),
+        hosting: host["hosting"],
+        reason: nullableText(host, "reason", at),
+        client_version: nullableText(host, "client_version", at),
+        seen_at: text(host, "seen_at", at),
+        live: host["live"],
+      };
+    }),
+    unreadable: list(r, "unreadable", where).map((u, i) => {
+      const at = `${where}.unreadable[${i}]`;
+      const entry = record(u, at);
+      return { id: text(entry, "id", at), reason: text(entry, "reason", at) };
+    }),
+  };
 }
 
 /** `read_adapter_status`. */

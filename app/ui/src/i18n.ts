@@ -195,6 +195,7 @@ const en = {
   generationNoAi:
     "No AI is connected. A request waits for an authoring client of your own: ask it to write the model for this work.",
   generationAiHere: "Connected: {names}",
+  generationNoAiBecause: "No AI is connected. {reasons}",
   generationQueued: "The request is registered. Waiting for the AI to take it.",
   generationQueuedNoAi:
     "The request is waiting, but no AI is connected to take it. Start your authoring client and ask it to write the model for this work, or cancel the request.",
@@ -437,6 +438,7 @@ const ko: Record<Key, string> = {
   generationNoAi:
     "AI가 연결되지 않았습니다. 요청은 직접 쓰는 작성 도구가 가져갈 때까지 기다립니다. 그 도구에게 이 작업의 모델을 쓰라고 하세요.",
   generationAiHere: "연결됨: {names}",
+  generationNoAiBecause: "AI가 연결되지 않았습니다. {reasons}",
   generationQueued: "생성 요청을 등록했습니다. AI가 가져가기를 기다리는 중입니다.",
   generationQueuedNoAi:
     "요청이 대기 중이지만 실행할 AI 연결이 없습니다. 작성 도구를 시작해 이 작업의 모델을 쓰라고 하거나, 요청을 취소하세요.",

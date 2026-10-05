@@ -82,12 +82,15 @@ use crate::revision::Revision;
 
 mod adapter_store;
 mod bundle_store;
+mod host_store;
 mod request_store;
+mod soft_state;
 
 pub use adapter_store::{
     Adapter, AdapterListing, AdapterReport, AdapterStatus, ADAPTER_LIVE_SECONDS,
 };
 pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
+pub use host_store::{Host, HostListing, HostReport, HostStatus};
 pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.

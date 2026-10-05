@@ -141,6 +141,7 @@
         "cancel_request",
         "report_adapter",
         "read_adapter_status",
+        "read_host_status",
         "read_bundle",
         "bundle_history"
       ],
@@ -508,6 +509,23 @@
         },
         "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
+    },
+    "read_host_status": {
+      "hosts": [
+        {
+          "client_version": null,
+          "hosting": false,
+          "live": true,
+          "name": "desktop",
+          "reason": "no Claude Code to write models with: install it, or set SCE_CLAUDE",
+          "seen_at": "2026-10-03T09:00:00Z"
+        }
+      ],
+      "unreadable": []
+    },
+    "read_host_status_none": {
+      "hosts": [],
+      "unreadable": []
     },
     "read_model": {
       "model": {
@@ -1299,7 +1317,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_bundle, bundle_history"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history"
     }
   }
 }

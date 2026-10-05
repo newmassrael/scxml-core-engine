@@ -113,6 +113,18 @@ class FakeCore implements Transport {
     }));
   }
 
+  private hostList: Array<{ name: string; hosting: boolean; reason: string | null; live: boolean }> = [];
+
+  /** What the shells say of the executor they host: that one runs, or why none does. */
+  setHosts(list: Array<{ name: string; hosting?: boolean; reason?: string | null; live?: boolean }>): void {
+    this.hostList = list.map((h) => ({
+      name: h.name,
+      hosting: h.hosting ?? false,
+      reason: h.reason ?? null,
+      live: h.live ?? true,
+    }));
+  }
+
   /** The latest request of a work, as the core keeps it. */
   latestRequest(id: string): FakeRequest | undefined {
     return this.requestsOf.get(id)?.at(-1);
@@ -402,6 +414,18 @@ class FakeCore implements Transport {
         found.state = "cancelled";
         return { request: this.requestJson(id, found) };
       }
+      case "read_host_status":
+        return {
+          hosts: this.hostList.map((h) => ({
+            name: h.name,
+            hosting: h.hosting,
+            reason: h.reason,
+            client_version: h.hosting ? "2.1.289" : null,
+            seen_at: "2026-10-05T09:00:00Z",
+            live: h.live,
+          })),
+          unreadable: [],
+        };
       case "read_adapter_status":
         return {
           adapters: this.adapterList.map((a) => ({
@@ -2455,6 +2479,49 @@ describe("asking for a model", () => {
     core.setAdapters([{ name: "desktop" }]);
 
     await click("Alpha");
+
+    expect(generationAi()).toBe("Connected: desktop");
+  });
+
+  it("says why no AI is connected, in the words the shell gave, where the owner looks", async () => {
+    core.setHosts([
+      { name: "desktop", reason: "no Claude Code to write models with: install it, or set SCE_CLAUDE to its path" },
+    ]);
+
+    await click("Alpha");
+
+    expect(generationAi()).toBe(
+      "No AI is connected. desktop: no Claude Code to write models with: install it, or set SCE_CLAUDE to its path",
+    );
+  });
+
+  it("does not repeat a reason once an AI is connected, or for a shell that stopped saying it", async () => {
+    core.setHosts([
+      { name: "desktop", reason: "no Claude Code" },
+      { name: "web-shell", reason: "the executor is off", live: false },
+    ]);
+    core.setAdapters([{ name: "someone" }]);
+
+    await click("Alpha");
+
+    expect(generationAi()).toBe("Connected: someone");
+    // The AI goes away; the screen hears of it at its next question, and then says why.
+    core.setAdapters([]);
+    await ticker.fire();
+    expect(generationAi()).toBe("No AI is connected. desktop: no Claude Code");
+    await press("generate");
+    expect(generationStatus()).toContain("no AI is connected to take it");
+    expect(generationAi()).toBe("No AI is connected. desktop: no Claude Code");
+  });
+
+  it("follows the shell coming up with its executor, without a press", async () => {
+    core.setHosts([{ name: "desktop", reason: "no Claude Code" }]);
+    await click("Alpha");
+    expect(generationAi()).toContain("no Claude Code");
+
+    core.setHosts([{ name: "desktop", hosting: true }]);
+    core.setAdapters([{ name: "desktop" }]);
+    await ticker.fire();
 
     expect(generationAi()).toBe("Connected: desktop");
   });
