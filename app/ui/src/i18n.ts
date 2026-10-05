@@ -184,6 +184,39 @@ const en = {
   channelRelayed: "Relayed by an authoring client: it was not accepted in this application.",
   channelUnknown: "Accepted through: {channel}",
   acceptedOpenTitle: "What SCE listed as left open when it was accepted",
+  generationTitle: "Pseudocode",
+  generateFirst: "Generate pseudocode",
+  generateAgain: "Generate again",
+  generateReplace: "Replace the request and generate again",
+  generateRegistering: "Registering the request...",
+  generateCancel: "Cancel the request",
+  generateCancelling: "Cancelling...",
+  generationIdle: "There is no pseudocode yet. Press the button to have the AI write it from the text.",
+  generationNoAi:
+    "No AI is connected. A request waits for an authoring client of your own: ask it to write the model for this work.",
+  generationAiHere: "Connected: {names}",
+  generationQueued: "The request is registered. Waiting for the AI to take it.",
+  generationQueuedNoAi:
+    "The request is waiting, but no AI is connected to take it. Start your authoring client and ask it to write the model for this work, or cancel the request.",
+  generationRunning: "The AI is writing the model (attempt {attempt}, {holder}).",
+  generationRunningUnnamed: "The AI is writing the model (attempt {attempt}).",
+  generationInterrupted:
+    "The AI that was writing the model stopped answering. Nothing was published. You can generate again.",
+  generationFailed: "The AI could not write the model: {reason}",
+  generationFailedUnsaid: "The AI could not write the model, and did not say why.",
+  generationCancelled: "You cancelled the last request.",
+  generationSuperseded:
+    "The last request ended because the text or the answers it was about were saved. Generate again to write from what is saved now.",
+  generationCompleted: "The last request finished.",
+  generationMoved:
+    "The text or the answers changed while the request was being made, so nothing was asked. What is saved now is shown; press the button again.",
+  generationActive: "A request is already open for this work. Replace it with a new one?",
+  generationRefused: "The request was refused: {detail}",
+  guardTitle: "A model is being written for this text",
+  guardBody:
+    "Saving changes the text or the answers the request is about, so what it writes will not be published. Save and cancel the request, or leave this unsaved.",
+  guardSave: "Save and cancel the request",
+  guardLeave: "Do not save",
 } as const;
 
 export type Key = keyof typeof en;
@@ -365,6 +398,39 @@ const ko: Record<Key, string> = {
   channelRelayed: "AI 클라이언트가 전한 것으로, 이 애플리케이션에서 직접 수락한 것이 아닙니다.",
   channelUnknown: "수락 경로: {channel}",
   acceptedOpenTitle: "수락할 때 SCE가 미결로 남았다고 한 것",
+  generationTitle: "의사코드",
+  generateFirst: "의사코드 생성",
+  generateAgain: "다시 생성",
+  generateReplace: "요청을 대체하고 다시 생성",
+  generateRegistering: "요청을 등록하는 중...",
+  generateCancel: "요청 취소",
+  generateCancelling: "취소하는 중...",
+  generationIdle: "아직 의사코드가 없습니다. 버튼을 누르면 AI가 이 글로 작성합니다.",
+  generationNoAi:
+    "AI가 연결되지 않았습니다. 요청은 직접 쓰는 작성 도구가 가져갈 때까지 기다립니다. 그 도구에게 이 작업의 모델을 쓰라고 하세요.",
+  generationAiHere: "연결됨: {names}",
+  generationQueued: "생성 요청을 등록했습니다. AI가 가져가기를 기다리는 중입니다.",
+  generationQueuedNoAi:
+    "요청이 대기 중이지만 실행할 AI 연결이 없습니다. 작성 도구를 시작해 이 작업의 모델을 쓰라고 하거나, 요청을 취소하세요.",
+  generationRunning: "AI가 모델을 작성하고 있습니다 ({attempt}번째 시도, {holder}).",
+  generationRunningUnnamed: "AI가 모델을 작성하고 있습니다 ({attempt}번째 시도).",
+  generationInterrupted:
+    "모델을 쓰던 AI가 응답을 멈췄습니다. 공개된 것은 없습니다. 다시 생성할 수 있습니다.",
+  generationFailed: "AI가 모델을 작성하지 못했습니다: {reason}",
+  generationFailedUnsaid: "AI가 모델을 작성하지 못했고, 이유를 말하지 않았습니다.",
+  generationCancelled: "마지막 요청을 취소했습니다.",
+  generationSuperseded:
+    "요청이 기준으로 삼은 사양이나 답변이 저장되어 마지막 요청이 끝났습니다. 지금 저장된 내용으로 다시 생성하세요.",
+  generationCompleted: "마지막 요청이 끝났습니다.",
+  generationMoved:
+    "요청하는 동안 사양이나 답변이 바뀌어 아무것도 요청하지 않았습니다. 지금 저장된 내용을 보여 드렸으니 버튼을 다시 누르세요.",
+  generationActive: "이 작업에는 이미 열린 요청이 있습니다. 새 요청으로 대체할까요?",
+  generationRefused: "요청이 거절되었습니다: {detail}",
+  guardTitle: "이 사양으로 모델을 작성하는 중입니다",
+  guardBody:
+    "저장하면 요청이 기준으로 삼은 사양이나 답변이 바뀌어, AI가 쓰는 결과는 공개되지 않습니다. 저장하고 요청을 취소하거나, 저장하지 않고 두세요.",
+  guardSave: "저장하고 요청 취소",
+  guardLeave: "저장하지 않음",
 };
 
 export type Locale = "en" | "ko";

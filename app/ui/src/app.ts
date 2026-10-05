@@ -34,10 +34,13 @@ import {
   conflictRevisions,
   ContractError,
   SUPPORTED_COMMAND_SET_VERSION,
+  type AdapterListing,
   type Described,
+  type GenerationRequest,
   type HistoryEntry,
   type Listing,
   type ReadAcceptance,
+  type RequestHead,
   type RequirementsReport,
   type SourceText,
   type Unresolved,
@@ -59,7 +62,16 @@ import {
   takeTheirs,
   type EditorModel,
 } from "./editor_model";
-import { movedParts, sameHeads, type WorkOnScreen } from "./heads_model";
+import {
+  connectedNames,
+  controlsOf,
+  isConnected,
+  pressKey,
+  savingEndsARequest,
+  statusOf,
+  type Status,
+} from "./generation_model";
+import { movedParts, sameHeads, sameRequest, type WorkOnScreen } from "./heads_model";
 import { initialLocale, languageName, LOCALES, translate, type Key, type Locale } from "./i18n";
 import { CommandFailure, TRANSPORT, UNAUTHORIZED, type Transport } from "./ipc";
 import {
@@ -185,6 +197,18 @@ export class App {
    * that failed, is not started over every few seconds.
    */
   private reactedTo: WorkHeads | null = null;
+  /** Where the work's latest request stands, as the core last said, and what was read of it. */
+  private requestHead: RequestHead | null = null;
+  private requestDetail: GenerationRequest | null = null;
+  /** Which AI adapters are there, as last read. */
+  private adapters: AdapterListing | null = null;
+  /** A request being made or called off now: a second press would be a second request. */
+  private requestBusy: "making" | "cancelling" | null = null;
+  /** Why the last attempt to ask was not made, in words; and whether a request that is open may be replaced. */
+  private requestNotice: string | null = null;
+  private offerReplace = false;
+  /** The person pressed save while a request was open, and has not yet said what to do. */
+  private guarding = false;
   /** The server refused for want of a token, and the person can supply one. */
   private needsToken = false;
   /** A token has been supplied since, so a further refusal means it was wrong. */
@@ -288,6 +312,12 @@ export class App {
       this.acceptanceTicket += 1;
       this.acceptance = null;
       this.reactedTo = null;
+      this.requestHead = null;
+      this.requestDetail = null;
+      this.requestBusy = null;
+      this.requestNotice = null;
+      this.offerReplace = false;
+      this.guarding = false;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -297,8 +327,172 @@ export class App {
     if (opened) {
       void this.loadModel(work.id, true);
       void this.loadAnswers(work.id);
+      void this.loadRequest(work.id, this.session);
       this.watch();
     }
+  }
+
+  /** Where the work's request stands, and which AIs are there, when the work opens. */
+  private async loadRequest(id: string, session: number): Promise<void> {
+    try {
+      const heads = await this.api.readWorkHeads(id);
+      if (session !== this.session) return;
+      await this.noteRequest(id, session, heads);
+    } catch (error) {
+      if (session === this.session) this.askForToken(error);
+    }
+  }
+
+  /**
+   * Take what the core says of the latest request and of the adapters, and draw it again if
+   * either moved. Asked on every question about the work, so a request an executor took, or
+   * let go of, or finished, is on the screen without the person pressing anything.
+   */
+  private async noteRequest(id: string, session: number, heads: WorkHeads): Promise<void> {
+    const head = heads.request;
+    let changed = !sameRequest(this.requestHead, head);
+    this.requestHead = head;
+    if (head === null) {
+      this.requestDetail = null;
+    } else if (changed || this.requestDetail?.id !== head.id) {
+      // Who holds it, and why it failed, are in the request and not in the heads.
+      if (head.state === "running" || head.state === "failed") {
+        try {
+          const read = await this.api.readRequest(id, head.id);
+          if (session !== this.session) return;
+          this.requestDetail = read;
+          changed = true;
+        } catch (error) {
+          if (session !== this.session) return;
+          this.askForToken(error);
+        }
+      }
+    }
+    try {
+      const listing = await this.api.readAdapterStatus();
+      if (session !== this.session) return;
+      if (adaptersKey(this.adapters) !== adaptersKey(listing)) changed = true;
+      this.adapters = listing;
+    } catch (error) {
+      if (session !== this.session) return;
+      this.askForToken(error);
+    }
+    if (changed) this.render();
+  }
+
+  /**
+   * The person pressed the button: the text and the answers they typed are saved first, and a
+   * request is made about what is then saved. Nothing is asked of the AI that the person has
+   * not seen: the request names the text and the answers THIS screen shows, and the core
+   * refuses it (`moved`) when the work is no longer at them.
+   */
+  private async generate(replace: boolean): Promise<void> {
+    const work = this.selected;
+    if (work === null || this.requestBusy !== null) return;
+    const session = this.session;
+    this.requestBusy = "making";
+    this.requestNotice = null;
+    this.offerReplace = false;
+    this.render();
+    try {
+      // The button saves what is typed (§ conflicts first: a save that did not take is
+      // the person's to resolve, and nothing is asked in the meantime).
+      if (this.editor !== null && isDirty(this.editor)) await this.save(true);
+      if (this.answers !== null && isAnswersDirty(this.answers)) await this.saveAnswers(true);
+      if (session !== this.session) return;
+      const editor = this.editor;
+      if (editor === null || editor.base === null || editor.phase !== "idle" || isDirty(editor)) return;
+      if (this.answers !== null && (this.answers.phase !== "idle" || isAnswersDirty(this.answers))) return;
+      const registered = await this.api.requestGeneration(
+        work.id,
+        pressKey(),
+        { source: editor.base, answers: this.answers?.base ?? null },
+        replace,
+      );
+      if (session !== this.session) return;
+      this.requestHead = {
+        id: registered.request.id,
+        state: registered.request.state,
+        attempt: registered.request.attempt,
+      };
+      this.requestDetail = registered.request;
+    } catch (error) {
+      if (session !== this.session) return;
+      if (this.askForToken(error)) return;
+      if (error instanceof CommandFailure && error.kind === "moved") {
+        this.requestNotice = this.t("generationMoved");
+        void this.lookAgain(work, session).catch(() => undefined);
+      } else if (error instanceof CommandFailure && error.kind === "active-request") {
+        this.requestNotice = this.t("generationActive");
+        this.offerReplace = true;
+      } else {
+        this.requestNotice = this.t("generationRefused", { detail: this.explain(error) });
+      }
+    } finally {
+      if (session === this.session) {
+        this.requestBusy = null;
+        this.render();
+      }
+    }
+  }
+
+  /** The person called the open request off. Whoever holds it is told at its next word. */
+  private async cancelGeneration(): Promise<void> {
+    const work = this.selected;
+    const head = this.requestHead;
+    if (work === null || head === null || this.requestBusy !== null) return;
+    const session = this.session;
+    this.requestBusy = "cancelling";
+    this.requestNotice = null;
+    this.render();
+    try {
+      const cancelled = await this.api.cancelRequest(work.id, head.id);
+      if (session !== this.session) return;
+      this.requestHead = { id: cancelled.id, state: cancelled.state, attempt: cancelled.attempt };
+      this.requestDetail = cancelled;
+    } catch (error) {
+      if (session !== this.session) return;
+      if (this.askForToken(error)) return;
+      this.requestNotice = this.t("generationRefused", { detail: this.explain(error) });
+      // What it says now is on screen at the next question; a request that ended meanwhile is not one to cancel.
+      void this.lookAgain(work, session).catch(() => undefined);
+    } finally {
+      if (session === this.session) {
+        this.requestBusy = null;
+        this.render();
+      }
+    }
+  }
+
+  /**
+   * A save of the text or the answers while a request is open ends it, in the core, in the
+   * same step. The person is told first, because what the request writes would not be
+   * published: they save and let it end, or leave it. Answers whether the save was held.
+   */
+  private holdSaveForTheRequest(): boolean {
+    if (!savingEndsARequest(this.requestHead)) return false;
+    this.guarding = true;
+    this.render();
+    return true;
+  }
+
+  /** What the person chose at the guard: saved, and the request ended with it. */
+  private async saveAndEndTheRequest(): Promise<void> {
+    this.guarding = false;
+    const target = this.pendingSwitch;
+    await this.save(true);
+    await this.saveAnswers(true);
+    if (target !== null && !this.hasUnsavedChanges()) {
+      await this.select(target);
+    } else if (this.closing && !this.hasUnsavedChanges()) {
+      await this.env.desktop?.close();
+    }
+  }
+
+  /** A save went through: a request that was open was ended by it, as the core does. */
+  private noteSaveEndedTheRequest(): void {
+    const head = this.requestHead;
+    if (head !== null && savingEndsARequest(head)) this.requestHead = { ...head, state: "superseded" };
   }
 
   // ---- the work moving under the screen ------------------------------------
@@ -356,6 +550,10 @@ export class App {
   /** Ask the core where the work stands and read again what is shown differently. */
   private async lookAgain(work: Work, session: number): Promise<void> {
     const heads = await this.api.readWorkHeads(work.id);
+    if (session !== this.session) return;
+    // The request and the adapters are noted whether or not a chain moved: an executor taking
+    // a request, or letting go of it, moves no chain.
+    await this.noteRequest(work.id, session, heads);
     if (session !== this.session) return;
     const moved = movedParts(this.onScreen(), heads);
     if (moved.length === 0 || sameHeads(this.reactedTo, heads)) return;
@@ -500,11 +698,12 @@ export class App {
   }
 
   /** Save the answers as the owner now has them, on top of the revision they were read as. */
-  private async saveAnswers(): Promise<void> {
+  private async saveAnswers(confirmed = false): Promise<void> {
     const model = this.answers;
     const work = this.selected;
     const request = model === null ? null : answersRequest(model);
     if (model === null || work === null || request === null) return;
+    if (!confirmed && this.holdSaveForTheRequest()) return;
     const session = this.session;
     this.answers = answersSaving(model);
     this.render();
@@ -531,6 +730,7 @@ export class App {
       return;
     }
 
+    this.noteSaveEndedTheRequest();
     // The core has the answers. What it holds is what is shown, because it stamps
     // each answer and the stamp is its to say; if that read fails the save still
     // took, and the panel says the answers cannot be read rather than that it failed.
@@ -847,10 +1047,11 @@ export class App {
     desktop.unsaved(unsaved);
   }
 
-  private async save(): Promise<void> {
+  private async save(confirmed = false): Promise<void> {
     const editor = this.editor;
     const request = editor === null ? null : saveRequest(editor);
     if (editor === null || request === null) return;
+    if (!confirmed && this.holdSaveForTheRequest()) return;
     const session = this.session;
     this.editor = saving(editor);
     this.notice = null;
@@ -877,6 +1078,8 @@ export class App {
     // base would conflict with this very save.
     if (session === this.session && this.editor !== null) {
       this.editor = saved(this.editor, request.text, outcome);
+      // An unchanged save moved nothing, so it ended nothing.
+      if (outcome.outcome === "saved") this.noteSaveEndedTheRequest();
     }
     this.render();
 
@@ -1386,7 +1589,7 @@ export class App {
           ),
           this.historyPanel(editor),
         ),
-        h("div", { class: "model-column" }, this.modelPanel(work)),
+        h("div", { class: "model-column" }, this.generationSection(), this.modelPanel(work)),
       ),
     );
   }
@@ -1417,6 +1620,150 @@ export class App {
             },
           },
           this.t("removeCancel"),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Asking for a model, and where the request stands. The sentence is the core's state in the
+   * person's words, and only what the core has said: no percentage is made up for an AI that
+   * is working, and a request nobody is there to take is not shown as running.
+   */
+  private generationSection(): HTMLElement {
+    const status = statusOf(this.requestHead, this.requestDetail, this.adapters);
+    const controls = controlsOf(status, this.requestBusy !== null);
+    const text = this.editor !== null && this.editor.base !== null;
+    const modelHere = this.model !== null && (this.model.phase === "drawn" || this.model.phase === "not-drawn" || this.model.phase === "drawing");
+    const label = controls.replaces
+      ? this.t("generateReplace")
+      : status.kind === "idle" && !modelHere
+        ? this.t("generateFirst")
+        : this.t("generateAgain");
+    const busyWords =
+      this.requestBusy === "making"
+        ? this.t("generateRegistering")
+        : this.requestBusy === "cancelling"
+          ? this.t("generateCancelling")
+          : null;
+    return h(
+      "section",
+      { class: "generation", "aria-label": this.t("generationTitle") },
+      h(
+        "div",
+        { class: "model-head" },
+        h("h3", {}, this.t("generationTitle")),
+        controls.canGenerate
+          ? h(
+              "button",
+              {
+                id: "generate",
+                type: "button",
+                disabled: !text,
+                onclick: () => void this.generate(controls.replaces),
+              },
+              label,
+            )
+          : null,
+        controls.canCancel
+          ? h(
+              "button",
+              { id: "cancel-request", type: "button", class: "quiet", onclick: () => void this.cancelGeneration() },
+              this.t("generateCancel"),
+            )
+          : null,
+      ),
+      this.guarding ? this.guardBanner() : null,
+      h(
+        "p",
+        { id: "generation-status", class: "status", role: "status", "aria-live": "polite" },
+        busyWords ?? this.generationWords(status, modelHere),
+      ),
+      this.requestNotice === null
+        ? null
+        : h(
+            "p",
+            { class: "banner banner-warn", role: "alert" },
+            this.requestNotice,
+            this.offerReplace
+              ? h(
+                  "button",
+                  { id: "replace-request", type: "button", onclick: () => void this.generate(true) },
+                  this.t("generateReplace"),
+                )
+              : null,
+          ),
+      this.aiLine(status),
+    );
+  }
+
+  /** The sentence for where the request stands. A request that finished says nothing a model panel does not. */
+  private generationWords(status: Status, modelHere: boolean): string {
+    switch (status.kind) {
+      case "idle":
+        return modelHere ? "" : this.t("generationIdle");
+      case "queued":
+        return this.t(status.connected ? "generationQueued" : "generationQueuedNoAi");
+      case "running":
+        return status.holder === null
+          ? this.t("generationRunningUnnamed", { attempt: String(status.attempt) })
+          : this.t("generationRunning", { attempt: String(status.attempt), holder: status.holder });
+      case "interrupted":
+        return this.t("generationInterrupted");
+      case "failed":
+        return status.reason === null
+          ? this.t("generationFailedUnsaid")
+          : this.t("generationFailed", { reason: status.reason });
+      case "cancelled":
+        return this.t("generationCancelled");
+      case "superseded":
+        return this.t("generationSuperseded");
+      case "completed":
+        return this.t("generationCompleted");
+    }
+  }
+
+  /** Whether an AI is there, said when it is not already said by the state of the request. */
+  private aiLine(status: Status): HTMLElement | null {
+    if (status.kind === "queued" || status.kind === "running") return null;
+    if (this.adapters === null) return null;
+    return h(
+      "p",
+      { id: "generation-ai", class: "muted" },
+      isConnected(this.adapters)
+        ? this.t("generationAiHere", { names: connectedNames(this.adapters).join(", ") })
+        : this.t("generationNoAi"),
+    );
+  }
+
+  /** Asked when a save would end the request that is open: the person says whether it goes ahead. */
+  private guardBanner(): HTMLElement {
+    return h(
+      "section",
+      { class: "banner banner-warn", role: "alert" },
+      h("strong", {}, this.t("guardTitle")),
+      h("p", {}, this.t("guardBody")),
+      h(
+        "div",
+        { class: "choices" },
+        h(
+          "button",
+          { id: "guard-save", type: "button", onclick: () => void this.saveAndEndTheRequest() },
+          this.t("guardSave"),
+        ),
+        h(
+          "button",
+          {
+            id: "guard-leave",
+            type: "button",
+            onclick: () => {
+              this.guarding = false;
+              this.pendingSwitch = null;
+              this.closing = false;
+              this.render();
+            },
+          },
+          this.t("guardLeave"),
         ),
       ),
     );
@@ -2105,6 +2452,13 @@ export class App {
     textarea.focus();
     textarea.setSelectionRange(keep.start, keep.end);
   }
+}
+
+/** What is said of the adapters, as one comparable thing: who is there and what each can do. */
+function adaptersKey(listing: AdapterListing | null): string {
+  return JSON.stringify(
+    listing === null ? null : listing.adapters.map((a) => [a.name, a.live, a.capabilities.join(",")]),
+  );
 }
 
 function readKept(storage: Environment["storage"], key: string): string | null {

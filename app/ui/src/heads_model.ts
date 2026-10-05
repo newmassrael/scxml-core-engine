@@ -69,7 +69,8 @@ export function movedParts(shown: WorkOnScreen, heads: WorkHeads): Part[] {
   return moved;
 }
 
-function sameRequest(a: RequestHead | null, b: RequestHead | null): boolean {
+/** Whether two answers of the core say the latest request is at the same place. */
+export function sameRequest(a: RequestHead | null, b: RequestHead | null): boolean {
   if (a === null || b === null) return a === b;
   return a.id === b.id && a.state === b.state && a.attempt === b.attempt;
 }

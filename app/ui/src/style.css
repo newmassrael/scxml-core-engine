@@ -293,6 +293,15 @@ textarea:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+/* Asking for a model: above the model, and the same head as it. */
+.generation {
+  margin-bottom: 8px;
+}
+
+.generation .status {
+  margin: 4px 0;
+}
+
 .model-head {
   display: flex;
   align-items: center;

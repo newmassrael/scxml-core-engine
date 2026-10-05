@@ -27,6 +27,19 @@ interface Revision {
   text: string;
 }
 
+/** A request as the fake core keeps it. */
+interface FakeRequest {
+  id: string;
+  seq: number;
+  key: string;
+  state: string;
+  attempt: number;
+  source: string;
+  answers: string | null;
+  holder: string | null;
+  note: string | null;
+}
+
 interface Gate {
   name: string;
   match: (args: Args) => boolean;
@@ -57,6 +70,88 @@ class FakeCore implements Transport {
   >();
   private listSaves = 0;
   private acceptSaves = 0;
+  private readonly requestsOf = new Map<string, FakeRequest[]>();
+  private adapterList: Array<{ name: string; kind: string; capabilities: string[]; live: boolean }> = [];
+  private requestSeq = 0;
+
+  /** The AI adapters the core says are there. */
+  setAdapters(list: Array<{ name: string; capabilities?: string[]; live?: boolean }>): void {
+    this.adapterList = list.map((a) => ({
+      name: a.name,
+      kind: "claude-code",
+      capabilities: a.capabilities ?? ["generate", "cancel"],
+      live: a.live ?? true,
+    }));
+  }
+
+  /** The latest request of a work, as the core keeps it. */
+  latestRequest(id: string): FakeRequest | undefined {
+    return this.requestsOf.get(id)?.at(-1);
+  }
+
+  /** An executor takes the request: it is running, held by `holder`. */
+  takeRequest(id: string, holder = "desktop"): void {
+    const request = this.latestRequest(id);
+    if (request === undefined) throw new Error(`${id} has no request`);
+    request.state = "running";
+    request.attempt += 1;
+    request.holder = holder;
+  }
+
+  /** The executor stops answering: its lease ran out, and nothing was written. */
+  letGoOfRequest(id: string): void {
+    const request = this.latestRequest(id);
+    if (request === undefined) throw new Error(`${id} has no request`);
+    request.state = "interrupted";
+  }
+
+  /** The executor could not, and says why. */
+  failRequest(id: string, note: string): void {
+    const request = this.latestRequest(id);
+    if (request === undefined) throw new Error(`${id} has no request`);
+    request.state = "failed";
+    request.note = note;
+  }
+
+  /** The executor is done and the core published what it wrote: the model and the list, for the text the request was about. */
+  completeRequest(id: string): void {
+    const request = this.latestRequest(id);
+    if (request === undefined) throw new Error(`${id} has no request`);
+    request.state = "completed";
+    this.setModel(id, "<scxml><!-- generated --></scxml>", request.source);
+    this.setRequirements(id, request.source);
+  }
+
+  /** A save of the text or the answers ends the request that was open, in the same step. */
+  private supersedeOpen(id: string): void {
+    const request = this.latestRequest(id);
+    if (request !== undefined && ["queued", "running", "interrupted"].includes(request.state)) {
+      request.state = "superseded";
+    }
+  }
+
+  private requestJson(id: string, request: FakeRequest): unknown {
+    return {
+      id: request.id,
+      work: id,
+      seq: request.seq,
+      key: request.key,
+      origin: "gui",
+      state: request.state,
+      stored_state: request.state,
+      attempt: request.attempt,
+      inputs: { source: request.source, answers: request.answers },
+      created_at: "2026-10-05T09:00:00Z",
+      lease:
+        request.holder === null
+          ? null
+          : { holder: request.holder, attempt: request.attempt, granted_at: "2026-10-05T09:00:01Z", expires_at: "2026-10-05T09:01:01Z" },
+      candidate: null,
+      outcome: null,
+      ended_at: null,
+      note: request.note,
+    };
+  }
 
   /**
    * The requirement list an authoring client saved for a work, and the text revision it
@@ -208,9 +303,74 @@ class FakeCore implements Transport {
           requirements: list === undefined ? null : { revision: list.revision, written_for: list.writtenFor },
           acceptance: this.acceptances.get(id)?.revision ?? null,
           bundle: null,
-          request: null,
+          request: ((r) => (r === undefined ? null : { id: r.id, state: r.state, attempt: r.attempt }))(this.latestRequest(id)),
         };
       }
+      case "request_generation": {
+        if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
+        const id = String(args["id"]);
+        const expect = args["expect"] as { source: string; answers: string | null };
+        const same = this.requestsOf.get(id)?.find((r) => r.key === args["key"]);
+        if (same !== undefined) return { request: this.requestJson(id, same), created: false };
+        const head = work.revisions.at(-1)?.revision ?? null;
+        const answers = this.answersOf.get(id)?.revision ?? null;
+        const moved = [
+          ...(expect.source === head ? [] : ["source"]),
+          ...((expect.answers ?? null) === answers ? [] : ["answers"]),
+        ];
+        if (moved.length > 0) {
+          throw new CommandFailure("moved", `${moved.join(", ")} moved since you read them`, { moved });
+        }
+        const open = this.latestRequest(id);
+        if (open !== undefined && ["queued", "running", "interrupted"].includes(open.state)) {
+          if (args["supersede"] !== true) {
+            throw new CommandFailure("active-request", "the work already has an open request", { open: open.id });
+          }
+          open.state = "superseded";
+        }
+        this.requestSeq += 1;
+        const request: FakeRequest = {
+          id: `req-${this.requestSeq}`,
+          seq: this.requestSeq,
+          key: String(args["key"]),
+          state: "queued",
+          attempt: 0,
+          source: expect.source,
+          answers: expect.answers ?? null,
+          holder: null,
+          note: null,
+        };
+        this.requestsOf.set(id, [...(this.requestsOf.get(id) ?? []), request]);
+        return { request: this.requestJson(id, request), created: true };
+      }
+      case "read_request": {
+        const id = String(args["id"]);
+        const found = this.requestsOf.get(id)?.find((r) => r.id === args["request"]);
+        if (found === undefined) throw new CommandFailure("not-found", "no such request");
+        return { request: this.requestJson(id, found) };
+      }
+      case "cancel_request": {
+        const id = String(args["id"]);
+        const found = this.requestsOf.get(id)?.find((r) => r.id === args["request"]);
+        if (found === undefined) throw new CommandFailure("not-found", "no such request");
+        if (!["queued", "running", "interrupted"].includes(found.state)) {
+          throw new CommandFailure("request-ended", `the request is ${found.state}`, { state: found.state });
+        }
+        found.state = "cancelled";
+        return { request: this.requestJson(id, found) };
+      }
+      case "read_adapter_status":
+        return {
+          adapters: this.adapterList.map((a) => ({
+            name: a.name,
+            kind: a.kind,
+            capabilities: a.capabilities,
+            version: "2.1",
+            seen_at: "2026-10-05T09:00:00Z",
+            live: a.live,
+          })),
+          unreadable: [],
+        };
       case "read_requirements": {
         const list = typeof args["id"] === "string" ? this.lists.get(args["id"]) : undefined;
         const head = work?.revisions.at(-1)?.revision ?? null;
@@ -326,6 +486,7 @@ class FakeCore implements Transport {
         this.answerSaves += 1;
         const revision = this.revision(`answers:${this.answerSaves}`);
         this.answersOf.set(id, { revision, entries });
+        this.supersedeOpen(id);
         return { outcome: "saved", revision, parent: held?.revision ?? null };
       }
       case "review": {
@@ -446,6 +607,7 @@ class FakeCore implements Transport {
         const revision = this.revision(text);
         if (revision === head) return { outcome: "unchanged", revision };
         work.revisions.push({ revision, text });
+        this.supersedeOpen(String(args["id"]));
         return { outcome: "saved", revision, parent: head };
       }
       default:
@@ -2039,11 +2201,12 @@ describe("a work that moves under the screen", () => {
     await click("Alpha");
     const read = (name: string): number => core.callsOf(name).length;
     const before = [read("read_model"), read("read_source"), read("read_answers"), read("requirements_report")];
+    const asked = read("read_work_heads");
 
     await ticker.fire();
     await ticker.fire();
 
-    expect(core.callsOf("read_work_heads")).toHaveLength(2);
+    expect(core.callsOf("read_work_heads")).toHaveLength(asked + 2);
     expect([read("read_model"), read("read_source"), read("read_answers"), read("requirements_report")]).toEqual(before);
   });
 
@@ -2096,10 +2259,16 @@ describe("a work that moves under the screen", () => {
     await click("Alpha");
     await click("Beta");
     expect(ticker.pending).toEqual([2000]);
+    const before = core.callsOf("read_work_heads").length;
 
     await ticker.fire();
 
-    expect(core.callsOf("read_work_heads").map((a) => a["id"])).toEqual(["beta"]);
+    expect(
+      core
+        .callsOf("read_work_heads")
+        .slice(before)
+        .map((a) => a["id"]),
+    ).toEqual(["beta"]);
   });
 
   it("stops asking when the server wants a token, and asks again once the person has signed in", async () => {
@@ -2140,5 +2309,310 @@ describe("a work that moves under the screen", () => {
 
     expect(root.textContent).toContain("work `absent`");
     expect(ticker.pending).toEqual([]);
+  });
+});
+
+// ---- asking for a model ---------------------------------------------------
+
+describe("asking for a model", () => {
+  let ticker: ManualTicker;
+
+  beforeEach(async () => {
+    ticker = new ManualTicker();
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    core.addWork("beta", "Beta", ["beta one"]);
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+  });
+
+  const generationStatus = (): string => root.querySelector("#generation-status")?.textContent ?? "";
+  const generationAi = (): string => root.querySelector("#generation-ai")?.textContent ?? "";
+  const button = (id: string): HTMLButtonElement | null => root.querySelector<HTMLButtonElement>(`#${id}`);
+
+  async function press(id: string): Promise<void> {
+    const found = button(id);
+    if (found === null) throw new Error(`no #${id} in: ${root.textContent}`);
+    found.click();
+    await settle();
+  }
+
+  it("offers the button for a work that has text, and says that no AI is connected", async () => {
+    await click("Alpha");
+
+    expect(button("generate")?.textContent).toBe("Generate pseudocode");
+    expect(generationStatus()).toContain("no pseudocode yet");
+    expect(generationAi()).toContain("No AI is connected");
+  });
+
+  it("says which AI is there when one is", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+
+    await click("Alpha");
+
+    expect(generationAi()).toBe("Connected: desktop");
+  });
+
+  it("does not offer a request for a work that has no text yet", async () => {
+    core.addWork("empty", "Empty", []);
+    await core.call("list_works");
+    await app.start();
+    await settle();
+
+    await click("Empty");
+
+    expect(button("generate")?.disabled).toBe(true);
+  });
+
+  it("asks about the text the screen shows, and says the request waits for the AI", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    await click("Alpha");
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")).toHaveLength(1);
+    const asked = core.callsOf("request_generation")[0];
+    expect(asked).toMatchObject({
+      id: "alpha",
+      origin: "gui",
+      supersede: false,
+      expect: { source: headOf("alpha"), answers: null },
+    });
+    expect(String(asked?.["key"])).toMatch(/^gui-/);
+    expect(generationStatus()).toBe("The request is registered. Waiting for the AI to take it.");
+    expect(button("generate")).toBeNull();
+    expect(button("cancel-request")).not.toBeNull();
+  });
+
+  it("says that nobody is there to take a request that waits, when no AI is connected", async () => {
+    await click("Alpha");
+
+    await press("generate");
+
+    expect(generationStatus()).toContain("no AI is connected to take it");
+  });
+
+  it("saves what is typed first, and asks about what was saved", async () => {
+    await click("Alpha");
+    await type("alpha typed");
+
+    await press("generate");
+
+    expect(core.headText("alpha")).toBe("alpha typed");
+    const calls = core.calls.map((c) => c.name).filter((n) => n === "save_source" || n === "request_generation");
+    expect(calls).toEqual(["save_source", "request_generation"]);
+    expect(core.callsOf("request_generation")[0]).toMatchObject({
+      expect: { source: core.revision("alpha typed") },
+    });
+    expect(app.hasUnsavedChanges()).toBe(false);
+  });
+
+  it("asks nothing when what was typed could not be saved, and leaves the conflict to the person", async () => {
+    await click("Alpha");
+    await type("alpha typed");
+    core.saveElsewhere("alpha", "alpha from elsewhere");
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")).toHaveLength(0);
+    expect(root.textContent).toContain("The text changed while you were editing");
+    expect(editor().value).toBe("alpha typed");
+  });
+
+  it("is refused when the text moved under the screen, says so, and asks nothing of the AI", async () => {
+    await click("Alpha");
+    core.saveElsewhere("alpha", "alpha from elsewhere");
+
+    await press("generate");
+
+    expect(core.latestRequest("alpha")).toBeUndefined();
+    expect(root.textContent).toContain("changed while the request was being made");
+  });
+
+  it("shows a request an executor took, and who holds it, without being asked", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    await click("Alpha");
+    await press("generate");
+
+    core.takeRequest("alpha", "desktop");
+    await ticker.fire();
+
+    expect(generationStatus()).toBe("The AI is writing the model (attempt 1, desktop).");
+    expect(button("cancel-request")).not.toBeNull();
+    expect(button("generate")).toBeNull();
+  });
+
+  it("shows the reason a request failed", async () => {
+    await click("Alpha");
+    await press("generate");
+    core.takeRequest("alpha");
+    await ticker.fire();
+
+    core.failRequest("alpha", "The text never says which cards open the door.");
+    await ticker.fire();
+
+    expect(generationStatus()).toBe("The AI could not write the model: The text never says which cards open the door.");
+    expect(button("generate")?.textContent).toBe("Generate again");
+  });
+
+  it("offers to replace a request that was let go of, and asks for the replacement as one", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    await click("Alpha");
+    await press("generate");
+    core.takeRequest("alpha");
+    core.letGoOfRequest("alpha");
+    await ticker.fire();
+
+    expect(generationStatus()).toContain("stopped answering");
+    expect(button("generate")?.textContent).toBe("Replace the request and generate again");
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")[1]).toMatchObject({ supersede: true });
+    expect(core.latestRequest("alpha")?.state).toBe("queued");
+    expect(generationStatus()).toContain("registered");
+  });
+
+  it("shows the model when the request completes, without a press, and says the request finished", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    await click("Alpha");
+    expect(modelText()).toContain("No model yet");
+    await press("generate");
+    core.takeRequest("alpha");
+    await ticker.fire();
+
+    core.completeRequest("alpha");
+    await ticker.fire();
+
+    expect(images()).toHaveLength(2);
+    expect(generationStatus()).toBe("The last request finished.");
+    expect(button("generate")?.textContent).toBe("Generate again");
+  });
+
+  it("calls the open request off, and says the owner did", async () => {
+    await click("Alpha");
+    await press("generate");
+
+    await press("cancel-request");
+
+    expect(core.callsOf("cancel_request")).toEqual([{ id: "alpha", request: "req-1" }]);
+    expect(core.latestRequest("alpha")?.state).toBe("cancelled");
+    expect(generationStatus()).toBe("You cancelled the last request.");
+    expect(button("cancel-request")).toBeNull();
+  });
+
+  it("does not make a second request while the first is on its way", async () => {
+    await click("Alpha");
+    const held = core.hold("request_generation");
+
+    const first = press("generate");
+    await settle();
+    expect(button("generate")).toBeNull();
+    expect(generationStatus()).toBe("Registering the request...");
+    held.release();
+    await first;
+
+    expect(core.callsOf("request_generation")).toHaveLength(1);
+  });
+
+  it("offers to replace an open request that was made from another window", async () => {
+    await click("Alpha");
+    // Another window asked first: this screen has not heard of it yet.
+    await core.call("request_generation", {
+      id: "alpha",
+      key: "other-window",
+      origin: "gui",
+      expect: { source: headOf("alpha"), answers: null },
+      supersede: false,
+    });
+
+    await press("generate");
+
+    expect(root.textContent).toContain("already open");
+    await press("replace-request");
+
+    expect(core.callsOf("request_generation").at(-1)).toMatchObject({ supersede: true });
+    expect(core.latestRequest("alpha")?.id).toBe("req-2");
+  });
+
+  it("asks before a save that would end the open request, and saves when told to", async () => {
+    await click("Alpha");
+    await press("generate");
+    await type("alpha changed meanwhile");
+
+    await click("Save");
+
+    expect(root.textContent).toContain("A model is being written for this text");
+    expect(core.callsOf("save_source")).toHaveLength(0);
+    expect(app.hasUnsavedChanges()).toBe(true);
+
+    await press("guard-save");
+
+    expect(core.callsOf("save_source")).toHaveLength(1);
+    expect(core.headText("alpha")).toBe("alpha changed meanwhile");
+    expect(root.textContent).not.toContain("A model is being written for this text");
+    expect(generationStatus()).toContain("ended because the text or the answers");
+    expect(core.latestRequest("alpha")?.state).toBe("superseded");
+  });
+
+  it("leaves what was typed unsaved, and the request open, when the person says not to save", async () => {
+    await click("Alpha");
+    await press("generate");
+    await type("alpha changed meanwhile");
+    await click("Save");
+
+    await press("guard-leave");
+
+    expect(core.callsOf("save_source")).toHaveLength(0);
+    expect(editor().value).toBe("alpha changed meanwhile");
+    expect(core.latestRequest("alpha")?.state).toBe("queued");
+    expect(root.textContent).not.toContain("A model is being written for this text");
+  });
+
+  it("asks before saving answers while a request is open, as it does for the text", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    await click("Alpha");
+    await press("generate");
+    await answer("open-guard", "Any card on the list opens it.");
+
+    await click("Save answers");
+
+    expect(root.textContent).toContain("A model is being written for this text");
+    expect(core.callsOf("save_answers")).toHaveLength(0);
+
+    await press("guard-save");
+
+    expect(core.answersHeld("alpha")).toEqual({ "open-guard": "Any card on the list opens it." });
+    expect(core.latestRequest("alpha")?.state).toBe("superseded");
+  });
+
+  it("does not ask when the request is over, or when nothing was asked for", async () => {
+    await click("Alpha");
+    await type("alpha typed");
+    await click("Save");
+    expect(root.textContent).not.toContain("A model is being written for this text");
+
+    await press("generate");
+    core.takeRequest("alpha");
+    core.completeRequest("alpha");
+    await ticker.fire();
+    await type("alpha typed again");
+    await click("Save");
+
+    expect(root.textContent).not.toContain("A model is being written for this text");
+    expect(core.headText("alpha")).toBe("alpha typed again");
+  });
+
+  it("asks nothing about a request of the work the person has left", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    await click("Alpha");
+    await press("generate");
+    await click("Beta");
+
+    expect(generationStatus()).toContain("no pseudocode yet");
+    expect(button("cancel-request")).toBeNull();
   });
 });

@@ -216,6 +216,31 @@ one it was, and `read_request_candidate` reads what was written. It becomes the 
   says which (`previous`), so the model's history continues where the chain stopped, and
   `bundle_history` lists the bundles. `read_bundle` reads one, or the current.
 
+#### What the screen shows of a request
+
+A section above the model (`generationSection`, with its state in `generation_model.ts`) says
+where the work's latest request stands, in the core's words and nothing it made up: no
+percentage is invented for an AI that is working, and a request nobody is there to take is not
+shown as running.
+
+- **The button** (`Generate pseudocode`, then `Generate again`) saves what is typed first, then
+  asks about the text and the answers THIS screen shows (`expect`): a save that conflicts is the
+  person's to resolve and nothing is asked in the meantime, and a request the core refuses as
+  `moved` (the work changed under the screen) says so and shows what is saved now. A press is
+  one request however many times it is sent (`key`), and a second press while the first is on
+  its way is not offered.
+- **The states** are the core's: waiting for an AI (and, when none is connected, that nobody is
+  there to take it, so the person can start an authoring client of their own or cancel), being
+  written (who holds it, which attempt), let go of (nothing was published; asking again
+  replaces it), failed (with the reason the executor gave), cancelled, ended because the text or
+  the answers were saved, and finished. When the model it wrote is published the screen shows
+  it without a press, as it shows any model that moves under it.
+- **Saving while a request is open asks first**, for the text and for the answers: the core ends
+  the request in the same step as the save, so what the AI writes would not be published, and
+  that is the person's to decide (`Save and cancel the request`, or `Do not save`).
+- **Which AIs are there** (`read_adapter_status`) is read with every question about the work,
+  so that "no AI is connected" and "connected: desktop" follow the executor coming and going.
+
 #### The executor the application hosts
 
 `runner.rs` is the host of an executor that is a process of the application: it finds the
