@@ -318,6 +318,12 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "is_hybrid": true,
                     "srcexpr": hi.srcexpr.as_str(),
                     "contentexpr": hi.contentexpr.as_str(),
+                    // `datamodel="sce-static"`: the `srcexpr` lowered to the
+                    // string it computes, read from the machine's fields when
+                    // the invocation starts, in place of a script engine's
+                    // evaluation of the attribute (`srcexpr` is empty then).
+                    "native_src": hi.native_src.as_str(),
+                    "native_src_fails": hi.native_src_fails,
                     // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the documents
                     // the value may choose between. Empty when none were
                     // declared, which is the build-time stub as before.

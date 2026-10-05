@@ -328,6 +328,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			}
 
 
+
 			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["second"] = &sce.ChildSession{
 				SessionID:       childSessionID,
@@ -403,6 +404,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 				}
 				childPolicy.AcceptParams(seed)
 			}
+
 
 
 			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize

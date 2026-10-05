@@ -1,0 +1,43 @@
+{
+  "about": [
+    "How every SCE engine reduces the value a hybrid <invoke srcexpr> computes",
+    "to the stem of the document it names, written out by hand.",
+    "",
+    "W3C SCXML 6.4 lets an expression name the child to start, and",
+    "docs/SCE_ACCEPTED_SUBSET.md 2.13 has the build generate one child per",
+    "document `sce:candidates` declares, so the runtime has to say which of",
+    "them a value names. An expression is free to compute `file:x.scxml`,",
+    "`./x.scxml`, an absolute path or a Windows one for the same document, so",
+    "the value is reduced to what the build names the generated child by.",
+    "",
+    "One rule, stated once: the text after the last '/' or '\\', without a",
+    "leading `file:` scheme, without the extension that follows its last '.'.",
+    "A '.' that opens the name is a name, not an extension. The build derives",
+    "the stem of each declared candidate by the same rule",
+    "(`sce_build::model::document_stem`), so a value and the candidate it names",
+    "cannot disagree about the stem.",
+    "",
+    "A value that names no document at all (nothing after the last separator)",
+    "has the empty stem, which no candidate has."
+  ],
+  "cases": [
+    { "name": "a bare file name", "value": "x.scxml", "stem": "x" },
+    { "name": "a file: scheme", "value": "file:x.scxml", "stem": "x" },
+    { "name": "a dot-slash path", "value": "./x.scxml", "stem": "x" },
+    { "name": "a parent-relative path", "value": "../charts/x.scxml", "stem": "x" },
+    { "name": "an absolute path", "value": "/opt/charts/x.scxml", "stem": "x" },
+    { "name": "a file: scheme before an absolute path", "value": "file:/opt/charts/x.scxml", "stem": "x" },
+    { "name": "a file: URL with an empty authority", "value": "file:///opt/charts/x.scxml", "stem": "x" },
+    { "name": "a Windows relative path", "value": "..\\charts\\x.scxml", "stem": "x" },
+    { "name": "a Windows drive path", "value": "C:\\charts\\x.scxml", "stem": "x" },
+    { "name": "both separators in one path", "value": "C:\\charts/x.scxml", "stem": "x" },
+    { "name": "only the last extension goes", "value": "a.b.scxml", "stem": "a.b" },
+    { "name": "no extension", "value": "x", "stem": "x" },
+    { "name": "a trailing dot", "value": "x.", "stem": "x" },
+    { "name": "a leading dot is part of the name", "value": ".hidden", "stem": ".hidden" },
+    { "name": "a leading dot and an extension", "value": ".hidden.scxml", "stem": ".hidden" },
+    { "name": "a stem that looks like a scheme", "value": "x:y.scxml", "stem": "x:y" },
+    { "name": "nothing at all", "value": "", "stem": "" },
+    { "name": "a directory has no stem", "value": "/opt/charts/", "stem": "" }
+  ]
+}

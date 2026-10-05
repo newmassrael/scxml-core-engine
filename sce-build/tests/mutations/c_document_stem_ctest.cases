@@ -1,0 +1,36 @@
+# Mutation cases for the C11 reader of the value a hybrid `<invoke srcexpr>`
+# computes (docs/SCE_ACCEPTED_SUBSET.md §2.13): `sce_document_stem` reduces it to
+# the stem of the document it names, and the table
+# `tests/document_stem/document_stem.json` holds every engine's reader, and the
+# build's, to one answer.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/c_document_stem_ctest.cases`.
+#
+# Each mutant changes one decision of the rule — which separator ends the
+# directory, which extension goes, what a leading dot is — and leaves a reader
+# that still compiles, so only the table can tell it from the right one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_unit_document_stem$'
+mutation_targets backends/c/runtime/include/sce/invoke.h
+mutation_oracles backends/c/tests/unit/document_stem_test.c tests/document_stem/document_stem.json
+
+mutation_case "a file: scheme stays in the stem" <<'PY'
+edit("backends/c/runtime/include/sce/invoke.h",
+     "    if (strncmp(name, \"file:\", 5u) == 0) {",
+     "    if (strncmp(name, \"file:\", 5u) != 0) {")
+PY
+
+mutation_case "a backslash does not end a directory" <<'PY'
+edit("backends/c/runtime/include/sce/invoke.h",
+     "        if (*p == '/' || *p == '\\\\') {",
+     "        if (*p == '/') {")
+PY
+
+mutation_case "a leading dot is an extension" <<'PY'
+edit("backends/c/runtime/include/sce/invoke.h",
+     "    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : strlen(name);",
+     "    size_t len = dot != NULL ? (size_t)(dot - name) : strlen(name);")
+PY

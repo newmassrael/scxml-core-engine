@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): an
+  <invoke type="scxml" srcexpr> that declares `sce:candidates`. The value
+  `srcexpr` computes names the document to start (W3C SCXML 6.4), by its stem,
+  so `file:x.scxml`, `./x.scxml` and an absolute path all name one child; the
+  invoke's `namelist` and <param>s go to the candidate the value named, each to
+  the variable of the same name that candidate declares (W3C SCXML 6.4.3).
+
+  Four phases, each in a state of its own. `pick` is assigned on entry, and the
+  invoke executes at the end of the macrostep that entered the state, so
+  `srcexpr` reads what the entry actions left and `base` is 7 by then:
+
+    first   pick names `static_hybrid_first` by `file:`; it is handed
+            start = 7 and enabled = true, and ends. `extra` (3) is evaluated
+            and left out, that candidate declaring none.
+    second  pick is an absolute path to `static_hybrid_second`; it is handed
+            start = 7 and extra = 3, and ends. `enabled` is left out.
+    lossy   `static_hybrid_first` again, with a <param name="extra"> that no
+            32-bit field can hold: it is left out, as it was in `first`, but
+            the evaluation FAILED, so `error.execution` is raised, and the
+            child still starts and ends — an argument is evaluated whatever
+            the child keeps (W3C SCXML 6.4.3, 5.7.1).
+    missing pick names a document the invoke did not declare: the failure the
+            Interpreter reports when a document will not load. `error.execution`
+            is raised, nothing starts, and no `done.invoke` follows.
+
+  `done.invoke.<id>` adds 1, 10 and 100 to `completed`, and each
+  `error.execution` is counted in `errors`: the run ends in `over` with
+  `completed` 111 and `errors` 2. A candidate handed the other's names would
+  never end, and the run would stop short.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="run" datamodel="sce-static" name="static_invoke_hybrid">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'file:static_hybrid_first.scxml'"/>
+    <data id="base" sce:type="uint32" expr="4"/>
+    <data id="enabled" sce:type="bool" expr="true"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="run" initial="first">
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <state id="first">
+      <onentry>
+        <assign location="base" expr="base + 3"/>
+      </onentry>
+      <invoke type="scxml" id="first_run" srcexpr="pick" namelist="enabled"
+              sce:candidates="static_hybrid_first.scxml static_hybrid_second.scxml">
+        <param name="start" expr="base"/>
+        <param name="extra" expr="base - 4"/>
+      </invoke>
+      <transition event="done.invoke.first_run" target="second">
+        <assign location="completed" expr="completed + 1"/>
+      </transition>
+    </state>
+    <state id="second">
+      <onentry>
+        <assign location="pick" expr="'/opt/charts/static_hybrid_second.scxml'"/>
+      </onentry>
+      <invoke type="scxml" id="second_run" srcexpr="pick" namelist="enabled"
+              sce:candidates="static_hybrid_first.scxml static_hybrid_second.scxml">
+        <param name="start" expr="base"/>
+        <param name="extra" expr="base - 4"/>
+      </invoke>
+      <transition event="done.invoke.second_run" target="lossy">
+        <assign location="completed" expr="completed + 10"/>
+      </transition>
+    </state>
+    <state id="lossy">
+      <onentry>
+        <assign location="pick" expr="'./static_hybrid_first.scxml'"/>
+      </onentry>
+      <invoke type="scxml" id="lossy_run" srcexpr="pick" namelist="enabled"
+              sce:candidates="static_hybrid_first.scxml static_hybrid_second.scxml">
+        <param name="start" expr="base"/>
+        <param name="extra" expr="base * 2000000000"/>
+      </invoke>
+      <transition event="done.invoke.lossy_run" target="missing">
+        <assign location="completed" expr="completed + 100"/>
+      </transition>
+    </state>
+    <state id="missing">
+      <onentry>
+        <assign location="pick" expr="'static_hybrid_missing.scxml'"/>
+      </onentry>
+      <invoke type="scxml" id="missing_run" srcexpr="pick" namelist="enabled"
+              sce:candidates="static_hybrid_first.scxml static_hybrid_second.scxml">
+        <param name="start" expr="base"/>
+      </invoke>
+      <transition event="done.invoke.missing_run">
+        <assign location="completed" expr="completed + 1000"/>
+      </transition>
+      <transition event="error.execution" target="over">
+        <assign location="errors" expr="errors + 1"/>
+      </transition>
+    </state>
+  </state>
+  <final id="over"/>
+</scxml>

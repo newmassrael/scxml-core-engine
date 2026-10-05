@@ -1,0 +1,61 @@
+# Mutation cases for the hybrid `<invoke>` of a `datamodel="sce-static"` machine
+# generated as C++ (docs/SCE_ACCEPTED_SUBSET.md §2.13): an `<invoke srcexpr>`
+# that declares `sce:candidates` starts the document its value names, by the
+# document's stem (W3C SCXML 6.4), and hands it the invoke's arguments, each to
+# the variable of the same name that candidate declares (W3C SCXML 6.4.3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_hybrid_invoke_starts_the_candidate_its_value_names_ctest.cases`.
+#
+# `static_invoke_hybrid.scxml` runs four phases and each `done.invoke` adds a power
+# of ten, so the sum 111 and the two errors say WHICH candidates ended and which
+# arguments and documents were reported. The mutants below each take one decision
+# away and leave a machine that still compiles:
+#
+#   the value is compared whole, so `file:x.scxml` names no candidate;
+#   no candidate is handed a value, so none ends;
+#   an argument a candidate keeps no variable for is not evaluated, so the
+#     `extra` that cannot be held is not reported;
+#   a document the invoke did not declare is not reported.
+#
+# The machines are generated when the tests are built, so there is no committed
+# tree to regenerate: the build is what carries a mutated template into them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets tools/codegen/templates/invoke_methods.jinja2
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
+
+# ── The value names a candidate by its document stem ────────────────
+
+mutation_case "the value is compared whole, not by the stem of the document it names" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "                            __sce_selected_{{ invoke_info.field_suffix }} = ::SCE::documentStem(computedSrc);",
+     "                            __sce_selected_{{ invoke_info.field_suffix }} = computedSrc;")
+PY
+
+# ── A candidate is handed the values it keeps ───────────────────────
+
+mutation_case "a candidate is handed none of the values" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "{% elif child.seeds or child.unkept %}",
+     "{% elif false and (child.seeds or child.unkept) %}")
+PY
+
+# ── An argument is evaluated whatever the candidate keeps ───────────
+
+mutation_case "an argument the candidate keeps no variable for is not evaluated" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "{{ seed_static_child(child.seeds, child.unkept, slot, model) }}",
+     "{{ seed_static_child(child.seeds, [], slot, model) }}")
+PY
+
+# ── A document the invoke did not declare starts nothing ────────────
+
+mutation_case "a document the invoke did not declare is not reported" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     "names no declared candidate\", __sce_selected_{{ invoke_info.field_suffix }});\n                            engine.raise(",
+     "names no declared candidate\", __sce_selected_{{ invoke_info.field_suffix }});\n                            (void)(")
+PY

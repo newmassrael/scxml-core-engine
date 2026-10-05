@@ -444,6 +444,7 @@ fn each_invoke_shape_renders_once_and_whole() {
                 .map(|p| sce_build::model::InvokeCandidate::from_path(p).unwrap())
                 .collect(),
             namelist: "seed".to_string(),
+            ..HybridInvokeInfo::default()
         }),
         Invoke::MeshRpc(MeshRpcInvokeInfo {
             base: base("i3"),

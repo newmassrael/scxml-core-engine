@@ -122,8 +122,8 @@ PY
 # it out.
 mutation_case "a string's bound is not carried to the child" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        rewrites.note(&written, spelling.as_ref(), &seed);\n",
-     "        rewrites.note(&written, spelling.as_ref(), &written);\n")
+     "    rewrites.note(&written, spelling.as_ref(), &seed);\n",
+     "    rewrites.note(&written, spelling.as_ref(), &written);\n")
 PY
 
 # An `<invoke>` by `src` is lowered as if its child were inline.

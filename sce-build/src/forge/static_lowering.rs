@@ -332,6 +332,16 @@ pub trait StaticTarget {
     fn lowers_scalar_content(&self) -> bool {
         false
     }
+    /// Whether a hybrid `<invoke>` is lowered: its `srcexpr` to the string it
+    /// computes ([`crate::model::HybridInvokeInfo::native_src`]), the document
+    /// stem of which the backend matches against the candidates it declares when
+    /// the invocation starts, and the arguments to the values each candidate
+    /// keeps ([`crate::model::InvokeCandidate::seeds`]). A target that does not
+    /// is refused where the
+    /// `<invoke>` is walked, by name, rather than left to start no child.
+    fn lowers_hybrid_invoke(&self) -> bool {
+        false
+    }
     /// Whether the `srcexpr` and the `<content expr>` of an `<invoke>` a host
     /// runs are lowered to the string each computes
     /// ([`UnsupportedInvokeInfo::native_src`],
@@ -1028,6 +1038,12 @@ impl StaticTarget for KotlinTarget {
     fn lowers_host_src_expr(&self) -> bool {
         true
     }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`DocumentStem.of`) and starts the candidate it names, handing it the
+    // values it keeps (`seed_static_child`).
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1181,6 +1197,12 @@ impl StaticTarget for RustTarget {
     }
     // The host invoke hands the host the `src` it computes (`host_invoke_src`).
     fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`document_stem`) and starts the candidate it names, handing it the
+    // values it keeps (`seed_static_child`).
+    fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -1841,6 +1863,9 @@ pub fn lower(
                 }
                 crate::model::Invoke::Scxml(info) => {
                     lower_child_arguments(info, &plain_ctx, &plain_renames, &rewrites)?;
+                }
+                crate::model::Invoke::Hybrid(info) => {
+                    lower_hybrid_invoke(info, &plain_ctx, &plain_renames, &rewrites)?;
                 }
                 _ => {}
             }
@@ -2666,7 +2691,8 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true) {
+            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
+            {
                 return Some(other);
             }
         }
@@ -2980,6 +3006,12 @@ impl StaticTarget for CppTarget {
     fn lowers_host_src_expr(&self) -> bool {
         true
     }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`SCE::documentStem`) and starts the candidate it names, handing it the
+    // values it keeps (`seed_static_child`).
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3033,15 +3065,21 @@ fn repeated_name<'a>(names: impl Iterator<Item = &'a str>) -> Option<&'a str> {
 
 /// The first of `invokes` a target that lowers a `<invoke type="scxml">` has no
 /// lowering for yet, described for a refusal. A scxml child is started by the
-/// machine's own invoke code and handed its values by the build; a hybrid one and
-/// a mesh one are not lowered yet, and one the host runs is only by a target that
-/// `lowers_host_run` — one whose invoke code reads a request's `<param>`s from the
-/// machine's own fields.
-fn unlowered_invoke(invokes: &[crate::model::Invoke], lowers_host_run: bool) -> Option<String> {
+/// machine's own invoke code and handed its values by the build; a mesh one is
+/// not lowered yet, a hybrid one only by a target that `lowers_hybrid` — one whose
+/// invoke code reads the stem of the string its `srcexpr` computes — and one the
+/// host runs only by a target that `lowers_host_run` — one whose invoke code reads
+/// a request's `<param>`s from the machine's own fields.
+fn unlowered_invoke(
+    invokes: &[crate::model::Invoke],
+    lowers_host_run: bool,
+    lowers_hybrid: bool,
+) -> Option<String> {
     invokes
         .iter()
         .find(|i| match i {
             crate::model::Invoke::Scxml(_) => false,
+            crate::model::Invoke::Hybrid(_) => !lowers_hybrid,
             crate::model::Invoke::Unsupported(info) => !(lowers_host_run && info.host_served),
             _ => true,
         })
@@ -3167,7 +3205,8 @@ impl StaticTarget for GoTarget<'_> {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true) {
+            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
+            {
                 return Some(other);
             }
         }
@@ -3498,6 +3537,12 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_host_src_expr(&self) -> bool {
         true
     }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`sce.DocumentStem`) and starts the candidate it names, handing it the
+    // values it keeps (`seed_static_child`).
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3661,7 +3706,8 @@ impl StaticTarget for PythonTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true) {
+            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
+            {
                 return Some(other);
             }
         }
@@ -3943,6 +3989,12 @@ impl StaticTarget for PythonTarget {
     fn lowers_host_src_expr(&self) -> bool {
         true
     }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`_document_stem`) and starts the candidate it names, handing it the
+    // values it keeps (`accept_params`).
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
     // The attribute the payload channel fills when the engine dequeues an
     // event of this name (`build_python_event_payload`).
     fn payload_accessor(&self, event: &str) -> String {
@@ -4117,8 +4169,8 @@ impl CTarget {
     /// `<sce:action>`s, which the parent has none to give it. An `<invoke>` the
     /// host serves is lowered: its `<param>`s are written into the request from
     /// the machine's own fields (`sce/forge/wire.h`), as a final's are.
-    fn unlowered_invoke(invokes: &[crate::model::Invoke]) -> Option<String> {
-        if let Some(other) = unlowered_invoke(invokes, true) {
+    fn unlowered_invoke(invokes: &[crate::model::Invoke], lowers_hybrid: bool) -> Option<String> {
+        if let Some(other) = unlowered_invoke(invokes, true, lowers_hybrid) {
             return Some(other);
         }
         invokes.iter().find_map(|invoke| match invoke {
@@ -4308,7 +4360,8 @@ impl StaticTarget for CTarget {
                     ));
                 }
             }
-            if let Some(other) = Self::unlowered_invoke(&state.invokes) {
+            if let Some(other) = Self::unlowered_invoke(&state.invokes, self.lowers_hybrid_invoke())
+            {
                 return Some(other);
             }
             // The pairs of a `<donedata>` are written as the JSON object of the
@@ -4813,6 +4866,13 @@ impl StaticTarget for CTarget {
     // held by a variable or written out; one that joins text is refused for the
     // reason a delay is.
     fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
+    // A hybrid invoke reads the stem of the string its `srcexpr` computes
+    // (`sce_document_stem`) and starts the candidate it names in two steps,
+    // handing it the values it keeps between them (`seed_static_child`). A
+    // string joined from text is refused where it is lowered, as a delay is.
+    fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
     // The member of the channel's union the event's payload is lifted into
@@ -5776,52 +5836,129 @@ fn lower_child_arguments(
     if arguments.is_empty() {
         return Ok(());
     }
-    let target = rewrites.target;
-    let lang = target.name();
     let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
     for param in &mut arguments {
-        let (written, spelling) = if param.expr.trim().is_empty() {
-            (param.location.clone(), param.location_spelling.clone())
-        } else {
-            (param.expr.clone(), param.expr_spelling.clone())
-        };
-        let refused = |why: String| {
-            GenerateError::unsupported(format!(
-                "<param name=\"{}\"> `{written}` has no {lang} lowering: {why}",
-                param.name
-            ))
-        };
         let variable = declared.iter().find(|v| v.id == param.name);
-        let (Some(slot), Some(held)) = (
-            variable.and_then(crate::forge::static_datamodel::seed_slot),
-            variable
-                .and_then(|v| v.value_type.as_ref())
-                .and_then(|t| t.scalar()),
-        ) else {
-            return Err(refused(
-                "the child declares no variable it can be handed to".into(),
-            ));
-        };
-        let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
-            .map_err(|r| refused(r.error.to_string()))?;
-        // A string handed to the child's variable is held to the bound the child
-        // declared for it, whatever the value came from, as an `<assign>` to it
-        // would be (§scxml-4.9): past it the value fails as any other does, is
-        // left out, and the child starts with the one its `<data>` gave it.
-        let (seed, fails) = match (held, variable.and_then(|v| v.capacity)) {
-            (SceType::String, Some(capacity)) => {
-                (target.bounded_string(&value.text, capacity), true)
-            }
-            _ => (value.text, value.can_fail),
-        };
-        // Where the value is written, for a backend that runs the document's own
-        // expression: the seed, which carries the bound a string is held to.
-        rewrites.note(&written, spelling.as_ref(), &seed);
-        param.native_seed = seed;
-        param.native_seed_type = target.scalar_type(held);
-        param.native_fails = fails;
+        lower_child_argument(param, variable, ctx, renames, rewrites)?;
     }
     info.common.base.params = arguments;
+    info.namelist.clear();
+    Ok(())
+}
+
+/// Lower one argument an `<invoke>` hands a child to the value of the child's
+/// `variable` of the same name (§scxml-6.4.1): `Param::native_seed`, the type of
+/// the variable it lands in, and whether it can fail.
+fn lower_child_argument(
+    param: &mut crate::model::Param,
+    variable: Option<&crate::model::Variable>,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let (written, spelling) = if param.expr.trim().is_empty() {
+        (param.location.clone(), param.location_spelling.clone())
+    } else {
+        (param.expr.clone(), param.expr_spelling.clone())
+    };
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "<param name=\"{}\"> `{written}` has no {lang} lowering: {why}",
+            param.name
+        ))
+    };
+    let (Some(slot), Some(held)) = (
+        variable.and_then(crate::forge::static_datamodel::seed_slot),
+        variable
+            .and_then(|v| v.value_type.as_ref())
+            .and_then(|t| t.scalar()),
+    ) else {
+        return Err(refused(
+            "the child declares no variable it can be handed to".into(),
+        ));
+    };
+    let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
+        .map_err(|r| refused(r.error.to_string()))?;
+    // A string handed to the child's variable is held to the bound the child
+    // declared for it, whatever the value came from, as an `<assign>` to it
+    // would be (§scxml-4.9): past it the value fails as any other does, is
+    // left out, and the child starts with the one its `<data>` gave it.
+    let (seed, fails) = match (held, variable.and_then(|v| v.capacity)) {
+        (SceType::String, Some(capacity)) => (target.bounded_string(&value.text, capacity), true),
+        _ => (value.text, value.can_fail),
+    };
+    // Where the value is written, for a backend that runs the document's own
+    // expression: the seed, which carries the bound a string is held to.
+    rewrites.note(&written, spelling.as_ref(), &seed);
+    param.native_seed = seed;
+    param.native_seed_type = target.scalar_type(held);
+    param.native_fails = fails;
+    Ok(())
+}
+
+/// Lower a hybrid `<invoke>` (§scxml-6.4): its `srcexpr` to the string it
+/// computes, which the machine reads the document stem of when the invocation
+/// starts to name the candidate to start
+/// ([`crate::model::HybridInvokeInfo::native_src`]), and what the invoke hands
+/// each candidate — the arguments the candidate declares a variable for as the
+/// values of those variables ([`crate::model::InvokeCandidate::seeds`]), and the
+/// rest as values evaluated and left out
+/// ([`crate::model::InvokeCandidate::unkept`], §scxml-6.4.3). The attribute and
+/// the `namelist` are cleared once they are lowered, so no template evaluates
+/// either a second time.
+///
+/// Validation already held each value to the type of the variable it lands in
+/// ([`crate::forge::static_datamodel`]), so a refusal here is a lowering this
+/// backend lacks, not a mistake in the document.
+fn lower_hybrid_invoke(
+    info: &mut crate::model::HybridInvokeInfo,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    if !target.lowers_hybrid_invoke() {
+        return Err(GenerateError::unsupported(format!(
+            "a hybrid <invoke> has no {lang} lowering yet"
+        )));
+    }
+    let value = transpile_into_owned(
+        &info.srcexpr,
+        target.expr_target(),
+        ctx,
+        renames,
+        InferredType::Str,
+    )
+    .map_err(|r| {
+        GenerateError::unsupported(format!(
+            "`{}` has no {lang} lowering: {}",
+            info.srcexpr, r.error
+        ))
+    })?;
+    info.native_src = value.text;
+    info.native_src_fails = value.can_fail;
+    info.srcexpr.clear();
+    let arguments = info.arguments();
+    for candidate in &mut info.candidates {
+        let declared = candidate.child_static_variables.as_deref().unwrap_or(&[]);
+        for argument in &arguments {
+            let mut param = argument.clone();
+            match declared.iter().find(|v| v.id == param.name) {
+                Some(variable) => {
+                    lower_child_argument(&mut param, Some(variable), ctx, renames, rewrites)?;
+                    candidate.seeds.push(param);
+                }
+                None => {
+                    lower_wire_param(&mut param, ctx, renames, rewrites)?;
+                    candidate.unkept.push(param);
+                }
+            }
+        }
+    }
+    info.common.base.params.clear();
     info.namelist.clear();
     Ok(())
 }

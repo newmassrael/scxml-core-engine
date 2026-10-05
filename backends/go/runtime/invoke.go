@@ -3,7 +3,10 @@
 
 package sce
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // PendingInvoke represents a §scxml-6.4 pending invoke structure for the
 // defer/cancel/execute pattern.
@@ -224,6 +227,28 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 			engine.RaiseExternalWithMeta(meta)
 		}
 	}
+}
+
+// DocumentStem is the stem of the document a hybrid <invoke>'s evaluated
+// srcexpr names — what the value is matched against the declared
+// sce:candidates by (§scxml-6.4, SCE_ACCEPTED_SUBSET.md §2.13). Port of Rust
+// document_stem().
+//
+// An expression is free to compute `file:x.scxml`, `./x.scxml`, an absolute
+// path or a Windows one for the same document, so the value is reduced to what
+// the build named the generated child by: the last path segment, without a
+// `file:` scheme and without its extension. A leading dot is a name, not an
+// extension, as the build reads it when it derives the candidate's stem.
+func DocumentStem(value string) string {
+	name := value
+	if i := strings.LastIndexAny(name, "/\\"); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.TrimPrefix(name, "file:")
+	if dot := strings.LastIndex(name, "."); dot > 0 {
+		return name[:dot]
+	}
+	return name
 }
 
 // RaiseDoneInvoke raises a done.invoke event in the parent engine (§scxml-6.3.1).

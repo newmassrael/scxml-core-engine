@@ -33,6 +33,68 @@
 {% endif %}
 {% endmacro %}
 {#
+    `datamodel="sce-static"`: each argument is native code
+    (`Param::native_seed`), read from the machine's own fields when the invoke
+    executes, and handed to the child's variable of the same name through its
+    `AcceptParams` — the child runs no script engine and keeps no value of its
+    own to receive them in.
+
+    `seeds` are the arguments the child declares a variable for. `unkept` are
+    the ones it declares none for, which a hybrid invoke has because it hands
+    every candidate the same arguments: each is evaluated and left out
+    (§scxml-6.4.3), and one that cannot be evaluated costs `error.execution`
+    all the same, because an argument is the invoke's whatever the child keeps.
+#}
+{% macro seed_static_child(child_name, seeds, unkept, model, machine_name) %}
+{% set native_seeded = seeds | selectattr("native_seed") | list | length > 0 %}
+{% if native_seeded %}
+			// W3C SCXML 6.4.1: hand the child its values before it initializes
+			{
+				var seed {{ child_name | to_machine_name }}InvokeParams
+{% for param in seeds %}
+{% if param.native_seed %}
+				{
+{% if param.native_fails %}
+					var sceFailure scealgorithm.Failure
+{% endif %}
+					sceValue := {{ param.native_seed }}
+{% if param.native_fails %}
+					if !sceFailure.Failed() {
+						seed.V{{ param.name | to_pascal_case }} = &sceValue
+					} else {
+						// §scxml-5.7.1: a value that failed is reported and the
+						// child still starts, one value short.
+{% if 'error.execution' in model.events %}
+						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+{% endif %}
+					}
+{% else %}
+					seed.V{{ param.name | to_pascal_case }} = &sceValue
+{% endif %}
+				}
+{% endif %}
+{% endfor %}
+				childPolicy.AcceptParams(seed)
+			}
+{% endif %}
+{% for param in unkept %}
+{% if param.native_value and param.native_fails %}
+			// §scxml-6.4.3: the child declares no `{{ param.name | escape_go }}`, so the Processor
+			// MUST NOT add it to its data model — but the argument is still the
+			// invoke's, evaluated, and a failure of it is reported (§scxml-5.7.1).
+			{
+				var sceFailure scealgorithm.Failure
+				_ = {{ param.native_value }}
+				if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+{% endif %}
+				}
+			}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{#
     §scxml-6.4.1 + §scxml-6.4.3: the invoke's `namelist` values and
     `<param>`s, into `childPolicy` before the child initializes.
 
@@ -58,41 +120,15 @@
 {% endfor %}
 			}
 {% endif %}
-{# `datamodel="sce-static"`: each argument is native code
-   (`Param::native_seed`), read from the machine's own fields when the invoke
-   executes, and handed to the child's variable of the same name through its
-   `AcceptParams` — the child runs no script engine and keeps no value of its own
-   to receive them in. #}
+{# `datamodel="sce-static"`: a static invoke hands its child the arguments it
+   lowered (`Param::native_seed`); a hybrid one has lowered them per candidate
+   (`InvokeCandidate::seeds` and `unkept`), because which names a child keeps is
+   its own (§scxml-6.4.3). See `seed_static_child`. #}
 {% set native_seeded = invoke_info.params | selectattr("native_seed") | list | length > 0 %}
 {% if native_seeded %}
-			// W3C SCXML 6.4.1: hand the child its values before it initializes
-			{
-				var seed {{ invoke_info.child_name | to_machine_name }}InvokeParams
-{% for param in invoke_info.params %}
-{% if param.native_seed %}
-				{
-{% if param.native_fails %}
-					var sceFailure scealgorithm.Failure
-{% endif %}
-					sceValue := {{ param.native_seed }}
-{% if param.native_fails %}
-					if !sceFailure.Failed() {
-						seed.V{{ param.name | to_pascal_case }} = &sceValue
-					} else {
-						// §scxml-5.7.1: a value that failed is reported and the
-						// child still starts, one value short.
-{% if 'error.execution' in model.events %}
-						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
-{% endif %}
-					}
-{% else %}
-					seed.V{{ param.name | to_pascal_case }} = &sceValue
-{% endif %}
-				}
-{% endif %}
-{% endfor %}
-				childPolicy.AcceptParams(seed)
-			}
+{{ seed_static_child(invoke_info.child_name, invoke_info.params, [], model, machine_name) }}
+{% elif child.seeds or child.unkept %}
+{{ seed_static_child(child.stem, child.seeds, child.unkept, model, machine_name) }}
 {% elif invoke_info.params and model.needs_script_engine %}
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
 			{
@@ -482,7 +518,28 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// document stem, so `file:x.scxml` and `./x.scxml` are one child).
 			__sceSelected := ""
 {% endif %}
-{% if invoke_info.srcexpr %}
+{% if invoke_info.native_src %}
+{# `datamodel="sce-static"`: the `srcexpr` is a string computed from the machine's
+   fields now (`HybridInvokeInfo::native_src`); no script engine is asked. One
+   that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+			// §scxml-6.4: the `srcexpr` names the document to start.
+{% if invoke_info.native_src_fails %}
+			{
+				var sceFailure scealgorithm.Failure
+				__sceValue := {{ invoke_info.native_src }}
+				if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"))
+{% endif %}
+					continue
+				}
+				__sceSelected = sce.DocumentStem(__sceValue)
+			}
+{% else %}
+			__sceSelected = sce.DocumentStem({{ invoke_info.native_src }})
+{% endif %}
+{% elif invoke_info.srcexpr %}
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
 			p.ensureScriptEngine()
 			{
@@ -507,16 +564,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 					continue
 {% if invoke_info.candidates %}
 				} else {
-					__sceRaw := fmt.Sprintf("%v", __sceValue)
-					if i := strings.LastIndexAny(__sceRaw, "/\\"); i >= 0 {
-						__sceRaw = __sceRaw[i+1:]
-					} else {
-						__sceRaw = strings.TrimPrefix(__sceRaw, "file:")
-					}
-					if d := strings.LastIndex(__sceRaw, "."); d >= 0 {
-						__sceRaw = __sceRaw[:d]
-					}
-					__sceSelected = __sceRaw
+					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
 {% endif %}
 				}
 			}
@@ -542,7 +590,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			case {% for candidate in invoke_info.candidates %}"{{ candidate.stem }}"{{ ", " if not loop.last }}{% endfor %}:
 			default:
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr }}'{% endif %}> evaluated to a document it did not declare"))
 {% endif %}
 				continue
 			}

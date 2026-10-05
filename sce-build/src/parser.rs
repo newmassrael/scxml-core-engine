@@ -4351,6 +4351,8 @@ impl SCXMLParser {
                 contentexpr_spelling,
                 candidates,
                 namelist,
+                // What lowering fills in, for a document that has it lowered.
+                ..HybridInvokeInfo::default()
             })));
         }
 
@@ -7357,6 +7359,10 @@ fn populate_candidate_metadata(
     parse_child_metadata(candidate_path, &mut common);
     candidate.child_needs_script_engine = common.child_needs_script_engine;
     candidate.child_datamodel_vars = common.child_datamodel_vars;
+    candidate.child_static_variables = common.child_static_variables;
+    candidate.child_is_static = common.child_is_static;
+    candidate.child_has_send_to_parent = common.child_has_send_to_parent;
+    candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
 }
 
 // ══════════════════════════════════════════════════════════════

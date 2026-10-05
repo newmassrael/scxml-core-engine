@@ -629,16 +629,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
-					__sceRaw := fmt.Sprintf("%v", __sceValue)
-					if i := strings.LastIndexAny(__sceRaw, "/\\"); i >= 0 {
-						__sceRaw = __sceRaw[i+1:]
-					} else {
-						__sceRaw = strings.TrimPrefix(__sceRaw, "file:")
-					}
-					if d := strings.LastIndex(__sceRaw, "."); d >= 0 {
-						__sceRaw = __sceRaw[:d]
-					}
-					__sceSelected = __sceRaw
+					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
 				}
 			}
 
@@ -810,16 +801,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
-					__sceRaw := fmt.Sprintf("%v", __sceValue)
-					if i := strings.LastIndexAny(__sceRaw, "/\\"); i >= 0 {
-						__sceRaw = __sceRaw[i+1:]
-					} else {
-						__sceRaw = strings.TrimPrefix(__sceRaw, "file:")
-					}
-					if d := strings.LastIndex(__sceRaw, "."); d >= 0 {
-						__sceRaw = __sceRaw[:d]
-					}
-					__sceSelected = __sceRaw
+					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
 				}
 			}
 
@@ -1057,16 +1039,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
-					__sceRaw := fmt.Sprintf("%v", __sceValue)
-					if i := strings.LastIndexAny(__sceRaw, "/\\"); i >= 0 {
-						__sceRaw = __sceRaw[i+1:]
-					} else {
-						__sceRaw = strings.TrimPrefix(__sceRaw, "file:")
-					}
-					if d := strings.LastIndex(__sceRaw, "."); d >= 0 {
-						__sceRaw = __sceRaw[:d]
-					}
-					__sceSelected = __sceRaw
+					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
 				}
 			}
 

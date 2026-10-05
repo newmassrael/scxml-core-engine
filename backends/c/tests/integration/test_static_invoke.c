@@ -28,6 +28,10 @@
 //                            child declared, in bytes: one that fits arrives, one
 //                            past it and one of two characters and five bytes are
 //                            left out and reported.
+//   * `static_invoke_hybrid` an `<invoke srcexpr>` that declares `sce:candidates`:
+//                            the value names the document to start, by its stem,
+//                            and the invoke's arguments reach the candidate it
+//                            named, each under a name that candidate declares.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54`: the machines have no script
 // engine, so the link is the proof.
@@ -38,6 +42,7 @@
 #include <string.h>
 
 #include "static_invoke_entry_sm.h"
+#include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
@@ -174,6 +179,30 @@ static int a_string_handed_to_a_child_is_held_to_the_childs_bound(void) {
     return bad;
 }
 
+// An `<invoke srcexpr>` that declares `sce:candidates` starts the document its
+// value names (§scxml-6.4), by the document's stem, and hands it the invoke's
+// arguments, each to the variable of the same name that candidate declares
+// (§scxml-6.4.3). The fixture runs four phases: `first` (a `file:` value),
+// `second` (an absolute path), `lossy` (an `extra` no 32-bit field can hold:
+// reported, left out, the child still ends) and `missing` (a document the invoke
+// did not declare: reported, nothing starts). Each `done.invoke` adds a power of
+// ten of its own, so 111 says which candidates ended, and the two errors are the
+// `lossy` argument and the `missing` document. A candidate handed what the OTHER
+// declares would never end.
+static int a_hybrid_invoke_starts_the_candidate_its_value_names(void) {
+    static static_invoke_hybrid_t sm;
+    static_invoke_hybrid_init(&sm);
+    for (int i = 0; i < 40; ++i) {
+        static_invoke_hybrid_step(&sm);
+    }
+    int bad = expect_count(static_invoke_hybrid_get_completed(&sm), 111u, "the three candidates that start ended");
+    bad |= expect_count(static_invoke_hybrid_get_errors(&sm), 2u,
+                        "the argument that cannot be held and the document not declared were reported");
+    bad |= expect(static_invoke_hybrid_is_in_final_state(&sm), "the last phase named no declared candidate");
+    static_invoke_hybrid_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= a_child_takes_what_its_parent_forwards();
@@ -182,6 +211,7 @@ int main(void) {
     bad |= the_children_are_handed_what_the_parent_holds_when_they_start();
     bad |= the_values_are_there_when_the_child_enters();
     bad |= a_string_handed_to_a_child_is_held_to_the_childs_bound();
+    bad |= a_hybrid_invoke_starts_the_candidate_its_value_names();
     if (bad != 0) {
         return 1;
     }

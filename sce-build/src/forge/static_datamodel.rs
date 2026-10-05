@@ -319,6 +319,32 @@ fn variable_type(var: &Variable) -> InferredType {
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
+/// The top-level `<data>` of a hybrid `<invoke>`'s `candidate` named `name`,
+/// when the candidate is a `sce-static` document this build read and declares
+/// one.
+pub(crate) fn candidate_variable<'a>(
+    candidate: &'a crate::model::InvokeCandidate,
+    name: &str,
+) -> Option<&'a Variable> {
+    candidate
+        .child_static_variables
+        .as_deref()?
+        .iter()
+        .find(|v| v.id == name)
+}
+
+/// The expression an argument of an `<invoke>` hands its child, and where it is
+/// written: its `expr`, or, failing that, the `location` read as one.
+pub(crate) fn argument_written(
+    param: &crate::model::Param,
+) -> (&str, Option<&crate::attribute_spelling::AttributeSpelling>) {
+    if param.expr.trim().is_empty() {
+        (param.location.as_str(), param.location_spelling.as_ref())
+    } else {
+        (param.expr.as_str(), param.expr_spelling.as_ref())
+    }
+}
+
 /// The type a value handed to the child's variable `var` is held to
 /// (§scxml-6.4.1), or `None` for a variable no value can be handed to — a
 /// list, a record, an enum or bytes. The one rule the judge and the lowering of
@@ -1643,34 +1669,9 @@ impl<'a> Judge<'a> {
         let element = format!("<invoke id=\"{}\">", base.invoke_id);
         let mut handed = std::collections::BTreeSet::new();
         for param in info.arguments() {
-            let (written, spelling) = if param.expr.trim().is_empty() {
-                (param.location.as_str(), param.location_spelling.as_ref())
-            } else {
-                (param.expr.as_str(), param.expr_spelling.as_ref())
-            };
-            let at = param.source_location.as_ref();
-            let refuse = |rule: &str| {
-                self.rule_at(
-                    format!("<param name=\"{}\"> of {element}", param.name),
-                    rule,
-                    at.and_then(|l| l.line),
-                    at.and_then(|l| l.col),
-                    state,
-                    written,
-                )
-            };
-            if written.trim().is_empty() {
-                return Err(refuse(
-                    "a <param> hands the child a value, and this one names none: give it an \
-                     expr or a location",
-                ));
-            }
-            if !handed.insert(param.name.clone()) {
-                return Err(refuse(
-                    "the child is handed this name twice, and one value would hide the other: \
-                     hand it once",
-                ));
-            }
+            let (written, spelling) = argument_written(&param);
+            let refuse = |rule: &str| self.argument_rule(&element, &param, rule, state);
+            self.argument_is_given_once(&param, &mut handed, &refuse)?;
             let Some(declared) = info.common.child_static_variables.as_deref() else {
                 return Err(refuse(
                     "the child of this invoke is not a datamodel=\"sce-static\" document this \
@@ -1697,26 +1698,170 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// The refusal of one argument an `<invoke>` hands a child, placed at the
+    /// `<param>` — or, for a `namelist` name, at the `<invoke>`, the only
+    /// position the model records for it — and saying `rule`.
+    fn argument_rule(
+        &self,
+        element: &str,
+        param: &crate::model::Param,
+        rule: &str,
+        state: &str,
+    ) -> Located<ForgeError> {
+        let (written, _) = argument_written(param);
+        let at = param.source_location.as_ref();
+        self.rule_at(
+            format!("<param name=\"{}\"> of {element}", param.name),
+            rule,
+            at.and_then(|l| l.line),
+            at.and_then(|l| l.col),
+            state,
+            written,
+        )
+    }
+
+    /// The two rules every argument of an `<invoke>` is held to whichever
+    /// child it is handed to: it names a value, and the name is handed once.
+    fn argument_is_given_once(
+        &self,
+        param: &crate::model::Param,
+        handed: &mut std::collections::BTreeSet<String>,
+        refuse: &dyn Fn(&str) -> Located<ForgeError>,
+    ) -> Result<(), Located<ForgeError>> {
+        let (written, _) = argument_written(param);
+        if written.trim().is_empty() {
+            return Err(refuse(
+                "a <param> hands the child a value, and this one names none: give it an \
+                 expr or a location",
+            ));
+        }
+        if !handed.insert(param.name.clone()) {
+            return Err(refuse(
+                "the child is handed this name twice, and one value would hide the other: \
+                 hand it once",
+            ));
+        }
+        Ok(())
+    }
+
+    /// §scxml-6.4: a hybrid `<invoke>` names its child by the `srcexpr` it
+    /// computes when it starts, and under this model the child is one of the
+    /// documents `sce:candidates` declares: the value names one by its document
+    /// stem, and the build has generated each. So the `srcexpr` is a string the
+    /// machine computes from its fields, every candidate is a
+    /// `datamodel="sce-static"` document this build read, and a `<content expr>`,
+    /// which PRODUCES the document, has no finite set to lower.
+    ///
+    /// The invoke's arguments are the same for whichever child is chosen, but
+    /// what each candidate KEEPS of them is its own (§scxml-6.4.3): a name it
+    /// declares is typed against that variable, and one it does not is
+    /// evaluated and left out. A name no candidate declares would be dropped by
+    /// every one, which is refused as a static invoke's is.
+    fn hybrid_invoke(
+        &self,
+        ctx: &TypeCtx<'_>,
+        info: &crate::model::HybridInvokeInfo,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let base = &info.common.base;
+        let element = format!("<invoke id=\"{}\">", base.invoke_id);
+        let at = base.source_location.as_ref();
+        let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
+        if !info.contentexpr.is_empty() {
+            let spelling = info.contentexpr_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("contentexpr=\"{}\"", info.contentexpr),
+                "a hybrid <invoke> whose <content expr> produces the document its child runs \
+                 has no finite set of documents to lower: name the child by `srcexpr` and \
+                 declare the documents it may start in `sce:candidates`",
+                spelling.map(|s| s.row()).or(line),
+                spelling.map(|s| s.col()).or(col),
+                state,
+                &info.contentexpr,
+            ));
+        }
+        let spelling = info.srcexpr_spelling.as_ref();
+        if info.candidates.is_empty() {
+            return Err(self.rule_at(
+                format!("srcexpr=\"{}\"", info.srcexpr),
+                "a hybrid <invoke> of this data model starts the child its `srcexpr` names \
+                 among the documents `sce:candidates` declares: with none declared there is no \
+                 child to start, so declare them",
+                spelling.map(|s| s.row()).or(line),
+                spelling.map(|s| s.col()).or(col),
+                state,
+                &info.srcexpr,
+            ));
+        }
+        self.expr(
+            ctx,
+            &info.srcexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        for candidate in &info.candidates {
+            if candidate.child_static_variables.is_none() {
+                return Err(self.rule_at(
+                    format!("sce:candidates=\"{}\"", candidate.path),
+                    "the candidate is not a datamodel=\"sce-static\" document this build read, \
+                     so a value has no typed variable to arrive in: write the candidate under \
+                     the same data model, beside this document",
+                    line,
+                    col,
+                    state,
+                    &candidate.path,
+                ));
+            }
+        }
+        let mut handed = std::collections::BTreeSet::new();
+        for param in info.arguments() {
+            let (written, spelling) = argument_written(&param);
+            let refuse = |rule: &str| self.argument_rule(&element, &param, rule, state);
+            self.argument_is_given_once(&param, &mut handed, &refuse)?;
+            if info
+                .candidates
+                .iter()
+                .all(|candidate| candidate_variable(candidate, &param.name).is_none())
+            {
+                return Err(refuse(&format!(
+                    "no candidate declares a top-level <data id=\"{}\">, so every one would \
+                     drop the value: declare it in a candidate, or hand a name one declares",
+                    param.name
+                )));
+            }
+            for candidate in &info.candidates {
+                let Some(variable) = candidate_variable(candidate, &param.name) else {
+                    continue;
+                };
+                let Some(slot) = seed_slot(variable) else {
+                    return Err(refuse(&format!(
+                        "the candidate `{}`'s `{}` is a list, a record, an enum or bytes, and a \
+                         value is handed only to a bool, a string, an integer or a real",
+                        candidate.stem, param.name
+                    )));
+                };
+                self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+            }
+            // A candidate that declares no such variable evaluates the value
+            // and leaves it out, so it must be one that can be evaluated to a
+            // value every backend spells alike.
+            if info
+                .candidates
+                .iter()
+                .any(|candidate| candidate_variable(candidate, &param.name).is_none())
+            {
+                self.wire_param(ctx, &WireParam::of_param(&param), &element, state)?;
+            }
+        }
+        Ok(())
+    }
+
     fn invoke(
         &self,
         ctx: &TypeCtx<'_>,
         invoke: &Invoke,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        // A hybrid invoke names its child by an expression evaluated at run
-        // time — its `srcexpr` or its `<content expr>`.
-        if let Invoke::Hybrid(info) = invoke {
-            let (attr, value, spelling) = if info.srcexpr.is_empty() {
-                (
-                    "contentexpr",
-                    &info.contentexpr,
-                    info.contentexpr_spelling.as_ref(),
-                )
-            } else {
-                ("srcexpr", &info.srcexpr, info.srcexpr_spelling.as_ref())
-            };
-            return Err(self.untyped(format!("{attr}=\"{value}\""), spelling, state, value));
-        }
         let base = invoke.base();
         let at = base.source_location.as_ref();
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
@@ -1748,6 +1893,11 @@ impl<'a> Judge<'a> {
                 state,
                 &base.idlocation,
             ));
+        }
+        // A hybrid invoke names its child by an expression evaluated when it
+        // starts, among the documents it declares.
+        if let Invoke::Hybrid(info) = invoke {
+            return self.hybrid_invoke(ctx, info, state);
         }
         if !srcexpr.is_empty() {
             return Err(self.untyped_at(

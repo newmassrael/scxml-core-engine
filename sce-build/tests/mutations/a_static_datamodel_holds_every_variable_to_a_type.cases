@@ -343,8 +343,8 @@ PY
 
 mutation_case "a host-run invoke's namelist stands after it is folded" <<'PY'
 edit("sce-build/src/model.rs",
-     "        let at = self.base.source_location.clone();\n        let names = std::mem::take(&mut self.namelist);\n",
-     "        let at = self.base.source_location.clone();\n        let names = self.namelist.clone();\n")
+     "        let names = std::mem::take(&mut self.namelist);\n        let at = self.base.source_location.clone();\n",
+     "        let names = self.namelist.clone();\n        let at = self.base.source_location.clone();\n")
 PY
 
 # A `<cancel>`'s `sendidexpr` is a string the machine computes, the id of the send

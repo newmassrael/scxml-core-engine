@@ -516,16 +516,9 @@ impl InvokeCandidateSelectsTheChildPolicy {
                             sce_rust_runtime::ScriptValue::String(s) => s.clone(),
                             other => format!("{:?}", other),
                         };
-                        let after_dir = raw
-                            .rsplit(['/', '\\'])
-                            .next()
-                            .unwrap_or(&raw)
-                            .trim_start_matches("file:")
-                            .to_string();
-                        __sce_selected = match after_dir.rfind('.') {
-                            Some(dot) => after_dir[..dot].to_string(),
-                            None => after_dir,
-                        };
+                        __sce_selected =
+                            sce_rust_runtime::helpers::invoke_processing::document_stem(&raw)
+                                .to_string();
                     }
                 }
 

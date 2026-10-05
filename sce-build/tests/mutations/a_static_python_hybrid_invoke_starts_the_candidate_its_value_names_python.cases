@@ -1,0 +1,53 @@
+# Mutation cases for the hybrid `<invoke>` of a `datamodel="sce-static"` machine
+# generated as Python (docs/SCE_ACCEPTED_SUBSET.md §2.13): an `<invoke srcexpr>`
+# that declares `sce:candidates` starts the document its value names, by the
+# document's stem (W3C SCXML 6.4), and hands it the invoke's arguments, each to
+# the variable of the same name that candidate declares (W3C SCXML 6.4.3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_hybrid_invoke_starts_the_candidate_its_value_names_python.cases`.
+#
+# `static_invoke_hybrid.scxml` runs four phases and each `done.invoke` adds a power
+# of ten, so the sum 111 and the two errors say WHICH candidates ended and which
+# arguments were reported. The mutants below each take one decision away and
+# leave a machine that still runs:
+#
+#   the value is compared whole, so `file:x.scxml` names no candidate;
+#   no candidate is handed a value, so none ends;
+#   an argument a candidate keeps no variable for is not evaluated, so the
+#     `extra` that cannot be held is not reported.
+#
+# The Python tree is gitignored: the regeneration runs before the tests, and the
+# command is what carries a mutated template into them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_a_static_hybrid_invoke_starts_the_candidate_its_value_names.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/invoke_methods.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_a_static_hybrid_invoke_starts_the_candidate_its_value_names.py sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
+
+# ── The value names a candidate by its document stem ────────────────
+
+mutation_case "the value is compared whole, not by the stem of the document it names" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     " = _document_stem({{ inv.native_src }})",
+     " = ({{ inv.native_src }})")
+PY
+
+# ── A candidate is handed the values it keeps ───────────────────────
+
+mutation_case "a candidate is handed none of the values" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "{% elif inv.native_src and inv.candidates %}",
+     "{% elif false and inv.native_src and inv.candidates %}")
+PY
+
+# ── An argument is evaluated whatever the candidate keeps ───────────
+
+mutation_case "an argument the candidate keeps no variable for is not evaluated" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "{% for param in candidate.unkept %}",
+     "{% for param in [] %}")
+PY

@@ -101,3 +101,70 @@ pub fn raise_done_invoke<P: StatePolicy>(
         engine.raise_external_with_meta(meta);
     }
 }
+
+/// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a
+/// hybrid `<invoke>`'s evaluated `srcexpr` names — what the value is matched
+/// against the declared `sce:candidates` by.
+///
+/// An expression is free to compute `file:x.scxml`, `./x.scxml`, an absolute
+/// path or a Windows one for the same document, so the value is reduced to
+/// what the build named the generated child by: the last path segment, without
+/// a `file:` scheme and without its extension. A leading dot is a name, not an
+/// extension — the reading `Path::file_stem` gives the candidate's stem when
+/// the build derives it (`InvokeCandidate::from_path` in `sce-build`) — so the
+/// two cannot disagree about which document a value names.
+///
+/// One derivation for every generated hybrid invoke: each template used to
+/// carry its own copy of these four steps.
+pub fn document_stem(value: &str) -> &str {
+    let name = value
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(value)
+        .trim_start_matches("file:");
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::document_stem;
+    use crate::json::{parse, Value};
+
+    /// tests/document_stem/document_stem.json: the cases every engine's reader
+    /// of a hybrid invoke's value, and the build's reader of each candidate,
+    /// are measured against, read with this crate's own JSON parser.
+    #[test]
+    fn a_value_is_reduced_to_the_one_stem_every_engine_reduces_it_to() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/document_stem/document_stem.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared document-stem table");
+        let Value::Object(members) = parse(&table).expect("the table is JSON") else {
+            panic!("the table is an object");
+        };
+        let Some((_, Value::Array(cases))) = members.iter().find(|(key, _)| key == "cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 15, "the table lost cases: {}", cases.len());
+        for case in cases {
+            let Value::Object(fields) = case else {
+                panic!("a case is an object");
+            };
+            let text = |name: &str| match fields.iter().find(|(key, _)| key == name) {
+                Some((_, Value::Text(text))) => text.as_str(),
+                other => panic!("a case's {name} is text, got {other:?}"),
+            };
+            assert_eq!(
+                document_stem(text("value")),
+                text("stem"),
+                "{}: {:?}",
+                text("name"),
+                text("value")
+            );
+        }
+    }
+}

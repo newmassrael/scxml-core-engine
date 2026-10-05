@@ -54,6 +54,19 @@ if [ "${#MACHINES[@]}" -lt 1 ]; then
     echo "error: no sce-static statechart found under $INPUT_ROOT" >&2
     exit 1
 fi
+# Derived, not listed: the stem of every document a machine here declares in
+# `sce:candidates`. Such a document is a child of the machine that invokes it,
+# generated into THAT machine's package (below) because the parent names its
+# children as package-local classes. Generated again as a machine of its own it
+# would be a second copy nothing runs.
+CANDIDATE_STEMS="$(grep -ho 'sce:candidates="[^"]*"' "$INPUT_ROOT"/*.scxml | cut -d'"' -f2 | tr ' ' '\n' | sed -e 's|.*/||' -e 's|\.scxml$||' | sort -u || true)"
+STANDALONE=()
+for machine in "${MACHINES[@]}"; do
+    if ! grep -qx -- "$machine" <<< "$CANDIDATE_STEMS"; then
+        STANDALONE+=("$machine")
+    fi
+done
+MACHINES=("${STANDALONE[@]}")
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -62,6 +75,18 @@ for machine in "${MACHINES[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/$machine.scxml" -l kotlin -o "$TMP/$machine/" \
         --input-root "$INPUT_ROOT" \
         --kotlin-package-prefix "$PACKAGE_PREFIX"
+    # The documents the machine's hybrid invokes declare in `sce:candidates` are
+    # real machines: `--parent-stem` puts each in the parent's package. Read from
+    # the parent's own attributes rather than from what the generator staged
+    # beside its output, which also holds the documents of its inline children.
+    # Generated from the TRACKED document, not from a staged copy, so the
+    # `// Source:` line of a committed file does not carry a temporary path.
+    while IFS= read -r base; do
+        [ -n "$base" ] || continue
+        "$CODEGEN" generate "$INPUT_ROOT/$base" --as-child --parent-stem "$machine" -l kotlin -o "$TMP/$machine/" \
+            --input-root "$INPUT_ROOT" \
+            --kotlin-package-prefix "$PACKAGE_PREFIX"
+    done < <(grep -ho 'sce:candidates="[^"]*"' "$INPUT_ROOT/$machine.scxml" | cut -d'"' -f2 | tr ' ' '\n' | sed 's|.*/||' | sort -u)
     dir="$GENERATED_ROOT/$machine"
     mkdir -p "$dir"
     find "$dir" -maxdepth 1 -name '*Sm.kt' -delete

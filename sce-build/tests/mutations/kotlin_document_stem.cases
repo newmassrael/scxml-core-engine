@@ -1,0 +1,36 @@
+# Mutation cases for the Kotlin reader of the value a hybrid `<invoke srcexpr>`
+# computes (docs/SCE_ACCEPTED_SUBSET.md §2.13): `DocumentStem.of` reduces it to
+# the stem of the document it names, and the table
+# `tests/document_stem/document_stem.json` holds every engine's reader, and the
+# build's, to one answer.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/kotlin_document_stem.cases`.
+#
+# Each mutant changes one decision of the rule — which scheme is dropped, which
+# extension goes, what a leading dot is — and leaves a reader that still
+# compiles, so only the table can tell it from the right one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.runtime.DocumentStemTest'
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DocumentStem.kt
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/runtime/DocumentStemTest.kt tests/document_stem/document_stem.json
+
+mutation_case "a file: scheme stays in the stem" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DocumentStem.kt",
+     ".removePrefix(\"file:\")",
+     ".removePrefix(\"\")")
+PY
+
+mutation_case "the first extension goes, not the last" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DocumentStem.kt",
+     "val dot = name.lastIndexOf('.')",
+     "val dot = name.indexOf('.')")
+PY
+
+mutation_case "a leading dot is an extension" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DocumentStem.kt",
+     "return if (dot > 0) name.substring(0, dot) else name",
+     "return if (dot >= 0) name.substring(0, dot) else name")
+PY

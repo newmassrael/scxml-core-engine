@@ -50,9 +50,18 @@ if [ "${#CANDIDATES[@]}" -lt 1 ]; then
     echo "error: no sce-static statechart found under $INPUT_ROOT" >&2
     exit 1
 fi
+# Derived, not listed: the stem of every document a machine here declares in
+# `sce:candidates`. Such a document is a child of the machine that invokes it,
+# generated into THAT machine's package (below) because a Go package is a
+# directory and the parent names its children as package-local symbols. Generated
+# again as a machine of its own it would be a second copy nothing runs.
+CANDIDATE_STEMS="$(grep -ho 'sce:candidates="[^"]*"' "$INPUT_ROOT"/*.scxml tests/integration/*.scxml | cut -d'"' -f2 | tr ' ' '\n' | sed -e 's|.*/||' -e 's|\.scxml$||' | sort -u || true)"
 MACHINES=()
 SOURCES=()
 for source in "${CANDIDATES[@]}"; do
+    if grep -qx -- "$(basename "$source" .scxml)" <<< "$CANDIDATE_STEMS"; then
+        continue
+    fi
     status=0
     "$CODEGEN" check -l go --go-module-prefix "$GO_MODULE_PREFIX" "$source" > /dev/null 2>&1 || status=$?
     case "$status" in
@@ -96,6 +105,16 @@ trap 'rm -rf "$TMP"' EXIT
 
 for i in "${!MACHINES[@]}"; do
     "$CODEGEN" generate "${SOURCES[$i]}" -l go -o "$TMP/${MACHINES[$i]}/" --go-module-prefix "$GO_MODULE_PREFIX"
+    # The documents the machine's hybrid invokes declare in `sce:candidates` are
+    # real machines: `--parent-stem` puts each in the parent's package. Read from
+    # the parent's own attributes rather than from what the generator staged
+    # beside its output, which also holds the documents of its inline children.
+    # Generated from the TRACKED document, not from a staged copy, so the
+    # `// From:` line of a committed file does not carry a temporary path.
+    while IFS= read -r base; do
+        [ -n "$base" ] || continue
+        "$CODEGEN" generate "$(dirname "${SOURCES[$i]}")/$base" --as-child --parent-stem "${MACHINES[$i]}" -l go -o "$TMP/${MACHINES[$i]}/" --go-module-prefix "$GO_MODULE_PREFIX"
+    done < <(grep -ho 'sce:candidates="[^"]*"' "${SOURCES[$i]}" | cut -d'"' -f2 | tr ' ' '\n' | sed 's|.*/||' | sort -u)
 done
 # An algorithm's directory is its package's name, which is its file's: the
 # generator names the file for the document, not for the path it was read from.

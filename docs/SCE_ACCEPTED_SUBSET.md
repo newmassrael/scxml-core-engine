@@ -2519,6 +2519,51 @@ child metadata, which a hybrid invoke never populates. The witness is
 two candidates declare different names so a filter by the wrong one
 leaks a name into the child the value chose.
 
+**A hybrid `<invoke>` under `datamodel="sce-static"`** is the same declaration,
+typed. A machine of this model has no script engine, so what the declaration
+promises is held to what a machine can compute from its own fields, and what it
+cannot is refused where it is written (`scxml/static-datamodel-rule`):
+
+- `srcexpr` is a string the machine computes from its fields when the
+  invocation starts. One that cannot be computed — a checked integer
+  operation that overflows — is an attribute that cannot be evaluated:
+  `error.execution`, and nothing starts. A `srcexpr` that is not a string is
+  refused.
+- `sce:candidates` is required. A hybrid invoke that declares none has no
+  finite set of children to lower, and one whose `<content expr>` PRODUCES the
+  child's document has none either; each is refused, and a document that
+  must start a child by its text names it in `src` or in-line.
+- Every candidate is a `datamodel="sce-static"` document this build read,
+  beside the document, because a value has to arrive in a typed variable of
+  it.
+- The value names a candidate by the STEM of the document it names: the text
+  after the last `/` or `\`, without a `file:` scheme, without the extension
+  after its last `.`. The rule is one for every engine and for the build, which
+  reads each declared candidate by it (`tests/document_stem/document_stem.json`
+  is the table each is held to), so `file:x.scxml`, `./x.scxml` and an
+  absolute path name one candidate and a value naming none of them is
+  `error.execution`.
+- The invoke's `<param>`s and `namelist` go to EVERY candidate, and each keeps
+  what it declares a variable for (§scxml-6.4.3), typed against THAT
+  candidate's variable. A candidate that declares none for a name evaluates the
+  argument and leaves it out, and an argument that cannot be evaluated is
+  reported (§scxml-5.7.1) whichever candidate was chosen: an argument is the
+  invoke's, not the child's. A name no candidate declares would be dropped by
+  every one, which is refused as a static child's is.
+
+`static_invoke_hybrid.scxml` and its two candidates (`static_hybrid_first`,
+`static_hybrid_second`) run four phases — a `file:` value, an absolute path, a
+value whose `extra` cannot be held, and a document not declared — and each
+`done.invoke` adds a power of ten, so the sum and the two errors say which
+candidates ended and what was reported. Rust, Go, Kotlin, Python, C++ and C11
+drive it (`a_static_hybrid_invoke_starts_the_candidate_its_value_names` in each),
+and each is held to the stem table.
+
+Not yet: the Interpreter refuses such a document by name
+(`has no ecmascript lowering`), and a machine that holds a hybrid `<invoke>` has
+no save API, because a saved state would have to name the candidate that was
+chosen.
+
 The runtime witness for the selection itself is
 `integration_resources/invoke_candidate_selects_the_child/`, driven on
 all seven channels. Its two candidates announce themselves differently,
@@ -2981,7 +3026,8 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send targetexpr/typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below), a hybrid `<invoke>` (`srcexpr` / `<content expr>`) | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send targetexpr/typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below) | No typed form: each is evaluated as script-engine text by every backend's templates |
+| a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
@@ -3639,8 +3685,10 @@ runs, whose `<param>`s are read from the policy's fields into the request's
 starts — as a host-served `<send>`'s are, which carry the same two renderings.
 `tests/integration/StaticHostParamsAotTest.cpp` drives
 `statechart_static_host_params` and holds the value on the wire and the pair a
-failed computation leaves out. A bytes variable, a hybrid invoke and a mesh one
-are not lowered yet. A call is the
+failed computation leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the
+string its `srcexpr` computes (`SCE::documentStem`) and starts the candidate it
+names, handing it the values it keeps and evaluating the rest. A bytes variable
+and a mesh invoke are not lowered yet. A call is the
 algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
 `Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
 is received as any failed operation is; the machine's header includes the
@@ -3700,8 +3748,10 @@ its `<param>`s (read from the policy's fields into the request's `Params` and
 whose arguments are typed expressions of the machine's variables.
 `statechart_static_host_params`, driven by `host_params_test.go`, holds the value
 on the wire for both the send and the invoke, and the pair a failed computation
-leaves out. Bytes, and a hybrid invoke and a mesh one, are not lowered yet. Each
-variable is
+leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the string its
+`srcexpr` computes (`sce.DocumentStem`) and starts the candidate it names,
+generated into the parent's package, handing it the values it keeps. Bytes, and a
+mesh invoke, are not lowered yet. Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
 (`Count()`), which answers a copy of a list. An enum is a named integer over the
@@ -3794,8 +3844,10 @@ delivery carried one. An `<invoke>` the host runs reads its `<param>`s from the
 policy's attributes when it starts, into the request's `params` (the payload
 rendered as text) and `event_data` (its JSON), a value that failed left out and
 reported (5.7.1); `test_static_host_params.py` drives `statechart_static_host_params`
-and holds the value on the wire. A hybrid and a mesh `<invoke>` and `bytes` are
-not lowered yet. Each variable is an attribute of
+and holds the value on the wire. A hybrid `<invoke>` (§2.13) reads the stem of the
+string its `srcexpr` computes (`document_stem`) and starts the candidate it names,
+a module beside its parent, handing it the values it keeps. A mesh `<invoke>` and
+`bytes` are not lowered yet. Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
@@ -3847,9 +3899,13 @@ literal `<content>` (the text it spells, finished at build time and copied into 
 event's data, as on every other backend), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
-the host serves (`--host-invoker`) with its `<param>`s. A 32-bit real and a list of
+the host serves (`--host-invoker`) with its `<param>`s, and a hybrid `<invoke>`
+whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
+the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
+names as a static child is started — begun, handed the values it keeps, entered,
+driven — evaluating the arguments it keeps no variable for. A 32-bit real and a list of
 them, bytes and a record with a string field or a 32-bit real field, a `<send>` to
-another processor, a hybrid or a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
+another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>` and a
 transition on an event whose payload carries a bytes field are refused

@@ -38,6 +38,7 @@ from .invoke import (
     PendingInvoke,
     ScxmlInvoke,
     create_done_invoke_event_name,
+    document_stem,
 )
 from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
 from .root_start import RootStartRefusal
@@ -98,6 +99,7 @@ __all__ = [
     "StatePolicy",
     "StateTarget",
     "create_done_invoke_event_name",
+    "document_stem",
     "is_invalid_target",
     "is_mesh_target",
     "is_reserved_type",

@@ -64,13 +64,21 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 
 #[=============================================================================[
-sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix])
+sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix] [AS_CHILD])
 
 Generates state machine code from SCXML and adds to target.
 
 Arguments:
   TARGET      - CMake target to add generated code to (required)
   SCXML_FILE  - Path to SCXML file (required)
+  AS_CHILD    - Generate the machine as a child another machine invokes
+                (`sce-codegen generate --as-child`): a class template over the
+                parent's type, which is the form a parent that starts it names.
+                A document a hybrid `<invoke>` declares in `sce:candidates` is
+                one — the parent refers to it as
+                `::SCE::Generated::<name>::<name><SelfType>` — so it is
+                generated this way and not as a machine of its own (optional,
+                cpp only)
   OUTPUT_DIR  - Output directory for generated files (optional, defaults to
                 ${CMAKE_CURRENT_BINARY_DIR}/generated)
   LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
@@ -102,7 +110,7 @@ Example:
   target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;SCRIPT_ENGINE_LANGUAGE;CPP_NAMESPACE_PREFIX" "HOST_PROCESSOR;HOST_INVOKER" ${ARGN})
+    cmake_parse_arguments(SCE "AS_CHILD" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;SCRIPT_ENGINE_LANGUAGE;CPP_NAMESPACE_PREFIX" "HOST_PROCESSOR;HOST_INVOKER" ${ARGN})
 
     # ⚠ The parse prefix is `SCE`, so a keyword may not name an SCE CACHE entry.
     #
@@ -222,6 +230,12 @@ function(sce_add_state_machine)
     # for other languages and when unset, leaving the command byte-identical.
     if(SCE_CPP_NAMESPACE_PREFIX AND SCE_LANGUAGE STREQUAL "cpp")
         list(APPEND _SCE_CODEGEN_CMD --cpp-namespace-prefix "${SCE_CPP_NAMESPACE_PREFIX}")
+    endif()
+    # A machine another one invokes, as the parent names it (a class template
+    # over the parent's type). Appended only when asked, so a call that does
+    # not name it produces the same command it did before this argument existed.
+    if(SCE_AS_CHILD)
+        list(APPEND _SCE_CODEGEN_CMD --as-child)
     endif()
     # Which language the artifact hands its engine. Appended only when asked,
     # so a call that does not name one produces the same command it did before

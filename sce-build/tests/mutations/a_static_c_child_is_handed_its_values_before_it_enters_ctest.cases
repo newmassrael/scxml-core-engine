@@ -33,11 +33,8 @@ mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integra
 
 mutation_case "a child is entered before it is handed its values" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "            {% for param in invoke_info.params if param.native_seed %}\n            {# A string is a buffer",
-     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% for param in invoke_info.params if param.native_seed %}\n            {# A string is a buffer")
-edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "            {% endfor %}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n            {% endif %}",
-     "            {% endfor %}\n            {% endif %}")
+     "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});",
+     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}")
 PY
 
 # ── A value that cannot be computed is left out and reported ───────
@@ -71,8 +68,8 @@ PY
 
 mutation_case "a value that failed is not reported" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "                if (sce_failure_.failed) {\n                    {% if 'error.execution' in model.events %}",
-     "                if (sce_failure_.failed) {\n                    {% if false %}")
+     "                if (sce_failure_.failed) {\n                    {% if 'error.execution' in model.events %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> could not be read\");\n                    {% endif %}\n                } else {",
+     "                if (sce_failure_.failed) {\n                    {% if false %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> could not be read\");\n                    {% endif %}\n                } else {")
 PY
 
 # ── A child begins as `_init` would, up to its entry walk ──────────

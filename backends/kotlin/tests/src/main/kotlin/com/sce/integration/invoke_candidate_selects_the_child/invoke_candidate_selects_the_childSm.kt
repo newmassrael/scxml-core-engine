@@ -456,11 +456,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
-                            val __sceSelected = filePath
-                                .substringAfterLast('/')
-                                .substringAfterLast('\\')
-                                .removePrefix("file:")
-                                .substringBeforeLast('.')
+                            val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
                                 "chosen" -> ChosenStateMachine()
                                 "other" -> OtherStateMachine()

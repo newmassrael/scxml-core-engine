@@ -39,6 +39,7 @@
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
@@ -650,6 +651,44 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStringHandedToAChildIsHeldToTheChild
     }
     EXPECT_EQ(machine.completed(), 111u);
     EXPECT_EQ(machine.errors(), 2u);
+}
+
+// An `<invoke srcexpr>` that declares `sce:candidates` starts the document its
+// value names (§scxml-6.4), by the document's stem, and hands it the invoke's
+// arguments, each to the variable of the same name that candidate declares
+// (§scxml-6.4.3). The fixture runs four phases: `first` (a `file:` value),
+// `second` (an absolute path), `lossy` (an `extra` no 32-bit field can hold:
+// reported, left out, the child still ends) and `missing` (a document the invoke
+// did not declare: reported, nothing starts). Each `done.invoke` adds a power of
+// ten of its own, so 111 says which candidates ended, and the two errors are the
+// `lossy` argument and the `missing` document. A candidate handed what the OTHER
+// declares would never end.
+class AStaticHybridInvokeStartsTheCandidateItsValueNames : public ::testing::Test {
+protected:
+    using Machine = G::static_invoke_hybrid::static_invoke_hybrid;
+
+    void SetUp() override {
+        machine.initialize();
+        for (int i = 0; i < 40; ++i) {
+            machine.tick();
+        }
+    }
+
+    Machine machine;
+};
+
+TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, EachPhaseStartsTheCandidateItsValueNamesAndEnds) {
+    EXPECT_EQ(machine.completed(), 111u);
+    EXPECT_TRUE(machine.isInFinalState()) << "the last phase named no declared candidate, so the run is over";
+}
+
+TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, AnArgumentIsEvaluatedWhateverTheCandidateKeeps) {
+    EXPECT_EQ(machine.errors(), 2u);
+}
+
+TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, AValueNamingNoDeclaredCandidateStartsNothing) {
+    // `done.invoke.missing_run` would add 1000: nothing started to send it.
+    EXPECT_LT(machine.completed(), 1000u);
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

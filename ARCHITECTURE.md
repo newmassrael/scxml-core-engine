@@ -825,6 +825,42 @@ it:
 
 Do NOT write a new delay parser; call the engine's reader above.
 
+### Document Stem (Single Source of Truth)
+
+A hybrid `<invoke srcexpr>` that declares `sce:candidates` starts the document
+its value names (docs/SCE_ACCEPTED_SUBSET.md §2.13), and the value is free to
+spell one document many ways: `file:x.scxml`, `./x.scxml`, an absolute path, a
+Windows one. So the value, and each declared candidate, is reduced to a STEM,
+and the two are compared. One rule reduces both:
+
+| Part | Rule |
+|------|------|
+| directory | the text after the last `/` or `\` |
+| scheme | a leading `file:` is dropped |
+| extension | the text from the last `.` is dropped, unless that `.` opens the name (`.hidden` is a name, not an extension) |
+
+A value that names no document (nothing after the last separator) has the
+empty stem, which no candidate has. The build derives each candidate's stem
+this way, so a value and the candidate it names cannot disagree about the stem —
+as they could when the build read it with the platform's `Path::file_stem`,
+which does not split on `\` on a Unix host and keeps a `file:` scheme in the
+stem.
+
+`tests/document_stem/document_stem.json` holds the cases, and every reader is
+held to it:
+
+| Engine | Reader | Reader of the table |
+|--------|--------|---------------------|
+| codegen (each declared candidate) | `model::document_stem` | `sce-build/tests/a_candidates_stem_is_the_one_every_engine_reads.rs` |
+| C++ (Interpreter and AOT) | `SCE::documentStem` | `tests/common/DocumentStemTest.cpp` |
+| Rust | `helpers::invoke_processing::document_stem` | `backends/rust/runtime/src/helpers/invoke_processing.rs` |
+| Go | `DocumentStem` | `backends/go/runtime/document_stem_test.go` |
+| Python | `sce_runtime.document_stem` | `backends/python/tests/document_stem/test_document_stem.py` |
+| C11 | `sce_document_stem` | `backends/c/tests/unit/document_stem_test.c` |
+| Kotlin | `DocumentStem.of` | `backends/kotlin/tests/.../runtime/DocumentStemTest.kt` |
+
+Do NOT write a new stem reader; call the engine's reader above.
+
 ### External-Event Budget (Single Source of Truth)
 
 A machine can answer an event by sending itself the next one, with no target,

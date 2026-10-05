@@ -113,7 +113,21 @@
             # W3C SCXML 6.4.1: the entry carries the document's id beside the
             # decorated runtime one, and is dispatched on it whole.
             if entry.document_id == {{ inv.invoke_id | py_string_literal }}:
-{% if inv.srcexpr or inv.contentexpr %}
+{% if inv.native_src %}
+{# `datamodel="sce-static"`: the `srcexpr` is a string computed from the machine's
+   fields now (`HybridInvokeInfo::native_src`); no script engine is asked. One
+   that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+                # §scxml-6.4: the `srcexpr` names the document to start.
+                try:
+                    __sce_selected_{{ inv.invoke_id | to_python_const }} = _document_stem({{ inv.native_src }})
+                except sce_algorithm.AlgorithmFailure:
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke srcexpr> could not be evaluated",
+                    )
+                    continue
+{% elif inv.srcexpr or inv.contentexpr %}
                 # W3C SCXML 6.4.3: evaluate the expression at invoke-fire
                 # time and raise `error.execution` when it cannot be
                 # evaluated. The value does not choose the child — that is
@@ -134,11 +148,9 @@
                     # dataclass, so stringifying it yields its repr and the
                     # stem below would be cut out of `ScriptValue(kind=...`.
                     # Measured — the fixture reached `fail` on the first run.
-                    __sce_raw = getattr(__sce_value, "string_val", "") or ""
-                    __sce_tail = __sce_raw.replace("\\", "/").rsplit("/", 1)[-1]
-                    if __sce_tail == __sce_raw:
-                        __sce_tail = __sce_tail.removeprefix("file:")
-                    __sce_selected_{{ inv.invoke_id | to_python_const }} = __sce_tail.rsplit(".", 1)[0]
+                    __sce_selected_{{ inv.invoke_id | to_python_const }} = _document_stem(
+                        getattr(__sce_value, "string_val", "") or ""
+                    )
 {% endif %}
                 except _ScriptError:
                     self._raise_error_execution(
@@ -163,7 +175,7 @@
                 if _child_module_{{ inv.invoke_id | to_python_const }} is None:
                     self._raise_error_execution(
                         engine,
-                        "<invoke srcexpr='{{ inv.srcexpr }}'> evaluated to a document it did not declare",
+                        "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr }}'{% endif %}> evaluated to a document it did not declare",
                     )
                     continue
 {% if inv.namelist or inv.params %}
@@ -237,6 +249,52 @@
 {% endif %}
 {% endfor %}
                 _child_policy.accept_params(_seed)
+{% elif inv.native_src and inv.candidates %}
+{# `datamodel="sce-static"`: a hybrid invoke lowered what it hands each candidate
+   (`InvokeCandidate::seeds` and `unkept`), because which names a child keeps is
+   its own (§scxml-6.4.3). `seeds` are the arguments the candidate declares a
+   variable for, handed through its `accept_params`. `unkept` are the ones it
+   declares none for: each is evaluated and left out, and one that cannot be
+   evaluated costs `error.execution` all the same, because an argument is the
+   invoke's whatever the child keeps. #}
+{% for candidate in inv.candidates %}
+{% if candidate.seeds or candidate.unkept %}
+                if __sce_selected_{{ inv.invoke_id | to_python_const }} == {{ candidate.stem | py_string_literal }}:
+{% if candidate.seeds %}
+                    # W3C SCXML 6.4.1: hand the child its values before it initializes
+                    _seed = _child_module_{{ inv.invoke_id | to_python_const }}.InvokeParams()
+{% for param in candidate.seeds %}
+{% if param.native_seed %}
+                    try:
+                        _seed.v_{{ param.name | to_snake_case }} = {{ param.native_seed }}
+                    except sce_algorithm.AlgorithmFailure:
+                        # §scxml-5.7.1: a value that failed is reported and the
+                        # child still starts, one value short.
+                        self._raise_error_execution(
+                            engine,
+                            {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                        )
+{% endif %}
+{% endfor %}
+                    _child_policy.accept_params(_seed)
+{% endif %}
+{% for param in candidate.unkept %}
+{% if param.native_value and param.native_fails %}
+                    # W3C SCXML 6.4.3: the child declares no `{{ param.name }}`, so the
+                    # Processor MUST NOT add it to its data model — but the
+                    # argument is still the invoke's, evaluated, and a failure
+                    # of it is reported (§scxml-5.7.1).
+                    try:
+                        {{ param.native_value }}
+                    except sce_algorithm.AlgorithmFailure:
+                        self._raise_error_execution(
+                            engine,
+                            {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                        )
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
 {% elif inv.namelist or inv.params %}
                 # W3C SCXML 6.4.1: Stage namelist + `<param>` values for
                 # the child's datamodel. The dict is applied by the

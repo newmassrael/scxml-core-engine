@@ -11574,6 +11574,28 @@
         {
           "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DocumentStem.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DocumentStem.kt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_document_stem",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DocumentStem",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12259,6 +12281,14 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_invoke",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/static_datamodel.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

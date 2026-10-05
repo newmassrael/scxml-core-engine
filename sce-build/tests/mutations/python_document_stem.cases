@@ -1,0 +1,36 @@
+# Mutation cases for the Python reader of the value a hybrid `<invoke srcexpr>`
+# computes (docs/SCE_ACCEPTED_SUBSET.md §2.13): `document_stem` reduces it to the
+# stem of the document it names, and the table
+# `tests/document_stem/document_stem.json` holds every engine's reader, and the
+# build's, to one answer.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/python_document_stem.cases`.
+#
+# Each mutant changes one decision of the rule — which scheme is dropped, which
+# extension goes, what a leading dot is — and leaves a reader that still runs, so
+# only the table can tell it from the right one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests document_stem/
+mutation_runtime_targets backends/python/runtime/sce_runtime/invoke.py
+mutation_oracles backends/python/tests/document_stem/test_document_stem.py tests/document_stem/document_stem.json
+
+mutation_case "a file: scheme stays in the stem" <<'PY'
+edit("backends/python/runtime/sce_runtime/invoke.py",
+     ".rsplit(\"/\", 1)[-1].removeprefix(\"file:\")",
+     ".rsplit(\"/\", 1)[-1]")
+PY
+
+mutation_case "the first extension goes, not the last" <<'PY'
+edit("backends/python/runtime/sce_runtime/invoke.py",
+     "dot = name.rfind(\".\")",
+     "dot = name.find(\".\")")
+PY
+
+mutation_case "a leading dot is an extension" <<'PY'
+edit("backends/python/runtime/sce_runtime/invoke.py",
+     "return name[:dot] if dot > 0 else name",
+     "return name[:dot] if dot >= 0 else name")
+PY

@@ -127,6 +127,11 @@
 {% if model.needs_event_scheduler %}
 #include "common/SendSchedulingHelper.h"
 {% endif %}
+{% if model.invokes | hybrid %}
+// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the one reader of the value a
+// hybrid `<invoke srcexpr>` computes, which names the candidate to start.
+#include "common/DocumentStem.h"
+{% endif %}
 #include "core/TransitionHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/EntryExitHelper.h"

@@ -172,9 +172,16 @@ impl ScriptEngineCauseKind {
             | C::HostInvokeExpr { .. }
             | C::DonedataParam { .. }
             // A `<donedata>`'s inline `<content>` is the text it spells,
-            // finished at build time (`static_lowering`); the model refuses a
-            // `<content expr>`, so this cause is the inline text alone here.
+            // finished at build time (`static_lowering`), and its `<content
+            // expr>` the model admits names a record or one value, lowered to
+            // the pairs or the value read from the machine's fields.
             | C::DonedataContent { .. }
+            // A hybrid `<invoke>` the model admits names its child by a string
+            // over the machine's fields among the documents it declares, and
+            // is lowered to the stem it computes matched against them, each
+            // candidate handed the values it keeps
+            // (`static_lowering::lower_hybrid_invoke`).
+            | C::HybridInvoke { .. }
             // A `<foreach>` the model admits walks a list variable, and is
             // lowered to a native loop over its typed elements.
             | C::ForeachAction { .. }
@@ -194,7 +201,6 @@ impl ScriptEngineCauseKind {
             | C::UnresolvedExternalScript
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
-            | C::HybridInvoke { .. }
             | C::MeshRpcSrcExpr { .. }
             | C::MeshRpcRequestExpr { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,

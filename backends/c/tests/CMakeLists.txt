@@ -2691,7 +2691,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # suite's own, for the reason `static_host_call_arguments` does. Each
     # `<invoke>`'s child is a document the parent's generation writes beside it,
     # which the staging declares from the generator's own plan.
-    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_params static_invoke_string)
+    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_hybrid static_invoke_params static_invoke_string)
         sce_generate_static_integration_c_test(${_STATIC_INVOKE_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_INVOKE_MACHINE}.scxml"
@@ -2704,6 +2704,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     add_executable(sce_c_integration_static_invoke
         integration/test_static_invoke.c
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_hybrid_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_entry_SOURCES}
@@ -3739,6 +3740,27 @@ set_target_properties(sce_c_duration_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_duration COMMAND sce_c_duration_unit_test)
 set_tests_properties(c11_unit_duration PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── Document stem unit test ────────────────────────────────────────
+#
+# The runtime's one reader of the value a hybrid `<invoke srcexpr>` computes,
+# measured against tests/document_stem/document_stem.json — the table every
+# engine's reader and the build's read (docs/SCE_ACCEPTED_SUBSET.md §2.13).
+# Header-only code, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_document_stem_unit_test unit/document_stem_test.c)
+target_link_libraries(sce_c_document_stem_unit_test PRIVATE sce_c_runtime)
+target_compile_definitions(sce_c_document_stem_unit_test PRIVATE
+    SCE_DOCUMENT_STEM_TABLE="${CMAKE_SOURCE_DIR}/tests/document_stem/document_stem.json")
+set_target_properties(sce_c_document_stem_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_document_stem COMMAND sce_c_document_stem_unit_test)
+set_tests_properties(c11_unit_document_stem PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

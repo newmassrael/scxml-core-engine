@@ -145,18 +145,24 @@
    macrostep's end — and the child takes them through its `acceptParams`.
 
    A value that cannot be computed costs `error.execution` and that one value
-   (W3C SCXML 5.7.1): the child still starts, one value short. #}
-{% macro seed_static_child(inv, child, model, machine_name, indent) %}
+   (W3C SCXML 5.7.1): the child still starts, one value short.
+
+   `seeds` are the arguments the child declares a variable for. `unkept` are the
+   ones it declares none for, which a hybrid invoke has because it hands every
+   candidate the same arguments: each is evaluated and left out (W3C SCXML
+   6.4.3), and one that cannot be evaluated costs `error.execution` all the
+   same, because an argument is the invoke's whatever the child keeps. #}
+{% macro seed_static_child(child_class, seeds, unkept, child, model, machine_name, indent) %}
 {% set ns = namespace(any=false) %}
-{% for param in inv.params %}
+{% for param in seeds %}
 {% if param.native_seed %}
 {% set ns.any = true %}
 {% endif %}
 {% endfor %}
 {% if ns.any %}
 {{ indent }}// W3C SCXML 6.4.1: hand the child the values this invoke names
-{{ indent }}val childSeed = {{ inv.child_class }}StateMachine.InvokeParams()
-{% for param in inv.params %}
+{{ indent }}val childSeed = {{ child_class }}StateMachine.InvokeParams()
+{% for param in seeds %}
 {% if param.native_seed and param.native_fails %}
 {{ indent }}try {
 {{ indent }}    childSeed.{{ param.name | to_camel_case }} = {{ param.native_seed }}
@@ -172,4 +178,18 @@
 {% endfor %}
 {{ indent }}{{ child }}.acceptParams(childSeed)
 {% endif %}
+{% for param in unkept %}
+{% if param.native_value and param.native_fails %}
+{{ indent }}// W3C SCXML 6.4.3: the child declares no `{{ param.name | escape_kotlin }}`, so the Processor MUST NOT
+{{ indent }}// add it to its data model — but the argument is still the invoke's,
+{{ indent }}// evaluated, and a failure of it is reported (W3C SCXML 5.7.1).
+{{ indent }}try {
+{{ indent }}    {{ param.native_value }}
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{% endif %}
+{{ indent }}}
+{% endif %}
+{% endfor %}
 {% endmacro %}

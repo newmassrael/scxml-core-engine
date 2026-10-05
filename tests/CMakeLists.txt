@@ -402,7 +402,7 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_payload static_enum static_list static_foreach static_block_ends_list static_record_fields static_record_list static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_idlocation static_send_namelist static_send_params static_string_capacity static_real static_record_real static_payload_enum static_payload_relay static_whole_payload static_wire_enum)
+foreach(_STATIC_CPP_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_payload static_enum static_list static_foreach static_block_ends_list static_record_fields static_record_list static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke_hybrid static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_idlocation static_send_namelist static_send_params static_string_capacity static_real static_record_real static_payload_enum static_payload_relay static_whole_payload static_wire_enum)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
@@ -446,6 +446,17 @@ sce_add_state_machine(
     HOST_PROCESSOR x-sce-host
     HOST_INVOKER x-sce-host
 )
+
+# The documents `static_invoke_hybrid` declares in `sce:candidates`. A parent
+# names a child it starts as a class template over its own type, so each is
+# generated as a child and not as a machine of its own.
+foreach(_STATIC_CPP_CANDIDATE static_hybrid_first static_hybrid_second)
+    sce_add_state_machine(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_CANDIDATE}.scxml
+        AS_CHILD
+    )
+endforeach()
 
 add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_cpp_test)
 
@@ -520,6 +531,41 @@ target_compile_definitions(duration_test
 apply_sce_test_policies(duration_test)
 
 add_test(NAME Durations COMMAND duration_test)
+
+# ============================================================================
+# One document stem (docs/SCE_ACCEPTED_SUBSET.md §2.13)
+#
+# SCE::documentStem — the one reader of the value a hybrid `<invoke srcexpr>`
+# computes, for the Interpreter and for every generated C++ machine — measured
+# against tests/document_stem/document_stem.json, the table every engine's
+# reader and the build's read.
+# ============================================================================
+add_executable(document_stem_test
+    common/DocumentStemTest.cpp
+)
+
+target_include_directories(document_stem_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(document_stem_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(document_stem_test
+    PRIVATE
+        SCE_DOCUMENT_STEM_TABLE="${CMAKE_SOURCE_DIR}/tests/document_stem/document_stem.json"
+)
+
+apply_sce_test_policies(document_stem_test)
+
+add_test(NAME DocumentStem COMMAND document_stem_test)
 
 # ============================================================================
 # Which <send target> values name a Mesh peer: SendHelper::isMeshTarget held

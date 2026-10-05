@@ -1,0 +1,36 @@
+# Mutation cases for the C++ reader of the value a hybrid `<invoke srcexpr>`
+# computes (docs/SCE_ACCEPTED_SUBSET.md §2.13): `SCE::documentStem` reduces it to
+# the stem of the document it names, and the table
+# `tests/document_stem/document_stem.json` holds every engine's reader, and the
+# build's, to one answer.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/cpp_document_stem_ctest.cases`.
+#
+# Each mutant changes one decision of the rule — which scheme is dropped, which
+# extension goes, what a leading dot is — and leaves a reader that still
+# compiles, so only the table can tell it from the right one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^DocumentStem$'
+mutation_targets sce/include/common/DocumentStem.h
+mutation_oracles tests/common/DocumentStemTest.cpp tests/document_stem/document_stem.json
+
+mutation_case "a file: scheme stays in the stem" <<'PY'
+edit("sce/include/common/DocumentStem.h",
+     "    if (name.substr(0, kFileScheme.size()) == kFileScheme) {",
+     "    if (false && name.substr(0, kFileScheme.size()) == kFileScheme) {")
+PY
+
+mutation_case "the first extension goes, not the last" <<'PY'
+edit("sce/include/common/DocumentStem.h",
+     "    const auto dot = name.find_last_of('.');",
+     "    const auto dot = name.find_first_of('.');")
+PY
+
+mutation_case "a leading dot is an extension" <<'PY'
+edit("sce/include/common/DocumentStem.h",
+     "    if (dot != std::string_view::npos && dot > 0) {",
+     "    if (dot != std::string_view::npos) {")
+PY

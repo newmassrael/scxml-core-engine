@@ -2064,27 +2064,46 @@ pub struct ScxmlInvokeInfo {
     pub remote_mesh_transport: Option<String>,
 }
 
+/// §scxml-6.4.1: what an `<invoke>` hands its child — each `<param>` of `base`,
+/// then each name of its `namelist` as the `<param name="x" expr="x"/>` it
+/// abbreviates. One list, so the judge and the lowering of a static invoke read
+/// the same arguments in the same order, whichever way the child is named. A
+/// `namelist` name carries the `<invoke>`'s own position, which is the only one
+/// the model records for it.
+fn invoke_arguments(base: &InvokeBase, namelist: &str) -> Vec<Param> {
+    base.params
+        .iter()
+        .cloned()
+        .chain(namelist_params(namelist, base.source_location.as_ref()))
+        .collect()
+}
+
+/// The `<param name="x" expr="x"/>` each name of `namelist` abbreviates
+/// (§scxml-6.4.1), placed at `at`, the `<invoke>`'s own position.
+fn namelist_params<'a>(
+    namelist: &'a str,
+    at: Option<&'a SourceLocation>,
+) -> impl Iterator<Item = Param> + 'a {
+    namelist.split_whitespace().map(move |name| Param {
+        name: name.to_string(),
+        expr: name.to_string(),
+        source_location: at.cloned(),
+        ..Param::default()
+    })
+}
+
 impl ScxmlInvokeInfo {
-    /// §scxml-6.4.1: what this invoke hands its child — each `<param>`, then
-    /// each `namelist` name as the `<param name="x" expr="x"/>` it abbreviates.
-    /// One list, so the judge and the lowering of a static invoke read the
-    /// same arguments in the same order. A `namelist` name carries the
-    /// `<invoke>`'s own position, which is the only one the model records for
-    /// it.
+    /// What this invoke hands its child ([`invoke_arguments`]).
     pub fn arguments(&self) -> Vec<Param> {
-        let at = self.common.base.source_location.clone();
-        self.common
-            .base
-            .params
-            .iter()
-            .cloned()
-            .chain(self.namelist.split_whitespace().map(|name| Param {
-                name: name.to_string(),
-                expr: name.to_string(),
-                source_location: at.clone(),
-                ..Param::default()
-            }))
-            .collect()
+        invoke_arguments(&self.common.base, &self.namelist)
+    }
+}
+
+impl HybridInvokeInfo {
+    /// What this invoke hands the child its value names ([`invoke_arguments`]):
+    /// how the child was named does not change what its arguments are.
+    pub fn arguments(&self) -> Vec<Param> {
+        invoke_arguments(&self.common.base, &self.namelist)
     }
 }
 
@@ -2093,19 +2112,13 @@ impl UnsupportedInvokeInfo {
     /// `<param name="x" expr="x"/>`s written short — the host receives the pairs
     /// beside the `<param>`s — so each name is appended to the params, in the
     /// order [`ScxmlInvokeInfo::arguments`] gives a child session, and the
-    /// `namelist` itself is cleared. A name carries the `<invoke>`'s own
-    /// position, which is the only one the model records for it.
+    /// `namelist` itself is cleared.
     pub fn fold_namelist_into_params(&mut self) {
-        let at = self.base.source_location.clone();
         let names = std::mem::take(&mut self.namelist);
+        let at = self.base.source_location.clone();
         self.base
             .params
-            .extend(names.split_whitespace().map(|name| Param {
-                name: name.to_string(),
-                expr: name.to_string(),
-                source_location: at.clone(),
-                ..Param::default()
-            }));
+            .extend(namelist_params(&names, at.as_ref()));
     }
 }
 
@@ -2157,6 +2170,23 @@ pub struct HybridInvokeInfo {
     /// child was named does not change what its arguments are, so a hybrid
     /// invoke validates and passes it exactly as a static one does.
     pub namelist: String,
+    /// Codegen-internal: the `srcexpr` of a hybrid invoke in a `sce-static`
+    /// document, as an owned string expression in the backend's own language,
+    /// read from the machine's fields when the invocation starts — the value
+    /// whose document stem names the candidate to start. Empty for an invoke of
+    /// a document under another data model, which a script engine evaluates.
+    /// [`Self::srcexpr`] is cleared once it is set, so no template evaluates the
+    /// attribute a second time. Transient and outside the AST contract, as
+    /// [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_src: String,
+    /// Codegen-internal: whether [`Self::native_src`] can fail — a checked
+    /// integer operation in the expression. A failure is an attribute that
+    /// cannot be evaluated: `error.execution` is raised and nothing starts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_src_fails: bool,
 }
 
 impl HybridInvokeInfo {
@@ -2219,14 +2249,94 @@ pub struct InvokeCandidate {
     /// `<param>` or `namelist` item may add to ITS data model and no other.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
+    /// §scxml-6.4.1: the candidate's own top-level `<data>`, as declared, when
+    /// it is a `datamodel="sce-static"` document this build could read; `None`
+    /// for one under another data model or one that could not be read. A static
+    /// parent holds each argument it hands the candidate to one of these, so a
+    /// value is typed against the variable it lands in
+    /// ([`InvokeSessionCommon::child_static_variables`], per candidate). Not part
+    /// of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_static_variables: Option<Vec<Variable>>,
+    /// Codegen-internal: the candidate is a `datamodel="sce-static"` document
+    /// this build read — [`InvokeSessionCommon::child_is_static`], per
+    /// candidate. A backend whose child is a value the parent holds, with no
+    /// constructor to give it the invoke's arguments, starts such a child in two
+    /// steps and hands the values over between them (C11). Outside the IR
+    /// contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_is_static: bool,
+    /// Codegen-internal: the candidate may address its parent —
+    /// [`InvokeSessionCommon::child_has_send_to_parent`], per candidate. Gates
+    /// the parent routing a backend stamps on a child it starts. Outside the IR
+    /// contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_has_send_to_parent: bool,
+    /// Codegen-internal: the candidate arms delayed sends, so it has a scheduler
+    /// and a `_tick` entry point —
+    /// [`InvokeSessionCommon::child_needs_event_scheduler`], per candidate.
+    /// Outside the IR contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_needs_event_scheduler: bool,
+    /// Codegen-internal: the arguments the invoke hands THIS candidate, each
+    /// lowered to a value of the type of the candidate's variable of the same
+    /// name ([`Param::native_seed`]) — those the candidate declares, which is
+    /// all it keeps (§scxml-6.4.3). Set by [`crate::forge::static_lowering`],
+    /// outside the AST contract, but read by the templates through the
+    /// serialized model as [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub seeds: Vec<Param>,
+    /// Codegen-internal: the arguments this candidate declares no variable for,
+    /// lowered to a value ([`Param::native_value`]) that is evaluated and left
+    /// out: an argument is evaluated whatever the child keeps, and one that
+    /// cannot be is reported (§scxml-6.4.3, §scxml-5.7.1). Set by
+    /// [`crate::forge::static_lowering`] and read by the templates through the
+    /// serialized model, as [`Self::seeds`] is; outside the AST contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub unkept: Vec<Param>,
+}
+
+/// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a path
+/// or a computed value names — what a hybrid `<invoke>`'s evaluated `srcexpr`
+/// is matched against the declared `sce:candidates` by.
+///
+/// An expression is free to compute `file:x.scxml`, `./x.scxml`, an absolute
+/// path or a Windows one for the same document, so the text is reduced to what
+/// the build names the generated child by: after the last `/` or `\`, without
+/// a `file:` scheme, without the extension that follows its last `.`. A `.`
+/// that opens the name is a name, not an extension.
+///
+/// ⚠ One rule, in seven places: this function, and the `DocumentStem` of each
+/// of the six generated runtimes, are held to the one table
+/// `tests/document_stem/document_stem.json`. The build reads each declared
+/// candidate by it ([`InvokeCandidate::from_path`]) and a runtime reads the
+/// value by it, so the two cannot disagree about the stem of one document — as
+/// they could when this was `Path::file_stem`, which does not split on `\` on
+/// a Unix build and keeps a `file:` scheme in the stem.
+pub fn document_stem(value: &str) -> &str {
+    let name = value
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(value)
+        .trim_start_matches("file:");
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    }
 }
 
 impl InvokeCandidate {
     /// Derive a candidate from one entry of `sce:candidates`.
     ///
-    /// `None` when the entry names no document (`""`, `"."`, a bare
-    /// separator). The caller words the refusal, because what it can say
-    /// about a bad entry differs by where the entry came from.
+    /// `None` when the entry names no document (`""`, `"."`, `".."`, a bare
+    /// separator, a path ending in one). The caller words the refusal, because
+    /// what it can say about a bad entry differs by where the entry came from.
     ///
     /// ⚠ Every producer of a candidate comes through here. The stem is an
     /// identity two readers have to agree on — the parser reading
@@ -2234,11 +2344,8 @@ impl InvokeCandidate {
     /// from rendered text — and a second derivation is exactly how they
     /// would come to disagree about which document a value names.
     pub fn from_path(path: &str) -> Option<Self> {
-        let stem = std::path::Path::new(path)
-            .file_stem()?
-            .to_str()?
-            .to_string();
-        if stem.is_empty() {
+        let stem = document_stem(path).to_string();
+        if stem.is_empty() || stem.chars().all(|c| c == '.') {
             return None;
         }
         Some(Self {

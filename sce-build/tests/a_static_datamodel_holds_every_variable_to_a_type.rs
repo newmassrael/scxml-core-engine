@@ -1304,6 +1304,202 @@ fn a_param_is_still_given_to_a_child_under_ecmascript() {
     assert!(ok, "ecmascript hands a param to its child:\n{out}");
 }
 
+// ── A hybrid <invoke> starts the candidate its srcexpr names ────────────
+//
+// An `<invoke srcexpr>` names its child when it starts. Under `sce-static`
+// that child is one of the documents `sce:candidates` declares — the value
+// names one by its document stem, and the build has generated each — so a
+// document that does not declare any, or that PRODUCES the child's text with a
+// `<content expr>`, has no finite set of children to lower and is refused where
+// it is written. The invoke's arguments are the same whichever child is
+// chosen, and what each candidate keeps of them is its own (W3C SCXML 6.4.3):
+// a name it declares is typed against that variable, and a name no candidate
+// declares would be dropped by every one.
+
+/// A candidate declaring `start: uint32` and `ready: bool`.
+const HYBRID_FIRST: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="busy" datamodel="sce-static" name="first">
+  <datamodel>
+    <data id="start" sce:type="uint32" expr="0"/>
+    <data id="ready" sce:type="bool" expr="false"/>
+  </datamodel>
+  <state id="busy"><transition event="finish" target="end"/></state>
+  <final id="end"/>
+</scxml>
+"##;
+
+/// A candidate declaring `start: uint32` and nothing else.
+const HYBRID_SECOND: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="busy" datamodel="sce-static" name="second">
+  <datamodel>
+    <data id="start" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="busy"><transition event="finish" target="end"/></state>
+  <final id="end"/>
+</scxml>
+"##;
+
+/// The `<invoke>` attributes of a hybrid invoke of the two candidates above.
+const HYBRID_ATTRS: &str = r#"srcexpr="pick" sce:candidates="first.scxml second.scxml""#;
+
+fn hybrid_siblings() -> [(&'static str, &'static str); 2] {
+    [
+        ("first.scxml", HYBRID_FIRST),
+        ("second.scxml", HYBRID_SECOND),
+    ]
+}
+
+/// A `sce-static` parent holding `pick: string` (line 5), `count: uint32` and
+/// `ready: bool`, whose first state opens on line 9 and hybrid-invokes with
+/// `invoke_attrs` on line 10, so a child written on its own line is on line 11.
+fn hybrid_invoking(invoke_attrs: &str, params: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="32" expr="'first.scxml'"/>
+    <data id="count" sce:type="uint32" expr="0"/>
+    <data id="ready" sce:type="bool" expr="false"/>
+  </datamodel>
+  <state id="s">
+    <invoke type="scxml" id="child" {invoke_attrs}>
+      {params}
+    </invoke>
+    <transition event="done.invoke.child" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
+#[test]
+fn a_hybrid_invoke_among_declared_static_candidates_is_accepted() {
+    // `start` is declared by both candidates and `ready` by one: each keeps the
+    // names it declares and leaves out the rest (W3C SCXML 6.4.3).
+    let document = hybrid_invoking(
+        r#"srcexpr="pick" namelist="ready" sce:candidates="first.scxml second.scxml""#,
+        r#"<param name="start" expr="count + 1"/>"#,
+    );
+    for args in [&["check"][..], &["check", "-l", "rust"][..]] {
+        let (ok, out) = run_beside(args, &document, &hybrid_siblings());
+        assert!(ok, "{args:?}: both candidates are static documents:\n{out}");
+    }
+}
+
+#[test]
+fn a_hybrid_invoke_that_declares_no_candidate_is_refused_on_its_srcexpr() {
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking(r#"srcexpr="pick""#, ""),
+        &hybrid_siblings(),
+    );
+    assert!(!ok, "there is no child to start:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+    assert!(
+        out.contains("sce:candidates"),
+        "it says what to write:\n{out}"
+    );
+}
+
+#[test]
+fn a_hybrid_invoke_that_produces_its_child_is_refused_on_its_content() {
+    // `sce:candidates` beside a `contentexpr` is refused by the parser, before
+    // this model is asked (`validation/incompatible-attributes`), so what
+    // reaches it is a `contentexpr` that declares no set at all.
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking("", r#"<content expr="pick"/>"#),
+        &hybrid_siblings(),
+    );
+    assert!(
+        !ok,
+        "a produced document has no finite set to lower:\n{out}"
+    );
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
+    assert!(
+        out.contains("no finite set of documents"),
+        "it says why:\n{out}"
+    );
+}
+
+#[test]
+fn a_candidate_under_another_data_model_is_refused_on_the_invoke() {
+    let ecmascript = HYBRID_FIRST
+        .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
+        .replace(r#" sce:type="uint32""#, "")
+        .replace(r#" sce:type="bool""#, "");
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking(HYBRID_ATTRS, ""),
+        &[
+            ("first.scxml", &ecmascript),
+            ("second.scxml", HYBRID_SECOND),
+        ],
+    );
+    assert!(!ok, "a value has no typed variable to arrive in:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 10);
+    assert!(
+        out.contains("first.scxml"),
+        "it names the candidate:\n{out}"
+    );
+}
+
+#[test]
+fn a_name_no_candidate_declares_is_refused_on_its_param() {
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking(HYBRID_ATTRS, r#"<param name="other" expr="count"/>"#),
+        &hybrid_siblings(),
+    );
+    assert!(!ok, "every candidate would drop it:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
+    assert!(out.contains("no candidate declares"), "it says why:\n{out}");
+}
+
+#[test]
+fn a_value_of_another_type_than_a_candidates_variable_is_refused() {
+    // Held to the variable as an `<assign>` to it would be: a bool does not
+    // land in a `uint32`, even though the OTHER candidate would take it.
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking(HYBRID_ATTRS, r#"<param name="start" expr="ready"/>"#),
+        &hybrid_siblings(),
+    );
+    assert!(!ok, "a bool is not a uint32:\n{out}");
+    assert!(out.contains("ready"), "it names what was written:\n{out}");
+}
+
+#[test]
+fn a_srcexpr_that_is_not_a_string_is_refused() {
+    let (ok, out) = run_beside(
+        &["check"],
+        &hybrid_invoking(
+            r#"srcexpr="count" sce:candidates="first.scxml second.scxml""#,
+            "",
+        ),
+        &hybrid_siblings(),
+    );
+    assert!(!ok, "a number names no document:\n{out}");
+    assert!(out.contains("count"), "it names what was written:\n{out}");
+}
+
+#[test]
+fn a_hybrid_invoke_is_still_given_its_candidates_under_ecmascript() {
+    // The refusals above are of this data model's having no typed place for a
+    // value and no finite set of documents, not of `sce:candidates`.
+    let document = hybrid_invoking(HYBRID_ATTRS, r#"<param name="start" expr="count"/>"#)
+        .replace(r#"datamodel="sce-static""#, r#"datamodel="ecmascript""#)
+        .replace(r#" sce:type="uint32""#, "")
+        .replace(r#" sce:type="bool""#, "")
+        .replace(r#" sce:type="string" sce:capacity="32""#, "");
+    let (ok, out) = run_beside(&["check"], &document, &hybrid_siblings());
+    assert!(ok, "ecmascript starts a candidate by its value:\n{out}");
+}
+
 // ── A <finalize> is run by no machine of this data model ────────────────
 //
 // The model keeps an `<invoke>`'s `<finalize>` as script text (the parser
@@ -4340,7 +4536,9 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
 ///
 /// A directory the script commits holds a machine (`<m>_sm.go`, with one
 /// `<m>__sce_synth_invoke__<id>_sm.go` beside it for each child an `<invoke>`
-/// declares in place) or an imported algorithm's package (`<m>.go`). Every
+/// declares in place, and one `<stem>_sm.go` for each document a hybrid
+/// `<invoke>` declares in `sce:candidates`) or an imported algorithm's package
+/// (`<m>.go`). Every
 /// `*_sm.go` is a target, the children included: a child is generated from the
 /// same templates as its parent, and one the casefile left out is one the round
 /// would regenerate and never restore. An algorithm's package is not: its

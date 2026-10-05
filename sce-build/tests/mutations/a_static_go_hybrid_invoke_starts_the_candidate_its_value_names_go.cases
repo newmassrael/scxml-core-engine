@@ -1,0 +1,64 @@
+# Mutation cases for the hybrid `<invoke>` of a `datamodel="sce-static"` machine
+# generated as Go (docs/SCE_ACCEPTED_SUBSET.md §2.13): an `<invoke srcexpr>`
+# that declares `sce:candidates` starts the document its value names, by the
+# document's stem (W3C SCXML 6.4), and hands it the invoke's arguments, each to
+# the variable of the same name that candidate declares (W3C SCXML 6.4.3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_hybrid_invoke_starts_the_candidate_its_value_names_go.cases`.
+#
+# `static_invoke_hybrid.scxml` runs four phases and each `done.invoke` adds a power
+# of ten, so the sum 111 and the two errors say WHICH candidates ended and which
+# arguments and documents were reported. The mutants below each take one decision
+# away and leave a machine that still compiles:
+#
+#   the value is compared whole, so `file:x.scxml` names no candidate;
+#   no candidate is handed a value, so none ends;
+#   an argument a candidate keeps no variable for is not evaluated, so the
+#     `extra` that cannot be held is not reported;
+#   a document the invoke did not declare is not reported.
+#
+# The templates reach the tests only through the committed tree the regeneration
+# writes, so both halves are declared: the generated file is compiled into the
+# tests, and the command is what carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets tools/codegen/templates/go/invoke_methods.go.jinja2
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/a_static_hybrid_invoke_starts_the_candidate_its_value_names_test.go sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
+
+# ── The value names a candidate by its document stem ────────────────
+
+mutation_case "the value is compared whole, not by the stem of the document it names" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "\t\t\t__sceSelected = sce.DocumentStem({{ invoke_info.native_src }})",
+     "\t\t\t__sceSelected = {{ invoke_info.native_src }}")
+PY
+
+# ── A candidate is handed the values it keeps ───────────────────────
+
+mutation_case "a candidate is handed none of the values" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "{% elif child.seeds or child.unkept %}",
+     "{% elif false and (child.seeds or child.unkept) %}")
+PY
+
+# ── An argument is evaluated whatever the candidate keeps ───────────
+
+mutation_case "an argument the candidate keeps no variable for is not evaluated" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "{{ seed_static_child(child.stem, child.seeds, child.unkept, model, machine_name) }}",
+     "{{ seed_static_child(child.stem, child.seeds, [], model, machine_name) }}")
+PY
+
+# ── A document the invoke did not declare starts nothing ────────────
+
+mutation_case "a document the invoke did not declare is not reported" <<'PY'
+edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
+     "\t\t\tdefault:\n{% if 'error.execution' in model.events %}\n\t\t\t\tengine.Raise(",
+     "\t\t\tdefault:\n{% if false %}\n\t\t\t\tengine.Raise(")
+PY

@@ -241,3 +241,22 @@ ERROR_INVOKE_EVENT = "error.invoke"
 def create_done_invoke_event_name(invoke_id: str) -> str:
     """W3C SCXML 6.3.1 — `done.invoke.<id>` event name."""
     return f"{DONE_INVOKE_PREFIX}{invoke_id}"
+
+
+def document_stem(value: str) -> str:
+    """The stem of the document a hybrid `<invoke>`'s evaluated `srcexpr` names —
+    what the value is matched against the declared `sce:candidates` by
+    (W3C SCXML 6.4, SCE_ACCEPTED_SUBSET.md §2.13). Port of Rust `document_stem`.
+
+    An expression is free to compute `file:x.scxml`, `./x.scxml`, an absolute
+    path or a Windows one for the same document, so the value is reduced to what
+    the build named the generated child by: the last path segment, without a
+    `file:` scheme and without its extension. A leading dot is a name, not an
+    extension, as the build reads it when it derives the candidate's stem.
+
+    `tests/document_stem/document_stem.json` is the one table every engine's
+    reader and the build's are measured against.
+    """
+    name = value.replace("\\", "/").rsplit("/", 1)[-1].removeprefix("file:")
+    dot = name.rfind(".")
+    return name[:dot] if dot > 0 else name

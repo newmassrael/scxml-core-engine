@@ -656,11 +656,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
-                            val __sceSelected = filePath
-                                .substringAfterLast('/')
-                                .substringAfterLast('\\')
-                                .removePrefix("file:")
-                                .substringBeforeLast('.')
+                            val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
                                 "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                                 "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
@@ -726,11 +722,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
-                            val __sceSelected = filePath
-                                .substringAfterLast('/')
-                                .substringAfterLast('\\')
-                                .removePrefix("file:")
-                                .substringBeforeLast('.')
+                            val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
                                 "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                                 "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
@@ -819,11 +811,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
-                            val __sceSelected = filePath
-                                .substringAfterLast('/')
-                                .substringAfterLast('\\')
-                                .removePrefix("file:")
-                                .substringBeforeLast('.')
+                            val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
                                 "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                                 "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))

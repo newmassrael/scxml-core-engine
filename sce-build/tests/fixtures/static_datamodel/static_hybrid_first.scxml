@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): the first
+  of the two documents `static_invoke_hybrid.scxml` may start. It declares
+  `start` and `enabled`, and ends the moment it holds the two values it is
+  waiting for: 7 and true.
+
+  The invoke hands every candidate the same arguments, and a candidate keeps
+  only the names its own top-level <data> declares (W3C SCXML 6.4.3). This one
+  declares no `extra`, so the `extra` the invoke hands is evaluated and left
+  out; `static_hybrid_second.scxml` is the one that keeps it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_hybrid_first">
+  <datamodel>
+    <data id="start" sce:type="uint32" expr="0"/>
+    <data id="enabled" sce:type="bool" expr="false"/>
+  </datamodel>
+  <state id="waiting">
+    <transition cond="start === 7 &amp;&amp; enabled" target="leaf"/>
+  </state>
+  <final id="leaf"/>
+</scxml>

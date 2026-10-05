@@ -1,0 +1,54 @@
+# Mutation cases for the hybrid `<invoke>` of a `datamodel="sce-static"` machine
+# generated as C11 (docs/SCE_ACCEPTED_SUBSET.md §2.13): an `<invoke srcexpr>`
+# that declares `sce:candidates` starts the document its value names, by the
+# document's stem (W3C SCXML 6.4), and hands it the invoke's arguments, each to
+# the variable of the same name that candidate declares (W3C SCXML 6.4.3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_hybrid_invoke_starts_the_candidate_its_value_names_ctest.cases`.
+#
+# `static_invoke_hybrid.scxml` runs four phases and each `done.invoke` adds a power
+# of ten, so the sum 111 and the two errors say WHICH candidates ended and which
+# arguments were reported. A `sce-static` candidate is begun, handed its values
+# and only then entered, so a mutant that enters it first is one a candidate that
+# ends on what it was handed cannot survive. The mutants below each take one
+# decision away and leave a machine that still compiles:
+#
+#   the value is compared whole, so `file:x.scxml` names no candidate;
+#   no candidate is handed a value, so none ends;
+#   an argument a candidate keeps no variable for is not evaluated, so the
+#     `extra` that cannot be held is not reported.
+#
+# The machines are generated when the tests are built, so there is no committed
+# tree to regenerate: the build is what carries a mutated template into them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_invoke$'
+mutation_targets tools/codegen/templates/c/invoke_methods.jinja2
+mutation_oracles backends/c/tests/integration/test_static_invoke.c sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
+
+# ── The value names a candidate by its document stem ────────────────
+
+mutation_case "the value is compared whole, not by the stem of the document it names" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "                sce_document_stem(__sce_value, __sce_selected_{{ invoke_info.field_suffix }}, sizeof(__sce_selected_{{ invoke_info.field_suffix }}));",
+     "                (void)snprintf(__sce_selected_{{ invoke_info.field_suffix }}, sizeof(__sce_selected_{{ invoke_info.field_suffix }}), \"%s\", __sce_value);")
+PY
+
+# ── A candidate is handed the values it keeps ───────────────────────
+
+mutation_case "a candidate is handed none of the values" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(",
+     "[], candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(")
+PY
+
+# ── An argument is evaluated whatever the candidate keeps ───────────
+
+mutation_case "an argument the candidate keeps no variable for is not evaluated" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(",
+     "candidate.seeds, [], model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(")
+PY

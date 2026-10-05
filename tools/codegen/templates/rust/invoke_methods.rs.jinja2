@@ -188,10 +188,16 @@
 
     A value that cannot be computed costs `error.execution` and that one value
     (§scxml-5.7.1): the child still starts, one value short.
+
+    `seeds` are the arguments the child declares a variable for. `unkept` are
+    the ones it declares none for, which a hybrid invoke has because it hands
+    every candidate the same arguments: each is evaluated and left out
+    (§scxml-6.4.3), and one that cannot be evaluated costs `error.execution`
+    all the same, because an argument is the invoke's whatever the child keeps.
 #}
-{% macro invoke_seed_static_child(invoke_info, model, machine_name) %}
+{% macro seed_static_child(child_name, seeds, unkept, model, machine_name) %}
 {% set ns = namespace(any=false) %}
-{% for param in invoke_info.params %}
+{% for param in seeds %}
 {% if param.native_seed %}
 {% set ns.any = true %}
 {% endif %}
@@ -199,8 +205,8 @@
 {% if ns.any %}
                 // W3C SCXML 6.4.1: hand the child the values this invoke names
                 {
-                    let mut seed = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}InvokeParams::default();
-{% for param in invoke_info.params %}
+                    let mut seed = super::{{ child_name }}_sm::{{ child_name | to_machine_name }}InvokeParams::default();
+{% for param in seeds %}
 {% if param.native_seed and param.native_fails %}
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_seed }}) })() {
                         Ok(value) => seed.{{ param.name | to_snake_case }} = Some(value),
@@ -219,6 +225,23 @@
                     child_policy.accept_params(seed);
                 }
 {% endif %}
+{% for param in unkept %}
+{% if param.native_value and param.native_fails %}
+                // W3C SCXML 6.4.3: the child declares no `{{ param.name | escape_rust }}`, so the Processor
+                // MUST NOT add it to its data model — but the argument is still
+                // the invoke's, evaluated, and a failure of it is reported
+                // (§scxml-5.7.1).
+                if (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_value }}) })().is_err() {
+                    ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+{% endif %}
+                }
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{% macro invoke_seed_static_child(invoke_info, model, machine_name) %}
+{{ seed_static_child(invoke_info.child_name, invoke_info.params, [], model, machine_name) }}
 {% endmacro %}
 {% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
@@ -239,6 +262,9 @@
                 }
 
 {{ invoke_seed_child(invoke_info, child, model, machine_name) }}
+{% if child.seeds or child.unkept %}
+{{ seed_static_child(child.stem, child.seeds, child.unkept, model, machine_name) }}
+{% endif %}
 
                 // W3C SCXML 6.4.1: Track active invoke session
                 self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
@@ -445,7 +471,33 @@
                 // because the evaluation below is a `match` of its own.
                 let mut __sce_selected = String::new();
 {% endif %}
-{% if invoke_info.srcexpr %}
+{% if invoke_info.native_src %}
+{# `datamodel="sce-static"`: the `srcexpr` is a string computed from the
+   machine's fields now (`HybridInvokeInfo::native_src`); no script engine is
+   asked. One that cannot be computed is an attribute that cannot be
+   evaluated, which raises error.execution and starts nothing — the failure
+   a value naming no candidate is, below. #}
+                // §scxml-6.4: the `srcexpr` names the document to start.
+{% if invoke_info.native_src_fails %}
+                let __sce_value = match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+                    Ok({{ invoke_info.native_src }})
+                })() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        ::sce_rust_runtime::sce_log_error!("Hybrid invoke: the srcexpr could not be evaluated");
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                            "<invoke srcexpr> could not be evaluated"));
+{% endif %}
+                        continue;
+                    }
+                };
+{% else %}
+                let __sce_value: String = {{ invoke_info.native_src }};
+{% endif %}
+                __sce_selected = sce_rust_runtime::helpers::invoke_processing::document_stem(&__sce_value).to_string();
+{% elif invoke_info.srcexpr %}
                 // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
@@ -472,16 +524,7 @@
                             sce_rust_runtime::ScriptValue::String(s) => s.clone(),
                             other => format!("{:?}", other),
                         };
-                        let after_dir = raw
-                            .rsplit(['/', '\\'])
-                            .next()
-                            .unwrap_or(&raw)
-                            .trim_start_matches("file:")
-                            .to_string();
-                        __sce_selected = match after_dir.rfind('.') {
-                            Some(dot) => after_dir[..dot].to_string(),
-                            None => after_dir,
-                        };
+                        __sce_selected = sce_rust_runtime::helpers::invoke_processing::document_stem(&raw).to_string();
 {% endif %}
                     }
                 }
@@ -516,7 +559,7 @@
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                        "<invoke srcexpr='{{ invoke_info.srcexpr | escape_rust }}'> evaluated to a document it did not declare"));
+                        "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_rust }}'{% endif %}> evaluated to a document it did not declare"));
 {% endif %}
                     continue;
                 }

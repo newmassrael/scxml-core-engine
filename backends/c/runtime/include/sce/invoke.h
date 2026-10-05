@@ -122,6 +122,45 @@ SCE_C_UNUSED static inline void sce_invoke_format_done_event_name(char *buf, siz
     (void)snprintf(buf, bufsz, "done.invoke.%s", invoke_id != NULL ? invoke_id : "");
 }
 
+/* §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a hybrid
+   `<invoke>`'s evaluated `srcexpr` names — what the value is matched against the
+   declared `sce:candidates` by. Port of Rust `document_stem`.
+
+   An expression is free to compute `file:x.scxml`, `./x.scxml`, an absolute path
+   or a Windows one for the same document, so the value is reduced to what the
+   build named the generated child by: the last path segment, without a `file:`
+   scheme and without its extension. A leading dot is a name, not an extension,
+   as the build reads it when it derives the candidate's stem.
+
+   Written into `out` (`cap` bytes), terminated; a stem longer than `cap - 1`
+   is cut, and a cut stem is no candidate's. `tests/document_stem/document_stem.json`
+   is the one table every engine's reader and the build's are measured against. */
+SCE_C_UNUSED static inline void sce_document_stem(const char *value, char *out, size_t cap) {
+    if (out == NULL || cap == 0u) {
+        return;
+    }
+    out[0] = '\0';
+    if (value == NULL) {
+        return;
+    }
+    const char *name = value;
+    for (const char *p = value; *p != '\0'; ++p) {
+        if (*p == '/' || *p == '\\') {
+            name = p + 1;
+        }
+    }
+    if (strncmp(name, "file:", 5u) == 0) {
+        name += 5;
+    }
+    const char *dot = strrchr(name, '.');
+    size_t len = (dot != NULL && dot > name) ? (size_t)(dot - name) : strlen(name);
+    if (len >= cap) {
+        len = cap - 1u;
+    }
+    memcpy(out, name, len);
+    out[len] = '\0';
+}
+
 #ifdef __cplusplus
 }
 #endif

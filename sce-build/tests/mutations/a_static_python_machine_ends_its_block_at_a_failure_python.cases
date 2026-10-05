@@ -94,8 +94,8 @@ PY
 
 mutation_case "a child is handed none of the values its invoke names" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                _child_policy.accept_params(_seed)\n{% elif inv.namelist or inv.params %}",
-     "                _child_policy.accept_params(_seed.__class__())\n{% elif inv.namelist or inv.params %}")
+     "                _child_policy.accept_params(_seed)\n{% elif inv.native_src and inv.candidates %}",
+     "                _child_policy.accept_params(_seed.__class__())\n{% elif inv.native_src and inv.candidates %}")
 PY
 
 # ── A host call whose argument failed is not made ───────────────────
