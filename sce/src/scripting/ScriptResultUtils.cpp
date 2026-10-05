@@ -23,8 +23,10 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
 
     const auto &value = result.getInternalValue();
 
-    // A scalar is its own text, with no engine: `scalarText` (header-only, so
-    // generated code without a script engine reaches it without this library).
+    // §scxml-B-1 and §scxml-C-1: a scalar is its own text, with no engine.
+    // `scalarText` writes it (header-only, so generated code without a script
+    // engine reaches it without this library), and this function adds only the
+    // engine fallback for what is not a scalar.
     // An integer-valued double used to be cast to `int64_t` here, which is
     // undefined for an infinity and for every finite double above 2^63;
     // `numberText` has no cast.
