@@ -10,9 +10,10 @@
 # field, which does not compile; only C11 refused, from inside its own target.
 # The refusal is now asked once in `lower`, ahead of the target's own `unsupported`,
 # and a target lifts it by answering `lowers_record_string_fields`. The judge
-# (`a_record_with_a_string_field_is_refused_by_name_in_every_language`) reads it for
-# a record variable and for a list of records in all six languages. The mutants take
-# one decision away each:
+# (`a_language_holds_a_record_string_field_or_refuses_it_by_name`) reads, for a
+# record variable and for a list of records, that each language that has not lowered
+# the field refuses it by name and each that has accepts it. The mutants take one
+# decision away each:
 #
 #   the target is not asked, so a record with a string field is let through;
 #   a list of records is not looked into;

@@ -1,0 +1,65 @@
+{
+  "machine": "static_record_string",
+  "about": "A record with a string field bounded by the sce:max-size its schema declares, eight UTF-8 bytes: built whole from its <sce:set>s, written a field at a time from a literal, from a string variable and from a typed event payload. The bound counts UTF-8 bytes, not characters. A value past it fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so the record is left as it was. Expected values are derived from the byte counts (e-acute 2, euro sign 3), not observed from a backend.",
+  "steps": [
+    { "note": "built whole from its <sce:set>s",
+      "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "label": "a" }, "note": "hello", "errors": 0 } } },
+
+    { "note": "eight ASCII bytes fit a bound of eight",
+      "event": "fill", "expect": { "variables": { "last": { "sensor": 1, "label": "abcdefgh" }, "errors": 0 } } },
+
+    { "note": "2 + 3 + 2 = seven bytes in three characters fit",
+      "event": "wide", "expect": { "variables": { "last": { "sensor": 1, "label": "é€é" }, "errors": 0 } } },
+
+    { "note": "2 + 3 + 2 + 2 = nine bytes in four characters do not: the record is left as it was and error.execution is raised",
+      "event": "toowide", "expect": { "variables": { "last": { "sensor": 1, "label": "é€é" }, "errors": 1 } } },
+
+    { "note": "back to one byte",
+      "event": "reset", "expect": { "variables": { "last": { "sensor": 1, "label": "a" }, "errors": 1 } } },
+
+    { "note": "a string variable of five bytes fits the field",
+      "event": "from_note", "expect": { "variables": { "last": { "sensor": 1, "label": "hello" }, "note": "hello", "errors": 1 } } },
+
+    { "note": "the variable holds sixteen bytes, which its own bound admits",
+      "event": "long_note", "expect": { "variables": { "last": { "sensor": 1, "label": "hello" }, "note": "abcdefghijklmnop", "errors": 1 } } },
+
+    { "note": "sixteen bytes do not fit a field of eight: the field is left as it was",
+      "event": "from_note", "expect": { "variables": { "last": { "sensor": 1, "label": "hello" }, "note": "abcdefghijklmnop", "errors": 2 } } },
+
+    { "note": "a field of five bytes into a variable of sixteen",
+      "event": "to_note", "expect": { "variables": { "last": { "sensor": 1, "label": "hello" }, "note": "hello", "errors": 2 } } },
+
+    { "note": "the payload replaces the record field by field",
+      "event": "labelled.taken", "data": { "sensor": 7, "label": "xyz" },
+      "expect": { "variables": { "last": { "sensor": 7, "label": "xyz" }, "errors": 2 } } },
+
+    { "note": "nine bytes do not fit: the label is read first, so the sensor stays 7 as well",
+      "event": "labelled.taken", "data": { "sensor": 9, "label": "123456789" },
+      "expect": { "variables": { "last": { "sensor": 7, "label": "xyz" }, "errors": 3 } } },
+
+    { "note": "eight bytes fit",
+      "event": "labelled.taken", "data": { "sensor": 9, "label": "12345678" },
+      "expect": { "variables": { "last": { "sensor": 9, "label": "12345678" }, "errors": 3 } } },
+
+    { "note": "a list of records holds a copy of the record as it stands, with its text",
+      "event": "keep", "expect": { "variables": { "labels": [ { "sensor": 9, "label": "12345678" } ] } } },
+
+    { "note": "the record changes and the copy in the list does not",
+      "event": "reset", "expect": { "variables": { "last": { "sensor": 9, "label": "a" }, "labels": [ { "sensor": 9, "label": "12345678" } ] } } },
+
+    { "note": "a second copy",
+      "event": "keep", "expect": { "variables": { "labels": [ { "sensor": 9, "label": "12345678" }, { "sensor": 9, "label": "a" } ] } } },
+
+    { "note": "the loop reads the string field of each record it walks: the note is the last one's",
+      "event": "tally", "expect": { "variables": { "note": "a", "errors": 3 } } },
+
+    { "note": "the third copy fills the list",
+      "event": "keep", "expect": { "variables": { "labels": [ { "sensor": 9, "label": "12345678" }, { "sensor": 9, "label": "a" }, { "sensor": 9, "label": "a" } ] } } },
+
+    { "note": "a full list takes no more: the list is left as it was and error.execution is raised",
+      "event": "keep", "expect": { "variables": { "labels": [ { "sensor": 9, "label": "12345678" }, { "sensor": 9, "label": "a" }, { "sensor": 9, "label": "a" } ], "errors": 4 } } },
+
+    { "note": "emptied",
+      "event": "forget", "expect": { "variables": { "labels": [], "errors": 4 } } }
+  ]
+}

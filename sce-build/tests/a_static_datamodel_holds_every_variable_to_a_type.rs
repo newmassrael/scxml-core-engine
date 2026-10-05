@@ -341,25 +341,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             r#"<data id="frame" sce:type="bytes">"#,
         ),
         (
-            "a record with a string field",
-            r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_echo.scxml" as="Echo"/>
-  <datamodel>
-    <data id="heard" sce:type="record:Echo">
-      <sce:set name="total" expr="0"/>
-      <sce:set name="ok" expr="false"/>
-      <sce:set name="tag" expr="''"/>
-    </data>
-  </datamodel>
-  <state id="s"/>
-</scxml>
-"##
-            .to_string(),
-            "record:Echo with the field `tag` of type string",
-        ),
-        (
             "a host-run <invoke>",
             machine(
                 r#"<state id="s">
@@ -437,16 +418,37 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     }
 }
 
-#[test]
-fn a_record_with_a_string_field_is_refused_by_name_in_every_language() {
-    // Measured 2026-10-06: `check` answered ok for Rust, Kotlin, Go, C++ and
-    // Python, and Rust wrote `#[derive(Clone, Copy)]` over a `String` field,
-    // which does not compile (E0204); only C11 refused. A string is bounded
-    // where it is declared and a schema's field has no bound the machine reads
-    // yet, so no language holds the field until one is written.
-    let held_by = |data: &str| {
-        format!(
-            r##"<?xml version="1.0"?>
+/// A record whose schema has a `string` field is held by the languages that have
+/// lowered it (docs/adr/0005, decision 1) and refused by name by the rest, which
+/// lift the refusal one at a time: the third column is the one value a language
+/// changes when it does. Go is checked with a module prefix, which it needs to
+/// write its imports.
+const RECORD_STRING_FIELD: &[(&str, &str, bool)] = &[
+    ("rust", "Rust", true),
+    ("kotlin", "Kotlin", false),
+    ("go", "Go", false),
+    ("cpp", "C++", false),
+    ("python", "Python", false),
+    ("c11", "C11", false),
+];
+
+/// `check -l <lang>` of `document`, with what that language needs to read it.
+fn check_in(lang: &str, document: &str, siblings: &[(&str, &str)]) -> (bool, String) {
+    match lang {
+        "go" => run_beside(
+            &["check", "-l", "go", "--go-module-prefix", "x/y"],
+            document,
+            siblings,
+        ),
+        _ => run_beside(&["check", "-l", lang], document, siblings),
+    }
+}
+
+/// A document that holds `data` (a `<data>` element of a record or a list of
+/// records of `schema_label.scxml`) and does nothing else.
+fn holding_label(data: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static">
   <sce:import kind="event-schema" src="schema_label.scxml" as="Label"/>
@@ -456,12 +458,31 @@ fn a_record_with_a_string_field_is_refused_by_name_in_every_language() {
   <state id="idle"/>
 </scxml>
 "##
-        )
-    };
-    let documents = [
+    )
+}
+
+/// The schema of `holding_label`: a small integer and a string, whose bound is
+/// `max_size` (`sce:max-size="8"`), or none when that is empty.
+fn label_schema(max_size: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_label" sce:event-name="label.taken">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="label" sce:type="string" {max_size} sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##
+    )
+}
+
+/// The two ways a record is declared: a variable built whole, and a list.
+fn labelled_documents() -> [(&'static str, String); 2] {
+    [
         (
             "a record variable",
-            held_by(
+            holding_label(
                 r#"<data id="last" sce:type="record:Label" sce:direction="out">
       <sce:set name="sensor" expr="1"/>
       <sce:set name="label" expr="'a'"/>
@@ -470,30 +491,29 @@ fn a_record_with_a_string_field_is_refused_by_name_in_every_language() {
         ),
         (
             "a list of records",
-            held_by(
+            holding_label(
                 r#"<data id="labels" sce:type="list&lt;record:Label&gt;" sce:capacity="4" sce:direction="out"/>"#,
             ),
         ),
-    ];
-    let schema = r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="schema_label" sce:event-name="label.taken">
-  <datamodel>
-    <data id="sensor" sce:type="uint8" sce:direction="in"/>
-    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"##;
-    let siblings = [("schema_label.scxml", schema)];
-    for (held, document) in &documents {
-        for (lang, name) in [
-            ("rust", "Rust"),
-            ("kotlin", "Kotlin"),
-            ("cpp", "C++"),
-            ("python", "Python"),
-            ("c11", "C11"),
-        ] {
-            let (ok, out) = run_beside(&["check", "-l", lang], document, &siblings);
+    ]
+}
+
+#[test]
+fn a_language_holds_a_record_string_field_or_refuses_it_by_name() {
+    // Measured 2026-10-06, before any language held the field: `check` answered
+    // ok for Rust, Kotlin, Go, C++ and Python, and Rust wrote
+    // `#[derive(Clone, Copy)]` over a `String` field, which does not compile
+    // (E0204); only C11 refused. A refusal is asked once, in `lower`, and a
+    // language that has not lowered the field is refused by name.
+    let schema = label_schema(r#"sce:max-size="8""#);
+    let siblings = [("schema_label.scxml", schema.as_str())];
+    for (held, document) in &labelled_documents() {
+        for (lang, name, holds) in RECORD_STRING_FIELD {
+            let (ok, out) = check_in(lang, document, &siblings);
+            if *holds {
+                assert!(ok, "{lang}, {held}: it lowers the field:\n{out}");
+                continue;
+            }
             assert!(!ok, "{lang}, {held}: no lowering for it yet:\n{out}");
             assert!(
                 out.contains("generate/unsupported-feature")
@@ -502,16 +522,82 @@ fn a_record_with_a_string_field_is_refused_by_name_in_every_language() {
                 "{lang}, {held}: expected the refusal naming {name} and the field:\n{out}"
             );
         }
-        let (ok, out) = run_beside(
-            &["check", "-l", "go", "--go-module-prefix", "x/y"],
-            document,
-            &siblings,
-        );
-        assert!(!ok, "go, {held}: no lowering for it yet:\n{out}");
+    }
+}
+
+#[test]
+fn a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language() {
+    // No default stands in for a bound the author did not write: the machine
+    // would fail a value at run time for a limit nobody declared. The refusal is
+    // the data model's, so it is the same wherever the record would be held.
+    let schema = label_schema("");
+    let siblings = [("schema_label.scxml", schema.as_str())];
+    for (held, document) in &labelled_documents() {
+        for (lang, _, _) in RECORD_STRING_FIELD {
+            let (ok, out) = check_in(lang, document, &siblings);
+            assert!(!ok, "{lang}, {held}: the field has no bound:\n{out}");
+            assert!(
+                out.contains("scxml/static-datamodel-rule")
+                    && out.contains("the field `label` of record:Label is a string")
+                    && out.contains("sce:max-size"),
+                "{lang}, {held}: expected the data model's refusal naming the field:\n{out}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
+    // The machine is built with no error to raise, as for a string variable:
+    // the field starts at a literal of at most the bound's UTF-8 bytes.
+    let schema = label_schema(r#"sce:max-size="8""#);
+    let siblings = [("schema_label.scxml", schema.as_str())];
+    for (what, label, expected) in [
+        ("nine bytes", "'123456789'", "past the sce:max-size of 8"),
+        // Counted in bytes: four characters, nine bytes (2 + 3 + 2 + 2).
+        (
+            "nine bytes in four characters",
+            "'é€éé'",
+            "past the sce:max-size of 8",
+        ),
+        (
+            "a value computed",
+            "'a' + 'b'",
+            "starts at a string literal",
+        ),
+    ] {
+        let document = holding_label(&format!(
+            r#"<data id="last" sce:type="record:Label" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="label" expr="{label}"/>
+    </data>"#
+        ));
+        for (lang, _, _) in RECORD_STRING_FIELD {
+            let (ok, out) = check_in(lang, &document, &siblings);
+            assert!(
+                !ok,
+                "{lang}, {what}: the field starts past its bound:\n{out}"
+            );
+            assert!(
+                out.contains("scxml/static-datamodel-rule") && out.contains(expected),
+                "{lang}, {what}: expected `{expected}`:\n{out}"
+            );
+        }
+    }
+    // Eight bytes in three characters (2 + 3 + 3) fit: the bound counts bytes.
+    let fits = holding_label(
+        r#"<data id="last" sce:type="record:Label" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="label" expr="'é€€'"/>
+    </data>"#,
+    );
+    for (lang, _, holds) in RECORD_STRING_FIELD {
+        let (ok, out) = check_in(lang, &fits, &siblings);
+        // A language that holds the field accepts it; one that does not refuses
+        // the field, never for its length.
         assert!(
-            out.contains("no Go lowering yet")
-                && out.contains("record:Label with the field `label` of type string"),
-            "go, {held}: expected the refusal naming Go and the field:\n{out}"
+            ok == *holds && (ok || !out.contains("past the sce:max-size")),
+            "{lang}: eight bytes fit a bound of eight:\n{out}"
         );
     }
 }

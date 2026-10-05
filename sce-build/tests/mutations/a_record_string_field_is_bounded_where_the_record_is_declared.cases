@@ -1,0 +1,58 @@
+# Mutation cases for "a record's string field is bounded by the `sce:max-size` its
+# schema declares, which is required, and starts at a literal that fits it"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string field"; docs/adr/0005,
+# decision 1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_record_string_field_is_bounded_where_the_record_is_declared.cases`.
+#
+# The data model judges it where the record is declared, for every language alike: a
+# string field the schema does not bound is refused (no default stands in for one),
+# and a field starts at a string literal of at most the bound's UTF-8 bytes — the
+# machine is built with no error to raise, as for a string variable's
+# `sce:capacity`. The judges are `a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language`
+# and `a_record_string_field_starts_at_a_literal_that_fits_its_bound`. The mutants
+# take one decision away each:
+#
+#   a string field with no bound is let through;
+#   a list of records is not asked for the bound;
+#   a literal one byte past the bound is let through;
+#   the bound is counted in characters, not UTF-8 bytes;
+#   a value that is not a literal is let through.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/forge/static_datamodel.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+mutation_case "a string field with no bound is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none()",
+     "matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none() && false")
+PY
+
+mutation_case "a list of records is not asked for the bound" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                judge.schema_enums_imported(var, alias, schema)?;\n                judge.schema_strings_bounded(var, alias, schema)?;",
+     "                judge.schema_enums_imported(var, alias, schema)?;")
+PY
+
+mutation_case "a literal one byte past the bound is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if literal.len() > bound as usize {",
+     "        if literal.len() > bound as usize + 1 {")
+PY
+
+mutation_case "the bound is counted in characters" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if literal.len() > bound as usize {",
+     "        if literal.chars().count() > bound as usize {")
+PY
+
+mutation_case "a value that is not a literal is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            _ => {\n                return Err(self.rule_at(\n                    construct,\n                    &format!(\n                        \"{} starts at a string literal",
+     "            _ if true => return Ok(()),\n            _ => {\n                return Err(self.rule_at(\n                    construct,\n                    &format!(\n                        \"{} starts at a string literal")
+PY

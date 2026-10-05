@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string
+  field"; docs/adr/0005, decision 1): a record's string field holds at most the
+  `sce:max-size` its schema declares, counted in UTF-8 bytes, and holds it on every
+  backend. An assignment past it is skipped and raises error.execution, and ends the
+  block it stands in (§scxml-4.9), as an assignment to a string variable past its
+  `sce:capacity` does — so the record is left as it was wherever the machine runs.
+
+  `last` holds eight bytes at most; `note` is a string variable of sixteen, which is
+  what a value that comes from another place is held to:
+
+      fill        'abcdefgh'  eight bytes: fits
+      wide        'é€é'       2 + 3 + 2 = seven bytes: fits, though it is only three
+                              characters (a count of characters would not tell the
+                              backends apart; a count of bytes does)
+      toowide     'é€éé'      2 + 3 + 2 + 2 = nine bytes: does not fit
+      from_note   a variable of sixteen bytes into a field of eight: fits only while
+                  the variable holds eight or fewer
+
+  The payload is read field by field, the string first, so a label that does not fit
+  leaves the sensor where it was as well: the whole event is refused, which is the
+  answer the Interpreter's lazy reading of a payload gives too.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_record_string">
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
+  <datamodel>
+    <data id="last" sce:type="record:Labelled" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="label" expr="'a'"/>
+    </data>
+    <data id="note" sce:type="string" sce:capacity="16" expr="'hello'" sce:direction="out"/>
+    <data id="labels" sce:type="list&lt;record:Labelled&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fill" type="internal">
+      <assign location="last.label" expr="'abcdefgh'"/>
+    </transition>
+    <transition event="wide" type="internal">
+      <assign location="last.label" expr="'é€é'"/>
+    </transition>
+    <transition event="toowide" type="internal">
+      <assign location="last.label" expr="'é€éé'"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <assign location="last.label" expr="'a'"/>
+    </transition>
+    <transition event="long_note" type="internal">
+      <assign location="note" expr="'abcdefghijklmnop'"/>
+    </transition>
+    <transition event="from_note" type="internal">
+      <assign location="last.label" expr="note"/>
+    </transition>
+    <transition event="to_note" type="internal">
+      <assign location="note" expr="last.label"/>
+    </transition>
+    <transition event="labelled.taken" type="internal">
+      <assign location="last.label" expr="_event.data.label"/>
+      <assign location="last.sensor" expr="_event.data.sensor"/>
+    </transition>
+    <!-- A list of these records holds a copy of the record as it stands, with its
+         text: `keep` appends, `tally` reads the string field of each record the
+         loop walks, and the list is full at three. -->
+    <transition event="keep" type="internal">
+      <sce:append target="labels" expr="last"/>
+    </transition>
+    <transition event="tally" type="internal">
+      <foreach array="labels" item="l">
+        <assign location="note" expr="l.label"/>
+      </foreach>
+    </transition>
+    <transition event="forget" type="internal">
+      <sce:clear target="labels"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

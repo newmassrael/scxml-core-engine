@@ -3605,15 +3605,30 @@ names each enum field's variants as a variable's are.
 model.
 
 **A record's string field.** A record variable (or a list of records) whose
-schema has a `string` field is refused at the `<data>` by every backend, as
-`generate/unsupported-feature` (`record:Label with the field `label` of type
-string has no Rust lowering yet`). Measured 2026-10-06, `check` had answered ok for
-Rust, Kotlin, Go, C++ and Python while Rust wrote a `Copy` record over a `String`
-field, which does not compile (E0204); only C11 refused. The field will be bounded
-by the `sce:max-size` its schema writes — required, no default — and held as a
-string variable's `sce:capacity` is (`docs/adr/0005`, decision 1). Each backend
-lifts the refusal (`StaticTarget::lowers_record_string_fields`) in the commit that
-lowers the field and runs `static_record_string`.
+schema has a `string` field holds it within the `sce:max-size` the schema writes on
+the field (`docs/adr/0005`, decision 1), as a string variable holds its
+`sce:capacity`. The bound is required: a field that declares none is refused where
+the record is declared, as `scxml/static-datamodel-rule`, by every backend, and no
+default stands in for it. The field starts at a string literal of at most that many
+UTF-8 bytes (`<sce:set name="label" expr="'a'"/>`), since the machine is built with
+no error to raise. A value written to it past the bound — an `<assign
+location="last.label">` of a literal, of a string variable or of a payload field —
+fails as any assignment does: nothing is written, `error.execution` is raised and
+the block ends (§scxml-4.9), so the record is left as it was; a saved state that
+claims a longer one is refused when read, naming the field. The bound counts UTF-8
+bytes, not characters. `scenarios/static_record_string.json` holds this on every
+backend that has lowered the field.
+
+A backend that has not lowered the field refuses it where the record is declared, by
+name, as `generate/unsupported-feature` (`record:Label with the field `label` of
+type string has no Kotlin lowering yet`), and lifts the refusal
+(`StaticTarget::lowers_record_string_fields`) in the commit that lowers it and
+replays the scenario. Rust holds it today: the record is a struct that owns a
+`String` and so is `Clone` and not `Copy`, a host reads a published one through a
+borrow, and a copy of one — an append, an assignment from another record — is a
+clone. Measured 2026-10-06, before any backend held the field, `check` had answered
+ok for Rust, Kotlin, Go, C++ and Python while Rust wrote `#[derive(Clone, Copy)]`
+over a `String`, which does not compile (E0204); only C11 refused.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

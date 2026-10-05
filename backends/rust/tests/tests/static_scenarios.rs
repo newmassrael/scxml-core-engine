@@ -89,6 +89,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_real_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
+    StaticRecordStringPersist, StaticRecordStringPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_content_sm::{
     StaticSendContentPersist, StaticSendContentPolicy,
 };
@@ -436,6 +439,17 @@ fn static_record_real32_holds_a_single_field_as_the_single_nearest_the_payload()
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_string_holds_a_string_field_within_the_bound_its_schema_declares() {
+    replay(
+        Engine::new(StaticRecordStringPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json"
         ),
     );
 }

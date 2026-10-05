@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The payload and the record of `static_record_string.scxml`: a small integer and
+  a string of at most eight UTF-8 bytes. `sce:max-size` is the bound a record holds
+  the string within (docs/adr/0005, decision 1); a schema that left it off would be
+  refused where a record of it is declared, since no default stands in for it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_labelled"
+       sce:event-name="labelled.taken">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>

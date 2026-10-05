@@ -174,6 +174,10 @@ pub struct StaticRecordField {
     pub name: String,
     /// The field's `sce:type` spelling (see [`StaticField::saved_type`]).
     pub saved_type: String,
+    /// The most UTF-8 bytes a `string` field holds, which a saved state being
+    /// restored is held to as the machine is (the `sce:max-size` its schema
+    /// declares); `None` for a field that is not a string.
+    pub bound: Option<u32>,
 }
 
 /// An enum type a `sce-static` machine declares, as a saved state writes it:
@@ -465,6 +469,19 @@ pub trait StaticTarget {
     /// The type a host reads a published list of `record` through, when it is
     /// not the list's own type (see [`StaticField::view`]).
     fn record_list_view(&self, record: &str) -> Option<String>;
+    /// The type a host reads a published record variable of the record type `ty`
+    /// through, when it is not the record's own type (see [`StaticField::view`]):
+    /// a record that owns text is lent, not moved out of the machine, as a string
+    /// is. `None` for a record that is plain data and is read by value.
+    fn record_view(&self, _ty: &str, _schema: &EventSchemaModel) -> Option<String> {
+        None
+    }
+    /// A record `value` — a record variable or a loop's record item, named — as
+    /// the copy a list or another variable holds: the name itself for a record
+    /// that is plain data, and a clone of it for one that owns text.
+    fn record_copy(&self, value: &str, _schema: &EventSchemaModel) -> String {
+        value.to_string()
+    }
     /// An empty list.
     fn list_empty(&self) -> String;
     /// How a list of the scalar `elem`, bounded by `capacity`, is declared: its
@@ -1144,7 +1161,8 @@ impl StaticTarget for RustTarget {
         )
     }
     // Plain data by the record rule, so `Copy` — the derive set a plain
-    // event-schema payload takes from the one policy that decides it.
+    // event-schema payload takes from the one policy that decides it — unless
+    // a field is a string, which owns its text and is `Clone` only.
     fn record_def(
         &self,
         ty: &str,
@@ -1152,6 +1170,11 @@ impl StaticTarget for RustTarget {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
+        let derives = if owns_a_string(schema) {
+            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
+        } else {
+            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPlainPayload
+        };
         let fields: String = schema
             .fields
             .iter()
@@ -1165,8 +1188,21 @@ impl StaticTarget for RustTarget {
             .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n{}\n#[allow(non_snake_case)]\npub struct {ty} {{\n{fields}}}",
-            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPlainPayload.derives_attr()
+            derives.derives_attr()
         )
+    }
+    // A record that owns a string is `Clone` only, so a host is lent it and the
+    // snapshot clones it, as it does a string.
+    fn record_view(&self, ty: &str, schema: &EventSchemaModel) -> Option<String> {
+        owns_a_string(schema).then(|| ty.to_string())
+    }
+    // ... and a copy of one is a clone.
+    fn record_copy(&self, value: &str, schema: &EventSchemaModel) -> String {
+        if owns_a_string(schema) {
+            format!("{value}.clone()")
+        } else {
+            value.to_string()
+        }
     }
     // The schema's id as written, as this file's payload structs spell their
     // fields — one file, one spelling of a schema field.
@@ -1220,6 +1256,11 @@ impl StaticTarget for RustTarget {
     // (`document_stem`) and starts the candidate it names, handing it the
     // values it keeps (`seed_static_child`).
     fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
+    // A string field of a record is a `String` the machine bounds by the
+    // `sce:max-size` its schema writes, as it bounds a string variable.
+    fn lowers_record_string_fields(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -1598,7 +1639,9 @@ pub fn lower(
         })
         .collect();
     // The string variables, each with its bound — what an `<assign>` to one is
-    // held to.
+    // held to — and the string fields of the record variables, each under the
+    // place an `<assign>` names it (`last.label`) with the `sce:max-size` its
+    // schema declares (docs/adr/0005, decision 1).
     let string_vars: StringVars = variables
         .iter()
         .filter(|v| {
@@ -1610,6 +1653,19 @@ pub fn lower(
             )
         })
         .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+        .chain(variables.iter().flat_map(|v| {
+            let schema = v
+                .value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+                .and_then(|alias| records.get(alias));
+            schema.into_iter().flat_map(move |schema| {
+                schema.fields.iter().filter_map(move |field| {
+                    matches!(field.sce_type, SceType::String)
+                        .then_some((format!("{}.{}", v.id, field.id), field.max_size?))
+                })
+            })
+        }))
         .collect();
     let rewrites = Rewrites {
         records: record_vars,
@@ -1696,6 +1752,7 @@ pub fn lower(
                 if let Some(element) = target.data_element(&var.id, &init) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
+                let view = target.record_view(&ty, schema);
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -1703,7 +1760,7 @@ pub fn lower(
                     saved_type: ty.clone(),
                     ty,
                     published,
-                    view: None,
+                    view,
                     read: None,
                     bound: None,
                     saved_kind: "record",
@@ -2203,6 +2260,9 @@ impl<'t> TypeDeclarations<'t> {
                             SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                             other => other.as_attr(),
                         },
+                        bound: matches!(f.sce_type, SceType::String)
+                            .then_some(f.max_size)
+                            .flatten(),
                     })
                     .collect(),
             });
@@ -3157,6 +3217,15 @@ fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
             }
             _ => None,
         })
+}
+
+/// Whether a record of `schema` owns text — has a `string` field — which a target
+/// that holds plain data by value must hold otherwise.
+fn owns_a_string(schema: &EventSchemaModel) -> bool {
+    schema
+        .fields
+        .iter()
+        .any(|f| matches!(f.sce_type, SceType::String))
 }
 
 /// The first record variable of `scope` — or list of records — whose schema has a
@@ -5328,6 +5397,14 @@ fn lower_action(
                 Some((alias, schema)) if action.expr.trim() == "_event.data" => {
                     payload_record_value(rewrites.machine, alias, schema, target, &lower)?
                 }
+                // A record taken from another by name is a copy of it.
+                Some((_, schema)) => {
+                    let value = lower(&action.expr, slot)?;
+                    Receiving {
+                        text: target.record_copy(&value.text, schema),
+                        can_fail: value.can_fail,
+                    }
+                }
                 _ => lower(&action.expr, slot)?,
             };
             // A string variable holds at most what it declared, whatever the
@@ -5463,11 +5540,15 @@ fn lower_action(
                     })?;
                     payload_record_value(rewrites.machine, alias, schema, target, &lower)?
                 }
-                crate::forge::model::ListElemType::Record { .. } => {
+                crate::forge::model::ListElemType::Record { alias } => {
                     reads_payload = false;
                     let written = action.expr.trim();
+                    let named = renames.get(written).copied().unwrap_or(written);
                     Receiving {
-                        text: renames.get(written).copied().unwrap_or(written).to_string(),
+                        text: match rewrites.schemas.get(alias) {
+                            Some(schema) => target.record_copy(named, schema),
+                            None => named.to_string(),
+                        },
                         can_fail: false,
                     }
                 }

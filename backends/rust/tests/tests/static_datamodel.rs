@@ -40,6 +40,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordDayPickedPayload, StaticRecordDayRecord, StaticRecordInject, StaticRecordObserve,
     StaticRecordPersist, StaticRecordPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
+    StaticRecordStringPersist, StaticRecordStringPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
@@ -759,6 +762,36 @@ fn a_string_longer_than_its_bound_is_refused_in_bytes() {
             assert!(restored.is_ok(), "{claimed:?} fits four bytes");
         } else {
             let refusal = refused(restored);
+            assert!(refusal.reason().contains("bounded by"), "{refusal}");
+        }
+    }
+}
+
+#[test]
+fn a_record_string_field_longer_than_its_bound_is_refused_in_bytes() {
+    // A machine never holds more than the sce:max-size="8" UTF-8 bytes its
+    // schema declares in `last.label`, so a saved state that claims it did is not
+    // one this machine wrote. The bound counts bytes: seven bytes in three
+    // characters fit it, and nine bytes in four do not.
+    let mut engine = Engine::new(StaticRecordStringPolicy::new());
+    engine.initialize();
+    let json = engine.save().expect("saves").to_json();
+    for (claimed, fits) in [
+        ("abcdefgh", true),
+        ("é€é", true),
+        ("abcdefghi", false),
+        ("é€éé", false),
+    ] {
+        let json = json.replace(r#""label":"a""#, &format!(r#""label":"{claimed}""#));
+        let restored = Engine::<StaticRecordStringPolicy>::restore(
+            StaticRecordStringPolicy::new(),
+            &SavedState::from_json(&json).expect("reads"),
+        );
+        if fits {
+            assert!(restored.is_ok(), "{claimed:?} fits eight bytes");
+        } else {
+            let refusal = refused(restored);
+            assert!(refusal.reason().contains("last.label"), "{refusal}");
             assert!(refusal.reason().contains("bounded by"), "{refusal}");
         }
     }

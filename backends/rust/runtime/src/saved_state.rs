@@ -879,10 +879,32 @@ pub fn record_field<T: SavedValue>(
     record: &str,
     name: &str,
 ) -> Result<T, StateRefusal> {
-    let field = value
+    T::from_saved(member_of(value, record, name)?, &format!("{record}.{name}"))
+}
+
+/// The string field `name` of a saved record `value`, read back only if it holds
+/// no more than the `capacity` UTF-8 bytes its schema bounds it by
+/// ([`bounded_string`]) — a record never holds more, and a restored one must not
+/// be the first to.
+pub fn record_bounded_string(
+    value: &Value,
+    record: &str,
+    name: &str,
+    capacity: usize,
+) -> Result<String, StateRefusal> {
+    bounded_string(
+        member_of(value, record, name)?,
+        &format!("{record}.{name}"),
+        capacity,
+    )
+}
+
+/// The field `name` of the saved record `value`, which a record that lacks it is
+/// refused for naming.
+fn member_of<'v>(value: &'v Value, record: &str, name: &str) -> Result<&'v Value, StateRefusal> {
+    value
         .member(name)
-        .ok_or_else(|| StateRefusal::new(format!("'{record}' has no field '{name}'")))?;
-    T::from_saved(field, &format!("{record}.{name}"))
+        .ok_or_else(|| StateRefusal::new(format!("'{record}' has no field '{name}'")))
 }
 
 /// A saved list or byte string `value`, read back only if it holds no more

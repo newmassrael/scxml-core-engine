@@ -194,6 +194,7 @@ pub fn check(
         {
             if let Some(schema) = model.imported_records.get(alias) {
                 judge.schema_enums_imported(var, alias, schema)?;
+                judge.schema_strings_bounded(var, alias, schema)?;
             }
         }
         if var.expr.trim().is_empty() {
@@ -395,6 +396,15 @@ pub(crate) fn enum_fields(
             _ => None,
         })
         .collect()
+}
+
+/// How a refusal of a string's initial value names what holds the string: a
+/// variable by its `sce:capacity`, a record's field by the `sce:max-size` its
+/// schema declares.
+struct StringHolder<'a> {
+    holder: &'a str,
+    bound: &'a str,
+    declarer: &'a str,
 }
 
 struct Judge<'a> {
@@ -613,35 +623,117 @@ impl<'a> Judge<'a> {
         ) else {
             return Ok(());
         };
-        let literal = match crate::forge::expr::parse_to_ast(&var.expr).map(|ast| ast.kind) {
+        self.string_literal_fits(
+            format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
+            &var.expr,
+            var.expr_spelling.as_ref(),
+            capacity,
+            StringHolder {
+                holder: "a string variable",
+                bound: "sce:capacity",
+                declarer: "the variable",
+            },
+        )
+    }
+
+    /// A record's string field starts at a string literal that fits the
+    /// `sce:max-size` its schema declares, for the reason a string variable's
+    /// does ([`Self::string_start`]).
+    fn string_field_start(
+        &self,
+        construct: String,
+        init: &crate::forge::model::RecordFieldInit,
+        max_size: u32,
+    ) -> Result<(), Located<ForgeError>> {
+        self.string_literal_fits(
+            construct,
+            &init.expr,
+            init.expr_spelling.as_ref(),
+            max_size,
+            StringHolder {
+                holder: "a record's string field",
+                bound: "sce:max-size",
+                declarer: "its schema",
+            },
+        )
+    }
+
+    /// `expr` is a string literal of at most `bound` UTF-8 bytes: the value a
+    /// machine is built with, before there is a block to end or an error to
+    /// raise for a value that does not fit.
+    fn string_literal_fits(
+        &self,
+        construct: String,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        bound: u32,
+        holder: StringHolder<'_>,
+    ) -> Result<(), Located<ForgeError>> {
+        let literal = match crate::forge::expr::parse_to_ast(expr).map(|ast| ast.kind) {
             Ok(crate::forge::expr::ExprKind::StringLit { value, .. }) => value,
             _ => {
                 return Err(self.rule_at(
-                    format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
-                    "a string variable starts at a string literal: the machine is built with \
-                     no error to raise for a value that does not fit its sce:capacity",
-                    var.expr_spelling.as_ref().map(|s| s.row()),
-                    var.expr_spelling.as_ref().map(|s| s.col()),
+                    construct,
+                    &format!(
+                        "{} starts at a string literal: the machine is built with no error to \
+                         raise for a value that does not fit its {}",
+                        holder.holder, holder.bound
+                    ),
+                    spelling.map(|s| s.row()),
+                    spelling.map(|s| s.col()),
                     "",
-                    &var.expr,
+                    expr,
                 ));
             }
         };
-        if literal.len() > capacity as usize {
+        if literal.len() > bound as usize {
             return Err(self.rule_at(
-                format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
+                construct,
                 &format!(
-                    "the initial value is {} UTF-8 bytes, past the sce:capacity of {capacity} \
-                     the variable declares",
-                    literal.len()
+                    "the initial value is {} UTF-8 bytes, past the {} of {bound} {} declares",
+                    literal.len(),
+                    holder.bound,
+                    holder.declarer
                 ),
-                var.expr_spelling.as_ref().map(|s| s.row()),
-                var.expr_spelling.as_ref().map(|s| s.col()),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
                 "",
-                &var.expr,
+                expr,
             ));
         }
         Ok(())
+    }
+
+    /// A record whose schema has a `string` field holds it within the
+    /// `sce:max-size` the schema writes, as a string variable is held within its
+    /// `sce:capacity` (docs/adr/0005, decision 1); a field that declares none has
+    /// no bound for the machine to keep, and no default stands in for one.
+    /// Judged where the record is declared, in a variable or in the elements of
+    /// a list.
+    fn schema_strings_bounded(
+        &self,
+        var: &Variable,
+        alias: &str,
+        schema: &crate::forge::model::EventSchemaModel,
+    ) -> Result<(), Located<ForgeError>> {
+        let Some(field) = schema.fields.iter().find(|f| {
+            matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none()
+        }) else {
+            return Ok(());
+        };
+        let spelling = var.value_type_spelling.as_ref();
+        Err(self.rule_at(
+            format!("<data id=\"{}\"> of record:{alias}", var.id),
+            &format!(
+                "the field `{}` of record:{alias} is a string its schema does not bound: a \
+                 record holds it within a bound, written as sce:max-size=\"N\" on the field",
+                field.id
+            ),
+            spelling.map(|s| s.row()),
+            spelling.map(|s| s.col()),
+            "",
+            &field.id,
+        ))
     }
 
     /// The `list<T>` variable `name` names, if it names one.
@@ -722,6 +814,7 @@ impl<'a> Judge<'a> {
         )
         .map_err(|error| Located::in_file(error, self.diag_label))?;
         self.schema_enums_imported(var, alias, schema)?;
+        self.schema_strings_bounded(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
             // A field of an enum starts at one of its variants, as a variable
             // of it does.
@@ -740,6 +833,17 @@ impl<'a> Judge<'a> {
                 init.expr_spelling.as_ref(),
                 Expected::Slot(InferredType::from_sce_type(&field.sce_type)),
             )?;
+            // A string field starts at a literal that fits its bound; one
+            // that declares none was refused above.
+            if let (crate::forge::model::SceType::String, Some(max_size)) =
+                (&field.sce_type, field.max_size)
+            {
+                self.string_field_start(
+                    format!("<sce:set name=\"{}\" expr=\"{}\">", field.id, init.expr),
+                    init,
+                    max_size,
+                )?;
+            }
         }
         Ok(())
     }

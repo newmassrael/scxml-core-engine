@@ -290,7 +290,11 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
 {% for field in record.fields %}
+{% if field.bound is not none %}
+            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "{{ field.id }}", {{ field.bound }})?,
+{% else %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_field(value, what, "{{ field.id }}")?,
+{% endif %}
 {% endfor %}
         })
     }

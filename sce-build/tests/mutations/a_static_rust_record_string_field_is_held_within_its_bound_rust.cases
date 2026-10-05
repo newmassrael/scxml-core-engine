@@ -1,0 +1,46 @@
+# Mutation cases for "a record's string field is held within the `sce:max-size` its
+# schema declares" under the Rust runtime
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string field"; docs/adr/0005,
+# decision 1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_record_string_field_is_held_within_its_bound_rust.cases`.
+#
+# `static_record_string` writes the field from a literal, from a string variable and
+# from a typed payload, and expects a value past eight UTF-8 bytes to leave the record
+# as it was and `errors` to count it; `a_record_string_field_longer_than_its_bound_is_refused_in_bytes`
+# restores a saved state that claims one and expects the refusal to name the field.
+# The mutants take one decision away each:
+#
+#   a saved record string is read back unbounded;
+#   a record's string field is not among the strings an `<assign>` is held to;
+#   a saved string past the bound is read back (the bound is not enforced).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/runtime/src/saved_state.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_record_string_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json
+
+mutation_case "a saved record string is read back unbounded" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% if field.bound is not none %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(",
+     "{% if false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(")
+PY
+
+mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(variables.iter().flat_map(|v| {",
+     "        .chain(variables.iter().take(0).flat_map(|v| {")
+PY
+
+mutation_case "a saved string past the bound is read back" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "    bounded_string(\n        member_of(value, record, name)?,",
+     "    String::from_saved(\n        member_of(value, record, name)?,")
+PY
