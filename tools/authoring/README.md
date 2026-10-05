@@ -1663,6 +1663,21 @@ interface model, though: a symbol a value space does not admit is one no documen
 could write, so the pack is refused. A rule about an output that lacks either
 field applies to nothing and is not an error.
 
+    field_defaults:          # a value a field holds unless the specification says another
+      - address_pattern: '\.Out\.Lamp$'
+        fields: {Sound.Kind: REPEAT, Sound.Count: 1}
+        measured: kind REPEAT in 1111 of 1329 cases, count 1 in 1109 of 1159
+
+A specification shows an output and the condition that turns it on, and is silent
+on a field that is the same nearly everywhere; a writer fills that silence with a
+guess. The rule gives, per field, the value it holds unless the specification
+states another, and the brief says it beside the field as the pack's convention
+with its measured rate, never as the specification's. The exceptions are what the
+specification has to say. As with `companion_symbol`, the core holds the rule to
+the interface model (a symbol the field does not admit, or a number outside its
+range, is refused) and checks no document against it; a rule about an output that
+lacks the field applies to nothing.
+
 A phrase whose reading is an assumption about the platform says so, with the
 reason, in the object form. ⚠ A reading that names no input -- `true`,
 `false` -- MUST: the pack is refused otherwise. Such a reading removes the

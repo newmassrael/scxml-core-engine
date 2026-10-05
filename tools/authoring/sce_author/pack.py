@@ -412,6 +412,27 @@ class CompanionRule:
     measured: str = ""
 
 
+@dataclass(frozen=True)
+class DefaultRule:
+    """Fields of an output that hold a value unless the specification states another
+    (`field_defaults`).
+
+    The pack's CLAIM about the platform, read and said. What the core does check is the
+    rule against the interface model, because a value a field does not admit is one no
+    document could write; it checks no document against the claim.
+    """
+
+    pattern: re.Pattern
+    fields: tuple[tuple[str, object], ...]
+    measured: str = ""
+
+    def value_of(self, field_name: str):
+        for name, value in self.fields:
+            if name == field_name:
+                return value
+        return None
+
+
 @dataclass
 class Conventions:
     name_classes: list[NameClass]
@@ -457,6 +478,16 @@ class Conventions:
     held_when_off: tuple[HeldRule, ...] = ()
     # A symbol a field holds while its companion is in use, as the pack says it.
     companion_symbol: tuple[CompanionRule, ...] = ()
+    # The value a field holds unless the specification says another, as the pack says it.
+    field_defaults: tuple[DefaultRule, ...] = ()
+
+    def default_rule(self, address: str, field_name: str) -> DefaultRule | None:
+        """The rule that gives `field_name` of the output at `address` a default value, or
+        None. The first rule that names the field decides."""
+        for rule in self.field_defaults:
+            if rule.pattern.search(address) and rule.value_of(field_name) is not None:
+                return rule
+        return None
 
     def held_rule(self, address: str, field_name: str) -> HeldRule | None:
         """The rule that says `field_name` of the output at `address` stays described
@@ -584,6 +615,7 @@ def load_conventions(paths: list[pathlib.Path],
     host: dict = {}
     held: list[HeldRule] = []
     companions: list[CompanionRule] = []
+    defaults: list[DefaultRule] = []
     rules: dict[str, dict] = {}
     phrase_files: dict[str, pathlib.Path] = {}
 
@@ -724,6 +756,12 @@ def load_conventions(paths: list[pathlib.Path],
                                                 companion["companion"], companion["symbol"],
                                                 companion["companion_off"],
                                                 companion.get("measured") or ""))
+        for number, default in enumerate(doc.get("field_defaults") or [], start=1):
+            compiled = _compiled(path, f"field_defaults[{number}].address_pattern",
+                                 default["address_pattern"], problems)
+            if compiled is not None:
+                defaults.append(DefaultRule(compiled, tuple(default["fields"].items()),
+                                            default.get("measured") or ""))
         if doc.get("duration_pattern"):
             compiled = _compiled(path, "duration_pattern", doc["duration_pattern"], problems)
             if compiled is not None:
@@ -778,6 +816,7 @@ def load_conventions(paths: list[pathlib.Path],
         host=host,
         held_when_off=tuple(held),
         companion_symbol=tuple(companions),
+        field_defaults=tuple(defaults),
     )
 
 
@@ -1021,6 +1060,7 @@ def _load(root: pathlib.Path, problems: Problems) -> Pack | None:
         if model_clean:
             _hold_rules_to_the_model(root, conventions, model, problems)
             _hold_companion_rules_to_the_model(root, conventions, model, problems)
+            _hold_default_rules_to_the_model(root, conventions, model, problems)
         else:
             # ⚠ Not held to a model that did not load whole: an address it should
             # declare may be the one in the file that failed, and the check would
@@ -1029,6 +1069,9 @@ def _load(root: pathlib.Path, problems: Problems) -> Pack | None:
                           "interface model, which did not load cleanly")
             if conventions.companion_symbol:
                 problems.skip("the rules in companion_symbol were not held to the "
+                              "interface model, which did not load cleanly")
+            if conventions.field_defaults:
+                problems.skip("the rules in field_defaults were not held to the "
                               "interface model, which did not load cleanly")
     examples = load_examples(example_paths, problems) if example_paths else Examples()
     if model is None or conventions is None:
@@ -1103,6 +1146,48 @@ def _hold_companion_rules_to_the_model(root: pathlib.Path, conventions: Conventi
                         f"{where} says the {owner.name!r} field {says} {symbol!r} on "
                         f"{entry.address!r}, which that field does not admit; it admits "
                         f"{', '.join(sorted(owner.values))}"))
+
+
+def _hold_default_rules_to_the_model(root: pathlib.Path, conventions: Conventions,
+                                     model: Model, problems: Problems = FIRST_PROBLEM) -> None:
+    """Refuse a `field_defaults` rule that gives a field a value no document could write.
+
+    The rule is a claim about the platform and is not checked against it. What the core can
+    hold it to is the interface model: on every output the rule is about -- its pattern
+    finds the address and the output has the field -- a field with a value space must admit
+    the symbol, and a numeric field must be given a number inside its range. A default the
+    field cannot carry is not one a document could follow.
+
+    A rule about outputs the pack does not have, or whose output lacks the field, applies
+    to nothing and is not refused: a pack's conventions may be written once for outputs
+    only some of its models carry.
+    """
+    for number, rule in enumerate(conventions.field_defaults, start=1):
+        where = f"{root}: field_defaults[{number}]"
+        for entry in model.outputs():
+            if not rule.pattern.search(entry.address):
+                continue
+            for name, value in rule.fields:
+                fld = entry.field(name)
+                if fld is None:
+                    continue
+                if fld.values is not None:
+                    if str(value) not in fld.values:
+                        problems.refuse(PackError(
+                            f"{where} gives the {name!r} field {value!r} on {entry.address!r}, "
+                            f"which that field does not admit; it admits "
+                            f"{', '.join(sorted(fld.values))}"))
+                elif isinstance(value, bool) or not isinstance(value, (int, float)):
+                    if fld.type in ("integer", "number"):
+                        problems.refuse(PackError(
+                            f"{where} gives the {name!r} field {value!r} on {entry.address!r}, "
+                            f"which is a number field"))
+                elif fld.range is not None:
+                    low, high = fld.range
+                    if (low is not None and value < low) or (high is not None and value > high):
+                        problems.refuse(PackError(
+                            f"{where} gives the {name!r} field {value!r} on {entry.address!r}, "
+                            f"outside the range {low}..{high} that field carries"))
 
 
 def _hold_rules_to_the_model(root: pathlib.Path, conventions: Conventions,

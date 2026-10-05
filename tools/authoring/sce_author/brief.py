@@ -193,6 +193,19 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
                     f"`{companion.companion_off}`, and not otherwise{basis}. The "
                     f"specification does not say; confirm it against the platform."
                 )
+            # A field the platform keeps the same nearly everywhere, which a specification
+            # shows an output without ever stating. Said as the pack's claim with its measured
+            # rate: a default is right for most outputs and wrong for the exceptions, and the
+            # exceptions are what the specification has to say.
+            default = conv.default_rule(entry.address, fld.name)
+            if default is not None:
+                basis = f" ({default.measured})" if default.measured else ""
+                parts.append(
+                    f"    - the pack's convention says this field holds "
+                    f"`{default.value_of(fld.name)}` unless the specification states "
+                    f"another{basis}. The specification usually does not say; confirm it "
+                    f"against the platform."
+                )
 
     parts += ["", "## 3. Outputs this specification is expected to decide", ""]
     for entry in model.outputs():

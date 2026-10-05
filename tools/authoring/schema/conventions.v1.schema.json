@@ -208,6 +208,33 @@
       }
     },
 
+    "field_defaults": {
+      "type": "array",
+      "description": "Fields of an output that a specification rarely states, with the value the platform's own tests show for them. A specification shows an output and the condition that turns it on, and is silent on a field that is the same everywhere (how a linked sound plays, how many times); a writer fills that silence with a guess. Each rule names the outputs it is about by address and gives, per field, the value that field holds unless the specification says another. The core says it beside each of those fields in the brief, as the pack's convention and never as a fact of the specification, and holds the rule to the interface model: a value a field does not admit is one no document could write.",
+      "items": {
+        "type": "object",
+        "required": ["address_pattern", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "address_pattern": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A regular expression searched in an output's address. The rule is about every output whose address it finds."
+          },
+          "fields": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {"type": ["string", "number", "boolean"]},
+            "description": "Field name, as the interface model gives it, to the value that field holds unless the specification states another."
+          },
+          "measured": {
+            "type": "string",
+            "description": "What the pack knows about how often the default holds, in one phrase (e.g. 'type REPEAT_COUNT in 1111 of 1329 cases, count 1 in 1109 of 1159'). Printed with the sentence, for the reason `gate_off_note` is: a default with a measured hit rate is not an oracle, and the exceptions are what a specification has to say."
+          }
+        }
+      }
+    },
+
     "neutral_symbols": {
       "type": "array",
       "items": {"type": "string"},
