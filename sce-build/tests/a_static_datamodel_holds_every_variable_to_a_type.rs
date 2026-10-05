@@ -323,8 +323,9 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // own processor or to one the host is declared to serve (and the literal
     // `<content>` of one), an `<invoke type="scxml">` handing numbers,
     // bools and strings, and an `<invoke>` the host is declared to serve. A 32-bit
-    // real is a `float` the wire writes as the double it widens to. What is
-    // past that — a list of 32-bit reals, a record with a string field, a bytes
+    // real, alone or in a list, is a `float` the wire writes as the double it
+    // widens to. What is
+    // past that — a record with a string field or a 32-bit real field, a bytes
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a payload field that
@@ -338,11 +339,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a bytes variable",
             variable(r#"<data id="frame" sce:type="bytes" expr="''"/>"#),
             r#"<data id="frame" sce:type="bytes">"#,
-        ),
-        (
-            "a list of 32-bit reals",
-            variable(r#"<data id="picked" sce:type="list&lt;float32&gt;" sce:capacity="3"/>"#),
-            r#"<data id="picked" sce:type="list">"#,
         ),
         (
             "a record with a string field",

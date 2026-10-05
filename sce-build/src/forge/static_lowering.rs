@@ -4262,9 +4262,10 @@ impl StaticTarget for CTarget {
         // document requires of every one ([`Self::string_storage`]). A bytes
         // value needs a capacity the C11 contract does not carry yet. A 64-bit
         // real is a `double`, written to the wire as ECMAScript spells it, alone,
-        // in a list and as a record's field; a 32-bit one is refused, since the
-        // contract pins only the 64-bit spelling. A record is a struct the
-        // machine's own header declares, of fields held as those are.
+        // in a list and as a record's field. A 32-bit one is a `float`, alone and
+        // in a list, written to the wire as the `double` it widens to; as a
+        // record's field it is refused until the payload lifts one. A record is
+        // a struct the machine's own header declares, of fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -4292,7 +4293,7 @@ impl StaticTarget for CTarget {
                 return !(v.capacity.is_some()
                     && match elem {
                         crate::forge::model::ListElemType::Scalar(ty) => {
-                            held_scalar(ty) || matches!(ty, SceType::Float64)
+                            held_scalar(ty) || matches!(ty, SceType::Float32 | SceType::Float64)
                         }
                         crate::forge::model::ListElemType::Record { .. } => true,
                     });
@@ -6648,6 +6649,31 @@ mod tests {
             statements[1].contains("self.v_tenth + 0.2") && !statements[1].contains("to_f32"),
             "{statements:?}"
         );
+    }
+
+    #[test]
+    fn a_c_machine_holds_a_list_of_singles_and_appends_a_single_to_it() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="tenth" sce:type="float32" expr="0.1"/>
+    <data id="samples" sce:type="list&lt;float32&gt;" sce:capacity="3"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <sce:append target="samples" expr="tenth + 0.2"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(document, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_c11(&mut model, "").expect("a list of `float` is held by C11");
+        let statement = &model.states["s"].transitions[0].actions[0].native_code;
+        // The element is the sum a single makes: the literal is the partner's width.
+        assert!(statement.contains("v_tenth + 0.2f"), "{statement}");
     }
 
     #[test]

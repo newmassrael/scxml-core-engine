@@ -821,7 +821,24 @@ static bool static_real32_read_real(void *sm, const char *name, double *out) {
         *out = static_real32_get_wide(machine);
         return true;
     }
+    if (strcmp(name, "total") == 0) {
+        *out = (double)static_real32_get_total(machine);
+        return true;
+    }
     return false;
+}
+
+// A list of `float`: each element is widened to the double it is exactly.
+static bool static_real32_read_real_list(void *sm, const char *name, double *out, size_t cap, size_t *len) {
+    if (strcmp(name, "samples") != 0) {
+        return false;
+    }
+    const sce_forge_float_view_t view = static_real32_get_samples((const static_real32_t *)sm);
+    for (size_t i = 0; i < view.len && i < cap; ++i) {
+        out[i] = (double)view.data[i];
+    }
+    *len = view.len;
+    return view.len <= cap;
 }
 
 static const name_value_t real32_states[] = {
@@ -831,7 +848,7 @@ static const name_value_t real32_states[] = {
 // states, so a lookup finds nothing rather than dereferencing a null name.
 static const variable_t real32_variables[] = {{"", NULL}};
 STATIC_SCENARIO_FULL(static_real32, real32_states, real32_variables, NULL, no_lists, no_records, NULL,
-                     static_real32_read_real, NULL, NULL)
+                     static_real32_read_real, static_real32_read_real_list, NULL)
 
 // static_block_ends_list: a full list ends the block it is appended to.
 VARIABLE_READER(static_block_ends_list, afterAppend)
@@ -1300,7 +1317,7 @@ int main(void) {
     bad |= static_list_scenario("static_list", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_real_scenario("static_real", 13);
-    bad |= static_real32_scenario("static_real32", 8);
+    bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);

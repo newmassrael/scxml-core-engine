@@ -15,6 +15,11 @@
             0.30000000447034836.
     wide    a `float32` stored in a `float64` is the same number exactly,
             0.10000000149011612 — the nearest binary32 to 0.1, and not 0.1.
+    samples a list of `float32` holds binary32 elements: a sum of two singles
+            is appended as the single it is, and a `float64` appended to it
+            lands as the binary32 nearest it (0.30000000149011613 becomes
+            0.30000001192092896), which a list that held doubles would not
+            do. `total` adds them up as singles.
 
   The expectations are the binary32 values written as the doubles they widen
   to, which is how every engine's harness reads a single-precision variable.
@@ -29,6 +34,8 @@
     <data id="tenth" sce:type="float32" expr="0.1"/>
     <data id="drift" sce:type="float32" expr="0" sce:direction="out"/>
     <data id="wide" sce:type="float64" expr="0" sce:direction="out"/>
+    <data id="samples" sce:type="list&lt;float32&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="total" sce:type="float32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <!-- A sum that a binary32 cannot hold exactly at 2^24. -->
@@ -53,6 +60,22 @@
          and its result is not the single of `drift`. -->
     <transition event="mix" type="internal">
       <assign location="wide" expr="tenth + 0.2"/>
+    </transition>
+    <!-- A sum of two singles appended to a list of singles. -->
+    <transition event="keep" type="internal">
+      <sce:append target="samples" expr="tenth + 0.2"/>
+    </transition>
+    <!-- A `float64` appended to a list of singles: the element is the single
+         nearest it. -->
+    <transition event="keepwide" type="internal">
+      <sce:append target="samples" expr="wide"/>
+    </transition>
+    <!-- The elements added up, each step a single's. -->
+    <transition event="sum" type="internal">
+      <assign location="total" expr="0"/>
+      <foreach array="samples" item="v">
+        <assign location="total" expr="total + v"/>
+      </foreach>
     </transition>
   </state>
 </scxml>

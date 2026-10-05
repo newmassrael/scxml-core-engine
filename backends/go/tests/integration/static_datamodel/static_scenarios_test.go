@@ -454,6 +454,16 @@ func TestARealIsANativeBinary32Field(t *testing.T) {
 		"level": func() any { return float64(policy.Level()) },
 		"drift": func() any { return float64(policy.Drift()) },
 		"wide":  func() any { return policy.Wide() },
+		"total": func() any { return float64(policy.Total()) },
+		"samples": func() any {
+			// A list of float32 is read element by element as the float64 each
+			// widens to: JSON would print the float32 itself, `0.3`.
+			widened := make([]float64, 0, len(policy.Samples()))
+			for _, v := range policy.Samples() {
+				widened = append(widened, float64(v))
+			}
+			return widened
+		},
 	}))
 }
 

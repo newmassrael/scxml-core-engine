@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4e6429b83bcaf7486fcebf0bd3d8457e9484662e476d9f68336b36b99ab225f5
+// source-hash: e142a23c6787a2fcea70a75377d69016ba1ad6bc5086aea494300524f54940a6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_real32.scxml:25 :: _machine"]
-// SCE-MAP: static_real32.scxml:25 :: _machine
+#![doc = "SCE-MAP: static_real32.scxml:30 :: _machine"]
+// SCE-MAP: static_real32.scxml:30 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -98,7 +98,10 @@ pub enum StaticReal32Event {
     Bump,
     Drift,
     Halve,
+    Keep,
+    Keepwide,
     Mix,
+    Sum,
     Widen,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -124,7 +127,10 @@ impl StaticReal32Event {
         StaticReal32Event::Bump,
         StaticReal32Event::Drift,
         StaticReal32Event::Halve,
+        StaticReal32Event::Keep,
+        StaticReal32Event::Keepwide,
         StaticReal32Event::Mix,
+        StaticReal32Event::Sum,
         StaticReal32Event::Widen,
     ];
 }
@@ -139,6 +145,8 @@ pub struct StaticReal32Data {
     pub level: f32,
     pub drift: f32,
     pub wide: f64,
+    pub samples: Vec<f32>,
+    pub total: f32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -171,6 +179,8 @@ impl StaticReal32Observe for Engine<StaticReal32Policy> {
                 level: policy.level,
                 drift: policy.drift,
                 wide: policy.wide,
+                samples: policy.samples.clone(),
+                total: policy.total,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -254,7 +264,7 @@ pub trait StaticReal32Persist: Sized {
 impl StaticReal32Persist for Engine<StaticReal32Policy> {
     type Policy = StaticReal32Policy;
 
-    const SHAPE: &'static str = "ef85b9c9de2d69167a44db37f8329dc6c6a14fb0c14182a66090bc288cf003ba";
+    const SHAPE: &'static str = "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -287,6 +297,14 @@ impl StaticReal32Persist for Engine<StaticReal32Policy> {
                 (
                     "wide".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.wide),
+                ),
+                (
+                    "samples".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.samples),
+                ),
+                (
+                    "total".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.total),
                 ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
@@ -324,6 +342,12 @@ impl StaticReal32Persist for Engine<StaticReal32Policy> {
             saved.variable("wide")?,
             "wide",
         )?;
+        policy.samples =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("samples")?, "samples", 3)?;
+        policy.total = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("total")?,
+            "total",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -337,6 +361,7 @@ pub struct StaticReal32InvokeParams {
     pub tenth: Option<f32>,
     pub drift: Option<f32>,
     pub wide: Option<f64>,
+    pub total: Option<f32>,
 }
 
 // ======================================================================
@@ -352,6 +377,10 @@ pub struct StaticReal32Policy {
     drift: f32,
     /// W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`).
     wide: f64,
+    /// W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`).
+    samples: Vec<f32>,
+    /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
+    total: f32,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -380,11 +409,15 @@ impl StaticReal32Policy {
         let tenth: f32 = 0.1;
         let drift: f32 = 0.0;
         let wide: f64 = 0.0;
+        let samples: Vec<f32> = Vec::new();
+        let total: f32 = 0.0;
         Self {
             level,
             tenth,
             drift,
             wide,
+            samples,
+            total,
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -407,6 +440,9 @@ impl StaticReal32Policy {
         if let Some(value) = params.wide {
             self.wide = value;
         }
+        if let Some(value) = params.total {
+            self.total = value;
+        }
     }
 
     /// W3C SCXML 5.2: what the published `level` datamodel variable
@@ -425,6 +461,18 @@ impl StaticReal32Policy {
     /// holds now. Only the machine writes it.
     pub fn wide(&self) -> f64 {
         self.wide
+    }
+
+    /// W3C SCXML 5.2: what the published `samples` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn samples(&self) -> &[f32] {
+        &self.samples
+    }
+
+    /// W3C SCXML 5.2: what the published `total` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn total(&self) -> f32 {
+        self.total
     }
 }
 
@@ -564,7 +612,10 @@ impl StatePolicy for StaticReal32Policy {
             StaticReal32Event::Bump => "bump",
             StaticReal32Event::Drift => "drift",
             StaticReal32Event::Halve => "halve",
+            StaticReal32Event::Keep => "keep",
+            StaticReal32Event::Keepwide => "keepwide",
             StaticReal32Event::Mix => "mix",
+            StaticReal32Event::Sum => "sum",
             StaticReal32Event::Widen => "widen",
             StaticReal32Event::Null => "",
         }
@@ -575,7 +626,10 @@ impl StatePolicy for StaticReal32Policy {
             "bump" => Some(StaticReal32Event::Bump),
             "drift" => Some(StaticReal32Event::Drift),
             "halve" => Some(StaticReal32Event::Halve),
+            "keep" => Some(StaticReal32Event::Keep),
+            "keepwide" => Some(StaticReal32Event::Keepwide),
             "mix" => Some(StaticReal32Event::Mix),
+            "sum" => Some(StaticReal32Event::Sum),
             "widen" => Some(StaticReal32Event::Widen),
             _ => None,
         }
@@ -616,8 +670,8 @@ impl StatePolicy for StaticReal32Policy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_real32.scxml:25 :: _machine"]
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_real32.scxml:30 :: _machine"]
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -633,8 +687,8 @@ impl StatePolicy for StaticReal32Policy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_real32.scxml:25 :: _machine"]
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_real32.scxml:30 :: _machine"]
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -650,8 +704,8 @@ impl StatePolicy for StaticReal32Policy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_real32.scxml:25 :: _machine"]
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_real32.scxml:30 :: _machine"]
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -715,6 +769,39 @@ impl StatePolicy for StaticReal32Policy {
                         });
                     }
                 }
+                if event == StaticReal32Event::Keep {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticReal32Event::Keepwide {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticReal32Event::Sum {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 7,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -723,8 +810,8 @@ impl StatePolicy for StaticReal32Policy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_real32.scxml:25 :: _machine"]
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_real32.scxml:30 :: _machine"]
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -735,7 +822,7 @@ impl StatePolicy for StaticReal32Policy {
             StaticReal32State::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_real32.scxml:35 :: idle :: _transition_0
+                        // SCE-MAP: static_real32.scxml:42 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -744,7 +831,7 @@ impl StatePolicy for StaticReal32Policy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_real32.scxml:39 :: idle :: _transition_1
+                        // SCE-MAP: static_real32.scxml:46 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -753,7 +840,7 @@ impl StatePolicy for StaticReal32Policy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_real32.scxml:43 :: idle :: _transition_2
+                        // SCE-MAP: static_real32.scxml:50 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -762,7 +849,7 @@ impl StatePolicy for StaticReal32Policy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_real32.scxml:47 :: idle :: _transition_3
+                        // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -771,12 +858,62 @@ impl StatePolicy for StaticReal32Policy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_4
+                        // SCE-MAP: static_real32.scxml:61 :: idle :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="wide">
                             self.wide = self.tenth as f64 + 0.2;
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: static_real32.scxml:65 :: idle :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // SCE Accepted Subset §2.15: <sce:append target="samples">
+                            let sce_failed = if self.samples.len() < 3 {
+                                self.samples.push(self.tenth + 0.2);
+                                false
+                            } else {
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    6 => {
+                        // SCE-MAP: static_real32.scxml:70 :: idle :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // SCE Accepted Subset §2.15: <sce:append target="samples">
+                            let sce_failed = if self.samples.len() < 3 {
+                                self.samples.push(self.wide as f32);
+                                false
+                            } else {
+                                true
+                            };
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    7 => {
+                        // SCE-MAP: static_real32.scxml:74 :: idle :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="total">
+                            self.total = 0.0;
+
+                            for v in self.samples.clone() {
+                                let _ = &v;
+
+                                // W3C SCXML 5.3: <assign location="total">
+                                self.total = self.total + v;
+                            }
                         }
                     }
                     _ => {}

@@ -3471,8 +3471,10 @@ Python and the Interpreter hold every real in a double, so the generator writes
 the rounding itself (`sce_algorithm.to_f32` and `Math.fround`) around each operand
 and result made as a single and around a value that lands in a `float32` slot;
 C and C++ compute a `float` operation as a `float` where `FLT_EVAL_METHOD` is 0
-(x86-64 with SSE, AArch64). `static_real32` holds the seven engines to the same
-numbers, derived from IEEE 754 and observed from none of them.
+(x86-64 with SSE, AArch64). The element of a `list<float32>` is a single like the
+variable: a `float64` appended to one lands as the binary32 nearest it. `static_real32`
+holds the seven engines to the same numbers, derived from IEEE 754 and observed
+from none of them.
 
 Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
 not a field type: with `sce:direction` and `sce:initial` it is the
@@ -3997,8 +3999,8 @@ of strings and integers the data model sizes (`wait + 'ms'`), a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools, strings and enums, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
-record whose fields are numbers, bools, 64-bit reals and enums, a list of integers, bools, 64-bit
-reals or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
+record whose fields are numbers, bools, 64-bit reals and enums, a list of integers, bools, reals
+of either width or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor or to one the host serves (`--host-processor`) with its `<param>`s or its
 literal `<content>` (the text it spells, finished at build time and copied into the
@@ -4009,15 +4011,15 @@ the host serves (`--host-invoker`) with its `<param>`s, and a hybrid `<invoke>`
 whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
-driven — evaluating the arguments it keeps no variable for. A list of 32-bit reals,
-bytes and a record with a string field or a 32-bit real field, a `<send>` to
+driven — evaluating the arguments it keeps no variable for. Bytes and a record with
+a string field or a 32-bit real field, a `<send>` to
 another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>` and a
 transition on an event whose payload carries a bytes field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
-not carry yet, and the list and the record field of 32-bit reals have no element
-or field type written. A `<param>` whose value is a 32-bit real is not refused:
+not carry yet, and a record's 32-bit real field has no C11 lowering yet.
+A `<param>` whose value is a 32-bit real is not refused:
 the contract fixes the 64-bit form only, so it is written as the `double` it
 widens to, exactly, as Rust and Kotlin write it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
 an event carries as its data, by the header-only wire writer of the forge runtime

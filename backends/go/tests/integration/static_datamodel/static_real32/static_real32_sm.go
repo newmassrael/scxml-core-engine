@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4e6429b83bcaf7486fcebf0bd3d8457e9484662e476d9f68336b36b99ab225f5
+// source-hash: e142a23c6787a2fcea70a75377d69016ba1ad6bc5086aea494300524f54940a6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_real32.scxml:25 :: _machine
+// SCE-MAP: static_real32.scxml:30 :: _machine
 
 package static_real32
 
@@ -139,10 +139,13 @@ const (
 	StaticReal32EventBump StaticReal32Event = 0
 	StaticReal32EventDrift StaticReal32Event = 1
 	StaticReal32EventHalve StaticReal32Event = 2
-	StaticReal32EventMix StaticReal32Event = 3
-	StaticReal32EventWiden StaticReal32Event = 4
+	StaticReal32EventKeep StaticReal32Event = 3
+	StaticReal32EventKeepwide StaticReal32Event = 4
+	StaticReal32EventMix StaticReal32Event = 5
+	StaticReal32EventSum StaticReal32Event = 6
+	StaticReal32EventWiden StaticReal32Event = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticReal32EventNull StaticReal32Event = 5
+	StaticReal32EventNull StaticReal32Event = 8
 )
 
 func (e StaticReal32Event) String() string {
@@ -153,8 +156,14 @@ func (e StaticReal32Event) String() string {
 		return "drift"
 	case StaticReal32EventHalve:
 		return "halve"
+	case StaticReal32EventKeep:
+		return "keep"
+	case StaticReal32EventKeepwide:
+		return "keepwide"
 	case StaticReal32EventMix:
 		return "mix"
+	case StaticReal32EventSum:
+		return "sum"
 	case StaticReal32EventWiden:
 		return "widen"
 	case StaticReal32EventNull:
@@ -179,6 +188,10 @@ type StaticReal32Policy struct {
 	vDrift float32
 	// W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`).
 	vWide float64
+	// W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`).
+	vSamples []float32
+	// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
+	vTotal float32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -195,6 +208,8 @@ func NewStaticReal32Policy() StaticReal32Policy {
 		vTenth: 0.1,
 		vDrift: 0.0,
 		vWide: 0.0,
+		vSamples: nil,
+		vTotal: 0.0,
 	}
 }
 
@@ -216,6 +231,19 @@ func (p *StaticReal32Policy) Wide() float64 {
 	return p.vWide
 }
 
+// Samples reports what the published `samples` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticReal32Policy) Samples() []float32 {
+	// A copy, so a host cannot write through the slice into what the machine holds.
+	return append([]float32{}, p.vSamples...)
+}
+
+// Total reports what the published `total` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticReal32Policy) Total() float32 {
+	return p.vTotal
+}
+
 // StaticReal32InvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
 // variable left nil keeps the value its `<data>` gave it.
@@ -224,6 +252,7 @@ type StaticReal32InvokeParams struct {
 	VTenth *float32
 	VDrift *float32
 	VWide *float64
+	VTotal *float32
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -240,6 +269,9 @@ func (p *StaticReal32Policy) AcceptParams(params StaticReal32InvokeParams) {
 	}
 	if params.VWide != nil {
 		p.vWide = *params.VWide
+	}
+	if params.VTotal != nil {
+		p.vTotal = *params.VTotal
 	}
 }
 
@@ -365,8 +397,14 @@ func (p *StaticReal32Policy) GetEventFromName(name string) (StaticReal32Event, b
 		return StaticReal32EventDrift, true
 	case "halve":
 		return StaticReal32EventHalve, true
+	case "keep":
+		return StaticReal32EventKeep, true
+	case "keepwide":
+		return StaticReal32EventKeepwide, true
 	case "mix":
 		return StaticReal32EventMix, true
+	case "sum":
+		return StaticReal32EventSum, true
 	case "widen":
 		return StaticReal32EventWiden, true
 	}
@@ -468,7 +506,7 @@ func (p *StaticReal32Policy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) ExecuteEntryActions(state StaticReal32State, engine *sce.Engine[StaticReal32State, StaticReal32Event], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -481,7 +519,7 @@ func (p *StaticReal32Policy) ExecuteEntryActions(state StaticReal32State, engine
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticReal32State, StaticReal32Event]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -489,7 +527,7 @@ func (p *StaticReal32Policy) ExecuteHistoryDefaultContent(history sce.HistoryID,
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) ExecuteExitActions(state StaticReal32State, engine *sce.Engine[StaticReal32State, StaticReal32Event], configurationBeforeExit []StaticReal32State) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -506,7 +544,7 @@ func (p *StaticReal32Policy) ExecuteExitActions(state StaticReal32State, engine 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) BindCurrentEvent(event StaticReal32Event, engine *sce.Engine[StaticReal32State, StaticReal32Event]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -516,7 +554,7 @@ func (p *StaticReal32Policy) BindCurrentEvent(event StaticReal32Event, engine *s
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) FirstEnabledTransition(state StaticReal32State, event StaticReal32Event, engine *sce.Engine[StaticReal32State, StaticReal32Event]) (sce.EnabledTransition[StaticReal32State, sce.HistoryID], bool) {
 	switch state {
 	case StaticReal32StateIdle:
@@ -570,19 +608,49 @@ func (p *StaticReal32Policy) FirstEnabledTransition(state StaticReal32State, eve
 				}, true
 			}
 		}
+		if event == StaticReal32EventKeep {
+			{
+				return sce.EnabledTransition[StaticReal32State, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticReal32EventKeepwide {
+			{
+				return sce.EnabledTransition[StaticReal32State, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticReal32EventSum {
+			{
+				return sce.EnabledTransition[StaticReal32State, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 7,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StaticReal32State, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_real32.scxml:25
+//line static_real32.scxml:30
 func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, transitionIndex int, engine *sce.Engine[StaticReal32State, StaticReal32Event]) {
 	switch source {
 	case StaticReal32StateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_real32.scxml:35
+			//line static_real32.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -591,7 +659,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 1:
-			//line static_real32.scxml:39
+			//line static_real32.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -600,7 +668,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 2:
-			//line static_real32.scxml:43
+			//line static_real32.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -609,7 +677,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 3:
-			//line static_real32.scxml:47
+			//line static_real32.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -618,12 +686,55 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 4:
-			//line static_real32.scxml:54
+			//line static_real32.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 
 	p.vWide = float64(p.vTenth) + 0.2
+
+			}()
+		case 5:
+			//line static_real32.scxml:65
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+	// SCE Accepted Subset §2.15: <sce:append target="samples">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vSamples) >= 3 { return true }; sceValue := scealgorithm.ElementOf(p.vSamples, p.vTenth + 0.2); if sceFailure.Failed() { return true }; p.vSamples = append(p.vSamples, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 6:
+			//line static_real32.scxml:70
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+	// SCE Accepted Subset §2.15: <sce:append target="samples">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vSamples) >= 3 { return true }; sceValue := scealgorithm.ElementOf(p.vSamples, float32(p.vWide)); if sceFailure.Failed() { return true }; p.vSamples = append(p.vSamples, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 7:
+			//line static_real32.scxml:74
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vTotal = 0.0
+
+
+	// W3C SCXML 4.6: <foreach array="samples" item="v">, a native loop over a sce-static list
+	for _, v := range append(p.vSamples[:0:0], p.vSamples...) {
+		_ = v
+
+
+	p.vTotal = p.vTotal + v
+
+	}
 
 			}()
 		}

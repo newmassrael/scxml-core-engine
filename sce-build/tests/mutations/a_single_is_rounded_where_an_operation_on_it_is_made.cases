@@ -25,8 +25,8 @@
 #   a literal beside a single is not written as one;
 #   the pass is not run;
 #   the data model of a statechart does not ask for it;
-#   C does not hold a `float` variable, has no wire value for one, or refuses
-#   one on the wire.
+#   C does not hold a `float` variable or a list of them, has no wire value for
+#   one, or refuses one on the wire.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -95,6 +95,12 @@ mutation_case "C does not hold a float variable" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)",
      "matches!(ty, SceType::Enum(_) | SceType::Float64)")
+PY
+
+mutation_case "C does not hold a list of floats" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "held_scalar(ty) || matches!(ty, SceType::Float32 | SceType::Float64)",
+     "held_scalar(ty) || matches!(ty, SceType::Float64)")
 PY
 
 mutation_case "C has no wire value for a single" <<'PY'

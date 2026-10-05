@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4e6429b83bcaf7486fcebf0bd3d8457e9484662e476d9f68336b36b99ab225f5
+// source-hash: e142a23c6787a2fcea70a75377d69016ba1ad6bc5086aea494300524f54940a6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_real32.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_real32.scxml:25 :: _machine
+// SCE-MAP: static_real32.scxml:30 :: _machine
 
 package com.sce.integration.static_real32
 
@@ -23,7 +23,10 @@ sealed interface StaticReal32Event : Event {
     data object Bump : StaticReal32Event
     data object Drift : StaticReal32Event
     data object Halve : StaticReal32Event
+    data object Keep : StaticReal32Event
+    data object Keepwide : StaticReal32Event
     data object Mix : StaticReal32Event
+    data object Sum : StaticReal32Event
     data object Widen : StaticReal32Event
 }
 // --- State Machine (W3C SCXML) ---
@@ -43,6 +46,12 @@ class StaticReal32StateMachine(
     /** W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`). */
     var wide: Double = 0.0
         private set
+    /** W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`). */
+    var samples: List<Float> = emptyList()
+        private set
+    /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
+    var total: Float = 0.0f
+        private set
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -54,6 +63,7 @@ class StaticReal32StateMachine(
         var tenth: Float? = null
         var drift: Float? = null
         var wide: Double? = null
+        var total: Float? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -62,6 +72,7 @@ class StaticReal32StateMachine(
         params.tenth?.let { tenth = it }
         params.drift?.let { drift = it }
         params.wide?.let { wide = it }
+        params.total?.let { total = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -69,6 +80,8 @@ class StaticReal32StateMachine(
         val level: Float,
         val drift: Float,
         val wide: Double,
+        val samples: List<Float>,
+        val total: Float,
     )
 
     /**
@@ -88,6 +101,8 @@ class StaticReal32StateMachine(
         level = level,
         drift = drift,
         wide = wide,
+        samples = samples,
+        total = total,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -114,7 +129,7 @@ class StaticReal32StateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "ef85b9c9de2d69167a44db37f8329dc6c6a14fb0c14182a66090bc288cf003ba"
+    val savedShape: String = "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -134,6 +149,8 @@ class StaticReal32StateMachine(
             "tenth" to SavedValues.of(tenth),
             "drift" to SavedValues.of(drift),
             "wide" to SavedValues.of(wide),
+            "samples" to SavedValues.list(samples) { SavedValues.of(it) },
+            "total" to SavedValues.of(total),
         ),
         wallNowMs,
     )
@@ -163,10 +180,14 @@ class StaticReal32StateMachine(
         val saved2 = SavedValues.float32(saved.variable("tenth"), "tenth")
         val saved3 = SavedValues.float32(saved.variable("drift"), "drift")
         val saved4 = SavedValues.float64(saved.variable("wide"), "wide")
+        val saved5 = SavedValues.list(saved.variable("samples"), "samples", 3) { e, w -> SavedValues.float32(e, w) }
+        val saved6 = SavedValues.float32(saved.variable("total"), "total")
         level = saved1
         tenth = saved2
         drift = saved3
         wide = saved4
+        samples = saved5
+        total = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -243,6 +264,33 @@ class StaticReal32StateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 5, as the microstep reads it.
+        val transitionIdleAt5 = EnabledTransition<StaticReal32State, HistoryId>(
+            StaticReal32State.Idle,
+            emptyList(),
+            5,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 6, as the microstep reads it.
+        val transitionIdleAt6 = EnabledTransition<StaticReal32State, HistoryId>(
+            StaticReal32State.Idle,
+            emptyList(),
+            6,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 7, as the microstep reads it.
+        val transitionIdleAt7 = EnabledTransition<StaticReal32State, HistoryId>(
+            StaticReal32State.Idle,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -266,7 +314,10 @@ class StaticReal32StateMachine(
         "bump" -> StaticReal32Event.Bump
         "drift" -> StaticReal32Event.Drift
         "halve" -> StaticReal32Event.Halve
+        "keep" -> StaticReal32Event.Keep
+        "keepwide" -> StaticReal32Event.Keepwide
         "mix" -> StaticReal32Event.Mix
+        "sum" -> StaticReal32Event.Sum
         "widen" -> StaticReal32Event.Widen
         else -> null
     }
@@ -276,7 +327,10 @@ class StaticReal32StateMachine(
         is StaticReal32Event.Bump -> "bump"
         is StaticReal32Event.Drift -> "drift"
         is StaticReal32Event.Halve -> "halve"
+        is StaticReal32Event.Keep -> "keep"
+        is StaticReal32Event.Keepwide -> "keepwide"
         is StaticReal32Event.Mix -> "mix"
+        is StaticReal32Event.Sum -> "sum"
         is StaticReal32Event.Widen -> "widen"
     }
 
@@ -299,61 +353,89 @@ class StaticReal32StateMachine(
             event is StaticReal32Event.Drift -> transitionIdleAt2
             event is StaticReal32Event.Widen -> transitionIdleAt3
             event is StaticReal32Event.Mix -> transitionIdleAt4
+            event is StaticReal32Event.Keep -> transitionIdleAt5
+            event is StaticReal32Event.Keepwide -> transitionIdleAt6
+            event is StaticReal32Event.Sum -> transitionIdleAt7
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun onEntry(state: StaticReal32State, isDefaultEntry: Boolean) {
         when (state) {
             is StaticReal32State.Idle -> {
-                // SCE-MAP: static_real32.scxml:33 :: idle :: _state_body
+                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun onExit(state: StaticReal32State) {
         when (state) {
             is StaticReal32State.Idle -> {
-                // SCE-MAP: static_real32.scxml:33 :: idle :: _state_body
+                // SCE-MAP: static_real32.scxml:40 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_real32.scxml:25 :: _machine
+    // SCE-MAP: static_real32.scxml:30 :: _machine
     override fun executeTransitionContent(source: StaticReal32State, transitionIndex: Int) {
         when (source) {
         is StaticReal32State.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_real32.scxml:35 :: idle :: _transition_0
+                // SCE-MAP: static_real32.scxml:42 :: idle :: _transition_0
 
             level = level + 1.0f
             }
             1 -> {
-                // SCE-MAP: static_real32.scxml:39 :: idle :: _transition_1
+                // SCE-MAP: static_real32.scxml:46 :: idle :: _transition_1
 
             level = level / 2.0f
             }
             2 -> {
-                // SCE-MAP: static_real32.scxml:43 :: idle :: _transition_2
+                // SCE-MAP: static_real32.scxml:50 :: idle :: _transition_2
 
             drift = tenth + 0.2f
             }
             3 -> {
-                // SCE-MAP: static_real32.scxml:47 :: idle :: _transition_3
+                // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_3
 
             wide = tenth.toDouble()
             }
             4 -> {
-                // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_4
+                // SCE-MAP: static_real32.scxml:61 :: idle :: _transition_4
 
             wide = tenth.toDouble() + 0.2
+            }
+            5 -> {
+                // SCE-MAP: static_real32.scxml:65 :: idle :: _transition_5
+
+            if (if (samples.size < 3) { samples = samples + (tenth + 0.2f); false } else { true }) {
+                return
+            }
+            }
+            6 -> {
+                // SCE-MAP: static_real32.scxml:70 :: idle :: _transition_6
+
+            if (if (samples.size < 3) { samples = samples + (wide.toFloat()); false } else { true }) {
+                return
+            }
+            }
+            7 -> {
+                // SCE-MAP: static_real32.scxml:74 :: idle :: _transition_7
+
+            total = 0.0f
+
+
+            for (v in samples) {
+
+            total = total + v
+            }
             }
             else -> {}
         }

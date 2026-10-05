@@ -393,6 +393,10 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARealIsANativeBinary32Field) {
         {"level", [](const Machine &m) { return json(static_cast<double>(m.level())); }},
         {"drift", [](const Machine &m) { return json(static_cast<double>(m.drift())); }},
         {"wide", [](const Machine &m) { return json(m.wide()); }},
+        {"total", [](const Machine &m) { return json(static_cast<double>(m.total())); }},
+        // A list of floats: each element is stored by the JSON value as the
+        // double it widens to.
+        {"samples", [](const Machine &m) { return json(m.samples()); }},
     });
     replay("static_real32", driver);
 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4e6429b83bcaf7486fcebf0bd3d8457e9484662e476d9f68336b36b99ab225f5
+// source-hash: e142a23c6787a2fcea70a75377d69016ba1ad6bc5086aea494300524f54940a6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_hybrid_holder.scxml
