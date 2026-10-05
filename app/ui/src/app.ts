@@ -334,11 +334,8 @@ export class App {
         delay = WATCH_MS;
       } catch (error) {
         if (cancelled || session !== this.session) return;
-        if (this.askForToken(error)) {
-          // The sign-in form is drawn, and the questions start again when the person has signed in.
-          this.render();
-          return;
-        }
+        // The sign-in form is drawn, and the questions start again when the person has signed in.
+        if (this.askForToken(error)) return;
         if (error instanceof CommandFailure && error.kind === "not-found") {
           // The work was taken away from another window: there is nothing to ask about.
           this.notice = this.explain(error);
@@ -448,7 +445,7 @@ export class App {
       this.render();
       return true;
     } catch (error) {
-      if (session === this.session && this.askForToken(error)) this.render();
+      if (session === this.session) this.askForToken(error);
       return false;
     }
   }
@@ -468,7 +465,7 @@ export class App {
       this.render();
       return true;
     } catch (error) {
-      if (session === this.session && this.askForToken(error)) this.render();
+      if (session === this.session) this.askForToken(error);
       return false;
     }
   }
@@ -1024,13 +1021,21 @@ export class App {
     }
   }
 
-  /** Whether `error` is the server wanting a token the person can type in; if so, the sign-in form is shown next. */
+  /**
+   * Whether `error` is the server wanting a token the person can type in; if so, the
+   * sign-in form is drawn now. It is drawn here and not left to the caller because the
+   * reads that open a work answer in no fixed order: a refusal that came after the last
+   * redraw and only set a flag left the screen as it was, with no way to sign in.
+   */
   private askForToken(error: unknown): boolean {
     const wanted =
       error instanceof CommandFailure &&
       error.kind === UNAUTHORIZED &&
       this.env.credentials !== undefined;
-    if (wanted) this.needsToken = true;
+    if (wanted) {
+      this.needsToken = true;
+      this.render();
+    }
     return wanted;
   }
 

@@ -1873,6 +1873,52 @@ class ManualTicker implements Ticker {
   }
 }
 
+describe("a token the server asks for in the middle of a read", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    core.addWork("beta", "Beta", ["beta one"]);
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    app = new App(root, {
+      transport: core,
+      storage: null,
+      browserLanguage: "en",
+      credentials: { token: () => null, save: () => undefined },
+    });
+    await app.start();
+    await settle();
+  });
+
+  // Each of these reads is started beside the others when a work opens, and each is
+  // one the server can refuse first. Whichever it is, the person is shown the form that
+  // asks for the token: a refusal that only sets a flag leaves the screen as it was.
+  for (const name of ["read_answers", "review", "read_requirements", "read_model", "figures"]) {
+    it(`draws the sign-in form when \`${name}\` is the read that is refused`, async () => {
+      core.failNext(name, new CommandFailure(UNAUTHORIZED, "no token"));
+
+      await click("Alpha");
+      await settle();
+
+      expect(root.querySelector("form.token-form"), name).not.toBeNull();
+    });
+  }
+
+  it("draws it though nothing else is left to draw, the refused read being the last to answer", async () => {
+    // A work with no model has nothing to draw once the model panel says so, and the
+    // answers are read beside it: the redraw that the model panel's answer brings comes
+    // first, so the refusal that follows has to draw the form itself.
+    core.failNext("read_answers", new CommandFailure(UNAUTHORIZED, "no token"));
+
+    await click("Beta");
+    await settle();
+
+    expect(root.querySelector("form.token-form"), root.textContent ?? "").not.toBeNull();
+  });
+});
+
 describe("a work that moves under the screen", () => {
   let ticker: ManualTicker;
 
