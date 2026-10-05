@@ -190,7 +190,7 @@
             }
             {% endfor %}
             {% for param in unkept if param.native_value and param.native_fails %}
-            /* §scxml-6.4.3: the child declares no `{{ param.name | escape_c }}`, so the Processor MUST
+            /* §scxml-6.4.3: the child declares no `{{ param.name }}`, so the Processor MUST
                NOT add it to its data model — but the argument is still the
                invoke's, evaluated, and a failure of it is reported (§scxml-5.7.1). */
             {

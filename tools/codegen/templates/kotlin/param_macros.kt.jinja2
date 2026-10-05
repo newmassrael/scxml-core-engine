@@ -180,7 +180,7 @@
 {% endif %}
 {% for param in unkept %}
 {% if param.native_value and param.native_fails %}
-{{ indent }}// W3C SCXML 6.4.3: the child declares no `{{ param.name | escape_kotlin }}`, so the Processor MUST NOT
+{{ indent }}// W3C SCXML 6.4.3: the child declares no `{{ param.name }}`, so the Processor MUST NOT
 {{ indent }}// add it to its data model — but the argument is still the invoke's,
 {{ indent }}// evaluated, and a failure of it is reported (W3C SCXML 5.7.1).
 {{ indent }}try {
