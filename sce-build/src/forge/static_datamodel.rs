@@ -58,16 +58,22 @@ impl<'a> WireParam<'a> {
         }
     }
 
-    /// A name of a `<send>`'s `namelist`: the variable it names, read as the
-    /// expression it is. The model records no position for a name, so a
-    /// refusal is placed at the attribute.
-    pub(crate) fn of_namelist_name(name: &'a str, action: &'a Action) -> Self {
+    /// A name of a `namelist`, of a `<send>` or of an `<invoke>` a host runs:
+    /// the variable it names, read as the expression it is. The model records
+    /// no position for a name, so a refusal is placed at the attribute when
+    /// the element records one (`spelling`), and at the element when it does
+    /// not (`at`).
+    pub(crate) fn of_namelist_name(
+        name: &'a str,
+        spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
+        at: Option<&'a crate::forge::error::SourceLocation>,
+    ) -> Self {
         Self {
             name,
             is_static_literal: false,
             written: name,
-            spelling: action.spellings.get("namelist"),
-            source_location: None,
+            spelling,
+            source_location: at,
         }
     }
 
@@ -1168,7 +1174,8 @@ impl<'a> Judge<'a> {
                 // abbreviates ([`Action::fold_namelist_into_params`]), held to
                 // the rule a param is, and placed at the attribute.
                 for name in action.namelist.split_whitespace() {
-                    let namelist = WireParam::of_namelist_name(name, action);
+                    let namelist =
+                        WireParam::of_namelist_name(name, action.spellings.get("namelist"), None);
                     self.wire_param(ctx, &namelist, "<send>", state)?;
                 }
                 if !action.eventexpr.is_empty() {
@@ -1558,14 +1565,10 @@ impl<'a> Judge<'a> {
         let base = invoke.base();
         let at = base.source_location.as_ref();
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
-        // A host-run invoke's `namelist` reads datamodel variables by name at
-        // entry, and a mesh-rpc `srcexpr` names its peer by an expression —
-        // both are evaluated as script-engine text. A child session's
-        // `namelist` is judged with its `<param>`s ([`Self::child_arguments`]).
-        let namelist = match invoke {
-            Invoke::Unsupported(info) => info.namelist.as_str(),
-            _ => "",
-        };
+        // A mesh-rpc `srcexpr` names its peer by an expression, evaluated as
+        // script-engine text. The `namelist` of a child session is judged with
+        // its `<param>`s ([`Self::child_arguments`]), and that of a host-run
+        // invoke with the pairs of its request, below.
         let srcexpr = match invoke {
             Invoke::MeshRpc(info) => match &info.target {
                 crate::model::MeshRpcTarget::SrcExpr { srcexpr } => srcexpr.as_str(),
@@ -1582,7 +1585,6 @@ impl<'a> Judge<'a> {
         };
         for (attr, value) in [
             ("idlocation", base.idlocation.as_str()),
-            ("namelist", namelist),
             ("srcexpr", srcexpr),
             ("contentexpr", contentexpr),
         ] {
@@ -1625,11 +1627,15 @@ impl<'a> Judge<'a> {
             }
         }
         // A host-run invoke's `<param>`s are the request the host receives, and
-        // are lowered to native code like a `<send>`'s. One typed by
-        // `sce:request` holds the host to the whole record its schema names
-        // and checks each value against its field, which the lowering does not
-        // yet do — so such a request may carry literals and nothing computed,
-        // rather than a `<param>` the host was promised and is not given.
+        // are lowered to native code like a `<send>`'s, as are the names of its
+        // `namelist`, which are the `<param name="x" expr="x"/>`s it abbreviates
+        // ([`crate::model::UnsupportedInvokeInfo::fold_namelist_into_params`]).
+        // One typed by `sce:request` holds the host to the whole record its
+        // schema names and checks each value against its field, which the
+        // lowering does not yet do — so such a request may carry literals and
+        // nothing computed, rather than a `<param>` the host was promised and
+        // is not given. It takes no `namelist` at all: the parser refuses one
+        // beside a typed request, under every data model.
         if let Invoke::Unsupported(info) = invoke {
             let element = format!("<invoke id=\"{}\">", base.invoke_id);
             if !info.request_schema.is_empty() {
@@ -1651,6 +1657,10 @@ impl<'a> Judge<'a> {
             }
             for param in &base.params {
                 self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;
+            }
+            for name in info.namelist.split_whitespace() {
+                let pair = WireParam::of_namelist_name(name, None, at);
+                self.wire_param(ctx, &pair, &element, state)?;
             }
             return Ok(());
         }

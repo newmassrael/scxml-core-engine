@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/model.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -313,4 +313,34 @@ mutation_case "a Go machine's imports are not read from its text" <<'PY'
 edit("sce-build/src/generator.rs",
      "    if unimported.is_empty() {\n        return Ok(first);\n    }\n",
      "    if true {\n        return Ok(first);\n    }\n")
+PY
+
+# The `namelist` of an `<invoke>` a host runs is the pairs of its request, the
+# `<param>`s it abbreviates. Four mutants take one step away: the names are not
+# judged, so a name no variable declares reaches a backend; a name that repeats a
+# `<param>` reaches C, which carries a name once; the names are not folded into
+# the params, so a backend evaluates the attribute with an engine the machine
+# lacks; and the attribute is left standing after the fold, which does the same.
+mutation_case "a host-run invoke's namelist is not judged" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            for name in info.namelist.split_whitespace() {\n                let pair = WireParam::of_namelist_name(name, None, at);\n                self.wire_param(ctx, &pair, &element, state)?;\n            }\n",
+     "")
+PY
+
+mutation_case "a namelist name that repeats a host-run invoke's param reaches C" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                        .map(|p| p.name.as_str())\n                        .chain(info.namelist.split_whitespace()),\n",
+     "                        .map(|p| p.name.as_str()),\n")
+PY
+
+mutation_case "a host-run invoke's namelist is not folded into its params" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    info.fold_namelist_into_params();\n",
+     "")
+PY
+
+mutation_case "a host-run invoke's namelist stands after it is folded" <<'PY'
+edit("sce-build/src/model.rs",
+     "        let at = self.base.source_location.clone();\n        let names = std::mem::take(&mut self.namelist);\n",
+     "        let at = self.base.source_location.clone();\n        let names = self.namelist.clone();\n")
 PY

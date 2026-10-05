@@ -2800,7 +2800,7 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send targetexpr/typeexpr/idlocation>`, a `<send><content expr>` that names no record, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send targetexpr/typeexpr/idlocation>`, a `<send><content expr>` that names no record, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
@@ -2865,7 +2865,15 @@ the same rule: a name no variable declares, or a variable of a type that has no
 spelling below, is refused at the attribute. The Interpreter's lowering leaves
 the attribute as written and its own element reads the names
 (`scenarios/static_send_namelist.json`, on the six generated backends and the
-Interpreter). A `<send>`'s `<content expr>` that names a record — a record
+Interpreter). The `namelist` of an `<invoke>` a host runs is the same: the host
+is handed the pairs of its names beside the `<param>`s, and the generator writes
+the same code for `namelist="a b"` as for the two `<param>`s it abbreviates
+(`a_host_run_invoke_namelist_is_the_params_it_abbreviates_and_needs_no_engine`,
+and `statechart_static_host_params`, whose invoke names `delta` and `ratio` this
+way, on the Rust, Go, Kotlin, Python and C11 machines). C11 refuses a name that
+a `<param>` of the same invoke already names, as it does for two `<param>`s; a
+request typed by `sce:request` takes no `namelist` under any data model. A
+`<send>`'s `<content expr>` that names a record — a record
 variable, the item of a `<foreach>` over a list of records, or the payload of the
 event the transition is on (`_event.data`) — is the `<param name="f"
 expr="record.f"/>` of each field the record's schema declares, held to the same

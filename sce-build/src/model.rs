@@ -1979,6 +1979,27 @@ impl ScxmlInvokeInfo {
     }
 }
 
+impl UnsupportedInvokeInfo {
+    /// §scxml-6.4.1: the `namelist` of an `<invoke>` a host runs is its
+    /// `<param name="x" expr="x"/>`s written short — the host receives the pairs
+    /// beside the `<param>`s — so each name is appended to the params, in the
+    /// order [`ScxmlInvokeInfo::arguments`] gives a child session, and the
+    /// `namelist` itself is cleared. A name carries the `<invoke>`'s own
+    /// position, which is the only one the model records for it.
+    pub fn fold_namelist_into_params(&mut self) {
+        let at = self.base.source_location.clone();
+        let names = std::mem::take(&mut self.namelist);
+        self.base
+            .params
+            .extend(names.split_whitespace().map(|name| Param {
+                name: name.to_string(),
+                expr: name.to_string(),
+                source_location: at.clone(),
+                ..Param::default()
+            }));
+    }
+}
+
 /// §scxml-6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
 ///
 /// Scxml-only fields (`finalize_content`, `src`, `namelist`) do not appear

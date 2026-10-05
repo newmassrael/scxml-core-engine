@@ -34,9 +34,15 @@
   so a lowering that dropped the pair without saying so is told from one that
   reported it.
 
-  Deliberately single-axis: no event payload, no delay, no namelist.
-  `statechart_host_processor.scxml` owns the dispatch under `ecmascript`; this
-  one owns what a typed expression puts on the wire.
+  The invoke names `delta` and `ratio` in its `namelist` where the send writes
+  them as params: a `namelist` name is the `<param name="x" expr="x"/>` it
+  abbreviates, so the host is handed the same pairs either way, and the one
+  set of assertions every backend makes about the request holds for both.
+
+  Deliberately single-axis: no event payload, no delay. The send's `namelist`
+  is held by `static_send_namelist`. `statechart_host_processor.scxml` owns the
+  dispatch under `ecmascript`; this one owns what a typed expression puts on
+  the wire.
 
   Generated with BOTH host declarations, processor and invoker, naming the type
   x-sce-host (scripts/regen_host_processor.sh and
@@ -76,13 +82,11 @@
         <param name="boom" expr="count * 2000000000"/>
       </send>
     </onentry>
-    <invoke type="x-sce-host" id="h">
+    <invoke type="x-sce-host" id="h" namelist="delta ratio">
       <param name="count" expr="count"/>
       <param name="ready" expr="ready"/>
       <param name="label" expr="label"/>
       <param name="twice" expr="count * 2"/>
-      <param name="delta" expr="delta"/>
-      <param name="ratio" expr="ratio"/>
       <param name="boom" expr="count * 2000000000"/>
     </invoke>
     <transition event="error.execution">

@@ -150,10 +150,12 @@ impl ScriptEngineCauseKind {
     /// (`crate::forge::static_datamodel`) or needs an engine whatever the
     /// document declares.
     ///
-    /// A host-run invoke's cause is its request's `<param>`s: its `srcexpr`,
-    /// `namelist`, `<content expr>` and `idlocation` are refused by the model,
-    /// so none of them reaches the generator under this data model, and each
-    /// `<param>` is lowered like a `<send>`'s (`static_lowering::lower_wire_param`).
+    /// A host-run invoke's cause is its request's `<param>`s and the names of
+    /// its `namelist`, which are `<param>`s written short
+    /// ([`crate::model::UnsupportedInvokeInfo::fold_namelist_into_params`]): its
+    /// `srcexpr`, `<content expr>` and `idlocation` are refused by the model, so
+    /// none of them reaches the generator under this data model, and each pair
+    /// is lowered like a `<send>`'s (`static_lowering::lower_wire_param`).
     ///
     /// Exhaustive, so a new cause is decided here rather than falling on
     /// either side by default.

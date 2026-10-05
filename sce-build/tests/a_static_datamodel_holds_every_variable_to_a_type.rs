@@ -2634,12 +2634,12 @@ fn a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it() {
 
 #[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
-    // Its `srcexpr`, `namelist` and `<content expr>` are script text a backend
-    // would hand to an engine this data model does not have; they are refused,
-    // as the same attributes of every other element are.
+    // Its `srcexpr` and `<content expr>` are script text a backend would hand
+    // to an engine this data model does not have; they are refused, as the same
+    // attributes of every other element are. Its `namelist` is not among them:
+    // it names variables, and is the pairs of its request.
     for invoke in [
         r#"<invoke type="x-sce-host" id="h" srcexpr="'a'"/>"#,
-        r#"<invoke type="x-sce-host" id="h" namelist="count"/>"#,
         r#"<invoke type="x-sce-host" id="h"><content expr="count"/></invoke>"#,
     ] {
         let document = machine(&format!(
@@ -2649,6 +2649,151 @@ fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
         assert!(!ok, "{invoke} has no typed form:\n{out}");
         assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
     }
+}
+
+/// A `sce-static` machine whose first state holds `invoke` on line 9.
+fn invoking_the_host(invoke: &str) -> String {
+    machine(&format!(
+        "<state id=\"s\">\n    {invoke}\n    <transition event=\"done.invoke.h\" target=\"done\"/>\n  </state>"
+    ))
+}
+
+/// What `language` generates from `document` for a host that runs
+/// `x-sce-host` invokes, by file name, and the run's own output. Left out is
+/// what says where the document was read from and what is not code — its hash
+/// and path, comments, includes and the source map — so two documents that mean
+/// one machine compare equal and two that do not, do not.
+fn generated_code(
+    language: &str,
+    document: &str,
+) -> (String, std::collections::BTreeMap<String, String>) {
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            language,
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+            "--host-invoker",
+            "x-sce-host",
+        ],
+        document,
+    );
+    assert!(ok, "{language}: the machine generates:\n{out}");
+    let mut files = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        let name = path
+            .file_name()
+            .expect("a file name")
+            .to_string_lossy()
+            .into_owned();
+        if name == "sce_sourcemap.json" {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("a generated file");
+        let code: Vec<&str> = text
+            .lines()
+            .filter(|line| {
+                let line = line.trim_start();
+                !(line.contains("source-hash")
+                    || line.starts_with("//")
+                    || line.starts_with("# ")
+                    || line.starts_with("#include"))
+            })
+            .collect();
+        files.insert(name, code.join("\n"));
+    }
+    (out, files)
+}
+
+#[test]
+fn a_host_run_invoke_namelist_names_variables_the_machine_holds() {
+    let (ok, out) = run(
+        &["check"],
+        &invoking_the_host(r#"<invoke type="x-sce-host" id="h" namelist="count ready"/>"#),
+    );
+    assert!(ok, "a namelist of variables is typed values:\n{out}");
+}
+
+#[test]
+fn a_host_run_invoke_namelist_is_the_params_it_abbreviates_and_needs_no_engine() {
+    // The host is handed the pairs of a `namelist` beside the `<param>`s, so
+    // `namelist="count ready"` is `<param name="count" expr="count"/>` and
+    // `<param name="ready" expr="ready"/>` after them: every backend generates
+    // the same code for the two spellings, and none of it asks an engine.
+    let short = invoking_the_host(
+        r#"<invoke type="x-sce-host" id="h" namelist="count ready"><param name="k" expr="count * 2"/></invoke>"#,
+    );
+    let written = invoking_the_host(
+        r#"<invoke type="x-sce-host" id="h"><param name="k" expr="count * 2"/><param name="count" expr="count"/><param name="ready" expr="ready"/></invoke>"#,
+    );
+    for language in ["rust", "kotlin", "go", "python", "c", "cpp"] {
+        let (out, from_short) = generated_code(language, &short);
+        let (_, from_written) = generated_code(language, &written);
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a namelist of variables needs no script engine:\n{out}"
+        );
+        assert!(
+            from_short.values().any(|text| text.contains("ready")),
+            "{language}: the request carries the names: {from_short:?}"
+        );
+        assert_eq!(
+            from_short, from_written,
+            "{language}: a namelist and the params it abbreviates generate alike"
+        );
+    }
+}
+
+#[test]
+fn a_host_run_invoke_namelist_name_is_held_to_the_rule_a_param_is() {
+    // A name nothing declares reads no variable.
+    let (ok, out) = run(
+        &["check"],
+        &invoking_the_host(r#"<invoke type="x-sce-host" id="h" namelist="count missing"/>"#),
+    );
+    assert!(!ok, "a name that is no variable is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+
+    // A 64-bit variable has no wire spelling every backend shares, and the
+    // refusal is placed at the invoke, where the name is written.
+    let document = invoking_the_host(r#"<invoke type="x-sce-host" id="h" namelist="big"/>"#)
+        .replace(
+            r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+            r#"<data id="big" sce:type="int64" expr="0"/>"#,
+        );
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+}
+
+#[test]
+fn a_host_run_invoke_namelist_name_that_repeats_a_param_is_refused_for_c() {
+    // C11 writes the request as one JSON object, in which a name is carried
+    // once, so a `namelist` name that a `<param>` of the same invoke already
+    // names is refused by name there, as two `<param>`s of one name are. The
+    // other backends carry it as they carry any name written twice.
+    let document = invoking_the_host(
+        r#"<invoke type="x-sce-host" id="h" namelist="count"><param name="count" expr="1"/></invoke>"#,
+    );
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+            "--host-invoker",
+            "x-sce-host",
+        ],
+        &document,
+    );
+    assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
+    assert!(out.contains("twice"), "it says why:\n{out}");
 }
 
 #[test]

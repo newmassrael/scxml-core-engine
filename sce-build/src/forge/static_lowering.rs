@@ -1746,10 +1746,12 @@ pub fn lower(
             &rewrites,
         )?;
         // An invoke the host runs evaluates its request when it starts, at
-        // the state's entry, where no event's payload is in scope.
+        // the state's entry, where no event's payload is in scope. The names of
+        // its `namelist` are params like any other: one list, folded in first.
         for invoke in &mut state.invokes {
             match invoke {
                 crate::model::Invoke::Unsupported(info) => {
+                    info.fold_namelist_into_params();
                     for param in &mut info.base.params {
                         lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
                     }
@@ -3966,7 +3968,15 @@ impl CTarget {
             // event's data on every engine (ARCHITECTURE.md, "JSON Object Key
             // Order"), which the wire writer of the forge runtime does not yet.
             crate::model::Invoke::Unsupported(info) if info.host_served => {
-                repeated_name(info.base.params.iter().map(|p| p.name.as_str())).map(|name| {
+                // A `namelist` name is a pair of the request like a `<param>`.
+                repeated_name(
+                    info.base
+                        .params
+                        .iter()
+                        .map(|p| p.name.as_str())
+                        .chain(info.namelist.split_whitespace()),
+                )
+                .map(|name| {
                     format!(
                         "an <invoke id=\"{}\"> that names <param name=\"{name}\"> twice",
                         info.base.invoke_id

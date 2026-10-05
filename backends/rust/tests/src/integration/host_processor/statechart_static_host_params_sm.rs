@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1f6bc95c36ab86616cc9027b13ff1ebc63474613294e4c113db9208e7d168c84
+// source-hash: 327f32bfac689bab002347f6271fd03e8461d4f1c6443bb61810f8495664127d
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_static_host_params.scxml:46 :: _machine"]
-// SCE-MAP: statechart_static_host_params.scxml:46 :: _machine
+#![doc = "SCE-MAP: statechart_static_host_params.scxml:52 :: _machine"]
+// SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -548,6 +548,20 @@ impl StatechartStaticHostParamsPolicy {
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<invoke> <param name='twice'> expr failed to evaluate"));
             }
         }
+                match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2000000000)?)))
+        })() {
+            Ok(val) => {
+                let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                host_invoke_params.entry("boom".to_string()).or_default().push(s);
+                host_invoke_payload.entry("boom".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                // W3C SCXML 5.7.1: report the failure and omit the pair.
+                ::sce_rust_runtime::sce_log_error!("invoke param 'boom' overflowed or failed");
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<invoke> <param name='boom'> expr failed to evaluate"));
+            }
+        }
                 {
                     let val = ::sce_rust_runtime::ScriptValue::Int(i64::from(self.delta));
                     let s =
@@ -574,20 +588,6 @@ impl StatechartStaticHostParamsPolicy {
                         .or_default()
                         .push(val);
                 }
-                match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
-            Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2000000000)?)))
-        })() {
-            Ok(val) => {
-                let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
-                host_invoke_params.entry("boom".to_string()).or_default().push(s);
-                host_invoke_payload.entry("boom".to_string()).or_default().push(val);
-            }
-            Err(_) => {
-                // W3C SCXML 5.7.1: report the failure and omit the pair.
-                ::sce_rust_runtime::sce_log_error!("invoke param 'boom' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<invoke> <param name='boom'> expr failed to evaluate"));
-            }
-        }
 
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
@@ -852,8 +852,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:46 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:46 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:52 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -862,7 +862,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     ) {
         match state {
             StatechartStaticHostParamsState::Working => {
-                // SCE-MAP: statechart_static_host_params.scxml:67 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:73 :: working :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1017,8 +1017,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:46 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:46 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:52 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1056,8 +1056,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:46 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:46 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:52 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1125,8 +1125,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:46 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:46 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:52 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1137,7 +1137,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             StatechartStaticHostParamsState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_static_host_params.scxml:59 :: idle :: _transition_0
+                        // SCE-MAP: statechart_static_host_params.scxml:65 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1181,7 +1181,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             StatechartStaticHostParamsState::Working => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_static_host_params.scxml:88 :: working :: _transition_0
+                        // SCE-MAP: statechart_static_host_params.scxml:92 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
