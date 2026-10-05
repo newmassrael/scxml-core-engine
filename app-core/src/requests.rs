@@ -139,6 +139,39 @@ pub enum Refusal {
     NotResuming,
 }
 
+/// What an executor has written for the request so far, by revision. The texts are kept
+/// where every revision of a model and of a requirement list is, named by what they hold;
+/// what the request keeps is which ones it means. Nothing here is the work's model: a
+/// candidate becomes it only when the request is published, as one bundle with the other.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Candidate {
+    #[serde(default)]
+    pub model: Option<Revision>,
+    #[serde(default)]
+    pub requirements: Option<Revision>,
+}
+
+impl Candidate {
+    /// What is still missing for a bundle, by name: a bundle is a model and the requirement
+    /// list read out of the same text, and one without the other is not one.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if self.model.is_none() {
+            missing.push("model");
+        }
+        if self.requirements.is_none() {
+            missing.push("requirements");
+        }
+        missing
+    }
+}
+
+/// What a completed request made: the bundle it published.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Outcome {
+    pub bundle: Revision,
+}
+
 /// One generation request, as it is kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
@@ -165,6 +198,12 @@ pub struct Request {
     /// Why it ended or was let go of, in a person's words.
     #[serde(default)]
     pub note: Option<String>,
+    /// What the executor has written for it so far; `None` until it writes something.
+    #[serde(default)]
+    pub candidate: Option<Candidate>,
+    /// The bundle a completed request published; `None` for every request that did not.
+    #[serde(default)]
+    pub outcome: Option<Outcome>,
 }
 
 /// Whether `seconds` is a lease a claim may ask for.
@@ -194,6 +233,8 @@ impl Request {
             lease: None,
             ended_at: None,
             note: None,
+            candidate: None,
+            outcome: None,
         }
     }
 
@@ -318,13 +359,55 @@ impl Request {
                 .is_some_and(|l| l.holder == holder && l.attempt == attempt)
     }
 
-    /// The executor says it is done.
-    pub fn complete(&self, holder: &str, attempt: u32, now: &Moment) -> Result<Request, Refusal> {
-        if self.already(State::Completed, holder, attempt) {
+    /// Whether `holder` speaks for the current attempt, as a request that is not theirs, or
+    /// that ended, is refused before anything else about the call is looked at.
+    pub fn check_held_by(&self, holder: &str, attempt: u32) -> Result<(), Refusal> {
+        self.held_by(holder, attempt)
+    }
+
+    /// The executor wrote something for the request: what it names replaces what it named
+    /// before, and what it leaves out stays. The executor says it as it says everything, so it
+    /// is the executor of the current attempt or it is refused.
+    pub fn with_candidate(
+        &self,
+        holder: &str,
+        attempt: u32,
+        written: Candidate,
+    ) -> Result<Request, Refusal> {
+        self.held_by(holder, attempt)?;
+        let before = self.candidate.clone().unwrap_or_default();
+        Ok(Request {
+            candidate: Some(Candidate {
+                model: written.model.or(before.model),
+                requirements: written.requirements.or(before.requirements),
+            }),
+            ..self.clone()
+        })
+    }
+
+    /// The executor says it is done and the bundle it made is the work's now. The same bundle
+    /// said again by the same attempt is the same completion.
+    pub fn publish(
+        &self,
+        holder: &str,
+        attempt: u32,
+        bundle: &Revision,
+        now: &Moment,
+    ) -> Result<Request, Refusal> {
+        if self.already(State::Completed, holder, attempt) && self.outcome_is(bundle) {
             return Ok(self.clone());
         }
         self.held_by(holder, attempt)?;
-        Ok(self.ended(State::Completed, None, now))
+        Ok(Request {
+            outcome: Some(Outcome {
+                bundle: bundle.clone(),
+            }),
+            ..self.ended(State::Completed, None, now)
+        })
+    }
+
+    fn outcome_is(&self, bundle: &Revision) -> bool {
+        self.outcome.as_ref().is_some_and(|o| &o.bundle == bundle)
     }
 
     /// The executor says it could not, and why.
@@ -475,7 +558,9 @@ mod tests {
         assert_eq!(renewed.state, State::Running);
         assert_eq!(renewed.effective(T0 + 559), State::Running);
         assert_eq!(renewed.lease.as_ref().map(|l| l.expires_at), Some(T0 + 560));
-        let late = held.complete("adapter-a", 1, &at(T0 + 500)).unwrap();
+        let late = held
+            .publish("adapter-a", 1, &revision("bundle"), &at(T0 + 500))
+            .unwrap();
         assert_eq!(late.state, State::Completed);
     }
 
@@ -523,7 +608,7 @@ mod tests {
             Err(fenced.clone())
         );
         assert_eq!(
-            resumed.complete("adapter-a", 1, &at(T0 + 101)),
+            resumed.publish("adapter-a", 1, &revision("bundle"), &at(T0 + 101)),
             Err(fenced.clone())
         );
         assert_eq!(
@@ -544,7 +629,7 @@ mod tests {
         for refused in [
             held.heartbeat("adapter-b", 1, 60, &at(T0 + 1)),
             held.heartbeat("adapter-a", 2, 60, &at(T0 + 1)),
-            held.complete("adapter-b", 1, &at(T0 + 1)),
+            held.publish("adapter-b", 1, &revision("bundle"), &at(T0 + 1)),
             held.fail("adapter-a", 7, "no", &at(T0 + 1)),
         ] {
             assert_eq!(
@@ -567,18 +652,21 @@ mod tests {
 
     #[test]
     fn a_completion_said_twice_by_the_same_attempt_is_one_completion() {
-        let done = running().complete("adapter-a", 1, &at(T0 + 5)).unwrap();
+        let bundle = revision("bundle");
+        let done = running()
+            .publish("adapter-a", 1, &bundle, &at(T0 + 5))
+            .unwrap();
         assert_eq!(done.state, State::Completed);
         assert_eq!(done.ended_at, Some(at(T0 + 5).text));
 
-        let again = done.complete("adapter-a", 1, &at(T0 + 9)).unwrap();
+        let again = done.publish("adapter-a", 1, &bundle, &at(T0 + 9)).unwrap();
 
         assert_eq!(
             again, done,
             "the second saying changes nothing, the time included"
         );
         assert_eq!(
-            done.complete("adapter-b", 1, &at(T0 + 9)),
+            done.publish("adapter-b", 1, &bundle, &at(T0 + 9)),
             Err(Refusal::Ended {
                 state: State::Completed
             })
@@ -631,7 +719,9 @@ mod tests {
                 })
             );
         }
-        let done = running().complete("adapter-a", 1, &at(T0 + 5)).unwrap();
+        let done = running()
+            .publish("adapter-a", 1, &revision("bundle"), &at(T0 + 5))
+            .unwrap();
         assert_eq!(
             done.cancel(&at(T0 + 6)),
             Err(Refusal::Ended {
@@ -651,7 +741,7 @@ mod tests {
         assert_eq!(superseded.supersede("again", &at(T0 + 4)), None);
         assert!(queued().supersede("x", &at(T0)).is_some());
         assert_eq!(
-            superseded.complete("adapter-a", 1, &at(T0 + 4)),
+            superseded.publish("adapter-a", 1, &revision("bundle"), &at(T0 + 4)),
             Err(Refusal::Ended {
                 state: State::Superseded
             })
@@ -690,6 +780,119 @@ mod tests {
         assert!(lease_is_valid(LEASE_DEFAULT_SECONDS));
         assert!(lease_is_valid(LEASE_MAX_SECONDS));
         assert!(!lease_is_valid(LEASE_MAX_SECONDS + 1));
+    }
+
+    #[test]
+    fn what_the_executor_writes_for_a_request_is_kept_by_revision_and_added_to() {
+        let held = running();
+        let model = revision("model");
+        let list = revision("list");
+
+        let first = held
+            .with_candidate(
+                "adapter-a",
+                1,
+                Candidate {
+                    model: Some(model.clone()),
+                    requirements: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            first.candidate.as_ref().unwrap().missing(),
+            vec!["requirements"]
+        );
+
+        // A second word names the other half, and leaves the first where it was.
+        let second = first
+            .with_candidate(
+                "adapter-a",
+                1,
+                Candidate {
+                    model: None,
+                    requirements: Some(list.clone()),
+                },
+            )
+            .unwrap();
+        assert!(second.candidate.as_ref().unwrap().missing().is_empty());
+        assert_eq!(second.candidate.as_ref().unwrap().model, Some(model));
+        // A later model replaces the earlier one.
+        let replaced = second
+            .with_candidate(
+                "adapter-a",
+                1,
+                Candidate {
+                    model: Some(revision("model, again")),
+                    requirements: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            replaced.candidate.unwrap().model,
+            Some(revision("model, again"))
+        );
+        // It does not move the lease or the state.
+        assert_eq!((second.state, second.lease), (held.state, held.lease));
+    }
+
+    #[test]
+    fn only_the_holder_of_the_current_attempt_writes_for_a_request() {
+        let held = running();
+        let written = Candidate {
+            model: Some(revision("model")),
+            requirements: None,
+        };
+
+        assert_eq!(
+            held.with_candidate("adapter-b", 1, written.clone()),
+            Err(Refusal::NotHolder {
+                holder: Some("adapter-a".to_string()),
+                attempt: 1
+            })
+        );
+        assert_eq!(
+            queued().with_candidate("adapter-a", 1, written.clone()),
+            Err(Refusal::NotHolder {
+                holder: None,
+                attempt: 0
+            })
+        );
+        let cancelled = held.cancel(&at(T0 + 1)).unwrap();
+        assert_eq!(
+            cancelled.with_candidate("adapter-a", 1, written),
+            Err(Refusal::Ended {
+                state: State::Cancelled
+            })
+        );
+    }
+
+    #[test]
+    fn a_published_request_says_which_bundle_it_made_and_says_it_once() {
+        let bundle = revision("bundle");
+
+        let done = running()
+            .publish("adapter-a", 1, &bundle, &at(T0 + 5))
+            .unwrap();
+
+        assert_eq!(done.state, State::Completed);
+        assert_eq!(
+            done.outcome,
+            Some(Outcome {
+                bundle: bundle.clone()
+            })
+        );
+        assert_eq!(
+            done.publish("adapter-a", 1, &bundle, &at(T0 + 9)).unwrap(),
+            done
+        );
+        // Another bundle from the same attempt is not the completion it made.
+        assert_eq!(
+            done.publish("adapter-a", 1, &revision("another"), &at(T0 + 9)),
+            Err(Refusal::Ended {
+                state: State::Completed
+            })
+        );
+        assert!(running().outcome.is_none() && running().candidate.is_none());
     }
 
     #[test]

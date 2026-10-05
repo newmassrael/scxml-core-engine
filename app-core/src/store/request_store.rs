@@ -32,8 +32,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{
-    atomic_write, drop_torn_tail, is_removed, read_pointer, removed_work, Artifact, WorkId,
-    WorkStore, LOCK_FILE, LOCK_WAIT,
+    atomic_write, bundle_store, drop_torn_tail, is_removed, read_pointer, removed_work, Artifact,
+    WorkId, WorkStore, LOCK_FILE, LOCK_WAIT,
 };
 use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
@@ -286,7 +286,7 @@ fn record_transition(
 
 /// Keep `to` as the request, in place of `from` (`None` for a request just made). A change of
 /// state is a line of the history; a renewal that changes nothing a person reads is not.
-fn persist(
+pub(super) fn persist(
     dir: &Path,
     from: Option<&Request>,
     to: &Request,
@@ -300,17 +300,55 @@ fn persist(
     Ok(())
 }
 
-/// Where the latest request of the work stands at `now` (seconds since the epoch).
-pub(super) fn latest_request_head(dir: &Path, now: u64) -> Result<Option<RequestHead>, StoreError> {
-    Ok(load_requests(dir)?.pop().map(|r| RequestHead {
-        state: r.effective(now),
-        attempt: r.attempt,
-        id: r.id,
-    }))
+/// The request, as the work's current bundle says it is: a request that is still open and
+/// that the current bundle says made it is completed.
+///
+/// Publishing a bundle moves a pointer and then writes the request down, and a process can
+/// stop between the two. The bundle is the work's model by then, and the request that made it
+/// would be read as running, taken again, and made to publish a second bundle of the same work.
+/// The bundle names the request and the attempt, so it is not a guess: the request is read as
+/// the completion it was, and written down as that by the next change.
+pub(super) fn reconcile(dir: &Path, request: Request) -> Result<Request, StoreError> {
+    if !request.state.is_open() {
+        return Ok(request);
+    }
+    let Some((revision, bundle)) = bundle_store::current_bundle(dir)? else {
+        return Ok(request);
+    };
+    if bundle.request != request.id || bundle.attempt != request.attempt {
+        return Ok(request);
+    }
+    let at = Moment {
+        epoch: crate::clock::parse_utc_timestamp(&bundle.published_at).unwrap_or(0),
+        text: bundle.published_at.clone(),
+    };
+    Ok(request
+        .publish(&bundle.executor, bundle.attempt, &revision, &at)
+        .unwrap_or(request))
+}
+
+/// [`reconcile`], and the request written down as that when it differs from what is kept.
+/// Under the lock, so the write is nobody else's.
+pub(super) fn heal(dir: &Path, stored: Request, now: &Moment) -> Result<Request, StoreError> {
+    let healed = reconcile(dir, stored.clone())?;
+    if healed != stored {
+        persist(dir, Some(&stored), &healed, now)?;
+    }
+    Ok(healed)
+}
+
+/// The request `id`, or `None` for one that is not there, and for a name that is not the
+/// shape of a request id (which names no file, whatever is at that path).
+pub(super) fn find_request(dir: &Path, id: &str) -> Result<Option<Request>, StoreError> {
+    if valid_request_id(id) {
+        load_request(dir, id)
+    } else {
+        Ok(None)
+    }
 }
 
 /// A request's refusal as the error a caller branches on.
-fn refusal_error(request: &Request, refusal: Refusal) -> StoreError {
+pub(super) fn refusal_error(request: &Request, refusal: Refusal) -> StoreError {
     let id = &request.id;
     match refusal {
         Refusal::Ended { state } => StoreError::refused(
@@ -386,7 +424,10 @@ impl<C: Clock> WorkStore<C> {
             return Err(removed_work(id));
         }
         let now = Moment::of(&self.clock);
-        let requests = load_requests(&dir)?;
+        let mut requests = Vec::new();
+        for stored in load_requests(&dir)? {
+            requests.push(heal(&dir, stored, &now)?);
+        }
 
         if let Some(same) = requests.iter().find(|r| r.key == registration.key) {
             if same.inputs != registration.expect {
@@ -479,16 +520,16 @@ impl<C: Clock> WorkStore<C> {
         let Some(found) = found else {
             return Err(not_found(id, request));
         };
-        Ok(self.view(found))
+        self.view(&dir, found)
     }
 
     /// Every request of the work, the newest first.
     pub fn list_requests(&self, id: &WorkId) -> Result<Vec<RequestView>, StoreError> {
         let dir = self.existing(id)?;
-        let mut views: Vec<RequestView> = load_requests(&dir)?
+        let mut views = load_requests(&dir)?
             .into_iter()
-            .map(|r| self.view(r))
-            .collect();
+            .map(|r| self.view(&dir, r))
+            .collect::<Result<Vec<RequestView>, StoreError>>()?;
         views.reverse();
         Ok(views)
     }
@@ -499,11 +540,30 @@ impl<C: Clock> WorkStore<C> {
         read_transitions(&dir)
     }
 
-    fn view(&self, request: Request) -> RequestView {
-        RequestView {
+    /// The request as the clock and the work's current bundle say it is now.
+    pub(super) fn view(&self, dir: &Path, request: Request) -> Result<RequestView, StoreError> {
+        let request = reconcile(dir, request)?;
+        Ok(RequestView {
             state: request.effective(self.clock.epoch()),
             request,
-        }
+        })
+    }
+
+    /// Where the latest request of the work stands as the clock says it now.
+    pub(super) fn latest_request_head(
+        &self,
+        dir: &Path,
+        _id: &WorkId,
+    ) -> Result<Option<RequestHead>, StoreError> {
+        let Some(latest) = load_requests(dir)?.pop() else {
+            return Ok(None);
+        };
+        let request = reconcile(dir, latest)?;
+        Ok(Some(RequestHead {
+            state: request.effective(self.clock.epoch()),
+            attempt: request.attempt,
+            id: request.id,
+        }))
     }
 
     /// `holder` takes the request for `ttl` seconds (a minute when it does not say).
@@ -539,20 +599,6 @@ impl<C: Clock> WorkStore<C> {
         checked_holder(holder)?;
         self.change_request(id, request, |current, now| {
             current.heartbeat(holder, attempt, ttl, now)
-        })
-    }
-
-    /// The executor says it is done. Said again by the same attempt, it is the same completion.
-    pub fn complete_request(
-        &self,
-        id: &WorkId,
-        request: &str,
-        holder: &str,
-        attempt: u32,
-    ) -> Result<RequestView, StoreError> {
-        checked_holder(holder)?;
-        self.change_request(id, request, |current, now| {
-            current.complete(holder, attempt, now)
         })
     }
 
@@ -602,6 +648,9 @@ impl<C: Clock> WorkStore<C> {
             return Err(not_found(id, request));
         };
         let now = Moment::of(&self.clock);
+        // A bundle published and not written down is written down first: a request it made
+        // is not called off, or taken again, as if it had not.
+        let current = heal(&dir, current, &now)?;
         let next = change(&current, &now).map_err(|refusal| refusal_error(&current, refusal))?;
         if let Some(written_down) = current.normalized(&now) {
             persist(&dir, Some(&current), &written_down, &now)?;
@@ -632,6 +681,12 @@ impl<C: Clock> WorkStore<C> {
             return;
         };
         let now = Moment::of(&self.clock);
+        // A request the current bundle says is done is done, not open: it is not ended
+        // because the text moved after it made its bundle.
+        let requests: Vec<Request> = requests
+            .into_iter()
+            .filter_map(|stored| heal(dir, stored, &now).ok())
+            .collect();
         for request in requests.iter().filter(|r| r.state.is_open()) {
             let pinned = match artifact {
                 Artifact::Source => Some(&request.inputs.source),
@@ -648,7 +703,7 @@ impl<C: Clock> WorkStore<C> {
     }
 }
 
-fn not_found(id: &WorkId, request: &str) -> StoreError {
+pub(super) fn not_found(id: &WorkId, request: &str) -> StoreError {
     StoreError::NotFound {
         what: format!("request `{request}` of work `{id}`"),
     }
@@ -674,7 +729,7 @@ fn checked_lease(ttl: Option<u64>) -> Result<u64, StoreError> {
     }
 }
 
-fn checked_holder(holder: &str) -> Result<(), StoreError> {
+pub(super) fn checked_holder(holder: &str) -> Result<(), StoreError> {
     if valid_name(holder) {
         Ok(())
     } else {

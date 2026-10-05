@@ -81,11 +81,13 @@ use crate::lock;
 use crate::revision::Revision;
 
 mod adapter_store;
+mod bundle_store;
 mod request_store;
 
 pub use adapter_store::{
     Adapter, AdapterListing, AdapterReport, AdapterStatus, ADAPTER_LIVE_SECONDS,
 };
+pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
 pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.
@@ -102,6 +104,10 @@ pub const MAX_REQUIREMENTS_BYTES: usize = 4 * 1024 * 1024;
 
 /// The most one acceptance (the product's record and what it was taken from) may hold.
 pub const MAX_ACCEPTANCE_BYTES: usize = 4 * 1024 * 1024;
+
+/// The most one bundle may hold. A bundle names revisions and does not hold them, so this is
+/// large for what it is made of; the limit is for a file that is not one.
+pub const MAX_BUNDLE_BYTES: usize = 1024 * 1024;
 
 /// How long a save waits for another save of the same work.
 pub const LOCK_WAIT: Duration = Duration::from_secs(30);
@@ -195,6 +201,9 @@ enum Artifact {
     Requirements,
     /// What the owner accepted: the product's record and what it was taken from.
     Acceptances,
+    /// The bundles a work's generation requests published: each names the model and the
+    /// requirement list that are the work's together (see [`crate::bundle`]).
+    Bundles,
 }
 
 impl Artifact {
@@ -206,6 +215,7 @@ impl Artifact {
             Artifact::Answers => "answers",
             Artifact::Requirements => "requirements",
             Artifact::Acceptances => "acceptances",
+            Artifact::Bundles => "bundles",
         }
     }
 
@@ -213,7 +223,10 @@ impl Artifact {
         match self {
             Artifact::Source => "txt",
             Artifact::Model => "scxml",
-            Artifact::Answers | Artifact::Requirements | Artifact::Acceptances => "json",
+            Artifact::Answers
+            | Artifact::Requirements
+            | Artifact::Acceptances
+            | Artifact::Bundles => "json",
         }
     }
 
@@ -225,6 +238,7 @@ impl Artifact {
             Artifact::Answers => "answers.head",
             Artifact::Requirements => "requirements.head",
             Artifact::Acceptances => "acceptances.head",
+            Artifact::Bundles => "bundles.head",
         }
     }
 
@@ -236,6 +250,7 @@ impl Artifact {
             Artifact::Answers => "answers.log",
             Artifact::Requirements => "requirements.log",
             Artifact::Acceptances => "acceptances.log",
+            Artifact::Bundles => "bundles.log",
         }
     }
 
@@ -246,6 +261,7 @@ impl Artifact {
             Artifact::Answers => MAX_ANSWERS_BYTES,
             Artifact::Requirements => MAX_REQUIREMENTS_BYTES,
             Artifact::Acceptances => MAX_ACCEPTANCE_BYTES,
+            Artifact::Bundles => MAX_BUNDLE_BYTES,
         }
     }
 
@@ -257,6 +273,7 @@ impl Artifact {
             Artifact::Answers => "answers",
             Artifact::Requirements => "requirements",
             Artifact::Acceptances => "acceptance",
+            Artifact::Bundles => "bundle",
         }
     }
 
@@ -366,6 +383,8 @@ pub struct WorkSnapshot {
     pub answers: Option<AnswersText>,
     pub requirements: Option<RequirementsText>,
     pub acceptance: Option<AcceptanceText>,
+    /// The bundle the work's model and list are the ones of, when it keeps bundles.
+    pub bundle: Option<Revision>,
 }
 
 /// The revision at the head of a chain whose saves say which source they were written
@@ -386,6 +405,10 @@ pub struct WorkHeads {
     pub answers: Option<Revision>,
     pub requirements: Option<ClaimedHead>,
     pub acceptance: Option<Revision>,
+    /// The bundle that is the work's model and requirement list now, when it keeps bundles.
+    /// `model` and `requirements` are then the ones it names, and the text they say they were
+    /// written for is the one it says.
+    pub bundle: Option<Revision>,
     /// Where the work's latest request stands as the clock says it now: a lease that ran
     /// out is an interrupted request, though nothing was written.
     pub request: Option<RequestHead>,
@@ -632,8 +655,19 @@ impl<C: Clock> WorkStore<C> {
         between_reads: impl FnMut(),
     ) -> Result<WorkHeads, StoreError> {
         self.read_stable(id, between_reads, |dir, marks| {
-            let [source, model, answers, requirements, acceptance] = &marks.chains;
+            let [source, model, answers, requirements, acceptance, bundle_pointer] = &marks.chains;
+            let bundle = bundle_store::bundle_at(dir, bundle_pointer)?;
             let claimed = |artifact: Artifact, pointer: &Option<Pointer>| {
+                if let Some((_, bundle)) = &bundle {
+                    let named = match artifact {
+                        Artifact::Model => &bundle.model,
+                        _ => &bundle.requirements,
+                    };
+                    return Ok::<_, StoreError>(Some(ClaimedHead {
+                        revision: named.clone(),
+                        written_for: Some(bundle.source.clone()),
+                    }));
+                }
                 pointer
                     .as_ref()
                     .map(|p| {
@@ -651,7 +685,8 @@ impl<C: Clock> WorkStore<C> {
                 answers: revision(answers),
                 requirements: claimed(Artifact::Requirements, requirements)?,
                 acceptance: revision(acceptance),
-                request: request_store::latest_request_head(dir, self.clock.epoch())?,
+                bundle: revision(bundle_pointer),
+                request: self.latest_request_head(dir, id)?,
             })
         })
     }
@@ -700,7 +735,10 @@ impl<C: Clock> WorkStore<C> {
         id: &WorkId,
         pointers: &Pointers,
     ) -> Result<WorkSnapshot, StoreError> {
-        let [source, model, answers, requirements, acceptance] = pointers;
+        let [source, model, answers, requirements, acceptance, bundle_pointer] = pointers;
+        // A work that keeps bundles has the model and the list its current bundle names, and
+        // the text the bundle says they were made from: one pointer chose both.
+        let bundle = bundle_store::bundle_at(dir, bundle_pointer)?;
         let text = |artifact: Artifact, pointer: &Option<Pointer>| {
             pointer
                 .as_ref()
@@ -708,6 +746,15 @@ impl<C: Clock> WorkStore<C> {
                 .transpose()
         };
         let claimed = |artifact: Artifact, pointer: &Option<Pointer>| {
+            if let Some((_, bundle)) = &bundle {
+                let named = match artifact {
+                    Artifact::Model => &bundle.model,
+                    _ => &bundle.requirements,
+                };
+                let (revision, text) =
+                    self.read_revision(dir, artifact, id, named.clone(), false)?;
+                return Ok::<_, StoreError>(Some((revision, Some(bundle.source.clone()), text)));
+            }
             pointer
                 .as_ref()
                 .map(|p| {
@@ -740,6 +787,7 @@ impl<C: Clock> WorkStore<C> {
             ),
             acceptance: text(Artifact::Acceptances, acceptance)?
                 .map(|(revision, text)| AcceptanceText { revision, text }),
+            bundle: bundle.map(|(revision, _)| revision),
         })
     }
 
@@ -789,6 +837,9 @@ impl<C: Clock> WorkStore<C> {
     /// The model that is current, or `None` for a work no model was saved to.
     pub fn model_head(&self, id: &WorkId) -> Result<Option<Revision>, StoreError> {
         let dir = self.existing(id)?;
+        if let Some((_, bundle)) = bundle_store::current_bundle(&dir)? {
+            return Ok(Some(bundle.model));
+        }
         read_head(&dir, Artifact::Model)
     }
 
@@ -849,6 +900,18 @@ impl<C: Clock> WorkStore<C> {
         revision: Option<&Revision>,
     ) -> Result<Option<(Revision, Option<Revision>, String)>, StoreError> {
         let dir = self.existing(id)?;
+        // A work that keeps bundles has the model and the list its current bundle names,
+        // written for the text the bundle says: one pointer chose both.
+        if revision.is_none() {
+            if let Some((_, bundle)) = bundle_store::current_bundle(&dir)? {
+                let named = match artifact {
+                    Artifact::Model => &bundle.model,
+                    _ => &bundle.requirements,
+                };
+                let (found, text) = self.read_revision(&dir, artifact, id, named.clone(), false)?;
+                return Ok(Some((found, Some(bundle.source.clone()), text)));
+            }
+        }
         let Snapshot { pointer, chain } = read_chain(&dir, artifact, || {})?;
         let wanted = match (revision, pointer.as_ref()) {
             (Some(named), _) => named.clone(),
@@ -857,6 +920,11 @@ impl<C: Clock> WorkStore<C> {
         };
         let (revision, text) =
             self.read_revision(&dir, artifact, id, wanted, revision.is_some())?;
+        // A revision a bundle names was written for the text the bundle says, and that is
+        // the more recent word on it than the chain's.
+        if let Some(source) = bundle_store::claim_of_a_bundle(&dir, artifact, &revision)? {
+            return Ok(Some((revision, Some(source), text)));
+        }
         let written_for = if pointer.as_ref().is_some_and(|p| p.revision == revision) {
             chain.claim()
         } else {
@@ -1080,6 +1148,38 @@ impl<C: Clock> WorkStore<C> {
         if is_removed(&dir) {
             return Err(removed_work(id));
         }
+        self.save_text_locked(&dir, id, artifact, text, base, written_for)
+    }
+
+    /// [`Self::save_text`] for a caller that already holds the work's lock: the publication
+    /// of a bundle moves a pointer in the same step as it ends the request that made it.
+    fn save_text_locked(
+        &self,
+        dir: &Path,
+        id: &WorkId,
+        artifact: Artifact,
+        text: &str,
+        base: Option<&Revision>,
+        written_for: Option<&Revision>,
+    ) -> Result<Saved, StoreError> {
+        // A work that keeps bundles has its model and its list from them, and a save of one
+        // half would move what the bundle's pointer does not: the pair the bundle exists to
+        // keep from being read would be made again. The text and the answers are the owner's
+        // and are saved as ever; what is asked for is a new generation.
+        if matches!(artifact, Artifact::Model | Artifact::Requirements)
+            && read_pointer(dir, Artifact::Bundles)?.is_some()
+        {
+            return Err(StoreError::refused(
+                "bundled-work",
+                format!(
+                    "work `{id}` keeps its model and its requirement list in bundles, which one \
+                     generation request makes together; ask for a generation, and do not save \
+                     one half"
+                ),
+                serde_json::json!({ "artifact": artifact.noun() }),
+            ));
+        }
+        let dir = dir.to_path_buf();
 
         if let Some(source) = written_for {
             if !revision_path(&dir, Artifact::Source, source).is_file() {
@@ -1202,7 +1302,10 @@ impl<C: Clock> WorkStore<C> {
     /// reads a text's; each entry also says the source revision the model was
     /// written for.
     pub fn model_history(&self, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
-        self.history_of(Artifact::Model, id)
+        let dir = self.existing(id)?;
+        let mut entries = history_in(&dir, Artifact::Model)?;
+        entries.extend(bundle_store::model_entries(&dir)?);
+        Ok(entries)
     }
 
     fn history_of(&self, artifact: Artifact, id: &WorkId) -> Result<Vec<HistoryEntry>, StoreError> {
@@ -1528,8 +1631,8 @@ struct Pointer {
 const POINTER_ENTRY_PREFIX: &str = "log ";
 
 /// The pointer of each chain, in the order a [`WorkSnapshot`] lists them: the text, the
-/// model, the answers, the requirement list, the acceptances.
-type Pointers = [Option<Pointer>; 5];
+/// model, the answers, the requirement list, the acceptances, the bundles.
+type Pointers = [Option<Pointer>; 6];
 
 /// What a work says it is at, to be read twice: the pointer of each chain, and how many
 /// changes of state its requests have made. A request changes in place and its renewals
@@ -1554,6 +1657,7 @@ fn read_pointers(dir: &Path) -> Result<Pointers, StoreError> {
         read_pointer(dir, Artifact::Answers)?,
         read_pointer(dir, Artifact::Requirements)?,
         read_pointer(dir, Artifact::Acceptances)?,
+        read_pointer(dir, Artifact::Bundles)?,
     ])
 }
 
@@ -1965,6 +2069,7 @@ mod tests {
                 answers: None,
                 requirements: None,
                 acceptance: None,
+                bundle: None,
                 request: None,
             }
         );

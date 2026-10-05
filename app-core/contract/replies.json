@@ -6,9 +6,19 @@
       "parent": null,
       "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
     },
+    "bundle_history": {
+      "entries": [
+        {
+          "parent": null,
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "saved_at": "2026-10-03T09:00:00Z"
+        }
+      ]
+    },
     "cancel_request": {
       "request": {
         "attempt": 0,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
         "id": "<cancelled-request-id>",
@@ -20,6 +30,7 @@
         "lease": null,
         "note": "cancelled by the owner",
         "origin": "gui",
+        "outcome": null,
         "seq": 3,
         "state": "cancelled",
         "stored_state": "cancelled",
@@ -29,6 +40,7 @@
     "claim_request": {
       "request": {
         "attempt": 1,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
         "id": "<request-id>",
@@ -45,6 +57,7 @@
         },
         "note": null,
         "origin": "gui",
+        "outcome": null,
         "seq": 1,
         "state": "running",
         "stored_state": "running",
@@ -52,8 +65,13 @@
       }
     },
     "complete_request": {
+      "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "request": {
         "attempt": 1,
+        "candidate": {
+          "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+          "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
+        },
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
         "id": "<request-id>",
@@ -70,6 +88,9 @@
         },
         "note": null,
         "origin": "gui",
+        "outcome": {
+          "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
         "seq": 1,
         "state": "completed",
         "stored_state": "completed",
@@ -82,7 +103,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 10,
+      "command_set_version": 11,
       "commands": [
         "describe",
         "list_works",
@@ -111,17 +132,25 @@
         "list_requests",
         "claim_request",
         "heartbeat_request",
+        "save_request_candidate",
+        "read_request_candidate",
         "complete_request",
         "fail_request",
         "cancel_request",
         "report_adapter",
-        "read_adapter_status"
+        "read_adapter_status",
+        "read_bundle",
+        "bundle_history"
       ],
       "root": "<root>"
     },
     "fail_request": {
       "request": {
         "attempt": 1,
+        "candidate": {
+          "model": "1344d1705ea72e1a9d59e791afa2f806dc8d9dfec8f983f41ca9eb33647eefac",
+          "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
+        },
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
         "id": "<failed-request-id>",
@@ -138,6 +167,7 @@
         },
         "note": "SCE refused the model",
         "origin": "gui",
+        "outcome": null,
         "seq": 2,
         "state": "failed",
         "stored_state": "failed",
@@ -166,6 +196,7 @@
     "heartbeat_request": {
       "request": {
         "attempt": 1,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
         "id": "<request-id>",
@@ -182,6 +213,7 @@
         },
         "note": null,
         "origin": "gui",
+        "outcome": null,
         "seq": 1,
         "state": "running",
         "stored_state": "running",
@@ -206,6 +238,7 @@
       "requests": [
         {
           "attempt": 0,
+          "candidate": null,
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
           "id": "<cancelled-request-id>",
@@ -217,6 +250,7 @@
           "lease": null,
           "note": "cancelled by the owner",
           "origin": "gui",
+          "outcome": null,
           "seq": 3,
           "state": "cancelled",
           "stored_state": "cancelled",
@@ -224,6 +258,10 @@
         },
         {
           "attempt": 1,
+          "candidate": {
+            "model": "1344d1705ea72e1a9d59e791afa2f806dc8d9dfec8f983f41ca9eb33647eefac",
+            "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
+          },
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
           "id": "<failed-request-id>",
@@ -240,6 +278,7 @@
           },
           "note": "SCE refused the model",
           "origin": "gui",
+          "outcome": null,
           "seq": 2,
           "state": "failed",
           "stored_state": "failed",
@@ -247,6 +286,10 @@
         },
         {
           "attempt": 1,
+          "candidate": {
+            "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+            "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
+          },
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
           "id": "<request-id>",
@@ -263,6 +306,9 @@
           },
           "note": null,
           "origin": "gui",
+          "outcome": {
+            "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
           "seq": 1,
           "state": "completed",
           "stored_state": "completed",
@@ -393,6 +439,45 @@
     "read_answers_none": {
       "answers": null
     },
+    "read_bundle": {
+      "bundle": {
+        "bundle": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "attempt": 1,
+          "checks": [
+            {
+              "by": "core",
+              "digest": "386e89bdbf76bc398c00dd6391bea25e1fb905212fc0a712ed5ff40bf1d2ce2d",
+              "generator": "fake-sce 0",
+              "name": "model",
+              "subject": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+              "verdict": "accepted"
+            },
+            {
+              "by": "client",
+              "digest": null,
+              "generator": null,
+              "name": "decisions",
+              "subject": null,
+              "verdict": "accepted"
+            }
+          ],
+          "executor": "adapter-a",
+          "format": "sce-bundle",
+          "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+          "previous": {
+            "model": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+            "requirements": null
+          },
+          "published_at": "2026-10-03T09:00:00Z",
+          "request": "<request-id>",
+          "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
+          "v": 1
+        },
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
     "read_model": {
       "model": {
         "documents": [
@@ -453,6 +538,7 @@
     "read_request": {
       "request": {
         "attempt": 0,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
         "id": "<request-id>",
@@ -464,10 +550,22 @@
         "lease": null,
         "note": null,
         "origin": "gui",
+        "outcome": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
         "work": "<work-id>"
+      }
+    },
+    "read_request_candidate": {
+      "model": {
+        "revision": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+        "text": "<scxml><!-- candidate --></scxml>"
+      },
+      "request": "<request-id>",
+      "requirements": {
+        "revision": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d",
+        "text": "{\n  \"format\": \"sce-requirements\",\n  \"v\": 1,\n  \"manifest\": \"{\\\"doc_id\\\":\\\"door\\\",\\\"rev\\\":\\\"2\\\",\\\"requirements\\\":[{\\\"id\\\":\\\"R1\\\"}]}\\n\",\n  \"sidecar\": null\n}\n"
       }
     },
     "read_requirements": {
@@ -511,6 +609,7 @@
     "read_work_heads": {
       "acceptance": null,
       "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+      "bundle": null,
       "model": {
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
         "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
@@ -522,6 +621,7 @@
     "read_work_heads_accepted": {
       "acceptance": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c",
       "answers": null,
+      "bundle": null,
       "model": {
         "revision": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
         "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
@@ -533,9 +633,29 @@
       },
       "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
     },
+    "read_work_heads_bundled": {
+      "acceptance": null,
+      "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+      "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "model": {
+        "revision": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+        "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "request": {
+        "attempt": 1,
+        "id": "<request-id>",
+        "state": "completed"
+      },
+      "requirements": {
+        "revision": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d",
+        "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+    },
     "read_work_heads_empty": {
       "acceptance": null,
       "answers": null,
+      "bundle": null,
       "model": null,
       "request": null,
       "requirements": null,
@@ -544,6 +664,7 @@
     "read_work_heads_requested": {
       "acceptance": null,
       "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+      "bundle": null,
       "model": {
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
         "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
@@ -575,6 +696,7 @@
         },
         "revision": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745"
       },
+      "bundle": null,
       "model": {
         "documents": [
           {
@@ -615,6 +737,7 @@
         "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
       },
       "answers": null,
+      "bundle": null,
       "model": {
         "documents": [
           {
@@ -648,6 +771,7 @@
     "read_work_snapshot_empty": {
       "acceptance": null,
       "answers": null,
+      "bundle": null,
       "model": null,
       "model_standing": null,
       "requirements": null,
@@ -683,6 +807,7 @@
       "created": true,
       "request": {
         "attempt": 0,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
         "id": "<request-id>",
@@ -694,6 +819,7 @@
         "lease": null,
         "note": null,
         "origin": "gui",
+        "outcome": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
@@ -704,6 +830,7 @@
       "created": false,
       "request": {
         "attempt": 0,
+        "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
         "id": "<request-id>",
@@ -715,6 +842,7 @@
         "lease": null,
         "note": null,
         "origin": "gui",
+        "outcome": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
@@ -896,6 +1024,36 @@
       "outcome": "unchanged",
       "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957"
     },
+    "save_request_candidate": {
+      "request": {
+        "attempt": 1,
+        "candidate": {
+          "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
+          "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
+        },
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": {
+          "attempt": 1,
+          "expires_at": "2026-10-03T09:02:00Z",
+          "granted_at": "2026-10-03T09:00:00Z",
+          "holder": "adapter-a"
+        },
+        "note": null,
+        "origin": "gui",
+        "outcome": null,
+        "seq": 1,
+        "state": "running",
+        "stored_state": "running",
+        "work": "<work-id>"
+      }
+    },
     "save_requirements_first": {
       "outcome": "saved",
       "parent": null,
@@ -920,7 +1078,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 10,
+  "command_set_version": 11,
   "refusals": {
     "active-request": {
       "detail": {
@@ -945,6 +1103,23 @@
     "bad-request": {
       "kind": "bad-request",
       "message": "unknown field `extra`, there are no fields"
+    },
+    "bundled-work": {
+      "detail": {
+        "artifact": "model"
+      },
+      "kind": "bundled-work",
+      "message": "work `<work-id>` keeps its model and its requirement list in bundles, which one generation request makes together; ask for a generation, and do not save one half"
+    },
+    "check-refused": {
+      "detail": {
+        "checks": [
+          "model"
+        ],
+        "request": "<failed-request-id>"
+      },
+      "kind": "check-refused",
+      "message": "the candidate was refused by model, so it is not the work's model"
     },
     "conflict": {
       "detail": {
@@ -1006,6 +1181,17 @@
       },
       "kind": "moved",
       "message": "model changed after you were shown it, so nothing was accepted; read it again"
+    },
+    "no-candidate": {
+      "detail": {
+        "missing": [
+          "model",
+          "requirements"
+        ],
+        "request": "<request-id>"
+      },
+      "kind": "no-candidate",
+      "message": "the request <request-id> has not written a model or a requirement list, and a bundle is both"
     },
     "not-current": {
       "detail": {
@@ -1072,7 +1258,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, claim_request, heartbeat_request, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_bundle, bundle_history"
     }
   }
 }

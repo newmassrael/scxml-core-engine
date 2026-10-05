@@ -148,14 +148,269 @@ fn a_request_is_taken_kept_and_finished_through_the_commands() {
         json!("2026-10-05T09:02:30Z")
     );
 
+    f.write_candidate(&id, "<scxml>door</scxml>");
     let done = f.run(
         "complete_request",
         json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
     );
     assert_eq!(done["request"]["state"], json!("completed"));
     assert_eq!(done["request"]["ended_at"], json!("2026-10-05T09:00:30Z"));
+    assert_eq!(
+        done["request"]["outcome"]["bundle"], done["bundle"],
+        "the request says which bundle it made"
+    );
     let read = f.run("read_request", json!({"id": f.work, "request": id}));
     assert_eq!(read["request"], done["request"]);
+}
+
+impl Fixture {
+    /// The executor of attempt 1 writes a model and a requirement list for the request.
+    fn write_candidate(&self, request: &str, model: &str) -> Value {
+        self.run(
+            "save_request_candidate",
+            json!({
+                "id": self.work,
+                "request": request,
+                "holder": "adapter-a",
+                "attempt": 1,
+                "text": model,
+                "manifest": "{\"list\":[]}",
+            }),
+        )
+    }
+
+    /// A request taken by `adapter-a`, attempt 1.
+    fn running(&self, key: &str) -> String {
+        let id = self.request_id(key);
+        self.claim(&id, "adapter-a");
+        id
+    }
+}
+
+#[test]
+fn what_an_executor_writes_is_the_requests_and_not_the_works_until_it_completes() {
+    let f = fixture("request-commands-candidate");
+    let id = f.running("press-1");
+
+    let written = f.write_candidate(&id, "<scxml>door</scxml>");
+
+    let candidate = &written["request"]["candidate"];
+    assert!(candidate["model"].is_string(), "{candidate}");
+    assert!(candidate["requirements"].is_string(), "{candidate}");
+    assert_eq!(written["request"]["outcome"], Value::Null);
+    let read = f.run(
+        "read_request_candidate",
+        json!({"id": f.work, "request": id}),
+    );
+    assert_eq!(
+        read["model"]["text"].as_str().map(|t| t.contains("door")),
+        Some(true)
+    );
+    assert_eq!(read["model"]["revision"], candidate["model"]);
+    assert_eq!(
+        f.run("read_bundle", json!({"id": f.work})),
+        json!({"bundle": null}),
+        "nothing is published by writing"
+    );
+    assert_eq!(
+        f.run("read_model", json!({"id": f.work}))["model"],
+        Value::Null
+    );
+}
+
+#[test]
+fn completing_publishes_one_bundle_and_the_core_ran_its_own_check_of_the_model() {
+    let f = fixture("request-commands-publish");
+    let id = f.running("press-1");
+    f.write_candidate(&id, "<scxml>door</scxml>");
+
+    let done = f.run(
+        "complete_request",
+        json!({
+            "id": f.work, "request": id, "holder": "adapter-a", "attempt": 1,
+            "checks": [{"name": "decisions", "verdict": "accepted"}],
+        }),
+    );
+
+    let read = f.run("read_bundle", json!({"id": f.work}));
+    assert_eq!(read["bundle"]["revision"], done["bundle"]);
+    let checks = read["bundle"]["bundle"]["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 2);
+    assert_eq!(checks[0]["by"], json!("core"));
+    assert_eq!(checks[0]["name"], json!("model"));
+    assert_eq!(checks[0]["verdict"], json!("accepted"));
+    assert_eq!(checks[0]["generator"], json!("fake-sce 0"));
+    assert_eq!(
+        checks[0]["subject"], read["bundle"]["bundle"]["model"],
+        "the check says which model it ran on"
+    );
+    assert_eq!(checks[1]["by"], json!("client"));
+    assert_eq!(checks[1]["name"], json!("decisions"));
+    // The work's model is the bundle's, and says it was written for the text it came from.
+    let model = f.run("read_model", json!({"id": f.work}));
+    assert_eq!(
+        model["model"]["revision"],
+        read["bundle"]["bundle"]["model"]
+    );
+    assert_eq!(model["model"]["written_for"], json!(f.source));
+    assert_eq!(model["standing"], json!("current"));
+    assert_eq!(
+        f.run("bundle_history", json!({"id": f.work}))["entries"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    let heads = f.run("read_work_heads", json!({"id": f.work}));
+    assert_eq!(heads["bundle"], done["bundle"]);
+}
+
+#[test]
+fn a_model_the_core_refuses_is_not_published_and_the_request_stays_where_it_was() {
+    let f = fixture("request-commands-refused");
+    let id = f.running("press-1");
+    f.write_candidate(&id, "<scxml>REFUSE</scxml>");
+
+    let refused = f.refuse(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
+    );
+
+    assert_eq!(refused.kind, "check-refused");
+    assert_eq!(refused.detail["checks"], json!(["model"]));
+    let read = f.run("read_request", json!({"id": f.work, "request": id}));
+    assert_eq!(read["request"]["state"], json!("running"));
+    assert_eq!(
+        f.run("read_bundle", json!({"id": f.work})),
+        json!({"bundle": null})
+    );
+}
+
+#[test]
+fn a_candidate_without_both_halves_is_not_completed() {
+    let f = fixture("request-commands-halves");
+    let id = f.running("press-1");
+    f.run(
+        "save_request_candidate",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1,
+               "text": "<scxml>door</scxml>"}),
+    );
+
+    let refused = f.refuse(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
+    );
+
+    assert_eq!(refused.kind, "no-candidate");
+    assert_eq!(refused.detail["missing"], json!(["requirements"]));
+}
+
+#[test]
+fn a_client_check_has_a_verdict_in_the_products_words_and_a_refused_one_stops_the_bundle() {
+    let f = fixture("request-commands-client");
+    let id = f.running("press-1");
+    f.write_candidate(&id, "<scxml>door</scxml>");
+
+    let odd = f.refuse(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1,
+               "checks": [{"name": "decisions", "verdict": "fine"}]}),
+    );
+    assert_eq!(odd.kind, "bad-request");
+    let refused = f.refuse(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1,
+               "checks": [{"name": "decisions", "verdict": "refused"}]}),
+    );
+    assert_eq!(refused.kind, "check-refused");
+    assert_eq!(refused.detail["checks"], json!(["decisions"]));
+}
+
+#[test]
+fn a_candidate_names_one_model_and_one_list_as_the_saves_do() {
+    let f = fixture("request-commands-shapes");
+    let id = f.running("press-1");
+    let base = json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1});
+    let with = |extra: Value| {
+        let mut args = base.clone();
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        args
+    };
+
+    assert_eq!(
+        f.refuse("save_request_candidate", base.clone()).kind,
+        "bad-candidate"
+    );
+    assert_eq!(
+        f.refuse("save_request_candidate", with(json!({"sidecar": "{}"})))
+            .kind,
+        "bad-request",
+        "a sidecar belongs to a manifest"
+    );
+    assert_eq!(
+        f.refuse(
+            "save_request_candidate",
+            with(
+                json!({"text": "<scxml/>", "documents": [{"name": "a.scxml", "text": "<scxml/>"}]})
+            )
+        )
+        .kind,
+        "bad-request"
+    );
+    // The list alone is a candidate, and so is the model alone: a later word adds the other.
+    f.run(
+        "save_request_candidate",
+        with(json!({"manifest": "{\"list\":[]}"})),
+    );
+    let both = f.run(
+        "save_request_candidate",
+        with(json!({"text": "<scxml>door</scxml>"})),
+    );
+    assert!(both["request"]["candidate"]["model"].is_string());
+    assert!(both["request"]["candidate"]["requirements"].is_string());
+}
+
+#[test]
+fn a_product_that_does_not_answer_leaves_the_request_running_to_be_said_again() {
+    let f = fixture("request-commands-unavailable");
+    let id = f.running("press-1");
+    f.write_candidate(&id, "<scxml>door</scxml>");
+
+    let refused = call(
+        &f.store,
+        &common::RefusingRenderer,
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
+    )
+    .expect_err("the product did not answer");
+
+    assert_ne!(refused.kind, "check-refused", "no answer is not a refusal");
+    let read = f.run("read_request", json!({"id": f.work, "request": id}));
+    assert_eq!(read["request"]["state"], json!("running"));
+    f.run(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
+    );
+}
+
+#[test]
+fn a_work_that_keeps_bundles_refuses_the_saves_of_one_half() {
+    let f = fixture("request-commands-bundled");
+    let id = f.running("press-1");
+    f.write_candidate(&id, "<scxml>door</scxml>");
+    f.run(
+        "complete_request",
+        json!({"id": f.work, "request": id, "holder": "adapter-a", "attempt": 1}),
+    );
+
+    let refused = f.refuse(
+        "save_model",
+        json!({"id": f.work, "text": "<scxml>by hand</scxml>"}),
+    );
+
+    assert_eq!(refused.kind, "bundled-work");
+    assert_eq!(refused.detail["artifact"], json!("model"));
 }
 
 #[test]
@@ -376,11 +631,15 @@ fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
         "list_requests",
         "claim_request",
         "heartbeat_request",
+        "save_request_candidate",
+        "read_request_candidate",
         "complete_request",
         "fail_request",
         "cancel_request",
         "report_adapter",
         "read_adapter_status",
+        "read_bundle",
+        "bundle_history",
     ] {
         assert!(commands.contains(&name), "{name}");
     }

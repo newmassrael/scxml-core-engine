@@ -571,12 +571,62 @@ fn replies() -> Value {
         "read_work_heads_requested".into(),
         answer(&store, "read_work_heads", json!({"id": id})),
     );
-    answers.insert(
-        "complete_request".into(),
-        answer(
+    // What the executor writes is the request's and not yet the work's; completing
+    // publishes it as one bundle.
+    let list = "{\"doc_id\":\"door\",\"rev\":\"2\",\"requirements\":[{\"id\":\"R1\"}]}\n";
+    refusals.insert(
+        "no-candidate".into(),
+        refusal(
             &store,
             "complete_request",
             json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1}),
+        ),
+    );
+    answers.insert(
+        "save_request_candidate".into(),
+        answer(
+            &store,
+            "save_request_candidate",
+            json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1,
+                   "text": "<scxml><!-- candidate --></scxml>", "manifest": list}),
+        ),
+    );
+    answers.insert(
+        "read_request_candidate".into(),
+        answer(
+            &store,
+            "read_request_candidate",
+            json!({"id": id, "request": request_id}),
+        ),
+    );
+    let completed = answer(
+        &store,
+        "complete_request",
+        json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1,
+               "checks": [{"name": "decisions", "verdict": "accepted"}]}),
+    );
+    // A bundle is named by what it holds, and what it holds says the request that made
+    // it, which is not the same in two runs.
+    let bundle_revision = completed["bundle"].as_str().unwrap().to_string();
+    answers.insert("complete_request".into(), completed);
+    answers.insert(
+        "read_bundle".into(),
+        answer(&store, "read_bundle", json!({"id": id})),
+    );
+    answers.insert(
+        "bundle_history".into(),
+        answer(&store, "bundle_history", json!({"id": id})),
+    );
+    answers.insert(
+        "read_work_heads_bundled".into(),
+        answer(&store, "read_work_heads", json!({"id": id})),
+    );
+    refusals.insert(
+        "bundled-work".into(),
+        refusal(
+            &store,
+            "save_model",
+            json!({"id": id, "text": "<scxml><!-- by hand --></scxml>"}),
         ),
     );
     refusals.insert(
@@ -598,6 +648,21 @@ fn replies() -> Value {
         &store,
         "claim_request",
         json!({"id": id, "request": failed_id, "holder": "adapter-a"}),
+    );
+    // A model the core refuses is not published, and the request is still the executor's.
+    answer(
+        &store,
+        "save_request_candidate",
+        json!({"id": id, "request": failed_id, "holder": "adapter-a", "attempt": 1,
+               "text": "<scxml><!-- REFUSE --></scxml>", "manifest": list}),
+    );
+    refusals.insert(
+        "check-refused".into(),
+        refusal(
+            &store,
+            "complete_request",
+            json!({"id": id, "request": failed_id, "holder": "adapter-a", "attempt": 1}),
+        ),
     );
     answers.insert(
         "fail_request".into(),
@@ -678,6 +743,9 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &request_id, "<request-id>");
     name_the_unstable(&mut document, &failed_id, "<failed-request-id>");
     name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");
+    // A revision stays the shape of one, so that the screen's guard reads the file as it
+    // would read the core.
+    name_the_unstable(&mut document, &bundle_revision, &"b".repeat(64));
     let _ = std::fs::remove_dir_all(&root);
     document
 }

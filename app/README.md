@@ -173,12 +173,48 @@ request (`claim_request`), keeps it (`heartbeat_request`) and finishes it (`comp
   the save), or somebody claims it again. A request that was let go of is taken again only by a
   caller that says it `resume`s, as the next **attempt**; every word an executor says names
   its attempt, and an attempt that is not the current one is refused (`not-holder`).
-- **What the executor itself saves does not end its request.** A model and a requirement list
+- **What the executor itself writes does not end its request.** A model and a requirement list
   move nothing a request was asked about.
 - **Nothing is taken again unasked.** A run costs something, and the next one is the owner's
   to ask for.
 
 The heads of a work (`read_work_heads`) say where its latest request stands, by the clock.
+
+#### What a request makes
+
+What an executor writes for a request is a **candidate** (`save_request_candidate`): a model, a
+requirement list, or both, kept with the work's other revisions (named by what they hold) and
+named in the request (`candidate`). Writing one moves no pointer: the work's model is still the
+one it was, and `read_request_candidate` reads what was written. It becomes the work's only by
+`complete_request`, which publishes it as one **bundle**.
+
+- **A bundle is one file and one pointer.** `bundles/<digest>.json` names the model, the
+  requirement list, the text and answers they were made from, the request and attempt that made
+  them, and what was checked of them. `bundles.head` moves to it in one step, so a reader that
+  takes the pointer has the model and the list of one generation, never a model of one beside a
+  list of another. A work that has a bundle has its model and list from its current bundle
+  (`read_model`, `read_requirements`, the snapshot and the heads agree with it), and the heads
+  and the snapshot say which bundle (`bundle`).
+- **The core checks the model itself.** `complete_request` runs SCE's check of the candidate
+  model and records it as `by: core`, with the revision it ran on (`subject`). What the executor
+  reports of a check only it can run (`checks` in the call) is kept as `by: client`, as
+  reported. A bundle is published only with an accepted core check, and a check that was
+  refused, of either kind, stops it (`check-refused`); a check run on a model the request has
+  since written over is not a check of this one (`candidate-moved`). A product that does not
+  answer is not a refusal: the request stays running and is said again.
+- **A request completes by publishing.** Both halves are needed (`no-candidate`), the speaker
+  is the holder of the current attempt, and the work is still at the text and answers the
+  request was asked about: a save that moved them ended the request in the same step. Said
+  again by the same attempt, it is the same bundle. The publication and the request's
+  completion are written in one step under the work's lock, and a process that stopped between
+  the two leaves a bundle that names its request: the next reader finds the request completed.
+- **A work that has a bundle refuses the old saves of one half** (`save_model`,
+  `save_requirements` answer `bundled-work`), because one half moved alone is the pair the
+  bundle exists to keep from being read. The text and the answers are the owner's and are saved
+  as ever. A work that never asked for a generation is read and written as it always was.
+- **The bundle keeps what it took over.** The first bundle of a work that had a model or a list
+  says which (`previous`), so the model's history continues where the chain stopped, and
+  `bundle_history` lists the bundles. `read_bundle` reads one, or the current.
 
 An AI adapter says it is there by reporting (`report_adapter`: its name, its kind and what it
 can do) and is there for ninety seconds after its last report. `read_adapter_status` lists the
@@ -404,6 +440,7 @@ else: it has no file-system, shell or network permission.
 | Removing a work, and a save racing it | `--test removal` of the same package |
 | A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of the same package |
 | Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) |
+| Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |

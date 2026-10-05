@@ -29,6 +29,7 @@ const heads: WorkHeads = {
   answers: A1,
   requirements: { revision: R1, written_for: T2 },
   acceptance: C1,
+  bundle: null,
   request: null,
 };
 
@@ -53,6 +54,7 @@ describe("a work that moved under the screen", () => {
       answers: null,
       requirements: { revision: R2, written_for: T2 },
       acceptance: hex(9),
+      bundle: null,
       request: null,
     };
     expect(movedParts(shown, moved)).toEqual(["source", "answers", "model", "requirements", "acceptance"]);
@@ -95,6 +97,7 @@ describe("a work that moved under the screen", () => {
       answers: null,
       requirements: null,
       acceptance: null,
+      bundle: null,
       request: null,
     };
     expect(movedParts(uncompared, moved)).toEqual([]);
@@ -108,6 +111,7 @@ describe("a work that moved under the screen", () => {
       answers: null,
       requirements: null,
       acceptance: null,
+      bundle: null,
       request: null,
     };
     const blank: WorkOnScreen = { source: null, model: null, answers: null, requirements: null, acceptance: null };

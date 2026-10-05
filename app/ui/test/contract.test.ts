@@ -19,8 +19,11 @@ import {
   isOpenRequest,
   parseAdapterListing,
   parseAdapterReport,
+  parseBundleRead,
+  parseCompletedRequest,
   parseDescribed,
   parseGenerationRequest,
+  parseRequestCandidateTexts,
   parseRegisteredRequest,
   parseRequestList,
   parseRequestReply,
@@ -81,11 +84,15 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   list_requests: parseRequestList,
   claim_request: parseRequestReply,
   heartbeat_request: parseRequestReply,
-  complete_request: parseRequestReply,
+  save_request_candidate: parseRequestReply,
+  read_request_candidate: parseRequestCandidateTexts,
+  complete_request: parseCompletedRequest,
   fail_request: parseRequestReply,
   cancel_request: parseRequestReply,
   report_adapter: parseAdapterReport,
   read_adapter_status: parseAdapterListing,
+  read_bundle: parseBundleRead,
+  bundle_history: parseHistory,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -267,6 +274,7 @@ describe("the replies the core gives", () => {
       answers: null,
       requirements: null,
       acceptance: null,
+      bundle: null,
       request: null,
     });
     const door = parseWorkHeads(replies.answers["read_work_heads"]);
@@ -299,7 +307,7 @@ describe("the replies the core gives", () => {
     expect(taken).toMatchObject({ state: "running", attempt: 1 });
     expect(taken.lease).toMatchObject({ holder: "adapter-a", attempt: 1 });
     expect(parseRequestReply(replies.answers["heartbeat_request"]).lease?.expires_at).toBe("2026-10-03T09:02:00Z");
-    expect(parseRequestReply(replies.answers["complete_request"])).toMatchObject({ state: "completed" });
+    expect(parseCompletedRequest(replies.answers["complete_request"]).request).toMatchObject({ state: "completed" });
     expect(parseRequestReply(replies.answers["fail_request"])).toMatchObject({
       state: "failed",
       note: "SCE refused the model",
@@ -309,6 +317,42 @@ describe("the replies the core gives", () => {
     const listed = parseRequestList(replies.answers["list_requests"]);
     expect(listed.map((r) => r.seq)).toEqual([...listed.map((r) => r.seq)].sort((a, b) => b - a));
     expect(listed.filter((r) => isOpenRequest(r.state))).toHaveLength(0);
+  });
+
+  it("say what an executor wrote for a request, and that it is not the work's until it completes", () => {
+    const written = parseRequestReply(replies.answers["save_request_candidate"]);
+    expect(written.candidate?.model).toMatch(/^[0-9a-f]{64}$/);
+    expect(written.candidate?.requirements).toMatch(/^[0-9a-f]{64}$/);
+    expect(written.outcome).toBeNull();
+    const texts = parseRequestCandidateTexts(replies.answers["read_request_candidate"]);
+    expect(texts.model?.revision).toBe(written.candidate?.model);
+    expect(texts.model?.text).toContain("candidate");
+    const refused = replies.refusals["no-candidate"] as { kind: string; detail: { missing: string[] } };
+    expect(refused.kind).toBe("no-candidate");
+    expect(refused.detail.missing).toEqual(["model", "requirements"]);
+  });
+
+  it("say which bundle a completed request made the work's, and what was checked of it", () => {
+    const done = parseCompletedRequest(replies.answers["complete_request"]);
+    // The contract file names a bundle's revision, which varies with the request that made it.
+    expect(done.bundle).toBe("b".repeat(64));
+    expect(done.request.outcome).toEqual({ bundle: done.bundle });
+    const read = parseBundleRead(replies.answers["read_bundle"]);
+    expect(read?.revision).toBe(done.bundle);
+    expect(read?.bundle).toMatchObject({ executor: "adapter-a", attempt: 1, request: "<request-id>" });
+    // The core's own check comes first and says which model it ran on; the executor's report is kept as reported.
+    expect(read?.bundle.checks.map((c) => [c.by, c.name, c.verdict])).toEqual([
+      ["core", "model", "accepted"],
+      ["client", "decisions", "accepted"],
+    ]);
+    expect(read?.bundle.checks[0]?.subject).toBe(read?.bundle.model);
+    // The work had a model before the first bundle, and the bundle says what it took over from.
+    expect(read?.bundle.previous?.model).toMatch(/^[0-9a-f]{64}$/);
+    expect(parseHistory(replies.answers["bundle_history"]).map((h) => h.revision)).toEqual([done.bundle]);
+    expect(parseWorkHeads(replies.answers["read_work_heads_bundled"]).bundle).toBe(done.bundle);
+    expect(parseWorkHeads(replies.answers["read_work_heads_bundled"]).model?.revision).toBe(read?.bundle.model);
+    expect((replies.refusals["bundled-work"] as { kind: string }).kind).toBe("bundled-work");
+    expect((replies.refusals["check-refused"] as { detail: { checks: string[] } }).detail.checks).toEqual(["model"]);
   });
 
   it("say where the latest request of a work stands in its heads", () => {

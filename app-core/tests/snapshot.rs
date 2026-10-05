@@ -49,6 +49,7 @@ fn a_snapshot_of_a_work_nothing_was_saved_to_says_null_for_every_chain() {
         "requirements",
         "requirements_standing",
         "acceptance",
+        "bundle",
     ] {
         assert_eq!(snapshot[key], Value::Null, "{key}");
     }
@@ -146,9 +147,75 @@ fn the_heads_of_a_work_nothing_was_saved_to_say_null_for_every_chain() {
             "answers": null,
             "requirements": null,
             "acceptance": null,
+            "bundle": null,
             "request": null,
         })
     );
+}
+
+/// A work that has a bundle has the model and the list the bundle names, and says so: the
+/// snapshot and the heads agree with the bundle and with each other, and a text saved after
+/// the bundle makes the model behind it without making it another model.
+#[test]
+fn a_bundled_work_is_read_by_its_bundle_in_the_snapshot_and_in_the_heads() {
+    let store = store("snapshot-bundled");
+    let id = run(&store, "create_work", json!({"title": "Door lock"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let source = run(
+        &store,
+        "save_source",
+        json!({"id": id, "text": "The door opens for a listed card."}),
+    )["revision"]
+        .clone();
+    let request = run(
+        &store,
+        "request_generation",
+        json!({"id": id, "key": "press-1", "origin": "gui", "expect": {"source": source}}),
+    )["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    run(
+        &store,
+        "claim_request",
+        json!({"id": id, "request": request, "holder": "adapter-a"}),
+    );
+    run(
+        &store,
+        "save_request_candidate",
+        json!({"id": id, "request": request, "holder": "adapter-a", "attempt": 1,
+               "text": "<scxml>door</scxml>", "manifest": "{\"list\":[]}"}),
+    );
+    let done = run(
+        &store,
+        "complete_request",
+        json!({"id": id, "request": request, "holder": "adapter-a", "attempt": 1}),
+    );
+
+    let snapshot = run(&store, "read_work_snapshot", json!({"id": id}));
+    let heads = run(&store, "read_work_heads", json!({"id": id}));
+
+    assert_eq!(snapshot["bundle"], done["bundle"]);
+    assert_eq!(heads["bundle"], done["bundle"]);
+    assert_eq!(snapshot["model_standing"], json!("current"));
+    assert_eq!(snapshot["requirements_standing"], json!("current"));
+    assert_eq!(heads["model"]["revision"], snapshot["model"]["revision"]);
+    assert_eq!(heads["model"]["written_for"], source);
+    assert_eq!(heads["requirements"]["written_for"], source);
+    assert_eq!(heads["request"]["state"], json!("completed"));
+
+    // The text moves on: the model is the same and is behind it now.
+    run(
+        &store,
+        "save_source",
+        json!({"id": id, "text": "The door opens for a listed card, twice.", "base": source}),
+    );
+    let later = run(&store, "read_work_snapshot", json!({"id": id}));
+    assert_eq!(later["bundle"], done["bundle"]);
+    assert_eq!(later["model"]["revision"], snapshot["model"]["revision"]);
+    assert_eq!(later["model_standing"], json!("behind"));
 }
 
 /// The heads are the revisions the snapshot holds, chain by chain, and the source each of

@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 10;
+export const SUPPORTED_COMMAND_SET_VERSION = 11;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -265,6 +265,12 @@ export interface WorkSnapshot {
   /** `null` exactly when there is no list. */
   readonly requirements_standing: Standing | null;
   readonly acceptance: AcceptanceRecord | null;
+  /**
+   * The bundle the model and the list are the ones of, for a work that keeps bundles; `null`
+   * for one whose model and list were saved by hand. A bundle is one pointer, so a model of
+   * one generation is never shown beside a list of another.
+   */
+  readonly bundle: Revision | null;
 }
 
 /**
@@ -288,6 +294,8 @@ export interface WorkHeads {
   readonly answers: Revision | null;
   readonly requirements: ClaimedHead | null;
   readonly acceptance: Revision | null;
+  /** The bundle the model and the list are the ones of; `null` for a work that keeps none. */
+  readonly bundle: Revision | null;
   /** Where the work's latest request stands as the clock says it now; `null` for a work never asked for a model. */
   readonly request: RequestHead | null;
 }
@@ -345,9 +353,75 @@ export interface GenerationRequest {
   readonly inputs: { readonly source: Revision; readonly answers: Revision | null };
   readonly created_at: string;
   readonly lease: RequestLease | null;
+  /**
+   * What the executor has written for it, by revision. It is the request's and not the
+   * work's: the work's model is the one it was until the request completes. `null` until
+   * the executor writes something.
+   */
+  readonly candidate: RequestCandidate | null;
+  /** The bundle a completed request made; `null` for every request that did not complete. */
+  readonly outcome: { readonly bundle: Revision } | null;
   readonly ended_at: string | null;
   /** Why it ended or was let go of, in words. */
   readonly note: string | null;
+}
+
+/** The halves of a candidate the executor has written; a bundle needs both. */
+export interface RequestCandidate {
+  readonly model: Revision | null;
+  readonly requirements: Revision | null;
+}
+
+/** `read_request_candidate`: what the executor wrote, as texts. */
+export interface RequestCandidateTexts {
+  readonly request: string;
+  readonly model: { readonly revision: Revision; readonly text: string } | null;
+  readonly requirements: { readonly revision: Revision; readonly text: string } | null;
+}
+
+/** `complete_request`: the request, completed, and the bundle it made the work's. */
+export interface CompletedRequest {
+  readonly request: GenerationRequest;
+  readonly bundle: Revision;
+}
+
+/** What checked a candidate: the core ran it, or the executor says it did. */
+export type CheckedBy = "core" | "client";
+
+/** One check of a candidate and how it came out. */
+export interface BundleCheck {
+  readonly by: CheckedBy;
+  /** What was checked (`model`, `decisions`). */
+  readonly name: string;
+  readonly verdict: "accepted" | "refused";
+  readonly generator: string | null;
+  readonly digest: string | null;
+  /** The revision the check ran on. */
+  readonly subject: Revision | null;
+}
+
+/**
+ * A published bundle: the model and the requirement list one generation made together,
+ * the text and answers it was made from, and what was checked of it.
+ */
+export interface Bundle {
+  readonly request: string;
+  readonly attempt: number;
+  readonly executor: string;
+  readonly source: Revision;
+  readonly answers: Revision | null;
+  readonly model: Revision;
+  readonly requirements: Revision;
+  /** Set on a work's first bundle, when it had a model or a list before. */
+  readonly previous: { readonly model: Revision | null; readonly requirements: Revision | null } | null;
+  readonly checks: readonly BundleCheck[];
+  readonly published_at: string;
+}
+
+/** `read_bundle`: the bundle and the revision it is, or `null` for a work that keeps none. */
+export interface BundleRead {
+  readonly revision: Revision;
+  readonly bundle: Bundle;
 }
 
 /** `request_generation`: the request, and whether this call made it or repeated a call that did. */
@@ -837,6 +911,7 @@ export function parseWorkHeads(value: unknown): WorkHeads {
     answers: nullableRevision(r["answers"], `${where}.answers`),
     requirements: requirements === null ? null : parseClaimedHead(requirements, `${where}.requirements`),
     acceptance: nullableRevision(r["acceptance"], `${where}.acceptance`),
+    bundle: nullableRevision(r["bundle"], `${where}.bundle`),
     request: request === null ? null : parseRequestHead(request, `${where}.request`),
   };
 }
@@ -856,6 +931,8 @@ export function parseGenerationRequest(value: unknown, where = "request"): Gener
   const r = record(value, where);
   const inputs = record(r["inputs"], `${where}.inputs`);
   const lease = r["lease"];
+  const candidate = r["candidate"];
+  const outcome = r["outcome"];
   return {
     id: text(r, "id", where),
     work: text(r, "work", where),
@@ -871,14 +948,110 @@ export function parseGenerationRequest(value: unknown, where = "request"): Gener
     },
     created_at: text(r, "created_at", where),
     lease: lease === null ? null : parseLease(lease, `${where}.lease`),
+    candidate: candidate === null ? null : parseRequestCandidate(candidate, `${where}.candidate`),
+    outcome:
+      outcome === null
+        ? null
+        : { bundle: revision(record(outcome, `${where}.outcome`)["bundle"], `${where}.outcome.bundle`) },
     ended_at: nullableText(r, "ended_at", where),
     note: nullableText(r, "note", where),
   };
 }
 
-/** `read_request`, `claim_request`, `heartbeat_request`, `complete_request`, `fail_request`, `cancel_request`: the request. */
+function parseRequestCandidate(value: unknown, where: string): RequestCandidate {
+  const r = record(value, where);
+  return {
+    model: nullableRevision(r["model"], `${where}.model`),
+    requirements: nullableRevision(r["requirements"], `${where}.requirements`),
+  };
+}
+
+/** `read_request`, `claim_request`, `heartbeat_request`, `save_request_candidate`, `fail_request`, `cancel_request`: the request. */
 export function parseRequestReply(value: unknown): GenerationRequest {
   return parseGenerationRequest(record(value, "request reply")["request"], "request reply.request");
+}
+
+/** `complete_request`. */
+export function parseCompletedRequest(value: unknown): CompletedRequest {
+  const where = "complete_request";
+  const r = record(value, where);
+  const request = parseGenerationRequest(r["request"], `${where}.request`);
+  const bundle = revision(r["bundle"], `${where}.bundle`);
+  if (request.outcome === null || request.outcome.bundle !== bundle) {
+    throw new ContractError(`${where}.request.outcome`, "the bundle the request made");
+  }
+  return { request, bundle };
+}
+
+function candidateText(value: unknown, where: string): { revision: Revision; text: string } | null {
+  if (value === null) return null;
+  const r = record(value, where);
+  return { revision: revision(r["revision"], `${where}.revision`), text: text(r, "text", where) };
+}
+
+/** `read_request_candidate`. */
+export function parseRequestCandidateTexts(value: unknown): RequestCandidateTexts {
+  const where = "read_request_candidate";
+  const r = record(value, where);
+  return {
+    request: text(r, "request", where),
+    model: candidateText(r["model"], `${where}.model`),
+    requirements: candidateText(r["requirements"], `${where}.requirements`),
+  };
+}
+
+function parseBundleCheck(value: unknown, where: string): BundleCheck {
+  const r = record(value, where);
+  const by = r["by"];
+  if (by !== "core" && by !== "client") throw new ContractError(`${where}.by`, `"core" or "client"`);
+  const verdict = r["verdict"];
+  if (verdict !== "accepted" && verdict !== "refused") {
+    throw new ContractError(`${where}.verdict`, `"accepted" or "refused"`);
+  }
+  return {
+    by,
+    name: text(r, "name", where),
+    verdict,
+    generator: nullableText(r, "generator", where),
+    digest: nullableText(r, "digest", where),
+    subject: nullableRevision(r["subject"], `${where}.subject`),
+  };
+}
+
+function parseBundle(value: unknown, where: string): Bundle {
+  const r = record(value, where);
+  const previous = r["previous"];
+  const earlier = previous === null ? null : record(previous, `${where}.previous`);
+  return {
+    request: text(r, "request", where),
+    attempt: count(r, "attempt", where),
+    executor: text(r, "executor", where),
+    source: revision(r["source"], `${where}.source`),
+    answers: nullableRevision(r["answers"], `${where}.answers`),
+    model: revision(r["model"], `${where}.model`),
+    requirements: revision(r["requirements"], `${where}.requirements`),
+    previous:
+      earlier === null
+        ? null
+        : {
+            model: nullableRevision(earlier["model"], `${where}.previous.model`),
+            requirements: nullableRevision(earlier["requirements"], `${where}.previous.requirements`),
+          },
+    checks: list(r, "checks", where).map((c, i) => parseBundleCheck(c, `${where}.checks[${i}]`)),
+    published_at: text(r, "published_at", where),
+  };
+}
+
+/** `read_bundle`: `null` for a work that keeps no bundle. */
+export function parseBundleRead(value: unknown): BundleRead | null {
+  const where = "read_bundle";
+  const found = record(value, where)["bundle"];
+  if (found === null) return null;
+  const r = record(found, `${where}.bundle`);
+  return {
+    revision: revision(r["revision"], `${where}.bundle.revision`),
+    bundle: parseBundle(r["bundle"], `${where}.bundle.bundle`),
+  };
 }
 
 /** `request_generation`. */
@@ -950,6 +1123,7 @@ export function parseWorkSnapshot(value: unknown): WorkSnapshot {
       `${where}.requirements_standing`,
     ),
     acceptance: acceptance === null ? null : parseAcceptanceRecord(acceptance, `${where}.acceptance`),
+    bundle: nullableRevision(r["bundle"], `${where}.bundle`),
   };
 }
 

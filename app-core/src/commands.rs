@@ -21,17 +21,18 @@ use std::collections::BTreeMap;
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
 use crate::acceptance_run::CheckOutcome;
 use crate::answers::{Answers, AnswersError};
+use crate::bundle::{BundleCheck, CheckedBy};
 use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::requests::{Inputs, Lease};
 use crate::requirements::{Requirements, RequirementsError};
-use crate::review::{Product, ReviewRequest};
+use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, ModelText, Registration, RequestView,
-    RequirementsText, WorkId, WorkStore,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ModelText, Registration,
+    RequestView, RequirementsText, WorkId, WorkStore,
 };
 
 /// Every command, in the order a person would meet them.
@@ -63,11 +64,15 @@ pub const COMMANDS: &[&str] = &[
     "list_requests",
     "claim_request",
     "heartbeat_request",
+    "save_request_candidate",
+    "read_request_candidate",
     "complete_request",
     "fail_request",
     "cancel_request",
     "report_adapter",
     "read_adapter_status",
+    "read_bundle",
+    "bundle_history",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -115,7 +120,16 @@ pub const COMMANDS: &[&str] = &[
 /// (`report_adapter`) and a screen asks which are (`read_adapter_status`). The heads of a
 /// work also say where its latest request stands. A screen written for 10 offers what a
 /// request makes possible, and would be refused by a core of 9 with `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 10;
+///
+/// 11: what a request makes becomes the work's in one step. The executor writes a candidate
+/// (`save_request_candidate`, read back by `read_request_candidate`) that is not yet the
+/// work's model, and `complete_request` publishes it: the core runs its own check of the
+/// model, and the model and the requirement list become the work's together as one bundle
+/// (`read_bundle`, `bundle_history`). A request says its `candidate` and, once done, its
+/// `outcome`; the heads and the snapshot of a work say their `bundle`. A work that keeps
+/// bundles refuses `save_model` and `save_requirements` with `bundled-work`. A screen
+/// written for 11 reads a work's model by the bundle and would be refused by a core of 10.
+pub const COMMAND_SET_VERSION: u32 = 11;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -399,11 +413,62 @@ struct HeartbeatRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct SaveCandidate {
+    id: String,
+    request: String,
+    holder: String,
+    attempt: u32,
+    /// The model as one document. At most one of `text` and `documents` is given; neither
+    /// means this call writes the requirement list alone.
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    documents: Option<Vec<Document>>,
+    #[serde(default)]
+    entry: Option<String>,
+    /// The requirement list, as `save_requirements` takes it. Absent when this call writes
+    /// the model alone.
+    #[serde(default)]
+    manifest: Option<String>,
+    #[serde(default)]
+    sidecar: Option<String>,
+}
+
+/// A check only the executor's side can run, as it reports it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClientCheck {
+    name: String,
+    /// `accepted` or `refused`.
+    verdict: String,
+    #[serde(default)]
+    generator: Option<String>,
+    #[serde(default)]
+    digest: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FinishRequest {
     id: String,
     request: String,
     holder: String,
     attempt: u32,
+    /// What the executor checked that the core cannot: it is kept as reported, beside the
+    /// check the core runs of the model itself.
+    #[serde(default)]
+    checks: Vec<ClientCheck>,
+    #[serde(default)]
+    lexicon: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneBundle {
+    id: String,
+    /// The bundle; the work's current one when absent.
+    #[serde(default)]
+    revision: Option<Revision>,
 }
 
 #[derive(Deserialize)]
@@ -456,6 +521,8 @@ fn request_json(work: &WorkId, view: &RequestView) -> Value {
         },
         "created_at": request.created_at,
         "lease": request.lease.as_ref().map(lease_json),
+        "candidate": request.candidate,
+        "outcome": request.outcome,
         "ended_at": request.ended_at,
         "note": request.note,
     })
@@ -606,6 +673,81 @@ fn acceptance_json(revision: &Revision, acceptance: &Acceptance) -> Value {
     })
 }
 
+/// A model as its caller gave it: `text` (one document), or `documents` (several that name
+/// each other) with the `entry` the product is asked about. Both, or neither, is refused.
+fn model_files_of(
+    text: Option<String>,
+    documents: Option<Vec<Document>>,
+    entry: Option<String>,
+) -> Result<ModelFiles, CommandError> {
+    match (text, documents) {
+        (Some(text), None) if entry.is_none() => Ok(ModelFiles::single(text)),
+        (Some(_), None) => Err(CommandError::bad_request(
+            "`entry` names one of several `documents`; a model given as `text` has one",
+        )),
+        (None, Some(documents)) => Ok(ModelFiles::set(documents, entry.as_deref())?),
+        _ => Err(CommandError::bad_request(
+            "give the model as `text` (one document) or as `documents` (several), \
+             not both and not neither",
+        )),
+    }
+}
+
+/// What SCE says of `files`, the model of work `id`: its check and its pseudocode page.
+fn review_model(
+    renderer: &dyn Product,
+    id: &WorkId,
+    files: &ModelFiles,
+    lexicon: Option<&str>,
+) -> Result<Review, RenderError> {
+    let others: Vec<Document> = files.others().into_iter().cloned().collect();
+    renderer.review(&ReviewRequest {
+        model: files.entry_text(),
+        name: Some(id.slug()),
+        entry_file: files.entry_name(),
+        siblings: &others,
+        lexicon,
+    })
+}
+
+/// A check the executor reports, as a bundle keeps it: as reported, and said to be so.
+fn client_check_of(check: ClientCheck) -> Result<BundleCheck, CommandError> {
+    if check.verdict != "accepted" && check.verdict != "refused" {
+        return Err(CommandError::bad_request(format!(
+            "the verdict of check `{}` is `accepted` or `refused`, not `{}`",
+            check.name, check.verdict
+        )));
+    }
+    Ok(BundleCheck {
+        by: CheckedBy::Client,
+        name: check.name,
+        verdict: check.verdict,
+        generator: check.generator,
+        digest: check.digest,
+        subject: None,
+    })
+}
+
+/// The check the core ran of a candidate model, as a bundle keeps it: who ran it, what it
+/// said, with which generator, the digest of the record it wrote so that what was checked is
+/// pinned and not only what it came to, and the revision it ran on.
+fn core_check_of(review: &Review, model: Revision) -> BundleCheck {
+    BundleCheck {
+        by: CheckedBy::Core,
+        name: "model".to_string(),
+        verdict: match review.check.verdict {
+            Verdict::Accepted => "accepted",
+            Verdict::Refused => "refused",
+        }
+        .to_string(),
+        generator: review.generator.clone(),
+        digest: Some(
+            Revision::of(&serde_json::to_vec(&review.check).unwrap_or_default()).to_string(),
+        ),
+        subject: Some(model),
+    }
+}
+
 /// The model of `id` as the product is asked about it: parsed into its documents,
 /// the staging that goes with it, and the save it came from.
 fn read_model_files<C: Clock>(
@@ -676,20 +818,7 @@ pub fn call<C: Clock>(
                 base,
                 written_for,
             } = arguments(args)?;
-            let files =
-                match (text, documents) {
-                    (Some(text), None) if entry.is_none() => ModelFiles::single(text),
-                    (Some(_), None) => return Err(CommandError::bad_request(
-                        "`entry` names one of several `documents`; a model given as `text` has one",
-                    )),
-                    (None, Some(documents)) => ModelFiles::set(documents, entry.as_deref())?,
-                    _ => {
-                        return Err(CommandError::bad_request(
-                            "give the model as `text` (one document) or as `documents` (several), \
-                         not both and not neither",
-                        ))
-                    }
-                };
+            let files = model_files_of(text, documents, entry)?;
             answer(&store.save_model(
                 &work_id(&id)?,
                 &files.stored_text(),
@@ -756,15 +885,8 @@ pub fn call<C: Clock>(
             } = arguments(args)?;
             let id = work_id(&id)?;
             let (model, files) = read_model_files(store, &id, revision.as_ref())?;
-            let others: Vec<Document> = files.others().into_iter().cloned().collect();
             let source_head = store.head(&id)?;
-            let read = renderer.review(&ReviewRequest {
-                model: files.entry_text(),
-                name: Some(id.slug()),
-                entry_file: files.entry_name(),
-                siblings: &others,
-                lexicon: lexicon.as_deref(),
-            })?;
+            let read = review_model(renderer, &id, &files, lexicon.as_deref())?;
             Ok(json!({
                 "model": { "revision": model.revision, "written_for": model.written_for },
                 "source_head": source_head,
@@ -985,6 +1107,7 @@ pub fn call<C: Clock>(
                 "requirements": requirements,
                 "requirements_standing": requirements_standing,
                 "acceptance": acceptance,
+                "bundle": snapshot.bundle,
             }))
         }
         "read_work_heads" => {
@@ -1061,10 +1184,97 @@ pub fn call<C: Clock>(
                 request,
                 holder,
                 attempt,
+                checks,
+                lexicon,
             } = arguments(args)?;
             let id = work_id(&id)?;
-            let view = store.complete_request(&id, &request, &holder, attempt)?;
+            // What the caller reports is read first: a report that is not one costs nothing
+            // to refuse, and the product is not asked about a call that will be refused.
+            let reported = checks
+                .into_iter()
+                .map(client_check_of)
+                .collect::<Result<Vec<_>, _>>()?;
+            // The core checks the model itself: a verdict an executor reports of its own
+            // model is not the check a bundle needs. A request already completed is said
+            // again without asking the product a second time.
+            let mut done = Vec::new();
+            if store.read_request(&id, &request)?.state.is_open() {
+                if let Some((revision, text)) = store.read_candidate(&id, &request)?.model {
+                    let files = ModelFiles::parse(&text)?;
+                    let review = review_model(renderer, &id, &files, lexicon.as_deref())?;
+                    done.push(core_check_of(&review, revision));
+                }
+            }
+            done.extend(reported);
+            let published = store.publish_candidate(&id, &request, &holder, attempt, done)?;
+            Ok(json!({
+                "request": request_json(&id, &published.request),
+                "bundle": published.bundle,
+            }))
+        }
+        "save_request_candidate" => {
+            let SaveCandidate {
+                id,
+                request,
+                holder,
+                attempt,
+                text,
+                documents,
+                entry,
+                manifest,
+                sidecar,
+            } = arguments(args)?;
+            let model = match (&text, &documents, &entry) {
+                (None, None, None) => None,
+                _ => Some(model_files_of(text, documents, entry)?.stored_text()),
+            };
+            let requirements = match (manifest, sidecar) {
+                (None, None) => None,
+                (Some(manifest), sidecar) => {
+                    Some(Requirements::new(manifest, sidecar)?.stored_text())
+                }
+                (None, Some(_)) => {
+                    return Err(CommandError::bad_request(
+                        "a `sidecar` belongs to a `manifest`: give both, or neither",
+                    ))
+                }
+            };
+            let id = work_id(&id)?;
+            let view = store.save_candidate(
+                &id,
+                &request,
+                &holder,
+                attempt,
+                CandidateWrite {
+                    model,
+                    requirements,
+                },
+            )?;
             Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "read_request_candidate" => {
+            let OneRequest { id, request } = arguments(args)?;
+            let id = work_id(&id)?;
+            let texts = store.read_candidate(&id, &request)?;
+            Ok(json!({
+                "request": request,
+                "model": texts.model.map(|(revision, text)| json!({ "revision": revision, "text": text })),
+                "requirements": texts
+                    .requirements
+                    .map(|(revision, text)| json!({ "revision": revision, "text": text })),
+            }))
+        }
+        "read_bundle" => {
+            let OneBundle { id, revision } = arguments(args)?;
+            let id = work_id(&id)?;
+            let read = store.read_bundle(&id, revision.as_ref())?;
+            Ok(json!({
+                "bundle": read.map(|r| json!({ "revision": r.revision, "bundle": r.bundle })),
+            }))
+        }
+        "bundle_history" => {
+            let OneWork { id } = arguments(args)?;
+            Ok(json!({ "entries": store.bundle_history(&work_id(&id)?)? }))
         }
         "fail_request" => {
             let FailRequest {

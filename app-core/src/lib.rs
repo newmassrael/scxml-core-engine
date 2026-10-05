@@ -28,6 +28,7 @@
 pub mod acceptance;
 pub mod acceptance_run;
 pub mod answers;
+pub mod bundle;
 pub mod clock;
 pub mod commands;
 pub mod error;
@@ -58,8 +59,9 @@ pub use review::{
 pub use revision::Revision;
 pub use store::{
     default_root, AcceptanceText, Adapter, AdapterListing, AdapterReport, AdapterStatus,
-    AnswersText, ClaimedHead, HistoryEntry, Listing, ModelText, Registered, Registration,
-    RequestHead, RequestView, RequirementsText, Saved, SourceText, Transition, Unreadable, Work,
-    WorkHeads, WorkId, WorkSnapshot, WorkStore, ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES,
-    MAX_ANSWERS_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
+    AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, HistoryEntry, Listing,
+    ModelText, Published, Registered, Registration, RequestHead, RequestView, RequirementsText,
+    Saved, SourceText, Transition, Unreadable, Work, WorkHeads, WorkId, WorkSnapshot, WorkStore,
+    ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES,
+    MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
 };

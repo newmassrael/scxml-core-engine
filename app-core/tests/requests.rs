@@ -14,8 +14,11 @@ mod common;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+use sce_app_core::bundle::{BundleCheck, CheckedBy};
 use sce_app_core::requests::{Inputs, State};
-use sce_app_core::{ManualClock, Registration, Revision, StoreError, WorkId, WorkStore};
+use sce_app_core::{
+    CandidateWrite, ManualClock, Registration, RequestView, Revision, StoreError, WorkId, WorkStore,
+};
 
 const T0: u64 = 1_791_190_800;
 
@@ -69,6 +72,47 @@ impl Fixture {
 
     fn state_of(&self, request: &str) -> State {
         self.store.read_request(&self.id, request).unwrap().state
+    }
+
+    /// The executor writes a model and a list and says it is done: the request completes
+    /// by publishing, which is the only way a request completes.
+    fn complete(
+        &self,
+        request: &str,
+        holder: &str,
+        attempt: u32,
+    ) -> Result<RequestView, StoreError> {
+        self.store.save_candidate(
+            &self.id,
+            request,
+            holder,
+            attempt,
+            CandidateWrite {
+                model: Some(format!("<scxml>{request}</scxml>")),
+                requirements: Some(format!("{{\"list\":\"{request}\"}}")),
+            },
+        )?;
+        self.publish(request, holder, attempt)
+    }
+
+    /// Say it is done, as an executor does, with the check the core made of the model.
+    fn publish(
+        &self,
+        request: &str,
+        holder: &str,
+        attempt: u32,
+    ) -> Result<RequestView, StoreError> {
+        let core = BundleCheck {
+            by: CheckedBy::Core,
+            name: "model".to_string(),
+            verdict: "accepted".to_string(),
+            generator: None,
+            digest: None,
+            subject: None,
+        };
+        self.store
+            .publish_candidate(&self.id, request, holder, attempt, vec![core])
+            .map(|published| published.request)
     }
 
     /// Save a text that differs from the current one.
@@ -270,17 +314,11 @@ fn an_executor_takes_a_request_keeps_it_and_finishes_it() {
         .unwrap();
     assert_eq!(kept.request.lease.unwrap().expires_at, T0 + 90);
 
-    let done = f
-        .store
-        .complete_request(&f.id, &id, "adapter-a", 1)
-        .unwrap();
+    let done = f.complete(&id, "adapter-a", 1).unwrap();
     assert_eq!(done.state, State::Completed);
     // Said twice is said once.
     f.clock.advance(5);
-    let again = f
-        .store
-        .complete_request(&f.id, &id, "adapter-a", 1)
-        .unwrap();
+    let again = f.publish(&id, "adapter-a", 1).unwrap();
     assert_eq!(again.request, done.request);
 }
 
@@ -330,11 +368,7 @@ fn an_interrupted_request_is_resumed_only_by_asking_and_the_attempt_before_is_fe
         (resumed.state, resumed.request.attempt),
         (State::Running, 2)
     );
-    let (kind, _) = refused(
-        f.store
-            .complete_request(&f.id, &id, "adapter-a", 1)
-            .unwrap_err(),
-    );
+    let (kind, _) = refused(f.complete(&id, "adapter-a", 1).unwrap_err());
     assert_eq!(kind, "not-holder");
     assert_eq!(f.state_of(&id), State::Running);
 }
@@ -349,10 +383,7 @@ fn an_executor_that_slept_past_its_lease_and_woke_with_the_run_done_finishes_it(
     f.clock.advance(3_600);
     assert_eq!(f.state_of(&id), State::Interrupted);
 
-    let done = f
-        .store
-        .complete_request(&f.id, &id, "adapter-a", 1)
-        .unwrap();
+    let done = f.complete(&id, "adapter-a", 1).unwrap();
 
     assert_eq!(done.state, State::Completed);
 }
@@ -401,9 +432,7 @@ fn a_cancelled_request_tells_the_executor_at_its_next_word() {
     f.store
         .claim_request(&f.id, &other, "adapter-a", None, false)
         .unwrap();
-    f.store
-        .complete_request(&f.id, &other, "adapter-a", 1)
-        .unwrap();
+    f.complete(&other, "adapter-a", 1).unwrap();
     let (kind, _) = refused(f.store.cancel_request(&f.id, &other).unwrap_err());
     assert_eq!(kind, "request-ended");
 }
@@ -574,9 +603,7 @@ fn every_change_of_state_is_a_line_of_the_history_and_a_heartbeat_is_not() {
             .heartbeat_request(&f.id, &id, "adapter-a", 1, None)
             .unwrap();
     }
-    f.store
-        .complete_request(&f.id, &id, "adapter-a", 1)
-        .unwrap();
+    f.complete(&id, "adapter-a", 1).unwrap();
 
     let history = f.store.request_history(&f.id).unwrap();
 
