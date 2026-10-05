@@ -23,27 +23,13 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
 
     const auto &value = result.getInternalValue();
 
-    if (std::holds_alternative<std::string>(value)) {
-        return result.getValue<std::string>();
-    } else if (std::holds_alternative<double>(value)) {
-        // §scxml-B-1: the data model is ECMAScript, so a number's text is its
-        // `String(value)` — the one spelling every engine writes
-        // (ARCHITECTURE.md, "JSON Number Text"). Neither iostream's spelling
-        // of a value is it: `oss << nan` writes "nan", and the default
-        // precision writes pi as `3.14159`. An integer-valued double used to
-        // be cast to `int64_t` here, which is undefined for an infinity and
-        // for every finite double above 2^63; `numberText` has no cast.
-        return JsonText::numberText(result.getValue<double>());
-    } else if (std::holds_alternative<int64_t>(value)) {
-        return std::to_string(result.getValue<int64_t>());
-    } else if (std::holds_alternative<bool>(value)) {
-        return result.getValue<bool>() ? "true" : "false";
-    } else if (std::holds_alternative<ScriptUndefined>(value)) {
-        // §scxml-C-1: undefined evaluates to empty string for target expressions
-        // Ensures isUnreachableTarget() works correctly across all script engines
-        return "";
-    } else if (std::holds_alternative<ScriptNull>(value)) {
-        return "";
+    // A scalar is its own text, with no engine: `scalarText` (header-only, so
+    // generated code without a script engine reaches it without this library).
+    // An integer-valued double used to be cast to `int64_t` here, which is
+    // undefined for an infinity and for every finite double above 2^63;
+    // `numberText` has no cast.
+    if (const auto text = scalarText(value)) {
+        return *text;
     } else if (engine && !sessionId.empty() && !originalExpression.text().empty()) {
         // JSON.stringify fallback using provided engine. Composed through the
         // dialect table rather than spelled inline: the wrapper has to be in

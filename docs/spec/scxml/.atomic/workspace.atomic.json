@@ -12746,6 +12746,10 @@
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
           "symbol": "resultToString",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/ScriptResultUtils.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -14855,6 +14859,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "send_to_target",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/ScriptResultUtils.h",
           "kind": "references"
         }
       ],

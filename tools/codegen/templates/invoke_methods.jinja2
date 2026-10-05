@@ -751,7 +751,7 @@
                             {% endif %}
                             {
                                 const std::string paramText =
-                                    ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue));
+                                    ::SCE::ScriptResultUtils::valueText(paramValue);
                                 hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(paramText);
                                 {% if not param.envelope_metadata %}
                                 payloadText["{{ param.name | escape_cpp }}"].push_back(paramText);

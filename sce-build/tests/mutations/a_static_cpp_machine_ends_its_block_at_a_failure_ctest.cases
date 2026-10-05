@@ -116,6 +116,6 @@ PY
 
 mutation_case "a send's param reaches the host as the pairs' JSON alone" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "{% else %}\n    params[\"{{ param.name | escape_cpp }}\"].push_back(\n        ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));\n    typedParams",
+     "{% else %}\n    params[\"{{ param.name | escape_cpp }}\"].push_back(\n        ::SCE::ScriptResultUtils::valueText(paramValue));\n    typedParams",
      "{% else %}\n    typedParams")
 PY

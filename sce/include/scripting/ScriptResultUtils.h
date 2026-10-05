@@ -5,8 +5,10 @@
 
 #include "ScriptResult.h"
 #include "ScriptSource.h"
+#include "common/JsonText.h"
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace SCE {
@@ -27,6 +29,58 @@ namespace ScriptResultUtils {
  * @return Boolean value following ECMAScript truthy rules
  */
 bool resultToBool(const ScriptResult &result);
+
+/**
+ * @brief The text of a scalar script value, or nothing for one that needs an engine
+ *
+ * A string is itself, a number is its ECMAScript `String(value)`
+ * (ARCHITECTURE.md, "JSON Number Text"), a truth value is `true` or `false`, and
+ * `undefined` and `null` are the empty string (§scxml-C-1). An array or an object
+ * has no text without an engine to stringify it, and returns nothing.
+ *
+ * Header-only on purpose. Generated code under `datamodel="sce-static"` carries
+ * no script engine and its component links no SCE library: it is compiled with
+ * the engine's headers and one runtime source. A native `<param>` value reaches
+ * its text through here and not through `resultToString`, which is compiled in
+ * `ScriptResultUtils.cpp` -- measured 2026-10-06, a component built that way
+ * started and the platform's loader stopped it at once on the missing symbol.
+ */
+inline std::optional<std::string> scalarText(const ScriptValue &value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return std::get<std::string>(value);
+    }
+    if (std::holds_alternative<double>(value)) {
+        // §scxml-B-1: the data model is ECMAScript, so a number's text is its
+        // `String(value)` -- the one spelling every engine writes. Neither
+        // iostream's spelling is it: `oss << nan` writes "nan", and the default
+        // precision writes pi as `3.14159`.
+        return JsonText::numberText(std::get<double>(value));
+    }
+    if (std::holds_alternative<int64_t>(value)) {
+        return std::to_string(std::get<int64_t>(value));
+    }
+    if (std::holds_alternative<bool>(value)) {
+        return std::string(std::get<bool>(value) ? "true" : "false");
+    }
+    if (std::holds_alternative<ScriptUndefined>(value) || std::holds_alternative<ScriptNull>(value)) {
+        // §scxml-C-1: undefined evaluates to the empty string for target
+        // expressions, so isUnreachableTarget() works across every script engine.
+        return std::string();
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief The text of a value a native expression computed, with no script engine
+ *
+ * `resultToString(ScriptResult::createSuccess(value))` for a scalar, without the
+ * library (see `scalarText`). A value that is not a scalar has no engine to be
+ * stringified by here and reads as the marker `resultToString` gives it.
+ */
+inline std::string valueText(const ScriptValue &value) {
+    const auto text = scalarText(value);
+    return text ? *text : std::string("[conversion_error]");
+}
 
 /**
  * @brief Convert ScriptResult to string with optional JSON.stringify fallback

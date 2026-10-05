@@ -115,12 +115,12 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("
 {{ param_eval_failed(param, '        ') }}
     } else {
         params["{{ param.name | escape_cpp }}"].push_back(
-            ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));
+            ::SCE::ScriptResultUtils::valueText(paramValue));
         typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
     }
 {% else %}
     params["{{ param.name | escape_cpp }}"].push_back(
-        ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(paramValue)));
+        ::SCE::ScriptResultUtils::valueText(paramValue));
     typedParams["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
 {% endif %}
 }
@@ -209,7 +209,7 @@ eventData = contentData;
         contentValue = ScriptValue(std::string());
     }
 {% endif %}
-    contentText = ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(contentValue));
+    contentText = ::SCE::ScriptResultUtils::valueText(contentValue);
     eventData = ::SCE::EventDataHelper::scriptValueToJsonString(contentValue);
     typedData = std::move(contentValue);
 }

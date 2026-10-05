@@ -20,15 +20,18 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(JSEngineTests|JsonText)$'
-mutation_targets sce/src/scripting/ScriptResultUtils.cpp sce/include/common/JsonText.h
+mutation_targets sce/src/scripting/ScriptResultUtils.cpp sce/include/scripting/ScriptResultUtils.h sce/include/common/JsonText.h
 mutation_oracles tests/engine/JSEngineBasicTest.cpp tests/common/JsonTextTest.cpp
 
 # ── The callers stop using the one writer ──────────────────────────
+# (A scalar's text is `scalarText`, in the header, since 2026-10-06: generated
+# code under `datamodel="sce-static"` links no SCE library and reaches it there;
+# `resultToString` calls it for the same arms.)
 
 mutation_case "a double's text is std::to_string's again" <<'PY'
-edit("sce/src/scripting/ScriptResultUtils.cpp",
-     "        return JsonText::numberText(result.getValue<double>());",
-     "        return std::to_string(result.getValue<double>());")
+edit("sce/include/scripting/ScriptResultUtils.h",
+     "        return JsonText::numberText(std::get<double>(value));",
+     "        return std::to_string(std::get<double>(value));")
 PY
 
 mutation_case "a double in an array is std::to_string's again" <<'PY'
