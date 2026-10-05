@@ -3175,8 +3175,9 @@ a `<param>` of the same invoke already names, as it does for two `<param>`s; a
 request typed by `sce:request` takes no `namelist` under any data model. The
 `srcexpr` of that `<invoke>` is a string the machine computes from its fields
 when the invocation starts, and it is the `src` the host is handed; it takes no
-`src` beside it, a machine with one needs no script engine, and C11 refuses an
-expression that joins text, for the reason it refuses a delay that does. A saved
+`src` beside it, a machine with one needs no script engine, and C11 writes an
+expression that joins text into a buffer the data model sizes, as it does for a
+delay (below). A saved
 state holds the request as it was handed, so a restore starts the invocation
 again from the `src` it was saved with and never computes it a second time
 (`statechart_static_host_invoke`, whose invoke reads its `src` from the string
@@ -3187,8 +3188,8 @@ is, and it is the `content` the host is handed as the text it is — a value of 
 other type is refused at the attribute. An invocation whose body cannot be
 computed is an attribute that cannot be evaluated (§scxml-6.4.1): `error.execution`
 is raised and nothing starts, the host is never asked, and a machine with one
-needs no script engine. C11 refuses an expression that joins text, for the reason
-it refuses one in a `srcexpr`; the saved request already holds the `content`, so
+needs no script engine. C11 writes an expression that joins text into a buffer
+the data model sizes, as it does in a `srcexpr`; the saved request already holds the `content`, so
 a restore starts the invocation with the body it was saved with
 (`statechart_static_host_params`, whose invoke reads its body from `label` through
 a condition over `huge`). A
@@ -3228,9 +3229,20 @@ of W3C SCXML 6.2.4, so `error.execution` is raised and the message is not sent
 under some default wait. It takes no `delay` beside it. A machine that has one
 must be driven with `tick()`, as one with a written delay is
 (`scenarios/static_send_delay.json`, whose `advance_ms` steps move a manual clock;
-the Interpreter waits the time out). C11 refuses an expression that joins text,
-because a C string has no storage for the joined text, and generates a
-`delayexpr` that is only a string written out or held by a variable. A `<send>`'s
+the Interpreter waits the time out, and C11 replays it as the others do). C11
+holds a string in a bounded buffer, so it writes an expression that joins text
+into one the generator sizes from what the data model declares
+(`SCE_FORGE_CONCAT`, `sce/forge/wire.h`): a string variable by the capacity it
+declares, a literal by its text, an integer by the digits of its type — the ten of
+a `uint32`, so `wait + 'ms'` is a buffer of thirteen bytes with its terminator —
+and a chain `a + b + c` is one buffer, not a join of a join. The text of each
+part is the one the wire writes (a string as itself, an integer as its decimal
+digits), and a buffer sized from the bounds cannot overflow, so a join never
+holds a truncated text. The buffer lives as long as the block that reads it,
+which is where a delay, an event name, an id and a request's source are read.
+C11 refuses a join with an operand the model declares no size for, and one with a
+floating-point value, a boolean or another type whose text is not the same in
+every backend, as the other backends refuse the latter. A `<send>`'s
 `eventexpr` is the same for the name of the event the send delivers: a string
 computed from the machine's fields when the send runs, so the one `<send>`
 delivers a different event once the name it reads has changed, and a name that is
@@ -3959,7 +3971,8 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
-variables of the integer types, `bool`, an enum, a string and a 64-bit real, a transition's
+variables of the integer types, `bool`, an enum, a string and a 64-bit real, the join
+of strings and integers the data model sizes (`wait + 'ms'`), a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools, strings and enums, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a

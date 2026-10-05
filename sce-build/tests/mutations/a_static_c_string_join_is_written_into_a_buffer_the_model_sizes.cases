@@ -1,0 +1,62 @@
+# Mutation cases for the join of strings in a `datamodel="sce-static"` machine
+# generated as C11 (docs/SCE_ACCEPTED_SUBSET.md §2.15): a C string is a bounded
+# buffer, so `wait + 'ms'` is written into one the generator sizes from the
+# bounds the data model declares — a string variable by the capacity it
+# declares, a literal by its text, an integer by the digits of its type — and a
+# chain `a + b + c` is one buffer.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_string_join_is_written_into_a_buffer_the_model_sizes.cases`.
+#
+# The generated source is read for the size of each buffer: the delays, event
+# names, ids and sources that join a literal and a `uint32` (13, 14, 17, 18, 17
+# bytes), and one machine that joins a string variable, a literal and an `int8`
+# (12) and a conditional (8). The mutants below each take one decision away and
+# leave a generator that still compiles:
+#
+#   the terminator is left out of the buffer;
+#   a string variable's declared capacity is not read, so nothing sizes it;
+#   a conditional is as long as its first branch only;
+#   an integer is as long as a `uint32` whatever its width;
+#   a chain is read one pair at a time, so each pair is a buffer of its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+# ── The buffer holds what the parts hold ────────────────────────────
+
+mutation_case "the terminator is left out of the buffer" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "let capacity = bounds.iter().sum::<usize>() + 1;",
+     "let capacity = bounds.iter().sum::<usize>();")
+PY
+
+mutation_case "a string variable's declared capacity is not read" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        ExprKind::Ident(name) => ctx.string_capacities.get(name.as_str()).copied(),\n",
+     "        ExprKind::Ident(_) => None,\n")
+PY
+
+mutation_case "a conditional is as long as its first branch only" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        } => Some(string_bound(consequent, ctx)?.max(string_bound(alternate, ctx)?)),\n",
+     "        } => {\n            let _ = alternate;\n            string_bound(consequent, ctx)\n        }\n")
+PY
+
+mutation_case "an integer is as long as a uint32 whatever its width" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        InferredType::Int { signed: true, bits } => digits(usize::from(bits).saturating_sub(1)) + 1,\n",
+     "        InferredType::Int { signed: true, bits } => {\n            let _ = bits;\n            10\n        }\n")
+PY
+
+# ── A chain is one buffer ───────────────────────────────────────────
+
+mutation_case "a chain is read one pair at a time" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "            concat_spine(left, into);\n",
+     "            into.push(left);\n")
+PY

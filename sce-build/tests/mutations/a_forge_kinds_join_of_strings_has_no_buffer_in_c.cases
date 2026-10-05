@@ -1,0 +1,27 @@
+# Mutation cases for the C11 join of strings outside a statechart
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `sce-static` statechart reads the text of
+# a join where it computes it — a delay, an event name, an id, a request's source
+# — so a buffer sized for that one evaluation is all it needs. A forge kind's
+# expression may return the text or keep it, and a buffer sized for one
+# evaluation does not outlive the block that made it, so there the join is still
+# refused by name, even for a literal and a number.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_forge_kinds_join_of_strings_has_no_buffer_in_c.cases`.
+#
+# The mutant below makes every context a statechart for the join, and a forge
+# document that joins `'v='` and a number then generates for C11 with a pointer
+# to a buffer that is gone when the function returns.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_string_and_a_number_concatenate_in_every_backend
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/tests/a_string_and_a_number_concatenate_in_every_backend.rs
+
+mutation_case "a join is written into a buffer where a string can be kept" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if matches!(target, ExprTarget::C) && ctx.joins_into_buffers {\n",
+     "    if matches!(target, ExprTarget::C) {\n")
+PY

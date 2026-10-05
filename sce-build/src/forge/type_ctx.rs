@@ -657,6 +657,10 @@ fn static_statechart<'a>(
     enums: &'a [StaticEnum],
 ) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
+    // A statechart reads the text of a join where it computes it — a delay, an
+    // event name, an id, a request's source — so a buffer sized for that one
+    // evaluation is all it needs.
+    ctx.joins_into_buffers = true;
     for var in variables {
         let Some(value_type) = var.value_type.as_ref() else {
             ctx.insert_var(var.id.as_str(), InferredType::Unknown);
@@ -680,6 +684,11 @@ fn static_statechart<'a>(
             .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type);
         ctx.insert_var(var.id.as_str(), ty);
+        // The bound a string is held to is what a value that joins it is sized
+        // from, on a target that stores a string in a buffer of its own.
+        if let (InferredType::Str, Some(capacity)) = (ty, var.capacity) {
+            ctx.insert_string_capacity(var.id.as_str(), capacity as usize);
+        }
     }
     for (path, ty) in paths {
         ctx.insert_var(path.as_str(), *ty);

@@ -60,6 +60,18 @@ fn run_beside(args: &[&str], doc: &str, siblings: &[(&str, &str)]) -> (bool, Str
     )
 }
 
+/// The text of every C source `generate -l c` wrote into `dir`, joined.
+fn generated_c(dir: &std::path::Path) -> String {
+    let mut text = String::new();
+    for entry in std::fs::read_dir(dir).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        if path.extension().is_some_and(|e| e == "c") {
+            text.push_str(&std::fs::read_to_string(&path).expect("a generated source"));
+        }
+    }
+    text
+}
+
 /// A statechart with the given `datamodel` value and `<datamodel>` body.
 /// The `<datamodel>` opens on line 4, so its first child is on line 5.
 fn doc(datamodel: &str, data: &str) -> String {
@@ -2146,9 +2158,10 @@ fn a_send_delayexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
 }
 
 #[test]
-fn a_send_delayexpr_that_joins_text_is_refused_for_c_by_name() {
-    // A C string has no storage for the joined text, so the expression is
-    // refused where it is lowered and the message says why; a literal is not.
+fn a_send_delayexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_sizes() {
+    // A C string is a bounded buffer, so the join is written into one sized from
+    // what the data model declares: the ten digits of a `uint32`, the two bytes
+    // of `ms` and the terminator. A literal needs none.
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
         &[
@@ -2160,8 +2173,16 @@ fn a_send_delayexpr_that_joins_text_is_refused_for_c_by_name() {
         ],
         &sending_with(r#"delayexpr="count + 'ms'""#),
     );
-    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
-    assert!(out.contains("concatenation"), "it says why:\n{out}");
+    assert!(ok, "operands the model sizes have a C11 lowering:\n{out}");
+    let source = generated_c(out_dir.path());
+    assert!(
+        source.contains("SCE_FORGE_CONCAT((char[13]){0}, 13, sce_forge_wire_uint("),
+        "the join is a buffer of 10 + 2 + 1 bytes:\n{source}"
+    );
+    assert!(
+        source.contains(r#"sce_forge_wire_string("ms")"#),
+        "the literal is a string part:\n{source}"
+    );
 
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
@@ -2280,9 +2301,9 @@ fn a_send_eventexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
 }
 
 #[test]
-fn a_send_eventexpr_that_joins_text_is_refused_for_c_by_name() {
-    // A C string has no storage for the joined text; a name that is only
-    // written out is generated.
+fn a_send_eventexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_sizes() {
+    // The join of a literal and a `uint32` is a buffer of 3 + 10 + 1 bytes; a
+    // name that is only written out needs none.
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
         &[
@@ -2294,8 +2315,12 @@ fn a_send_eventexpr_that_joins_text_is_refused_for_c_by_name() {
         ],
         &sending_event(r#"eventexpr="'on.' + count""#),
     );
-    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
-    assert!(out.contains("concatenation"), "it says why:\n{out}");
+    assert!(ok, "operands the model sizes have a C11 lowering:\n{out}");
+    let source = generated_c(out_dir.path());
+    assert!(
+        source.contains(r#"SCE_FORGE_CONCAT((char[14]){0}, 14, sce_forge_wire_string("on.")"#),
+        "the join is a buffer of 3 + 10 + 1 bytes:\n{source}"
+    );
 
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
@@ -2309,6 +2334,58 @@ fn a_send_eventexpr_that_joins_text_is_refused_for_c_by_name() {
         &sending_event(r#"eventexpr="'notify'""#),
     );
     assert!(ok, "a name that is only written generates for C11:\n{out}");
+}
+
+/// [`sending_event`] over a machine that also holds the string `prefix`, bounded
+/// to six bytes, and the `int8` `level`.
+fn sending_event_over_variables(send: &str) -> String {
+    sending_event(send).replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="ready" sce:type="bool" expr="false"/>
+    <data id="prefix" sce:type="string" sce:capacity="6" expr="'ab'"/>
+    <data id="level" sce:type="int8" expr="0"/>"#,
+    )
+}
+
+#[test]
+fn a_join_for_c_is_sized_by_a_variables_capacity_and_an_integers_width() {
+    // The C source of the machine whose `eventexpr` is `event`.
+    let generate = |event: &str| {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                "c",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &sending_event_over_variables(&format!(r#"eventexpr="{event}""#)),
+        );
+        assert!(ok, "`{event}` has a C11 lowering:\n{out}");
+        generated_c(out_dir.path())
+    };
+
+    // A string variable by the capacity it declares (6), a literal by its text
+    // (1), an `int8` by its three digits and its sign (4), and the terminator.
+    let source = generate("prefix + '.' + level");
+    assert!(
+        source.contains("SCE_FORGE_CONCAT((char[12]){0}, 12, sce_forge_wire_string("),
+        "6 + 1 + 4 + 1 bytes:\n{source}"
+    );
+    // A chain is one buffer, not a join of a join.
+    assert_eq!(
+        source.matches("SCE_FORGE_CONCAT(").count(),
+        1,
+        "one join for the chain:\n{source}"
+    );
+
+    // A conditional is as long as its longer branch, whichever it is.
+    let source = generate("(ready ? 'ab' : prefix) + 'x'");
+    assert!(
+        source.contains("SCE_FORGE_CONCAT((char[8]){0}, 8, "),
+        "6 + 1 + 1 bytes:\n{source}"
+    );
 }
 
 // ── A `<cancel>`'s `sendidexpr` is a string the machine computes ────────
@@ -2410,9 +2487,9 @@ fn a_cancel_sendidexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine(
 }
 
 #[test]
-fn a_cancel_sendidexpr_that_joins_text_is_refused_for_c_by_name() {
-    // A C string has no storage for the joined text; an id that is only
-    // written out is generated.
+fn a_cancel_sendidexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_sizes() {
+    // The join of a literal and a `uint32` is a buffer of 6 + 10 + 1 bytes; an
+    // id that is only written out needs none.
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
         &[
@@ -2424,8 +2501,12 @@ fn a_cancel_sendidexpr_that_joins_text_is_refused_for_c_by_name() {
         ],
         &cancelling(r#"sendidexpr="'timer.' + count""#),
     );
-    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
-    assert!(out.contains("concatenation"), "it says why:\n{out}");
+    assert!(ok, "operands the model sizes have a C11 lowering:\n{out}");
+    let source = generated_c(out_dir.path());
+    assert!(
+        source.contains(r#"SCE_FORGE_CONCAT((char[17]){0}, 17, sce_forge_wire_string("timer.")"#),
+        "the join is a buffer of 6 + 10 + 1 bytes:\n{source}"
+    );
 
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
@@ -3449,9 +3530,8 @@ fn a_host_run_invoke_content_expr_is_lowered_to_the_string_it_computes_and_needs
 }
 
 #[test]
-fn a_host_run_invoke_content_expr_that_joins_text_is_refused_for_c_by_name() {
-    // A C string has no storage for the joined text; a body held by a variable
-    // is generated.
+fn a_host_run_invoke_content_expr_that_joins_text_is_written_for_c_into_a_buffer_the_model_sizes() {
+    // The join of a literal and a `uint32` is a buffer of 7 + 10 + 1 bytes.
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
         &[
@@ -3467,8 +3547,12 @@ fn a_host_run_invoke_content_expr_that_joins_text_is_refused_for_c_by_name() {
             r#"<invoke type="x-sce-host" id="h"><content expr="'report ' + count"/></invoke>"#,
         ),
     );
-    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
-    assert!(out.contains("concatenation"), "it says why:\n{out}");
+    assert!(ok, "operands the model sizes have a C11 lowering:\n{out}");
+    let source = generated_c(out_dir.path());
+    assert!(
+        source.contains(r#"SCE_FORGE_CONCAT((char[18]){0}, 18, sce_forge_wire_string("report ")"#),
+        "the join is a buffer of 7 + 10 + 1 bytes:\n{source}"
+    );
 }
 
 /// [`invoking_the_host`] over a machine that also holds the string `place`,
@@ -3728,9 +3812,8 @@ fn a_host_run_invoke_srcexpr_is_lowered_to_the_string_it_computes_and_needs_no_e
 }
 
 #[test]
-fn a_host_run_invoke_srcexpr_that_joins_text_is_refused_for_c_by_name() {
-    // A C string has no storage for the joined text; a source held by a
-    // variable is generated.
+fn a_host_run_invoke_srcexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_sizes() {
+    // The join of a literal and a `uint32` is a buffer of 6 + 10 + 1 bytes.
     let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
         &[
@@ -3744,8 +3827,12 @@ fn a_host_run_invoke_srcexpr_that_joins_text_is_refused_for_c_by_name() {
         ],
         &invoking_the_host(r#"<invoke type="x-sce-host" id="h" srcexpr="'job://' + count"/>"#),
     );
-    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
-    assert!(out.contains("concatenation"), "it says why:\n{out}");
+    assert!(ok, "operands the model sizes have a C11 lowering:\n{out}");
+    let source = generated_c(out_dir.path());
+    assert!(
+        source.contains(r#"SCE_FORGE_CONCAT((char[17]){0}, 17, sce_forge_wire_string("job://")"#),
+        "the join is a buffer of 6 + 10 + 1 bytes:\n{source}"
+    );
 }
 
 #[test]

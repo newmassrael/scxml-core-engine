@@ -2424,6 +2424,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_content.scxml"
         STAGE_ALSO schema_view.scxml schema_view_relayed.scxml enum_view_mode.scxml
     )
+    # The `delayexpr` of a `<send>`: a number joined to its unit, written into a
+    # buffer the data model sizes and read as the CSS2 time it must be, so the
+    # machine stands alone; its sends wait on a clock the scenario owns.
+    sce_generate_static_integration_c_test(static_send_delay
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_delay.scxml"
+    )
     # The `eventexpr` of a `<send>`: the name of the event it delivers is a
     # string the machine holds, so the machine stands alone.
     sce_generate_static_integration_c_test(static_send_event
@@ -2570,6 +2577,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_params_SOURCES}
         ${INTEGRATION_C_TEST_static_send_namelist_SOURCES}
         ${INTEGRATION_C_TEST_static_send_content_SOURCES}
+        ${INTEGRATION_C_TEST_static_send_delay_SOURCES}
         ${INTEGRATION_C_TEST_static_send_event_SOURCES}
         ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
@@ -3720,6 +3728,27 @@ set_target_properties(sce_c_json_text_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_json_text COMMAND sce_c_json_text_unit_test)
 set_tests_properties(c11_unit_json_text PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── Forge concat unit test ─────────────────────────────────────────
+#
+# The join a `sce-static` machine writes into a buffer the generator sizes from
+# the bounds the data model declares (`SCE_FORGE_CONCAT`): the widest text of
+# each integer width fits its bound, and a join never ends truncated.
+# Header-only code, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_forge_concat_unit_test unit/forge_concat_test.c)
+target_link_libraries(sce_c_forge_concat_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_forge_concat_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_forge_concat_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_concat COMMAND sce_c_forge_concat_unit_test)
+set_tests_properties(c11_unit_forge_concat PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

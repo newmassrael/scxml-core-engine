@@ -1051,6 +1051,22 @@ pub struct TypeCtx<'a> {
     /// `previous(…)` exactly what it was: a call of a name the context does
     /// not carry.
     pub previous_cells: HashMap<&'a str, &'a str>,
+    /// The bound, in UTF-8 bytes, of each string variable the data model
+    /// declares one for (`sce:capacity`, docs/SCE_ACCEPTED_SUBSET.md §2.15) —
+    /// what a value that joins strings is sized from where the target holds a
+    /// string in storage of its own and not in a growing one (C11).
+    ///
+    /// ⚠ Empty everywhere but a `sce-static` statechart, and emptiness is what
+    /// keeps every other context's string concatenation exactly what it was: a
+    /// name with no bound here has a size nothing declares.
+    pub string_capacities: HashMap<&'a str, usize>,
+    /// Whether a join of strings may be written into a buffer sized from the
+    /// bounds of its operands ([`TypeCtx::string_capacities`]) — true where the
+    /// text is read at the place it is computed, as a `sce-static` statechart's
+    /// are (a delay, an event name, an id, a request's source), and false where
+    /// a string can be returned or kept, since a buffer sized for one
+    /// evaluation does not outlive the block that made it.
+    pub joins_into_buffers: bool,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -1081,7 +1097,15 @@ impl<'a> TypeCtx<'a> {
             member_len_fields: HashMap::new(),
             records: HashMap::new(),
             previous_cells: HashMap::new(),
+            string_capacities: HashMap::new(),
+            joins_into_buffers: false,
         }
+    }
+
+    /// Declare the bound of the string variable `name`. See
+    /// [`TypeCtx::string_capacities`].
+    pub fn insert_string_capacity(&mut self, name: &'a str, bytes: usize) {
+        self.string_capacities.insert(name, bytes);
     }
 
     /// Declare a name whose members an expression may read. See

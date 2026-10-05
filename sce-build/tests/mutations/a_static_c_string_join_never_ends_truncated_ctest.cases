@@ -1,0 +1,35 @@
+# Mutation cases for the C helper that writes a join of strings into the buffer a
+# `sce-static` machine sizes (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# `SCE_FORGE_CONCAT`): each part is written as the wire text of its value, one
+# after another, and a join that does not fit leaves the empty string, never a
+# truncated text that would read as some other value.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c_string_join_never_ends_truncated_ctest.cases`.
+#
+# `forge_concat_test.c` joins a number and its unit, a chain, the widest text of
+# each integer width, and a pair that does not fit its buffer. The mutants below
+# each take one decision out of the helper and leave a header that still
+# compiles:
+#
+#   a part that does not fit leaves what the earlier parts wrote;
+#   each part is written over the start of the join, not after the last.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_unit_forge_concat$'
+mutation_targets backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/unit/forge_concat_test.c
+
+mutation_case "a part that does not fit leaves the earlier parts as they are" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        if (!sce_forge_wire_text(parts[i], buf + len, cap - len)) {\n            buf[0] = '\\0';\n            return buf;\n        }\n",
+     "        if (!sce_forge_wire_text(parts[i], buf + len, cap - len)) {\n            return buf;\n        }\n")
+PY
+
+mutation_case "each part is written over the start of the join" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        len += strlen(buf + len);\n",
+     "        len += 0u;\n")
+PY

@@ -594,6 +594,12 @@ fn resolve_then_rename(
         lower_stateful_import_calls(ast, lowerings);
     }
     lower_enum_variant_refs(ast, ctx, target)?;
+    // A C string is a bounded buffer: a join of strings the data model sizes is
+    // written into one the lowering sizes, and one it cannot size is refused at
+    // emission, by name.
+    if matches!(target, ExprTarget::C) && ctx.joins_into_buffers {
+        lower_string_concatenation(ast, ctx);
+    }
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
     }
@@ -4455,6 +4461,140 @@ fn lower_enum_variant_refs(
     Ok(())
 }
 
+/// A string concatenation of operands the data model sizes, as the call that
+/// writes the joined text into a buffer of exactly their sum — for C11, whose
+/// string is a bounded buffer and has nowhere to put the text of `wait + 'ms'`.
+///
+/// Every operand of a `sce-static` statechart's expression is sized by the
+/// document: a string variable by the capacity it declares, a literal by its
+/// text, an integer by the digits of its type (the only operands a
+/// concatenation carries, [`concat_operand`]). The sum of those bounds, and one
+/// byte for the terminator, is a buffer that holds every text the expression can
+/// compute, so the join is a compound literal of that size which
+/// `SCE_FORGE_CONCAT` writes into: an expression that needs no statement and
+/// whose storage lasts as long as the block that reads it. A chain `a + b + c`
+/// is one join, not a join of a join.
+///
+/// Left as written, for the emitter to refuse by name, when an operand has no
+/// declared size, and everywhere a context does not read the joined text where
+/// it computes it ([`TypeCtx::joins_into_buffers`]): a forge kind's expression
+/// may return the text or keep it, and a buffer sized for one evaluation does
+/// not outlive the block that made it.
+fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if is_string_concatenation(*op, left.ty, right.ty) {
+            let mut spine = Vec::new();
+            concat_spine(expr, &mut spine);
+            let mut parts: Vec<TypedExpr> = spine.into_iter().cloned().collect();
+            let bounds: Option<Vec<usize>> = parts
+                .iter()
+                .map(|part| concat_part_bound(part, ctx))
+                .collect();
+            if let Some(bounds) = bounds {
+                for part in &mut parts {
+                    lower_string_concatenation(part, ctx);
+                }
+                let capacity = bounds.iter().sum::<usize>() + 1;
+                let raw = |text: String| TypedExpr::new(ExprKind::Raw(text));
+                let wire_value = |part: TypedExpr| {
+                    let constructor = match part.ty {
+                        InferredType::Int { signed: false, .. } => "sce_forge_wire_uint",
+                        InferredType::Int { .. } | InferredType::UntypedInt => "sce_forge_wire_int",
+                        _ => "sce_forge_wire_string",
+                    };
+                    TypedExpr::new(ExprKind::Call {
+                        callee: Box::new(raw(constructor.to_string())),
+                        args: vec![part],
+                        params: Vec::new(),
+                        fails: false,
+                    })
+                };
+                let mut args = vec![
+                    raw(format!("(char[{capacity}]){{0}}")),
+                    raw(capacity.to_string()),
+                ];
+                args.extend(parts.into_iter().map(wire_value));
+                expr.kind = ExprKind::Call {
+                    callee: Box::new(raw("SCE_FORGE_CONCAT".to_string())),
+                    args,
+                    params: Vec::new(),
+                    fails: false,
+                };
+                return;
+            }
+        }
+    }
+    for child in expr_children_mut(expr) {
+        lower_string_concatenation(child, ctx);
+    }
+}
+
+/// The operands of the string concatenation `expr` stands for, left to right:
+/// the chain `a + b + c` is read along its left spine, so a sum of numbers that
+/// begins it (`1 + 2 + 'x'`, which is `'3x'`) is the first operand.
+fn concat_spine<'e>(expr: &'e TypedExpr, into: &mut Vec<&'e TypedExpr>) {
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if is_string_concatenation(*op, left.ty, right.ty) {
+            concat_spine(left, into);
+            into.push(right);
+            return;
+        }
+    }
+    into.push(expr);
+}
+
+/// The most bytes the text of one operand of a concatenation can take, or `None`
+/// when the data model declares no size for it.
+fn concat_part_bound(part: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
+    match concat_operand(part.ty) {
+        ConcatOperand::Text => string_bound(part, ctx),
+        ConcatOperand::Decimal => Some(integer_text_bound(part.ty)),
+        ConcatOperand::Refused(_) => None,
+    }
+}
+
+/// The most bytes a string-typed expression can hold: a literal's text, the
+/// capacity a variable declares, the larger branch of a conditional, the sum of
+/// a join. Nothing else has a size the data model declares.
+fn string_bound(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
+    match &expr.kind {
+        // The text between the quotes, before an escape is read: never fewer
+        // bytes than the string it spells.
+        ExprKind::StringLit { value, .. } => Some(value.len()),
+        ExprKind::Ident(name) => ctx.string_capacities.get(name.as_str()).copied(),
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => Some(string_bound(consequent, ctx)?.max(string_bound(alternate, ctx)?)),
+        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
+            let mut spine = Vec::new();
+            concat_spine(expr, &mut spine);
+            spine
+                .into_iter()
+                .map(|part| concat_part_bound(part, ctx))
+                .sum()
+        }
+        _ => None,
+    }
+}
+
+/// The most bytes the decimal text of an integer of type `ty` can take: the
+/// digits of its largest magnitude and a minus sign for a signed one. A literal
+/// takes the width of an `int64`, the widest it can be written as.
+fn integer_text_bound(ty: InferredType) -> usize {
+    // `bits * log10(2)` rounded up, in integers: 8 -> 3, 16 -> 5, 32 -> 10, 64 -> 20.
+    let digits = |bits: usize| bits * 30103 / 100_000 + 1;
+    match ty {
+        InferredType::Int {
+            signed: false,
+            bits,
+        } => digits(usize::from(bits)),
+        InferredType::Int { signed: true, bits } => digits(usize::from(bits).saturating_sub(1)) + 1,
+        _ => 20,
+    }
+}
+
 /// Every sub-expression of `expr`, in source order, mutably — the twin of
 /// [`expr_children`] for passes that rewrite the tree.
 fn expr_children_mut(expr: &mut TypedExpr) -> Vec<&mut TypedExpr> {
@@ -7698,14 +7838,23 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // text to live, and a returned pointer to a local buffer is a
             // dangling one. Written as `"E" + n` -- the shape this branch
             // replaces -- it compiled and read another string's bytes, which
-            // is the worst of the answers. Until a bounded buffer carries the
-            // result (the capacity contract `sce-static` strings are held to),
-            // the document is refused, by name, at the construct.
+            // is the worst of the answers. A join whose operands the data model
+            // sizes was written into a buffer of the sum of their bounds before
+            // emission ([`lower_string_concatenation`]), so what reaches here is
+            // one that has no such buffer: an operand whose text is not the same
+            // in every backend is refused as every backend refuses it, and one
+            // with no declared size is refused, by name, at the construct.
+            for side in [left, right] {
+                if let ConcatOperand::Refused(what) = concat_operand(side.ty) {
+                    return Err(concat_refusal(what, emit_c(side, side.ty)?));
+                }
+            }
             let (l, r) = (emit_c(left, left.ty)?, emit_c(right, right.ty)?);
             return Err(ExprError::UnsupportedConstruct {
-                construct: "string concatenation in C (a C string has no storage for \
-                            the joined text; hold the pieces in separate outputs, or \
-                            generate for another backend)"
+                construct: "string concatenation in C (a C string is a bounded buffer, and a \
+                            value whose size the data model does not declare has no buffer \
+                            to be joined into; declare `sce:capacity` on the variable, hold \
+                            the pieces in separate outputs, or generate for another backend)"
                     .to_string(),
                 observed: Some(format!("{l} + {r}")),
             });
@@ -8249,6 +8398,126 @@ mod tests {
         assert_eq!(tp_with("a > b", ExprTarget::C, &ctx), "strcmp(a, b) > 0");
         assert_eq!(tp_with("a <= b", ExprTarget::C, &ctx), "strcmp(a, b) <= 0");
         assert_eq!(tp_with("a >= b", ExprTarget::C, &ctx), "strcmp(a, b) >= 0");
+    }
+
+    /// A context that reads a join where it computes it, over a `uint32`
+    /// `wait` and a string `name` the data model bounds to eight bytes.
+    fn sized_join_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var(
+            "wait",
+            InferredType::Int {
+                signed: false,
+                bits: 32,
+            },
+        );
+        ctx.insert_var(
+            "level",
+            InferredType::Int {
+                signed: true,
+                bits: 8,
+            },
+        );
+        ctx.insert_var("name", InferredType::Str);
+        ctx.insert_string_capacity("name", 8);
+        ctx.insert_var("loose", InferredType::Str);
+        ctx.joins_into_buffers = true;
+        ctx
+    }
+
+    #[test]
+    fn c_join_of_sized_operands_is_written_into_a_buffer_of_their_sum() {
+        let ctx = sized_join_ctx();
+        // The ten digits of a `uint32`, the two bytes of the unit, and the
+        // terminator.
+        assert_eq!(
+            tp_with("wait + 'ms'", ExprTarget::C, &ctx),
+            "SCE_FORGE_CONCAT((char[13]){0}, 13, sce_forge_wire_uint(wait), sce_forge_wire_string(\"ms\"))"
+        );
+        // A string variable by the capacity the data model declares, a signed
+        // `int8` by its three digits and its sign.
+        assert_eq!(
+            tp_with("name + level", ExprTarget::C, &ctx),
+            "SCE_FORGE_CONCAT((char[13]){0}, 13, sce_forge_wire_string(name), sce_forge_wire_int(level))"
+        );
+    }
+
+    #[test]
+    fn c_chain_of_joins_is_one_buffer() {
+        let ctx = sized_join_ctx();
+        // `'a' + wait + 'b'` is one join of three parts: 1 + 10 + 1 + 1.
+        assert_eq!(
+            tp_with("'a' + wait + 'b'", ExprTarget::C, &ctx),
+            "SCE_FORGE_CONCAT((char[13]){0}, 13, sce_forge_wire_string(\"a\"), sce_forge_wire_uint(wait), sce_forge_wire_string(\"b\"))"
+        );
+        // A sum that begins the chain is a number: `1 + 2 + 'x'` is `'3x'`, and
+        // the sum is one part of ten digits at most.
+        let text = tp_with("wait + wait + 'x'", ExprTarget::C, &ctx);
+        assert!(
+            text.starts_with(
+                "SCE_FORGE_CONCAT((char[12]){0}, 12, sce_forge_wire_uint(wait + wait)"
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn c_join_of_a_conditional_is_sized_by_its_larger_branch() {
+        let ctx = sized_join_ctx();
+        let text = tp_with("(wait > 3 ? name : 'ab') + 'x'", ExprTarget::C, &ctx);
+        assert!(
+            text.starts_with("SCE_FORGE_CONCAT((char[10]){0}, 10, "),
+            "8 + 1 + 1 bytes: {text}"
+        );
+    }
+
+    #[test]
+    fn c_join_with_an_operand_the_model_does_not_size_is_refused_by_name() {
+        let ctx = sized_join_ctx();
+        // `loose` is a string with no declared bound: there is no buffer to
+        // size, and the refusal names the construct.
+        let refusal = transpile_typed(
+            "loose + 'ms'",
+            ExprTarget::C,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .expect_err("a join with no declared size");
+        assert!(
+            format!("{refusal:?}").contains("string concatenation in C"),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn c_join_outside_a_statechart_keeps_its_refusal() {
+        // A forge kind's string may be returned or kept, so a buffer sized for
+        // one evaluation is not one it can use, even for a literal and a
+        // number.
+        let mut ctx = sized_join_ctx();
+        ctx.joins_into_buffers = false;
+        let refusal = transpile_typed(
+            "'v=' + wait",
+            ExprTarget::C,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .expect_err("no buffer outside a statechart");
+        assert!(
+            format!("{refusal:?}").contains("string concatenation in C"),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn other_backends_are_unchanged_by_a_sized_join() {
+        let ctx = sized_join_ctx();
+        assert!(
+            !tp_with("wait + 'ms'", ExprTarget::Rust, &ctx).contains("SCE_FORGE_CONCAT"),
+            "only C11 writes a join into a buffer"
+        );
     }
 
     // ── W-project: Str-arg → borrowed bytes-view projection ─────

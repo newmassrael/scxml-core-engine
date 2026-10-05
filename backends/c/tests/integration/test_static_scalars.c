@@ -109,6 +109,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
+#include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
 #include "static_send_idlocation_sm.h"
 #include "static_send_namelist_sm.h"
@@ -1075,6 +1076,25 @@ static const variable_t send_event_variables[] = {
 };
 STATIC_SCENARIO(static_send_event, send_event_states, send_event_variables, NULL, no_lists, no_records)
 
+// static_send_delay: the `delayexpr` of a `<send>` is the string `wait + 'ms'`, a
+// number joined to its unit, computed when the send runs and read as the CSS2 time
+// it must be; a value that is no time, and an operation that fails, send nothing.
+// The join is written into a buffer sized from the bounds the data model declares
+// (`SCE_FORGE_CONCAT`), and the machine's sends wait on a clock the scenario owns.
+VARIABLE_READER(static_send_delay, wait)
+VARIABLE_READER(static_send_delay, beats)
+VARIABLE_READER(static_send_delay, refusals)
+
+static const name_value_t send_delay_states[] = {
+    {"idle", STATIC_SEND_DELAY_STATE_IDLE},
+};
+static const variable_t send_delay_variables[] = {
+    {"wait", static_send_delay_read_wait},
+    {"beats", static_send_delay_read_beats},
+    {"refusals", static_send_delay_read_refusals},
+};
+STATIC_SCENARIO_TIMED(static_send_delay, send_delay_states, send_delay_variables, NULL, no_lists, no_records)
+
 // static_cancel_expr: the `sendidexpr` of a `<cancel>` is a string the machine
 // holds, the id of the delayed send it removes, read when the cancel runs; an id
 // no send holds cancels nothing, and one that cannot be computed is an
@@ -1273,6 +1293,7 @@ int main(void) {
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= static_send_content_scenario("static_send_content", 5);
     bad |= static_send_event_scenario("static_send_event", 11);
+    bad |= static_send_delay_scenario("static_send_delay", 12);
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= sync_client_scenario("sync_client", 30);

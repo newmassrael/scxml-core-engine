@@ -258,6 +258,36 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
     return true;
 }
 
+/* `n` values joined into one string, written into `buf` of `cap` bytes — what
+ * `a + b` is when either operand is a string (ECMA-262 §13.15.3): each part is
+ * written as `sce_forge_wire_text` writes it, a string as itself and an integer
+ * as its decimal digits. The generator sizes `buf` as the sum of the bounds the
+ * data model declares for the parts, plus the terminator, so every part fits;
+ * a part that did not would leave the empty string, never a truncated join.
+ * Returns `buf`, so the call is an expression a statement can read. */
+static inline char *sce_forge_concat_into(char *buf, size_t cap, const sce_forge_wire_value_t *parts, size_t n) {
+    size_t len = 0u;
+    if (cap == 0u) {
+        return buf;
+    }
+    buf[0] = '\0';
+    for (size_t i = 0u; i < n; ++i) {
+        if (!sce_forge_wire_text(parts[i], buf + len, cap - len)) {
+            buf[0] = '\0';
+            return buf;
+        }
+        len += strlen(buf + len);
+    }
+    return buf;
+}
+
+/* The same, with the parts written where it is called: the buffer is the
+ * caller's (a compound literal the generator sizes), and the parts are
+ * `sce_forge_wire_*` values. */
+#define SCE_FORGE_CONCAT(buf, cap, ...)                                                                                \
+    sce_forge_concat_into((buf), (cap), (const sce_forge_wire_value_t[]){__VA_ARGS__},                                 \
+                          sizeof((const sce_forge_wire_value_t[]){__VA_ARGS__}) / sizeof(sce_forge_wire_value_t))
+
 /* Finish the object. False when it did not fit the buffer, which then holds `{}`. */
 static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {
     if (!w->overflow) {
