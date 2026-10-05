@@ -332,6 +332,23 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // needs a faster lane, not a quieter day.
     ("forge-conformance.yml", 25.5, 4, 19, 2),
     ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
+    // ⚠ STAND-IN, borrowed 2026-10-06 when the lane landed: it has no run of
+    // its own, so the median below is `example-codegen.yml`'s (8.5, 23
+    // successes) and not an observation. The nearest MEASURED lane: a cached
+    // debug build of `sce-codegen`, then `scripts/gate`.
+    //
+    // The residue, stated rather than hidden: this lane also installs the Tauri
+    // CLI (cached after the first run), compiles the desktop shell and bundles
+    // it into a `.deb`, and the shell's first compile alone took 295s on the
+    // 32-core build machine, so a COLD hosted run may run well above the
+    // borrowed figure and could pass 17.6. The lane declares `false` like every
+    // other, so the cost of being wrong is a row filed under the wrong
+    // population, not a missing guard; if it does pass 17.6, the workflow
+    // owes the measured numbers in its own comments
+    // (`every_long_lane_states_its_measured_numbers_in_its_own_workflow`).
+    // Replace it after 25 runs of its own, and delete this paragraph when the
+    // number is its own.
+    ("installer.yml", 8.5, 0, 0, 0),
     ("license-verify.yml", 0.3, 0, 3, 0),
     // ⚠⚠⚠ This row is why the fifth column exists, and it was taken under a
     // group that no longer exists. Measured 2026-09-02 its concurrency group

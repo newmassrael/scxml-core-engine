@@ -1,0 +1,100 @@
+name: Workbench installer
+
+# The workbench's installer, judged by installing it: built as a `.deb` that carries the
+# generator, `sce-work` and the authoring server, unpacked into a scratch directory and started
+# under a virtual display with nothing on the machine to help. The application it installs has to
+# find what the installer carried and say so.
+#
+# A workflow of its own and not a job of `app.yml`: building the installer compiles the product's
+# generator and the desktop shell, which the screen's lane has no reason to wait for, and what
+# reaches the installer is not what reaches the screen. The bundle carries the authoring package
+# and the generator's templates, so those are inputs here; the compiler's own sources are not
+# (`authoring-core.yml` and the Rust lanes judge those).
+#
+# `scripts/gates/installer.sh` is the whole of what is judged. This file only installs what that
+# script needs and calls it, so the lane and a local run cannot differ in what they check.
+#
+# Linux only. No installer for another platform is built, so none is judged (`app/README.md`).
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'app-core/**'
+      - 'tools/authoring/**'
+      - 'tools/codegen/templates/**'
+      - 'scripts/package_app.sh'
+      - 'scripts/package_sce_author.sh'
+      - 'scripts/verify_installed_app.sh'
+      - 'scripts/gates/installer.sh'
+      - '.github/workflows/installer.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'app-core/**'
+      - 'tools/authoring/**'
+      - 'tools/codegen/templates/**'
+      - 'scripts/package_app.sh'
+      - 'scripts/package_sce_author.sh'
+      - 'scripts/verify_installed_app.sh'
+      - 'scripts/gates/installer.sh'
+      - '.github/workflows/installer.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    name: The installer, installed and started
+    runs-on: ubuntu-latest
+    # Cold: the product's generator, the Tauri CLI, the desktop shell, then the bundle. There is
+    # no run of this job yet to measure, so the ceiling is generous and is to be replaced by a
+    # measurement.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install what the installer is built and tried with
+        # WebKitGTK's development files for the desktop shell; libxml2 for the generator's XSD
+        # validator (see forge-conformance.yml); xvfb to start the installed application; and the
+        # SYSTEM Python's PyYAML, because the application is started with the system's search
+        # path alone and its authoring launcher runs the `python3` found there.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxml2-dev pkg-config build-essential \
+            xvfb python3-yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            app/target
+          key: ${{ runner.os }}-cargo-installer-${{ hashFiles('Cargo.lock', 'app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml', 'sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-installer-
+      - name: Cache the Tauri CLI
+        id: tauri-cli
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: ${{ runner.os }}-cargo-tauri-cli-2
+      - name: Install the Tauri CLI
+        if: steps.tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version '^2' --locked
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Installer gate
+        run: scripts/gate installer

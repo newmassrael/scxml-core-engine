@@ -207,6 +207,11 @@ COST_MEASURED: dict[str, str] = {
     # Run once end to end through `bx` on 2026-10-03, warm: 66s. Not taken by
     # `scripts/gate --measure`, which is refused locally for this repository.
     "app": "2026-10-03",
+    # Taken as its two scripts, not as `scripts/gate installer`, which is refused locally for
+    # this repository: `package_app.sh --debug --bundles deb` 61s through `bx --local` on a warm
+    # tree, and `verify_installed_app.sh` 1.6s (it waits for the application's own report, which
+    # is written as it starts, and not for a fixed time).
+    "installer": "2026-10-06",
     # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
     # the same figure the table already carried. That is the point rather
     # than an anticlimax: the NUMBER was right and unaskable, and what the
@@ -1006,6 +1011,24 @@ GATES: dict[str, dict] = {
                    "runner, which a push hook cannot assume.",
         "cost_s": 66,
         "summary": "workbench screen, browser shell and desktop shell",
+    },
+    # The workbench's installer, judged by installing it: built as a `.deb`, unpacked into a
+    # scratch directory and started under a virtual display with nothing on the machine to help,
+    # which has to host an executor from what the installer carried. The `app` gate cannot say
+    # that: a bundle folder renamed on one side only leaves every test green.
+    #
+    # `ci_only` for the number: building the installer compiles the product's generator and the
+    # desktop shell, and the shell's first compile alone took 295s on a 32-core machine.
+    "installer": {
+        "workflows": ["installer.yml"],
+        "runner_workflow": True,
+        "ci_only": "63s warm (61s to build the .deb, 2s to install it and start it "
+                   "twice under a virtual display), and the first compile of the "
+                   "generator and the Tauri shell alone is minutes on a cold tree. "
+                   "installer.yml needs WebKitGTK, the Tauri CLI and a virtual display "
+                   "on the runner, which a push hook cannot assume.",
+        "cost_s": 63,
+        "summary": "workbench installer: built, installed, started",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate

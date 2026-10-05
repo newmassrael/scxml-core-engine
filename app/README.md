@@ -378,9 +378,14 @@ templates and the Python package) in the application's resources (`sce-author/`,
 `tauri.conf.json` names) and has Tauri build the installer around it. The desktop application
 looks there (`installed::in_bundle`) and uses what it finds where the environment names
 nothing: a developer's variable still wins, and a development build, which carries nothing,
-finds them as before. Tried on Linux: the `.deb` unpacked into a scratch root and started under
-a virtual display with no `SCE_*` variable set reports an executor, and with the bundled
-generator removed reports that it hosts none and why.
+finds them as before. `scripts/verify_installed_app.sh` judges an installer by installing it:
+the `.deb` is unpacked into a scratch directory and started under a virtual display with no
+`SCE_*` variable set and the system's search path alone, and the application has to report an
+executor (`.sce-hosts/desktop.json`); with the bundled generator removed it has to report that it
+hosts none and name the generator, which is the control that shows the first answer came from the
+installer and not from the machine. An installer whose application looks for its bundle under
+another name fails it (tried by renaming the folder in the shell and rebuilding). CI runs it as
+the `installer` gate (`.github/workflows/installer.yml`); that lane has not run in CI yet.
 
 **A shell says what it is doing where the owner looks.** `host::start` never fails: that nothing
 could be hosted is a state, and the shell reports it the way an adapter does (`.sce-hosts/<name>.json`,
@@ -627,7 +632,7 @@ else: it has no file-system, shell or network permission.
 | A shell that hosts the executor: the settings, what it says when it cannot (including a server that would not start), taking a request, stopping | `--test host` of the same package |
 | The programs an installer carries, found in its bundle and named when missing | `--test installed` of the same package |
 | The authoring server saying whether it could start (`--check`) | `python3 -m unittest tests.test_the_server_says_whether_it_can_do_its_work_before_it_is_asked_to` (in `tools/authoring`, with `PYTHONPATH=.`) |
-| The installer, on this machine (Linux `.deb`) | `scripts/package_app.sh --debug`, then unpack it with `dpkg-deb -x` and start `usr/bin/sce-workbench` under `xvfb-run` with no `SCE_*` variable: `.sce-hosts/desktop.json` in the works folder says whether it hosts an executor |
+| The installer, installed and started (Linux `.deb`) | `scripts/package_app.sh --debug`, then `scripts/verify_installed_app.sh <the .deb it prints>`; CI runs both as the `installer` gate (`installer.yml`) |
 | The real client, server and product end to end (a model runs: minutes and money) | `cargo test -p sce-app-core --features cli --test claude_code_live -- --ignored --nocapture` |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
