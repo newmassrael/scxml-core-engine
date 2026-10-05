@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `idlocation` of
+  a <send>. The machine generates an id for the send and writes it to the
+  variable the attribute names, and a later <cancel> names that variable with
+  `sendidexpr`: `arm` sends two delayed events, each with an id of its own, and
+  `cancel.first` removes only the one whose id `first` holds.
+
+  The id is written before the send reads any other argument, so it is there
+  even when a later argument fails: `armfail` sends with a `delayexpr` that
+  cannot be evaluated, which discards the message and raises error.execution,
+  and `first` holds the id the failed send was given — an id no send holds, so
+  the <cancel> that follows removes nothing, and the send `arm` made earlier
+  under the id `first` held before comes due.
+
+  An id belongs to one execution of the send, not to the element: `arm` run
+  twice leaves four sends waiting under four ids, and a <cancel> by `first`
+  removes the latest of the two it made.
+
+  A string variable that holds the id declares a bound the id fits (32 bytes: the
+  id is at most 31). Every send waits 200 ms, so a machine driven by a clock it
+  owns and one that waits in real time see the same order: every check stands
+  50 ms or more from a deadline.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_idlocation">
+  <datamodel>
+    <data id="first" sce:type="string" sce:capacity="32" expr="''"/>
+    <data id="second" sce:type="string" sce:capacity="32" expr="''"/>
+    <data id="scale" sce:type="uint32" expr="3"/>
+    <data id="first_fired" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="second_fired" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="arm" type="internal">
+      <send idlocation="first" event="first.due" delay="200ms"/>
+      <send idlocation="second" event="second.due" delay="200ms"/>
+    </transition>
+    <transition event="armfail" type="internal">
+      <send idlocation="first" event="first.due"
+            delayexpr="(scale * 2000000000) &gt; 1 ? '200ms' : '300ms'"/>
+    </transition>
+    <transition event="cancel.first" type="internal">
+      <cancel sendidexpr="first"/>
+    </transition>
+    <transition event="cancel.second" type="internal">
+      <cancel sendidexpr="second"/>
+    </transition>
+    <transition event="first.due" type="internal">
+      <assign location="first_fired" expr="first_fired + 1"/>
+    </transition>
+    <transition event="second.due" type="internal">
+      <assign location="second_fired" expr="second_fired + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

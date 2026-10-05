@@ -68,7 +68,7 @@
                 target = {% if dyn_target %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
                 content = "{{ action.content | default('', true) | escape_kotlin }}",
                 params = sendWireParams,
-                sendId = "{{ send_id_kt }}",
+                sendId = {{ send_id_kt }},
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -83,7 +83,7 @@
             // report for an act nobody performed. W3C SCXML 6.3: it lands in
             // the delayed-send queue under the send id, so a `<cancel>`
             // reaches it and the host never sees the act.
-            scheduleHostSend("{{ send_id_kt }}", {{ delay_kt }}, hostRequest)
+            scheduleHostSend({{ send_id_kt }}, {{ delay_kt }}, hostRequest)
 {%- else %}
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -92,7 +92,7 @@
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("{{ processor_type | escape_kotlin }}")) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ processor_type }}'> names a processor the host declared but never registered", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ processor_type }}'> names a processor the host declared but never registered", {{ send_id_kt }})
             }
 {%- endif %}
 {% endmacro %}
@@ -114,7 +114,12 @@
 {% set content_data = 'evaluateSendContent(' ~ (action.content | to_script_source_data_content) ~ ')' %}
 {% endif %}
 {% endif %}
-{% set send_id_kt = action.auto_send_id | escape_kotlin %}
+{# The Kotlin expression every site below hands the id as: the literal the build
+   knows or — under `datamodel="sce-static"` with an `idlocation` — the local the
+   send starts by taking from the variable the machine has just written the id it
+   generated to. An expression and not the text inside a literal, because a value
+   written inside a literal is escaped for it. #}
+{% set send_id_kt = 'sendIdGenerated' if action.native_idlocation else '"' ~ (action.auto_send_id | escape_kotlin) ~ '"' %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {# A <content expr> that fails costs what a failing <param> does (§scxml-5.6.2):
    the message still goes and the block ends after it. #}
@@ -153,12 +158,20 @@
    each is an argument like the others but needs no engine to be read. #}
 {% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event %}
             if (run send@{
+{% if action.native_idlocation %}
+            // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates
+            // the id and writes it to the variable `idlocation` names before it
+            // reads any other argument (`Action::native_idlocation`); that variable
+            // is then the id the send is known by (`Action::native_sendid`).
+            {{ action.native_idlocation }}
+            val sendIdGenerated: String = {{ action.native_sendid }}
+{% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
             // W3C SCXML 6.2: the written delay is not a CSS2 time
             // (ARCHITECTURE.md, "Durations"; the build decided it once). It is
             // known before anything is evaluated, so the send ends here with
             // the argument error, as it does on every engine.
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delay is not a CSS2 time", "{{ send_id_kt }}")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delay is not a CSS2 time", {{ send_id_kt }})
             true
 {% else %}
 {% if param_ns.can_fail %}
@@ -170,13 +183,13 @@
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
-{% if action.idlocation %}
+{% if action.idlocation and not action.native_idlocation %}
             // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
             // there even when a later argument fails (test183, test332),
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, "{{ send_id_kt }}", "<send>")) return@send true
+            if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, {{ send_id_kt }}, "<send>")) return@send true
 {% endif %}
 {% if action.native_event %}
             // The event's name is a string computed from the machine's fields now.
@@ -192,7 +205,7 @@
             val sendEventName: String = {{ action.native_event }}
 {% endif %}
             if (sendEventName.isEmpty()) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", {{ send_id_kt }})
                 return@send true
             }
 {% elif action.eventexpr %}
@@ -204,7 +217,7 @@
                 ""
             }
             if (sendEventName.isEmpty()) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -214,12 +227,12 @@
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, {{ action.targetexpr | to_script_source_expr }}))
             } catch (_: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr could not be evaluated", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr could not be evaluated", {{ send_id_kt }})
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -229,11 +242,11 @@
             val sendTypeValue = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, {{ action.typeexpr | to_script_source_expr }}))
             } catch (_: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> typeexpr could not be evaluated", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> typeexpr could not be evaluated", {{ send_id_kt }})
                 return@send true
             }
             if (!com.sce.runtime.SendHelper.isSupportedSendType(sendTypeValue)) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> typeexpr names a processor this platform does not support", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> typeexpr names a processor this platform does not support", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -247,14 +260,14 @@
             val sendDelayText: String = try {
                 {{ action.native_delay }}
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", {{ send_id_kt }})
                 return@send true
             }
 {% else %}
             val sendDelayText: String = {{ action.native_delay }}
 {% endif %}
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", {{ send_id_kt }})
                 return@send true
             }
 {% elif action.delayexpr %}
@@ -264,11 +277,11 @@
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, {{ action.delayexpr | to_script_source_expr }}))
             } catch (_: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", {{ send_id_kt }})
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -279,13 +292,13 @@
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
 {% for var_name in action.namelist.split() %}
             if (!argEngine.hasVariable(argSid, "{{ var_name | escape_kotlin }}")) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name | escape_kotlin }}', which is not declared", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name | escape_kotlin }}', which is not declared", {{ send_id_kt }})
                 return@send true
             }
             try {
                 sendNamelist.add("{{ var_name | escape_kotlin }}" to argEngine.getVariable(argSid, "{{ var_name | escape_kotlin }}"))
             } catch (_: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name | escape_kotlin }}' could not be read", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name | escape_kotlin }}' could not be read", {{ send_id_kt }})
                 return@send true
             }
 {% endfor %}
@@ -295,7 +308,7 @@
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -323,21 +336,21 @@
 {% if not static_refused %}
 {% elif action.send_type_unsupported %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ send_id_kt }}")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", {{ send_id_kt }})
             true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif action.target_unsupported %}
             // W3C SCXML 6.2.4 (test194): a target this processor cannot address
             // — `Action::target_unsupported`, decided once at build time.
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", "{{ send_id_kt }}")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", {{ send_id_kt }})
             true  // W3C SCXML 5.10: discarded; the block stops below
 {% elif is_http and not action.target and not action.targetexpr %}
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "{{ send_id_kt }}")
+            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", {{ send_id_kt }})
             true  // W3C SCXML 5.10: discarded; the block stops below
 {% else %}
             // W3C SCXML C.1 + 6.4: no invocation of this document is called
             // "{{ action.target[2:] }}", so the target reaches nobody.
-            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names no invocation of this session", "{{ send_id_kt }}")
+            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names no invocation of this session", {{ send_id_kt }})
             true  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% if not static_refused %}
@@ -392,7 +405,7 @@
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), {{ action.contentexpr | to_script_source_expr }})
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate", {{ send_id_kt }})
                 paramFailed = true
                 valueToJson("")
             }
@@ -435,7 +448,7 @@
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
 {% if dyn_target %}
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
@@ -445,9 +458,9 @@
             val httpContent = "{{ action.content | default('', true) | escape_kotlin }}"
 {% endif %}
 {% if has_delay %}
-            scheduleHttpSend({{ delay_kt }}, {% if dyn_target %}_rt{% else %}"{{ action.target | escape_kotlin }}"{% endif %}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | default('', true) | escape_kotlin }}"{% endif %}, httpContent, sendWireParams, "{{ send_id_kt }}")
+            scheduleHttpSend({{ delay_kt }}, {% if dyn_target %}_rt{% else %}"{{ action.target | escape_kotlin }}"{% endif %}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | default('', true) | escape_kotlin }}"{% endif %}, httpContent, sendWireParams, {{ send_id_kt }})
 {% else %}
-            performHttpSend({% if dyn_target %}_rt{% else %}"{{ action.target | escape_kotlin }}"{% endif %}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | default('', true) | escape_kotlin }}"{% endif %}, httpContent, sendWireParams, "{{ send_id_kt }}")
+            performHttpSend({% if dyn_target %}_rt{% else %}"{{ action.target | escape_kotlin }}"{% endif %}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | default('', true) | escape_kotlin }}"{% endif %}, httpContent, sendWireParams, {{ send_id_kt }})
 {% endif %}
 {% elif not (action.event or dyn_event) %}
             // W3C SCXML 6.2: no event to deliver.
@@ -458,9 +471,9 @@
             // W3C SCXML 6.2.4: a delay postpones the send, it does not change
             // where it goes — the event joins the internal queue when due.
 {% if dyn_event %}
-            if (sendEvent != null) scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.internal(sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleInternalSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.internal(sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            scheduleInternalSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(sendData))
+            scheduleInternalSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.internal(sendData))
 {% endif %}
 {% elif dyn_event %}
             if (sendEvent != null) raiseInternal(sendEvent, EventMetadata.internal(sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
@@ -470,14 +483,14 @@
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}
             // W3C SCXML 6.4 (test187): Delayed send to parent — cancelled when child stops
-            scheduleParentSend("{{ send_id_kt }}", {{ delay_kt }}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
+            scheduleParentSend({{ send_id_kt }}, {{ delay_kt }}, {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
 {% else %}
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback.
             // W3C SCXML C.1: a session its host started, not an `<invoke>`, has
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", {{ send_id_kt }})
                 return@send true
             }
             toParent({% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)
@@ -489,33 +502,33 @@
             // error.communication, nothing delivered, the block ended (4.9).
 {% if static_target != '#_scxml_' %}
             if (scriptSessionId != "{{ action.target[8:] | escape_kotlin }}") {
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names a session this processor cannot reach", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names a session this processor cannot reach", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}
 {% if has_delay %}
             // W3C SCXML 6.2.4: this session's own external queue, when due.
 {% if dyn_event %}
-            if (sendEvent != null) scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData))
 {% endif %}
 {% elif dyn_event %}
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData))
 {% endif %}
 {% elif static_target.startswith('#_') and has_delay %}
             // W3C SCXML 6.2.4 + 6.4: a delayed send to an invoked child. Whether
             // it is still running is judged when the send comes due; if not,
             // the sender hears error.communication then (W3C SCXML C.1).
-            scheduleChildSend("{{ send_id_kt }}", {{ delay_kt }}, "{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
+            scheduleChildSend({{ send_id_kt }}, {{ delay_kt }}, "{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData, {{ machine_name }}Event.Error.Communication)
 {% elif static_target.startswith('#_') %}
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("{{ action.target[2:] | escape_kotlin }}", {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %}, sendData)) {
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names an invocation that is not running", "{{ send_id_kt }}")
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names an invocation that is not running", {{ send_id_kt }})
                 return@send true
             }
 {% elif dyn_target %}
@@ -529,15 +542,15 @@
                 {% if dyn_event %}sendEventName{% else %}"{{ action.event | escape_kotlin }}"{% endif %},
                 sendData,
                 {% if has_delay %}{{ delay_kt }}{% else %}0L{% endif %},
-                "{{ send_id_kt }}",
+                {{ send_id_kt }},
                 {{ machine_name }}Event.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr produced a value that is not a target", "{{ send_id_kt }}")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr produced a value that is not a target", {{ send_id_kt }})
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "{{ send_id_kt }}")
+                    raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr names a session this processor cannot reach", {{ send_id_kt }})
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -545,16 +558,16 @@
 {% elif has_delay %}
             // W3C SCXML 6.2: Delayed send
 {% if dyn_event %}
-            if (sendEvent != null) scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleSend({{ send_id_kt }}, {{ delay_kt }}, sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            scheduleSend("{{ send_id_kt }}", {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend({{ send_id_kt }}, {{ delay_kt }}, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData))
 {% endif %}
 {% else %}
             // W3C SCXML 6.2: send to this session's external queue
 {% if dyn_event %}
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
 {% else %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ send_id_kt }}", origin = scriptSessionId ?: "", data = sendData))
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = {{ send_id_kt }}, origin = scriptSessionId ?: "", data = sendData))
 {% endif %}
 {% endif %}
 {% if dynamic_mesh %}

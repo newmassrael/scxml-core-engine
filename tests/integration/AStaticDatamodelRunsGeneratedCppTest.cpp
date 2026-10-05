@@ -55,6 +55,7 @@
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
+#include "static_send_idlocation_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -484,6 +485,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_cancel_expr", driver);
+}
+
+// The `idlocation` of a `<send>` names a string variable the machine writes the id
+// it generates for the send to, which a later `<cancel sendidexpr>` names; the
+// machine runs on a manual clock, which the scenario's `advance_ms` steps move on.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendHandsTheDocumentAnIdACancelCanName) {
+    using Machine = G::static_send_idlocation::static_send_idlocation;
+    Driver<Machine> driver({
+        {"first_fired", [](const Machine &m) { return json(m.first_fired()); }},
+        {"second_fired", [](const Machine &m) { return json(m.second_fired()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_send_idlocation", driver);
 }
 
 // The `<content expr>` of a `<send>` names a record, which crosses as the pairs of

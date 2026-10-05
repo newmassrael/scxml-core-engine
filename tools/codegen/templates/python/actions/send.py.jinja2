@@ -140,7 +140,16 @@
    id and a block abort (`_send_argument_error`, W3C SCXML 4.9). The send id
    comes first, so an `idlocation` holds it even when a later argument fails
    (test332). #}
+{% if action.native_idlocation %}
+{# Under `datamodel="sce-static"` the machine generates the id and writes it to
+   the variable `idlocation` names (`Action::native_idlocation`); that variable is
+   then the id the send is known by (`Action::native_sendid`). No script engine is
+   asked to store it. #}
+{{ indent }}{{ action.native_idlocation }}
+{{ indent }}_sid = {{ action.native_sendid }}
+{% else %}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% endif %}
 {% if action.native_event %}
 {# Under `datamodel="sce-static"` the event's name is a string computed from the
    machine's fields now (`Action::native_event`). A name that evaluates to nothing

@@ -877,6 +877,22 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    `foreach_depth`, which names the lua global each depth caches its
    collection in — so a nested <foreach> walks its own array and leaves its
    enclosing one's intact. #}
+{# The C expression of the id a `<send>` is known by — to `<cancel>`, to
+   `idlocation`, and to the error a failed send raises (W3C SCXML 5.10.1): the
+   literal the build knows or, under `datamodel="sce-static"` with an
+   `idlocation`, `_sce_send_id`, the local the send starts by taking from the
+   variable the machine has just written the id it generated to
+   (`Action::native_idlocation`, `Action::native_sendid`). The local is declared
+   where the element begins (`emit_action`), so every route below reads it. #}
+{% macro send_id_c_expr(action) -%}
+{%- if action.native_idlocation -%}_sce_send_id{%- else -%}"{{ action.auto_send_id | default('', true) | escape_c }}"{%- endif -%}
+{%- endmacro %}
+{# The id a delivered event carries, as a C expression: only one the author
+   could know — one written as `id`, or one `idlocation` handed over — and
+   nothing (so false) for any other. #}
+{% macro send_meta_id_c_expr(action) -%}
+{%- if action.native_idlocation -%}_sce_send_id{%- elif action.id -%}"{{ action.id | escape_c }}"{%- elif action.idlocation -%}{{ send_id_c_expr(action) }}{%- endif -%}
+{%- endmacro %}
 {#- §scxml-6.2.5 host-served send: the one hand-off every host-served `<send>`
     takes, whether its type named a host processor or its evaluated target
     named a Mesh peer (SCE_MESH.md §mesh-19). `processor_type` is the C string
@@ -974,7 +990,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 _host_req.event_name = {% if resolved_event %}{{ resolved_event }}{% elif action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
                 _host_req.target = {% if resolved_target %}{{ resolved_target }}{% elif action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
                 _host_req.content = {% if content_buf %}{{ content_buf }}{% else %}"{{ action.content | default('', true) | escape_c }}"{% endif %};
-                _host_req.send_id = "{% if action.id %}{{ action.id | escape_c }}{% else %}{{ action.auto_send_id | default('', true) | escape_c }}{% endif %}";
+                _host_req.send_id = {% if action.id %}"{{ action.id | escape_c }}"{% else %}{{ send_id_c_expr(action) }}{% endif %};
 {% if action.params or action.namelist %}
                 _host_req.params = _host_params;
                 _host_req.param_count = _host_param_count;
@@ -1099,12 +1115,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
     `action.auto_send_id` is the id the send is known by — to `<cancel>`, to
     `idlocation`, and to the error a failed send raises (W3C SCXML 5.10.1). The
     delivered event carries a send id only when the author could know it: one
-    written as `id`, or one `idlocation` handed over. -#}
+    written as `id`, or one `idlocation` handed over. Both are C expressions
+    (`send_id_c_expr`, `send_meta_id_c_expr`): a literal, or the local that holds
+    the id a `sce-static` machine generated. -#}
 {% macro send_lowered(action, in_foreach) %}
 {% set P = csym_prefix ~ model.name %}
 {% set PU = csym_prefix | upper ~ model.name | upper %}
-{% set send_id_c = action.auto_send_id | escape_c %}
-{% set meta_send_id = action.id if action.id else (action.auto_send_id if action.idlocation else '') %}
+{% set send_id_c = send_id_c_expr(action) %}
+{% set meta_send_id = send_meta_id_c_expr(action) %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
 {% set child_ns = namespace(invoke=none) %}
@@ -1160,7 +1178,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                 "<send> uses a combination of attributes this backend cannot emit",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;
 {% else %}
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
@@ -1171,15 +1189,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    raised while the element was processed — the block ends (W3C SCXML 4.9).
    The id goes to `idlocation` first, so it is there even when a later
    argument fails (test 183, 332). #}
-{% if action.idlocation %}
+{% if action.idlocation and not action.native_idlocation %}
             {
                 bool _idloc_ok = false;
-{{ se.lua_store_id_in_location(action.idlocation, '"' ~ send_id_c ~ '"', '_idloc_ok') }}
+{{ se.lua_store_id_in_location(action.idlocation, send_id_c, '_idloc_ok') }}
                 if (!_idloc_ok) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                         "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
             }
@@ -1196,7 +1214,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                         "<send> typeexpr could not be evaluated",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
 {% if is_http %}
@@ -1208,7 +1226,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                         "<send> typeexpr names a processor this platform does not support",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
             }
@@ -1230,7 +1248,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     "<send> eventexpr could not be evaluated to an event name",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% elif action.eventexpr %}
@@ -1244,7 +1262,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     "<send> eventexpr could not be evaluated to an event name",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% endif %}
@@ -1260,7 +1278,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     "<send> targetexpr failed to evaluate",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% if route == 'http' %}
@@ -1275,7 +1293,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     "<send> targetexpr produced a target this processor cannot address",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
             if (sce_send_target_names_nothing(_send_target_buf)) {
@@ -1285,7 +1303,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                     "<send> targetexpr evaluated to nothing, so there is no target to reach",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
             if (strncmp(_send_target_buf, "http://", 7) != 0 &&
@@ -1295,7 +1313,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                     "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% endif %}
@@ -1315,7 +1333,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                         sce_failure_.failed ? "<send> delayexpr could not be evaluated"
                                             : "<send> delayexpr is not a CSS2 time",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
             }
@@ -1334,7 +1352,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     _send_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
                                           : "<send> delayexpr could not be evaluated",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% endif %}
@@ -1351,7 +1369,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                 "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;
 {% elif action.target_unsupported %}
             /* W3C SCXML 6.2.4 (test159, 194, 332): a target this processor
@@ -1360,14 +1378,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                 "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;
 {% elif is_http and not action.target and not action.targetexpr %}
             /* W3C SCXML C.2 (test577): BasicHTTP names no target to post to. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                 "<send> over BasicHTTPEventProcessor has no target to post to",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;
 {% elif names_no_invocation %}
             /* W3C SCXML C.1 + 6.4: no invocation of this document is called
@@ -1377,7 +1395,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                 "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;
 {% else %}
 {{ send_param_failed_open(action) }}
@@ -1403,7 +1421,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                     "<send> contentexpr failed to evaluate",
-                    "{{ send_id_c }}");
+                    {{ send_id_c }});
                 return;
             }
 {% endif %}
@@ -1444,7 +1462,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                         "<send target='{{ static_target | escape_c }}'> names a session this processor cannot reach",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
 {% endif %}
@@ -1457,7 +1475,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    rides on the entry, as it would on the send made now. */
                 scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
                                       {{ PU }}_SCHED_ROUTE_PARENT, {{ PU }}_EVENT_NONE,
-                                      {{ event_name_c }}, NULL, "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                      {{ event_name_c }}, NULL, {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% elif route == 'parent' %}
                 /* W3C SCXML 6.4 (test191, 233, 338): to the invoking parent,
                    carrying the payload; the parent's shim names this child's
@@ -1474,7 +1492,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                         "<send target='#_parent'> has no parent session to reach",
-                        "{{ send_id_c }}");
+                        {{ send_id_c }});
                     return;
                 }
 {% elif route == 'child' and has_delay %}
@@ -1484,7 +1502,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
                                       {{ PU }}_SCHED_ROUTE_INVOCATION, {{ PU }}_EVENT_NONE,
                                       {{ event_name_c }}, "{{ child_ns.invoke.invoke_id | escape_c }}",
-                                      "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                      {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% elif route == 'child' %}
 {{ send_to_child(action, child_ns.invoke, event_name_c, meta_send_id, has_payload) }}
 {% elif route == 'internal' and has_delay %}
@@ -1534,7 +1552,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                                 {{ P }}_raise_platform_error_with_send_id(
                                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                                     "<send> targetexpr names #_parent, and nothing invoked this session",
-                                    "{{ send_id_c }}");
+                                    {{ send_id_c }});
                                 return;
                             }
                             break;
@@ -1542,7 +1560,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if has_delay %}
                         scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
                                               {{ PU }}_SCHED_ROUTE_PARENT, {{ PU }}_EVENT_NONE,
-                                              {{ event_name_c }}, NULL, "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                              {{ event_name_c }}, NULL, {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% else %}
                         sm->parent_dispatch(sm->parent_sm, {{ event_name_c }}, sm->invoke_id, {% if has_payload %}_ed{% else %}NULL{% endif %});
 {% endif %}
@@ -1565,7 +1583,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                             scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }},
                                                   {{ PU }}_SCHED_ROUTE_INVOCATION, {{ PU }}_EVENT_NONE,
                                                   {{ event_name_c }}, _send_invoke,
-                                                  "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                                  {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% else %}
                             sce_forwarded_event_t _send_fwd;
                             memset(&_send_fwd, 0, sizeof(_send_fwd));
@@ -1574,7 +1592,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                             sce_copy_bounded_data(_send_fwd.data, _ed);
 {% endif %}
 {% if meta_send_id %}
-                            sce_copy_bounded_id(_send_fwd.send_id, "{{ meta_send_id | escape_c }}");
+                            sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
                             (void)deliver_to_invocation(sm, _send_invoke, &_send_fwd);
 {% endif %}
@@ -1583,7 +1601,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                             "<send> targetexpr names a session this processor cannot reach",
-                            "{{ send_id_c }}");
+                            {{ send_id_c }});
                         return;
                     }
 {% endif %}
@@ -1599,7 +1617,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
                             "<send> targetexpr names a session this processor cannot reach",
-                            "{{ send_id_c }}");
+                            {{ send_id_c }});
                         return;
                     default:
                         /* SCE_SEND_TARGET_UNSUPPORTED, and a Mesh peer this
@@ -1607,7 +1625,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_EXECUTION,
                             "<send> targetexpr produced a value that is not a target",
-                            "{{ send_id_c }}");
+                            {{ send_id_c }});
                         return;
                     }
                 }
@@ -1653,12 +1671,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     if ({{ P }}_arrive(_send_evt_name, strlen(_send_evt_name), &_send_delayed, _send_arrival)) {
                         scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
                                               _send_delayed, _send_arrival[0] != '\0' ? _send_evt_name : NULL, NULL,
-                                              "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                              {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
                     }
 {% else %}
                     scheduled_push_routed(sm, sched_now_ms(sm) + {{ delay_c }}, {{ route_c }},
                                           {{ PU }}_EVENT_{{ action.event | to_c11_upper_ident }}, NULL, NULL,
-                                          "{{ send_id_c }}"{{ scheduled_payload_arg(has_payload) }});
+                                          {{ send_id_c }}{{ scheduled_payload_arg(has_payload) }});
 {% endif %}
                 }
 {%- endmacro %}
@@ -1682,7 +1700,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if meta_send_id %}
                     /* W3C SCXML 5.10.1 (test351, 183): the id the author
                        could know rides on the event. */
-                    sce_copy_bounded_id(_send_evt.send_id, "{{ meta_send_id | escape_c }}");
+                    sce_copy_bounded_id(_send_evt.send_id, {{ meta_send_id }});
 {% endif %}
 {% if has_payload %}
                     memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
@@ -1713,14 +1731,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                     sce_copy_bounded_data(_send_fwd.data, _ed);
 {% endif %}
 {% if meta_send_id %}
-                    sce_copy_bounded_id(_send_fwd.send_id, "{{ meta_send_id | escape_c }}");
+                    sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
 {% if report_missing %}
                     if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                             "<send target='{{ action.target | escape_c }}'> names an invocation that is not running",
-                            "{{ action.auto_send_id | escape_c }}");
+                            {{ send_id_c_expr(action) }});
                         return;
                     }
 {% else %}
@@ -1845,6 +1863,17 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% elif action.type == 'send' %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
+{% if action.native_idlocation %}
+            /* W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine
+               generates the id and writes it to the variable `idlocation`
+               names before it reads any other argument
+               (`Action::native_idlocation`); that variable is then the id the
+               send is known by (`Action::native_sendid`), which every route
+               below reads as `_sce_send_id`. */
+            {{ action.native_idlocation }}
+            const char *_sce_send_id = {{ action.native_sendid }};
+            (void)_sce_send_id;
+{% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
             /* W3C SCXML 6.2: the written delay is not a CSS2 time
                (ARCHITECTURE.md, "Durations"; the build decided it once). It
@@ -1853,7 +1882,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<send> delay is not a CSS2 time",
-                "{{ action.auto_send_id | escape_c }}");
+                {{ send_id_c_expr(action) }});
             return;
 {% elif action.send_type_host_served %}
             /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,

@@ -120,13 +120,15 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // in a `namelist` or names a record in a `<content expr>`, a `<send>`'s or a
     // `<donedata>`'s, or computes its delay in a `delayexpr` or the name of its
     // event in an `eventexpr`, or the id of the send a `<cancel>` removes in a
-    // `sendidexpr`, which the Interpreter reads itself.
+    // `sendidexpr`, or the variable a `<send>`'s generated id is written to in
+    // an `idlocation`, which the Interpreter reads itself.
     for name in [
         "static_send_params",
         "static_send_namelist",
         "static_send_content",
         "static_send_delay",
         "static_send_event",
+        "static_send_idlocation",
         "static_cancel_expr",
         "static_wire_enum",
         "static_payload_relay",

@@ -783,6 +783,11 @@ private:
     std::map<std::pair<std::string, std::string>, uint64_t> startedHostInvokes_;
     // The token the next host-run start receives.
     uint64_t nextHostInvokeToken_ = 0;
+    // How many ids this machine has generated for a `<send idlocation>`: the
+    // number the last one carried. Counted per machine, not per process, so a
+    // machine's ids do not depend on what else ran beside it. See
+    // nextAutoSendId().
+    uint64_t autoSendSeq_ = 0;
     // See refusedHostInvokeCompletions().
     uint64_t refusedHostInvokeCompletions_ = 0;
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
@@ -3565,6 +3570,19 @@ private:
     }
 
 public:
+    /**
+     * @brief The id for a `<send idlocation>`, which the document keeps and may
+     *        name in a `<cancel>` later
+     *
+     * `_auto_send_` and the number of ids this machine has generated, counted
+     * from one. Unique within the machine, as the send's id must be, and the
+     * same text on every backend (at most 31 bytes: the largest `uint64_t` is
+     * twenty digits).
+     */
+    std::string nextAutoSendId() {
+        return "_auto_send_" + std::to_string(++autoSendSeq_);
+    }
+
     /**
      * @brief §scxml-6.2.4 + §scxml-6.2.5: arm a host-served `<send delay>`,
      *        to be performed when the delay elapses

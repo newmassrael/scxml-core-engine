@@ -103,6 +103,12 @@ type Engine[S comparable, E comparable] struct {
 	// nextHostInvokeToken is the token the next host-run start receives.
 	nextHostInvokeToken uint64
 
+	// autoSendSeq is how many ids this machine has generated for a
+	// `<send idlocation>`: the number the last one carried. Counted per machine,
+	// not per process, so a machine's ids do not depend on what else ran beside
+	// it. See NextAutoSendID.
+	autoSendSeq uint64
+
 	// refusedHostInvokeCompletions counts host invokes' `done.invoke` events
 	// refused at dequeue; see RefusedHostInvokeCompletions.
 	refusedHostInvokeCompletions uint64
@@ -1284,6 +1290,16 @@ func (e *Engine[S, E]) deliverRouted(act ReadyAct[E]) {
 func (e *Engine[S, E]) ScheduleHostSend(request HostSendRequest, delay time.Duration, sendID string) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
 	return e.scheduler.ScheduleHostSendAt(request, readyAtMs, sendID)
+}
+
+// NextAutoSendID is the id for a `<send idlocation>`, which the document keeps
+// and may name in a `<cancel>` later: `_auto_send_` and the
+// number of ids this machine has generated, counted from one. Unique within the
+// machine, as the send's id must be, and the same text on every backend (at
+// most 31 bytes: the largest `uint64` is twenty digits).
+func (e *Engine[S, E]) NextAutoSendID() string {
+	e.autoSendSeq++
+	return fmt.Sprintf("_auto_send_%d", e.autoSendSeq)
 }
 
 // CancelEvent cancels a previously scheduled event by send ID.

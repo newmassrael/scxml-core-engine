@@ -100,11 +100,14 @@ impl<'a> WireParam<'a> {
 
 /// The attributes of executable content that carry an expression this model
 /// does not type, with the element each belongs to. Refused where written.
-const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[
-    ("send", "targetexpr"),
-    ("send", "typeexpr"),
-    ("send", "idlocation"),
-];
+const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[("send", "targetexpr"), ("send", "typeexpr")];
+
+/// The most bytes of the id a machine generates for a `<send idlocation>`:
+/// `_auto_send_` and the twenty digits of the largest `u64` count. The number
+/// every runtime's `AUTO_SEND_ID_MAX_LEN` states
+/// (`backends/rust/runtime/src/helpers/unique_id_generator.rs`), which a test
+/// holds this one to.
+pub const AUTO_SEND_ID_MAX_BYTES: u32 = 31;
 
 /// Judge every expression of a `sce-static` document; a document under any
 /// other data model is not this pass's to judge.
@@ -876,6 +879,64 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// A `<send>`'s `idlocation`: the string variable the machine writes the id
+    /// it generates for the send to, so that a later `<cancel>` can name it. The
+    /// id is written before any other argument is read, and is the send's own,
+    /// so the element takes one id, a written one or a generated one.
+    ///
+    /// The machine is built with no error to raise for a write that does not fit
+    /// (§scxml-4.9), so a variable that declares a bound declares one the id
+    /// always fits: [`AUTO_SEND_ID_MAX_BYTES`] plus the terminator a C buffer
+    /// holds, 32. And the place is a variable the document declares — not a
+    /// record's field, a list's element, or what a `<foreach>` binds, which
+    /// would be a copy no one reads.
+    fn send_idlocation(&self, action: &Action, state: &str) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("idlocation");
+        let refuse = |rule: &str| {
+            self.rule_at(
+                format!("idlocation=\"{}\"", action.idlocation),
+                rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.idlocation,
+            )
+        };
+        if !action.id.trim().is_empty() {
+            return Err(refuse(
+                "a <send> carries its id as `id` or has the machine generate one for \
+                 `idlocation`, and never both",
+            ));
+        }
+        let location = action.idlocation.trim();
+        let variable = self
+            .scope
+            .variables
+            .iter()
+            .find(|v| v.id == location)
+            .filter(|_| !self.loop_names.borrow().iter().any(|name| name == location));
+        let is_string = variable
+            .and_then(|v| v.value_type.as_ref())
+            .and_then(crate::forge::model::AlgorithmValueType::scalar)
+            == Some(&crate::forge::model::SceType::String);
+        let Some(variable) = variable.filter(|_| is_string) else {
+            return Err(refuse(
+                "an idlocation names a string variable the document declares: the id is a \
+                 string, and the place it is written to is one variable, not a record's \
+                 field, a list's element or what a <foreach> binds",
+            ));
+        };
+        match variable.capacity {
+            Some(capacity) if capacity <= AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(
+                "the id a machine generates is up to {AUTO_SEND_ID_MAX_BYTES} UTF-8 bytes, \
+                 and the variable it is written to declares an sce:capacity of {capacity}: \
+                 a bound the id fits, with room for a C buffer's terminator, is at least {}",
+                AUTO_SEND_ID_MAX_BYTES + 1
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     /// The `<content expr>` of a `<send>` or of a `<final>`'s `<donedata>`
     /// (`element`): the one value this model has that is an object, a record,
     /// taken whole by name — a record variable, the item of a `<foreach>` over a
@@ -1213,6 +1274,9 @@ impl<'a> Judge<'a> {
                 }
                 if !action.delayexpr.is_empty() {
                     self.delay_expr(ctx, action, state)?;
+                }
+                if !action.idlocation.is_empty() {
+                    self.send_idlocation(action, state)?;
                 }
                 if !action.contentexpr.is_empty() {
                     self.content_record(
@@ -1741,7 +1805,6 @@ fn action_attribute<'a>(action: &'a Action, attr: &str) -> &'a str {
     match attr {
         "targetexpr" => &action.targetexpr,
         "typeexpr" => &action.typeexpr,
-        "idlocation" => &action.idlocation,
         // An attribute listed in [`UNTYPED_ACTION_ATTRIBUTES`] and read nowhere
         // here would be refused never, which is the worst way to fail.
         other => unreachable!("`{other}` is read by no arm of action_attribute"),

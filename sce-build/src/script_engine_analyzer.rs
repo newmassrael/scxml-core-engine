@@ -665,14 +665,15 @@ fn collect_action_causes(
 /// ([`crate::forge::static_datamodel`]), so it costs no engine. Nor is a
 /// `delayexpr`, which is lowered to the string it computes, read as a CSS2 time
 /// when the send runs, nor an `eventexpr`, lowered to the string that names the
-/// event it delivers.
+/// event it delivers. Nor is an `idlocation`, which names a string variable the
+/// machine writes the id it generates to.
 fn send_has_dynamic_attr(action: &Action, static_model: bool) -> bool {
     (!static_model && !action.eventexpr.is_empty())
         || !action.targetexpr.is_empty()
         || (!static_model && !action.delayexpr.is_empty())
         || !action.typeexpr.is_empty()
         || (!static_model && !action.contentexpr.is_empty())
-        || !action.idlocation.is_empty()
+        || (!static_model && !action.idlocation.is_empty())
 }
 
 fn cond_needs_engine(cond: &str) -> bool {

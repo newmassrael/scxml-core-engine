@@ -52,9 +52,8 @@ PY
 # declared it has none.
 mutation_case "an attribute with no typed form is admitted" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     """    ("send", "targetexpr"),
-""",
-     "")
+     """&[("send", "targetexpr"), ("send", "typeexpr")];""",
+     """&[("send", "typeexpr")];""")
 PY
 
 # A variable with no initial value is admitted, and a backend would pick
@@ -418,4 +417,61 @@ mutation_case "a Kotlin host invoke is not told the source it was lowered to" <<
 edit("sce-build/src/kotlin.rs",
      "                    \"native_src\": ui.native_src.as_str(),\n",
      "                    \"native_src\": \"\",\n")
+PY
+
+# A `<send>`'s `idlocation` is a string variable the machine writes the id it
+# generates to, which a later `<cancel sendidexpr>` names. Each case takes one
+# step away: the analyzer counts it as an engine need again, which the manifest
+# of a machine with none would deny; an `id` is admitted beside it, a send
+# named twice; it may name a variable that is no string; the id fits a bound one
+# byte short of what it needs, whether by the number the judge holds or by how it
+# compares it; it is not lowered to a write, so no backend generates the id; the
+# send is not known by the id the variable holds; and C generates the id twice, a
+# count taken for the length and another for the copy.
+mutation_case "a send idlocation needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "        || (!static_model && !action.idlocation.is_empty())\n}",
+     "        || !action.idlocation.is_empty()\n}")
+PY
+
+mutation_case "an id is admitted beside a send idlocation" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.id.trim().is_empty() {\n            return Err(refuse(",
+     "        if false && !action.id.trim().is_empty() {\n            return Err(refuse(")
+PY
+
+mutation_case "a send idlocation may name a variable that is no string" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        let Some(variable) = variable.filter(|_| is_string) else {",
+     "        let Some(variable) = variable.filter(|_| is_string || true) else {")
+PY
+
+mutation_case "a send idlocation holder one byte short of the id is admitted" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            Some(capacity) if capacity <= AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(",
+     "            Some(capacity) if capacity < AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(")
+PY
+
+mutation_case "the judge holds an id holder to a bound one byte short" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "pub const AUTO_SEND_ID_MAX_BYTES: u32 = 31;",
+     "pub const AUTO_SEND_ID_MAX_BYTES: u32 = 30;")
+PY
+
+mutation_case "a send idlocation is not lowered to a write of the id" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                action.native_idlocation = target\n                    .assign_fresh_send_id(name, rewrites.strings.contains_key(location.as_str()));\n",
+     "                let _ = target\n                    .assign_fresh_send_id(name, rewrites.strings.contains_key(location.as_str()));\n")
+PY
+
+mutation_case "a send with an idlocation is not known by the id the variable holds" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                let held = lower(&location, InferredType::Str)?;\n                action.native_sendid = held.text;\n",
+     "                let held = lower(&location, InferredType::Str)?;\n                let _ = &held.text;\n")
+PY
+
+mutation_case "C generates the id of a send idlocation twice" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        format!(\n            \"{{ const char *{local} = {}; {store} }}\",\n            self.fresh_send_id()\n        )\n",
+     "        let _ = (local, self.fresh_send_id());\n        store\n")
 PY

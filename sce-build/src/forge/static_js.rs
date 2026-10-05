@@ -376,6 +376,12 @@ impl StaticTarget for JsTarget {
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }
+    // The Interpreter's own `<send>` generates the id and writes it to the
+    // location the attribute names, which is kept as it is written: there is no
+    // statement of the lowering's to emit.
+    fn fresh_send_id(&self) -> String {
+        String::new()
+    }
     fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
         String::new()
     }

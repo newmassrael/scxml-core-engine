@@ -186,6 +186,36 @@ SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) 
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_ID_LEN);
 }
 
+/* The bytes a machine keeps for the id it generates for a `<send idlocation>`:
+   `_auto_send_` and up to twenty digits, and the terminator. A machine that
+   generates one declares a buffer of this size and a count, and asserts that
+   `SCE_MAX_ID_LEN` holds it, so an id is never cut short into another's. */
+#define SCE_AUTO_SEND_ID_BUF_LEN 32u
+
+/* The id for a `<send idlocation>`, which the document keeps and may name in a
+   `<cancel>` later: `_auto_send_` and the number of ids this machine has
+   generated, counted from one, written into `buf` of `SCE_AUTO_SEND_ID_BUF_LEN`
+   bytes and answered. The count is the machine's own, so two sends of a machine
+   never hold one id, and it is formatted here with no `snprintf`, which a
+   target of this runtime may not have. */
+SCE_C_UNUSED static inline const char *sce_next_auto_send_id(uint64_t *count, char *buf) {
+    static const char prefix[] = "_auto_send_";
+    char digits[20];
+    size_t digit_count = 0u;
+    size_t at = sizeof(prefix) - 1u;
+    uint64_t number = ++*count;
+    do {
+        digits[digit_count++] = (char)('0' + (int)(number % 10u));
+        number /= 10u;
+    } while (number != 0u);
+    memcpy(buf, prefix, at);
+    while (digit_count != 0u) {
+        buf[at++] = digits[--digit_count];
+    }
+    buf[at] = '\0';
+    return buf;
+}
+
 /* The largest delay any engine can hold, in milliseconds: the positive
    range of a signed 64-bit count, because Kotlin's `Long` is signed and
    every engine answers the same text the same way. */

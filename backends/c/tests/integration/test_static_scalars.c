@@ -110,6 +110,7 @@
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_event_sm.h"
+#include "static_send_idlocation_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -1090,6 +1091,25 @@ static const variable_t cancel_expr_variables[] = {
 };
 STATIC_SCENARIO_TIMED(static_cancel_expr, cancel_expr_states, cancel_expr_variables, NULL, no_lists, no_records)
 
+// static_send_idlocation: the `idlocation` of a `<send>` names a string variable
+// the machine writes the id it generates for the send to, which a later `<cancel
+// sendidexpr>` names. The id is one execution's, not the element's, and is
+// written before the send reads any other argument. The machine's sends wait on
+// a clock the scenario owns.
+VARIABLE_READER(static_send_idlocation, first_fired)
+VARIABLE_READER(static_send_idlocation, second_fired)
+VARIABLE_READER(static_send_idlocation, refusals)
+
+static const name_value_t idlocation_states[] = {
+    {"idle", STATIC_SEND_IDLOCATION_STATE_IDLE},
+};
+static const variable_t idlocation_variables[] = {
+    {"first_fired", static_send_idlocation_read_first_fired},
+    {"second_fired", static_send_idlocation_read_second_fired},
+    {"refusals", static_send_idlocation_read_refusals},
+};
+STATIC_SCENARIO_TIMED(static_send_idlocation, idlocation_states, idlocation_variables, NULL, no_lists, no_records)
+
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
 // when the state is entered — an enum field as the name its enum declares.
@@ -1248,6 +1268,7 @@ int main(void) {
     bad |= static_send_content_scenario("static_send_content", 5);
     bad |= static_send_event_scenario("static_send_event", 11);
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
+    bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

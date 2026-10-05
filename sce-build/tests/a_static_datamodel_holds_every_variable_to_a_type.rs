@@ -2154,6 +2154,210 @@ fn a_cancel_sendidexpr_that_joins_text_is_refused_for_c_by_name() {
     assert!(ok, "an id that is only written generates for C11:\n{out}");
 }
 
+// ── A `<send>`'s `idlocation` is a string variable the machine writes to ──
+
+/// A `sce-static` machine holding `data` (on line 5) whose entry (line 7) sends
+/// with the attributes `send`.
+fn identifying(data: &str, send: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    {data}
+  </datamodel>
+  <state id="s"><onentry><send {send}/></onentry></state>
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
+const ID_HOLDER: &str = r#"<data id="id" sce:type="string" sce:capacity="32" expr="''"/>"#;
+
+#[test]
+fn a_send_idlocation_names_a_string_variable_the_id_fits() {
+    // A string variable declares the most bytes it holds; one that holds the id
+    // declares at least the longest the machine generates (31 bytes) and a
+    // terminator's room, which is what a C buffer needs.
+    for data in [
+        ID_HOLDER,
+        r#"<data id="id" sce:type="string" sce:capacity="64" expr="''"/>"#,
+    ] {
+        let (ok, out) = run(
+            &["check"],
+            &identifying(data, r#"idlocation="id" event="e" delay="1s""#),
+        );
+        assert!(ok, "`{data}` holds the id:\n{out}");
+    }
+}
+
+#[test]
+fn a_send_idlocation_that_cannot_hold_the_id_or_names_no_variable_is_refused_on_its_line() {
+    for (what, data, send) in [
+        (
+            "a variable whose bound the id does not fit",
+            r#"<data id="id" sce:type="string" sce:capacity="31" expr="''"/>"#,
+            r#"idlocation="id" event="e""#,
+        ),
+        (
+            "a variable that is no string",
+            r#"<data id="id" sce:type="uint32" expr="0"/>"#,
+            r#"idlocation="id" event="e""#,
+        ),
+        (
+            "a variable no <data> declares",
+            ID_HOLDER,
+            r#"idlocation="missing" event="e""#,
+        ),
+        (
+            "an id written beside the one generated",
+            ID_HOLDER,
+            r#"id="a" idlocation="id" event="e""#,
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &identifying(data, send));
+        assert!(!ok, "{what}: the id has nowhere to go:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 7);
+    }
+    // The refusal says what bound the id needs.
+    let (_, out) = run(
+        &["check"],
+        &identifying(
+            r#"<data id="id" sce:type="string" sce:capacity="31" expr="''"/>"#,
+            r#"idlocation="id" event="e""#,
+        ),
+    );
+    assert!(
+        out.contains("31 UTF-8 bytes") && out.contains("at least 32"),
+        "it names the longest id and the bound it needs:\n{out}"
+    );
+}
+
+#[test]
+fn the_bound_the_judge_holds_an_id_holder_to_is_the_one_every_runtime_states() {
+    // The judge's number and the runtimes' are one fact written twice: the
+    // longest id (`_auto_send_` and the twenty digits of the largest count).
+    let runtime = std::fs::read_to_string(
+        repo_root().join("backends/rust/runtime/src/helpers/unique_id_generator.rs"),
+    )
+    .expect("the Rust runtime's id generator");
+    let stated = format!(
+        "pub const AUTO_SEND_ID_MAX_LEN: usize = {};",
+        sce_build::forge::static_datamodel::AUTO_SEND_ID_MAX_BYTES
+    );
+    assert!(
+        runtime.contains(&stated),
+        "the runtime states the same longest id: `{stated}`"
+    );
+    assert_eq!(
+        "_auto_send_".len() + u64::MAX.to_string().len(),
+        sce_build::forge::static_datamodel::AUTO_SEND_ID_MAX_BYTES as usize,
+        "and it is what the format makes of the largest count"
+    );
+}
+
+#[test]
+fn a_send_idlocation_is_lowered_to_a_write_of_the_machines_own_count_and_needs_no_engine() {
+    // The machine counts the ids it generates and writes the next one to the
+    // variable, ahead of everything else the send does, so no engine stores it
+    // and the manifest says so. The send is then known by the id that variable
+    // holds, read back from it. Each backend spells these its own way.
+    let document = identifying(ID_HOLDER, r#"idlocation="id" event="e" delay="1s""#);
+    for (language, counter, read_back, no_engine_store) in [
+        (
+            "rust",
+            "engine.next_auto_send_id()",
+            "let send_id_text: String = self.id.to_string();",
+            "store_id_in_location",
+        ),
+        (
+            "go",
+            "engine.NextAutoSendID()",
+            "sendID := p.vId",
+            "storeIDInLocation",
+        ),
+        (
+            "kotlin",
+            "nextAutoSendId()",
+            "val sendIdGenerated: String = id",
+            "storeIdInLocation",
+        ),
+        (
+            "python",
+            "engine._next_auto_sendid()",
+            "_sid = self.v_id",
+            "self._resolve_send_id(",
+        ),
+        (
+            "cpp",
+            "engine.nextAutoSendId()",
+            "std::string sendId = v_id;",
+            "storeIdInLocation",
+        ),
+        (
+            "c",
+            // Taken once, into a local: the copy into the variable reads its
+            // value twice, and a count taken twice is two ids.
+            "const char *sce_fresh_id_ = sce_next_auto_send_id(&sm->auto_send_seq",
+            "const char *_sce_send_id = sm->policy.v_id.data;",
+            "_idloc_ok",
+        ),
+    ] {
+        let (out, files) = generated_code(language, &document);
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: an id the machine counts needs no engine:\n{out}"
+        );
+        let code: String = files.values().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            code.contains(counter),
+            "{language}: the machine generates the id from its own count (`{counter}`)"
+        );
+        assert!(
+            code.contains(read_back),
+            "{language}: the send is known by the id the variable holds (`{read_back}`)"
+        );
+        assert!(
+            !code.contains(no_engine_store),
+            "{language}: no engine stores the id (`{no_engine_store}`)"
+        );
+    }
+}
+
+#[test]
+fn a_c_machine_carries_a_count_and_a_buffer_only_when_it_generates_an_id() {
+    let (_, with_id) = generated_code(
+        "c",
+        &identifying(ID_HOLDER, r#"idlocation="id" event="e" delay="1s""#),
+    );
+    let header: String = with_id
+        .iter()
+        .filter(|(name, _)| name.ends_with(".h"))
+        .map(|(_, text)| text.as_str())
+        .collect();
+    assert!(header.contains("uint64_t auto_send_seq;"), "the count");
+    assert!(
+        header.contains("char auto_send_id[SCE_AUTO_SEND_ID_BUF_LEN];"),
+        "the buffer the id is formatted into"
+    );
+    assert!(
+        header.contains("SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= SCE_AUTO_SEND_ID_BUF_LEN"),
+        "an id is never cut short into another's"
+    );
+
+    let (_, without_id) = generated_code("c", &identifying(ID_HOLDER, r#"event="e" delay="1s""#));
+    let header: String = without_id
+        .iter()
+        .filter(|(name, _)| name.ends_with(".h"))
+        .map(|(_, text)| text.as_str())
+        .collect();
+    assert!(
+        !header.contains("auto_send_seq"),
+        "a machine that generates no id carries no count"
+    );
+}
+
 /// A `sce-static` machine holding the record variable `shown` whose `<final>`
 /// carries a `<donedata>` of `content`, all on line 12.
 fn finishing_with_a_record(content: &str) -> String {

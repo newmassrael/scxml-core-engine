@@ -283,7 +283,14 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 {% if param_ns.can_fail %}
 [[maybe_unused]] bool paramFailed = false;  // W3C SCXML 5.7.1 + 4.9: read after the message has gone
 {% endif %}
-{% if action.id %}
+{% if action.native_idlocation %}
+// W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the id
+// and writes it to the variable `idlocation` names before it reads any other
+// argument (`Action::native_idlocation`); that variable is then the id the send
+// is known by (`Action::native_sendid`).
+{{ action.native_idlocation }}
+std::string sendId = {{ action.native_sendid }};
+{% elif action.id %}
 std::string sendId = "{{ action.id }}";
 {% else %}
 std::string sendId = ::SCE::SendHelper::generateSendId();
@@ -306,7 +313,7 @@ ensureSessionId();
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
    Processor MUST evaluate all arguments to <send> when the <send> element is
    evaluated". #}
-{% if action.idlocation %}
+{% if action.idlocation and not action.native_idlocation %}
 // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there even
 // when a later argument fails (test183, test332). The store is the assignment
 // `<assign>` makes — a member path lands — and a location that cannot take the

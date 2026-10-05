@@ -125,7 +125,15 @@
 {%- endmacro %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {
-{% if action.id %}
+{% if action.native_idlocation %}
+    // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
+    // id and writes it to the variable `idlocation` names before it reads any
+    // other argument (`Action::native_idlocation`); that variable is then the
+    // id the send is known by (`Action::native_sendid`).
+    {{ action.native_idlocation }}
+    let send_id_text: String = {{ action.native_sendid }};
+    let send_id = ::sce_rust_runtime::sce_string_from_str(&send_id_text);
+{% elif action.id %}
     let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.id }}");
 {% elif action.auto_send_id %}
     let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.auto_send_id }}");
@@ -197,7 +205,7 @@
     let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
 {% endif %}
     let mut _send_arg_error: Option<&'static str> = None;
-{% if action.idlocation %}
+{% if action.idlocation and not action.native_idlocation %}
     // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
     // even when a later argument fails. W3C SCXML B.2: a write target is
     // lowered by the frontend, so the id lands where a read of the same text
@@ -373,7 +381,7 @@
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
 {% endif %}
     } else {
-{% elif action.idlocation %}
+{% elif action.idlocation and not action.native_idlocation %}
     // W3C SCXML 6.2.4: Store sendid in idlocation
     self.{{ action.idlocation | to_snake_case }} = send_id.clone();
 {% endif %}

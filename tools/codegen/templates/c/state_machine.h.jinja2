@@ -499,6 +499,14 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {{ event_payload_type }} pending_payload;
 {{ event_payload_lift_storage }}
 {% endif %}
+{% if model.needs_auto_send_id %}
+    /* The ids this machine generates for a `<send idlocation>`: how many it has
+       generated, and the buffer the latest is formatted into
+       (`sce_next_auto_send_id`). Zero until the first, as `_init` clears the
+       struct. */
+    uint64_t auto_send_seq;
+    char auto_send_id[SCE_AUTO_SEND_ID_BUF_LEN];
+{% endif %}
 {% if static_done_data %}
     /* §scxml-5.5: the pairs of a final's `<donedata>`, written when the final is
        entered as the JSON object a done event carries as its data — what a host
@@ -1618,6 +1626,12 @@ void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *
 /* ── Compile-time invariants ──────────────────────────────────────── */
 SCE_STATIC_ASSERT(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
+{% if model.needs_auto_send_id %}
+/* An id this machine generates is copied into the entries that carry it, which
+   cut an id at `SCE_MAX_ID_LEN`; a cut id would be another send's. */
+SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= SCE_AUTO_SEND_ID_BUF_LEN,
+                  "SCE_MAX_ID_LEN too small for the ids a <send idlocation> generates");
+{% endif %}
 SCE_STATIC_ASSERT((unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT <= 32u,
                   "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
 {% if model.host_invoker_types %}

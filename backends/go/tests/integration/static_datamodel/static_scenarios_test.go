@@ -58,6 +58,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_event"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_idlocation"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
@@ -639,6 +640,20 @@ func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
 		"a_fired":  func() any { return policy.AFired() },
 		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// The `idlocation` of a <send> names a string variable the machine writes the id
+// it generates for the send to, which a later <cancel sendidexpr> names; the
+// machine runs on a manual clock, which the scenario's `advance_ms` steps move
+// on.
+func TestASendHandsTheDocumentAnIdACancelCanName(t *testing.T) {
+	policy := static_send_idlocation.NewStaticSendIdlocationPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_idlocation", drive[static_send_idlocation.StaticSendIdlocationState, static_send_idlocation.StaticSendIdlocationEvent](&policy, map[string]func() any{
+		"first_fired":  func() any { return policy.FirstFired() },
+		"second_fired": func() any { return policy.SecondFired() },
+		"refusals":     func() any { return policy.Refusals() },
 	}))
 }
 

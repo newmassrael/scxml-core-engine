@@ -84,10 +84,10 @@ PY
 mutation_case "C11 runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
-                "{{ send_id_c }}");
+                {{ send_id_c }});
             return;""",
      """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
-                "{{ send_id_c }}");""")
+                {{ send_id_c }});""")
 PY
 
 # ── C11: the bare `#_scxml_` has no route ──────────────────────────

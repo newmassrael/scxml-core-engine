@@ -495,6 +495,24 @@ pub trait StaticTarget {
     }
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
+    /// The id the machine generates for a `<send idlocation>`, as an owned
+    /// string expression evaluated where the send runs: `_auto_send_` and the
+    /// number of ids this machine has generated, counted from one. The count is
+    /// the machine's own, so two sends of a machine never hold one id, and a
+    /// target that saves its state carries it through the save.
+    fn fresh_send_id(&self) -> String;
+    /// `target = <a fresh send id>` for the variable `target`, a string one when
+    /// `is_string`, as [`Self::assign_string`] and [`Self::assign`] write it. The
+    /// id is generated once: a target whose assignment reads its value twice
+    /// (C's `memmove` and `strlen`) takes it into a local first.
+    fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
+        let id = self.fresh_send_id();
+        if is_string {
+            self.assign_string(target, &id)
+        } else {
+            self.assign(target, &id)
+        }
+    }
     /// Replace field `field` of the record at `target` with `value`.
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String;
     /// A target that rewrites the document itself rather than a model it
@@ -859,6 +877,10 @@ impl StaticTarget for KotlinTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
+    // The machine counts the ids it generates, in the engine it extends.
+    fn fresh_send_id(&self) -> String {
+        "nextAutoSendId()".to_string()
+    }
     // A record's field is a `val` of an immutable data class, so the
     // assignment builds the next value with that field replaced — the
     // lowering an algorithm's record local takes (E9).
@@ -1201,6 +1223,12 @@ impl StaticTarget for RustTarget {
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
+    }
+    // The count is the engine's the action is handed, and the id a `SceString`,
+    // which the variable's `String` takes by `to_string` whatever the runtime's
+    // string type is.
+    fn fresh_send_id(&self) -> String {
+        "engine.next_auto_send_id().to_string()".to_string()
     }
     // Debug formatting, as the script-engine arm of the same template logs a
     // value: a record has no `Display`, and one spelling serves every type.
@@ -2739,6 +2767,10 @@ impl StaticTarget for CppTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
+    // The count is the engine's the action is handed.
+    fn fresh_send_id(&self) -> String {
+        "engine.nextAutoSendId()".to_string()
+    }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
     }
@@ -3245,6 +3277,10 @@ impl StaticTarget for GoTarget<'_> {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
+    // The count is the engine's the action is handed.
+    fn fresh_send_id(&self) -> String {
+        "engine.NextAutoSendID()".to_string()
+    }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value}")
     }
@@ -3708,6 +3744,11 @@ impl StaticTarget for PythonTarget {
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
+    }
+    // The count is the engine's the action is handed, which spells the id
+    // `_auto_send_` and the number, as every backend does.
+    fn fresh_send_id(&self) -> String {
+        "engine._next_auto_sendid()".to_string()
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target} = sce_dataclasses.replace({target}, {field}=({value}))")
@@ -4507,6 +4548,27 @@ impl StaticTarget for CTarget {
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
+    }
+    // The count and the buffer the id is formatted into are fields of the
+    // machine (`SCXMLModel::needs_auto_send_id`), and the runtime's helper
+    // answers the buffer.
+    fn fresh_send_id(&self) -> String {
+        "sce_next_auto_send_id(&sm->auto_send_seq, sm->auto_send_id)".to_string()
+    }
+    // Generated once, into a local: the copy into the variable's buffer reads
+    // its value twice (`memmove` and `strlen`), and a count taken twice is two
+    // ids.
+    fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
+        let local = "sce_fresh_id_";
+        let store = if is_string {
+            self.assign_string(target, local)
+        } else {
+            self.assign(target, local)
+        };
+        format!(
+            "{{ const char *{local} = {}; {store} }}",
+            self.fresh_send_id()
+        )
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
@@ -5380,6 +5442,23 @@ fn lower_action(
                 );
                 action.native_event = value.text;
                 action.native_event_fails = value.can_fail;
+            }
+            // The id the machine generates for the send is written to the
+            // variable `idlocation` names before any other argument is read, and
+            // is then the id the send is known by, read back from that variable
+            // as the id a `<cancel>` computes is. The judge held the variable's
+            // bound to one the id fits, so the write has nothing to fail at.
+            if !action.idlocation.trim().is_empty() {
+                let location = action.idlocation.trim().to_string();
+                let name = renames
+                    .get(location.as_str())
+                    .copied()
+                    .unwrap_or(location.as_str());
+                action.native_idlocation = target
+                    .assign_fresh_send_id(name, rewrites.strings.contains_key(location.as_str()));
+                let held = lower(&location, InferredType::Str)?;
+                action.native_sendid = held.text;
+                action.native_sendid_fails = held.can_fail;
             }
             // A literal `<content>` is the event's data as written, finished
             // here ([`crate::filters::static_content_wire`]): the machine has

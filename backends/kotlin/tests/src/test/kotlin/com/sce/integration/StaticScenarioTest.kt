@@ -45,6 +45,7 @@ import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_content.StaticSendContentStateMachine
 import com.sce.integration.static_send_delay.StaticSendDelayStateMachine
 import com.sce.integration.static_send_event.StaticSendEventStateMachine
+import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -598,6 +599,29 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_cancel_expr"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `idlocation` of a <send> names a string variable the machine writes the
+    // id it generates for the send to, which a later <cancel sendidexpr> names;
+    // the machine runs on a manual clock, which the scenario's `advance_ms` steps
+    // move on.
+    @Test
+    fun staticSendHandsTheDocumentAnIdACancelCanName() {
+        val sm = StaticSendIdlocationStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_idlocation"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

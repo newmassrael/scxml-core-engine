@@ -92,6 +92,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_delay_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_event_sm::{
     StaticSendEventPersist, StaticSendEventPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_idlocation_sm::{
+    StaticSendIdlocationPersist, StaticSendIdlocationPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
     StaticSendNamelistPersist, StaticSendNamelistPolicy,
 };
@@ -493,6 +496,23 @@ fn static_cancel_expr_removes_the_send_its_id_names() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_cancel_expr.json"
+        ),
+    );
+}
+
+// The `idlocation` of a <send> names a string variable the machine writes the
+// id it generates for the send to, which a later <cancel sendidexpr> names. The
+// machine's clock is a manual one, which the scenario's `advance_ms` steps move
+// on.
+#[test]
+fn static_send_idlocation_hands_the_document_an_id_a_cancel_can_name() {
+    let mut engine = Engine::new(StaticSendIdlocationPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay(
+        engine,
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_idlocation.json"
         ),
     );
 }

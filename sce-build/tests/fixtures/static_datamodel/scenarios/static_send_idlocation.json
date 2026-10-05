@@ -1,0 +1,56 @@
+{
+  "machine": "static_send_idlocation",
+  "about": "The `idlocation` of a <send> names a string variable the machine writes the id it generates for the send to, and a later <cancel sendidexpr> names that variable: `arm` sends two delayed events under ids of their own, and `cancel.first` removes only the one whose id `first` holds. An id belongs to one execution of the send: `arm` run twice leaves four sends waiting under four ids, and `cancel.first` removes the latest of the two it made. The id is written before the send reads any other argument, so `armfail`, whose `delayexpr` cannot be evaluated, still leaves `first` holding the id of the send it discarded: the <cancel> that follows removes nothing, and the earlier send comes due. Every send waits 200 ms and every check stands at least 50 ms from a deadline. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has come due yet",
+      "expect": { "state": "idle", "variables": { "first_fired": 0, "second_fired": 0, "refusals": 0 } } },
+
+    { "note": "two sends are armed, each under an id of its own",
+      "event": "arm",
+      "expect": { "variables": { "first_fired": 0, "second_fired": 0, "refusals": 0 } } },
+
+    { "note": "the wait is not over",
+      "advance_ms": 100,
+      "expect": { "variables": { "first_fired": 0, "second_fired": 0, "refusals": 0 } } },
+
+    { "note": "`first` holds the id of the first send: only that send is removed",
+      "event": "cancel.first",
+      "expect": { "variables": { "first_fired": 0, "second_fired": 0, "refusals": 0 } } },
+
+    { "note": "the wait is over: only the second send comes due",
+      "advance_ms": 150,
+      "expect": { "variables": { "first_fired": 0, "second_fired": 1, "refusals": 0 } } },
+
+    { "note": "armed again",
+      "event": "arm",
+      "expect": { "variables": { "first_fired": 0, "second_fired": 1, "refusals": 0 } } },
+
+    { "note": "armed a second time: four sends wait under four ids, and the variables hold the latest two",
+      "event": "arm",
+      "expect": { "variables": { "first_fired": 0, "second_fired": 1, "refusals": 0 } } },
+
+    { "note": "`first` holds the id of the latest first send: only that one is removed",
+      "event": "cancel.first",
+      "expect": { "variables": { "first_fired": 0, "second_fired": 1, "refusals": 0 } } },
+
+    { "note": "three sends come due: the earlier first send, and both second sends",
+      "advance_ms": 250,
+      "expect": { "variables": { "first_fired": 1, "second_fired": 3, "refusals": 0 } } },
+
+    { "note": "armed again, and `first` holds the id of its first send",
+      "event": "arm",
+      "expect": { "variables": { "first_fired": 1, "second_fired": 3, "refusals": 0 } } },
+
+    { "note": "the delay cannot be computed: the message is discarded and error.execution is raised, but the id was written first",
+      "event": "armfail",
+      "expect": { "variables": { "first_fired": 1, "second_fired": 3, "refusals": 1 } } },
+
+    { "note": "`first` holds the id of the send that was discarded: no send holds it, so nothing is removed",
+      "event": "cancel.first",
+      "expect": { "variables": { "first_fired": 1, "second_fired": 3, "refusals": 1 } } },
+
+    { "note": "both sends of the last `arm` come due",
+      "advance_ms": 250,
+      "expect": { "variables": { "first_fired": 2, "second_fired": 4, "refusals": 1 } } }
+  ]
+}

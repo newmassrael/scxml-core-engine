@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 72506eed06ed7894ebff824273abdaf0b39ab834077970ec5c6c7b4b2e9cc584
+// source-hash: 860af7978d3b862216839cf8b169c14ab2f1b057aa2d784af873fa0958afaca8
 #![doc = "SCE-MAP: algorithm_days_in_month.scxml:8 :: _forge_body"]
 // SCE-MAP: algorithm_days_in_month.scxml:8 :: _forge_body
 

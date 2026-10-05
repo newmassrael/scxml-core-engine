@@ -7,7 +7,7 @@
    One body for the two ways a send reaches it: a type the build saw served by
    the host (`send_type_host_served`, a Mesh send the build lowered among them)
    and a `targetexpr` that turns out, at run time, to name a Mesh peer. #}
-{% macro host_send_arm(action, model, machine_name, processor_type, event_name_go, send_id, has_params, has_dynamic_params, has_namelist) %}
+{% macro host_send_arm(action, model, machine_name, processor_type, event_name_go, send_id_go, has_params, has_dynamic_params, has_namelist) %}
 	// §scxml-6.2.5: "{{ processor_type }}" is served by the host, which
 	// declared it to this build. Dispatch rather than refuse — and take the
 	// whole send, because a processor the host serves owns delivery; falling
@@ -31,7 +31,7 @@
 			Target:        {% if action.targetexpr and model.needs_script_engine %}sendTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
 			Content:       "{{ action.content | default('', true) | escape_go }}",
 			Params:        hostParams,
-			SendID:        "{{ send_id | default('') | escape_go }}",
+			SendID:        {{ send_id_go }},
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -53,7 +53,7 @@
 		// this site has returned long before the deadline. W3C SCXML 6.3: it
 		// lands in the delayed-send queue under SendID, so a <cancel> reaches
 		// it and the host never sees the act.
-		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, "{{ send_id | default('') | escape_go }}")
+		engine.ScheduleHostSend(hostRequest, time.Duration(hostDelayMs)*time.Millisecond, {{ send_id_go }})
 {% else %}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 {% if 'error.execution' in model.events %}
@@ -63,7 +63,7 @@
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("{{ processor_type | escape_go }}") {
 			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ processor_type }}'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			errEvt.Metadata.SendID = {{ send_id_go }}
 			engine.Raise(errEvt)
 		}
 {% else %}
@@ -75,31 +75,35 @@
 {# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
    queue, carrying this session as its origin. One body for the send with no
    target and the one whose target names this session. #}
-{% macro raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go=none) %}
+{% macro raise_external_here(action, model, machine_name, send_id_go, event_name_go, delay_go=none) %}
 {% if delay_go %}
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
 	// origin is this session, as on the immediate path.
 {% if (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
 	// document's names resolve it to, and `_event.name` is the whole name.
-	engine.SendNamedExternal({{ event_name_go }}, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+	engine.SendNamedExternal({{ event_name_go }}, {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID)
 {% else %}
 	if delayEvt, delayOk := p.GetEventFromName({{ event_name_go }}); delayOk {
-		engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+		engine.ScheduleEvent(delayEvt, {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID)
 	}
 {% endif %}
 {% elif (action.eventexpr and model.needs_script_engine) or action.native_event %}
-	engine.SendNamedExternal({{ event_name_go }}, 0, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+	engine.SendNamedExternal({{ event_name_go }}, 0, {{ send_id_go }}, eventDataStr, p.SessionID)
 {% elif action.event %}
 	{
 		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
-		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", p.SessionID)
+		meta.Metadata = sce.ExternalMetadata({{ send_id_go }}, p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
 {%- endif %}
 {%- endmacro %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
+{# The Go expression every site below hands the id as: the literal the build knows,
+   or — under `datamodel="sce-static"` with an `idlocation` — the local the block
+   starts by taking from the variable the machine has just written it to. #}
+{% set send_id_go = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_go) ~ '"' %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set has_params = action.params and action.params | length > 0 %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
@@ -112,10 +116,19 @@
    costs what a failing <param> does — reported, the message sent with '' as
    its value, the block ended — so it rides the same flag. #}
 {% set content_expr = action.contentexpr and model.needs_script_engine and not has_params and not has_namelist and not action.content %}
-{% if send_id %}
+{% if send_id and not action.native_idlocation %}
 	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
 	{
+{% if action.native_idlocation %}
+	// W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
+	// id and writes it to the variable `idlocation` names before it reads any
+	// other argument (`Action::native_idlocation`); that variable is then the id
+	// the send is known by (`Action::native_sendid`).
+	{{ action.native_idlocation }}
+	sendID := {{ action.native_sendid }}
+	_ = sendID
+{% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
 	// W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
 	// "Durations"; the build decided it once). It is known before anything is
@@ -123,7 +136,7 @@
 	// every engine.
 {% if 'error.execution' in model.events %}
 	errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> delay is not a CSS2 time")
-	errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+	errEvt.Metadata.SendID = {{ send_id_go }}
 	engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -152,7 +165,7 @@
 	p.ensureScriptEngine()
 {% endif %}
 	sendArgError := ""
-{% if action.idlocation %}
+{% if action.idlocation and not action.native_idlocation %}
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
@@ -288,7 +301,7 @@
 	if sendArgError != "" {
 {% if 'error.execution' in model.events %}
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sendArgError)
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -305,7 +318,7 @@
 		// reads this session's location, never "".
 {% if 'error.communication' in model.events %}
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -345,7 +358,7 @@
 {% if 'error.execution' in model.events %}
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 	}
 {% endif %}
@@ -358,7 +371,7 @@
 {% if 'error.execution' in model.events %}
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 	}
 {% endif %}
@@ -370,13 +383,13 @@
 {% if 'error.communication' in model.events %}
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 	}
 {% elif 'error.execution' in model.events %}
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 	}
 {% endif %}
@@ -389,7 +402,7 @@
 	// error.communication, nothing delivered, the block ended.
 	{
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names no invocation of this session")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 	}
 {% if in_block %}
@@ -580,11 +593,11 @@
 {% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {% if dynamic_mesh %}
 	if sce.IsMeshTarget(sendTarget) {
-{{ host_send_arm(action, model, machine_name, 'sce:mesh', event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
+{{ host_send_arm(action, model, machine_name, 'sce:mesh', event_name_go, send_id_go, has_params, has_dynamic_params, has_namelist) }}
 	} else {
 {% endif %}
 {% if action.send_type_host_served %}
-{{ host_send_arm(action, model, machine_name, action.send_type, event_name_go, send_id, has_params, has_dynamic_params, has_namelist) }}
+{{ host_send_arm(action, model, machine_name, action.send_type, event_name_go, send_id_go, has_params, has_dynamic_params, has_namelist) }}
 {% elif is_http %}
 	// W3C SCXML C.2: BasicHTTP send
 	{
@@ -599,11 +612,11 @@
 		if httpTarget == "" {
 {% if 'error.communication' in model.events %}
 			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			errEvt.Metadata.SendID = {{ send_id_go }}
 			engine.Raise(errEvt)
 {% elif 'error.execution' in model.events %}
 			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			errEvt.Metadata.SendID = {{ send_id_go }}
 			engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -627,9 +640,9 @@
 			// W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
 			// makes it — the request waits in the queue every delayed send does (so
 			// <cancel> reaches it) and its deadline dispatches it.
-			engine.ScheduleHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, {{ delay_go }}, "{{ send_id | default('') | escape_go }}")
+			engine.ScheduleHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, {{ delay_go }}, {{ send_id_go }})
 {% else %}
-			engine.PerformHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, "{{ send_id | default('') | escape_go }}")
+			engine.PerformHTTPSend(httpTarget, {{ event_name_go }}, {% if has_params or has_namelist %}""{% else %}eventDataStr{% endif %}, httpParams, {{ send_id_go }})
 {% endif %}
 		}
 	}
@@ -638,7 +651,7 @@
 	// and does not change the queue.
 {% if action.event %}
 {% if delay_go %}
-	engine.ScheduleRoutedEvent({{ machine_name }}Event{{ action.event | to_event_variant }}, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+	engine.ScheduleRoutedEvent({{ machine_name }}Event{{ action.event | to_event_variant }}, {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID,
 		sce.ScheduledRoute{Kind: sce.RouteInternalQueue})
 {% else %}
 	{
@@ -650,7 +663,7 @@
 {% elif (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
 	// document's names resolve it to, and `_event.name` is the whole name.
-	engine.SendNamedInternal({{ event_name_go }}, {% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+	engine.SendNamedInternal({{ event_name_go }}, {% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, {{ send_id_go }}, eventDataStr, p.SessionID)
 {% endif %}
 {% elif action.target == '#_parent' %}
 	// W3C SCXML 6.2: Send to parent
@@ -658,7 +671,7 @@
 	// W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
 	// queue, so `<cancel>` reaches it and a child that ends first drops it, and
 	// it carries its payload when the delay has elapsed.
-	engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+	engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID,
 		sce.ScheduledRoute{Kind: sce.RouteParent, EventName: {{ event_name_go }}})
 {% elif action.event %}
 	if p.ParentExternalQueue == nil {
@@ -666,7 +679,7 @@
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='#_parent'> has no parent session to reach")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% if in_block %}
 		return  // W3C SCXML 4.9: the error ends the block
@@ -683,14 +696,14 @@
 {% if static_target != '#_scxml_' %}
 	if p.SessionID != "{{ static_target | slice_from(8) | escape_go }}" {
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names a session this processor cannot reach")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% if in_block %}
 		return
 {% endif %}
 	} else {
 {% endif %}
-{{ raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go) }}
+{{ raise_external_here(action, model, machine_name, send_id_go, event_name_go, delay_go) }}
 {% if static_target != '#_scxml_' %}
 	}
 {% endif %}
@@ -707,7 +720,7 @@
 {% if delay_go %}
 		// W3C SCXML 6.2: named now, reached when the delay has elapsed — or
 		// reported then, if the invocation has ended by that time (C.1).
-		engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID,
+		engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID,
 			sce.ScheduledRoute{Kind: sce.RouteInvocation, EventName: {{ event_name_go }}, InvokeID: "{{ invoke_info.invoke_id | escape_go }}"})
 {% else %}
 		sce.DeliverToChild(child, {{ event_name_go }}, eventDataStr)
@@ -719,7 +732,7 @@
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
 		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_go }}'> names an invocation that is not running")
-		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% if in_block %}
 		return
@@ -736,11 +749,11 @@
 	{
 		sendEvt, sendHasEvt := engine.ResolveEventByName({{ event_name_go }})
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, {{ event_name_go }}, sendTarget, p.SessionID,
-			{% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
+			{% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, {{ send_id_go }}, eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
 {% if 'error.execution' in model.events %}
 			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> targetexpr produced a value that is not a target")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			errEvt.Metadata.SendID = {{ send_id_go }}
 			engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -750,7 +763,7 @@
 		if routed == sce.TargetNotReachable {
 {% if 'error.communication' in model.events %}
 			errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr names a session this processor cannot reach")
-			errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+			errEvt.Metadata.SendID = {{ send_id_go }}
 			engine.Raise(errEvt)
 {% endif %}
 {% if in_block %}
@@ -759,9 +772,9 @@
 		}
 	}
 {% elif delay_go %}
-{{ raise_external_here(action, model, machine_name, send_id, event_name_go, delay_go) }}
+{{ raise_external_here(action, model, machine_name, send_id_go, event_name_go, delay_go) }}
 {% else %}
-{{ raise_external_here(action, model, machine_name, send_id, event_name_go) }}
+{{ raise_external_here(action, model, machine_name, send_id_go, event_name_go) }}
 {% endif %}
 {% endif %}
 {% if dynamic_mesh %}

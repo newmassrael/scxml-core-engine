@@ -298,6 +298,13 @@ def test_a_cancel_removes_the_send_its_id_names() -> None:
     replay("static_cancel_expr")
 
 
+# The `idlocation` of a `<send>` names a string variable the machine writes the id
+# it generates for the send to, which a later `<cancel sendidexpr>` names; the
+# scenario's `advance_ms` steps move the engine's time on.
+def test_a_send_hands_the_document_an_id_a_cancel_can_name() -> None:
+    replay("static_send_idlocation")
+
+
 # The `<content expr>` of a `<send>` names a record, which crosses as the pairs of
 # its fields: a record variable and the payload of the event the transition is
 # on, taken whole.

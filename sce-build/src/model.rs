@@ -573,12 +573,14 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_event_fails: bool,
-    /// Codegen-internal: the `sendidexpr` of a `<cancel>` in a `sce-static`
-    /// document, as an owned string expression in the backend's own language,
-    /// read from the machine's fields when the cancel runs — the id of the send
-    /// it cancels. Empty for a `<cancel>` with no `sendidexpr`, and for one of a
-    /// document under another data model, which a script engine evaluates.
-    /// Transient and outside the AST contract, as [`Self::native_code`] is.
+    /// Codegen-internal: an id of a `sce-static` document that is computed, as an
+    /// owned string expression in the backend's own language, read from the
+    /// machine's fields when the action runs — the id of the send a `<cancel>`
+    /// with a `sendidexpr` cancels, or the id a `<send>` with an `idlocation` is
+    /// known by (the variable [`Self::native_idlocation`] has just written it
+    /// to). Empty for any other, and for an element of a document under another
+    /// data model, which a script engine evaluates. Transient and outside the
+    /// AST contract, as [`Self::native_code`] is.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_sendid: String,
@@ -588,6 +590,17 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_sendid_fails: bool,
+    /// Codegen-internal: the whole statement a `<send>` with an `idlocation` in
+    /// a `sce-static` document runs before it reads any other argument, in the
+    /// backend's own code — the id the machine generates for it
+    /// ([`crate::forge::static_lowering::StaticTarget::fresh_send_id`]) written
+    /// to the variable the attribute names. It cannot fail: the judge holds the
+    /// variable's bound to one the id fits. Empty for a `<send>` with no
+    /// `idlocation`. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_idlocation: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
@@ -3549,6 +3562,14 @@ pub struct SCXMLModel {
     /// so a machine that stores no id does not carry one.
     #[serde(default)]
     pub needs_idlocation_store: bool,
+    /// Under `datamodel="sce-static"`, some `<send>` names an `idlocation`, so
+    /// the machine generates ids and counts them. Gates the counter a backend
+    /// that keeps it in the machine's own struct (C) declares, so a machine
+    /// that generates none does not carry one. Transient and outside the AST
+    /// contract, as [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub needs_auto_send_id: bool,
     /// §scxml-B-2: any reachable `<data>` content / `<data src=...>`
     /// loaded payload / `<send><content>` literal whose first non-WS
     /// character is `<` triggers the host-side XML DOM helper (C11
