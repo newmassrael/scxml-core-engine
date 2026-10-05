@@ -45,6 +45,18 @@ pub enum StoreError {
     Busy { path: PathBuf, waited_ms: u64 },
     /// The operating system refused.
     Io { path: PathBuf, source: io::Error },
+    /// A request would not do what was asked of it, or a call about requests was not one
+    /// that can be answered (a lease that cannot be kept, a holder that cannot be named).
+    ///
+    /// `kind` is the word a program branches on and is one of the request words
+    /// (`request-ended`, `request-held`, `not-holder`, `not-resuming`, `active-request`,
+    /// `key-reused`, `moved`, `bad-lease`, `bad-holder`); `detail` carries what a caller
+    /// acts on, when there is something (who holds a request, what moved).
+    Refused {
+        kind: &'static str,
+        message: String,
+        detail: serde_json::Value,
+    },
 }
 
 impl StoreError {
@@ -59,6 +71,21 @@ impl StoreError {
             StoreError::Corrupt { .. } => "corrupt",
             StoreError::Busy { .. } => "busy",
             StoreError::Io { .. } => "io",
+            StoreError::Refused { kind, .. } => kind,
+        }
+    }
+
+    /// A refusal of a request, in the words a person reads (`message`) and the facts a
+    /// caller acts on (`detail`, `null` when there are none).
+    pub(crate) fn refused(
+        kind: &'static str,
+        message: impl Into<String>,
+        detail: serde_json::Value,
+    ) -> Self {
+        StoreError::Refused {
+            kind,
+            message: message.into(),
+            detail,
         }
     }
 
@@ -120,6 +147,7 @@ impl fmt::Display for StoreError {
                 path.display()
             ),
             StoreError::Io { path, source } => write!(f, "{}: {source}", path.display()),
+            StoreError::Refused { message, .. } => f.write_str(message),
         }
     }
 }

@@ -146,6 +146,7 @@ fn the_heads_of_a_work_nothing_was_saved_to_say_null_for_every_chain() {
             "answers": null,
             "requirements": null,
             "acceptance": null,
+            "request": null,
         })
     );
 }

@@ -277,6 +277,7 @@
         "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
         "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
       },
+      "request": null,
       "requirements": null,
       "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
     },
@@ -287,6 +288,7 @@
         "revision": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
         "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
       },
+      "request": null,
       "requirements": {
         "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
         "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
@@ -297,6 +299,7 @@
       "acceptance": null,
       "answers": null,
       "model": null,
+      "request": null,
       "requirements": null,
       "source": null
     },

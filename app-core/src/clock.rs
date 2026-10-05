@@ -88,6 +88,17 @@ impl<C: Clock + ?Sized> Clock for &C {
     }
 }
 
+/// A clock shared with a test (or between threads) through an `Arc`.
+impl<C: Clock + ?Sized> Clock for std::sync::Arc<C> {
+    fn now(&self) -> String {
+        (**self).now()
+    }
+
+    fn epoch(&self) -> u64 {
+        (**self).epoch()
+    }
+}
+
 /// A clock that always says the same thing, for tests.
 #[derive(Debug, Clone)]
 pub struct FixedClock(pub String);

@@ -80,6 +80,10 @@ use crate::error::StoreError;
 use crate::lock;
 use crate::revision::Revision;
 
+mod request_store;
+
+pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
+
 /// The most a single source text may hold.
 pub const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 
@@ -378,6 +382,9 @@ pub struct WorkHeads {
     pub answers: Option<Revision>,
     pub requirements: Option<ClaimedHead>,
     pub acceptance: Option<Revision>,
+    /// Where the work's latest request stands as the clock says it now: a lease that ran
+    /// out is an interrupted request, though nothing was written.
+    pub request: Option<RequestHead>,
 }
 
 /// One line of a work's history.
@@ -601,8 +608,8 @@ impl<C: Clock> WorkStore<C> {
         id: &WorkId,
         between_reads: impl FnMut(),
     ) -> Result<WorkSnapshot, StoreError> {
-        self.read_stable(id, between_reads, |dir, pointers| {
-            self.read_state(dir, id, pointers)
+        self.read_stable(id, between_reads, |dir, marks| {
+            self.read_state(dir, id, &marks.chains)
         })
     }
 
@@ -620,8 +627,8 @@ impl<C: Clock> WorkStore<C> {
         id: &WorkId,
         between_reads: impl FnMut(),
     ) -> Result<WorkHeads, StoreError> {
-        self.read_stable(id, between_reads, |dir, pointers| {
-            let [source, model, answers, requirements, acceptance] = pointers;
+        self.read_stable(id, between_reads, |dir, marks| {
+            let [source, model, answers, requirements, acceptance] = &marks.chains;
             let claimed = |artifact: Artifact, pointer: &Option<Pointer>| {
                 pointer
                     .as_ref()
@@ -640,13 +647,15 @@ impl<C: Clock> WorkStore<C> {
                 answers: revision(answers),
                 requirements: claimed(Artifact::Requirements, requirements)?,
                 acceptance: revision(acceptance),
+                request: request_store::latest_request_head(dir, self.clock.epoch())?,
             })
         })
     }
 
-    /// `read` of the pointers of every chain, taken as one state: the pointers are read,
-    /// `read` runs on them, and the pointers are read again; when any moved it starts over.
-    /// What is returned is what `read` made of the pointers as the second look found them.
+    /// `read` of the pointers of every chain and the count of changes of the work's
+    /// requests, taken as one state: they are read, `read` runs on them, and they are read
+    /// again; when any moved it starts over. What is returned is what `read` made of them as
+    /// the second look found them.
     ///
     /// No lock is taken, which is sound for the reason [`read_chain`] is. After
     /// [`READ_TRIES`] the read takes the lock a save takes and reads once.
@@ -658,14 +667,14 @@ impl<C: Clock> WorkStore<C> {
         &self,
         id: &WorkId,
         mut between_reads: impl FnMut(),
-        read: impl Fn(&Path, &Pointers) -> Result<T, StoreError>,
+        read: impl Fn(&Path, &Marks) -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
         let dir = self.existing(id)?;
         for _ in 0..READ_TRIES {
-            let pointers = read_pointers(&dir)?;
+            let marks = read_marks(&dir)?;
             between_reads();
-            let state = read(&dir, &pointers)?;
-            if read_pointers(&dir)? == pointers {
+            let state = read(&dir, &marks)?;
+            if read_marks(&dir)? == marks {
                 return Ok(state);
             }
         }
@@ -674,8 +683,8 @@ impl<C: Clock> WorkStore<C> {
         if is_removed(&dir) {
             return Err(removed_work(id));
         }
-        let pointers = read_pointers(&dir)?;
-        read(&dir, &pointers)
+        let marks = read_marks(&dir)?;
+        read(&dir, &marks)
     }
 
     /// The work and what each of `pointers` names. The two chains whose saves say which
@@ -1149,6 +1158,9 @@ impl<C: Clock> WorkStore<C> {
             &dir.join(artifact.head_file()),
             pointer_file_text(&revision, place).as_bytes(),
         )?;
+        // The save has taken effect. The requests that were asked about what it replaced
+        // end in the same step, under the same lock.
+        self.supersede_moved(&dir, artifact, &revision);
         Ok(Saved::Saved {
             revision,
             parent: current,
@@ -1514,6 +1526,22 @@ const POINTER_ENTRY_PREFIX: &str = "log ";
 /// The pointer of each chain, in the order a [`WorkSnapshot`] lists them: the text, the
 /// model, the answers, the requirement list, the acceptances.
 type Pointers = [Option<Pointer>; 5];
+
+/// What a work says it is at, to be read twice: the pointer of each chain, and how many
+/// changes of state its requests have made. A request changes in place and its renewals
+/// are not history, so the count moves on a change a person reads and not on every renewal.
+#[derive(Debug, PartialEq, Eq)]
+struct Marks {
+    chains: Pointers,
+    requests: u64,
+}
+
+fn read_marks(dir: &Path) -> Result<Marks, StoreError> {
+    Ok(Marks {
+        chains: read_pointers(dir)?,
+        requests: request_store::read_requests_head(dir)?,
+    })
+}
 
 fn read_pointers(dir: &Path) -> Result<Pointers, StoreError> {
     Ok([
@@ -1933,6 +1961,7 @@ mod tests {
                 answers: None,
                 requirements: None,
                 acceptance: None,
+                request: None,
             }
         );
     }
