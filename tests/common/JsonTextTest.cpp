@@ -268,6 +268,27 @@ TEST(JsonText, TheCoreSpellsAFloatAsEcmaScriptSpellsIt) {
     }
 }
 
+// A library without floating-point `std::to_chars` (libstdc++ before GCC 11, which the
+// product's own build used) still spells a float the same way: the shortest digits come
+// from `printf` there. Both ways exist on a compiler that has both, so the table
+// holds the fallback to the text the primary way gives, and to the table itself.
+TEST(JsonText, TheFallbackForALibraryWithoutFloatToCharsSpellsAFloatTheSameWay) {
+    const auto cases = loadRealCases();
+    ASSERT_GE(cases.size(), kRealTableFloor) << "the table was not read from " << SCE_JSON_REAL_TEXT_TABLE;
+    for (const auto &c : cases) {
+        if (!std::isfinite(c.value)) {
+            continue;
+        }
+        EXPECT_EQ(SCE::JsonText::detail::numberTextWith(c.value, SCE::JsonText::detail::scientificByPrintf), c.text)
+            << c.name << ": by printf";
+#ifdef SCE_JSON_TEXT_HAS_FLOAT_TO_CHARS
+        EXPECT_EQ(SCE::JsonText::detail::numberTextWith(c.value, SCE::JsonText::detail::scientificByToChars),
+                  SCE::JsonText::detail::numberTextWith(c.value, SCE::JsonText::detail::scientificByPrintf))
+            << c.name << ": the two ways";
+#endif
+    }
+}
+
 // JSON has no spelling for a float that is not finite; the untyped wire text
 // gives it the one ECMAScript does.
 TEST(JsonText, AFloatThatIsNotFiniteHasNoJsonSpellingAndAWireOne) {

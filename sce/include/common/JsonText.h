@@ -22,24 +22,58 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <string_view>
 
 namespace SCE::JsonText {
 
-/// A 64-bit float as ECMAScript's `Number::toString` spells it, radix 10: the
-/// fewest digits that read back as the same double, in decimal notation when
-/// `1e-6 <= |x| < 1e21` and as `d[.ddd]e[+-]n` otherwise, no fraction on a whole
-/// value and `0` for either zero. A value that is not finite is spelled `NaN`,
-/// `Infinity` or `-Infinity`, as `String(x)` does; a JSON writer, which has no
-/// spelling for those, tests `std::isfinite` before it calls this.
+namespace detail {
+
+/// The shortest scientific digits of a positive finite double, written into
+/// `buffer` as `d[.ddd]e[+-]XX` (the exponent signed, two digits at least), and
+/// their length: the form `std::to_chars(..., std::chars_format::scientific)`
+/// gives.
 ///
-/// `std::to_chars` in scientific form gives the shortest digits (and the nearest
-/// of them), which `printf`'s `%g` family cannot: `%.17g` writes 0.1 as
-/// `0.10000000000000001` and the default stream precision writes pi as
-/// `3.14159`. The layout is the specification's.
-inline std::string numberText(double value) {
+/// Through `printf`, which every library has. libstdc++ declares no
+/// floating-point `to_chars` before GCC 11, so a platform whose compiler is older
+/// (the product's own build was GCC 9.5: `'std::chars_format' has not been
+/// declared`, measured 2026-10-06) could not compile this header at all, and the
+/// compiler is the platform's to choose and not ours. The smallest precision whose
+/// output reads back as the same double is the shortest digits, and `printf`
+/// rounds to nearest, so it is also the nearest of the shortest ones -- the pair
+/// `to_chars` returns. `tests/common/JsonTextTest.cpp` holds the two to each other
+/// over the whole table, so the fallback is measured on a compiler that has both.
+inline std::size_t scientificByPrintf(char *buffer, std::size_t size, double value) {
+    for (int precision = 0; precision <= 17; ++precision) {
+        const int written = std::snprintf(buffer, size, "%.*e", precision, value);
+        if (written > 0 && std::strtod(buffer, nullptr) == value) {
+            return static_cast<std::size_t>(written);
+        }
+    }
+    return 0;  // not reached: 17 significant digits read back every double
+}
+
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+#define SCE_JSON_TEXT_HAS_FLOAT_TO_CHARS 1
+
+inline std::size_t scientificByToChars(char *buffer, std::size_t size, double value) {
+    const auto written = std::to_chars(buffer, buffer + size, value, std::chars_format::scientific);
+    return static_cast<std::size_t>(written.ptr - buffer);
+}
+
+inline std::size_t scientific(char *buffer, std::size_t size, double value) {
+    return scientificByToChars(buffer, size, value);
+}
+#else
+inline std::size_t scientific(char *buffer, std::size_t size, double value) {
+    return scientificByPrintf(buffer, size, value);
+}
+#endif
+
+/// `numberText` over a chosen way of getting the shortest scientific digits.
+template <typename Scientific> inline std::string numberTextWith(double value, Scientific scientific) {
     if (std::isnan(value)) {
         return "NaN";
     }
@@ -50,17 +84,18 @@ inline std::string numberText(double value) {
         return "0";
     }
     char buffer[40];
-    const auto written = std::to_chars(buffer, buffer + sizeof buffer, std::fabs(value), std::chars_format::scientific);
-    const std::string_view scientific(buffer, static_cast<std::size_t>(written.ptr - buffer));
-    const std::size_t marker = scientific.find('e');
+    const std::size_t length = scientific(buffer, sizeof buffer, std::fabs(value));
+    const std::string_view text(buffer, length);
+    const std::size_t marker = text.find('e');
     std::string digits;
-    for (const char c : scientific.substr(0, marker)) {
-        if (c != '.') {
+    for (const char c : text.substr(0, marker)) {
+        // Digits only: the decimal point a locale writes is not one of them.
+        if (c >= '0' && c <= '9') {
             digits += c;
         }
     }
-    // `to_chars` writes the exponent as a sign and at least two digits.
-    const int exponent = std::atoi(std::string(scientific.substr(marker + 1)).c_str());
+    // The exponent is a sign and at least two digits.
+    const int exponent = std::atoi(std::string(text.substr(marker + 1)).c_str());
     // The value is `0.<digits> * 10^point`; the specification's `k` and `n`.
     const int k = static_cast<int>(digits.size());
     const int point = exponent + 1;
@@ -88,6 +123,25 @@ inline std::string numberText(double value) {
         out += std::to_string(std::abs(power));
     }
     return out;
+}
+
+}  // namespace detail
+
+/// A 64-bit float as ECMAScript's `Number::toString` spells it, radix 10: the
+/// fewest digits that read back as the same double, in decimal notation when
+/// `1e-6 <= |x| < 1e21` and as `d[.ddd]e[+-]n` otherwise, no fraction on a whole
+/// value and `0` for either zero. A value that is not finite is spelled `NaN`,
+/// `Infinity` or `-Infinity`, as `String(x)` does; a JSON writer, which has no
+/// spelling for those, tests `std::isfinite` before it calls this.
+///
+/// The shortest digits (and the nearest of them) are what `printf`'s `%g` family
+/// cannot give: `%.17g` writes 0.1 as `0.10000000000000001` and the default
+/// stream precision writes pi as `3.14159`. `std::to_chars` in scientific form
+/// gives them where the library has it, and `printf` at the smallest precision
+/// that reads back gives the same ones where it does not (`detail::scientific`).
+/// The layout is the specification's.
+inline std::string numberText(double value) {
+    return detail::numberTextWith(value, detail::scientific);
 }
 
 /// Append `text` to `out` as the body of a JSON string: escaped, unquoted.
