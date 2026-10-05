@@ -3404,6 +3404,15 @@ at the `<param>` as `scxml/static-datamodel-rule`: each would be typed, accepted
 and never delivered (measured 2026-10-01 on Rust and Kotlin, when no generated code
 handed a parent's `<param>` to a child).
 
+A child that declares `<sce:action>`s is refused at the `<invoke>` by every generated
+backend, as `generate/unsupported-feature` (`an <invoke id="child"> of a child that
+declares <sce:action>s has no Rust lowering yet`). A child's machine takes the host
+that performs its acts when it is built, and the parent that starts it has none to
+give it, so the code a parent would write is that constructor called with the host
+left out: measured 2026-10-06, it does not compile in Rust, Kotlin, Go or C++ and
+Python fails when the invoke starts, and C11 held it as a value with no act table to
+give it. A host that supplies a child's acts is not part of this model yet.
+
 Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
 `accept_params`, C++ a nested `InvokeParams` (a `std::optional` per variable) and
@@ -4179,7 +4188,8 @@ A value that
 cannot be computed raises `error.execution` and is left out, and the child still
 starts holding the value its `<data>` gave it (5.7.1). A child that declares
 `<sce:action>`s has no such door, for the acts are a host's to supply, and a
-parent that invokes one is refused by name. `test_static_invoke.c` drives
+parent that invokes one is refused by name on every backend (**Child sessions**,
+above). `test_static_invoke.c` drives
 `static_invoke` and `static_invoke_params` live (their saved halves have no C
 counterpart, since a C machine is not saved) and `static_invoke_entry`, which
 sits beside the C++ suite's own fixtures and whose child reads in its `<onentry>`

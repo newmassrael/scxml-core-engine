@@ -1,0 +1,45 @@
+# Mutation cases for "an `<invoke type=\"scxml\">` of a child that declares
+# `<sce:action>`s is refused by every generated language"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_child_that_needs_a_host_for_its_actions_is_refused_by_every_language.cases`.
+#
+# A child's machine takes the host that performs its acts when it is built, and the
+# parent that starts it has none to give it, so what a parent would write is that
+# constructor called with the host left out: Rust, Kotlin, Go and C++ do not compile
+# it and Python fails when the invoke starts. Only C11 used to refuse, from inside
+# its own target, so the other five generated a parent that did not build. The
+# refusal is now asked once in `lower`, before the target's own `unsupported`, and
+# the judge (`every_language_refuses_a_child_that_needs_a_host_to_perform_its_actions`)
+# reads it in all six languages; its neighbours in the same file read that a child
+# with no act is still lowered. The mutants take one decision away each:
+#
+#   a child that declares an act is let through;
+#   the shared check is not asked, leaving it to each target;
+#   a child that declares no act is refused too.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+mutation_case "a child that declares an act is let through" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts && false => {")
+PY
+
+mutation_case "the shared check is not asked" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))",
+     "        target.unsupported(model, &scope)")
+PY
+
+mutation_case "a child that declares no act is refused too" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts || true => {")
+PY

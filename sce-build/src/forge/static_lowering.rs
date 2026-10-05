@@ -1548,7 +1548,9 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) = target.unsupported(model, &scope) {
+    if let Some(construct) =
+        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))
+    {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
         )));
@@ -3125,6 +3127,29 @@ fn unlowered_invoke(
         })
 }
 
+/// The first `<invoke type="scxml">` of `model` whose child declares
+/// `<sce:action>`s, described for a refusal. Every target refuses it, so it is
+/// asked once for all of them rather than by each: a child's machine takes the
+/// host that performs its acts when it is built, and the parent that starts it
+/// has none to give it (§scxml-6.4.1) — what a parent would write is a call of
+/// that constructor with the host left out, which does not compile in Rust,
+/// Kotlin, Go or C++ and fails when the invoke starts in Python.
+fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
+    model
+        .states
+        .values()
+        .flat_map(|state| &state.invokes)
+        .find_map(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
+                Some(format!(
+                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
+                    info.common.base.invoke_id
+                ))
+            }
+            _ => None,
+        })
+}
+
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of
 /// a `sce-static` document is native C++.
 pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
@@ -4195,22 +4220,14 @@ impl CTarget {
     /// The first of `invokes` that C11 has no lowering for yet. A child session
     /// of `type="scxml"` is started by the machine's own invoke code, which
     /// hands a static child its parent's values between the two steps its
-    /// start takes (§scxml-6.4.1). What the child cannot be started without is
-    /// refused here, by name: the host's act table of a child that declares
-    /// `<sce:action>`s, which the parent has none to give it. An `<invoke>` the
-    /// host serves is lowered: its `<param>`s are written into the request from
-    /// the machine's own fields (`sce/forge/wire.h`), as a final's are.
+    /// start takes (§scxml-6.4.1). An `<invoke>` the host serves is lowered: its
+    /// `<param>`s are written into the request from the machine's own fields
+    /// (`sce/forge/wire.h`), as a final's are.
     fn unlowered_invoke(invokes: &[crate::model::Invoke], lowers_hybrid: bool) -> Option<String> {
         if let Some(other) = unlowered_invoke(invokes, true, lowers_hybrid) {
             return Some(other);
         }
         invokes.iter().find_map(|invoke| match invoke {
-            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
-                Some(format!(
-                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
-                    info.common.base.invoke_id
-                ))
-            }
             // A `namelist` name is a pair of the request like a `<param>`.
             crate::model::Invoke::Unsupported(info) if info.host_served => {
                 namelist_name_taken(info.base.params.iter().map(|p| p.name.as_str()), &info.namelist)
