@@ -3623,14 +3623,15 @@ A backend that has not lowered the field refuses it where the record is declared
 name, as `generate/unsupported-feature` (`record:Label with the field `label` of
 type string has no Kotlin lowering yet`), and lifts the refusal
 (`StaticTarget::lowers_record_string_fields`) in the commit that lowers it and
-replays the scenario. Rust, Kotlin and Go hold it today. In Rust the record is a
+replays the scenario. Rust, Kotlin, Go and Python hold it today. In Rust the record is a
 struct that owns a `String` and so is `Clone` and not `Copy`, a host reads a
 published one through a borrow, and a copy of one — an append, an assignment from
 another record — is a clone. In Kotlin the record is the immutable data class it
 already is, so a copy is the same value, and a saved string is read back through the
 runtime's bounded reader. In Go the record is a struct copied by value, so a copy is
-the same value too; a Go machine is not saved, so there is no restore to refuse.
-Measured 2026-10-06, before any backend held the field, `check` had answered
+the same value too; a Go machine is not saved, so there is no restore to refuse. In
+Python the record is a frozen dataclass changed a field at a time by replacement, so
+a copy is the same value, and a Python machine is not saved either. Measured 2026-10-06, before any backend held the field, `check` had answered
 ok for Rust, Kotlin, Go, C++ and Python while Rust wrote `#[derive(Clone, Copy)]`
 over a `String`, which does not compile (E0204); only C11 refused.
 

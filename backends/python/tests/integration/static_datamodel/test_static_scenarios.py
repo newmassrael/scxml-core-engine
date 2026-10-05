@@ -252,6 +252,14 @@ def test_a_record_holds_a_single_field_as_the_single_nearest_the_payload() -> No
     replay("static_record_real32")
 
 
+# A record's string field is held to the UTF-8 bytes its schema declares: an
+# assignment past the bound — from a literal, a string variable or a payload —
+# writes nothing, raises error.execution and ends its block, and a list of such
+# records holds copies with their text.
+def test_a_record_holds_a_string_field_within_the_bound_its_schema_declares() -> None:
+    replay("static_record_string")
+
+
 # A list of records is filled by name from a record variable or a loop's item,
 # walked by a `<foreach>`, and a record is taken whole.
 def test_a_list_holds_records_and_a_foreach_walks_them() -> None:
