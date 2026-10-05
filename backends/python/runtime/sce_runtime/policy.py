@@ -260,7 +260,7 @@ class StatePolicy(ABC, Generic[S, E]):
 
     def needs_parent(self) -> bool:
         """W3C SCXML 6.2.4 — whether the document sends to its parent session
-        (a literal `<send target="#_parent">`), the generate manifest's
+        (a literal `<send target='#_parent'>`), the generate manifest's
         `needs_parent`. Read by `Engine.root_start_refusal`."""
         return False
 
