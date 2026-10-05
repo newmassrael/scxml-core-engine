@@ -3772,14 +3772,43 @@ def serve(stdin=None, stdout=None) -> int:
     return 0
 
 
+def readiness() -> list[str]:
+    """What would stop this server from doing its work, one sentence each; none when nothing would.
+
+    The question an application that starts an AI client with this server asks first (`--check`):
+    from outside, a server that cannot start is an AI that does not answer, and the owner is told
+    nothing. It is asked here, and not copied into whatever starts the server, so that what this
+    server needs is said by the server.
+    """
+    from .verify import _default_codegen
+
+    problems = []
+    codegen = _default_codegen()
+    if not codegen.is_file():
+        problems.append(f"the product's generator is not at {codegen}: set SCE_CODEGEN to it")
+    work = works.default_work_binary()
+    if not work.is_file():
+        problems.append(f"sce-work is not at {work}, so the works tools cannot reach the works "
+                        f"folder: set SCE_WORK to it")
+    try:
+        __import__("yaml")
+    except ImportError:
+        problems.append("PyYAML is not installed for this Python: pip install pyyaml")
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     """stdio by default; `--http HOST:PORT` serves the same tools over HTTP
-    to a caller on another machine (see `mcp_http`)."""
+    to a caller on another machine (see `mcp_http`); `--check` says whether the
+    server could do its work, and starts nothing."""
     import argparse
 
     from .process import ISOLATION_LEVELS
 
     parser = argparse.ArgumentParser(prog="python3 -m sce_author.mcp")
+    parser.add_argument("--check", action="store_true",
+                        help="say whether this server can do its work (what it needs is "
+                             "there), exit 0 if so and 1 with the reasons if not; starts nothing")
     parser.add_argument("--http", metavar="HOST:PORT",
                         help="serve over HTTP instead of stdio")
     parser.add_argument("--token-file", type=pathlib.Path,
@@ -3791,6 +3820,16 @@ def main(argv: list[str] | None = None) -> int:
              "without it they are read and checked and never played, and a host that "
              "isolates less than LEVEL does not start")
     args = parser.parse_args(argv)
+    if args.check:
+        if args.http is not None or args.token_file is not None or args.run_designs_under:
+            parser.error("--check starts nothing: it goes with no other option")
+        problems = readiness()
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        if problems:
+            return 1
+        print("sce-author-mcp: ready")
+        return 0
     if args.http is None:
         if args.token_file is not None:
             parser.error("--token-file goes with --http")

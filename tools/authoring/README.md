@@ -88,6 +88,12 @@ From a checkout, `scripts/sce_author_mcp.sh` runs the same server out of
 the tree after `cargo build -p sce-build --features cli --bin sce-codegen`,
 and takes the same `--http` flags.
 
+`--check` (on either launcher) starts nothing and asks whether the server could do its work:
+it exits 0 and says `ready`, or exits 1 and says, one line each, what is missing (the
+generator and how to point at it, `sce-work`, PyYAML). An application that starts an AI client
+with this server asks first, so that a server that cannot start is told to the owner in these
+words and not as an AI that never answers. It goes with no other option.
+
 The launcher and MCP server run locally, but the AI client may send the prose,
 SCXML, tool results, and pseudocode to its model service. Local MCP does not
 guarantee local-only handling of a specification. Before using restricted
