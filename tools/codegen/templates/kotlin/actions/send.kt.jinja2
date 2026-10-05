@@ -66,7 +66,7 @@
                 processorType = "{{ processor_type | escape_kotlin }}",
                 eventName = {% if dyn_event %}sendEventName{% else %}"{{ action.event | default('', true) | escape_kotlin }}"{% endif %},
                 target = {% if dyn_target %}_rt{% else %}"{{ action.target | default('', true) | escape_kotlin }}"{% endif %},
-                content = "{{ action.content | default('', true) | escape_kotlin }}",
+                content = {% if action.native_content_value %}valueToWireString(sendContentValue){% else %}"{{ action.content | default('', true) | escape_kotlin }}"{% endif %},
                 params = sendWireParams,
                 sendId = {{ send_id_kt }},
                 eventData = sendData,
@@ -130,7 +130,7 @@
 {# `engine` is whether some param is read by a script engine, which the payload
    binds below only then. A param lowered to native code (`native_value`) needs
    none, and can fail only when it is a checked operation. #}
-{% set param_ns = namespace(can_fail=(action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content)), engine=false) %}
+{% set param_ns = namespace(can_fail=(action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content)) or action.native_content_value_fails, engine=false) %}
 {% for param in action.params %}
 {% if not param.is_static_literal and not param.native_value %}
 {% set param_ns.can_fail = true %}
@@ -400,6 +400,32 @@
 {% if needs_wire_params %}
             val sendWireParams = emptyMap<String, List<String>>()
 {% endif %}
+{% elif action.native_content_value %}
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // Under `datamodel="sce-static"` it is one value lowered to native
+            // code (`Action::native_content_value`), read from the machine's own
+            // fields now and kept, so the event's data and the text a host takes
+            // as `content` are renderings of the one reading. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place
+            // error.execution in the internal event queue and use the empty
+            // string as the value of the <content> element."
+{% if action.native_content_value_fails %}
+            val sendContentValue: Any = try {
+                {{ action.native_content_value }}
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate", {{ send_id_kt }})
+{% endif %}
+                paramFailed = true
+                ""
+            }
+{% else %}
+            val sendContentValue: Any = {{ action.native_content_value }}
+{% endif %}
+            val sendData = valueToJson(sendContentValue)
+{% if needs_wire_params %}
+            val sendWireParams = emptyMap<String, List<String>>()
+{% endif %}
 {% elif action.contentexpr and model.needs_script_engine %}
             // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
             // "If the evaluation of 'expr' produces an error, the Processor MUST
@@ -460,7 +486,7 @@
                 return@send true
             }
 {% endif %}
-{% if action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content) %}
+{% if action.native_content_value or (action.contentexpr and model.needs_script_engine and not (action.params or has_namelist or action.content)) %}
             val httpContent = valueToWireString(sendContentValue)
 {% else %}
             val httpContent = "{{ action.content | default('', true) | escape_kotlin }}"

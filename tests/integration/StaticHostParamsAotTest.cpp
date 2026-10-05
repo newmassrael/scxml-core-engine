@@ -91,6 +91,20 @@ protected:
         EXPECT_FALSE(value.contains("boom")) << what << ": a pair whose value failed is left out: " << eventData;
     }
 
+    /// The request the send of `event` made, which a run of the fixture holds once.
+    const SCE::HostSendRequest &requestOf(const std::string &event) const {
+        const SCE::HostSendRequest *found = nullptr;
+        size_t named = 0;
+        for (const auto &request : sends) {
+            if (request.eventName == event) {
+                found = &request;
+                ++named;
+            }
+        }
+        EXPECT_EQ(named, 1u) << "one request for `" << event << "`";
+        return named == 1u ? *found : sends.front();
+    }
+
     Machine sm;
     std::vector<SCE::HostSendRequest> sends;
     std::vector<SCE::HostInvokeRequest> starts;
@@ -101,9 +115,55 @@ protected:
 TEST_F(StaticHostParamsAotTest, ASendParamCarriesTheValueTheFieldsHoldWhenItIsSent) {
     drive({"bump", "go"});
 
-    ASSERT_EQ(sends.size(), 1u) << "one <send>, one request";
+    ASSERT_EQ(sends.size(), 4u) << "the pairs' send and the three that carry one value";
+    EXPECT_EQ(sends[0].eventName, "notify");
     EXPECT_EQ(sends[0].params, wanted("4", "true", "busy", "8")) << "the text each <param> crosses as";
     expectTypedEventData(sends[0].eventData, "send");
+}
+
+// SCE Accepted Subset §2.15: a `<content expr>` that names one value is the event's
+// whole data, as the JSON the value is, and the request's `content`, as the text it
+// is — read from the fields when the send runs (`count` 4 and `label` "busy" after
+// `bump`, not the 3 and "idle" a copy at start-up holds).
+TEST_F(StaticHostParamsAotTest, ASendContentThatNamesAValueCarriesItWhole) {
+    drive({"bump", "go"});
+    ASSERT_EQ(sends.size(), 4u);
+
+    const auto &value = requestOf("value");
+    EXPECT_EQ(value.eventData, "8") << "a number is its digits, as data";
+    EXPECT_EQ(value.content, "8") << "and as content";
+    EXPECT_TRUE(value.params.empty()) << "a value is not a pair";
+
+    const auto &text = requestOf("text");
+    EXPECT_EQ(text.eventData, "\"busy\"") << "a string is quoted as data";
+    EXPECT_EQ(text.content, "busy") << "and is itself as content";
+}
+
+// The control for the case above: nothing has written a variable, so the fields
+// still hold what `<data expr>` gave them.
+TEST_F(StaticHostParamsAotTest, ASendContentReadBeforeAnyBumpCarriesTheDeclaredValue) {
+    drive({"go"});
+    ASSERT_EQ(sends.size(), 4u);
+
+    EXPECT_EQ(requestOf("value").eventData, "6");
+    EXPECT_EQ(requestOf("value").content, "6");
+    EXPECT_EQ(requestOf("text").eventData, "\"idle\"");
+    EXPECT_EQ(requestOf("text").content, "idle");
+}
+
+// W3C SCXML 5.6.2: a `<content expr>` that cannot be evaluated — here a
+// multiplication a 32-bit field cannot hold — is reported with `error.execution` and
+// has the empty string as its value, while the message still goes.
+TEST_F(StaticHostParamsAotTest, ASendContentWhoseValueCannotBeComputedIsTheEmptyString) {
+    drive({"bump", "go"});
+    ASSERT_EQ(sends.size(), 4u);
+
+    const auto &lost = requestOf("lost");
+    EXPECT_EQ(lost.eventData, "\"\"") << "the empty string, as data";
+    EXPECT_EQ(lost.content, "") << "and as content";
+    for (const auto &request : sends) {
+        EXPECT_NE(request.eventName, "after") << "the error ends the block, so the send after it never runs";
+    }
 }
 
 TEST_F(StaticHostParamsAotTest, AnInvokeParamCarriesTheValueTheFieldsHoldWhenItStarts) {
@@ -121,7 +181,7 @@ TEST_F(StaticHostParamsAotTest, AnInvokeParamCarriesTheValueTheFieldsHoldWhenItS
 TEST_F(StaticHostParamsAotTest, AParamReadBeforeAnyBumpCarriesTheDeclaredValues) {
     drive({"go"});
 
-    ASSERT_EQ(sends.size(), 1u);
+    ASSERT_EQ(sends.size(), 4u);
     ASSERT_EQ(starts.size(), 1u);
     EXPECT_EQ(sends[0].params, wanted("3", "false", "idle", "6"));
     EXPECT_EQ(starts[0].params, wanted("3", "false", "idle", "6"));
@@ -130,14 +190,16 @@ TEST_F(StaticHostParamsAotTest, AParamReadBeforeAnyBumpCarriesTheDeclaredValues)
 // W3C SCXML 5.7.1: a `<param>` whose value cannot be computed — here a
 // multiplication a 32-bit field cannot hold — is reported with `error.execution`
 // and its pair left out, while the message still goes and the invocation still
-// starts. `errors` counts the reports the document took, one for the send and one
-// for the invoke, so a pair dropped in silence is told from one reported.
+// starts. `errors` counts the reports the document took, one for the send's pair,
+// one for the content that could not be computed and one for the invoke, so a pair
+// dropped in silence is told from one reported.
 TEST_F(StaticHostParamsAotTest, AParamWhoseValueCannotBeComputedIsReportedAndLeftOut) {
     drive({"bump", "go"});
 
-    ASSERT_EQ(sends.size(), 1u) << "the send still went";
+    ASSERT_EQ(sends.size(), 4u) << "every send still went, the one whose value failed among them";
     ASSERT_EQ(starts.size(), 1u) << "the invoke still started";
-    EXPECT_EQ(sm.errors(), 2u) << "one error.execution for the send's `boom` and one for the invoke's";
+    EXPECT_EQ(sm.errors(), 3u)
+        << "one error.execution for the send's `boom`, one for the content and one for the invoke's";
     EXPECT_EQ(sends[0].params.count("boom"), 0u) << "the failed pair is left out of the send";
     EXPECT_EQ(starts[0].params.count("boom"), 0u) << "the failed pair is left out of the invoke";
 }

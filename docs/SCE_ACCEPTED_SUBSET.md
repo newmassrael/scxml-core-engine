@@ -2919,7 +2919,7 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send targetexpr/typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below), a `<send><content expr>` that names no record, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send targetexpr/typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below), a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
@@ -3008,10 +3008,21 @@ variable, the item of a `<foreach>` over a list of records, or the payload of th
 event the transition is on (`_event.data`) — is the `<param name="f"
 expr="record.f"/>` of each field the record's schema declares, held to the same
 rule; it takes no `<param>` or `namelist` beside it (§scxml-6.2.4: the element
-carries its data one way), and any other expression is refused at the attribute.
-The Interpreter reads the record as the object it holds
+carries its data one way). Any other expression is the one value the event
+carries, whole: it is held to the rule a `<param>`'s value is (a bool, a string, an
+integer of at most 32 bits, a real or an enum value, read from the machine's fields
+when the send runs; anything else is refused at the attribute, naming the
+`<content expr>`), and it is the event's data as the JSON the value is (`8`,
+`"busy"`) and, in the request a host serves, the `content` as the text it is (`8`,
+`busy`), both from the one reading. One that cannot be computed is the evaluation
+that failed (§scxml-5.6.2): `error.execution` is raised and the empty string is the
+content's value, so the message still goes, with `""` as its data and no content,
+and the block ends after it as it does for a `<param>` (`statechart_static_host_params`,
+whose `lost` is `count * 2000000000`). A machine whose only data is such a value
+needs no script engine. The Interpreter reads a record as the object it holds
 (`scenarios/static_send_content.json`, on the six generated backends and the
-Interpreter). A `<final>`'s `<donedata><content expr>` is the same, for a record
+Interpreter) and a value as the data it is, its expression lowered in the attribute
+it is written in. A `<final>`'s `<donedata><content expr>` is the same, for a record
 variable alone, since no event's payload is in scope where a state is entered, and
 its pairs are read then (`scenarios/static_donedata_record.json`). A `<send>`'s
 `delayexpr` is a string, the CSS2 time the delay is written in (`wait + 'ms'` for

@@ -95,9 +95,57 @@ def _assert_typed_event_data(event_data: str, what: str) -> None:
 def test_a_send_param_carries_the_value_the_fields_hold_when_it_is_sent() -> None:
     engine, sends, _ = _started()
     _drive(engine, ["bump", "go"])
-    assert len(sends) == 1, "one <send>, one request"
+    assert len(sends) == 4, f"the pairs' send and the three that carry one value: {sends}"
+    assert sends[0].event_name == "notify"
     assert sends[0].params == _wanted("4", "true", "busy", "8"), "the text each <param> crosses as"
     _assert_typed_event_data(sends[0].event_data, "send")
+
+
+def _request_of(sends: List[HostSendRequest], event: str) -> HostSendRequest:
+    """The request the send of ``event`` made, which a run of the fixture holds once."""
+    named = [s for s in sends if s.event_name == event]
+    assert len(named) == 1, f"one request for `{event}`: {sends}"
+    return named[0]
+
+
+def test_a_send_content_that_names_a_value_carries_it_whole() -> None:
+    # SCE Accepted Subset §2.15: a ``<content expr>`` that names one value is the
+    # event's whole data, as the JSON the value is, and the request's ``content``,
+    # as the text it is — read from the fields when the send runs (``count`` 4 and
+    # ``label`` "busy" after ``bump``, not the 3 and "idle" a copy at start-up holds).
+    engine, sends, _ = _started()
+    _drive(engine, ["bump", "go"])
+    value = _request_of(sends, "value")
+    assert value.event_data == "8", "a number is its digits, as data"
+    assert value.content == "8", "and as content"
+    assert value.params == {}, "a value is not a pair"
+    text = _request_of(sends, "text")
+    assert text.event_data == '"busy"', "a string is quoted as data"
+    assert text.content == "busy", "and is itself as content"
+
+
+def test_a_send_content_read_before_any_bump_carries_the_declared_value() -> None:
+    # The control for the case above: nothing has written a variable, so the fields
+    # still hold what ``<data expr>`` gave them.
+    engine, sends, _ = _started()
+    _drive(engine, ["go"])
+    value = _request_of(sends, "value")
+    assert (value.event_data, value.content) == ("6", "6")
+    text = _request_of(sends, "text")
+    assert (text.event_data, text.content) == ('"idle"', "idle")
+
+
+def test_a_send_content_whose_value_cannot_be_computed_is_the_empty_string() -> None:
+    # W3C SCXML 5.6.2: a ``<content expr>`` that cannot be evaluated — here a
+    # multiplication a 32-bit field cannot hold — is reported with
+    # ``error.execution`` and has the empty string as its value, while the message
+    # still goes.
+    engine, sends, _ = _started()
+    _drive(engine, ["bump", "go"])
+    lost = _request_of(sends, "lost")
+    assert lost.event_data == '""', "the empty string, as data"
+    assert lost.content == "", "and as content"
+    assert all(s.event_name != "after" for s in sends), "the error ends the block, so the send after it never runs"
 
 
 def test_an_invoke_param_carries_the_value_the_fields_hold_when_it_starts() -> None:
@@ -134,12 +182,12 @@ def test_a_param_whose_value_cannot_be_computed_is_reported_and_left_out() -> No
     # multiplication a 32-bit field cannot hold — is reported with
     # ``error.execution`` and its pair left out, while the message still goes and
     # the invocation still starts. ``errors`` counts the reports the document took,
-    # one for the send and one for the invoke, so a pair dropped in silence is told
-    # from one reported.
+    # one for the send's pair, one for the content that could not be computed and
+    # one for the invoke, so a pair dropped in silence is told from one reported.
     engine, sends, starts = _started()
     _drive(engine, ["bump", "go"])
-    assert len(sends) == 1, "the send still went"
+    assert len(sends) == 4, "every send still went, the one whose value failed among them"
     assert len(starts) == 1, "the invoke still started"
-    assert engine.policy.errors() == 2, "one error.execution for the send's `boom` and one for the invoke's"
+    assert engine.policy.errors() == 3, "one error.execution for the send's `boom`, one for the content and one for the invoke's"
     assert "boom" not in sends[0].params, "the failed pair is left out of the send"
     assert "boom" not in starts[0].params, "the failed pair is left out of the invoke"

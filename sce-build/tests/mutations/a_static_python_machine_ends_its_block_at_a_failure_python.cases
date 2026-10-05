@@ -159,8 +159,8 @@ PY
 
 mutation_case "a send's content record is not folded into its pairs" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                action.fold_content_record_into_params(&content, &fields);\n",
-     "                let _ = &fields;\n")
+     "                    Some(fields) => action.fold_content_record_into_params(&content, &fields),\n",
+     "                    Some(fields) => drop(fields),\n")
 PY
 
 # `static_donedata_record`: a final's `<content expr="shown"/>` is the pairs of the
@@ -245,8 +245,8 @@ PY
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{% endfor %}\n{% elif has_payload %}",
-     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{{ indent }}    _data[{{ param.name | py_string_literal }}] = 0\n{% endfor %}\n{% elif has_payload %}")
+     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{% endfor %}\n{% elif action.native_content_value %}",
+     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{{ indent }}    _data[{{ param.name | py_string_literal }}] = 0\n{% endfor %}\n{% elif action.native_content_value %}")
 PY
 
 # ── A called algorithm is a module the machine imports ─────────────

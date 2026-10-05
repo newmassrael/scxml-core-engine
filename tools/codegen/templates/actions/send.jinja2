@@ -59,6 +59,9 @@ std::map<std::string, std::vector<std::string>> params;
 std::map<std::string, std::vector<ScriptValue>> typedParams;
 std::string eventData;
 std::optional<ScriptValue> typedData;
+{% if action.native_content_value %}
+std::string contentText;  // the `<content expr>` value as the text a host takes
+{% endif %}
 {% if action.namelist or action.params %}
 {% if action.namelist %}
 // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
@@ -182,6 +185,34 @@ eventData = contentData;
 // children *are* the value — the same arm `<donedata>` takes there.
 ::SCE::DoneDataHelper::emitContentLiteral("{{ action.content | escape_cpp }}", eventData, &typedData);
 {% endif %}
+{% elif action.native_content_value %}
+// W3C SCXML 5.6.2: the value of <content expr> is the output of <content> —
+// the event's data, as the typed value JSON carries. Under
+// `datamodel="sce-static"` it is one value lowered to native code
+// (`Action::native_content_value`), read from the machine's own fields now and
+// kept, so the event's data and the text a host takes as `content` are
+// renderings of the one reading. "If the evaluation of 'expr' produces an
+// error, the Processor MUST place error.execution in the internal event queue
+// and use the empty string as the value": the message still goes, carrying "",
+// and the error ends the block once it has (§scxml-4.9).
+{
+{% if action.native_content_value_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    ScriptValue contentValue = {{ action.native_content_value }};
+{% if action.native_content_value_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+        SCE_LOG_ERROR("<send> contentexpr failed to evaluate");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<send> contentexpr failed to evaluate"));
+        paramFailed = true;
+        contentValue = ScriptValue(std::string());
+    }
+{% endif %}
+    contentText = ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(contentValue));
+    eventData = ::SCE::EventDataHelper::scriptValueToJsonString(contentValue);
+    typedData = std::move(contentValue);
+}
 {% elif action.contentexpr %}
 // W3C SCXML 5.6.2: the value of <content expr> is the output of <content> —
 // the event's data, as the typed value JSON carries. "If the evaluation of
@@ -258,7 +289,7 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
    is emitted — a runtime test of a constant leaves the other branch as dead
    code the compiler still has to reason about. `typedData` is carried only by
    a send whose payload can produce one. #}
-{% set carries_typed = action.params or action.namelist or action.content or action.contentexpr %}
+{% set carries_typed = action.params or action.namelist or action.content or action.contentexpr or action.native_content_value %}
 {% if action.target == '#_internal' %}
 {{ send_raise_internal(event_cpp, carries_typed) }}
 {% else %}
@@ -272,7 +303,7 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 {% set event_enum_cpp = '*sendEvent' if dyn_event else 'Event::' ~ (action.event | to_cpp_event_variant) %}
 {# Declared for any `<param>`, a literal included: the failure branch names the
    flag. #}
-{% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or (action.contentexpr and not action.content)) %}
+{% set param_ns = namespace(can_fail=(action.params | default([]) | length > 0) or (action.contentexpr and not action.content) or action.native_content_value_fails) %}
 {# W3C SCXML 4.9: the statement that ends the block this <send> sits in, named
    by whoever includes it — `return;` in an entry, exit, initial, history or
    transition block, which is its own function or lambda, and `return false;`
@@ -671,7 +702,7 @@ engine.raise(typename Engine::EventWithMetadata(
     hostRequest.processorType = "{{ action.send_type | escape_cpp }}";
     hostRequest.eventName = {% if dyn_event %}eventName{% else %}"{{ action.event | escape_cpp }}"{% endif %};
     hostRequest.target = {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target | escape_cpp }}"{% endif %};
-    hostRequest.content = "{{ action.content | escape_cpp }}";
+    hostRequest.content = {% if action.native_content_value %}contentText{% else %}"{{ action.content | escape_cpp }}"{% endif %};
     hostRequest.sendId = sendId;
     // W3C SCXML 5.10: the host receives the namelist and <param> pairs the
     // document sent and, as `eventData`, exactly the `_event.data` a local
@@ -713,9 +744,9 @@ engine.raise(typename Engine::EventWithMetadata(
 // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that makes it —
 // the request waits in the queue every delayed send does (so `<cancel>` reaches
 // it) and its deadline dispatches it through performHttpSend().
-engine.scheduleHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, delayMs, sendId);
+engine.scheduleHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.native_content_value %}contentText{% elif action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, delayMs, sendId);
 {% else %}
-engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, sendId);
+engine.performHttpSend({% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}, {{ event_name_cpp }}, {% if action.native_content_value %}contentText{% elif action.contentexpr and not (action.params or action.namelist or action.content) %}eventData{% else %}"{{ action.content | escape_cpp }}"{% endif %}, params, sendId);
 {% endif %}
 {% elif action.targetexpr and (action.event or dyn_event) %}
 {% if dyn_event %}

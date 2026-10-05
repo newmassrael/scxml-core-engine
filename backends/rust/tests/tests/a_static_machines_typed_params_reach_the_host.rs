@@ -134,13 +134,90 @@ fn a_send_param_carries_the_value_the_fields_hold_when_it_is_sent() {
     assert_eq!(engine.get_current_state(), State::Working);
 
     let sends = sends.lock().expect("send log");
-    assert_eq!(sends.len(), 1, "one <send>, one request: {sends:?}");
+    assert_eq!(
+        sends.len(),
+        4,
+        "the pairs' send and the three that carry one value: {sends:?}"
+    );
+    assert_eq!(sends[0].event_name, "notify");
     assert_eq!(
         text_params(&sends[0].params),
         wanted_text_params("4", "true", "busy", "8"),
         "the text each <param> crosses as"
     );
     assert_typed_event_data(&sends[0].event_data, "send");
+}
+
+/// The request the send of `event` made, which a run of the fixture holds once.
+fn request_of(sends: &[HostSendRequest], event: &str) -> HostSendRequest {
+    let mut named = sends.iter().filter(|s| s.event_name == event);
+    let request = named
+        .next()
+        .unwrap_or_else(|| panic!("no request for `{event}`: {sends:?}"));
+    assert!(
+        named.next().is_none(),
+        "one request for `{event}`: {sends:?}"
+    );
+    request.clone()
+}
+
+/// SCE Accepted Subset §2.15: a `<content expr>` that names one value is the
+/// event's whole data, as the JSON the value is, and the request's `content`,
+/// as the text it is — read from the fields when the send runs (`count` 4 and
+/// `label` "busy" after `bump`, not the 3 and "idle" a copy at start-up holds).
+#[test]
+fn a_send_content_that_names_a_value_carries_it_whole() {
+    let (mut engine, sends, _) = started();
+    drive(&mut engine, &["bump", "go"]);
+    let sends = sends.lock().expect("send log");
+
+    let value = request_of(&sends, "value");
+    assert_eq!(value.event_data, "8", "a number is its digits");
+    assert_eq!(value.content, "8");
+    assert!(value.params.is_empty(), "a value is not a pair: {value:?}");
+
+    let text = request_of(&sends, "text");
+    assert_eq!(text.event_data, "\"busy\"", "a string is quoted as data");
+    assert_eq!(text.content, "busy", "and is itself as content");
+}
+
+#[test]
+fn a_send_content_read_before_any_bump_carries_the_declared_value() {
+    // The control for the case above: nothing has written a variable, so the
+    // fields still hold what `<data expr>` gave them.
+    let (mut engine, sends, _) = started();
+    drive(&mut engine, &["go"]);
+    let sends = sends.lock().expect("send log");
+
+    let value = request_of(&sends, "value");
+    assert_eq!(
+        (value.event_data.as_str(), value.content.as_str()),
+        ("6", "6")
+    );
+    let text = request_of(&sends, "text");
+    assert_eq!(
+        (text.event_data.as_str(), text.content.as_str()),
+        ("\"idle\"", "idle")
+    );
+}
+
+/// W3C SCXML 5.6.2: a `<content expr>` that cannot be evaluated — here a
+/// multiplication a 32-bit field cannot hold — is reported with
+/// `error.execution` and has the empty string as its value, while the message
+/// still goes.
+#[test]
+fn a_send_content_whose_value_cannot_be_computed_is_the_empty_string() {
+    let (mut engine, sends, _) = started();
+    drive(&mut engine, &["bump", "go"]);
+    let sends = sends.lock().expect("send log");
+
+    let lost = request_of(&sends, "lost");
+    assert_eq!(lost.event_data, "\"\"", "the empty string, as data");
+    assert_eq!(lost.content, "", "and as content");
+    assert!(
+        sends.iter().all(|s| s.event_name != "after"),
+        "the error ends the block, so the send after it never runs: {sends:?}"
+    );
 }
 
 #[test]
@@ -211,8 +288,8 @@ fn a_param_whose_value_cannot_be_computed_is_reported_and_left_out() {
 
     assert_eq!(
         sends.lock().expect("send log").len(),
-        1,
-        "the send still went"
+        4,
+        "every send still went, the one whose value failed among them"
     );
     assert_eq!(
         starts.lock().expect("start log").len(),
@@ -221,8 +298,9 @@ fn a_param_whose_value_cannot_be_computed_is_reported_and_left_out() {
     );
     assert_eq!(
         engine.policy().errors(),
-        2,
-        "one error.execution for the send's `boom` and one for the invoke's"
+        3,
+        "one error.execution for the send's `boom`, one for the content that \
+         could not be computed and one for the invoke's"
     );
     for (what, params) in [
         (

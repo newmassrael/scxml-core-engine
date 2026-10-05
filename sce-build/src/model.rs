@@ -601,6 +601,25 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_idlocation: String,
+    /// Codegen-internal: the `<content expr>` of a `<send>` in a `sce-static`
+    /// document that names a single value — a bool, a string, an integer of at
+    /// most 32 bits, a real or an enum value — as the typed value the backend's
+    /// wire helpers take ([`crate::forge::static_lowering::StaticTarget::wire_value`]),
+    /// read from the machine's fields when the send runs. It is the event's whole
+    /// data, as JSON, and what a host that serves the send is handed as the
+    /// request's `content`, as text. Empty for a `<send>` with no such content
+    /// (a record named by one crosses as the pairs of its fields instead).
+    /// Transient and outside the AST contract, as [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content_value: String,
+    /// Codegen-internal: whether [`Self::native_content_value`] can fail — a
+    /// checked integer operation in the expression. A failure is an argument
+    /// that cannot be evaluated: the message still goes, with the empty string
+    /// as its content, `error.execution` is raised and the block ends after it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content_value_fails: bool,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

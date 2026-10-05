@@ -77,6 +77,23 @@ impl<'a> WireParam<'a> {
         }
     }
 
+    /// The `<content expr>` of a `<send>` that names a single value: the one
+    /// value the event carries, read as a `<param>` of no name is, so it is held
+    /// to the rule a param's value is. The attribute it is written in places a
+    /// refusal.
+    pub(crate) fn of_content(
+        written: &'a str,
+        spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
+    ) -> Self {
+        Self {
+            name: "",
+            is_static_literal: false,
+            written,
+            spelling,
+            source_location: None,
+        }
+    }
+
     /// §scxml-5.7 admits exactly one of `expr` and `location` on a donedata
     /// `<param>`; an `expr` that is empty is no expression, and falls to the
     /// `location` the same way [`Self::of_param`] does.
@@ -96,6 +113,25 @@ impl<'a> WireParam<'a> {
             source_location: param.source_location.as_ref(),
         }
     }
+}
+
+/// A `<content expr>` as the judge reads it: where it is written, and what may
+/// stand beside it or be named by it there.
+#[derive(Clone, Copy)]
+struct ContentExpr<'a> {
+    /// The element it is written in (`<send>`, `<donedata>`), which a refusal
+    /// names.
+    element: &'a str,
+    /// The expression, as written.
+    written: &'a str,
+    spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
+    /// `<param>`s or a `namelist` stand beside it, which an element that carries
+    /// its data one way refuses.
+    beside: bool,
+    /// An expression that names no record is the one value the event carries: a
+    /// `<send>`'s, where a `<donedata>` carries pairs and so admits a record
+    /// alone.
+    value_admitted: bool,
 }
 
 /// The attributes of executable content that carry an expression this model
@@ -227,10 +263,13 @@ pub fn check(
             if let crate::model::DoneDataContent::Expression(expr) = &done.content {
                 judge.content_record(
                     &plain,
-                    "<donedata>",
-                    expr,
-                    done.content_spelling.as_ref(),
-                    !done.params.is_empty(),
+                    &ContentExpr {
+                        element: "<donedata>",
+                        written: expr,
+                        spelling: done.content_spelling.as_ref(),
+                        beside: !done.params.is_empty(),
+                        value_admitted: false,
+                    },
                     &state.id,
                 )?;
             }
@@ -946,15 +985,23 @@ impl<'a> Judge<'a> {
     /// ([`crate::model::Action::fold_content_record_into_params`]) and held to
     /// the rule a param is. The element carries its data one way, as content or
     /// as pairs, so a `<param>` or a `namelist` `beside` it is refused.
+    ///
+    /// An expression that names no record is, for an element that admits it
+    /// (`value_admitted`: a `<send>`), the one value the event carries, and is
+    /// judged as a param's value is ([`WireParam::of_content`]).
     fn content_record(
         &self,
         ctx: &TypeCtx<'_>,
-        element: &str,
-        written: &str,
-        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
-        beside: bool,
+        content: &ContentExpr<'_>,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
+        let ContentExpr {
+            element,
+            written,
+            spelling,
+            beside,
+            value_admitted,
+        } = *content;
         let written = written.trim();
         let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
         let construct = format!("<content expr=\"{written}\">");
@@ -972,6 +1019,18 @@ impl<'a> Judge<'a> {
             ));
         }
         let Some(fields) = self.content_fields(written) else {
+            // A `<send>` may carry one value instead: what the expression
+            // computes is the event's data as it is, held to the rule a
+            // param's value is. A `<donedata>` carries pairs, so a value that
+            // is no record is refused there.
+            if value_admitted {
+                return self.wire_param(
+                    ctx,
+                    &WireParam::of_content(written, spelling),
+                    element,
+                    state,
+                );
+            }
             return Err(self.rule_at(
                 construct,
                 "a <content expr> of this data model names a record, which crosses as the pairs \
@@ -1070,16 +1129,29 @@ impl<'a> Judge<'a> {
             (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
             (None, None) => (None, None),
         };
-        let construct = format!("<param name=\"{}\"> of {element}", param.name);
+        // A value of no name is the `<content expr>` a `<send>` carries whole.
+        let (construct, what) = if param.name.is_empty() {
+            (
+                format!("<content expr=\"{written}\"> of {element}"),
+                "a <content expr>",
+            )
+        } else {
+            (
+                format!("<param name=\"{}\"> of {element}", param.name),
+                "a <param>",
+            )
+        };
         if crate::forge::expr::references_event_data_lexically(written)
             && self.payload_schema.borrow().is_none()
         {
             return Err(self.rule_at(
                 construct,
-                "a <param> of this data model is read from the machine's fields when its \
-                 element runs; the triggering event's payload is read only in a transition \
-                 on an event that declares a schema, so copy the value into a variable \
-                 there first",
+                &format!(
+                    "{what} of this data model is read from the machine's fields when its \
+                     element runs; the triggering event's payload is read only in a transition \
+                     on an event that declares a schema, so copy the value into a variable \
+                     there first"
+                ),
                 line,
                 col,
                 state,
@@ -1111,13 +1183,15 @@ impl<'a> Judge<'a> {
         if ty.wire_param_slot().is_none() {
             return Err(self.rule_at(
                 construct,
-                "a <param> crosses as text and as a JSON value, which every \
-                 backend spells alike for a bool, a string, an integer of at most 32 bits, \
-                 a real, and an enum value held by a variable or by a field of a record \
-                 variable (as the name its enum declares); a 64-bit integer (which a \
-                 backend that reads numbers through a double would carry with its low bits \
-                 wrong), bytes, a list, a record and an enum value of a loop's item have \
-                 no such spelling yet",
+                &format!(
+                    "{what} crosses as text and as a JSON value, which every \
+                     backend spells alike for a bool, a string, an integer of at most 32 bits, \
+                     a real, and an enum value held by a variable or by a field of a record \
+                     variable (as the name its enum declares); a 64-bit integer (which a \
+                     backend that reads numbers through a double would carry with its low bits \
+                     wrong), bytes, a list, a record and an enum value of a loop's item have \
+                     no such spelling yet"
+                ),
                 line,
                 col,
                 state,
@@ -1281,10 +1355,13 @@ impl<'a> Judge<'a> {
                 if !action.contentexpr.is_empty() {
                     self.content_record(
                         ctx,
-                        "<send>",
-                        &action.contentexpr,
-                        action.contentexpr_spelling.as_ref(),
-                        !action.params.is_empty() || !action.namelist.trim().is_empty(),
+                        &ContentExpr {
+                            element: "<send>",
+                            written: &action.contentexpr,
+                            spelling: action.contentexpr_spelling.as_ref(),
+                            beside: !action.params.is_empty() || !action.namelist.trim().is_empty(),
+                            value_admitted: true,
+                        },
                         state,
                     )?;
                 }

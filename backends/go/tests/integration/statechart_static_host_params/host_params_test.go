@@ -123,13 +123,86 @@ func assertTypedEventData(t *testing.T, eventData, what string) {
 func TestASendParamCarriesTheValueTheFieldsHoldWhenItIsSent(t *testing.T) {
 	s := newStarted()
 	s.drive("bump", "go")
-	if len(*s.sends) != 1 {
-		t.Fatalf("one <send>, one request: %v", *s.sends)
+	if len(*s.sends) != 4 {
+		t.Fatalf("the pairs' send and the three that carry one value: %v", *s.sends)
+	}
+	if got := (*s.sends)[0].EventName; got != "notify" {
+		t.Fatalf("the first request is the pairs' send: %q", got)
 	}
 	if got, want := textParams((*s.sends)[0].Params), wantedTextParams("4", "true", "busy", "8"); !reflect.DeepEqual(got, want) {
 		t.Errorf("the text each <param> crosses as: got %v, want %v", got, want)
 	}
 	assertTypedEventData(t, (*s.sends)[0].EventData, "send")
+}
+
+// The request the send of `event` made, which a run of the fixture holds once.
+func (s started) requestOf(t *testing.T, event string) sce.HostSendRequest {
+	t.Helper()
+	var found []sce.HostSendRequest
+	for _, request := range *s.sends {
+		if request.EventName == event {
+			found = append(found, request)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("one request for `%s`, got %d: %v", event, len(found), *s.sends)
+	}
+	return found[0]
+}
+
+// SCE Accepted Subset §2.15: a `<content expr>` that names one value is the
+// event's whole data, as the JSON the value is, and the request's `content`, as
+// the text it is — read from the fields when the send runs (`count` 4 and
+// `label` "busy" after `bump`, not the 3 and "idle" a copy at start-up holds).
+func TestASendContentThatNamesAValueCarriesItWhole(t *testing.T) {
+	s := newStarted()
+	s.drive("bump", "go")
+
+	value := s.requestOf(t, "value")
+	if value.EventData != "8" || value.Content != "8" {
+		t.Errorf("a number is its digits, as data and as content: data %q, content %q", value.EventData, value.Content)
+	}
+	if len(value.Params) != 0 {
+		t.Errorf("a value is not a pair: %v", value.Params)
+	}
+	text := s.requestOf(t, "text")
+	if text.EventData != `"busy"` || text.Content != "busy" {
+		t.Errorf("a string is quoted as data and is itself as content: data %q, content %q", text.EventData, text.Content)
+	}
+}
+
+// The control for the case above: nothing has written a variable, so the fields
+// still hold what `<data expr>` gave them.
+func TestASendContentReadBeforeAnyBumpCarriesTheDeclaredValue(t *testing.T) {
+	s := newStarted()
+	s.drive("go")
+
+	value := s.requestOf(t, "value")
+	if value.EventData != "6" || value.Content != "6" {
+		t.Errorf("data %q, content %q", value.EventData, value.Content)
+	}
+	text := s.requestOf(t, "text")
+	if text.EventData != `"idle"` || text.Content != "idle" {
+		t.Errorf("data %q, content %q", text.EventData, text.Content)
+	}
+}
+
+// W3C SCXML 5.6.2: a `<content expr>` that cannot be evaluated — here a
+// multiplication a 32-bit field cannot hold — is reported with `error.execution`
+// and has the empty string as its value, while the message still goes.
+func TestASendContentWhoseValueCannotBeComputedIsTheEmptyString(t *testing.T) {
+	s := newStarted()
+	s.drive("bump", "go")
+
+	lost := s.requestOf(t, "lost")
+	if lost.EventData != `""` || lost.Content != "" {
+		t.Errorf("the empty string, as data and as content: data %q, content %q", lost.EventData, lost.Content)
+	}
+	for _, request := range *s.sends {
+		if request.EventName == "after" {
+			t.Errorf("the error ends the block, so the send after it never runs: %v", *s.sends)
+		}
+	}
 }
 
 func TestAnInvokeParamCarriesTheValueTheFieldsHoldWhenItStarts(t *testing.T) {
@@ -177,19 +250,20 @@ func TestAParamReadBeforeAnyBumpCarriesTheDeclaredValues(t *testing.T) {
 // W3C SCXML 5.7.1: a `<param>` whose value cannot be computed — here a
 // multiplication a 32-bit field cannot hold — is reported with `error.execution`
 // and its pair left out, while the message still goes and the invocation still
-// starts. `errors` counts the reports the document took, one for the send and one
-// for the invoke, so a pair dropped in silence is told from one reported.
+// starts. `errors` counts the reports the document took, one for the send's pair,
+// one for the content that could not be computed and one for the invoke, so a
+// pair dropped in silence is told from one reported.
 func TestAParamWhoseValueCannotBeComputedIsReportedAndLeftOut(t *testing.T) {
 	s := newStarted()
 	s.drive("bump", "go")
-	if len(*s.sends) != 1 {
-		t.Errorf("the send still went: %v", *s.sends)
+	if len(*s.sends) != 4 {
+		t.Errorf("every send still went, the one whose value failed among them: %v", *s.sends)
 	}
 	if len(*s.starts) != 1 {
 		t.Errorf("the invoke still started: %v", *s.starts)
 	}
-	if got := s.policy.Errors(); got != 2 {
-		t.Errorf("errors is %d, not 2: one error.execution for the send's `boom` and one for the invoke's", got)
+	if got := s.policy.Errors(); got != 3 {
+		t.Errorf("errors is %d, not 3: one error.execution for the send's `boom`, one for the content and one for the invoke's", got)
 	}
 	for _, params := range []map[string][]string{(*s.sends)[0].Params, (*s.starts)[0].Params} {
 		if _, present := params["boom"]; present {

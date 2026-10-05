@@ -34,6 +34,21 @@
   so a lowering that dropped the pair without saying so is told from one that
   reported it.
 
+  Four more sends carry one value as their `<content expr>` instead of pairs
+  (SCE Accepted Subset §2.15): that value is the event's whole data, as JSON,
+  and what the host is handed as the request's `content`, as text. `value` is
+  `count * 2` (the number 8, as `8` both ways), `text` is `label` (the string
+  "busy", as `"busy"` in the data and `busy` as the content), and `lost` is
+  `count * 2000000000`, which the field cannot hold: the content is then the
+  empty string, as W3C SCXML 5.6.2 has it, so the request carries `""` as its
+  data and no content, `error.execution` is raised, and the message still goes.
+  `errors` counts that report too, so it is three: the pairs' `boom`, this and
+  the invoke's. A send that raises an error ends the block it is in (W3C SCXML
+  4.9), so each of the two that fail in the run `bump`, `go` has an `<onentry>`
+  of its own, and the four requests go out in document order: the pairs,
+  `value`, `text`, `lost`. `after` follows `lost` in its block and is never
+  sent, which is how the end of the block is told from a block that goes on.
+
   The invoke names `delta` and `ratio` in its `namelist` where the send writes
   them as params: a `namelist` name is the `<param name="x" expr="x"/>` it
   abbreviates, so the host is handed the same pairs either way, and the one
@@ -90,6 +105,22 @@
         <param name="delta" expr="delta"/>
         <param name="ratio" expr="ratio"/>
         <param name="boom" expr="count * 2000000000"/>
+      </send>
+    </onentry>
+    <onentry>
+      <send type="x-sce-host" target="somewhere" event="value">
+        <content expr="count * 2"/>
+      </send>
+      <send type="x-sce-host" target="somewhere" event="text">
+        <content expr="label"/>
+      </send>
+    </onentry>
+    <onentry>
+      <send type="x-sce-host" target="somewhere" event="lost">
+        <content expr="count * 2000000000"/>
+      </send>
+      <send type="x-sce-host" target="somewhere" event="after">
+        <content expr="count"/>
       </send>
     </onentry>
     <invoke type="x-sce-host" id="h" namelist="delta ratio"

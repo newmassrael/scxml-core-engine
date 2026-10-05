@@ -223,9 +223,57 @@
    to ask: the text is the value, finished at build time as the JSON string it
    spells, or the XML as written (SCE Accepted Subset §2.15), so a
    `<content>123</content>` is the string `"123"` on every backend. #}
-{% macro send_content_json(action, csym_prefix, machine) %}
+{# §scxml-5.6.2 under `datamodel="sce-static"`: the `<content expr>` of a `<send>`
+   is one value lowered to native code (`Action::native_content_value`), read
+   from the machine's own fields once, and written from that one reading to
+   whichever of the two buffers the caller names: `json_buf`, the JSON text of
+   the event's data, and `text_buf`, the text a host takes as the request's
+   `content`. One that failed is the evaluation that failed, which costs what
+   §scxml-5.6.2 says: error.execution, and the empty string as the content's
+   value, so the message still goes and the error ends the block once it has
+   (4.9) — the `_param_failed` the end of the element reads. A value that does
+   not fit a buffer is not truncated: the message is not sent. #}
+{% macro send_native_content(action, csym_prefix, machine, json_buf, text_buf) %}
+                {
+{% if action.native_content_value_fails %}
+                    sce_forge_algorithm_failure_t sce_failure_ = {0};
+{% endif %}
+                    sce_forge_wire_value_t sce_value = {{ action.native_content_value }};
+{% if action.native_content_value_fails %}
+                    if (sce_failure_.failed) {
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> <content expr> failed to evaluate");
+                        sce_value = sce_forge_wire_string("");
+                        _param_failed = true;
+                    }
+{% endif %}
+{% if json_buf %}
+                    if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof({{ json_buf }}))) {
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> <content expr> does not fit the event's data, so the message was not sent");
+                        return;
+                    }
+{% endif %}
+{% if text_buf %}
+                    if (!sce_forge_wire_text(sce_value, {{ text_buf }}, sizeof({{ text_buf }}))) {
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> <content expr> does not fit a request's content, so the message was not sent");
+                        return;
+                    }
+{% endif %}
+                }
+{% endmacro %}
+{% macro send_content_json(action, csym_prefix, machine, host_text=false) %}
                 char _ed[SCE_MAX_DATA_LEN];
-{% if action.native_content %}
+{% if action.native_content_value %}
+{% if host_text %}
+                char _host_content[SCE_MAX_DATA_LEN];
+{% endif %}
+{{ send_native_content(action, csym_prefix, machine, '_ed', '_host_content' if host_text else none) }}
+{% elif action.native_content %}
                 {
                     static const char _lit[] = "{{ action.native_content | escape_c }}";
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
@@ -982,14 +1030,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 }
                 lua_pop(sm->L, 1);
 {% endif %}
-{% elif (action.content or action.contentexpr) and not basic_http %}
-{{ send_content_json(action, csym_prefix, model.name) }}
+{% elif (action.content or action.contentexpr or action.native_content_value) and not basic_http %}
+{{ send_content_json(action, csym_prefix, model.name, true) }}
 {% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = {{ processor_type }};
                 _host_req.event_name = {% if resolved_event %}{{ resolved_event }}{% elif action.eventexpr %}_host_event{% else %}"{{ action.event | default('', true) | escape_c }}"{% endif %};
                 _host_req.target = {% if resolved_target %}{{ resolved_target }}{% elif action.targetexpr %}_host_target{% else %}"{{ action.target | default('', true) | escape_c }}"{% endif %};
-                _host_req.content = {% if content_buf %}{{ content_buf }}{% else %}"{{ action.content | default('', true) | escape_c }}"{% endif %};
+                _host_req.content = {% if content_buf %}{{ content_buf }}{% elif action.native_content_value and not basic_http %}_host_content{% else %}"{{ action.content | default('', true) | escape_c }}"{% endif %};
                 _host_req.send_id = {% if action.id %}"{{ action.id | escape_c }}"{% else %}{{ send_id_c_expr(action) }}{% endif %};
 {% if action.params or action.namelist %}
                 _host_req.params = _host_params;
@@ -1002,7 +1050,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 /* A POST's body is its form or its `<content>` text, built
                    from the pairs and `content` above — not a payload. */
                 _host_req.event_data = "";
-{% elif action.params or action.namelist or action.content or action.contentexpr %}
+{% elif action.params or action.namelist or action.content or action.contentexpr or action.native_content_value %}
                 _host_req.event_data = _ed;
 {% else %}
                 _host_req.event_data = "";
@@ -1090,12 +1138,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
     since some readers evaluate a literal through Lua too — and read once the
     message has gone. -#}
 {% macro send_param_failed_open(action) %}
-{% if action.params or action.contentexpr %}
+{% if action.params or action.contentexpr or action.native_content_value %}
             bool _param_failed = false;
 {% endif %}
 {%- endmacro %}
 {% macro send_param_failed_close(action) %}
-{% if action.params or action.contentexpr %}
+{% if action.params or action.contentexpr or action.native_content_value %}
             if (_param_failed) {
                 return;
             }
@@ -1133,7 +1181,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endfor %}
 {% set names_no_invocation = static_target.startswith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target.startswith('#_scxml_') and not child_ns.invoke %}
 {% set has_delay = action.delay or action.delayexpr %}
-{% set has_payload = action.params or action.namelist or action.content or action.contentexpr %}
+{% set has_payload = action.params or action.namelist or action.content or action.contentexpr or action.native_content_value %}
 {% set has_event = action.event or action.eventexpr %}
 {% set event_name_c = '_send_evt_name' if action.eventexpr else '"' ~ (action.event | default('', true) | escape_c) ~ '"' %}
 {# Where the event goes, decided at build time. `dynamic` is a `targetexpr`
@@ -1410,7 +1458,13 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    namelist name, or the `<content>` text — a `<content expr>` is evaluated
    here, once, only when no form is being built, as the body has always
    followed. #}
-{% if action.contentexpr and not (action.event or action.params or action.namelist) %}
+{% if action.native_content_value and not (action.event or action.params or action.namelist) %}
+            /* W3C SCXML C.2 + 5.10: the `<content expr>` body, a value of the
+               machine's own fields (`Action::native_content_value`), shipped as
+               text/plain. */
+            char _http_content[SCE_MAX_DATA_LEN];
+{{ send_native_content(action, csym_prefix, model.name, none, '_http_content') }}
+{% elif action.contentexpr and not (action.event or action.params or action.namelist) %}
             /* W3C SCXML C.2 + 5.10: dynamic `<content expr=...>` body,
                shipped as text/plain. An expression that fails raises
                error.execution and ends the block (W3C SCXML 5.10). */
@@ -1429,7 +1483,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                  resolved_target=('_send_target_buf' if action.targetexpr else none),
                  resolved_delay=(delay_c if has_delay else none),
                  basic_http=true,
-                 content_buf=('_http_content' if (action.contentexpr and not (action.event or action.params or action.namelist)) else none)) }}
+                 content_buf=('_http_content' if ((action.contentexpr or action.native_content_value) and not (action.event or action.params or action.namelist)) else none)) }}
 {% else %}
 {% set dynamic_mesh = route == 'dynamic' and 'sce:mesh' in (model.host_processor_types or []) and not action.typeexpr %}
 {% if dynamic_mesh %}
@@ -1449,7 +1503,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    delivery below reads. #}
 {% if action.params or action.namelist %}
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name) }}
-{% elif action.content or action.contentexpr %}
+{% elif action.content or action.contentexpr or action.native_content_value %}
 {{ send_content_json(action, csym_prefix, model.name) }}
 {% endif %}
 {% if route == 'session' and static_target != '#_scxml_' %}

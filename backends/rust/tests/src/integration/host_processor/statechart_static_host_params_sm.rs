@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: bc49353528c5016f597a40bdea3f7d294d38f4af5ab2b1e8d51f531e0040d019
+// source-hash: 4500332adf7cfa97272dfcd7c9c32e9f80a0408d25705f3d6b2eed7d01a88cee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_static_host_params.scxml:58 :: _machine"]
-// SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+#![doc = "SCE-MAP: statechart_static_host_params.scxml:73 :: _machine"]
+// SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -97,13 +97,17 @@ pub enum StatechartStaticHostParamsState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatechartStaticHostParamsEvent {
+    After,
     Big,
     Bump,
     DoneInvoke,
     DoneInvokeH,
     ErrorExecution,
     Go,
+    Lost,
     Notify,
+    Text,
+    Value,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -809,26 +813,34 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StatechartStaticHostParamsEvent::After => "after",
             StatechartStaticHostParamsEvent::Big => "big",
             StatechartStaticHostParamsEvent::Bump => "bump",
             StatechartStaticHostParamsEvent::DoneInvoke => "done.invoke",
             StatechartStaticHostParamsEvent::DoneInvokeH => "done.invoke.h",
             StatechartStaticHostParamsEvent::ErrorExecution => "error.execution",
             StatechartStaticHostParamsEvent::Go => "go",
+            StatechartStaticHostParamsEvent::Lost => "lost",
             StatechartStaticHostParamsEvent::Notify => "notify",
+            StatechartStaticHostParamsEvent::Text => "text",
+            StatechartStaticHostParamsEvent::Value => "value",
             StatechartStaticHostParamsEvent::Null => "",
         }
     }
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "after" => Some(StatechartStaticHostParamsEvent::After),
             "big" => Some(StatechartStaticHostParamsEvent::Big),
             "bump" => Some(StatechartStaticHostParamsEvent::Bump),
             "done.invoke" => Some(StatechartStaticHostParamsEvent::DoneInvoke),
             "done.invoke.h" => Some(StatechartStaticHostParamsEvent::DoneInvokeH),
             "error.execution" => Some(StatechartStaticHostParamsEvent::ErrorExecution),
             "go" => Some(StatechartStaticHostParamsEvent::Go),
+            "lost" => Some(StatechartStaticHostParamsEvent::Lost),
             "notify" => Some(StatechartStaticHostParamsEvent::Notify),
+            "text" => Some(StatechartStaticHostParamsEvent::Text),
+            "value" => Some(StatechartStaticHostParamsEvent::Value),
             _ => None,
         }
     }
@@ -888,8 +900,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:58 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:73 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -898,8 +910,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     ) {
         match state {
             StatechartStaticHostParamsState::Working => {
-                // SCE-MAP: statechart_static_host_params.scxml:83 :: working :: _state_body
-                // W3C SCXML 3.8: onentry block 1/1
+                // SCE-MAP: statechart_static_host_params.scxml:98 :: working :: _state_body
+                // W3C SCXML 3.8: onentry block 1/3
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
@@ -1023,6 +1035,262 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
+                // W3C SCXML 3.8: onentry block 2/3
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+
+                        let mut _param_failed = false;
+
+                        // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
+                        // the event's data. Under `datamodel="sce-static"` it is one typed value
+                        // lowered to native code (`Action::native_content_value`), read from the
+                        // machine's fields now and kept, so the event's data and the text a host
+                        // takes as `content` are renderings of the one reading. "If the evaluation
+                        // of 'expr' produces an error, the Processor MUST place error.execution in
+                        // the internal event queue and use the empty string as the value of the
+                        // <content> element."
+                        let _send_content_value: ::sce_rust_runtime::ScriptValue = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+        Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2)?)))
+    })() {
+        Ok(val) => val,
+        Err(_) => {
+            ::sce_rust_runtime::sce_log_error!("send contentexpr overflowed or failed");
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> contentexpr failed to evaluate"));
+            _param_failed = true;
+            ::sce_rust_runtime::ScriptValue::String(String::new())
+        }
+    };
+                        let event_data_string: String =
+                            ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                                &_send_content_value,
+                            );
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+            processor_type: "x-sce-host".to_string(),
+            event_name: "value".to_string(),
+            target: "somewhere".to_string(),
+            content: ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value),
+            params: host_params,
+            send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
+            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+            // processed now, carried back out as a W3C child's send to its
+            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+            // every machine with a host-served send.
+            invoke_id: self.pending_event_invokeid.to_string(),
+        };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+
+                        // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
+                        // the event's data. Under `datamodel="sce-static"` it is one typed value
+                        // lowered to native code (`Action::native_content_value`), read from the
+                        // machine's fields now and kept, so the event's data and the text a host
+                        // takes as `content` are renderings of the one reading. "If the evaluation
+                        // of 'expr' produces an error, the Processor MUST place error.execution in
+                        // the internal event queue and use the empty string as the value of the
+                        // <content> element."
+                        let _send_content_value: ::sce_rust_runtime::ScriptValue =
+                            ::sce_rust_runtime::ScriptValue::String(self.label.to_string());
+                        let event_data_string: String =
+                            ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                                &_send_content_value,
+                            );
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+            processor_type: "x-sce-host".to_string(),
+            event_name: "text".to_string(),
+            target: "somewhere".to_string(),
+            content: ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value),
+            params: host_params,
+            send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
+            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+            // processed now, carried back out as a W3C child's send to its
+            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+            // every machine with a host-served send.
+            invoke_id: self.pending_event_invokeid.to_string(),
+        };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+                // W3C SCXML 3.8: onentry block 3/3
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                        let mut _param_failed = false;
+
+                        // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
+                        // the event's data. Under `datamodel="sce-static"` it is one typed value
+                        // lowered to native code (`Action::native_content_value`), read from the
+                        // machine's fields now and kept, so the event's data and the text a host
+                        // takes as `content` are renderings of the one reading. "If the evaluation
+                        // of 'expr' produces an error, the Processor MUST place error.execution in
+                        // the internal event queue and use the empty string as the value of the
+                        // <content> element."
+                        let _send_content_value: ::sce_rust_runtime::ScriptValue = match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+        Ok(::sce_rust_runtime::ScriptValue::Int(i64::from(sce_forge_runtime::algorithm::mul::<u32>(self.count, 2000000000)?)))
+    })() {
+        Ok(val) => val,
+        Err(_) => {
+            ::sce_rust_runtime::sce_log_error!("send contentexpr overflowed or failed");
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> contentexpr failed to evaluate"));
+            _param_failed = true;
+            ::sce_rust_runtime::ScriptValue::String(String::new())
+        }
+    };
+                        let event_data_string: String =
+                            ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                                &_send_content_value,
+                            );
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+            processor_type: "x-sce-host".to_string(),
+            event_name: "lost".to_string(),
+            target: "somewhere".to_string(),
+            content: ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value),
+            params: host_params,
+            send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
+            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+            // processed now, carried back out as a W3C child's send to its
+            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+            // every machine with a host-served send.
+            invoke_id: self.pending_event_invokeid.to_string(),
+        };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+
+                        // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
+                        // the event's data. Under `datamodel="sce-static"` it is one typed value
+                        // lowered to native code (`Action::native_content_value`), read from the
+                        // machine's fields now and kept, so the event's data and the text a host
+                        // takes as `content` are renderings of the one reading. "If the evaluation
+                        // of 'expr' produces an error, the Processor MUST place error.execution in
+                        // the internal event queue and use the empty string as the value of the
+                        // <content> element."
+                        let _send_content_value: ::sce_rust_runtime::ScriptValue =
+                            ::sce_rust_runtime::ScriptValue::Int(i64::from(self.count));
+                        let event_data_string: String =
+                            ::sce_rust_runtime::helpers::event_data::script_value_to_json(
+                                &_send_content_value,
+                            );
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+                        // which declared it to this build. Dispatch rather than refuse.
+                        {
+                            let host_params =
+                                std::collections::HashMap::<String, Vec<String>>::new();
+                            let __sce_request = sce_rust_runtime::HostSendRequest {
+            processor_type: "x-sce-host".to_string(),
+            event_name: "after".to_string(),
+            target: "somewhere".to_string(),
+            content: ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value),
+            params: host_params,
+            send_id: send_id.to_string(),
+            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+            event_data: event_data.to_string(),
+            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+            // processed now, carried back out as a W3C child's send to its
+            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+            // every machine with a host-served send.
+            invoke_id: self.pending_event_invokeid.to_string(),
+        };
+                            let __sce_served = engine.perform_host_send(__sce_request);
+                            // W3C SCXML 6.2: a declared type with no handler registered is,
+                            // from the document's side, a processor the platform does not
+                            // support — the act it asked for was performed by nobody. Same
+                            // event, so a wiring mistake cannot read as success.
+                            if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                engine.raise(err_meta);
+                            }
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1053,8 +1321,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:58 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:73 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1092,8 +1360,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:58 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:73 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1172,8 +1440,8 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_static_host_params.scxml:58 :: _machine"]
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    #[doc = "SCE-MAP: statechart_static_host_params.scxml:73 :: _machine"]
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1184,7 +1452,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             StatechartStaticHostParamsState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_static_host_params.scxml:72 :: idle :: _transition_0
+                        // SCE-MAP: statechart_static_host_params.scxml:87 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1223,7 +1491,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_static_host_params.scxml:77 :: idle :: _transition_1
+                        // SCE-MAP: statechart_static_host_params.scxml:92 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1237,7 +1505,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             StatechartStaticHostParamsState::Working => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_static_host_params.scxml:103 :: working :: _transition_0
+                        // SCE-MAP: statechart_static_host_params.scxml:134 :: working :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

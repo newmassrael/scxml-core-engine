@@ -1,0 +1,74 @@
+# Mutation cases for the `<content expr>` of a host-served `<send>` that names
+# one value, in a `datamodel="sce-static"` machine generated as Rust
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_send_content_value_is_the_whole_event_data_rust.cases`.
+#
+# The expression is Rust the lowering wrote, read from the machine's own fields
+# when the send runs, and the template only places it: the value is the event's
+# whole data as the JSON it is (`8`, `"busy"`) and, in the request a host
+# serves, the `content` as the text it is (`8`, `busy`), both from the one
+# reading. A value that cannot be computed — a checked multiplication that
+# overflows — is the evaluation that failed (W3C SCXML 5.6.2): `error.execution`
+# is raised and the empty string is the content's value, so the message still
+# goes, and the error ends the block it is in (W3C SCXML 4.9).
+#
+# What is easy to get wrong and reads as success: a failed value written as the
+# zero of its type is a request that looks complete, a failure that is not
+# reported is one that looks like a quiet success, and a block that goes on is a
+# send nobody asked for. `statechart_static_host_params` tells them apart: its
+# `lost` is `count * 2000000000`, `errors` counts the reports the document took
+# (the pairs' `boom`, this and the invoke's), and `after` follows `lost` in its
+# block and must never be sent.
+#
+# The template reaches the tests only through the committed tree the
+# regeneration writes, so the tree is a declared target and the command is what
+# carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_static_machines_typed_params_reach_the_host
+mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
+mutation_targets backends/rust/tests/src/integration/host_processor/statechart_static_host_params_sm.rs
+mutation_regen scripts/regen_host_processor.sh
+mutation_oracles backends/rust/tests/tests/a_static_machines_typed_params_reach_the_host.rs sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+
+# ── A value that cannot be computed is the empty string ────────────
+
+mutation_case "a content value that failed is the zero of its type, not the empty string" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "            _param_failed = true;\n            ::sce_rust_runtime::ScriptValue::String(String::new())\n        }\n    };\n{% else %}\n    let _send_content_value",
+     "            _param_failed = true;\n            ::sce_rust_runtime::ScriptValue::Int(0)\n        }\n    };\n{% else %}\n    let _send_content_value")
+PY
+
+# ── ... and reported ───────────────────────────────────────────────
+
+mutation_case "a content value that failed is replaced by the empty string without a word" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "            ::sce_rust_runtime::sce_log_error!(\"send contentexpr overflowed or failed\");\n{% if 'error.execution' in model.events %}",
+     "            ::sce_rust_runtime::sce_log_error!(\"send contentexpr overflowed or failed\");\n{% if false %}")
+PY
+
+# ── ... and ends the block it is in ────────────────────────────────
+
+mutation_case "the error of a content value does not end its block" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "            _param_failed = true;\n            ::sce_rust_runtime::ScriptValue::String(String::new())\n        }\n    };\n{% else %}\n    let _send_content_value",
+     "            ::sce_rust_runtime::ScriptValue::String(String::new())\n        }\n    };\n{% else %}\n    let _send_content_value")
+PY
+
+# ── The one value is two renderings ────────────────────────────────
+
+mutation_case "a host is handed the JSON of the value as its content" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "            content: {% if action.native_content_value %}::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value){% else %}",
+     "            content: {% if action.native_content_value %}::sce_rust_runtime::helpers::event_data::script_value_to_json(&_send_content_value){% else %}")
+PY
+
+mutation_case "the event's data is the text of the value, not its JSON" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "    let event_data_string: String = ::sce_rust_runtime::helpers::event_data::script_value_to_json(&_send_content_value);",
+     "    let event_data_string: String = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&_send_content_value);")
+PY

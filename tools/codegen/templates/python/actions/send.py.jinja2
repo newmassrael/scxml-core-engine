@@ -23,7 +23,7 @@
 {{ indent }}    processor_type={{ processor_type | py_string_literal }},
 {{ indent }}    event_name=_evt_name,
 {{ indent }}    target={% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %},
-{{ indent }}    content={{ action.content | py_string_literal }},
+{{ indent }}    content={% if action.native_content_value %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %},
 {{ indent }}    params=self._wire_params_from_payload(_data),
 {{ indent }}    send_id=_sid,
 {{ indent }}    event_data=self._event_data_text(_data, {{ action.content | to_lua_data_content | py_string_literal }}, {{ 'True' if has_payload else 'False' }}),
@@ -71,7 +71,7 @@
 {%- endmacro -%}
 {%- macro emit_send(action, indent, machine_name, model) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
-{% set has_payload = action.params or has_namelist or action.content or action.contentexpr %}
+{% set has_payload = action.params or has_namelist or action.content or action.contentexpr or action.native_content_value %}
 {% set has_delay = action.delayexpr or action.delay_ms > 0 %}
 {% set dyn_event = action.eventexpr and not action.event %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
@@ -128,7 +128,7 @@
    at the end of this macro reads it after the act. A `<content expr>` that
    cannot be read is the same shape (W3C SCXML 5.6.2): reported, the message
    sent with '' as its value, the block ended. #}
-{% set payload_can_fail = action.params or action.contentexpr %}
+{% set payload_can_fail = action.params or action.contentexpr or action.native_content_value_fails %}
 {% if payload_can_fail %}
 {{ indent }}_param_failures = []
 {% endif %}
@@ -294,6 +294,24 @@
 {{ indent }}    self._raise_error_execution(engine, "<send> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate")
 {{ indent }}    _param_failures.append({{ param.name | py_string_literal }})
 {% endfor %}
+{% elif action.native_content_value %}
+{# `datamodel="sce-static"`: the `<content expr>` is one value lowered to native
+   code (`Action::native_content_value`), read from the policy's own attributes
+   now and kept, so the event's data and the text a host takes as `content` are
+   renderings of the one reading. A checked operation that fails raises
+   `AlgorithmFailure`: "if the evaluation of 'expr' produces an error, the
+   Processor MUST place error.execution in the internal event queue and use the
+   empty string as the value of the <content> element" (§scxml-5.6.2). #}
+{% if action.native_content_value_fails %}
+{{ indent }}try:
+{{ indent }}    _data = ({{ action.native_content_value }}).to_python()
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    self._raise_error_execution(engine, "<send> contentexpr failed to evaluate")
+{{ indent }}    _param_failures.append("")
+{{ indent }}    _data = ""
+{% else %}
+{{ indent }}_data = ({{ action.native_content_value }}).to_python()
+{% endif %}
 {% elif has_payload %}
 {{ indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
@@ -334,9 +352,9 @@
    it (W3C SCXML 6.2.4): the request waits in the queue every delayed send
    does, so `<cancel>` reaches it, and its deadline dispatches it. #}
 {% if has_delay %}
-{{ indent }}engine.schedule_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), {{ delay_py }}, _sid)
+{{ indent }}engine.schedule_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.native_content_value or (action.contentexpr and not (action.params or has_namelist or action.content)) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), {{ delay_py }}, _sid)
 {% else %}
-{{ indent }}engine.perform_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.contentexpr and not (action.params or has_namelist or action.content) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
+{{ indent }}engine.perform_http_send({% if action.targetexpr %}_target_str{% else %}{{ action.target | py_string_literal }}{% endif %}, _evt_name, {% if action.native_content_value or (action.contentexpr and not (action.params or has_namelist or action.content)) %}_ScriptValue.of(_data).to_wire_string(){% else %}{{ action.content | py_string_literal }}{% endif %}, self._wire_params_from_payload(_data), _sid)
 {% endif %}
 {% elif not action.targetexpr and action.target == '#_parent' %}
 {% if has_delay %}

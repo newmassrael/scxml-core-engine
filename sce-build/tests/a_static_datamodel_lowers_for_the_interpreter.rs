@@ -334,6 +334,32 @@ fn a_send_content_is_finished_to_the_string_it_spells() {
     );
 }
 
+/// A `<send>`'s `<content expr>` that names one value is the event's whole data,
+/// which the Interpreter's own `<send>` evaluates when it runs: the expression is
+/// lowered in the attribute it is written in, and stays a `<content expr>` — no
+/// pair is made of it, as one is of a record's fields.
+#[test]
+fn a_send_content_that_names_a_value_is_lowered_in_its_attribute() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="go" type="internal"><send event="note"><content expr="n + 1"/></send></transition></state>
+</scxml>"#;
+    let lowered =
+        lower_source(document, "send_value").expect("a content that names a value lowers");
+    assert!(
+        lowered.contains(r#"<content expr=""#),
+        "the value is still the content's expression: {lowered}"
+    );
+    assert!(
+        !lowered.contains("<param"),
+        "a value is not made into a pair: {lowered}"
+    );
+    assert!(
+        lowered.contains(r#"datamodel="ecmascript""#),
+        "the document is the ecmascript one the Interpreter runs: {lowered}"
+    );
+}
+
 /// An inline child is a `sce-static` document of its own, lowered where it stands
 /// in its parent's text, and a string it bounds is handed through that bound: the
 /// Interpreter holds no bound, so the lowered `<param>` carries it.

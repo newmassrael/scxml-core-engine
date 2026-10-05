@@ -32,20 +32,25 @@
 
 typedef statechart_static_host_params_t sm_t;
 
-enum { MAX_PARAMS = 8 };
+enum { MAX_PARAMS = 8, MAX_SENDS = 8 };
 
 // What the host saw of one request: a `<send>`'s or an `<invoke>`'s.
 typedef struct {
     int calls;
     char src[64];
+    char event[16];
+    char content[64];
     char event_data[256];
     int param_count;
     char names[MAX_PARAMS][32];
     char values[MAX_PARAMS][64];
 } seen_t;
 
+// Every `<send>` the host served, in the order they ran (`send_count` of them, the
+// first the one that carries pairs), and the one `<invoke>` it was asked to start.
 typedef struct {
-    seen_t send;
+    seen_t sends[MAX_SENDS];
+    int send_count;
     seen_t invoke;
 } host_t;
 
@@ -59,9 +64,15 @@ static void note_param(seen_t *seen, const char *name, const char *value) {
 }
 
 static void on_send(void *user_data, const sce_host_send_request_t *request, sce_host_send_response_list_t *out) {
-    seen_t *seen = &((host_t *)user_data)->send;
+    host_t *host = (host_t *)user_data;
     (void)out;
+    if (host->send_count >= MAX_SENDS) {
+        return;
+    }
+    seen_t *seen = &host->sends[host->send_count++];
     seen->calls++;
+    (void)snprintf(seen->event, sizeof(seen->event), "%s", request->event_name);
+    (void)snprintf(seen->content, sizeof(seen->content), "%s", request->content);
     (void)snprintf(seen->event_data, sizeof(seen->event_data), "%s", request->event_data);
     for (int i = 0; i < request->param_count; i++) {
         note_param(seen, request->params[i].name, request->params[i].value);
@@ -166,13 +177,100 @@ static int a_send_param_carries_the_value_the_fields_hold_when_it_is_sent(void) 
     memset(&host, 0, sizeof(host));
     boot(&sm, &host);
     int bad = drive(&sm, "bump") && drive(&sm, "go") ? 0 : 1;
-    if (host.send.calls != 1) {
-        (void)fprintf(stderr, "FAIL: one <send>, one request: the host saw %d\n", host.send.calls);
+    if (host.send_count != 4) {
+        (void)fprintf(stderr, "FAIL: the pairs' send and the three that carry one value: the host saw %d\n",
+                      host.send_count);
         statechart_static_host_params_destroy(&sm);
         return 1;
     }
-    bad |= expect_params("send", &host.send, "4", "true", "busy", "8");
-    bad |= expect_event_data("send event data", &host.send);
+    bad |= expect_text("first request's event", host.sends[0].event, "notify");
+    bad |= expect_params("send", &host.sends[0], "4", "true", "busy", "8");
+    bad |= expect_event_data("send event data", &host.sends[0]);
+    statechart_static_host_params_destroy(&sm);
+    return bad;
+}
+
+// The request the send of `event` made, which a run of the fixture holds once.
+static const seen_t *request_of(const host_t *host, const char *event) {
+    const seen_t *found = NULL;
+    int named = 0;
+    for (int i = 0; i < host->send_count; i++) {
+        if (strcmp(host->sends[i].event, event) == 0) {
+            found = &host->sends[i];
+            named++;
+        }
+    }
+    if (named != 1) {
+        (void)fprintf(stderr, "FAIL: one request for `%s`, the host saw %d\n", event, named);
+        return NULL;
+    }
+    return found;
+}
+
+// A request's whole data and its content, as the JSON and the text of one value.
+static int expect_content(const char *kind, const seen_t *seen, const char *data, const char *content) {
+    char what[64];
+    int bad = 0;
+    if (seen == NULL) {
+        return 1;
+    }
+    (void)snprintf(what, sizeof(what), "%s event data", kind);
+    bad |= expect_text(what, seen->event_data, data);
+    (void)snprintf(what, sizeof(what), "%s content", kind);
+    bad |= expect_text(what, seen->content, content);
+    if (seen->param_count != 0) {
+        (void)fprintf(stderr, "FAIL: a value is not a pair: the %s carried %d params\n", kind, seen->param_count);
+        bad = 1;
+    }
+    return bad;
+}
+
+// SCE Accepted Subset §2.15: a `<content expr>` that names one value is the event's
+// whole data, as the JSON the value is, and the request's `content`, as the text it
+// is — read from the fields when the send runs (`count` 4 and `label` "busy" after
+// `bump`, not the 3 and "idle" a copy at start-up holds).
+static int a_send_content_that_names_a_value_carries_it_whole(void) {
+    static sm_t sm;
+    host_t host;
+    memset(&host, 0, sizeof(host));
+    boot(&sm, &host);
+    int bad = drive(&sm, "bump") && drive(&sm, "go") ? 0 : 1;
+    bad |= expect_content("value", request_of(&host, "value"), "8", "8");
+    bad |= expect_content("text", request_of(&host, "text"), "\"busy\"", "busy");
+    statechart_static_host_params_destroy(&sm);
+    return bad;
+}
+
+// The control for the case above: nothing has written a variable, so the fields
+// still hold what `<data expr>` gave them.
+static int a_send_content_read_before_any_bump_carries_the_declared_value(void) {
+    static sm_t sm;
+    host_t host;
+    memset(&host, 0, sizeof(host));
+    boot(&sm, &host);
+    int bad = drive(&sm, "go") ? 0 : 1;
+    bad |= expect_content("value", request_of(&host, "value"), "6", "6");
+    bad |= expect_content("text", request_of(&host, "text"), "\"idle\"", "idle");
+    statechart_static_host_params_destroy(&sm);
+    return bad;
+}
+
+// W3C SCXML 5.6.2: a `<content expr>` that cannot be evaluated — here a
+// multiplication a 32-bit field cannot hold — is reported with `error.execution` and
+// has the empty string as its value, while the message still goes.
+static int a_send_content_whose_value_cannot_be_computed_is_the_empty_string(void) {
+    static sm_t sm;
+    host_t host;
+    memset(&host, 0, sizeof(host));
+    boot(&sm, &host);
+    int bad = drive(&sm, "bump") && drive(&sm, "go") ? 0 : 1;
+    bad |= expect_content("lost", request_of(&host, "lost"), "\"\"", "");
+    for (int i = 0; i < host.send_count; i++) {
+        if (strcmp(host.sends[i].event, "after") == 0) {
+            (void)fprintf(stderr, "FAIL: the error ends the block, so the send after it never runs\n");
+            bad = 1;
+        }
+    }
     statechart_static_host_params_destroy(&sm);
     return bad;
 }
@@ -224,13 +322,13 @@ static int a_param_read_before_any_bump_carries_the_declared_values(void) {
     memset(&host, 0, sizeof(host));
     boot(&sm, &host);
     int bad = drive(&sm, "go") ? 0 : 1;
-    if (host.send.calls != 1 || host.invoke.calls != 1) {
-        (void)fprintf(stderr, "FAIL: the host saw %d send(s) and %d start(s), want 1 and 1\n", host.send.calls,
+    if (host.send_count != 4 || host.invoke.calls != 1) {
+        (void)fprintf(stderr, "FAIL: the host saw %d send(s) and %d start(s), want 4 and 1\n", host.send_count,
                       host.invoke.calls);
         statechart_static_host_params_destroy(&sm);
         return 1;
     }
-    bad |= expect_params("send", &host.send, "3", "false", "idle", "6");
+    bad |= expect_params("send", &host.sends[0], "3", "false", "idle", "6");
     bad |= expect_params("invoke", &host.invoke, "3", "false", "idle", "6");
     statechart_static_host_params_destroy(&sm);
     return bad;
@@ -239,22 +337,23 @@ static int a_param_read_before_any_bump_carries_the_declared_values(void) {
 // W3C SCXML 5.7.1: a `<param>` whose value cannot be computed is reported with
 // `error.execution` and its pair left out, while the message still goes and the
 // invocation still starts. `errors` counts the reports the document took, one for
-// the send and one for the invoke, so a pair dropped in silence is told from one
-// reported.
+// the send's pair, one for the content that could not be computed and one for the
+// invoke, so a pair dropped in silence is told from one reported.
 static int a_param_whose_value_cannot_be_computed_is_reported_and_left_out(void) {
     static sm_t sm;
     host_t host;
     memset(&host, 0, sizeof(host));
     boot(&sm, &host);
     int bad = drive(&sm, "bump") && drive(&sm, "go") ? 0 : 1;
-    if (host.send.calls != 1 || host.invoke.calls != 1) {
-        (void)fprintf(stderr, "FAIL: the send still went and the invoke still started: saw %d and %d\n",
-                      host.send.calls, host.invoke.calls);
+    if (host.send_count != 4 || host.invoke.calls != 1) {
+        (void)fprintf(stderr, "FAIL: every send still went and the invoke still started: saw %d and %d\n",
+                      host.send_count, host.invoke.calls);
         bad = 1;
     }
-    if (statechart_static_host_params_get_errors(&sm) != 2u) {
+    if (statechart_static_host_params_get_errors(&sm) != 3u) {
         (void)fprintf(stderr,
-                      "FAIL: errors is %u, want 2: one error.execution for the send's `boom`, one for the invoke's\n",
+                      "FAIL: errors is %u, want 3: one error.execution for the send's `boom`, one for the content, one "
+                      "for the invoke's\n",
                       (unsigned)statechart_static_host_params_get_errors(&sm));
         bad = 1;
     }
@@ -268,6 +367,9 @@ int main(void) {
     bad |= an_invoke_param_carries_the_value_the_fields_hold_when_it_starts();
     bad |= an_invoke_whose_source_cannot_be_computed_starts_nothing();
     bad |= a_param_read_before_any_bump_carries_the_declared_values();
+    bad |= a_send_content_that_names_a_value_carries_it_whole();
+    bad |= a_send_content_read_before_any_bump_carries_the_declared_value();
+    bad |= a_send_content_whose_value_cannot_be_computed_is_the_empty_string();
     bad |= a_param_whose_value_cannot_be_computed_is_reported_and_left_out();
     if (bad != 0) {
         return 1;

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: bc49353528c5016f597a40bdea3f7d294d38f4af5ab2b1e8d51f531e0040d019
+// source-hash: 4500332adf7cfa97272dfcd7c9c32e9f80a0408d25705f3d6b2eed7d01a88cee
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
 
 package statechart_static_host_params
 
@@ -154,19 +154,25 @@ var transitionTargetsOfStatechartStaticHostParams = [3][][]StatechartStaticHostP
 type StatechartStaticHostParamsEvent int
 
 const (
-	StatechartStaticHostParamsEventBig StatechartStaticHostParamsEvent = 0
-	StatechartStaticHostParamsEventBump StatechartStaticHostParamsEvent = 1
-	StatechartStaticHostParamsEventDoneInvoke StatechartStaticHostParamsEvent = 2
-	StatechartStaticHostParamsEventDoneInvokeH StatechartStaticHostParamsEvent = 3
-	StatechartStaticHostParamsEventErrorExecution StatechartStaticHostParamsEvent = 4
-	StatechartStaticHostParamsEventGo StatechartStaticHostParamsEvent = 5
-	StatechartStaticHostParamsEventNotify StatechartStaticHostParamsEvent = 6
+	StatechartStaticHostParamsEventAfter StatechartStaticHostParamsEvent = 0
+	StatechartStaticHostParamsEventBig StatechartStaticHostParamsEvent = 1
+	StatechartStaticHostParamsEventBump StatechartStaticHostParamsEvent = 2
+	StatechartStaticHostParamsEventDoneInvoke StatechartStaticHostParamsEvent = 3
+	StatechartStaticHostParamsEventDoneInvokeH StatechartStaticHostParamsEvent = 4
+	StatechartStaticHostParamsEventErrorExecution StatechartStaticHostParamsEvent = 5
+	StatechartStaticHostParamsEventGo StatechartStaticHostParamsEvent = 6
+	StatechartStaticHostParamsEventLost StatechartStaticHostParamsEvent = 7
+	StatechartStaticHostParamsEventNotify StatechartStaticHostParamsEvent = 8
+	StatechartStaticHostParamsEventText StatechartStaticHostParamsEvent = 9
+	StatechartStaticHostParamsEventValue StatechartStaticHostParamsEvent = 10
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartStaticHostParamsEventNull StatechartStaticHostParamsEvent = 7
+	StatechartStaticHostParamsEventNull StatechartStaticHostParamsEvent = 11
 )
 
 func (e StatechartStaticHostParamsEvent) String() string {
 	switch e {
+	case StatechartStaticHostParamsEventAfter:
+		return "after"
 	case StatechartStaticHostParamsEventBig:
 		return "big"
 	case StatechartStaticHostParamsEventBump:
@@ -179,8 +185,14 @@ func (e StatechartStaticHostParamsEvent) String() string {
 		return "error.execution"
 	case StatechartStaticHostParamsEventGo:
 		return "go"
+	case StatechartStaticHostParamsEventLost:
+		return "lost"
 	case StatechartStaticHostParamsEventNotify:
 		return "notify"
+	case StatechartStaticHostParamsEventText:
+		return "text"
+	case StatechartStaticHostParamsEventValue:
+		return "value"
 	case StatechartStaticHostParamsEventNull:
 		return ""
 	}
@@ -543,6 +555,8 @@ func (p *StatechartStaticHostParamsPolicy) GetEventName(event StatechartStaticHo
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StatechartStaticHostParamsPolicy) GetEventFromName(name string) (StatechartStaticHostParamsEvent, bool) {
 	switch name {
+	case "after":
+		return StatechartStaticHostParamsEventAfter, true
 	case "big":
 		return StatechartStaticHostParamsEventBig, true
 	case "bump":
@@ -555,8 +569,14 @@ func (p *StatechartStaticHostParamsPolicy) GetEventFromName(name string) (Statec
 		return StatechartStaticHostParamsEventErrorExecution, true
 	case "go":
 		return StatechartStaticHostParamsEventGo, true
+	case "lost":
+		return StatechartStaticHostParamsEventLost, true
 	case "notify":
 		return StatechartStaticHostParamsEventNotify, true
+	case "text":
+		return StatechartStaticHostParamsEventText, true
+	case "value":
+		return StatechartStaticHostParamsEventValue, true
 	}
 	return StatechartStaticHostParamsEventNull, false
 }
@@ -668,11 +688,11 @@ func (p *StatechartStaticHostParamsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartStaticHostParamsStateWorking:
-		//line statechart_static_host_params.scxml:83
+		//line statechart_static_host_params.scxml:98
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -773,6 +793,238 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 	}
 	}
 		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	// W3C SCXML 6.2: send id="__send_1"
+	{
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data. Under `datamodel="sce-static"` it is one
+		// value lowered to native code (`Action::native_content_value`), read
+		// from the machine's own fields now and kept, so the event's data and
+		// the text a host takes as `content` are renderings of the one reading.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+		paramFailed := false
+		var sceFailure scealgorithm.Failure
+		var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2))
+		if sceFailure.Failed() {
+			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			paramFailed = true
+			contentValue = ""
+		}
+		eventDataStr := sce.ScriptValueToJSON(contentValue)
+		_ = eventDataStr
+	// §scxml-6.2.5: "x-sce-host" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "x-sce-host",
+			EventName:     "value",
+			Target:        "somewhere",
+			Content:       sce.ToWireString(contentValue),
+			Params:        hostParams,
+			SendID:        "__send_1",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_1"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+
+	// W3C SCXML 6.2: send id="__send_2"
+	{
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data. Under `datamodel="sce-static"` it is one
+		// value lowered to native code (`Action::native_content_value`), read
+		// from the machine's own fields now and kept, so the event's data and
+		// the text a host takes as `content` are renderings of the one reading.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+		var contentValue interface{} = p.vLabel
+		eventDataStr := sce.ScriptValueToJSON(contentValue)
+		_ = eventDataStr
+	// §scxml-6.2.5: "x-sce-host" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "x-sce-host",
+			EventName:     "text",
+			Target:        "somewhere",
+			Content:       sce.ToWireString(contentValue),
+			Params:        hostParams,
+			SendID:        "__send_2",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_2"
+			engine.Raise(errEvt)
+		}
+	}
+	}
+	}
+		}()
+		// W3C SCXML 3.8 + 4.9: onentry block 2, its own function so an
+		// error ends it with `return` from however deep a <foreach> it came.
+		func() {
+
+	// W3C SCXML 6.2: send id="__send_3"
+	{
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data. Under `datamodel="sce-static"` it is one
+		// value lowered to native code (`Action::native_content_value`), read
+		// from the machine's own fields now and kept, so the event's data and
+		// the text a host takes as `content` are renderings of the one reading.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+		paramFailed := false
+		var sceFailure scealgorithm.Failure
+		var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2000000000))
+		if sceFailure.Failed() {
+			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			paramFailed = true
+			contentValue = ""
+		}
+		eventDataStr := sce.ScriptValueToJSON(contentValue)
+		_ = eventDataStr
+	// §scxml-6.2.5: "x-sce-host" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "x-sce-host",
+			EventName:     "lost",
+			Target:        "somewhere",
+			Content:       sce.ToWireString(contentValue),
+			Params:        hostParams,
+			SendID:        "__send_3",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_3"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+
+	// W3C SCXML 6.2: send id="__send_4"
+	{
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data. Under `datamodel="sce-static"` it is one
+		// value lowered to native code (`Action::native_content_value`), read
+		// from the machine's own fields now and kept, so the event's data and
+		// the text a host takes as `content` are renderings of the one reading.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+		var contentValue interface{} = int64(p.vCount)
+		eventDataStr := sce.ScriptValueToJSON(contentValue)
+		_ = eventDataStr
+	// §scxml-6.2.5: "x-sce-host" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := map[string][]string{}
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "x-sce-host",
+			EventName:     "after",
+			Target:        "somewhere",
+			Content:       sce.ToWireString(contentValue),
+			Params:        hostParams,
+			SendID:        "__send_4",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_4"
+			engine.Raise(errEvt)
+		}
+	}
+	}
+	}
+		}()
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -795,7 +1047,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -803,7 +1055,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], configurationBeforeExit []StatechartStaticHostParamsState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -831,7 +1083,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -841,7 +1093,7 @@ func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStat
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state StatechartStaticHostParamsState, event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) (sce.EnabledTransition[StatechartStaticHostParamsState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartStaticHostParamsStateIdle:
@@ -904,13 +1156,13 @@ func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state Statecha
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_static_host_params.scxml:58
+//line statechart_static_host_params.scxml:73
 func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source StatechartStaticHostParamsState, transitionIndex int, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	switch source {
 	case StatechartStaticHostParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:72
+			//line statechart_static_host_params.scxml:87
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -931,7 +1183,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 			}()
 		case 1:
-			//line statechart_static_host_params.scxml:77
+			//line statechart_static_host_params.scxml:92
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -943,7 +1195,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 	case StatechartStaticHostParamsStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:103
+			//line statechart_static_host_params.scxml:134
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: bc49353528c5016f597a40bdea3f7d294d38f4af5ab2b1e8d51f531e0040d019
+// source-hash: 4500332adf7cfa97272dfcd7c9c32e9f80a0408d25705f3d6b2eed7d01a88cee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
 
 package com.sce.integration.statechart_static_host_params
 
@@ -22,6 +22,7 @@ sealed interface StatechartStaticHostParamsState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface StatechartStaticHostParamsEvent : Event {
+    data object After : StatechartStaticHostParamsEvent
     data object Big : StatechartStaticHostParamsEvent
     data object Bump : StatechartStaticHostParamsEvent
     sealed interface Done : StatechartStaticHostParamsEvent {
@@ -34,7 +35,10 @@ sealed interface StatechartStaticHostParamsEvent : Event {
         data object Execution : Error
     }
     data object Go : StatechartStaticHostParamsEvent
+    data object Lost : StatechartStaticHostParamsEvent
     data object Notify : StatechartStaticHostParamsEvent
+    data object Text : StatechartStaticHostParamsEvent
+    data object Value : StatechartStaticHostParamsEvent
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -307,25 +311,33 @@ class StatechartStaticHostParamsStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StatechartStaticHostParamsEvent? = when (name) {
+        "after" -> StatechartStaticHostParamsEvent.After
         "big" -> StatechartStaticHostParamsEvent.Big
         "bump" -> StatechartStaticHostParamsEvent.Bump
         "done.invoke" -> StatechartStaticHostParamsEvent.Done.Invoke.Self
         "done.invoke.h" -> StatechartStaticHostParamsEvent.Done.Invoke.H
         "error.execution" -> StatechartStaticHostParamsEvent.Error.Execution
         "go" -> StatechartStaticHostParamsEvent.Go
+        "lost" -> StatechartStaticHostParamsEvent.Lost
         "notify" -> StatechartStaticHostParamsEvent.Notify
+        "text" -> StatechartStaticHostParamsEvent.Text
+        "value" -> StatechartStaticHostParamsEvent.Value
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StatechartStaticHostParamsEvent): String? = when (event) {
+        is StatechartStaticHostParamsEvent.After -> "after"
         is StatechartStaticHostParamsEvent.Big -> "big"
         is StatechartStaticHostParamsEvent.Bump -> "bump"
         is StatechartStaticHostParamsEvent.Done.Invoke.Self -> "done.invoke"
         is StatechartStaticHostParamsEvent.Done.Invoke.H -> "done.invoke.h"
         is StatechartStaticHostParamsEvent.Error.Execution -> "error.execution"
         is StatechartStaticHostParamsEvent.Go -> "go"
+        is StatechartStaticHostParamsEvent.Lost -> "lost"
         is StatechartStaticHostParamsEvent.Notify -> "notify"
+        is StatechartStaticHostParamsEvent.Text -> "text"
+        is StatechartStaticHostParamsEvent.Value -> "value"
     }
 
     // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
@@ -363,20 +375,20 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     override fun onEntry(state: StatechartStaticHostParamsState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> {
-                // SCE-MAP: statechart_static_host_params.scxml:109 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:140 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is StatechartStaticHostParamsState.Idle -> {
-                // SCE-MAP: statechart_static_host_params.scxml:71 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:86 :: idle :: _state_body
             }
             is StatechartStaticHostParamsState.Working -> {
-                // SCE-MAP: statechart_static_host_params.scxml:83 :: working :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/1
+                // SCE-MAP: statechart_static_host_params.scxml:98 :: working :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/3
                 run {
 
 
@@ -441,6 +453,214 @@ class StatechartStaticHostParamsStateMachine(
                 raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
             }
             paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
+                // W3C SCXML 3.8: Onentry block 2/3
+                run {
+
+
+            if (run send@{
+            var paramFailed = false
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // Under `datamodel="sce-static"` it is one value lowered to native
+            // code (`Action::native_content_value`), read from the machine's own
+            // fields now and kept, so the event's data and the text a host takes
+            // as `content` are renderings of the one reading. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place
+            // error.execution in the internal event queue and use the empty
+            // string as the value of the <content> element."
+            val sendContentValue: Any = try {
+                (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong()
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_1")
+                paramFailed = true
+                ""
+            }
+            val sendData = valueToJson(sendContentValue)
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "value",
+                target = "somewhere",
+                content = valueToWireString(sendContentValue),
+                params = sendWireParams,
+                sendId = "__send_1",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
+            }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // Under `datamodel="sce-static"` it is one value lowered to native
+            // code (`Action::native_content_value`), read from the machine's own
+            // fields now and kept, so the event's data and the text a host takes
+            // as `content` are renderings of the one reading. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place
+            // error.execution in the internal event queue and use the empty
+            // string as the value of the <content> element."
+            val sendContentValue: Any = label
+            val sendData = valueToJson(sendContentValue)
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "text",
+                target = "somewhere",
+                content = valueToWireString(sendContentValue),
+                params = sendWireParams,
+                sendId = "__send_2",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
+                // W3C SCXML 3.8: Onentry block 3/3
+                run {
+
+
+            if (run send@{
+            var paramFailed = false
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // Under `datamodel="sce-static"` it is one value lowered to native
+            // code (`Action::native_content_value`), read from the machine's own
+            // fields now and kept, so the event's data and the text a host takes
+            // as `content` are renderings of the one reading. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place
+            // error.execution in the internal event queue and use the empty
+            // string as the value of the <content> element."
+            val sendContentValue: Any = try {
+                (com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong()
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_3")
+                paramFailed = true
+                ""
+            }
+            val sendData = valueToJson(sendContentValue)
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "lost",
+                target = "somewhere",
+                content = valueToWireString(sendContentValue),
+                params = sendWireParams,
+                sendId = "__send_3",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+            }
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            // W3C SCXML 5.6.2: the value of <content expr> is the event's data.
+            // Under `datamodel="sce-static"` it is one value lowered to native
+            // code (`Action::native_content_value`), read from the machine's own
+            // fields now and kept, so the event's data and the text a host takes
+            // as `content` are renderings of the one reading. "If the evaluation
+            // of 'expr' produces an error, the Processor MUST place
+            // error.execution in the internal event queue and use the empty
+            // string as the value of the <content> element."
+            val sendContentValue: Any = (count).toLong()
+            val sendData = valueToJson(sendContentValue)
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "x-sce-host",
+                eventName = "after",
+                target = "somewhere",
+                content = valueToWireString(sendContentValue),
+                params = sendWireParams,
+                sendId = "__send_4",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("x-sce-host")) {
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
+            }
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
@@ -543,17 +763,17 @@ class StatechartStaticHostParamsStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     override fun onExit(state: StatechartStaticHostParamsState) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> {
-                // SCE-MAP: statechart_static_host_params.scxml:109 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:140 :: done :: _state_body
             }
             is StatechartStaticHostParamsState.Idle -> {
-                // SCE-MAP: statechart_static_host_params.scxml:71 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:86 :: idle :: _state_body
             }
             is StatechartStaticHostParamsState.Working -> {
-                // SCE-MAP: statechart_static_host_params.scxml:83 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:98 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -567,12 +787,12 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
     override fun executeTransitionContent(source: StatechartStaticHostParamsState, transitionIndex: Int) {
         when (source) {
         is StatechartStaticHostParamsState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:72 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:87 :: idle :: _transition_0
 
             if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -585,7 +805,7 @@ class StatechartStaticHostParamsStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:77 :: idle :: _transition_1
+                // SCE-MAP: statechart_static_host_params.scxml:92 :: idle :: _transition_1
 
             count = 3000000000.toUInt()
             }
@@ -593,7 +813,7 @@ class StatechartStaticHostParamsStateMachine(
         }
         is StatechartStaticHostParamsState.Working -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:103 :: working :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:134 :: working :: _transition_0
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

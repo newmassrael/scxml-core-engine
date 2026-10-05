@@ -268,7 +268,8 @@ impl StaticTarget for JsTarget {
             // to the string it spells, at the place it is written. A
             // `<content expr>` the model let through names a record, which the
             // engine reads as the object it holds, the fields the generated
-            // backends carry as pairs; a `<content>` that holds an element has
+            // backends carry as pairs, or one value (a `<send>`'s), which the
+            // engine reads as the data it is; a `<content>` that holds an element has
             // no text to finish and is read by the engine as a document, where
             // the generated backends carry it as a string.
             if let Some(done) = &state.donedata {
@@ -482,6 +483,11 @@ impl StaticTarget for JsTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // Its own `<send>` evaluates the `<content expr>` and carries the value as
+    // the event's data.
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a
@@ -560,7 +566,8 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // attribute each is written in, and the Interpreter's own `<send>` reads
         // them once, when it runs. A `<content expr>` the judge let through names
         // a record, which that `<send>` reads as the object it holds: the fields
-        // the generated backends carry as pairs.
+        // the generated backends carry as pairs; or one value, which it reads as
+        // the event's data, as the generated backends carry it whole.
         "send" => None,
         "sce_append" | "sce_clear" => None,
         // A host operation: the Interpreter performs it through its host, and

@@ -1,0 +1,72 @@
+# Mutation cases for the `<content expr>` of a host-served `<send>` that names
+# one value, in a `datamodel="sce-static"` machine generated as C++
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_send_content_value_is_the_whole_event_data_ctest.cases`.
+#
+# The expression is C++ the lowering wrote, read from the machine's own fields
+# when the send runs, and the template only places it: the value is the event's
+# whole data as the JSON `EventDataHelper::scriptValueToJsonString` writes (`8`,
+# `"busy"`) and, in the request a host serves, the `content` as the text
+# `ScriptResultUtils::resultToString` renders (`8`, `busy`), both from the one
+# reading. A value that cannot be computed — a checked multiplication that
+# overflows — is the evaluation that failed (W3C SCXML 5.6.2): `error.execution`
+# is raised and the empty string is the content's value, so the message still
+# goes, and the error ends the block it is in (W3C SCXML 4.9).
+#
+# What is easy to get wrong and reads as success: the zero of a failed value is
+# a request that looks complete, a failure that is not reported is one that looks
+# like a quiet success, and a block that goes on is a send nobody asked for.
+# `statechart_static_host_params` tells them apart: its `lost` is
+# `count * 2000000000`, `errors` counts the reports the document took (the pairs'
+# `boom`, this and the invoke's), and `after` follows `lost` in its block and
+# must never be sent.
+#
+# The generated machine is built from the template at build time, so the template
+# is the declared target and the build is what carries a mutation into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets tools/codegen/templates/actions/send.jinja2
+mutation_oracles tests/integration/StaticHostParamsAotTest.cpp sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+
+# ── A value that cannot be computed is the empty string ────────────
+
+mutation_case "a content value that failed is the zero of its type, not the empty string" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "        paramFailed = true;\n        contentValue = ScriptValue(std::string());",
+     "        paramFailed = true;\n        contentValue = ScriptValue(std::in_place_type<int64_t>, static_cast<int64_t>(0));")
+PY
+
+# ── ... and reported ───────────────────────────────────────────────
+
+mutation_case "a content value that failed is replaced by the empty string without a word" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,\n                                                        \"<send> contentexpr failed to evaluate\"));\n        paramFailed = true;\n        contentValue = ScriptValue(std::string());",
+     "        paramFailed = true;\n        contentValue = ScriptValue(std::string());")
+PY
+
+# ── ... and ends the block it is in ────────────────────────────────
+
+mutation_case "the error of a content value does not end its block" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "        paramFailed = true;\n        contentValue = ScriptValue(std::string());",
+     "        contentValue = ScriptValue(std::string());")
+PY
+
+# ── The one value is two renderings ────────────────────────────────
+
+mutation_case "a host is handed the JSON of the value as its content" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    hostRequest.content = {% if action.native_content_value %}contentText{% else %}",
+     "    hostRequest.content = {% if action.native_content_value %}eventData{% else %}")
+PY
+
+mutation_case "the event's data is the text of the value, not its JSON" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    eventData = ::SCE::EventDataHelper::scriptValueToJsonString(contentValue);\n    typedData = std::move(contentValue);",
+     "    eventData = contentText;\n    typedData = std::move(contentValue);")
+PY

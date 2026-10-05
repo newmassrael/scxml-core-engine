@@ -29,7 +29,7 @@
 			ProcessorType: "{{ processor_type | escape_go }}",
 			EventName:     {{ event_name_go }},
 			Target:        {% if action.targetexpr and model.needs_script_engine %}sendTarget{% else %}"{{ action.target | default('', true) | escape_go }}"{% endif %},
-			Content:       "{{ action.content | default('', true) | escape_go }}",
+			Content:       {% if action.native_content_value %}sce.ToWireString(contentValue){% else %}"{{ action.content | default('', true) | escape_go }}"{% endif %},
 			Params:        hostParams,
 			SendID:        {{ send_id_go }},
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
@@ -553,6 +553,32 @@
 		eventDataStr := "\"{{ action.content | normalize_ws | escape_json_string | escape_go }}\""
 {% endif %}
 		_ = eventDataStr
+{% elif action.native_content_value %}
+	{
+		// W3C SCXML 5.6.2: the value of <content expr> is the output of
+		// <content>, the event's data. Under `datamodel="sce-static"` it is one
+		// value lowered to native code (`Action::native_content_value`), read
+		// from the machine's own fields now and kept, so the event's data and
+		// the text a host takes as `content` are renderings of the one reading.
+		// "If the evaluation of 'expr' produces an error, the Processor MUST
+		// place error.execution in the internal event queue and use the empty
+		// string as the value of the <content> element."
+{% if action.native_content_value_fails %}
+		paramFailed := false
+		var sceFailure scealgorithm.Failure
+		var contentValue interface{} = {{ action.native_content_value }}
+		if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> contentexpr failed to evaluate"))
+{% endif %}
+			paramFailed = true
+			contentValue = ""
+		}
+{% else %}
+		var contentValue interface{} = {{ action.native_content_value }}
+{% endif %}
+		eventDataStr := sce.ScriptValueToJSON(contentValue)
+		_ = eventDataStr
 {% elif content_expr %}
 	{
 		// W3C SCXML 5.6.2: the value of <content expr> is the output of
@@ -790,7 +816,7 @@
 {% if dynamic_mesh %}
 	} // end of the Mesh-peer choice (SCE_MESH.md §mesh-19)
 {% endif %}
-{% if has_dynamic_params or content_expr %}
+{% if has_dynamic_params or content_expr or action.native_content_value_fails %}
 {% if in_block %}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.

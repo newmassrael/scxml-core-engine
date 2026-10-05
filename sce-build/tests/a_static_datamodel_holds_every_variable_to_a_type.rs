@@ -1620,25 +1620,116 @@ fn a_send_content_that_names_a_record_is_accepted() {
 }
 
 #[test]
-fn a_send_content_that_names_no_record_is_refused_on_its_line() {
+fn a_send_content_that_names_one_value_is_accepted() {
+    // An expression that is no record is the one value the event carries, held
+    // to the rule a param's value is: a field of a record and an operation on one.
+    for expr in ["shown.year + 1", "shown.month", "shown.year > 2000"] {
+        let states = format!(
+            r#"<state id="s"><onentry><send event="out"><content expr="{expr}"/></send></onentry></state>"#
+        );
+        let (ok, out) = run_record(&["check"], &sending_content(&states));
+        assert!(ok, "`{expr}` is one value the event carries:\n{out}");
+    }
+    // A variable of the machine, a bool and a number, each crossing alone.
+    for expr in ["count", "ready", "count * 2"] {
+        let (ok, out) = run(&["check"], &sending_content_of_a_value(expr));
+        assert!(ok, "`{expr}` is one value the event carries:\n{out}");
+    }
+}
+
+#[test]
+fn a_send_content_that_names_no_record_or_value_is_refused_on_its_line() {
     for (what, states) in [
-        (
-            "an expression that is no record",
-            r#"<state id="s"><onentry><send event="out"><content expr="shown.year + 1"/></send></onentry></state>"#,
-        ),
         (
             "the payload of an entry, where none is in scope",
             r#"<state id="s"><onentry><send event="out"><content expr="_event.data"/></send></onentry></state>"#,
         ),
         (
+            "a field of the payload of an entry, where none is in scope",
+            r#"<state id="s"><onentry><send event="out"><content expr="_event.data.year"/></send></onentry></state>"#,
+        ),
+        (
             "a record beside a param",
             r#"<state id="s"><onentry><send event="out"><content expr="shown"/><param name="k" expr="1"/></send></onentry></state>"#,
         ),
+        (
+            "a value beside a param",
+            r#"<state id="s"><onentry><send event="out"><content expr="shown.year + 1"/><param name="k" expr="1"/></send></onentry></state>"#,
+        ),
     ] {
         let (ok, out) = run_record(&["check"], &sending_content(states));
-        assert!(!ok, "{what}: no record is named alone:\n{out}");
+        assert!(!ok, "{what}: no record or value is named alone:\n{out}");
         assert_refused_at(&out, "scxml/static-datamodel-rule", 12);
     }
+}
+
+/// A `sce-static` machine whose entry (line 8) sends the one value `expr`
+/// computes as its `<content>`.
+fn sending_content_of_a_value(expr: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry><send event="out"><content expr="{expr}"/></send></onentry></state>"#
+    ))
+}
+
+#[test]
+fn a_send_content_value_is_held_to_the_rule_a_param_is() {
+    // A name nothing declares reads no variable.
+    let (ok, out) = run(&["check"], &sending_content_of_a_value("missing"));
+    assert!(!ok, "a name that is no variable is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+
+    // A 64-bit variable has no wire spelling every backend shares, and the
+    // refusal is placed at the attribute and says it is the content it refuses.
+    let document = sending_content_of_a_value("big").replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="big" sce:type="int64" expr="0"/>"#,
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    assert!(
+        out.contains("<content expr=\\\"big\\\">"),
+        "it names the content, not a param:\n{out}"
+    );
+}
+
+#[test]
+fn a_send_content_value_is_lowered_to_one_typed_value_and_needs_no_engine() {
+    // The value is read from the machine's fields when the send runs, as a
+    // `<param>`'s is, so no engine evaluates it and the manifest says so; it is
+    // the event's whole data, so it is written as one value and not as a pair.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &sending_content_of_a_value("count * 2"),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a value named by a content needs no script engine:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("sce.ScriptValueToJSON(contentValue)"),
+        "the value is the event's whole data"
+    );
+    assert!(
+        !source.contains("Name: \"") && !source.contains("EvaluateExpression"),
+        "no pair is built and no engine reads the value"
+    );
 }
 
 #[test]

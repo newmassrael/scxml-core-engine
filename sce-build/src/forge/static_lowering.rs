@@ -322,6 +322,15 @@ pub trait StaticTarget {
     fn lowers_cancel_expr(&self) -> bool {
         false
     }
+    /// Whether a `<send>`'s `<content expr>` that names one value, not a
+    /// record, is lowered to the typed value the backend's wire helpers take
+    /// ([`Action::native_content_value`]) that the send template carries as the
+    /// event's data and, as text, as a host's `content`. A target that does not
+    /// is refused where the `<send>` is walked, by name, rather than left to
+    /// emit a send with no data.
+    fn lowers_scalar_content(&self) -> bool {
+        false
+    }
     /// Whether the `srcexpr` of an `<invoke>` a host runs is lowered to the
     /// string it computes ([`UnsupportedInvokeInfo::native_src`]) that the
     /// backend hands the host as the request's `src` when the invocation
@@ -1007,6 +1016,11 @@ impl StaticTarget for KotlinTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The send template carries the value as the event's JSON and as the text a
+    // host takes (`valueToJson`, `valueToWireString`).
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
     // The host invoke hands the host the `src` it computes (`hostInvokeSrc`).
     fn lowers_host_src_expr(&self) -> bool {
         true
@@ -1155,6 +1169,11 @@ impl StaticTarget for RustTarget {
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_event`).
     fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
+    // The send template carries the value as the event's JSON and as the text a
+    // host takes (`script_value_to_json`, `script_value_to_wire_string`).
+    fn lowers_scalar_content(&self) -> bool {
         true
     }
     // The host invoke hands the host the `src` it computes (`host_invoke_src`).
@@ -2923,6 +2942,12 @@ impl StaticTarget for CppTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The send template carries the value as the event's JSON and as the text a
+    // host takes (`EventDataHelper::scriptValueToJsonString`,
+    // `ScriptResultUtils::resultToString`).
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
     // The host invoke hands the host the `src` it computes (`hostInvoke.src`).
     fn lowers_host_src_expr(&self) -> bool {
         true
@@ -3436,6 +3461,11 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The send template carries the value as the event's JSON and as the text a
+    // host takes (`sce.ScriptValueToJSON`, `sce.ToWireString`).
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
     // The host invoke hands the host the `src` it computes (`hostInvokeSrc`).
     fn lowers_host_src_expr(&self) -> bool {
         true
@@ -3874,6 +3904,11 @@ impl StaticTarget for PythonTarget {
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_send`).
     fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
+    // The send template carries the value as the event's JSON and as the text a
+    // host takes (`to_json_literal`, `to_wire_string`).
+    fn lowers_scalar_content(&self) -> bool {
         true
     }
     // The host invoke hands the host the `src` it computes (`_host_src`).
@@ -4741,6 +4776,11 @@ impl StaticTarget for CTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The send template writes the value as the event's JSON and as the text a
+    // host takes (`sce_forge_wire_json`, `sce_forge_wire_text`).
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
     // The host invoke hands the host the `src` it computes (`_host_inv.src`),
     // held by a variable or written out; one that joins text is refused for the
     // reason a delay is.
@@ -5378,14 +5418,23 @@ fn lower_action(
             // and the names of a `namelist` are params like any other: one list
             // of pairs is read from here on, each value as the machine holds it
             // when the send runs.
+            //
+            // An expression that names no record is the one value the event
+            // carries: it is lowered below, once the pairs are, as the typed
+            // value its own type is (`Action::native_content_value`).
             let content = action.contentexpr.trim().to_string();
+            let mut content_value = false;
             if !content.is_empty() {
-                let fields = rewrites.content_fields(&content).ok_or_else(|| {
-                    GenerateError::unsupported(format!(
-                        "`<content expr=\"{content}\">` names no record this {lang} lowering reads"
-                    ))
-                })?;
-                action.fold_content_record_into_params(&content, &fields);
+                match rewrites.content_fields(&content) {
+                    Some(fields) => action.fold_content_record_into_params(&content, &fields),
+                    None if target.lowers_scalar_content() => content_value = true,
+                    None => {
+                        return Err(GenerateError::unsupported(format!(
+                            "a <send> whose <content expr=\"{content}\"> names a value has no \
+                             {lang} lowering yet"
+                        )))
+                    }
+                }
             }
             action.fold_namelist_into_params();
             let noted = rewrites.sites.borrow().len();
@@ -5400,8 +5449,24 @@ fn lower_action(
             // expr>` names, which a backend that runs the document's own
             // element reads as the object it is: they have no attribute of
             // their own to be rewritten at.
-            if !content.is_empty() {
+            if !content.is_empty() && !content_value {
                 rewrites.sites.borrow_mut().truncate(noted);
+            }
+            // The value is read once, as a param's is, and the attribute is
+            // cleared once it is lowered so no template evaluates it a second
+            // time: the machine has no engine to do it with.
+            if content_value {
+                reads_payload |= reads(&content);
+                let view = crate::forge::static_datamodel::WireParam::of_content(
+                    &content,
+                    action.contentexpr_spelling.as_ref(),
+                );
+                let lowered = lower_wire_value(&view, ctx, renames, rewrites)?;
+                if let Some((value, fails)) = lowered {
+                    action.native_content_value = value;
+                    action.native_content_value_fails = fails;
+                }
+                action.contentexpr.clear();
             }
             // A delay computed from the machine's fields is the string it
             // spells, read as a CSS2 time when the send runs; a value that is
@@ -5525,10 +5590,14 @@ fn lower_wire_value(
     }
     let target = rewrites.target;
     let lang = target.name();
+    let construct = if param.name.is_empty() {
+        "<content expr>".to_string()
+    } else {
+        format!("<param name=\"{}\">", param.name)
+    };
     let refused = |why: String| {
         GenerateError::unsupported(format!(
-            "<param name=\"{}\"> `{written}` has no {lang} lowering: {why}",
-            param.name
+            "{construct} `{written}` has no {lang} lowering: {why}"
         ))
     };
     let ty = crate::forge::expr::judge_into(

@@ -118,8 +118,8 @@ PY
 # branch that asks the Lua engine the machine was not given.
 mutation_case "a C send content is read by the engine again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "{% if action.native_content %}\n                {\n                    static const char _lit[]",
-     "{% if false and action.native_content %}\n                {\n                    static const char _lit[]")
+     "{% elif action.native_content %}\n                {\n                    static const char _lit[]",
+     "{% elif false and action.native_content %}\n                {\n                    static const char _lit[]")
 PY
 
 # C stops lowering the text and refuses the send by name again.
@@ -483,4 +483,40 @@ mutation_case "an invoke idlocation is admitted" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        if !base.idlocation.is_empty() {\n            return Err(self.rule_at(\n                format!(\"idlocation=\\\"{}\\\"\", base.idlocation),",
      "        if false && !base.idlocation.is_empty() {\n            return Err(self.rule_at(\n                format!(\"idlocation=\\\"{}\\\"\", base.idlocation),")
+PY
+
+# A `<send>`'s `<content expr>` that names no record is the one value the event
+# carries, and is held to the rule a `<param>`'s value is: a name nothing declares
+# and a 64-bit integer, which no backend spells alike, are refused where written.
+# The case lets the value through unjudged, and both are accepted.
+mutation_case "a send content value is not held to the rule a param's value is" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                return self.wire_param(\n                    ctx,\n                    &WireParam::of_content(written, spelling),\n                    element,\n                    state,\n                );",
+     "                return Ok(());")
+PY
+
+# A `<donedata>` carries pairs, so its `<content expr>` stays a record. The case
+# lets a value through it, and the refusal's own test sees a document accepted.
+mutation_case "a donedata content that names a value is admitted" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                        beside: !done.params.is_empty(),\n                        value_admitted: false,",
+     "                        beside: !done.params.is_empty(),\n                        value_admitted: true,")
+PY
+
+# The value is lowered to the typed value the send template carries as the event's
+# whole data. The case lowers it and keeps nothing, so the machine sends no data and
+# the generated Go has no value to write.
+mutation_case "a send content value is lowered and then dropped" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    action.native_content_value = value;\n                    action.native_content_value_fails = fails;",
+     "                    let _ = (value, fails);")
+PY
+
+# The attribute is cleared once the value is lowered, so no template evaluates it a
+# second time with an engine the machine does not have. The case leaves it standing,
+# and the machine is then one that needs a script engine.
+mutation_case "a send content expression stands after it is lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    action.native_content_value_fails = fails;\n                }\n                action.contentexpr.clear();",
+     "                    action.native_content_value_fails = fails;\n                }")
 PY

@@ -154,16 +154,10 @@ static inline void sce_forge_wire_put_text(sce_forge_wire_t *w, const char *text
     }
 }
 
-/* One pair: `key` is the JSON text of the name, quotes included, which the
- * generator has already escaped. */
-static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
+/* A value as JSON: what a pair's value, and the whole of an event's data when a
+ * `<send>`'s `<content expr>` names one value, are written as. */
+static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_value_t value) {
     char number[64];
-    if (w->any) {
-        sce_forge_wire_put(w, ",", 1u);
-    }
-    w->any = true;
-    sce_forge_wire_put(w, key, strlen(key));
-    sce_forge_wire_put(w, ":", 1u);
     switch (value.kind) {
     case SCE_FORGE_WIRE_BOOL:
         sce_forge_wire_put(w, value.as.b ? "true" : "false", value.as.b ? 4u : 5u);
@@ -194,6 +188,41 @@ static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce
         sce_forge_wire_put(w, "\"", 1u);
         break;
     }
+}
+
+/* One pair: `key` is the JSON text of the name, quotes included, which the
+ * generator has already escaped. */
+static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
+    if (w->any) {
+        sce_forge_wire_put(w, ",", 1u);
+    }
+    w->any = true;
+    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, ":", 1u);
+    sce_forge_wire_put_value(w, value);
+}
+
+/* One value alone, as the JSON text of an event's data, written into `buf` of
+ * `cap` bytes. False when it did not fit, and `buf` then holds the empty string,
+ * never a truncated value (truncated JSON does not parse, so it would arrive as
+ * some other value). */
+static inline bool sce_forge_wire_json(sce_forge_wire_value_t value, char *buf, size_t cap) {
+    sce_forge_wire_t w;
+    if (cap == 0u) {
+        return false;
+    }
+    w.buf = buf;
+    w.cap = cap;
+    w.len = 0;
+    w.any = false;
+    w.overflow = false;
+    sce_forge_wire_put_value(&w, value);
+    if (w.overflow) {
+        buf[0] = '\0';
+        return false;
+    }
+    buf[w.len] = '\0';
+    return true;
 }
 
 /* The text a value crosses as where a request carries it as text — a host's
