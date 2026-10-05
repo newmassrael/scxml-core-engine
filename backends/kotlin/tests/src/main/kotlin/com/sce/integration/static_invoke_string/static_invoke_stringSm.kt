@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 48a87232ac281780a2bf087034fd503fdeb4a6a917bd2bcd8cecf2bac4f0fed7
+// source-hash: 50a81795587554344192a69a0f2264073791a21546f32a4b85e4b021d2b4e0ca
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
@@ -171,7 +171,8 @@ class StaticInvokeStringStateMachine(
 
     // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
     // and a restore starts each again from its beginning. This document saves
-    // only when every invoke is a static child session.
+    // only when every invoke is a static child session, a hybrid one among
+    // declared candidates, or one a declared host invoker serves.
     override val staticInvokes: List<Pair<String, StaticInvokeStringState>> = listOf(
         "fits" to StaticInvokeStringState.Running,
         "over" to StaticInvokeStringState.Running,
@@ -317,8 +318,9 @@ class StaticInvokeStringStateMachine(
         }
     }
 
-    // W3C SCXML 6.4: defer the start of the static child session of the
-    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
     // end. One body for the two things that start a child: entering the state
     // (`onEntry` above) and a restore, which starts again each running
     // invocation a saved state lists (`restartInvoke`). The child is not saved,
@@ -388,7 +390,7 @@ class StaticInvokeStringStateMachine(
                     startInvoke("wide", childSM, false, StaticInvokeStringEvent.Done.Invoke.Wide, "", generatedInvokeId)
                 }
             }
-            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

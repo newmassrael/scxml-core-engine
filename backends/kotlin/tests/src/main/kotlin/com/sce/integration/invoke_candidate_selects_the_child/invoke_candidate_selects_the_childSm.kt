@@ -427,6 +427,32 @@ class InvokeCandidateSelectsTheChildStateMachine(
             }
             is InvokeCandidateSelectsTheChildState.Probe -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("_invoke_0", state)
+            }
+            is InvokeCandidateSelectsTheChildState.WrongChild -> {
+                // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: InvokeCandidateSelectsTheChildState) {
+        when (invokeId) {
+            "_invoke_0" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -478,11 +504,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                     }
                 }
             }
-            is InvokeCandidateSelectsTheChildState.WrongChild -> {
-                // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
-                // W3C SCXML 3.7: Top-level final state reached
-                markFinalStateReached()
-            }
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

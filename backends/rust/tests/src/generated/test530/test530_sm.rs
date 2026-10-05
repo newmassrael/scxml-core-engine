@@ -448,6 +448,24 @@ impl Test530Policy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 's0' to macrostep end
+    fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: Test530State::S0,
+                        document_id: "_invoke_0",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -911,19 +929,7 @@ impl StatePolicy for Test530Policy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke '_invoke_0' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: Test530State::S0,
-                                document_id: "_invoke_0",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_0(engine);
                 }
             }
             _ => {}

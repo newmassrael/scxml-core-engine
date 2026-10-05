@@ -2559,10 +2559,15 @@ candidates ended and what was reported. Rust, Go, Kotlin, Python, C++ and C11
 drive it (`a_static_hybrid_invoke_starts_the_candidate_its_value_names` in each),
 and each is held to the stem table.
 
+A machine that holds a hybrid `<invoke>` has the save API (§2.15, "Saving and
+restoring"). A saved state names the invocation by its id and not the candidate
+that was running, and a restore starts it again as entering the state would: the
+start reads `srcexpr` from the restored variables and hands the arguments'
+current values to every candidate. Rust and Kotlin, the backends that have the
+API, drive it (`a_static_hybrid_invoke_is_started_again_by_a_restore` in each).
+
 Not yet: the Interpreter refuses such a document by name
-(`has no ecmascript lowering`), and a machine that holds a hybrid `<invoke>` has
-no save API, because a saved state would have to name the candidate that was
-chosen.
+(`has no ecmascript lowering`).
 
 The runtime witness for the selection itself is
 `integration_resources/invoke_candidate_selects_the_child/`, driven on
@@ -4256,6 +4261,19 @@ a document with an `<invoke>` that restored from a state with no `invokes` would
 stand in "working" with nobody working. `sce-build/tests/fixtures/static_datamodel/static_invoke.scxml`
 and `saved/static_invoke_working.json` hold it on both backends.
 
+A hybrid `<invoke>` (§2.13) is listed the same way, by its id, and the candidate
+that was running is not recorded: a restore runs the start again, which reads
+`srcexpr` from the restored variables and hands every candidate the arguments'
+current values, as entering the state would. So a `srcexpr` that reads a
+variable changed after the child started names, after a restore, the candidate
+that variable names NOW, and the child is handed the values current at the
+restore and not those it was first handed — the same loss of progress a static
+child has, and one the document can see. `static_invoke_hybrid_saved.scxml` and
+its two candidates run all three on both backends: the same candidate again with
+a changed argument, the other candidate once `srcexpr` names it, and the
+unchanged arguments again, and show a child that ended not started a second
+time.
+
 **Running host invocations.** An `<invoke>` a declared host invoker serves
 (§scxml-6.4.1) is part of the state for the same reason, and what is lost with
 the process that ran it is the host's side of it. A saved state lists each one
@@ -4353,7 +4371,8 @@ moment.
 A saved state is bound to the document's SHAPE, not its source hash: a
 SHA-256 the generator computes over every state with its kind and parent,
 every `<history>` with its id, kind and parent, every `<invoke type="scxml">` with
-its id and the state that holds it, every `<invoke>` a declared host invoker
+its id and the state that holds it, every hybrid `<invoke>` the same under a name
+of its own, every `<invoke>` a declared host invoker
 serves with its type as well, and every variable with its type and bound
 (`static_lowering::saved_shape`); a document with no `<history>` or `<invoke>`
 hashes what it did before either was saved. A guard, an action, an initial

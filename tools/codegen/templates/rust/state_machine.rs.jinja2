@@ -1208,14 +1208,15 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         self.do_execute_pending_invokes(engine);
     }
 {% endif %}
-{% if static_saved_shape and not no_std and model.invokes | scxml %}
+{% if static_saved_shape and not no_std and model.invokes | scxml_family %}
 
     // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
     // `<invoke>`s whose child is running, and a restore starts each again. This
-    // document saves only when every invoke is a static child session.
+    // document saves only when every invoke is a static child session, a hybrid
+    // one among declared candidates, or one a declared host invoker serves.
     fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
         match invoke_id {
-{% for invoke_info in model.invokes | scxml %}
+{% for invoke_info in model.invokes | scxml_family %}
             "{{ invoke_info.invoke_id }}" => Some({{ machine_name }}State::{{ invoke_info.state_name | to_state_variant }}),
 {% endfor %}
             _ => None,
@@ -1225,10 +1226,16 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // W3C SCXML 6.4: running means started and not ended. The policy keeps an
     // ended child until its state exits, so the ending is what is asked here;
     // an invocation whose `done.invoke` is queued or taken must not run twice.
+    // A hybrid invoke holds its child in the slot of the candidate it chose, and
+    // at most one is filled.
     fn running_invokes(&self) -> Vec<&'static str> {
         let mut running = Vec::new();
-{% for invoke_info in model.invokes | scxml %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+        if ({% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some(){{ " || " if not loop.last }}{% endfor %}) && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+{% else %}
         if self.child_{{ invoke_info.field_suffix }}.is_some() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+{% endif %}
             running.push("{{ invoke_info.invoke_id }}");
         }
 {% endfor %}
@@ -1237,7 +1244,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     fn restart_invoke(&mut self, invoke_id: &str, engine: &mut Engine<Self>) {
         match invoke_id {
-{% for invoke_info in model.invokes | scxml %}
+{% for invoke_info in model.invokes | scxml_family %}
             "{{ invoke_info.invoke_id }}" => self.defer_invoke_{{ invoke_info.field_suffix }}(engine),
 {% endfor %}
             _ => {}

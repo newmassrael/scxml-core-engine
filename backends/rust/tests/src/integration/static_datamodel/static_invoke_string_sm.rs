@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 48a87232ac281780a2bf087034fd503fdeb4a6a917bd2bcd8cecf2bac4f0fed7
+// source-hash: 50a81795587554344192a69a0f2264073791a21546f32a4b85e4b021d2b4e0ca
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1471,7 +1471,8 @@ impl StatePolicy for StaticInvokeStringPolicy {
 
     // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
     // `<invoke>`s whose child is running, and a restore starts each again. This
-    // document saves only when every invoke is a static child session.
+    // document saves only when every invoke is a static child session, a hybrid
+    // one among declared candidates, or one a declared host invoker serves.
     fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
         match invoke_id {
             "fits" => Some(StaticInvokeStringState::Running),
@@ -1484,6 +1485,8 @@ impl StatePolicy for StaticInvokeStringPolicy {
     // W3C SCXML 6.4: running means started and not ended. The policy keeps an
     // ended child until its state exits, so the ending is what is asked here;
     // an invocation whose `done.invoke` is queued or taken must not run twice.
+    // A hybrid invoke holds its child in the slot of the candidate it chose, and
+    // at most one is filled.
     fn running_invokes(&self) -> Vec<&'static str> {
         let mut running = Vec::new();
         if self.child_fits.is_some() && !self.pending_done_invoke_fits {

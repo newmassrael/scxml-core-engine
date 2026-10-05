@@ -9,7 +9,8 @@
 // A saved state holds what this session holds: its configuration, its
 // variables, what each `<history>` recorded, the delayed `<send>`s it is
 // waiting to deliver to its own queues or to a host-served processor, the child
-// sessions it is running (a restore starts each again), the invocations a
+// sessions it is running, static or named by a value among declared candidates
+// (a restore starts each again), the invocations a
 // declared host invoker is running (a restore starts each again from the request
 // it was started with), and its external queue. What it cannot hold is a session
 // whose start a restore cannot repeat — a Mesh request, which the peer may
@@ -47,8 +48,15 @@ static SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 
 /// What `sce-codegen generate -l <language>` wrote for `document`, joined, and
 /// whether it succeeded. `flags` are handed to the generator as well: the
-/// declarations a host makes (`--host-invoker <type>`).
-fn generate_declaring(language: &str, document: &str, flags: &[&str]) -> (bool, String) {
+/// declarations a host makes (`--host-invoker <type>`). `siblings` are
+/// `(file name, content)` pairs written next to the document, for one that
+/// names others the generator reads from beside it (`sce:candidates`).
+fn generate_beside(
+    language: &str,
+    document: &str,
+    flags: &[&str],
+    siblings: &[(&str, &str)],
+) -> (bool, String) {
     let id = SCRATCH_ID.fetch_add(1, Ordering::SeqCst);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
         "no-save-api-{language}-{}-{id}",
@@ -58,6 +66,9 @@ fn generate_declaring(language: &str, document: &str, flags: &[&str]) -> (bool, 
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     let path = dir.join("machine.scxml");
     std::fs::write(&path, document).expect("write document");
+    for (name, content) in siblings {
+        std::fs::write(dir.join(name), content).expect("write sibling document");
+    }
     let run = Command::new(sce_codegen_bin())
         .args([
             "generate",
@@ -136,10 +147,19 @@ fn save_api_per_backend(document: &str) -> Vec<(&'static str, bool)> {
 
 /// [`save_api_per_backend`] for a document its host declared `flags` for.
 fn save_api_per_backend_declaring(document: &str, flags: &[&str]) -> Vec<(&'static str, bool)> {
+    save_api_per_backend_beside(document, flags, &[])
+}
+
+/// [`save_api_per_backend_declaring`] for a document with `siblings` beside it.
+fn save_api_per_backend_beside(
+    document: &str,
+    flags: &[&str],
+    siblings: &[(&str, &str)],
+) -> Vec<(&'static str, bool)> {
     SAVE_API
         .iter()
         .map(|(language, _)| {
-            let (ok, text) = generate_declaring(language, document, flags);
+            let (ok, text) = generate_beside(language, document, flags, siblings);
             assert!(
                 ok,
                 "{language}: the machine does not generate:\n{text}\n--- document:\n{document}"
@@ -228,6 +248,66 @@ fn a_static_child_session_is_generated_with_the_save_api() {
             "{language}: a running child session is in a saved state, so the machine saves it"
         );
     }
+}
+
+#[test]
+fn a_hybrid_invoke_is_generated_with_the_save_api() {
+    // A hybrid invoke names its child by a value (`srcexpr`) among the candidates
+    // it declares. A saved state names the invocation and holds the fields the
+    // value is read from, so a restore starts it again and the restored fields
+    // name the candidate: the machine saves.
+    let parent = include_str!("fixtures/static_datamodel/static_invoke_hybrid_saved.scxml");
+    let watcher = include_str!("fixtures/static_datamodel/static_hybrid_watcher.scxml");
+    let holder = include_str!("fixtures/static_datamodel/static_hybrid_holder.scxml");
+    for (language, has) in save_api_per_backend_beside(
+        parent,
+        &[],
+        &[
+            ("static_hybrid_watcher.scxml", watcher),
+            ("static_hybrid_holder.scxml", holder),
+        ],
+    ) {
+        assert!(
+            has,
+            "{language}: a running hybrid child is in a saved state, so the machine saves it"
+        );
+    }
+}
+
+/// The shape a generated Rust machine binds its saved state to.
+fn rust_shape(text: &str) -> String {
+    const MARKER: &str = "const SHAPE: &'static str = \"";
+    let start = text.find(MARKER).expect("a saved shape in the machine") + MARKER.len();
+    let len = text[start..].find('"').expect("the shape ends");
+    text[start..start + len].to_string()
+}
+
+#[test]
+fn a_hybrid_invoke_is_part_of_the_shape_a_saved_state_is_bound_to() {
+    // A saved state names the invocation a restore starts again, by its id: a
+    // document that renamed it is one a saved state must refuse, so the hybrid
+    // invoke is in the shape.
+    let parent = include_str!("fixtures/static_datamodel/static_invoke_hybrid_saved.scxml");
+    let watcher = include_str!("fixtures/static_datamodel/static_hybrid_watcher.scxml");
+    let holder = include_str!("fixtures/static_datamodel/static_hybrid_holder.scxml");
+    let siblings = [
+        ("static_hybrid_watcher.scxml", watcher),
+        ("static_hybrid_holder.scxml", holder),
+    ];
+    let shape_of = |document: &str| {
+        let (ok, text) = generate_beside("rust", document, &[], &siblings);
+        assert!(ok, "the machine does not generate:\n{text}");
+        rust_shape(&text)
+    };
+    let renamed = parent
+        .replace(r#"id="watch""#, r#"id="watching""#)
+        .replace("done.invoke.watch", "done.invoke.watching");
+    assert_ne!(renamed, parent, "the rename found the invocation");
+    assert_ne!(
+        shape_of(&renamed),
+        shape_of(parent),
+        "the id is what a saved state names the invocation by"
+    );
 }
 
 #[test]

@@ -627,6 +627,44 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             }
             is AHybridInvokeCarriesItsArgumentsState.NamelistPhase -> {
                 // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:76 :: namelistPhase :: _state_body
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("_invoke_1", state)
+            }
+            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:60 :: paramsPhase :: _state_body
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("_invoke_0", state)
+            }
+            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:87 :: refusedPhase :: _state_body
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("_invoke_2", state)
+            }
+            is AHybridInvokeCarriesItsArgumentsState.Run -> {
+                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:54 :: run :: _state_body
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: AHybridInvokeCarriesItsArgumentsState) {
+        when (invokeId) {
+            "_invoke_1" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -691,8 +729,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                     }
                 }
             }
-            is AHybridInvokeCarriesItsArgumentsState.ParamsPhase -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:60 :: paramsPhase :: _state_body
+            "_invoke_0" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -780,8 +817,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                     }
                 }
             }
-            is AHybridInvokeCarriesItsArgumentsState.RefusedPhase -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:87 :: refusedPhase :: _state_body
+            "_invoke_2" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -855,9 +891,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                     }
                 }
             }
-            is AHybridInvokeCarriesItsArgumentsState.Run -> {
-                // SCE-MAP: a_hybrid_invoke_carries_its_arguments.scxml:54 :: run :: _state_body
-            }
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

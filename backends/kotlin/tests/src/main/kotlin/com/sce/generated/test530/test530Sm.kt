@@ -436,6 +436,27 @@ class Test530StateMachine(
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("_invoke_0", state)
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: Test530State) {
+        when (invokeId) {
+            "_invoke_0" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -470,6 +491,7 @@ class Test530StateMachine(
                     }
                 }
             }
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

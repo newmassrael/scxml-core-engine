@@ -691,6 +691,65 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
         let _ = se.set_variable(&sid, name, value);
     }
 
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_1' of state 'namelistPhase' to macrostep end
+    fn defer_invoke_invoke_1(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id = format!(
+                "{}.{}._invoke_1",
+                "namelistPhase", self as *const _ as usize
+            );
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: AHybridInvokeCarriesItsArgumentsState::NamelistPhase,
+                        document_id: "_invoke_1",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 'paramsPhase' to macrostep end
+    fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}._invoke_0", "paramsPhase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: AHybridInvokeCarriesItsArgumentsState::ParamsPhase,
+                        document_id: "_invoke_0",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke '_invoke_2' of state 'refusedPhase' to macrostep end
+    fn defer_invoke_invoke_2(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}._invoke_2", "refusedPhase", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: AHybridInvokeCarriesItsArgumentsState::RefusedPhase,
+                        document_id: "_invoke_2",
+                    },
+                );
+            }
+        }
+    }
+
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -2255,21 +2314,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke '_invoke_1' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id = format!(
-                        "{}.{}._invoke_1",
-                        "namelistPhase", self as *const _ as usize
-                    );
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: AHybridInvokeCarriesItsArgumentsState::NamelistPhase,
-                                document_id: "_invoke_1",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_1(engine);
                 }
             }
             AHybridInvokeCarriesItsArgumentsState::ParamsPhase => {
@@ -2277,19 +2322,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke '_invoke_0' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_0", "paramsPhase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: AHybridInvokeCarriesItsArgumentsState::ParamsPhase,
-                                document_id: "_invoke_0",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_0(engine);
                 }
             }
             AHybridInvokeCarriesItsArgumentsState::RefusedPhase => {
@@ -2297,19 +2330,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke '_invoke_2' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}._invoke_2", "refusedPhase", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: AHybridInvokeCarriesItsArgumentsState::RefusedPhase,
-                                document_id: "_invoke_2",
-                            },
-                        );
-                    }
+                    self.defer_invoke_invoke_2(engine);
                 }
             }
             _ => {}

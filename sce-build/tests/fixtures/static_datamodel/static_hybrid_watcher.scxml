@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): a candidate
+  of `static_invoke_hybrid_saved.scxml` that ends only on the 8 it is handed. A
+  restore that starts it again hands it the value the restored machine holds, so
+  it ends there when the parent had moved on to 8 and had not told it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_hybrid_watcher">
+  <datamodel>
+    <data id="start" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition cond="start === 8" target="leaf"/>
+  </state>
+  <final id="leaf"/>
+</scxml>

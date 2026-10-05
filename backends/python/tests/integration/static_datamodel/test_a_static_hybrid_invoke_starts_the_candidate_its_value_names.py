@@ -71,3 +71,15 @@ def test_a_value_naming_no_declared_candidate_starts_nothing() -> None:
     engine = _settled()
     # `done.invoke.missing_run` would add 1000: nothing started to send it.
     assert engine.policy.completed() < 1000
+
+
+def test_a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidate() -> None:
+    # A document that never mentions `error.execution` has no such event, and
+    # what the invoke does where it would raise one is to start nothing and say
+    # nothing. `static_invoke_hybrid_saved` is such a document: the watcher it
+    # starts is handed 7 and waits for an 8 nothing gives it.
+    module = importlib.import_module("integration.static_datamodel.static_invoke_hybrid_saved_sm")
+    engine = module.create_engine()
+    engine.initialize()
+    assert engine.policy.completed() == 0
+    assert not engine.reached_final

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 48a87232ac281780a2bf087034fd503fdeb4a6a917bd2bcd8cecf2bac4f0fed7
+// source-hash: 50a81795587554344192a69a0f2264073791a21546f32a4b85e4b021d2b4e0ca
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml
@@ -118,6 +118,88 @@ class StaticInvokeHybridStateMachine(
     override fun onMacrostepComplete(truncated: Boolean) {
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "pick" to SavedValues.of(pick),
+            "base" to SavedValues.of(base),
+            "enabled" to SavedValues.of(enabled),
+            "completed" to SavedValues.of(completed),
+            "errors" to SavedValues.of(errors),
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(saved.variable("pick"), "pick", 48)
+        val saved2 = SavedValues.uint32(saved.variable("base"), "base")
+        val saved3 = SavedValues.bool(saved.variable("enabled"), "enabled")
+        val saved4 = SavedValues.uint32(saved.variable("completed"), "completed")
+        val saved5 = SavedValues.uint32(saved.variable("errors"), "errors")
+        pick = saved1
+        base = saved2
+        enabled = saved3
+        completed = saved4
+        errors = saved5
+        enterSaved(saved, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
+    // and a restore starts each again from its beginning. This document saves
+    // only when every invoke is a static child session, a hybrid one among
+    // declared candidates, or one a declared host invoker serves.
+    override val staticInvokes: List<Pair<String, StaticInvokeHybridState>> = listOf(
+        "first_run" to StaticInvokeHybridState.First,
+        "second_run" to StaticInvokeHybridState.Second,
+        "lossy_run" to StaticInvokeHybridState.Lossy,
+        "missing_run" to StaticInvokeHybridState.Missing,
+    )
+
+    override fun restartInvoke(invokeId: String, state: StaticInvokeHybridState) = deferStaticInvoke(invokeId, state)
 
     override val initialState: StaticInvokeHybridState = StaticInvokeHybridState.First
 
@@ -340,6 +422,77 @@ class StaticInvokeHybridStateMachine(
                 return@run
             }
                 }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("first_run", state)
+            }
+            is StaticInvokeHybridState.Lossy -> {
+                // SCE-MAP: static_invoke_hybrid.scxml:72 :: lossy :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
+
+            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+                return@run
+            }
+                }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("lossy_run", state)
+            }
+            is StaticInvokeHybridState.Missing -> {
+                // SCE-MAP: static_invoke_hybrid.scxml:85 :: missing :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
+
+            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+                return@run
+            }
+                }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("missing_run", state)
+            }
+            is StaticInvokeHybridState.Over -> {
+                // SCE-MAP: static_invoke_hybrid.scxml:101 :: over :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is StaticInvokeHybridState.Run -> {
+                // SCE-MAP: static_invoke_hybrid.scxml:42 :: run :: _state_body
+            }
+            is StaticInvokeHybridState.Second -> {
+                // SCE-MAP: static_invoke_hybrid.scxml:59 :: second :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
+
+            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+                return@run
+            }
+                }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("second_run", state)
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
+    // end. One body for the two things that start a child: entering the state
+    // (`onEntry` above) and a restore, which starts again each running
+    // invocation a saved state lists (`restartInvoke`). The child is not saved,
+    // so what a restore needs is exactly what entering the state does, and two
+    // spellings of it would be two places a change to one is forgotten in the
+    // other. A state that exits before the macrostep ends cancels the entry
+    // (`cancelPendingInvokesForState`) in either case.
+    private fun deferStaticInvoke(invokeId: String, state: StaticInvokeHybridState) {
+        when (invokeId) {
+            "first_run" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -402,15 +555,7 @@ class StaticInvokeHybridStateMachine(
                     }
                 }
             }
-            is StaticInvokeHybridState.Lossy -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:72 :: lossy :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/1
-                run {
-
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
-                }
+            "lossy_run" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -473,15 +618,7 @@ class StaticInvokeHybridStateMachine(
                     }
                 }
             }
-            is StaticInvokeHybridState.Missing -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:85 :: missing :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/1
-                run {
-
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
-                }
+            "missing_run" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -530,23 +667,7 @@ class StaticInvokeHybridStateMachine(
                     }
                 }
             }
-            is StaticInvokeHybridState.Over -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:101 :: over :: _state_body
-                // W3C SCXML 3.7: Top-level final state reached
-                markFinalStateReached()
-            }
-            is StaticInvokeHybridState.Run -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:42 :: run :: _state_body
-            }
-            is StaticInvokeHybridState.Second -> {
-                // SCE-MAP: static_invoke_hybrid.scxml:59 :: second :: _state_body
-                // W3C SCXML 3.8: Onentry block 1/1
-                run {
-
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
-                return@run
-            }
-                }
+            "second_run" -> {
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -609,6 +730,7 @@ class StaticInvokeHybridStateMachine(
                     }
                 }
             }
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

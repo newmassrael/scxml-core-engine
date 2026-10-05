@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 48a87232ac281780a2bf087034fd503fdeb4a6a917bd2bcd8cecf2bac4f0fed7
+// source-hash: 50a81795587554344192a69a0f2264073791a21546f32a4b85e4b021d2b4e0ca
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -174,6 +174,163 @@ impl StaticInvokeHybridObserve for Engine<StaticInvokeHybridPolicy> {
     }
 }
 
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StaticInvokeHybridPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// The shape a saved state of this document is bound to: a state saved
+    /// from a document that renamed, re-typed or moved a state or a variable
+    /// is refused, one saved before a guard or an action changed is not.
+    const SHAPE: &'static str;
+
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >];
+
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
+    /// machine that is not running, and for one whose last macrostep stopped
+    /// at the microstep ceiling.
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
+}
+
+impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
+    type Policy = StaticInvokeHybridPolicy;
+
+    const SHAPE: &'static str = "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868";
+
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >] = &[];
+
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let policy = self.policy();
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            Self::SHAPE,
+            vec![
+                (
+                    "pick".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.pick),
+                ),
+                (
+                    "base".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.base),
+                ),
+                (
+                    "enabled".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.enabled),
+                ),
+                (
+                    "completed".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.completed),
+                ),
+                (
+                    "errors".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
+                ),
+            ],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            wall_now_ms,
+        )
+    }
+
+    fn restore_with(
+        mut policy: StaticInvokeHybridPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+        ::sce_rust_runtime::saved_state::restore_history::<StaticInvokeHybridPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        policy.pick =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        policy.base = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("base")?,
+            "base",
+        )?;
+        policy.enabled = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("enabled")?,
+            "enabled",
+        )?;
+        policy.completed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("completed")?,
+            "completed",
+        )?;
+        policy.errors = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("errors")?,
+            "errors",
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+    }
+}
+
 /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
 /// machine's variables before it starts. A variable left `None` keeps the
 /// value its `<data>` gave it.
@@ -329,6 +486,82 @@ impl StaticInvokeHybridPolicy {
     /// holds now. Only the machine writes it.
     pub fn errors(&self) -> u32 {
         self.errors
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'first_run' of state 'first' to macrostep end
+    fn defer_invoke_first_run(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.first_run", "first", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: StaticInvokeHybridState::First,
+                        document_id: "first_run",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'lossy_run' of state 'lossy' to macrostep end
+    fn defer_invoke_lossy_run(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.lossy_run", "lossy", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: StaticInvokeHybridState::Lossy,
+                        document_id: "lossy_run",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'missing_run' of state 'missing' to macrostep end
+    fn defer_invoke_missing_run(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.missing_run", "missing", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: StaticInvokeHybridState::Missing,
+                        document_id: "missing_run",
+                    },
+                );
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Defer the start of invoke 'second_run' of state 'second' to macrostep end
+    fn defer_invoke_second_run(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
+        {
+            let generated_invoke_id =
+                format!("{}.{}.second_run", "second", self as *const _ as usize);
+            let id_stored = true;
+            if id_stored {
+                sce_rust_runtime::invoke::defer_invoke(
+                    &mut self.pending_invokes,
+                    sce_rust_runtime::invoke::PendingInvoke {
+                        invoke_id: generated_invoke_id,
+                        state: StaticInvokeHybridState::Second,
+                        document_id: "second_run",
+                    },
+                );
+            }
+        }
     }
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
@@ -1888,19 +2121,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke 'first_run' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.first_run", "first", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: StaticInvokeHybridState::First,
-                                document_id: "first_run",
-                            },
-                        );
-                    }
+                    self.defer_invoke_first_run(engine);
                 }
             }
             StaticInvokeHybridState::Lossy => {
@@ -1930,19 +2151,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke 'lossy_run' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.lossy_run", "lossy", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: StaticInvokeHybridState::Lossy,
-                                document_id: "lossy_run",
-                            },
-                        );
-                    }
+                    self.defer_invoke_lossy_run(engine);
                 }
             }
             StaticInvokeHybridState::Missing => {
@@ -1972,19 +2181,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke 'missing_run' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.missing_run", "missing", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: StaticInvokeHybridState::Missing,
-                                document_id: "missing_run",
-                            },
-                        );
-                    }
+                    self.defer_invoke_missing_run(engine);
                 }
             }
             StaticInvokeHybridState::Second => {
@@ -2014,19 +2211,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 // W3C SCXML 6.4: Defer hybrid invoke 'second_run' (srcexpr/contentexpr evaluated at macrostep end)
                 {
-                    let generated_invoke_id =
-                        format!("{}.{}.second_run", "second", self as *const _ as usize);
-                    let id_stored = true;
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: StaticInvokeHybridState::Second,
-                                document_id: "second_run",
-                            },
-                        );
-                    }
+                    self.defer_invoke_second_run(engine);
                 }
             }
             _ => {}
@@ -2408,6 +2593,64 @@ impl StatePolicy for StaticInvokeHybridPolicy {
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
+    }
+
+    // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
+    // `<invoke>`s whose child is running, and a restore starts each again. This
+    // document saves only when every invoke is a static child session, a hybrid
+    // one among declared candidates, or one a declared host invoker serves.
+    fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
+        match invoke_id {
+            "first_run" => Some(StaticInvokeHybridState::First),
+            "second_run" => Some(StaticInvokeHybridState::Second),
+            "lossy_run" => Some(StaticInvokeHybridState::Lossy),
+            "missing_run" => Some(StaticInvokeHybridState::Missing),
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 6.4: running means started and not ended. The policy keeps an
+    // ended child until its state exits, so the ending is what is asked here;
+    // an invocation whose `done.invoke` is queued or taken must not run twice.
+    // A hybrid invoke holds its child in the slot of the candidate it chose, and
+    // at most one is filled.
+    fn running_invokes(&self) -> Vec<&'static str> {
+        let mut running = Vec::new();
+        if (self.child_first_run_static_hybrid_first.is_some()
+            || self.child_first_run_static_hybrid_second.is_some())
+            && !self.pending_done_invoke_first_run
+        {
+            running.push("first_run");
+        }
+        if (self.child_second_run_static_hybrid_first.is_some()
+            || self.child_second_run_static_hybrid_second.is_some())
+            && !self.pending_done_invoke_second_run
+        {
+            running.push("second_run");
+        }
+        if (self.child_lossy_run_static_hybrid_first.is_some()
+            || self.child_lossy_run_static_hybrid_second.is_some())
+            && !self.pending_done_invoke_lossy_run
+        {
+            running.push("lossy_run");
+        }
+        if (self.child_missing_run_static_hybrid_first.is_some()
+            || self.child_missing_run_static_hybrid_second.is_some())
+            && !self.pending_done_invoke_missing_run
+        {
+            running.push("missing_run");
+        }
+        running
+    }
+
+    fn restart_invoke(&mut self, invoke_id: &str, engine: &mut Engine<Self>) {
+        match invoke_id {
+            "first_run" => self.defer_invoke_first_run(engine),
+            "second_run" => self.defer_invoke_second_run(engine),
+            "lossy_run" => self.defer_invoke_lossy_run(engine),
+            "missing_run" => self.defer_invoke_missing_run(engine),
+            _ => {}
+        }
     }
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait

@@ -144,19 +144,7 @@
 {% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 6.4: Defer hybrid invoke '{{ invoke_info.invoke_id }}' (srcexpr/contentexpr evaluated at macrostep end)
                 {  {{- annot.annotation_comment(invoke_info, "rust", "                    ") }}
-                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
-                        "{{ state_id }}", self as *const _ as usize);
-{{ store_invoke_idlocation(invoke_info, model, machine_name) -}}
-                    if id_stored {
-                        sce_rust_runtime::invoke::defer_invoke(
-                            &mut self.pending_invokes,
-                            sce_rust_runtime::invoke::PendingInvoke {
-                                invoke_id: generated_invoke_id,
-                                state: {{ machine_name }}State::{{ state_id | to_state_variant }},
-                                document_id: "{{ invoke_info.invoke_id }}",
-                            },
-                        );
-                    }
+                    self.defer_invoke_{{ invoke_info.field_suffix }}(engine);
                 }
 {% endfor %}
 {% endif %}

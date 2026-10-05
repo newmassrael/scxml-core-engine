@@ -328,6 +328,12 @@
 {% for invoke_info in state.invokes | scxml %}
 {{ defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) }}
 {% endfor %}
+{# A hybrid invoke is deferred by the same body: entering its state and a
+   restore both start it, and `srcexpr` is read when the macrostep ends, as the
+   start reads every other argument. #}
+{% for invoke_info in state.invokes | hybrid %}
+{{ defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) }}
+{% endfor %}
 {% endfor %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2

@@ -182,8 +182,9 @@ class Test247StateMachine(
         }
     }
 
-    // W3C SCXML 6.4: defer the start of the static child session of the
-    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
     // end. One body for the two things that start a child: entering the state
     // (`onEntry` above) and a restore, which starts again each running
     // invocation a saved state lists (`restartInvoke`). The child is not saved,
@@ -203,7 +204,7 @@ class Test247StateMachine(
                     startInvoke("_invoke_0", childSM, false, Test247Event.Done.Invoke, "", generatedInvokeId)
                 }
             }
-            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 

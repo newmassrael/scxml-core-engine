@@ -77,6 +77,150 @@
 {% endfor %}
 {% endif %}
 {%- endmacro %}
+{#
+    §scxml-6.4: the start of a hybrid <invoke>, deferred to the macrostep's end.
+
+    One body for the two things that start it: entering the state (`onEntry`
+    calls `deferStaticInvoke`) and a restore, which starts again each running
+    invocation a saved state lists (`restartInvoke`). The child is not saved, so
+    what a restore needs is exactly what entering the state does — `srcexpr` is
+    read from the fields again, as every other argument is, and names the
+    candidate they choose — and two spellings of it would be two places a change
+    to one is forgotten in the other.
+
+    `state` is the parameter of the Kotlin function this renders into.
+#}
+{%- macro hybrid_invoke_start(inv, model, machine_name) %}
+                // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
+                // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
+                run {
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+{% if inv.idlocation and model.needs_script_engine %}
+                    // W3C SCXML 6.4.1: the generated id goes to `idlocation` when the
+                    // element is evaluated — this arm wrote nothing, so a document
+                    // matching `_event.invokeid` against it matched an empty slot.
+                    // The write is the assignment `<assign>` makes; a location that
+                    // cannot take the id raises error.execution and defers nothing.
+                    if (!storeIdInLocation({{ inv.idlocation | to_script_source_location }}, generatedInvokeId, "<invoke>")) return@run
+{% endif %}
+                    deferInvoke(state, generatedInvokeId) {
+{% if not inv.native_src %}
+                        ensureScriptEngine()
+                        val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
+                        try {
+{% if inv.native_src %}
+{# `datamodel="sce-static"`: the `srcexpr` is a string computed from the machine's
+   fields now (`HybridInvokeInfo::native_src`); no script engine is asked. One
+   that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+                            // §scxml-6.4: the `srcexpr` names the document to start.
+{% if inv.native_src_fails %}
+                            val filePath: String = try {
+                                {{ inv.native_src }}
+                            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr> failed to evaluate")
+{% endif %}
+                                return@deferInvoke
+                            }
+{% else %}
+                            val filePath: String = {{ inv.native_src }}
+{% endif %}
+{% elif inv.srcexpr %}
+                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child.
+                            // The evaluation is its own try: the clause it answers is
+                            // "the expression could not be evaluated", and until this
+                            // split that fact shared a catch — and a wording — with
+                            // "the child could not be started". A `null` result took
+                            // neither path and returned silently.
+                            val filePath = try {
+                                eng.evaluateExpr(sid, {{ inv.srcexpr | to_script_source_expr }})?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (filePath == null) {
+{% if 'error.execution' in model.events %}
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
+{% endif %}
+                                return@deferInvoke
+                            }
+{% elif inv.contentexpr %}
+                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
+                            // Split for the reason the srcexpr arm above states.
+                            val scxmlContent = try {
+                                eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})?.toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (scxmlContent == null) {
+{% if 'error.execution' in model.events %}
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
+{% endif %}
+                                return@deferInvoke
+                            }
+                            // The stub, for the reason the srcexpr arm above states.
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = scxmlContent
+                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+{% endif %}
+{% if inv.native_src or inv.srcexpr %}
+{% if inv.candidates %}
+                            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
+                            // chooses among the declared candidates, matched on the
+                            // document stem so `file:x.scxml` and `./x.scxml` name
+                            // one child. `startInvoke` takes a star-projected
+                            // machine, so only the construction differs here.
+                            val __sceSelected = DocumentStem.of(filePath)
+                            val childSM = when (__sceSelected) {
+{% for candidate in inv.candidates %}
+{% if candidate.seeds or candidate.unkept %}
+                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine().also { child ->
+{{ param_macros.seed_static_child(candidate.stem | to_pascal_case, candidate.seeds, candidate.unkept, 'child', model, machine_name, '                                    ') }}
+                                }
+{% else %}
+                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+{% endif %}
+{% endfor %}
+                                else -> {
+                                    // The failure the Interpreter reports when a
+                                    // document will not load: nothing to create.
+{% if 'error.execution' in model.events %}
+                                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr | escape_kotlin }}'{% endif %}> evaluated to a document it did not declare")
+{% endif %}
+                                    return@deferInvoke
+                                }
+                            }
+{% else %}
+                            // §scxml-6.4: the child is the build-time stub, as on
+                            // every other AOT backend. `filePath` is not consulted:
+                            // the clause this arm answers is that the expression
+                            // evaluates, and what the value NAMES is a residue this
+                            // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
+                            @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
+                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+{% endif %}
+{% endif %}
+{#- §scxml-6.4.1: the child is chosen (a value naming no candidate has
+    already returned), so the arguments are read now — after the choice, as
+    the Interpreter reads them after the document loads, and before the child
+    starts. #}
+{{ collect_invoke_args(inv, model, machine_name) }}
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                            setInvokeParams(childSM, invokeParams)
+{% endif %}
+                            startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
+                        } catch (_: Exception) {
+                            // W3C SCXML 6.4: the child could not be started. Evaluation
+                            // failure no longer reaches here — it has its own raise above,
+                            // under the one wording every emitter uses for that fact.
+{% if 'error.execution' in model.events %}
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not start a child")
+{% endif %}
+                        }
+                    }
+                }
+{%- endmacro %}
 
     // Entry Actions (W3C SCXML 3.8)
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
@@ -302,125 +446,10 @@
                     }
                 }
 {% elif inv.is_hybrid is defined and inv.is_hybrid %}
-                // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
-                // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
-                run {
-                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
-{% if inv.idlocation and model.needs_script_engine %}
-                    // W3C SCXML 6.4.1: the generated id goes to `idlocation` when the
-                    // element is evaluated — this arm wrote nothing, so a document
-                    // matching `_event.invokeid` against it matched an empty slot.
-                    // The write is the assignment `<assign>` makes; a location that
-                    // cannot take the id raises error.execution and defers nothing.
-                    if (!storeIdInLocation({{ inv.idlocation | to_script_source_location }}, generatedInvokeId, "<invoke>")) return@run
-{% endif %}
-                    deferInvoke(state, generatedInvokeId) {
-{% if not inv.native_src %}
-                        ensureScriptEngine()
-                        val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-{% endif %}
-                        try {
-{% if inv.native_src %}
-{# `datamodel="sce-static"`: the `srcexpr` is a string computed from the machine's
-   fields now (`HybridInvokeInfo::native_src`); no script engine is asked. One
-   that cannot be computed is an attribute that cannot be evaluated, which
-   raises error.execution and starts nothing. #}
-                            // §scxml-6.4: the `srcexpr` names the document to start.
-{% if inv.native_src_fails %}
-                            val filePath: String = try {
-                                {{ inv.native_src }}
-                            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr> failed to evaluate")
-                                return@deferInvoke
-                            }
-{% else %}
-                            val filePath: String = {{ inv.native_src }}
-{% endif %}
-{% elif inv.srcexpr %}
-                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child.
-                            // The evaluation is its own try: the clause it answers is
-                            // "the expression could not be evaluated", and until this
-                            // split that fact shared a catch — and a wording — with
-                            // "the child could not be started". A `null` result took
-                            // neither path and returned silently.
-                            val filePath = try {
-                                eng.evaluateExpr(sid, {{ inv.srcexpr | to_script_source_expr }})?.toString()
-                            } catch (_: Exception) {
-                                null
-                            }
-                            if (filePath == null) {
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
-                                return@deferInvoke
-                            }
-{% elif inv.contentexpr %}
-                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
-                            // Split for the reason the srcexpr arm above states.
-                            val scxmlContent = try {
-                                eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})?.toString()
-                            } catch (_: Exception) {
-                                null
-                            }
-                            if (scxmlContent == null) {
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
-                                return@deferInvoke
-                            }
-                            // The stub, for the reason the srcexpr arm above states.
-                            @Suppress("UNUSED_VARIABLE") val _evaluated = scxmlContent
-                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
-{% endif %}
-{% if inv.native_src or inv.srcexpr %}
-{% if inv.candidates %}
-                            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
-                            // chooses among the declared candidates, matched on the
-                            // document stem so `file:x.scxml` and `./x.scxml` name
-                            // one child. `startInvoke` takes a star-projected
-                            // machine, so only the construction differs here.
-                            val __sceSelected = DocumentStem.of(filePath)
-                            val childSM = when (__sceSelected) {
-{% for candidate in inv.candidates %}
-{% if candidate.seeds or candidate.unkept %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine().also { child ->
-{{ param_macros.seed_static_child(candidate.stem | to_pascal_case, candidate.seeds, candidate.unkept, 'child', model, machine_name, '                                    ') }}
-                                }
-{% else %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
-{% endif %}
-{% endfor %}
-                                else -> {
-                                    // The failure the Interpreter reports when a
-                                    // document will not load: nothing to create.
-                                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr | escape_kotlin }}'{% endif %}> evaluated to a document it did not declare")
-                                    return@deferInvoke
-                                }
-                            }
-{% else %}
-                            // §scxml-6.4: the child is the build-time stub, as on
-                            // every other AOT backend. `filePath` is not consulted:
-                            // the clause this arm answers is that the expression
-                            // evaluates, and what the value NAMES is a residue this
-                            // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
-                            @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
-                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
-{% endif %}
-{% endif %}
-{#- §scxml-6.4.1: the child is chosen (a value naming no candidate has
-    already returned), so the arguments are read now — after the choice, as
-    the Interpreter reads them after the document loads, and before the child
-    starts. #}
-{{ collect_invoke_args(inv, model, machine_name) }}
-{% if (inv.params or inv.namelist) and model.needs_script_engine %}
-                            setInvokeParams(childSM, invokeParams)
-{% endif %}
-                            startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
-                        } catch (_: Exception) {
-                            // W3C SCXML 6.4: the child could not be started. Evaluation
-                            // failure no longer reaches here — it has its own raise above,
-                            // under the one wording every emitter uses for that fact.
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not start a child")
-                        }
-                    }
-                }
+                // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
+                // starts it — for entering the state and for a restore alike, so the two
+                // cannot start it differently.
+                deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", state)
 {% elif inv.child_class %}
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 deferStaticInvoke("{{ inv.invoke_id | escape_kotlin }}", state)
@@ -596,10 +625,11 @@
 {% endfor %}
         }
     }
-{% if model.invokes | scxml %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
 
-    // W3C SCXML 6.4: defer the start of the static child session of the
-    // `<invoke type="scxml">` `invokeId`, held by `state`, to the macrostep's
+    // W3C SCXML 6.4: defer the start of the child session of the
+    // `<invoke type="scxml">` (a static child, or a hybrid one that names its
+    // child by `srcexpr`) `invokeId`, held by `state`, to the macrostep's
     // end. One body for the two things that start a child: entering the state
     // (`onEntry` above) and a restore, which starts again each running
     // invocation a saved state lists (`restartInvoke`). The child is not saved,
@@ -646,11 +676,15 @@
                     startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId)
                 }
             }
+{% elif inv.is_hybrid is defined and inv.is_hybrid %}
+            "{{ inv.invoke_id | escape_kotlin }}" -> {
+{{ hybrid_invoke_start(inv, model, machine_name) }}
+            }
 {% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
-            else -> error("the document has no static child session '$invokeId' (codegen invariant)")
+            else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
     }
 {% endif %}

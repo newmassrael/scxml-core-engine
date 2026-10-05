@@ -39,6 +39,7 @@
 #include "static_foreach_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_string_sm.h"
@@ -689,6 +690,22 @@ TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, AnArgumentIsEvaluated
 TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, AValueNamingNoDeclaredCandidateStartsNothing) {
     // `done.invoke.missing_run` would add 1000: nothing started to send it.
     EXPECT_LT(machine.completed(), 1000u);
+}
+
+// A hybrid `<invoke>` of a document that never mentions `error.execution` has no
+// such event in its enum, and what the invoke does where it would raise one
+// (a value naming no declared candidate, an argument that cannot be computed) is
+// to start nothing and say nothing, not to name a member the document never
+// declared. `static_invoke_hybrid_saved` is such a document: the watcher it
+// starts is handed 7 and waits for an 8 nothing gives it.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHybridInvokeOfADocumentWithNoErrorEventStartsItsCandidate) {
+    G::static_invoke_hybrid_saved::static_invoke_hybrid_saved machine;
+    machine.initialize();
+    for (int i = 0; i < 5; ++i) {
+        machine.tick();
+    }
+    EXPECT_EQ(machine.completed(), 0u);
+    EXPECT_FALSE(machine.isInFinalState());
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

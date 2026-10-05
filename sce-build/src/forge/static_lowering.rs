@@ -2240,9 +2240,9 @@ impl<'t> TypeDeclarations<'t> {
 ///
 /// An `<invoke type="scxml">` is named by the saved state too — which child a
 /// restore starts again — so each is part of the shape with its id and the
-/// state that holds it, and so is each `<invoke>` a declared host invoker
-/// serves, with the type as well. A document without either hashes exactly what
-/// it did before invocations were saved.
+/// state that holds it, a hybrid one under a line of its own, and so is each
+/// `<invoke>` a declared host invoker serves, with the type as well. A document
+/// without any hashes exactly what it did before invocations were saved.
 ///
 /// `None` for a machine whose state lives partly in a session other than this
 /// one that a restore cannot start again — an `<invoke>` of any other kind
@@ -2302,6 +2302,17 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             match invoke {
                 crate::model::Invoke::Scxml(_) => {
                     let _ = writeln!(text, "invoke {} {}", invoke.base().invoke_id, state.id);
+                }
+                // Named apart from a child session of the same id: the two are
+                // started differently (a hybrid one by the stem its `srcexpr`
+                // computes), so a saved state of one is not the other's.
+                crate::model::Invoke::Hybrid(_) => {
+                    let _ = writeln!(
+                        text,
+                        "hybridinvoke {} {}",
+                        invoke.base().invoke_id,
+                        state.id
+                    );
                 }
                 // A host-run one is named with the type the host serves, which
                 // is part of what a restore starts it with: the same id under
@@ -2410,15 +2421,20 @@ fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
 }
 
 /// Whether the document holds an `<invoke>` a restore cannot start again: a
-/// mesh call, a peer on another device, or one whose child is chosen by an
-/// expression at run time.
+/// mesh call or a peer on another device.
 ///
 /// A saved state names an invocation and a restore starts it again
-/// (§scxml-6.4). Two kinds reduce to that:
+/// (§scxml-6.4). Three kinds reduce to that:
 ///
 /// - a child session (`type="scxml"`) starts from the beginning, and what it
-///   was started with is the document — it has no parameters and no
-///   `<finalize>`, both refused in `static_datamodel`;
+///   was started with is its arguments, read again from the restored fields as
+///   its start reads them — it has no `<finalize>`, which `static_datamodel`
+///   refuses;
+/// - a hybrid invoke (`srcexpr` among declared `sce:candidates`) starts the
+///   same way, and the `srcexpr` is one more of what the start reads: the
+///   restored fields name the candidate, as they would had the state been
+///   entered, so a candidate chosen before the save is not what a restore
+///   starts unless the fields still choose it;
 /// - a host-run invocation (`<invoke type>` a declared invoker serves) starts
 ///   again from the request it was started with, which the saved state holds,
 ///   with the deadline it had left.
@@ -2427,9 +2443,8 @@ fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
 /// is running and a saved state has nothing to name.
 ///
 /// The rest do not reduce: a mesh-rpc call has one request in flight that
-/// cannot be sent twice, a mesh peer is a session this machine does not own,
-/// and a hybrid invoke chooses its child by an expression this data model
-/// refuses. A saved state that left one out would restore a machine waiting on
+/// cannot be sent twice, and a mesh peer is a session this machine does not
+/// own. A saved state that left one out would restore a machine waiting on
 /// something nobody is doing.
 ///
 /// A mesh-rpc call reaches this point already lowered to a host-served invoke
@@ -2449,7 +2464,8 @@ fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
                 info.host_served
                     && crate::host_processor_analyzer::is_reserved_type(&info.invoke_type)
             }
-            crate::model::Invoke::Hybrid(_) | crate::model::Invoke::MeshRpc(_) => true,
+            crate::model::Invoke::Hybrid(_) => false,
+            crate::model::Invoke::MeshRpc(_) => true,
         })
 }
 

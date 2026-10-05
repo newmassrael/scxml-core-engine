@@ -1,0 +1,56 @@
+# Mutation cases for the saved state of a hybrid `<invoke>` of a
+# `datamodel="sce-static"` machine generated as Kotlin
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring"): a saved state
+# names the invocation whose child is running, and a restore starts it again
+# from its beginning (W3C SCXML 6.4), reading `srcexpr` and the arguments from
+# the restored variables as entering the state would.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_hybrid_invoke_is_started_again_by_a_restore_kotlin.cases`.
+#
+# `static_invoke_hybrid_saved.scxml` invokes `watch` among two candidates, and
+# each restore test saves the machine at a moment that tells a started-again
+# child from one that is not: the watcher ends on the 8 a restored machine
+# hands it, the holder waits for a 7 it is not handed. The mutants below each
+# take one decision away and leave a machine that still compiles:
+#
+#   a saved state does not list a hybrid invocation, so nothing is started;
+#   a restore names the invocation and starts nothing;
+#   entering the state does not start a hybrid child, so there is none to save.
+#
+# The templates reach the tests only through the committed tree the regeneration
+# writes, so both halves are declared: the generated file is compiled into the
+# tests, and the command is what carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticHybridInvokeIsStartedAgainByARestoreTest'
+mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_invoke_hybrid_saved/static_invoke_hybrid_savedSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticHybridInvokeIsStartedAgainByARestoreTest.kt sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid_saved.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_watcher.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_holder.scxml
+
+# ── A saved state names a hybrid invocation ─────────────────────────
+
+mutation_case "a saved state does not list a hybrid invocation" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "{% for invoke_info in model.invokes | scxml_family %}\n        \"{{ invoke_info.invoke_id | escape_kotlin }}\" to",
+     "{% for invoke_info in model.invokes | scxml %}\n        \"{{ invoke_info.invoke_id | escape_kotlin }}\" to")
+PY
+
+# ── A restore starts the invocation again ───────────────────────────
+
+mutation_case "a restore names the invocation and starts nothing" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "    override fun restartInvoke(invokeId: String, state: {{ machine_name }}State) = deferStaticInvoke(invokeId, state)",
+     "    override fun restartInvoke(invokeId: String, state: {{ machine_name }}State) = Unit")
+PY
+
+# ── Entering the state starts a hybrid child ────────────────────────
+
+mutation_case "entering the state does not start a hybrid child" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "                // cannot start it differently.\n                deferStaticInvoke(\"{{ inv.invoke_id | escape_kotlin }}\", state)",
+     "                // cannot start it differently.\n                Unit")
+PY

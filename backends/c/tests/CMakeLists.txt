@@ -2691,7 +2691,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # suite's own, for the reason `static_host_call_arguments` does. Each
     # `<invoke>`'s child is a document the parent's generation writes beside it,
     # which the staging declares from the generator's own plan.
-    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_hybrid static_invoke_params static_invoke_string)
+    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string)
         sce_generate_static_integration_c_test(${_STATIC_INVOKE_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_INVOKE_MACHINE}.scxml"
@@ -2705,6 +2705,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_invoke.c
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_hybrid_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_hybrid_saved_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_entry_SOURCES}

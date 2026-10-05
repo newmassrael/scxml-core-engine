@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15, "Saving and
+  restoring"): a hybrid `<invoke>` whose child is running when the machine is
+  saved. A saved state names the invocation and a restore starts it again from
+  its beginning (W3C SCXML 6.4), as it does a static child — and what the start
+  reads is read again, `srcexpr` among it: the restored fields name the
+  candidate, as they would had the state been entered.
+
+  `working` invokes `watch`, whose `srcexpr` is `pick` among two candidates:
+
+    static_hybrid_watcher   handed `start = base` (7 at first), ends on 8
+    static_hybrid_holder    handed the same, ends on 7
+
+  `bump` raises `base` to 8 while the child runs, and the child is not told: a
+  child is handed its values once, when it starts. `swap` makes `pick` name the
+  other candidate.
+
+    bump, save, restore        the child is started again and handed 8: the
+                               watcher ends (`done.invoke.watch` adds 1)
+    swap, bump, save, restore  `pick` now names the holder, which is handed 8 and
+                               waits: nothing ends, and the watcher that was
+                               running when the machine was saved is not what a
+                               restore starts
+    save, restore              handed the 7 it was handed before: it waits
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_invoke_hybrid_saved">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'static_hybrid_watcher.scxml'"/>
+    <data id="base" sce:type="uint32" expr="4"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <onentry>
+      <assign location="base" expr="base + 3"/>
+    </onentry>
+    <invoke type="scxml" id="watch" srcexpr="pick"
+            sce:candidates="static_hybrid_watcher.scxml static_hybrid_holder.scxml">
+      <param name="start" expr="base"/>
+    </invoke>
+    <transition event="bump">
+      <assign location="base" expr="base + 1"/>
+    </transition>
+    <transition event="swap">
+      <assign location="pick" expr="'static_hybrid_holder.scxml'"/>
+    </transition>
+    <transition event="done.invoke.watch" target="after">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+  </state>
+  <!-- Not a <final>: a machine that has ended cannot be saved, and a child that
+       ended must be shown not to start again from a machine that still runs. -->
+  <state id="after"/>
+</scxml>

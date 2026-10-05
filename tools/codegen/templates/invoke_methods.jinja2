@@ -494,7 +494,9 @@
                             std::string computedSrc = {{ invoke_info.native_src }};
 {% if invoke_info.native_src_fails %}
                             if (sce_failure_.failed()) SCE_UNLIKELY {
+{% if 'error.execution' in model.events %}
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
+{% endif %}
                                 return;
                             }
 {% endif %}
@@ -508,7 +510,9 @@
                             auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr | escape_cpp_format }}' evaluation failed");
+{% if 'error.execution' in model.events %}
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
+{% endif %}
                                 return;
                             }
                             // `.template getValue<T>()`: `pathResult` is `auto`-deduced
@@ -539,7 +543,9 @@
                             auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr | escape_cpp_format }}' evaluation failed");
+{% if 'error.execution' in model.events %}
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
+{% endif %}
                                 return;
                             }
                             AOT_DEBUG("Hybrid invoke: contentexpr evaluated successfully");
@@ -554,8 +560,10 @@
                         // there — the arguments are not read.
                         if ({% for candidate in invoke_info.candidates %}__sce_selected_{{ invoke_info.field_suffix }} != "{{ candidate.stem | escape_cpp }}"{{ " && " if not loop.last }}{% endfor %}) {
                             SCE_LOG_ERROR("Hybrid invoke: '{}' names no declared candidate", __sce_selected_{{ invoke_info.field_suffix }});
+{% if 'error.execution' in model.events %}
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                 "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_cpp }}'{% endif %}> evaluated to a document it did not declare"));
+{% endif %}
                             return;
                         }
 {% endif %}

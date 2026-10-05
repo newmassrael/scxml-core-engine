@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "static_invoke_entry_sm.h"
+#include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
@@ -203,8 +204,26 @@ static int a_hybrid_invoke_starts_the_candidate_its_value_names(void) {
     return bad;
 }
 
+// A hybrid `<invoke>` of a document that never mentions `error.execution` has no
+// such event in its enum, and what the invoke does where it would raise one is to
+// start nothing and say nothing, not to name a member the document never
+// declared. `static_invoke_hybrid_saved` is such a document: the watcher it starts
+// is handed 7 and waits for an 8 nothing gives it.
+static int a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidate(void) {
+    static static_invoke_hybrid_saved_t sm;
+    static_invoke_hybrid_saved_init(&sm);
+    for (int i = 0; i < 5; ++i) {
+        static_invoke_hybrid_saved_step(&sm);
+    }
+    int bad = expect_count(static_invoke_hybrid_saved_get_completed(&sm), 0u, "the watcher waits for an 8");
+    bad |= expect(!static_invoke_hybrid_saved_is_in_final_state(&sm), "the machine has not ended");
+    static_invoke_hybrid_saved_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
+    bad |= a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidate();
     bad |= a_child_takes_what_its_parent_forwards();
     bad |= a_child_waits_for_its_first_event();
     bad |= leaving_the_state_cancels_the_child();

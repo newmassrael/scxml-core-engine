@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): the other
+  candidate of `static_invoke_hybrid_saved.scxml`, which ends only on the 7 it is
+  handed. A restore reads the parent's `srcexpr` again, so when the restored
+  fields name this one and hand it 8 it waits — which is how a test tells that
+  the candidate started again is the one the fields name now and not the one that
+  was running when the machine was saved.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_hybrid_holder">
+  <datamodel>
+    <data id="start" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition cond="start === 7" target="leaf"/>
+  </state>
+  <final id="leaf"/>
+</scxml>

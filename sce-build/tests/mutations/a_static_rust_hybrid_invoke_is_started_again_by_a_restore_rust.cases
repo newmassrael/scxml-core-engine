@@ -1,0 +1,58 @@
+# Mutation cases for the saved state of a hybrid `<invoke>` of a
+# `datamodel="sce-static"` machine generated as Rust
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring"): a saved state
+# names the invocation whose child is running, and a restore starts it again
+# from its beginning (W3C SCXML 6.4), reading `srcexpr` and the arguments from
+# the restored variables as entering the state would.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_hybrid_invoke_is_started_again_by_a_restore_rust.cases`.
+#
+# `static_invoke_hybrid_saved.scxml` invokes `watch` among two candidates, and
+# each restore test saves the machine at a moment that tells a started-again
+# child from one that is not: the watcher ends on the 8 a restored machine
+# hands it, the holder waits for a 7 it is not handed. The mutants below each
+# take one decision away and leave a machine that still compiles:
+#
+#   a restore names the invocation and starts nothing;
+#   entering the state does not start a hybrid child, so there is none to save;
+#   a saved state looks for the child in one candidate's slot only, so a child
+#     the restore started from the other candidate is saved as not running.
+#
+# The templates reach the tests only through the committed tree the regeneration
+# writes, so both halves are declared: the generated file is compiled into the
+# tests, and the command is what carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_static_hybrid_invoke_is_started_again_by_a_restore
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets tools/codegen/templates/rust/entry_exit_actions.rs.jinja2
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_invoke_hybrid_saved_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/a_static_hybrid_invoke_is_started_again_by_a_restore.rs sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid_saved.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_watcher.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_holder.scxml
+
+# ── A restore starts the invocation again ───────────────────────────
+
+mutation_case "a restore names the invocation and starts nothing" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "            \"{{ invoke_info.invoke_id }}\" => self.defer_invoke_{{ invoke_info.field_suffix }}(engine),",
+     "            \"{{ invoke_info.invoke_id }}\" => {}")
+PY
+
+# ── Entering the state starts a hybrid child ────────────────────────
+
+mutation_case "entering the state does not start a hybrid child" <<'PY'
+edit("tools/codegen/templates/rust/entry_exit_actions.rs.jinja2",
+     "(srcexpr/contentexpr evaluated at macrostep end)\n                {  {{- annot.annotation_comment(invoke_info, \"rust\", \"                    \") }}\n                    self.defer_invoke_{{ invoke_info.field_suffix }}(engine);",
+     "(srcexpr/contentexpr evaluated at macrostep end)\n                {  {{- annot.annotation_comment(invoke_info, \"rust\", \"                    \") }}\n                    let _ = &engine;")
+PY
+
+# ── The child is looked for in every candidate's slot ───────────────
+
+mutation_case "a saved state looks for the child in one candidate's slot only" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some()",
+     "{% for candidate in invoke_info.candidates[:1] %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some()")
+PY
