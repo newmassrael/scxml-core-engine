@@ -86,7 +86,7 @@ class Invoke(ABC, Generic[E]):
     @abstractmethod
     def drain_events(self) -> Iterable[Tuple[str, Any]]:
         """W3C SCXML 6.4 — yield every `(event_name, data)` the target
-        has raised to its parent (e.g. `<send target="#_parent">`)
+        has raised to its parent (e.g. `<send target='#_parent'>`)
         since the last drain. The runtime promotes each tuple onto
         the parent's external queue via `Engine.send_external_by_name`."""
 
@@ -100,7 +100,7 @@ class Invoke(ABC, Generic[E]):
         `metadata` is an `EventMetadata`. On the autoforward path it is
         the source event's own metadata — §6.4 mandates an exact copy, so
         the implementation preserves its fields. On the explicit
-        `<send target="#_<invokeid>">` path it is a freshly built envelope
+        `<send target='#_<invokeid>'>` path it is a freshly built envelope
         carrying only what that `<send>` specified."""
 
     @abstractmethod
@@ -129,7 +129,7 @@ class ScxmlInvoke(Invoke):
     """W3C SCXML 6.4 — in-process child statechart invoke. Wraps a
     pre-instantiated child `Engine` plus a parent-event queue the
     child's generated policy writes into when it executes
-    `<send target="#_parent">`.
+    `<send target='#_parent'>`.
 
     The child's main loop is its own `advance_time(0)` macrostep settler
     — `tick()` runs that so any newly-due child schedules drain into
@@ -159,7 +159,7 @@ class ScxmlInvoke(Invoke):
 
     def origin(self) -> str:
         # The child engine's policy owns the session id the parent uses to
-        # identify this invocation (W3C SCXML 5.10.1 `_event.origin`).
+        # identify this invocation (§scxml-5.10.1 `_event.origin`).
         return getattr(self._child.policy, "_session_id", "") or ""
 
     def drain_events(self) -> Iterable[Tuple[str, Any]]:

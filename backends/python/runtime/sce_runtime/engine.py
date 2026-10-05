@@ -1135,7 +1135,7 @@ class Engine(Generic[S, E]):
 
     def register_mesh_router(self, router: HostSendHandler) -> None:
         """Register `router` as the Event I/O Processor Mesh sends reach — the
-        build lowers a ``<send target="#peer">`` to ``<send type="sce:mesh">``
+        build lowers a ``<send target='#peer'>`` to ``<send type="sce:mesh">``
         and reports ``needs_mesh_router`` on its manifest when the machine has
         one.
 
@@ -1292,7 +1292,7 @@ class Engine(Generic[S, E]):
             )
         response = handler(HostInvokeEvent(start=request))
         if response is not None and response.refusal is not None:
-            # W3C SCXML 6.4.1: the host could not start it, so it never
+            # §scxml-6.4.1: the host could not start it, so it never
             # started — taken back out of the running set with its deadline
             # dropped, and the element's error raised with what the host said.
             del self._started_host_invokes[(request.processor_type, request.invoke_id)]
@@ -1534,7 +1534,7 @@ class Engine(Generic[S, E]):
     ) -> None:
         """W3C SCXML 5.10 + 6.4 — enqueue an external event addressed by
         its wire name (`done.invoke.<id>`, `error.execution`, or any
-        child-raised `<send target="#_parent">` name). Unknown names
+        child-raised `<send target='#_parent'>` name). Unknown names
         drop silently; matches W3C 5.10.1 ("if no transition is enabled
         the event is lost"). Used by the runtime to lift child-raised
         events onto the parent's external queue with the originating
@@ -1557,7 +1557,7 @@ class Engine(Generic[S, E]):
         )
         if self._refuses_host_invoke_completion(event_name, metadata):
             return
-        # W3C SCXML 3.13 / 6.3.1 — a wire name like `done.invoke._invoke_0`
+        # §scxml-3.13 / 6.3.1 — a wire name like `done.invoke._invoke_0`
         # surfaces on a document that only declares the generic
         # `done.invoke` descriptor: the policy resolves it through its
         # dot-token prefixes, and token-prefix matching at the transition
@@ -1808,7 +1808,7 @@ class Engine(Generic[S, E]):
                 return "unreachable"
             route = ScheduledRoute(kind="session", event_name=event_name, session_id=address)
         elif kind == send_module.TARGET_PARENT:
-            # W3C SCXML C.1: a session nothing invoked has no parent to
+            # §scxml-C-1: a session nothing invoked has no parent to
             # reach, delayed or not.
             if self._policy._parent_queue is None:
                 return "unreachable"
@@ -1915,7 +1915,7 @@ class Engine(Generic[S, E]):
         Without this, a wiring mistake on a delayed send is perfect
         silence: the act never happens, nothing says so, and the document
         goes on waiting for a reply that has nobody left to come from."""
-        # W3C SCXML C.2 + 6.2.4 — a delayed BasicHTTP send waits in this
+        # §scxml-C-2 + 6.2.4 — a delayed BasicHTTP send waits in this
         # queue as a host-served one does, and its deadline performs the
         # POST the immediate send would have made, through the same
         # callback, so the reply it draws comes back as it does from an
@@ -1964,7 +1964,7 @@ class Engine(Generic[S, E]):
         if ms < 0:
             raise ValueError("advance_time requires a non-negative delta")
         self._now_ms += ms
-        # W3C SCXML 6.4 — propagate the time delta to every active
+        # §scxml-6.4 — propagate the time delta to every active
         # child so its scheduler stays in lock-step with the parent's
         # virtual clock. Done BEFORE draining the parent scheduler so
         # any child-raised `<send target="#_parent">` lands in the
@@ -2413,7 +2413,7 @@ class Engine(Generic[S, E]):
         The states are not exited here: the microstep that entered the final
         is still running. The main event loop ends on the flag set here and
         runs `_exit_interpreter` then (test236: a child invoke's
-        `<final><onexit><send target="#_parent">` must reach the parent)."""
+        `<final><onexit><send target='#_parent'>` must reach the parent)."""
         parent = self._policy.get_parent(final_state)
         if parent is None:
             self._terminal_state = final_state
@@ -2446,7 +2446,7 @@ class Engine(Generic[S, E]):
         clears it, and inserts the resulting `Invoke` instances into
         `_active_invokes`. Children that complete during their own
         initialise raise `done.invoke.<id>` and any child-side
-        `<send target="#_parent">` onto the parent's external queue;
+        `<send target='#_parent'>` onto the parent's external queue;
         `_run_main_event_loop` is the caller and picks them up on its
         next iteration."""
         if not self._pending_invokes:

@@ -2141,6 +2141,11 @@
         {
           "file": "sce/include/core/ExternalEventBudget.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "send_external_by_name",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6089,6 +6094,11 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "RaiseExternalByName",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/invoke.py",
+          "symbol": "origin",
           "kind": "references"
         }
       ],
@@ -11596,6 +11606,11 @@
           "file": "backends/go/runtime/invoke.go",
           "symbol": "DocumentStem",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "advance_time",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12095,6 +12110,11 @@
         {
           "file": "sce-build/src/generator.rs",
           "symbol": "generate_go_for_module",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "perform_host_invoke",
           "kind": "references"
         }
       ],
@@ -14831,6 +14851,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "send_to_target",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -15397,6 +15422,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduleHttpSend",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_perform_deferred_host_send",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
