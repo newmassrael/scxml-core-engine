@@ -466,6 +466,7 @@ fn each_invoke_shape_renders_once_and_whole() {
             result_schema: "AskResult".to_string(),
             request_schema_at: None,
             result_schema_at: None,
+            ..UnsupportedInvokeInfo::default()
         }),
     ];
 

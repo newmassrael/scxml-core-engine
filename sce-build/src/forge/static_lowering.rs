@@ -322,6 +322,14 @@ pub trait StaticTarget {
     fn lowers_cancel_expr(&self) -> bool {
         false
     }
+    /// Whether the `srcexpr` of an `<invoke>` a host runs is lowered to the
+    /// string it computes ([`UnsupportedInvokeInfo::native_src`]) that the
+    /// backend hands the host as the request's `src` when the invocation
+    /// starts. A target that does not is refused where the `<invoke>` is
+    /// walked, by name, rather than left to start it with no `src`.
+    fn lowers_host_src_expr(&self) -> bool {
+        false
+    }
     /// Whether a transition may read the payload of an event whose schema
     /// declares an enum field: the target holds the field in the machine's own
     /// type for the enum and reads it off the wire as the variant's declared
@@ -977,6 +985,10 @@ impl StaticTarget for KotlinTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The host invoke hands the host the `src` it computes (`hostInvokeSrc`).
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1121,6 +1133,10 @@ impl StaticTarget for RustTarget {
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_event`).
     fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
+    // The host invoke hands the host the `src` it computes (`host_invoke_src`).
+    fn lowers_host_src_expr(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -1768,6 +1784,7 @@ pub fn lower(
             match invoke {
                 crate::model::Invoke::Unsupported(info) => {
                     info.fold_namelist_into_params();
+                    lower_host_src(info, &plain_ctx, &plain_renames, &rewrites)?;
                     for param in &mut info.base.params {
                         lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
                     }
@@ -2874,6 +2891,10 @@ impl StaticTarget for CppTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The host invoke hands the host the `src` it computes (`hostInvoke.src`).
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3379,6 +3400,10 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The host invoke hands the host the `src` it computes (`hostInvokeSrc`).
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3808,6 +3833,10 @@ impl StaticTarget for PythonTarget {
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_send`).
     fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
+    // The host invoke hands the host the `src` it computes (`_host_src`).
+    fn lowers_host_src_expr(&self) -> bool {
         true
     }
     // The attribute the payload channel fills when the engine dequeues an
@@ -4650,6 +4679,12 @@ impl StaticTarget for CTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
+    // The host invoke hands the host the `src` it computes (`_host_inv.src`),
+    // held by a variable or written out; one that joins text is refused for the
+    // reason a delay is.
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     // The member of the channel's union the event's payload is lifted into
     // (`build_c11_event_payload`), whose fields carry the schema's own ids.
     fn payload_accessor(&self, event: &str) -> String {
@@ -5477,6 +5512,47 @@ fn lower_wire_param(
         param.native_value = value;
         param.native_fails = fails;
     }
+    Ok(())
+}
+
+/// Lower the `srcexpr` of an `<invoke>` a host runs, in place: the string it
+/// computes, which the host is handed as the request's `src`
+/// ([`crate::model::UnsupportedInvokeInfo::native_src`]), and whether it can
+/// fail. The attribute is cleared once it is lowered, so no template evaluates
+/// it a second time. Read when the invocation starts, where no event's payload
+/// is in scope, so the lowering is given none.
+fn lower_host_src(
+    info: &mut crate::model::UnsupportedInvokeInfo,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    if info.srcexpr.trim().is_empty() {
+        return Ok(());
+    }
+    let target = rewrites.target;
+    let lang = target.name();
+    if !target.lowers_host_src_expr() {
+        return Err(GenerateError::unsupported(format!(
+            "an <invoke> a host runs with a srcexpr has no {lang} lowering yet"
+        )));
+    }
+    let value = transpile_into_owned(
+        &info.srcexpr,
+        target.expr_target(),
+        ctx,
+        renames,
+        InferredType::Str,
+    )
+    .map_err(|r| {
+        GenerateError::unsupported(format!(
+            "`{}` has no {lang} lowering: {}",
+            info.srcexpr, r.error
+        ))
+    })?;
+    info.native_src = value.text;
+    info.native_src_fails = value.can_fail;
+    info.srcexpr.clear();
     Ok(())
 }
 

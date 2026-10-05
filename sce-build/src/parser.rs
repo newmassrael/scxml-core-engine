@@ -4572,6 +4572,7 @@ impl SCXMLParser {
                 // the invocation, read as the other arms read them. Dropped
                 // here until 2026-09-25, so a host that ran the type got the
                 // `src` and the literal params and nothing else.
+                srcexpr_spelling: AttributeSpelling::of(elem, None, "srcexpr"),
                 srcexpr,
                 namelist,
                 content: content_text,
@@ -4585,6 +4586,8 @@ impl SCXMLParser {
                 result_schema: typed.result,
                 request_schema_at: typed.request_at,
                 result_schema_at: typed.result_at,
+                // What lowering fills in, for a document that has it lowered.
+                ..UnsupportedInvokeInfo::default()
             })));
         }
 

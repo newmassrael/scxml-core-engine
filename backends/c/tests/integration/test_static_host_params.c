@@ -37,6 +37,7 @@ enum { MAX_PARAMS = 8 };
 // What the host saw of one request: a `<send>`'s or an `<invoke>`'s.
 typedef struct {
     int calls;
+    char src[64];
     char event_data[256];
     int param_count;
     char names[MAX_PARAMS][32];
@@ -74,6 +75,7 @@ static void on_invoke(void *user_data, const sce_host_invoke_event_t *event, sce
         return;
     }
     seen->calls++;
+    (void)snprintf(seen->src, sizeof(seen->src), "%s", event->src);
     (void)snprintf(seen->event_data, sizeof(seen->event_data), "%s", event->event_data);
     for (int i = 0; i < event->param_count; i++) {
         note_param(seen, event->params[i].name, event->params[i].value);
@@ -189,6 +191,26 @@ static int an_invoke_param_carries_the_value_the_fields_hold_when_it_starts(void
     // A copy taken at start-up would say count 3, ready false, label idle.
     bad |= expect_params("invoke", &host.invoke, "4", "true", "busy", "8");
     bad |= expect_event_data("invoke event data", &host.invoke);
+    // The string the machine computed when the invocation started.
+    bad |= expect_text("invoke src", host.invoke.src, "job://params");
+    statechart_static_host_params_destroy(&sm);
+    return bad;
+}
+
+// W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `big`
+// makes `count` too large for the multiplication the `srcexpr` is chosen by, so
+// the source cannot be computed and the host is never asked.
+static int an_invoke_whose_source_cannot_be_computed_starts_nothing(void) {
+    static sm_t sm;
+    host_t host;
+    memset(&host, 0, sizeof(host));
+    boot(&sm, &host);
+    int bad = drive(&sm, "big") && drive(&sm, "go") ? 0 : 1;
+    if (host.invoke.calls != 0) {
+        (void)fprintf(stderr, "FAIL: a source nobody could compute starts nothing: the host saw %d\n",
+                      host.invoke.calls);
+        bad = 1;
+    }
     statechart_static_host_params_destroy(&sm);
     return bad;
 }
@@ -244,6 +266,7 @@ int main(void) {
     int bad = 0;
     bad |= a_send_param_carries_the_value_the_fields_hold_when_it_is_sent();
     bad |= an_invoke_param_carries_the_value_the_fields_hold_when_it_starts();
+    bad |= an_invoke_whose_source_cannot_be_computed_starts_nothing();
     bad |= a_param_read_before_any_bump_carries_the_declared_values();
     bad |= a_param_whose_value_cannot_be_computed_is_reported_and_left_out();
     if (bad != 0) {

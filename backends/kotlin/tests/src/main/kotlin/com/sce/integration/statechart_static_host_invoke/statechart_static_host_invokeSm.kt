@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 327f32bfac689bab002347f6271fd03e8461d4f1c6443bb61810f8495664127d
+// source-hash: bc49353528c5016f597a40bdea3f7d294d38f4af5ab2b1e8d51f531e0040d019
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_static_host_invoke.scxml:42 :: _machine
+// SCE-MAP: statechart_static_host_invoke.scxml:44 :: _machine
 
 package com.sce.integration.statechart_static_host_invoke
 
@@ -50,6 +50,8 @@ class StatechartStaticHostInvokeStateMachine(
     private var job: UInt = 7.toUInt()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
     private var label: String = "report"
+    /** W3C SCXML 5.2: the `place` datamodel variable, the machine's own. */
+    private var place: String = "job://report"
     /** W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`). */
     var seen: UInt = 0.toUInt()
         private set
@@ -62,6 +64,7 @@ class StatechartStaticHostInvokeStateMachine(
     class InvokeParams {
         var job: UInt? = null
         var label: String? = null
+        var place: String? = null
         var seen: UInt? = null
     }
 
@@ -69,6 +72,7 @@ class StatechartStaticHostInvokeStateMachine(
     fun acceptParams(params: InvokeParams) {
         params.job?.let { job = it }
         params.label?.let { label = it }
+        params.place?.let { place = it }
         params.seen?.let { seen = it }
     }
 
@@ -118,7 +122,7 @@ class StatechartStaticHostInvokeStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "6c5500351260aea6df554c7d384da2c3d9c85ac7094c6f1401a93a4610aa72e4"
+    val savedShape: String = "647781765f19981584d6277b376df1cb577a70c191c4983ee2d71737b9f93ac9"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -136,6 +140,7 @@ class StatechartStaticHostInvokeStateMachine(
         linkedMapOf(
             "job" to SavedValues.of(job),
             "label" to SavedValues.of(label),
+            "place" to SavedValues.of(place),
             "seen" to SavedValues.of(seen),
         ),
         wallNowMs,
@@ -164,10 +169,12 @@ class StatechartStaticHostInvokeStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("job"), "job")
         val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved3 = SavedValues.uint32(saved.variable("seen"), "seen")
+        val saved3 = SavedValues.string(saved.variable("place"), "place", 16)
+        val saved4 = SavedValues.uint32(saved.variable("seen"), "seen")
         job = saved1
         label = saved2
-        seen = saved3
+        place = saved3
+        seen = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -348,20 +355,20 @@ class StatechartStaticHostInvokeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_static_host_invoke.scxml:42 :: _machine
+    // SCE-MAP: statechart_static_host_invoke.scxml:44 :: _machine
     override fun onEntry(state: StatechartStaticHostInvokeState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartStaticHostInvokeState.After -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:77 :: after :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:80 :: after :: _state_body
             }
             is StatechartStaticHostInvokeState.Failed -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:78 :: failed :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:81 :: failed :: _state_body
             }
             is StatechartStaticHostInvokeState.Idle -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:51 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:54 :: idle :: _state_body
             }
             is StatechartStaticHostInvokeState.Working -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:58 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:61 :: working :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -375,6 +382,7 @@ class StatechartStaticHostInvokeStateMachine(
                 run {
                     val generatedInvokeId = "working.${System.identityHashCode(this)}.h"
                     deferInvoke(state, generatedInvokeId) {
+                        val hostInvokeSrc: String = place
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -402,7 +410,7 @@ class StatechartStaticHostInvokeStateMachine(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "h",
-                                src = "job://report",
+                                src = hostInvokeSrc,
                                 params = hostInvokeParams,
                                 eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
                                 content = "payload"                            )
@@ -422,20 +430,20 @@ class StatechartStaticHostInvokeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_static_host_invoke.scxml:42 :: _machine
+    // SCE-MAP: statechart_static_host_invoke.scxml:44 :: _machine
     override fun onExit(state: StatechartStaticHostInvokeState) {
         when (state) {
             is StatechartStaticHostInvokeState.After -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:77 :: after :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:80 :: after :: _state_body
             }
             is StatechartStaticHostInvokeState.Failed -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:78 :: failed :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:81 :: failed :: _state_body
             }
             is StatechartStaticHostInvokeState.Idle -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:51 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:54 :: idle :: _state_body
             }
             is StatechartStaticHostInvokeState.Working -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:58 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_invoke.scxml:61 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -449,12 +457,12 @@ class StatechartStaticHostInvokeStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_static_host_invoke.scxml:42 :: _machine
+    // SCE-MAP: statechart_static_host_invoke.scxml:44 :: _machine
     override fun executeTransitionContent(source: StatechartStaticHostInvokeState, transitionIndex: Int) {
         when (source) {
         is StatechartStaticHostInvokeState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:52 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_host_invoke.scxml:55 :: idle :: _transition_0
 
             if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -464,21 +472,21 @@ class StatechartStaticHostInvokeStateMachine(
         }
         is StatechartStaticHostInvokeState.Working -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:65 :: working :: _transition_0
+                // SCE-MAP: statechart_static_host_invoke.scxml:68 :: working :: _transition_0
 
             if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:68 :: working :: _transition_1
+                // SCE-MAP: statechart_static_host_invoke.scxml:71 :: working :: _transition_1
 
             if (try { seen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(seen, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
-                // SCE-MAP: statechart_static_host_invoke.scxml:71 :: working :: _transition_2
+                // SCE-MAP: statechart_static_host_invoke.scxml:74 :: working :: _transition_2
 
             if (try { seen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(seen, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return

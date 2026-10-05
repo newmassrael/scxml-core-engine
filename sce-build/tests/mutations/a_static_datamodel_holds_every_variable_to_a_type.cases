@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/model.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/kotlin.rs sce-build/src/model.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -375,4 +375,47 @@ mutation_case "a cancel sendidexpr is not lowered to the string it computes" <<'
 edit("sce-build/src/forge/static_lowering.rs",
      "            action.native_sendid = value.text;\n",
      "            let _ = &value.text;\n")
+PY
+
+# The `srcexpr` of an `<invoke>` a host runs is a string the machine computes,
+# the `src` the host is handed when the invocation starts. Six mutants take one
+# step away: it is refused as script text again; a `src` is admitted beside it, a
+# source named twice; it is not held to a string, so a number names a source; it
+# is not lowered, so a backend with no engine hands the host none; it stands after
+# it is lowered, so a backend evaluates it a second time with an engine the
+# machine lacks; and the Kotlin template is not told the string it was lowered to.
+mutation_case "a host-run invoke's srcexpr is script text again" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                _ => \"\",\n            },\n            _ => \"\",\n        };\n        // A host-run invoke's `<content expr>` is evaluated when it starts, as\n",
+     "                _ => \"\",\n            },\n            Invoke::Unsupported(info) => info.srcexpr.as_str(),\n            _ => \"\",\n        };\n        // A host-run invoke's `<content expr>` is evaluated when it starts, as\n")
+PY
+
+mutation_case "a src is admitted beside a host-run invoke's srcexpr" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                if !info.src.trim().is_empty() {\n                    return Err(self.rule_at(\n                        format!(\"srcexpr=",
+     "                if false && !info.src.trim().is_empty() {\n                    return Err(self.rule_at(\n                        format!(\"srcexpr=")
+PY
+
+mutation_case "a host-run invoke's srcexpr is not held to a string" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                    &info.srcexpr,\n                    spelling,\n                    Expected::Slot(InferredType::Str),\n",
+     "                    &info.srcexpr,\n                    spelling,\n                    Expected::Hint(InferredType::Unknown),\n")
+PY
+
+mutation_case "a host-run invoke's srcexpr is not lowered to the string it computes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    info.native_src = value.text;\n",
+     "    let _ = &value.text;\n")
+PY
+
+mutation_case "a host-run invoke's srcexpr stands after it is lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    info.srcexpr.clear();\n",
+     "")
+PY
+
+mutation_case "a Kotlin host invoke is not told the source it was lowered to" <<'PY'
+edit("sce-build/src/kotlin.rs",
+     "                    \"native_src\": ui.native_src.as_str(),\n",
+     "                    \"native_src\": \"\",\n")
 PY

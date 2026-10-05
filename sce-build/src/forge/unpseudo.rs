@@ -3385,6 +3385,8 @@ fn parse_scxml_invoke(
             // rebuilt from one names no row — as for every page-built node.
             request_schema_at: None,
             result_schema_at: None,
+            // What lowering fills in, and no source to take a spelling from.
+            ..UnsupportedInvokeInfo::default()
         }),
     })
 }

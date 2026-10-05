@@ -317,6 +317,25 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                raises error.execution and starts nothing; a `<param>` that
                cannot is reported and dropped (W3C SCXML 5.7.1) while the
                invocation still starts. */
+{% if invoke_info.native_src %}
+            /* `datamodel="sce-static"`: the `src` is a string the machine
+               computed from its own fields (`UnsupportedInvokeInfo::native_src`),
+               no script engine asked. One that failed cannot be evaluated: it
+               raises error.execution and starts nothing. */
+            const char *_host_inv_src_native = "";
+            {
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                _host_inv_src_native = {{ invoke_info.native_src }};
+                if (sce_failure_.failed) {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke> srcexpr failed to evaluate");
+{% endif %}
+                    continue;
+                }
+            }
+{% endif %}
 {% for attr, buf, cap, expr in [('src', '_host_inv_src', 'SCE_MAX_URI_LEN', invoke_info.srcexpr), ('content', '_host_inv_content', 'SCE_MAX_DATA_LEN', invoke_info.contentexpr)] %}
 {% if expr %}
             char {{ buf }}[{{ cap }}];
@@ -496,7 +515,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 _host_inv.phase = SCE_HOST_INVOKE_START;
                 _host_inv.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
                 _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
-                _host_inv.src = {% if invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
+                _host_inv.src = {% if invoke_info.native_src %}_host_inv_src_native{% elif invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
                 _host_inv.content = {% if invoke_info.contentexpr %}_host_inv_content{% else %}"{{ invoke_info.content | default('', true) | escape_c }}"{% endif %};
                 _host_inv.event_data = _host_inv_event_data;
                 /* W3C SCXML 6.4.1: the machine's one start path records the

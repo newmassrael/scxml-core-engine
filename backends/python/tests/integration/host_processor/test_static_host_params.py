@@ -107,6 +107,16 @@ def test_an_invoke_param_carries_the_value_the_fields_hold_when_it_starts() -> N
     # A copy taken at start-up would say count 3, ready false, label idle.
     assert starts[0].params == _wanted("4", "true", "busy", "8"), "the text each <param> crosses as"
     _assert_typed_event_data(starts[0].event_data, "invoke")
+    assert starts[0].src == "job://params", "the src is the string the machine computed when the invocation started"
+
+
+def test_an_invoke_whose_source_cannot_be_computed_starts_nothing() -> None:
+    # W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. ``big``
+    # makes ``count`` too large for the multiplication the ``srcexpr`` is chosen by,
+    # so the source cannot be computed and the host is never asked.
+    engine, _, starts = _started()
+    _drive(engine, ["big", "go"])
+    assert starts == [], "a source nobody could compute starts nothing"
 
 
 def test_a_param_read_before_any_bump_carries_the_declared_values() -> None:

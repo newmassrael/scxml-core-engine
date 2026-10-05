@@ -39,6 +39,12 @@
   abbreviates, so the host is handed the same pairs either way, and the one
   set of assertions every backend makes about the request holds for both.
 
+  The invoke's `src` is computed too (`srcexpr`, a string the machine holds,
+  chosen by a condition that multiplies a field, so the expression can fail).
+  `big` makes `count` too large for that multiplication, and an invocation whose
+  source cannot be computed starts nothing: the host is never asked, which the
+  start log says.
+
   Deliberately single-axis: no event payload, no delay. The send's `namelist`
   is held by `static_send_namelist`. `statechart_host_processor.scxml` owns the
   dispatch under `ecmascript`; this one owns what a typed expression puts on
@@ -58,6 +64,7 @@
     <data id="label" sce:type="string" sce:capacity="16" expr="'idle'"/>
     <data id="delta" sce:type="int16" expr="-5"/>
     <data id="ratio" sce:type="float64" expr="1.5"/>
+    <data id="tag" sce:type="string" sce:capacity="16" expr="'job://params'"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
 
@@ -66,6 +73,9 @@
       <assign location="count" expr="count + 1"/>
       <assign location="ready" expr="true"/>
       <assign location="label" expr="'busy'"/>
+    </transition>
+    <transition event="big">
+      <assign location="count" expr="3000000000"/>
     </transition>
     <transition event="go" target="working"/>
   </state>
@@ -82,7 +92,8 @@
         <param name="boom" expr="count * 2000000000"/>
       </send>
     </onentry>
-    <invoke type="x-sce-host" id="h" namelist="delta ratio">
+    <invoke type="x-sce-host" id="h" namelist="delta ratio"
+            srcexpr="count * 2 &gt; 0 ? tag : tag">
       <param name="count" expr="count"/>
       <param name="ready" expr="ready"/>
       <param name="label" expr="label"/>

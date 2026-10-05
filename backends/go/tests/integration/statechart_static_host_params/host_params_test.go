@@ -143,6 +143,20 @@ func TestAnInvokeParamCarriesTheValueTheFieldsHoldWhenItStarts(t *testing.T) {
 		t.Errorf("the text each <param> crosses as: got %v, want %v", got, want)
 	}
 	assertTypedEventData(t, (*s.starts)[0].EventData, "invoke")
+	if got := (*s.starts)[0].Src; got != "job://params" {
+		t.Errorf("the src is the string the machine computed when the invocation started: got %q", got)
+	}
+}
+
+// W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `big`
+// makes `count` too large for the multiplication the `srcexpr` is chosen by, so
+// the source cannot be computed and the host is never asked.
+func TestAnInvokeWhoseSourceCannotBeComputedStartsNothing(t *testing.T) {
+	s := newStarted()
+	s.drive("big", "go")
+	if len(*s.starts) != 0 {
+		t.Errorf("a source nobody could compute starts nothing: %v", *s.starts)
+	}
 }
 
 // The same machine on the shorter run: nothing has written a variable, so the

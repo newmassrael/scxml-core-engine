@@ -587,6 +587,25 @@
                             return;
                         }
 {% endif %}
+{% if invoke_info.native_src %}
+{# `datamodel="sce-static"`: the `src` is a string computed from the machine's
+   fields now (`UnsupportedInvokeInfo::native_src`); no script engine is asked.
+   One that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+                        {
+{% if invoke_info.native_src_fails %}
+                            SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                            std::string computedSrc = {{ invoke_info.native_src }};
+{% if invoke_info.native_src_fails %}
+                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
+                                return;
+                            }
+{% endif %}
+                            hostInvoke.src = std::move(computedSrc);
+                        }
+{% endif %}
 {% if invoke_info.srcexpr %}
                         {
                             auto srcResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();

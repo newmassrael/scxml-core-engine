@@ -1602,14 +1602,14 @@ impl<'a> Judge<'a> {
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
         // A mesh-rpc `srcexpr` names its peer by an expression, evaluated as
         // script-engine text. The `namelist` of a child session is judged with
-        // its `<param>`s ([`Self::child_arguments`]), and that of a host-run
-        // invoke with the pairs of its request, below.
+        // its `<param>`s ([`Self::child_arguments`]), and the `namelist` and
+        // `srcexpr` of a host-run invoke with the request it hands the host,
+        // below.
         let srcexpr = match invoke {
             Invoke::MeshRpc(info) => match &info.target {
                 crate::model::MeshRpcTarget::SrcExpr { srcexpr } => srcexpr.as_str(),
                 _ => "",
             },
-            Invoke::Unsupported(info) => info.srcexpr.as_str(),
             _ => "",
         };
         // A host-run invoke's `<content expr>` is evaluated when it starts, as
@@ -1689,6 +1689,29 @@ impl<'a> Judge<'a> {
                         &param.expr,
                     ));
                 }
+            }
+            // The `src` the host is handed is a string computed from the
+            // machine's fields when the invocation starts. The element names its
+            // source one way, written or computed, so a `src` beside it is
+            // refused.
+            if !info.srcexpr.is_empty() {
+                let spelling = info.srcexpr_spelling.as_ref();
+                if !info.src.trim().is_empty() {
+                    return Err(self.rule_at(
+                        format!("srcexpr=\"{}\"", info.srcexpr),
+                        "an <invoke> names its source as `src` or as `srcexpr`, and never as both",
+                        spelling.map(|s| s.row()).or(line),
+                        spelling.map(|s| s.col()).or(col),
+                        state,
+                        &info.srcexpr,
+                    ));
+                }
+                self.expr(
+                    ctx,
+                    &info.srcexpr,
+                    spelling,
+                    Expected::Slot(InferredType::Str),
+                )?;
             }
             for param in &base.params {
                 self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 327f32bfac689bab002347f6271fd03e8461d4f1c6443bb61810f8495664127d
+// source-hash: bc49353528c5016f597a40bdea3f7d294d38f4af5ab2b1e8d51f531e0040d019
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_static_host_params.scxml:52 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:58 :: _machine
 
 package statechart_static_host_params
 
@@ -140,7 +140,7 @@ var documentInitialTargetsOfStatechartStaticHostParams = []StatechartStaticHostP
 // source's own transitions. A targetless transition's entry is empty.
 var transitionTargetsOfStatechartStaticHostParams = [3][][]StatechartStaticHostParamsTarget{
 	StatechartStaticHostParamsStateIdle: {
-		1: {sce.StateTarget[StatechartStaticHostParamsState, sce.HistoryID](StatechartStaticHostParamsStateWorking)},
+		2: {sce.StateTarget[StatechartStaticHostParamsState, sce.HistoryID](StatechartStaticHostParamsStateWorking)},
 	},
 	StatechartStaticHostParamsStateWorking: {
 		1: {sce.StateTarget[StatechartStaticHostParamsState, sce.HistoryID](StatechartStaticHostParamsStateDone)},
@@ -154,18 +154,21 @@ var transitionTargetsOfStatechartStaticHostParams = [3][][]StatechartStaticHostP
 type StatechartStaticHostParamsEvent int
 
 const (
-	StatechartStaticHostParamsEventBump StatechartStaticHostParamsEvent = 0
-	StatechartStaticHostParamsEventDoneInvoke StatechartStaticHostParamsEvent = 1
-	StatechartStaticHostParamsEventDoneInvokeH StatechartStaticHostParamsEvent = 2
-	StatechartStaticHostParamsEventErrorExecution StatechartStaticHostParamsEvent = 3
-	StatechartStaticHostParamsEventGo StatechartStaticHostParamsEvent = 4
-	StatechartStaticHostParamsEventNotify StatechartStaticHostParamsEvent = 5
+	StatechartStaticHostParamsEventBig StatechartStaticHostParamsEvent = 0
+	StatechartStaticHostParamsEventBump StatechartStaticHostParamsEvent = 1
+	StatechartStaticHostParamsEventDoneInvoke StatechartStaticHostParamsEvent = 2
+	StatechartStaticHostParamsEventDoneInvokeH StatechartStaticHostParamsEvent = 3
+	StatechartStaticHostParamsEventErrorExecution StatechartStaticHostParamsEvent = 4
+	StatechartStaticHostParamsEventGo StatechartStaticHostParamsEvent = 5
+	StatechartStaticHostParamsEventNotify StatechartStaticHostParamsEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StatechartStaticHostParamsEventNull StatechartStaticHostParamsEvent = 6
+	StatechartStaticHostParamsEventNull StatechartStaticHostParamsEvent = 7
 )
 
 func (e StatechartStaticHostParamsEvent) String() string {
 	switch e {
+	case StatechartStaticHostParamsEventBig:
+		return "big"
 	case StatechartStaticHostParamsEventBump:
 		return "bump"
 	case StatechartStaticHostParamsEventDoneInvoke:
@@ -203,6 +206,8 @@ type StatechartStaticHostParamsPolicy struct {
 	vDelta int16
 	// W3C SCXML 5.2: the `ratio` datamodel variable.
 	vRatio float64
+	// W3C SCXML 5.2: the `tag` datamodel variable.
+	vTag string
 	// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
 	vErrors uint32
 	pendingInvokes []sce.PendingInvoke[StatechartStaticHostParamsState]
@@ -224,6 +229,7 @@ func NewStatechartStaticHostParamsPolicy() StatechartStaticHostParamsPolicy {
 		vLabel: "idle",
 		vDelta: -5,
 		vRatio: 1.5,
+		vTag: "job://params",
 		vErrors: 0,
 		pendingInvokes: make([]sce.PendingInvoke[StatechartStaticHostParamsState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
@@ -245,6 +251,7 @@ type StatechartStaticHostParamsInvokeParams struct {
 	VLabel *string
 	VDelta *int16
 	VRatio *float64
+	VTag *string
 	VErrors *uint32
 }
 
@@ -265,6 +272,9 @@ func (p *StatechartStaticHostParamsPolicy) AcceptParams(params StatechartStaticH
 	}
 	if params.VRatio != nil {
 		p.vRatio = *params.VRatio
+	}
+	if params.VTag != nil {
+		p.vTag = *params.VTag
 	}
 	if params.VErrors != nil {
 		p.vErrors = *params.VErrors
@@ -305,6 +315,15 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 			// that cannot is reported and left out (W3C SCXML 5.7.1).
 			hostInvokeSrc := ""
 			hostInvokeContent := ""
+			{
+				var sceFailure scealgorithm.Failure
+				computedSrc := func() string { if scealgorithm.MulUint32(&sceFailure, p.vCount, 2) > 0 { return p.vTag }; return p.vTag }()
+				if sceFailure.Failed() {
+					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke srcexpr> could not be evaluated"))
+					continue
+				}
+				hostInvokeSrc = computedSrc
+			}
 			hostInvokeParams := map[string][]string{}
 			// The same pairs as the data model holds them, for the request's
 			// EventData: one evaluation, read as text for Params and typed for
@@ -524,6 +543,8 @@ func (p *StatechartStaticHostParamsPolicy) GetEventName(event StatechartStaticHo
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StatechartStaticHostParamsPolicy) GetEventFromName(name string) (StatechartStaticHostParamsEvent, bool) {
 	switch name {
+	case "big":
+		return StatechartStaticHostParamsEventBig, true
 	case "bump":
 		return StatechartStaticHostParamsEventBump, true
 	case "done.invoke":
@@ -647,11 +668,11 @@ func (p *StatechartStaticHostParamsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartStaticHostParamsStateWorking:
-		//line statechart_static_host_params.scxml:73
+		//line statechart_static_host_params.scxml:83
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -774,7 +795,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -782,7 +803,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], configurationBeforeExit []StatechartStaticHostParamsState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -810,7 +831,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -820,7 +841,7 @@ func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStat
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state StatechartStaticHostParamsState, event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) (sce.EnabledTransition[StatechartStaticHostParamsState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartStaticHostParamsStateIdle:
@@ -834,12 +855,22 @@ func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state Statecha
 				}, true
 			}
 		}
+		if event == StatechartStaticHostParamsEventBig {
+			{
+				return sce.EnabledTransition[StatechartStaticHostParamsState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 		if event == StatechartStaticHostParamsEventGo {
 			{
 				return sce.EnabledTransition[StatechartStaticHostParamsState, sce.HistoryID]{
 					Source:          state,
-					Targets:         transitionTargetsOfStatechartStaticHostParams[state][1],
-					TransitionIndex: 1,
+					Targets:         transitionTargetsOfStatechartStaticHostParams[state][2],
+					TransitionIndex: 2,
 					HasActions:      false,
 					IsInternal:      false,
 				}, true
@@ -873,13 +904,13 @@ func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state Statecha
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_static_host_params.scxml:52
+//line statechart_static_host_params.scxml:58
 func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source StatechartStaticHostParamsState, transitionIndex int, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	switch source {
 	case StatechartStaticHostParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:65
+			//line statechart_static_host_params.scxml:72
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -899,11 +930,20 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 	}
 
 			}()
+		case 1:
+			//line statechart_static_host_params.scxml:77
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vCount = 3000000000
+
+			}()
 		}
 	case StatechartStaticHostParamsStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:92
+			//line statechart_static_host_params.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -8,8 +8,10 @@
   "working" with nobody working.
 
   `working` hands a job to the host: the invoke carries a typed `<param>` read
-  from the machine's fields (`job`, `label`), an inline `<content>`, a `src`,
-  and a deadline (`_sce_deadline_ms`, which the engine keeps rather than handing
+  from the machine's fields (`job`, `label`), an inline `<content>`, a `src`
+  the machine computes (`srcexpr="place"`, a string it holds, read when the
+  invocation starts), and a deadline (`_sce_deadline_ms`, which the engine
+  keeps rather than handing
   to the host). The host answers later, with `done.invoke.h` or `error.invoke.h`,
   or the deadline does:
 
@@ -45,6 +47,7 @@
   <datamodel>
     <data id="job" sce:type="uint32" expr="7"/>
     <data id="label" sce:type="string" sce:capacity="16" expr="'report'"/>
+    <data id="place" sce:type="string" sce:capacity="16" expr="'job://report'"/>
     <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
 
@@ -56,7 +59,7 @@
   </state>
 
   <state id="working">
-    <invoke type="x-sce-host" id="h" src="job://report">
+    <invoke type="x-sce-host" id="h" srcexpr="place">
       <param name="_sce_deadline_ms" expr="5000"/>
       <param name="label" expr="label"/>
       <param name="job" expr="job"/>

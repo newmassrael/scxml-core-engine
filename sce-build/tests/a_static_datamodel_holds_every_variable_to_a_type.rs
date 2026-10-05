@@ -2764,21 +2764,28 @@ fn a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it() {
 
 #[test]
 fn what_a_host_run_invoke_evaluates_besides_its_params_has_no_typed_form() {
-    // Its `srcexpr` and `<content expr>` are script text a backend would hand
-    // to an engine this data model does not have; they are refused, as the same
-    // attributes of every other element are. Its `namelist` is not among them:
-    // it names variables, and is the pairs of its request.
-    for invoke in [
-        r#"<invoke type="x-sce-host" id="h" srcexpr="'a'"/>"#,
-        r#"<invoke type="x-sce-host" id="h"><content expr="count"/></invoke>"#,
-    ] {
-        let document = machine(&format!(
-            "<state id=\"s\">\n    {invoke}\n    <transition event=\"go\" target=\"done\"/>\n  </state>"
-        ));
-        let (ok, out) = run(&["check"], &document);
-        assert!(!ok, "{invoke} has no typed form:\n{out}");
-        assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
-    }
+    // Its `<content expr>` is script text a backend would hand to an engine
+    // this data model does not have; it is refused, as the same attributes of
+    // every other element are. Its `namelist` and its `srcexpr` are not among
+    // them: the first names variables and is the pairs of its request, the
+    // second is a string the machine computes.
+    let invoke = r#"<invoke type="x-sce-host" id="h"><content expr="count"/></invoke>"#;
+    let document = machine(&format!(
+        "<state id=\"s\">\n    {invoke}\n    <transition event=\"go\" target=\"done\"/>\n  </state>"
+    ));
+    let (ok, out) = run(&["check"], &document);
+    assert!(!ok, "{invoke} has no typed form:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+}
+
+/// [`invoking_the_host`] over a machine that also holds the string `place`,
+/// which a `srcexpr` can read.
+fn invoking_the_host_from_a_place(invoke: &str) -> String {
+    invoking_the_host(invoke).replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="ready" sce:type="bool" expr="false"/>
+    <data id="place" sce:type="string" sce:capacity="16" expr="'job://report'"/>"#,
+    )
 }
 
 /// A `sce-static` machine whose first state holds `invoke` on line 9.
@@ -2924,6 +2931,128 @@ fn a_host_run_invoke_namelist_name_that_repeats_a_param_is_refused_for_c() {
     );
     assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
     assert!(out.contains("twice"), "it says why:\n{out}");
+}
+
+#[test]
+fn a_host_run_invoke_srcexpr_is_a_string_the_machine_computes() {
+    // The `src` the host is handed is a string, written out or joined from the
+    // machine's fields, read when the invocation starts.
+    for expr in ["'job://report'", "'job://' + count"] {
+        let (ok, out) = run(
+            &["check"],
+            &invoking_the_host(&format!(
+                r#"<invoke type="x-sce-host" id="h" srcexpr="{expr}"/>"#
+            )),
+        );
+        assert!(ok, "`{expr}` is a string:\n{out}");
+    }
+}
+
+#[test]
+fn a_host_run_invoke_srcexpr_that_is_no_string_or_is_doubled_is_refused_on_its_line() {
+    for (what, invoke, code) in [
+        (
+            "a number, which is no source",
+            r#"<invoke type="x-sce-host" id="h" srcexpr="count"/>"#,
+            "expression/type-mismatch",
+        ),
+        (
+            "a src beside it",
+            r#"<invoke type="x-sce-host" id="h" src="a" srcexpr="'b'"/>"#,
+            "scxml/static-datamodel-rule",
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &invoking_the_host(invoke));
+        assert!(!ok, "{what}: no source is named by it:\n{out}");
+        assert_refused_at(&out, code, 9);
+    }
+    let (ok, out) = run(
+        &["check"],
+        &invoking_the_host(r#"<invoke type="x-sce-host" id="h" srcexpr="missing + 'x'"/>"#),
+    );
+    assert!(!ok, "a name no variable declares is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+}
+
+#[test]
+fn a_host_run_invoke_srcexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
+    // Read from the machine's fields when the invocation starts, so no engine
+    // evaluates it and the manifest says so, in every backend that runs one.
+    let document = invoking_the_host_from_a_place(
+        r#"<invoke type="x-sce-host" id="h" srcexpr="place"><param name="k" expr="count"/></invoke>"#,
+    );
+    // Each backend's assignment of the source from the variable, and the
+    // assignment it makes of the source when an engine evaluates the attribute,
+    // which this machine must not carry: the helpers an engine's machines hold
+    // are in every generated machine, so only that assignment tells the two apart.
+    for (language, read, engine_call) in [
+        (
+            "rust",
+            "host_invoke_src = self.place",
+            "host_invoke_src = ::sce_rust_runtime",
+        ),
+        (
+            "kotlin",
+            "val hostInvokeSrc: String = place",
+            "val hostInvokeSrc = try",
+        ),
+        (
+            "go",
+            "hostInvokeSrc = p.vPlace",
+            "hostInvokeSrc = sce.ToWireString",
+        ),
+        (
+            "python",
+            "_host_src = self.v_place",
+            "_host_src = engine._script_engine",
+        ),
+        (
+            "c",
+            "_host_inv_src_native = sm->policy.v_place",
+            "char _host_inv_src[",
+        ),
+        (
+            "cpp",
+            "std::string computedSrc = v_place",
+            "hostInvoke.src = ::SCE::ScriptResultUtils",
+        ),
+    ] {
+        let (out, code) = generated_code(language, &document);
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a source computed from the fields needs no engine:\n{out}"
+        );
+        let text: String = code.values().cloned().collect();
+        assert!(
+            text.contains(read),
+            "{language}: the source the host is handed is read from the variable (`{read}`)"
+        );
+        assert!(
+            !text.contains(engine_call),
+            "{language}: no engine evaluates the source (`{engine_call}`)"
+        );
+    }
+}
+
+#[test]
+fn a_host_run_invoke_srcexpr_that_joins_text_is_refused_for_c_by_name() {
+    // A C string has no storage for the joined text; a source held by a
+    // variable is generated.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+            "--host-invoker",
+            "x-sce-host",
+        ],
+        &invoking_the_host(r#"<invoke type="x-sce-host" id="h" srcexpr="'job://' + count"/>"#),
+    );
+    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
+    assert!(out.contains("concatenation"), "it says why:\n{out}");
 }
 
 #[test]

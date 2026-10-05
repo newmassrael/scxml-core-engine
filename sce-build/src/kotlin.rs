@@ -361,6 +361,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     // the template reads was chosen to reach it.
                     "src": ui.src.as_str(),
                     "srcexpr": ui.srcexpr.as_str(),
+                    // The `srcexpr` of a `sce-static` document, lowered to the
+                    // string it computes, which the template reads in its place.
+                    "native_src": ui.native_src.as_str(),
+                    "native_src_fails": ui.native_src_fails,
                     "namelist": ui.namelist.as_str(),
                     "content": ui.content.as_str(),
                     "contentexpr": ui.contentexpr.as_str(),

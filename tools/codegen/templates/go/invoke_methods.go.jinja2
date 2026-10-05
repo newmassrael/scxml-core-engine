@@ -347,6 +347,27 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				continue
 			}
 {% endif %}
+{% if invoke_info.native_src %}
+{# `datamodel="sce-static"`: the `src` is a string computed from the machine's
+   fields now (`UnsupportedInvokeInfo::native_src`); no script engine is asked.
+   One that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+{% if invoke_info.native_src_fails %}
+			{
+				var sceFailure scealgorithm.Failure
+				computedSrc := {{ invoke_info.native_src }}
+				if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"))
+{% endif %}
+					continue
+				}
+				hostInvokeSrc = computedSrc
+			}
+{% else %}
+			hostInvokeSrc = {{ invoke_info.native_src }}
+{% endif %}
+{% endif %}
 {% for attr, var, expr in [('src', 'hostInvokeSrc', invoke_info.srcexpr), ('content', 'hostInvokeContent', invoke_info.contentexpr)] %}
 {% if expr %}
 			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ expr | to_lua_expr }}`); err == nil {

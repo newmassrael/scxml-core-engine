@@ -596,6 +596,27 @@
                 let mut host_invoke_src = "{{ invoke_info.src | default('', true) | escape_rust }}".to_string();
                 #[allow(unused_mut)]
                 let mut host_invoke_content = "{{ invoke_info.content | default('', true) | escape_rust }}".to_string();
+{% if invoke_info.native_src %}
+{# `datamodel="sce-static"`: the `src` is a string computed from the machine's
+   fields now (`UnsupportedInvokeInfo::native_src`); no script engine is asked.
+   One that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing. #}
+{% if invoke_info.native_src_fails %}
+                match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+                    Ok({{ invoke_info.native_src }})
+                })() {
+                    Ok(value) => host_invoke_src = value,
+                    Err(_) => {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"));
+{% endif %}
+                        continue;
+                    }
+                }
+{% else %}
+                host_invoke_src = {{ invoke_info.native_src }};
+{% endif %}
+{% endif %}
 {% for attr, expr in [('src', invoke_info.srcexpr), ('content', invoke_info.contentexpr)] %}
 {% if expr %}
                 {

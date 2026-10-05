@@ -157,6 +157,26 @@ fn an_invoke_param_carries_the_value_the_fields_hold_when_it_starts() {
          count 3, ready false, label idle"
     );
     assert_typed_event_data(&starts[0].event_data, "invoke");
+    assert_eq!(
+        starts[0].src, "job://params",
+        "the `src` is the string the machine computed when the invocation started"
+    );
+}
+
+/// W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `big`
+/// makes `count` too large for the multiplication the `srcexpr` is chosen by, so
+/// the source cannot be computed and the host is never asked.
+#[test]
+fn an_invoke_whose_source_cannot_be_computed_starts_nothing() {
+    let (mut engine, _, starts) = started();
+    drive(&mut engine, &["big", "go"]);
+    assert_eq!(engine.get_current_state(), State::Working);
+
+    let starts = starts.lock().expect("start log");
+    assert!(
+        starts.is_empty(),
+        "a source nobody could compute starts nothing: {starts:?}"
+    );
 }
 
 #[test]
