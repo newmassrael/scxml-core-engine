@@ -34,6 +34,7 @@ pub mod error;
 pub mod figures;
 mod lock;
 pub mod model_set;
+pub mod requests;
 pub mod requirements;
 pub mod review;
 pub mod revision;
