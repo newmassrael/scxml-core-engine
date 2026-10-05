@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "56f38d5f273",
+  "embed_version": "fe9d723b9ba",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 298,
+  "symbol_count": 299,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -161,6 +161,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::DatamodelValidationHelper"
+    },
+    {
+      "header": "common/DocumentStem.h",
+      "kind": "function",
+      "name": "SCE::documentStem",
+      "signature": "std::string SCE::documentStem(std::string_view)"
     },
     {
       "header": "common/DoneDataHelper.h",
