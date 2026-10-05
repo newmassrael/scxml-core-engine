@@ -264,6 +264,27 @@ is the one thing this side cannot know. `tests/claude_code.rs` holds this side a
 stand-in `claude`; `tests/claude_code_live.rs` (ignored, minutes and money) runs the real
 client through the real server and product once, end to end.
 
+**Who hosts it.** Both shells call `host::start`, so that what they host cannot differ for a
+reason that lives in a shell: the desktop application (as `desktop`) and the browser shell used
+while developing the screen (as `web-shell`). It finds what it needs the way the product's
+generator is found (the environment, then beside the program, then the search path) and a shell
+that cannot find it does not fail: it says what it looked for and hosts nothing, and the
+application shows that no AI is connected and works as it always did. Nobody has to have Claude
+Code to use the workbench.
+
+| What | Environment | Otherwise |
+|---|---|---|
+| Claude Code | `SCE_CLAUDE` | `claude` on the search path |
+| The authoring server's launcher | `SCE_AUTHOR_MCP` (a checkout has `scripts/sce_author_mcp.sh`) | `sce-author-mcp` beside the program or on the search path |
+| `sce-work`, for the authoring server | `SCE_WORK` | beside the program or on the search path |
+| The product, for the authoring server | `SCE_CODEGEN` | the product's own discovery |
+
+`SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses, and
+`SCE_CLAUDE_BUDGET_USD` bounds what one run may cost (anything that is not a positive number is
+no bound). Dropping the host, which the desktop application does when it exits, stops the
+runner and kills a client at work: closing the window does not leave a run nobody is waiting
+for.
+
 An AI adapter says it is there by reporting (`report_adapter`: its name, its kind and what it
 can do) and is there for ninety seconds after its last report. `read_adapter_status` lists the
 adapters that ever reported with whether each is there now, so the screen can say that no AI is
@@ -491,6 +512,7 @@ else: it has no file-system, shell or network permission.
 | Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
 | The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of the same package |
 | Claude Code as the generator, against a stand-in client (Unix) | `--test claude_code` of the same package |
+| A shell that hosts the executor: the settings, what it says when it cannot, taking a request, stopping | `--test host` of the same package |
 | The real client, server and product end to end (a model runs: minutes and money) | `cargo test -p sce-app-core --features cli --test claude_code_live -- --ignored --nocapture` |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |

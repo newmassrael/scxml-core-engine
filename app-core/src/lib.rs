@@ -37,6 +37,7 @@ pub mod clock;
 pub mod commands;
 pub mod error;
 pub mod figures;
+pub mod host;
 mod lock;
 pub mod model_set;
 pub mod requests;

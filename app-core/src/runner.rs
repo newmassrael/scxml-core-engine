@@ -199,23 +199,22 @@ pub enum Outcome {
 }
 
 /// Finds requests, takes them, and has a [`Generator`] write for them.
-pub struct Runner<C: Clock, G, P> {
+pub struct Runner<C: Clock, G> {
     store: Arc<WorkStore<C>>,
-    product: Arc<P>,
+    product: Arc<dyn Product>,
     generator: Arc<G>,
     config: RunnerConfig,
     shutdown: Cancel,
 }
 
-impl<C, G, P> Runner<C, G, P>
+impl<C, G> Runner<C, G>
 where
     C: Clock + Send + Sync,
     G: Generator,
-    P: Product + Send + Sync,
 {
     pub fn new(
         store: Arc<WorkStore<C>>,
-        product: Arc<P>,
+        product: Arc<dyn Product>,
         generator: Arc<G>,
         config: RunnerConfig,
     ) -> Self {
@@ -415,7 +414,7 @@ where
             }
             match complete_generation(
                 &self.store,
-                self.product.as_ref(),
+                &*self.product,
                 work,
                 request,
                 holder,

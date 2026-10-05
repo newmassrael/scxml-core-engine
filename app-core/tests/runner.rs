@@ -146,7 +146,7 @@ impl Fixture {
         &self,
         generator: &Arc<Scripted>,
         config: RunnerConfig,
-    ) -> Runner<Arc<ManualClock>, Scripted, FakeRenderer> {
+    ) -> Runner<Arc<ManualClock>, Scripted> {
         Runner::new(
             Arc::clone(&self.store),
             Arc::new(FakeRenderer),

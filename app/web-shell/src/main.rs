@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use sce_app_core::host::{self, HostSettings};
 use sce_app_core::{default_renderer, default_root, SceCodegen, WorkStore};
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
@@ -104,6 +105,27 @@ fn run() -> Result<(), String> {
     } else {
         eprintln!("open:         http://{bound}/#token=<SCE_WEB_TOKEN>");
     }
+
+    // The same executor the desktop application hosts, so that the screen being developed here
+    // can be pressed "generate" on and be answered. Held to the end of the program: it stops
+    // a client at work when the server stops, and `SCE_EXECUTOR=off` hosts nothing.
+    let _executor = match host::start(
+        Arc::new(WorkStore::at(root.clone())),
+        Arc::from(default_renderer()),
+        HostSettings::from_environment("web-shell"),
+    ) {
+        Ok(running) => {
+            eprintln!(
+                "executor:     Claude Code {}",
+                running.client_version().unwrap_or_default()
+            );
+            Some(running)
+        }
+        Err(why) => {
+            eprintln!("executor:     none ({why})");
+            None
+        }
+    };
 
     let shell = Arc::new(Shell::new(WorkStore::at(root), figures, token, assets));
     let runtime = tokio::runtime::Builder::new_multi_thread()

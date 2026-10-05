@@ -20,12 +20,14 @@
 
 mod close_gate;
 
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use close_gate::{CloseGate, Decision};
+use sce_app_core::host::{self, ExecutorHost, HostSettings};
 use sce_app_core::{call, default_renderer, default_root, CommandError, Product, WorkStore};
 use serde_json::Value;
-use tauri::{Manager, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 /// What the shell asks the screen to run when a window that holds unsaved changes is
 /// asked to close. A fixed script with nothing of the person's in it.
@@ -36,6 +38,25 @@ const ASK_THE_SCREEN: &str = "window.sceCloseRequested && window.sceCloseRequest
 struct Works {
     store: WorkStore,
     figures: Box<dyn Product>,
+}
+
+/// The executor this application hosts, when it found what it needs: a runner on a thread of
+/// its own that takes the requests the owner makes. Held so that it is stopped when the
+/// application ends, and a client at work is killed with it and not left running.
+struct Executor(Mutex<Option<ExecutorHost>>);
+
+/// Host the application's own executor, or say why it does not. Not having Claude Code is not
+/// an error: the application shows that no AI is connected and works as it always did.
+fn host_the_executor(root: std::path::PathBuf) -> Executor {
+    let store = Arc::new(WorkStore::at(root));
+    let product: Arc<dyn Product> = Arc::from(default_renderer());
+    match host::start(store, product, HostSettings::from_environment("desktop")) {
+        Ok(running) => Executor(Mutex::new(Some(running))),
+        Err(why) => {
+            eprintln!("sce-workbench: {why}");
+            Executor(Mutex::new(None))
+        }
+    }
 }
 
 /// Run one of the store's commands. The screen's only way to anything.
@@ -98,6 +119,7 @@ pub fn run() {
                     .expect("the platform has no per-user data directory")
                     .join("works")
             });
+            app.manage(host_the_executor(root.clone()));
             app.manage(Works {
                 store: WorkStore::at(root),
                 figures: default_renderer(),
@@ -105,6 +127,21 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sce_call, sce_unsaved, sce_close])
-        .run(tauri::generate_context!())
-        .expect("the application could not start");
+        .build(tauri::generate_context!())
+        .expect("the application could not start")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Stopped here and not left to the end of the process: a client at work is a
+                // child process, and one that outlives the window is a run nobody is waiting for.
+                if let Some(running) = app
+                    .state::<Executor>()
+                    .0
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                {
+                    running.stop();
+                }
+            }
+        });
 }
