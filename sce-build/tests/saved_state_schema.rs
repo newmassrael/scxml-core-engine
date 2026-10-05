@@ -121,6 +121,7 @@ fn the_schema_refuses_what_no_backend_writes() {
             }
         ],
         "hostinvoketoken": "7",
+        "sendseq": "3",
         "external": [
             {
                 "name": "tick", "data": "", "type": "external",
@@ -290,6 +291,16 @@ fn the_schema_refuses_what_no_backend_writes() {
             "hostinvoketoken",
             serde_json::json!(7),
         ),
+        (
+            "a send count that is not a text of digits",
+            "sendseq",
+            serde_json::json!("-1"),
+        ),
+        (
+            "a send count that is a number",
+            "sendseq",
+            serde_json::json!(3),
+        ),
     ];
     for (what, key, value) in broken {
         let mut instance = good.clone();
@@ -304,8 +315,16 @@ fn the_schema_refuses_what_no_backend_writes() {
     // with `[]`, and one that does not say is not this format. For `invokes`
     // that is what keeps a document with an `<invoke>` from restoring a state
     // that says "working" with nobody working, and for the host-run ones the
-    // same, with the token a restore carries on from.
-    for field in ["pending", "invokes", "hostinvokes", "hostinvoketoken"] {
+    // same, with the token a restore carries on from. The send count is the
+    // same kind of field: without it a restored machine would hand out an id
+    // a send still waiting in the saved state already holds.
+    for field in [
+        "pending",
+        "invokes",
+        "hostinvokes",
+        "hostinvoketoken",
+        "sendseq",
+    ] {
         let mut without = good.clone();
         without.as_object_mut().expect("an object").remove(field);
         assert!(

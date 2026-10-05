@@ -1132,6 +1132,12 @@ pub struct Engine<P: StatePolicy> {
     /// build composes with the capped-string convention used across
     /// `EventMetadata` (B-γ2d-1).
     pub(crate) donedata_at_final: SceString,
+    /// How many ids this machine has generated for a `<send idlocation>`: the
+    /// number the last one carried. Counted per machine, not per process, so a
+    /// machine's ids do not depend on what else ran beside it, and carried
+    /// through a saved state, so a restored machine never hands the document an
+    /// id an earlier run already did — the document may still hold it.
+    pub(crate) auto_send_seq: u64,
 }
 
 impl<P: StatePolicy> Engine<P> {
@@ -1195,6 +1201,7 @@ impl<P: StatePolicy> Engine<P> {
             macrostep_microsteps_taken: 0,
             macrostep_truncated: false,
             donedata_at_final: SceString::new(),
+            auto_send_seq: 0,
         }
     }
 
@@ -3775,6 +3782,29 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "no_std"))]
     pub(crate) fn set_next_host_invoke_token(&mut self, next: u64) {
         self.host_processors.set_next_token(next);
+    }
+
+    /// The id for a `<send idlocation>`, which the document keeps and may name
+    /// in a `<cancel>` later: `_auto_send_` and the number of ids this machine
+    /// has generated, counted from one. Unique within the machine, as the send's
+    /// id must be, and the same text on every backend
+    /// ([`crate::helpers::unique_id_generator::format_auto_send_id`]).
+    pub fn next_auto_send_id(&mut self) -> SceString {
+        self.auto_send_seq += 1;
+        crate::helpers::unique_id_generator::format_auto_send_id(self.auto_send_seq)
+    }
+
+    /// The number the last id from [`next_auto_send_id`](Self::next_auto_send_id)
+    /// carried, which a save writes so that a restore carries on from it.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn auto_send_seq(&self) -> u64 {
+        self.auto_send_seq
+    }
+
+    /// Hand `<send idlocation>` ids numbers after `seq` from here on.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn set_auto_send_seq(&mut self, seq: u64) {
+        self.auto_send_seq = seq;
     }
 
     /// §scxml-6.4: a host-run invocation finished; raise its

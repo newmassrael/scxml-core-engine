@@ -1015,6 +1015,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var nextHostInvokeToken: Long = 0
 
     /**
+     * How many ids this machine has generated for a `<send idlocation>`: the
+     * number the last one carried. Counted per machine, not per process, so a
+     * machine's ids do not depend on what else ran beside it, and carried
+     * through a saved state, so a restored machine never hands the document an
+     * id an earlier run already did — the document may still hold it.
+     */
+    private var autoSendSeq: Long = 0
+
+    /**
+     * The id for a `<send idlocation>`, which the document keeps and may name in
+     * a `<cancel>` later: `_auto_send_` and the number of ids this machine has
+     * generated, counted from one. Unique within the machine, as the send's id
+     * must be, and the same text on every backend.
+     */
+    protected fun nextAutoSendId(): String = "_auto_send_${++autoSendSeq}"
+
+    /**
      * How many host-run invocations' `done.invoke` events the engine refused
      * because they did not arrive through [completeHostInvoke].
      *
@@ -2444,6 +2461,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             invokes = runningInvokes(),
             hostInvokes = runningHostInvokes(wallNowMs),
             hostInvokeToken = nextHostInvokeToken,
+            autoSendSeq = autoSendSeq,
             external = externalEventQueue.map { queued ->
                 SavedEvent(
                     // §scxml-5.10: saved under the name the event ARRIVED under, so a
@@ -2755,6 +2773,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         externalEventQueue.addAll(savedExternal(saved))
         rearmHostInvokes(saved, wallNowMs)
         nextHostInvokeToken = saved.hostInvokeToken
+        autoSendSeq = saved.autoSendSeq
         // Last, so what a child sends as it starts stands behind what was
         // already waiting: the saved machine's queue was ahead of it. Started as
         // entering the state starts them — deferred, then run together — so a

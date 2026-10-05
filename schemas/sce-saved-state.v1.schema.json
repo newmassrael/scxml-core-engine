@@ -5,7 +5,7 @@
   "title": "SCE saved state (wire schema v1)",
   "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "invokes", "hostinvokes", "hostinvoketoken", "external"],
+  "required": ["format", "shape", "configuration", "current", "variables", "history", "pending", "invokes", "hostinvokes", "hostinvoketoken", "sendseq", "external"],
   "additionalProperties": false,
   "properties": {
     "format": {
@@ -65,6 +65,10 @@
     },
     "hostinvoketoken": {
       "description": "The token the next host-run start receives, a text of digits within a signed 64-bit count. A restore carries on from it, so a start it makes is never given a token an earlier run already handed to a host that may still answer with it.",
+      "$ref": "#/definitions/token"
+    },
+    "sendseq": {
+      "description": "How many ids the machine has generated for a <send idlocation>: the number the last one carried, a text of digits within a signed 64-bit count. The ids are `_auto_send_` and a decimal number counted from one. A restore carries on from it, so an id it generates is never one an earlier run already handed to the document, which may still hold it in a variable.",
       "$ref": "#/definitions/token"
     },
     "external": {

@@ -122,6 +122,11 @@ pub struct SavedState {
     /// a restored machine makes is never given a token an earlier run already
     /// handed to a host that may still answer with it.
     pub host_invoke_token: u64,
+    /// How many ids the machine has generated for a `<send idlocation>`: the
+    /// number the last one carried. Carried on, so that an id a restored machine
+    /// generates is never one an earlier run already handed to the document,
+    /// which may still hold it in a variable.
+    pub auto_send_seq: u64,
     /// The external queue, front first: events a host raised and has not yet
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
@@ -613,6 +618,10 @@ impl SavedState {
                 Value::Text(self.host_invoke_token.to_string()),
             ),
             (
+                "sendseq".to_string(),
+                Value::Text(self.auto_send_seq.to_string()),
+            ),
+            (
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
@@ -694,6 +703,10 @@ impl SavedState {
             Value::Text(written) => read_token(written, "hostinvoketoken")?,
             _ => return Err(StateRefusal::new("'hostinvoketoken' is not a text")),
         };
+        let auto_send_seq = match field("sendseq")? {
+            Value::Text(written) => read_token(written, "sendseq")?,
+            _ => return Err(StateRefusal::new("'sendseq' is not a text")),
+        };
         let external = match field("external")? {
             Value::Array(items) => items
                 .iter()
@@ -712,6 +725,7 @@ impl SavedState {
             invokes,
             host_invokes,
             host_invoke_token,
+            auto_send_seq,
             external,
         })
     }
@@ -968,6 +982,7 @@ pub fn save<P: StatePolicy>(
             .collect(),
         host_invokes: save_host_invokes(engine, wall_now_ms),
         host_invoke_token: engine.next_host_invoke_token(),
+        auto_send_seq: engine.auto_send_seq(),
         external: engine
             .external_queue
             .queued()
@@ -1395,6 +1410,7 @@ pub fn enter<P: StatePolicy>(
     arm_pending(&mut engine, pending, wall_now_ms);
     rearm_host_invokes(&mut engine, &saved.host_invokes, wall_now_ms);
     engine.set_next_host_invoke_token(saved.host_invoke_token);
+    engine.set_auto_send_seq(saved.auto_send_seq);
     // Last, so what a child sends as it starts stands behind what was already
     // waiting: the saved machine's queue was ahead of it.
     engine.restart_invokes(&restarts);
@@ -1694,6 +1710,7 @@ mod tests {
                 },
             ],
             host_invoke_token: i64::MAX as u64,
+            auto_send_seq: 41,
             external: vec![
                 SavedEvent {
                     name: "tick".to_string(),

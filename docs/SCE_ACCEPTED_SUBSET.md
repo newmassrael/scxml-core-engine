@@ -4005,6 +4005,16 @@ signed 64-bit count; both fields are always present.
 `sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml` and
 `saved/statechart_static_host_invoke_running.json` hold it on both backends.
 
+`sendseq` carries how many ids the engine has handed to a `<send>` that asked
+for one, and a restore carries on from it. The id is `_auto_send_` and that
+count (§scxml-6.2.4: the processor generates an id that is unique among the
+sessions' ids and that a later `<cancel>` can name), counted from 1, so the
+id is at most 31 bytes and a variable that stores it holds 32. A restored
+engine that counted from 0 again would hand a new send the id of one still
+waiting in `pending`, and a `<cancel>` of that id would cancel both. The field
+is a text of digits within a signed 64-bit count and is always present, as
+`hostinvoketoken` is; a state saved before the field existed is not this format.
+
 The request's `event_data` is a JSON object whose members are written in one
 order on every backend — ascending by name, whatever order the document declared
 its `<param>`s in (ARCHITECTURE.md, "JSON Object Key Order") — so a host that

@@ -72,6 +72,10 @@ class StateRefusal(message: String) : Exception(message)
  * @property hostInvokeToken the token the next host-run start receives. Carried
  *   on, so that a start a restored machine makes is never given a token an
  *   earlier run already handed to a host that may still answer with it.
+ * @property autoSendSeq how many ids the machine has generated for a
+ *   `<send idlocation>`: the number the last one carried. Carried on, so that an
+ *   id a restored machine generates is never one an earlier run already handed
+ *   to the document, which may still hold it in a variable.
  * @property external the external queue, front first: events raised to the
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
@@ -87,6 +91,7 @@ class SavedState(
     val invokes: List<String> = emptyList(),
     val hostInvokes: List<SavedHostInvoke> = emptyList(),
     val hostInvokeToken: Long = 0L,
+    val autoSendSeq: Long = 0L,
     val external: List<SavedEvent> = emptyList(),
 ) {
     /** The variable [id], or a refusal naming it. */
@@ -108,6 +113,7 @@ class SavedState(
             "invokes" to invokes,
             "hostinvokes" to hostInvokes.map { it.toJsonValue() },
             "hostinvoketoken" to hostInvokeToken.toString(),
+            "sendseq" to autoSendSeq.toString(),
             "external" to external.map { it.toJsonValue() },
         )
     )
@@ -116,12 +122,13 @@ class SavedState(
         other is SavedState && other.shape == shape && other.configuration == configuration &&
             other.current == current && other.variables == variables && other.history == history &&
             other.pending == pending && other.invokes == invokes && other.hostInvokes == hostInvokes &&
-            other.hostInvokeToken == hostInvokeToken && other.external == external
+            other.hostInvokeToken == hostInvokeToken && other.autoSendSeq == autoSendSeq &&
+            other.external == external
 
     override fun hashCode(): Int =
         listOf(
             shape, configuration, current, variables, history, pending, invokes, hostInvokes, hostInvokeToken,
-            external,
+            autoSendSeq, external,
         ).hashCode()
 
     companion object {
@@ -177,6 +184,10 @@ class SavedState(
                 field("hostinvoketoken") as? String ?: throw StateRefusal("'hostinvoketoken' is not a text"),
                 "hostinvoketoken",
             )
+            val autoSendSeq = readToken(
+                field("sendseq") as? String ?: throw StateRefusal("'sendseq' is not a text"),
+                "sendseq",
+            )
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
             return SavedState(
@@ -189,6 +200,7 @@ class SavedState(
                 invokes = invokes,
                 hostInvokes = hostInvokes,
                 hostInvokeToken = hostInvokeToken,
+                autoSendSeq = autoSendSeq,
                 external = external,
             )
         }

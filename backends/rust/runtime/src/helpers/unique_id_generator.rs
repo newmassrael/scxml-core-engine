@@ -79,6 +79,32 @@ fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
     }
 }
 
+/// Build `_auto_send_{number}` into a fresh [`SceString`]: the id a machine
+/// gives a `<send idlocation>`, from the number of ids it has generated so far.
+///
+/// The same text on every backend (`_auto_send_` and a decimal number counted
+/// from one), so a machine of a document hands the document the same id
+/// wherever it runs and a saved state carries on from the number alone. At most
+/// 31 bytes: [`AUTO_SEND_ID_MAX_LEN`].
+pub fn format_auto_send_id(number: u64) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        format!("_auto_send_{}", number)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        use core::fmt::Write;
+        let mut s = SceString::new();
+        let _ = write!(&mut s, "_auto_send_{}", number);
+        s
+    }
+}
+
+/// The most bytes an id from [`format_auto_send_id`] takes: `_auto_send_` and
+/// the twenty digits of the largest `u64`. A string a document stores the id in
+/// must hold this many.
+pub const AUTO_SEND_ID_MAX_LEN: usize = 31;
+
 /// Generate a unique ID with the given prefix.
 ///
 /// Format: `{prefix}_{timestamp}_{counter}`
@@ -174,4 +200,25 @@ fn current_timestamp_millis() -> u64 {
 #[cfg(feature = "no_std")]
 fn current_timestamp_millis() -> u64 {
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_send_id_is_the_prefix_and_the_number_it_was_counted_as() {
+        assert_eq!(format_auto_send_id(1).as_str(), "_auto_send_1");
+        assert_eq!(format_auto_send_id(10).as_str(), "_auto_send_10");
+        assert_eq!(
+            format_auto_send_id(i64::MAX as u64).as_str(),
+            "_auto_send_9223372036854775807"
+        );
+    }
+
+    #[test]
+    fn no_count_makes_an_id_longer_than_the_length_a_document_is_told_to_hold() {
+        assert_eq!(format_auto_send_id(u64::MAX).len(), AUTO_SEND_ID_MAX_LEN);
+        assert_eq!(format_auto_send_id(0).len(), "_auto_send_0".len());
+    }
 }
