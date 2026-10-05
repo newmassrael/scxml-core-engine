@@ -4577,6 +4577,7 @@ impl SCXMLParser {
                 namelist,
                 content: content_text,
                 contentexpr,
+                contentexpr_spelling,
                 // Decided after the parse, by the build's `--host-invoker`
                 // declaration: the parser answers what the DOCUMENT says,
                 // and whether this platform can run the type is not in the

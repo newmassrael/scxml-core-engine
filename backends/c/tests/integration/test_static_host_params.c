@@ -87,6 +87,7 @@ static void on_invoke(void *user_data, const sce_host_invoke_event_t *event, sce
     }
     seen->calls++;
     (void)snprintf(seen->src, sizeof(seen->src), "%s", event->src);
+    (void)snprintf(seen->content, sizeof(seen->content), "%s", event->content);
     (void)snprintf(seen->event_data, sizeof(seen->event_data), "%s", event->event_data);
     for (int i = 0; i < event->param_count; i++) {
         note_param(seen, event->params[i].name, event->params[i].value);
@@ -291,6 +292,26 @@ static int an_invoke_param_carries_the_value_the_fields_hold_when_it_starts(void
     bad |= expect_event_data("invoke event data", &host.invoke);
     // The string the machine computed when the invocation started.
     bad |= expect_text("invoke src", host.invoke.src, "job://params");
+    // The body the machine computed when the invocation started, not the "idle" a
+    // copy at start-up holds.
+    bad |= expect_text("invoke content", host.invoke.content, "busy");
+    statechart_static_host_params_destroy(&sm);
+    return bad;
+}
+
+// The same for the body: `bloat` makes `huge` too large for the multiplication the
+// `<content expr>` is chosen by while `count` is as it was, so the source can be
+// computed and the body cannot, and the host is never asked.
+static int an_invoke_whose_body_cannot_be_computed_starts_nothing(void) {
+    static sm_t sm;
+    host_t host;
+    memset(&host, 0, sizeof(host));
+    boot(&sm, &host);
+    int bad = drive(&sm, "bloat") && drive(&sm, "go") ? 0 : 1;
+    if (host.invoke.calls != 0) {
+        (void)fprintf(stderr, "FAIL: a body nobody could compute starts nothing: the host saw %d\n", host.invoke.calls);
+        bad = 1;
+    }
     statechart_static_host_params_destroy(&sm);
     return bad;
 }
@@ -330,6 +351,7 @@ static int a_param_read_before_any_bump_carries_the_declared_values(void) {
     }
     bad |= expect_params("send", &host.sends[0], "3", "false", "idle", "6");
     bad |= expect_params("invoke", &host.invoke, "3", "false", "idle", "6");
+    bad |= expect_text("invoke content", host.invoke.content, "idle");
     statechart_static_host_params_destroy(&sm);
     return bad;
 }
@@ -366,6 +388,7 @@ int main(void) {
     bad |= a_send_param_carries_the_value_the_fields_hold_when_it_is_sent();
     bad |= an_invoke_param_carries_the_value_the_fields_hold_when_it_starts();
     bad |= an_invoke_whose_source_cannot_be_computed_starts_nothing();
+    bad |= an_invoke_whose_body_cannot_be_computed_starts_nothing();
     bad |= a_param_read_before_any_bump_carries_the_declared_values();
     bad |= a_send_content_that_names_a_value_carries_it_whole();
     bad |= a_send_content_read_before_any_bump_carries_the_declared_value();

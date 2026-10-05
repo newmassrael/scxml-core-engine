@@ -606,6 +606,26 @@
                             hostInvoke.src = std::move(computedSrc);
                         }
 {% endif %}
+{% if invoke_info.native_content %}
+{# `datamodel="sce-static"`: the `<content expr>` is a string computed from the
+   machine's fields now (`UnsupportedInvokeInfo::native_content`) — the body the
+   service runs; no script engine is asked. One that cannot be computed is an
+   attribute that cannot be evaluated, which raises error.execution and starts
+   nothing. #}
+                        {
+{% if invoke_info.native_content_fails %}
+                            SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                            std::string computedContent = {{ invoke_info.native_content }};
+{% if invoke_info.native_content_fails %}
+                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> content expr could not be evaluated"));
+                                return;
+                            }
+{% endif %}
+                            hostInvoke.content = std::move(computedContent);
+                        }
+{% endif %}
 {% if invoke_info.srcexpr %}
                         {
                             auto srcResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();

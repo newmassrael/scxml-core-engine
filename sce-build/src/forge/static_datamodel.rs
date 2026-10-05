@@ -1732,12 +1732,6 @@ impl<'a> Judge<'a> {
             },
             _ => "",
         };
-        // A host-run invoke's `<content expr>` is evaluated when it starts, as
-        // its `srcexpr` is.
-        let contentexpr = match invoke {
-            Invoke::Unsupported(info) => info.contentexpr.as_str(),
-            _ => "",
-        };
         // An `idlocation` stores the id the build already wrote for the invoke —
         // its `id`, or `<state>.platform_N` — and this model reads no
         // `_event.invokeid`, only `_event.data`, so nothing could compare what it
@@ -1755,16 +1749,14 @@ impl<'a> Judge<'a> {
                 &base.idlocation,
             ));
         }
-        for (attr, value) in [("srcexpr", srcexpr), ("contentexpr", contentexpr)] {
-            if !value.is_empty() {
-                return Err(self.untyped_at(
-                    format!("{attr}=\"{value}\""),
-                    line,
-                    col,
-                    state,
-                    value,
-                ));
-            }
+        if !srcexpr.is_empty() {
+            return Err(self.untyped_at(
+                format!("srcexpr=\"{srcexpr}\""),
+                line,
+                col,
+                state,
+                srcexpr,
+            ));
         }
         // A host-run invoke's `<param>` is part of the request the host
         // receives, and is judged below.
@@ -1843,6 +1835,18 @@ impl<'a> Judge<'a> {
                     ctx,
                     &info.srcexpr,
                     spelling,
+                    Expected::Slot(InferredType::Str),
+                )?;
+            }
+            // The `content` the host is handed — the body the service runs — is a
+            // string computed from the machine's fields when the invocation
+            // starts, as the `src` is: a value the host reads as text, not event
+            // data, so it is held to a string and no other type.
+            if !info.contentexpr.is_empty() {
+                self.expr(
+                    ctx,
+                    &info.contentexpr,
+                    info.contentexpr_spelling.as_ref(),
                     Expected::Slot(InferredType::Str),
                 )?;
             }

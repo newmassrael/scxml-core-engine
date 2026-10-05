@@ -617,6 +617,28 @@
                 host_invoke_src = {{ invoke_info.native_src }};
 {% endif %}
 {% endif %}
+{% if invoke_info.native_content %}
+{# `datamodel="sce-static"`: the `<content expr>` is a string computed from the
+   machine's fields now (`UnsupportedInvokeInfo::native_content`) — the body the
+   service runs; no script engine is asked. One that cannot be computed is an
+   attribute that cannot be evaluated, which raises error.execution and starts
+   nothing. #}
+{% if invoke_info.native_content_fails %}
+                match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+                    Ok({{ invoke_info.native_content }})
+                })() {
+                    Ok(value) => host_invoke_content = value,
+                    Err(_) => {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> content expr could not be evaluated"));
+{% endif %}
+                        continue;
+                    }
+                }
+{% else %}
+                host_invoke_content = {{ invoke_info.native_content }};
+{% endif %}
+{% endif %}
 {% for attr, expr in [('src', invoke_info.srcexpr), ('content', invoke_info.contentexpr)] %}
 {% if expr %}
                 {

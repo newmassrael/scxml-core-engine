@@ -156,6 +156,9 @@ def test_an_invoke_param_carries_the_value_the_fields_hold_when_it_starts() -> N
     assert starts[0].params == _wanted("4", "true", "busy", "8"), "the text each <param> crosses as"
     _assert_typed_event_data(starts[0].event_data, "invoke")
     assert starts[0].src == "job://params", "the src is the string the machine computed when the invocation started"
+    assert starts[0].content == "busy", (
+        'the content is the body the machine computed when the invocation started, not the "idle" a copy at start-up holds'
+    )
 
 
 def test_an_invoke_whose_source_cannot_be_computed_starts_nothing() -> None:
@@ -167,6 +170,16 @@ def test_an_invoke_whose_source_cannot_be_computed_starts_nothing() -> None:
     assert starts == [], "a source nobody could compute starts nothing"
 
 
+def test_an_invoke_whose_body_cannot_be_computed_starts_nothing() -> None:
+    # The same for the body: ``bloat`` makes ``huge`` too large for the
+    # multiplication the ``<content expr>`` is chosen by while ``count`` is as it
+    # was, so the source can be computed and the body cannot, and the host is never
+    # asked.
+    engine, _, starts = _started()
+    _drive(engine, ["bloat", "go"])
+    assert starts == [], "a body nobody could compute starts nothing"
+
+
 def test_a_param_read_before_any_bump_carries_the_declared_values() -> None:
     # The same machine on the shorter run: nothing has written a variable, so the
     # fields still hold what ``<data expr>`` gave them. The control that keeps the
@@ -175,6 +188,7 @@ def test_a_param_read_before_any_bump_carries_the_declared_values() -> None:
     _drive(engine, ["go"])
     assert sends[0].params == _wanted("3", "false", "idle", "6")
     assert starts[0].params == _wanted("3", "false", "idle", "6")
+    assert starts[0].content == "idle"
 
 
 def test_a_param_whose_value_cannot_be_computed_is_reported_and_left_out() -> None:

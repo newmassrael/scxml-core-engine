@@ -219,6 +219,9 @@ func TestAnInvokeParamCarriesTheValueTheFieldsHoldWhenItStarts(t *testing.T) {
 	if got := (*s.starts)[0].Src; got != "job://params" {
 		t.Errorf("the src is the string the machine computed when the invocation started: got %q", got)
 	}
+	if got := (*s.starts)[0].Content; got != "busy" {
+		t.Errorf("the content is the body the machine computed when the invocation started, not the \"idle\" a copy at start-up holds: got %q", got)
+	}
 }
 
 // W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `big`
@@ -229,6 +232,17 @@ func TestAnInvokeWhoseSourceCannotBeComputedStartsNothing(t *testing.T) {
 	s.drive("big", "go")
 	if len(*s.starts) != 0 {
 		t.Errorf("a source nobody could compute starts nothing: %v", *s.starts)
+	}
+}
+
+// The same for the body: `bloat` makes `huge` too large for the multiplication the
+// `<content expr>` is chosen by while `count` is as it was, so the source can be
+// computed and the body cannot, and the host is never asked.
+func TestAnInvokeWhoseBodyCannotBeComputedStartsNothing(t *testing.T) {
+	s := newStarted()
+	s.drive("bloat", "go")
+	if len(*s.starts) != 0 {
+		t.Errorf("a body nobody could compute starts nothing: %v", *s.starts)
 	}
 }
 
@@ -244,6 +258,9 @@ func TestAParamReadBeforeAnyBumpCarriesTheDeclaredValues(t *testing.T) {
 	}
 	if got := textParams((*s.starts)[0].Params); !reflect.DeepEqual(got, want) {
 		t.Errorf("invoke: got %v, want %v", got, want)
+	}
+	if got := (*s.starts)[0].Content; got != "idle" {
+		t.Errorf("invoke content: got %q, want \"idle\"", got)
 	}
 }
 

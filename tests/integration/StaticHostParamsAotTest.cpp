@@ -173,6 +173,18 @@ TEST_F(StaticHostParamsAotTest, AnInvokeParamCarriesTheValueTheFieldsHoldWhenItS
     EXPECT_EQ(starts[0].params, wanted("4", "true", "busy", "8"))
         << "the text each <param> crosses as: a copy taken at start-up would say count 3, ready false, label idle";
     expectTypedEventData(starts[0].eventData, "invoke");
+    EXPECT_EQ(starts[0].content, "busy") << "the content is the body the machine computed when the invocation "
+                                            "started, not the \"idle\" a copy at start-up holds";
+}
+
+// W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `bloat`
+// makes `huge` too large for the multiplication the `<content expr>` is chosen by
+// while `count` is as it was, so the source can be computed and the body cannot,
+// and the host is never asked.
+TEST_F(StaticHostParamsAotTest, AnInvokeWhoseBodyCannotBeComputedStartsNothing) {
+    drive({"bloat", "go"});
+
+    EXPECT_TRUE(starts.empty()) << "a body nobody could compute starts nothing";
 }
 
 // The same machine on the shorter run: nothing has written a variable, so the
@@ -185,6 +197,7 @@ TEST_F(StaticHostParamsAotTest, AParamReadBeforeAnyBumpCarriesTheDeclaredValues)
     ASSERT_EQ(starts.size(), 1u);
     EXPECT_EQ(sends[0].params, wanted("3", "false", "idle", "6"));
     EXPECT_EQ(starts[0].params, wanted("3", "false", "idle", "6"));
+    EXPECT_EQ(starts[0].content, "idle");
 }
 
 // W3C SCXML 5.7.1: a `<param>` whose value cannot be computed — here a

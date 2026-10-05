@@ -332,11 +332,13 @@ pub trait StaticTarget {
     fn lowers_scalar_content(&self) -> bool {
         false
     }
-    /// Whether the `srcexpr` of an `<invoke>` a host runs is lowered to the
-    /// string it computes ([`UnsupportedInvokeInfo::native_src`]) that the
-    /// backend hands the host as the request's `src` when the invocation
-    /// starts. A target that does not is refused where the `<invoke>` is
-    /// walked, by name, rather than left to start it with no `src`.
+    /// Whether the `srcexpr` and the `<content expr>` of an `<invoke>` a host
+    /// runs are lowered to the string each computes
+    /// ([`UnsupportedInvokeInfo::native_src`],
+    /// [`UnsupportedInvokeInfo::native_content`]) that the backend hands the
+    /// host as the request's `src` and `content` when the invocation starts. A
+    /// target that does not is refused where the `<invoke>` is walked, by name,
+    /// rather than left to start it with no `src` or `content`.
     fn lowers_host_src_expr(&self) -> bool {
         false
     }
@@ -1832,7 +1834,7 @@ pub fn lower(
             match invoke {
                 crate::model::Invoke::Unsupported(info) => {
                     info.fold_namelist_into_params();
-                    lower_host_src(info, &plain_ctx, &plain_renames, &rewrites)?;
+                    lower_host_request_strings(info, &plain_ctx, &plain_renames, &rewrites)?;
                     for param in &mut info.base.params {
                         lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
                     }
@@ -5689,44 +5691,49 @@ fn lower_wire_param(
     Ok(())
 }
 
-/// Lower the `srcexpr` of an `<invoke>` a host runs, in place: the string it
-/// computes, which the host is handed as the request's `src`
-/// ([`crate::model::UnsupportedInvokeInfo::native_src`]), and whether it can
+/// Lower the `srcexpr` and the `<content expr>` of an `<invoke>` a host runs, in
+/// place: each is the string it computes, which the host is handed as the
+/// request's `src` ([`crate::model::UnsupportedInvokeInfo::native_src`]) and as
+/// its `content`, the body the service runs
+/// ([`crate::model::UnsupportedInvokeInfo::native_content`]), and whether it can
 /// fail. The attribute is cleared once it is lowered, so no template evaluates
 /// it a second time. Read when the invocation starts, where no event's payload
 /// is in scope, so the lowering is given none.
-fn lower_host_src(
+fn lower_host_request_strings(
     info: &mut crate::model::UnsupportedInvokeInfo,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<(), GenerateError> {
-    if info.srcexpr.trim().is_empty() {
-        return Ok(());
-    }
     let target = rewrites.target;
     let lang = target.name();
-    if !target.lowers_host_src_expr() {
-        return Err(GenerateError::unsupported(format!(
-            "an <invoke> a host runs with a srcexpr has no {lang} lowering yet"
-        )));
+    let lower = |written: &str, attribute: &str| -> Result<(String, bool), GenerateError> {
+        if !target.lowers_host_src_expr() {
+            return Err(GenerateError::unsupported(format!(
+                "an <invoke> a host runs with a {attribute} has no {lang} lowering yet"
+            )));
+        }
+        let value = transpile_into_owned(
+            written,
+            target.expr_target(),
+            ctx,
+            renames,
+            InferredType::Str,
+        )
+        .map_err(|r| {
+            GenerateError::unsupported(format!("`{written}` has no {lang} lowering: {}", r.error))
+        })?;
+        Ok((value.text, value.can_fail))
+    };
+    if !info.srcexpr.trim().is_empty() {
+        (info.native_src, info.native_src_fails) = lower(&info.srcexpr, "srcexpr")?;
+        info.srcexpr.clear();
     }
-    let value = transpile_into_owned(
-        &info.srcexpr,
-        target.expr_target(),
-        ctx,
-        renames,
-        InferredType::Str,
-    )
-    .map_err(|r| {
-        GenerateError::unsupported(format!(
-            "`{}` has no {lang} lowering: {}",
-            info.srcexpr, r.error
-        ))
-    })?;
-    info.native_src = value.text;
-    info.native_src_fails = value.can_fail;
-    info.srcexpr.clear();
+    if !info.contentexpr.trim().is_empty() {
+        (info.native_content, info.native_content_fails) =
+            lower(&info.contentexpr, "<content expr>")?;
+        info.contentexpr.clear();
+    }
     Ok(())
 }
 

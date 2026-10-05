@@ -200,6 +200,11 @@ class StaticHostParamsTest {
                 host.starts[0].src,
                 "the src is the string the machine computed when the invocation started",
             )
+            assertEquals(
+                "busy",
+                host.starts[0].content,
+                "the content is the body the machine computed when the invocation started, not the \"idle\" a copy at start-up holds",
+            )
         }
     }
 
@@ -215,6 +220,18 @@ class StaticHostParamsTest {
         }
     }
 
+    // The same for the body: `bloat` makes `huge` too large for the multiplication
+    // the `<content expr>` is chosen by while `count` is as it was, so the source
+    // can be computed and the body cannot, and the host is never asked.
+    @Test
+    fun anInvokeWhoseBodyCannotBeComputedStartsNothing() {
+        started { sm, host ->
+            drive(sm, StatechartStaticHostParamsEvent.Bloat, StatechartStaticHostParamsEvent.Go)
+
+            assertEquals(0, host.starts.size, "a body nobody could compute starts nothing: ${host.starts}")
+        }
+    }
+
     @Test
     fun aParamReadBeforeAnyBumpCarriesTheDeclaredValues() {
         // The same machine on the shorter run: nothing has written a variable,
@@ -226,6 +243,7 @@ class StaticHostParamsTest {
             assertTrue(host.sends.size == 4 && host.starts.size == 1, "${host.sends} ${host.starts}")
             assertEquals(wanted("3", "false", "idle", "6"), host.sends[0].params)
             assertEquals(wanted("3", "false", "idle", "6"), host.starts[0].params)
+            assertEquals("idle", host.starts[0].content)
         }
     }
 

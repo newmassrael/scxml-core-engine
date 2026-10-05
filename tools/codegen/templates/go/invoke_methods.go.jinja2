@@ -368,6 +368,28 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			hostInvokeSrc = {{ invoke_info.native_src }}
 {% endif %}
 {% endif %}
+{% if invoke_info.native_content %}
+{# `datamodel="sce-static"`: the `<content expr>` is a string computed from the
+   machine's fields now (`UnsupportedInvokeInfo::native_content`) — the body the
+   service runs; no script engine is asked. One that cannot be computed is an
+   attribute that cannot be evaluated, which raises error.execution and starts
+   nothing. #}
+{% if invoke_info.native_content_fails %}
+			{
+				var sceFailure scealgorithm.Failure
+				computedContent := {{ invoke_info.native_content }}
+				if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> content expr could not be evaluated"))
+{% endif %}
+					continue
+				}
+				hostInvokeContent = computedContent
+			}
+{% else %}
+			hostInvokeContent = {{ invoke_info.native_content }}
+{% endif %}
+{% endif %}
 {% for attr, var, expr in [('src', 'hostInvokeSrc', invoke_info.srcexpr), ('content', 'hostInvokeContent', invoke_info.contentexpr)] %}
 {% if expr %}
 			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ expr | to_lua_expr }}`); err == nil {

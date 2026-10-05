@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4500332adf7cfa97272dfcd7c9c32e9f80a0408d25705f3d6b2eed7d01a88cee
+// source-hash: 2b636e9df9c9e39b6c016df490c4261f68f9ed45cf2751011900f4ec96cffb39
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
 
 package com.sce.integration.statechart_static_host_params
 
@@ -24,6 +24,7 @@ sealed interface StatechartStaticHostParamsState : State {
 sealed interface StatechartStaticHostParamsEvent : Event {
     data object After : StatechartStaticHostParamsEvent
     data object Big : StatechartStaticHostParamsEvent
+    data object Bloat : StatechartStaticHostParamsEvent
     data object Bump : StatechartStaticHostParamsEvent
     sealed interface Done : StatechartStaticHostParamsEvent {
         sealed interface Invoke : Done {
@@ -58,6 +59,8 @@ class StatechartStaticHostParamsStateMachine(
     private var ratio: Double = 1.5
     /** W3C SCXML 5.2: the `tag` datamodel variable, the machine's own. */
     private var tag: String = "job://params"
+    /** W3C SCXML 5.2: the `huge` datamodel variable, the machine's own. */
+    private var huge: UInt = 1.toUInt()
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
     var errors: UInt = 0.toUInt()
         private set
@@ -74,6 +77,7 @@ class StatechartStaticHostParamsStateMachine(
         var delta: Short? = null
         var ratio: Double? = null
         var tag: String? = null
+        var huge: UInt? = null
         var errors: UInt? = null
     }
 
@@ -85,6 +89,7 @@ class StatechartStaticHostParamsStateMachine(
         params.delta?.let { delta = it }
         params.ratio?.let { ratio = it }
         params.tag?.let { tag = it }
+        params.huge?.let { huge = it }
         params.errors?.let { errors = it }
     }
 
@@ -134,7 +139,7 @@ class StatechartStaticHostParamsStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "15c0d238fae626a8f851c4b2aa591a258a7168cd6e3c4b5899426eec53333936"
+    val savedShape: String = "b286785fdef50776d9642d37e26700602e2eff4718258424a77f400ff92c5e20"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -156,6 +161,7 @@ class StatechartStaticHostParamsStateMachine(
             "delta" to SavedValues.of(delta),
             "ratio" to SavedValues.of(ratio),
             "tag" to SavedValues.of(tag),
+            "huge" to SavedValues.of(huge),
             "errors" to SavedValues.of(errors),
         ),
         wallNowMs,
@@ -188,14 +194,16 @@ class StatechartStaticHostParamsStateMachine(
         val saved4 = SavedValues.int16(saved.variable("delta"), "delta")
         val saved5 = SavedValues.float64(saved.variable("ratio"), "ratio")
         val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
-        val saved7 = SavedValues.uint32(saved.variable("errors"), "errors")
+        val saved7 = SavedValues.uint32(saved.variable("huge"), "huge")
+        val saved8 = SavedValues.uint32(saved.variable("errors"), "errors")
         count = saved1
         ready = saved2
         label = saved3
         delta = saved4
         ratio = saved5
         tag = saved6
-        errors = saved7
+        huge = saved7
+        errors = saved8
         enterSaved(saved, wallNowMs)
     }
 
@@ -262,8 +270,17 @@ class StatechartStaticHostParamsStateMachine(
         // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
         val transitionIdleAt2 = EnabledTransition<StatechartStaticHostParamsState, HistoryId>(
             StatechartStaticHostParamsState.Idle,
-            listOf(StateTarget(StatechartStaticHostParamsState.Working)),
+            emptyList(),
             2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<StatechartStaticHostParamsState, HistoryId>(
+            StatechartStaticHostParamsState.Idle,
+            listOf(StateTarget(StatechartStaticHostParamsState.Working)),
+            3,
             hasActions = false,
             isInternal = false,
         )
@@ -313,6 +330,7 @@ class StatechartStaticHostParamsStateMachine(
     override fun resolveEventByName(name: String): StatechartStaticHostParamsEvent? = when (name) {
         "after" -> StatechartStaticHostParamsEvent.After
         "big" -> StatechartStaticHostParamsEvent.Big
+        "bloat" -> StatechartStaticHostParamsEvent.Bloat
         "bump" -> StatechartStaticHostParamsEvent.Bump
         "done.invoke" -> StatechartStaticHostParamsEvent.Done.Invoke.Self
         "done.invoke.h" -> StatechartStaticHostParamsEvent.Done.Invoke.H
@@ -329,6 +347,7 @@ class StatechartStaticHostParamsStateMachine(
     override fun eventNameOf(event: StatechartStaticHostParamsEvent): String? = when (event) {
         is StatechartStaticHostParamsEvent.After -> "after"
         is StatechartStaticHostParamsEvent.Big -> "big"
+        is StatechartStaticHostParamsEvent.Bloat -> "bloat"
         is StatechartStaticHostParamsEvent.Bump -> "bump"
         is StatechartStaticHostParamsEvent.Done.Invoke.Self -> "done.invoke"
         is StatechartStaticHostParamsEvent.Done.Invoke.H -> "done.invoke.h"
@@ -362,7 +381,8 @@ class StatechartStaticHostParamsStateMachine(
         is StatechartStaticHostParamsState.Idle -> when {
             event is StatechartStaticHostParamsEvent.Bump -> transitionIdleAt0
             event is StatechartStaticHostParamsEvent.Big -> transitionIdleAt1
-            event is StatechartStaticHostParamsEvent.Go -> transitionIdleAt2
+            event is StatechartStaticHostParamsEvent.Bloat -> transitionIdleAt2
+            event is StatechartStaticHostParamsEvent.Go -> transitionIdleAt3
             else -> null
         }
         is StatechartStaticHostParamsState.Working -> when {
@@ -375,19 +395,19 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun onEntry(state: StatechartStaticHostParamsState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> {
-                // SCE-MAP: statechart_static_host_params.scxml:140 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is StatechartStaticHostParamsState.Idle -> {
-                // SCE-MAP: statechart_static_host_params.scxml:86 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
             }
             is StatechartStaticHostParamsState.Working -> {
-                // SCE-MAP: statechart_static_host_params.scxml:98 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/3
                 run {
 
@@ -686,6 +706,12 @@ class StatechartStaticHostParamsStateMachine(
                             raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
+                        val hostInvokeContent: String = try {
+                            if (com.sce.forge.runtime.SceChecked.mul(huge, 2.toUInt()) > 0.toUInt()) label else label
+                        } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> content expr failed to evaluate")
+                            return@deferInvoke
+                        }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -746,7 +772,7 @@ class StatechartStaticHostParamsStateMachine(
                                 src = hostInvokeSrc,
                                 params = hostInvokeParams,
                                 eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
-                                content = ""                            )
+                                content = hostInvokeContent                            )
                         )
                         if (!started) {
                             // W3C SCXML 6.4.1: declared but no invoker
@@ -763,17 +789,17 @@ class StatechartStaticHostParamsStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun onExit(state: StatechartStaticHostParamsState) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> {
-                // SCE-MAP: statechart_static_host_params.scxml:140 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
             }
             is StatechartStaticHostParamsState.Idle -> {
-                // SCE-MAP: statechart_static_host_params.scxml:86 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
             }
             is StatechartStaticHostParamsState.Working -> {
-                // SCE-MAP: statechart_static_host_params.scxml:98 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -787,12 +813,12 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_static_host_params.scxml:73 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
     override fun executeTransitionContent(source: StatechartStaticHostParamsState, transitionIndex: Int) {
         when (source) {
         is StatechartStaticHostParamsState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:87 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:95 :: idle :: _transition_0
 
             if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -805,15 +831,20 @@ class StatechartStaticHostParamsStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:92 :: idle :: _transition_1
+                // SCE-MAP: statechart_static_host_params.scxml:100 :: idle :: _transition_1
 
             count = 3000000000.toUInt()
+            }
+            2 -> {
+                // SCE-MAP: statechart_static_host_params.scxml:103 :: idle :: _transition_2
+
+            huge = 3000000000.toUInt()
             }
             else -> {}
         }
         is StatechartStaticHostParamsState.Working -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_static_host_params.scxml:134 :: working :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:146 :: working :: _transition_0
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

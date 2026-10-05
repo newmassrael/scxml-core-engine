@@ -1662,6 +1662,28 @@ pub struct UnsupportedInvokeInfo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_src_fails: bool,
+    /// The `expr` of the `<content>` child [`Self::contentexpr`] was read from,
+    /// as written and where, for the reason [`Transition::cond_spelling`] gives.
+    #[serde(skip)]
+    pub contentexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// Codegen-internal: the `<content expr>` of an `<invoke>` a host runs in a
+    /// `sce-static` document, as an owned string expression in the backend's own
+    /// language, read from the machine's fields when the invocation starts — the
+    /// `content` the host is handed, the body the service runs. Empty for an
+    /// invoke with no `<content expr>`, and for one of a document under another
+    /// data model, which a script engine evaluates. [`Self::contentexpr`] is
+    /// cleared once it is set, so no template evaluates the attribute a second
+    /// time. Transient and outside the AST contract, as
+    /// [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content: String,
+    /// Codegen-internal: whether [`Self::native_content`] can fail — a checked
+    /// integer operation in the expression. A failure is an attribute that
+    /// cannot be evaluated: `error.execution` is raised and nothing starts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_content_fails: bool,
     /// `true` when the host has declared it serves
     /// [`Self::invoke_type`] (§scxml-6.4.1 leaves the set of invokable
     /// types to the platform, exactly as §scxml-6.2.5 does for `<send>`).

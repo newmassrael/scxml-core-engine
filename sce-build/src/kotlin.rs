@@ -368,6 +368,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "namelist": ui.namelist.as_str(),
                     "content": ui.content.as_str(),
                     "contentexpr": ui.contentexpr.as_str(),
+                    // The `<content expr>` of a `sce-static` document, lowered to
+                    // the string it computes, which the template reads in its place.
+                    "native_content": ui.native_content.as_str(),
+                    "native_content_fails": ui.native_content_fails,
                     "idlocation": ui.base.idlocation.as_str(),
                     "params": serde_json::to_value(&ui.base.params).unwrap_or_default(),
                 }));

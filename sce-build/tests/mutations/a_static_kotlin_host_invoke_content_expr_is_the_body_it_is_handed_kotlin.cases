@@ -1,0 +1,48 @@
+# Mutation cases for the `<content expr>` of an `<invoke>` a host runs, in a
+# `datamodel="sce-static"` machine generated as Kotlin
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_host_invoke_content_expr_is_the_body_it_is_handed_kotlin.cases`.
+#
+# The expression is Kotlin the lowering wrote, a string read from the machine's own
+# fields when the invocation starts, and the template only places it: the string
+# is the `content` the host is handed, the body the service runs. One that cannot
+# be computed — a checked multiplication that overflows — is an attribute that
+# cannot be evaluated (W3C SCXML 6.4.1): `error.execution` is raised and nothing
+# starts, so the host is never asked.
+#
+# What is easy to get wrong and reads as success: a body that is never read is a
+# request that still looks complete, and a body that failed but started the
+# invocation anyway hands the service nothing to run. `statechart_static_host_params`
+# tells them apart: its body is `label`, read through a condition over `huge`, and
+# `bloat` makes only that condition fail while the `src` still computes.
+#
+# The template reaches the tests only through the committed tree the
+# regeneration writes, so the tree is a declared target and the command is what
+# carries a mutated template into it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticHostParamsTest'
+mutation_targets tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_static_host_params/statechart_static_host_paramsSm.kt
+mutation_regen scripts/regen_host_processor_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticHostParamsTest.kt sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+
+# ── The body is read and handed over ───────────────────────────────
+
+mutation_case "a body that was computed is not the content the host is handed" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "                        val hostInvokeContent: String = try {\n                            {{ inv.native_content }}\n",
+     "                        val hostInvokeContent: String = try {\n                            \"\"\n")
+PY
+
+# ── A body that cannot be computed starts nothing ──────────────────
+
+mutation_case "an invoke whose body failed starts all the same" <<'PY'
+edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+     "\"<invoke> content expr failed to evaluate\")\n                            return@deferInvoke\n",
+     "\"<invoke> content expr failed to evaluate\")\n                            \"\"\n")
+PY

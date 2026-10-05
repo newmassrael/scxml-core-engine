@@ -60,6 +60,13 @@
   source cannot be computed starts nothing: the host is never asked, which the
   start log says.
 
+  The invoke's `content` — the body the service runs — is computed the same way
+  (`<content expr>`, a string: `label`, chosen by a condition that multiplies a
+  field of its own, `huge`, so it can fail on its own). `bloat` makes `huge` too
+  large for that multiplication while `count` stays as it is, so an invocation
+  whose body cannot be computed starts nothing though its source could be, and a
+  source that failed first is told from a body that did.
+
   Deliberately single-axis: no event payload, no delay. The send's `namelist`
   is held by `static_send_namelist`. `statechart_host_processor.scxml` owns the
   dispatch under `ecmascript`; this one owns what a typed expression puts on
@@ -80,6 +87,7 @@
     <data id="delta" sce:type="int16" expr="-5"/>
     <data id="ratio" sce:type="float64" expr="1.5"/>
     <data id="tag" sce:type="string" sce:capacity="16" expr="'job://params'"/>
+    <data id="huge" sce:type="uint32" expr="1"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
 
@@ -91,6 +99,9 @@
     </transition>
     <transition event="big">
       <assign location="count" expr="3000000000"/>
+    </transition>
+    <transition event="bloat">
+      <assign location="huge" expr="3000000000"/>
     </transition>
     <transition event="go" target="working"/>
   </state>
@@ -125,6 +136,7 @@
     </onentry>
     <invoke type="x-sce-host" id="h" namelist="delta ratio"
             srcexpr="count * 2 &gt; 0 ? tag : tag">
+      <content expr="huge * 2 &gt; 0 ? label : label"/>
       <param name="count" expr="count"/>
       <param name="ready" expr="ready"/>
       <param name="label" expr="label"/>

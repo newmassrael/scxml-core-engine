@@ -1,0 +1,49 @@
+# Mutation cases for the `<content expr>` of an `<invoke>` a host runs, in a
+# `datamodel="sce-static"` machine generated as Python
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_host_invoke_content_expr_is_the_body_it_is_handed_python.cases`.
+#
+# The expression is Python the lowering wrote, a string read from the policy's own
+# attributes when the invocation starts, and the template only places it: the
+# string is the `content` the host is handed, the body the service runs. One that
+# cannot be computed — a checked multiplication that overflows — raises
+# `AlgorithmFailure`, and it is an attribute that cannot be evaluated (W3C SCXML
+# 6.4.1): `error.execution` is raised and nothing starts, so the host is never
+# asked.
+#
+# What is easy to get wrong and reads as success: a body that is never read is a
+# request that still looks complete, and a body that failed but started the
+# invocation anyway hands the service nothing to run. `statechart_static_host_params`
+# tells them apart: its body is `label`, read through a condition over `huge`, and
+# `bloat` makes only that condition fail while the `src` still computes.
+#
+# Python compiles nothing and its generated machines are gitignored, so the
+# template reaches the tests only through the regeneration declared below. It is a
+# `mutation_runtime_targets` for the reason the other Python casefiles give: what
+# shows a mutation arrived is that the file on disk differed while the tests ran.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/host_processor/test_static_host_params.py
+mutation_regen scripts/regen_host_processor_python.sh
+mutation_runtime_targets tools/codegen/templates/python/invoke_methods.py.jinja2
+mutation_oracles backends/python/tests/integration/host_processor/test_static_host_params.py sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+
+# ── The body is read and handed over ───────────────────────────────
+
+mutation_case "a body that was computed is not the content the host is handed" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                try:\n                    _host_content = {{ inv.native_content }}\n",
+     "                try:\n                    _host_content = \"\"\n")
+PY
+
+# ── A body that cannot be computed starts nothing ──────────────────
+
+mutation_case "an invoke whose body failed starts all the same" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "\"<invoke> content expr failed to evaluate\")\n                    continue\n",
+     "\"<invoke> content expr failed to evaluate\")\n                    pass\n")
+PY

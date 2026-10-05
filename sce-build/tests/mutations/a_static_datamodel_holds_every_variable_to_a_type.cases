@@ -385,8 +385,8 @@ PY
 # machine lacks; and the Kotlin template is not told the string it was lowered to.
 mutation_case "a host-run invoke's srcexpr is script text again" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                _ => \"\",\n            },\n            _ => \"\",\n        };\n        // A host-run invoke's `<content expr>` is evaluated when it starts, as\n",
-     "                _ => \"\",\n            },\n            Invoke::Unsupported(info) => info.srcexpr.as_str(),\n            _ => \"\",\n        };\n        // A host-run invoke's `<content expr>` is evaluated when it starts, as\n")
+     "                _ => \"\",\n            },\n            _ => \"\",\n        };\n        // An `idlocation` stores the id the build already wrote for the invoke —\n",
+     "                _ => \"\",\n            },\n            Invoke::Unsupported(info) => info.srcexpr.as_str(),\n            _ => \"\",\n        };\n        // An `idlocation` stores the id the build already wrote for the invoke —\n")
 PY
 
 mutation_case "a src is admitted beside a host-run invoke's srcexpr" <<'PY'
@@ -403,14 +403,44 @@ PY
 
 mutation_case "a host-run invoke's srcexpr is not lowered to the string it computes" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    info.native_src = value.text;\n",
-     "    let _ = &value.text;\n")
+     "        (info.native_src, info.native_src_fails) = lower(&info.srcexpr, \"srcexpr\")?;\n",
+     "        let _ = lower(&info.srcexpr, \"srcexpr\")?;\n")
 PY
 
 mutation_case "a host-run invoke's srcexpr stands after it is lowered" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    info.srcexpr.clear();\n",
+     "        info.srcexpr.clear();\n",
      "")
+PY
+
+# The `<content expr>` of a host-run invoke is the body the service runs: a string
+# the machine computes when the invocation starts, as its `srcexpr` is. The cases
+# take the string away one rule at a time — it is held to no type, it is lowered
+# and nothing keeps it, it stands after it is lowered so a backend evaluates it a
+# second time with an engine the machine lacks, and the Kotlin template is not
+# told the string it was lowered to.
+mutation_case "a host-run invoke's content expr is not held to a string" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                    info.contentexpr_spelling.as_ref(),\n                    Expected::Slot(InferredType::Str),\n",
+     "                    info.contentexpr_spelling.as_ref(),\n                    Expected::Hint(InferredType::Unknown),\n")
+PY
+
+mutation_case "a host-run invoke's content expr is not lowered to the string it computes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        (info.native_content, info.native_content_fails) =\n            lower(&info.contentexpr, \"<content expr>\")?;\n",
+     "        let _ = lower(&info.contentexpr, \"<content expr>\")?;\n")
+PY
+
+mutation_case "a host-run invoke's content expr stands after it is lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        info.contentexpr.clear();\n",
+     "")
+PY
+
+mutation_case "a Kotlin host invoke is not told the body it was lowered to" <<'PY'
+edit("sce-build/src/kotlin.rs",
+     "                    \"native_content\": ui.native_content.as_str(),\n",
+     "                    \"native_content\": \"\",\n")
 PY
 
 mutation_case "a Kotlin host invoke is not told the source it was lowered to" <<'PY'

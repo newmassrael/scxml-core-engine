@@ -238,6 +238,11 @@ fn an_invoke_param_carries_the_value_the_fields_hold_when_it_starts() {
         starts[0].src, "job://params",
         "the `src` is the string the machine computed when the invocation started"
     );
+    assert_eq!(
+        starts[0].content, "busy",
+        "the `content` is the body the machine computed when the invocation started, \
+         not the \"idle\" a copy at start-up holds"
+    );
 }
 
 /// W3C SCXML 6.4.1: an attribute that cannot be evaluated starts nothing. `big`
@@ -253,6 +258,22 @@ fn an_invoke_whose_source_cannot_be_computed_starts_nothing() {
     assert!(
         starts.is_empty(),
         "a source nobody could compute starts nothing: {starts:?}"
+    );
+}
+
+/// The same for the body: `bloat` makes `huge` too large for the multiplication
+/// the `<content expr>` is chosen by while `count` is as it was, so the source
+/// can be computed and the body cannot, and the host is never asked.
+#[test]
+fn an_invoke_whose_body_cannot_be_computed_starts_nothing() {
+    let (mut engine, _, starts) = started();
+    drive(&mut engine, &["bloat", "go"]);
+    assert_eq!(engine.get_current_state(), State::Working);
+
+    let starts = starts.lock().expect("start log");
+    assert!(
+        starts.is_empty(),
+        "a body nobody could compute starts nothing: {starts:?}"
     );
 }
 
@@ -273,6 +294,7 @@ fn a_param_read_before_any_bump_carries_the_declared_values() {
         text_params(&starts.lock().expect("start log")[0].params),
         wanted_text_params("3", "false", "idle", "6")
     );
+    assert_eq!(starts.lock().expect("start log")[0].content, "idle");
 }
 
 /// W3C SCXML 5.7.1: a `<param>` whose value cannot be computed — here a

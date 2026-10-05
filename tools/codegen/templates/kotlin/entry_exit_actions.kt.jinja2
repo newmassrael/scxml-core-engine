@@ -214,6 +214,23 @@
                         val hostInvokeSrc: String = {{ inv.native_src }}
 {% endif %}
 {% endif %}
+{% if inv.native_content %}
+{# `datamodel="sce-static"`: the `<content expr>` is a string computed from the
+   machine's fields now (`UnsupportedInvokeInfo::native_content`) — the body the
+   service runs; no script engine is asked. One that cannot be computed is an
+   attribute that cannot be evaluated, which raises error.execution and starts
+   nothing. #}
+{% if inv.native_content_fails %}
+                        val hostInvokeContent: String = try {
+                            {{ inv.native_content }}
+                        } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> content expr failed to evaluate")
+                            return@deferInvoke
+                        }
+{% else %}
+                        val hostInvokeContent: String = {{ inv.native_content }}
+{% endif %}
+{% endif %}
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -259,7 +276,7 @@
                                 src = {% if inv.srcexpr or inv.native_src %}hostInvokeSrc{% else %}"{{ inv.src | default('', true) | escape_kotlin }}"{% endif %},
                                 params = hostInvokeParams,
                                 eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
-                                content = {% if inv.contentexpr %}hostInvokeContent{% else %}"{{ inv.content | default('', true) | escape_kotlin }}"{% endif %}
+                                content = {% if inv.contentexpr or inv.native_content %}hostInvokeContent{% else %}"{{ inv.content | default('', true) | escape_kotlin }}"{% endif %}
                             )
                         )
                         if (!started) {
