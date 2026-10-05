@@ -400,6 +400,23 @@ textarea:focus-visible {
   margin-bottom: 4px;
 }
 
+/* The sentence of the text a question is about, quoted as the list keeps it. */
+.ground {
+  margin: 4px 0 6px;
+}
+
+.ground blockquote {
+  margin: 4px 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--line);
+}
+
+/* A line of the pseudocode that names a state the marked requirement is carried by. */
+.pseudo .lit {
+  background: var(--warn-bg);
+  box-shadow: -3px 0 0 var(--warn-line);
+}
+
 .answer-input {
   display: block;
   width: 100%;

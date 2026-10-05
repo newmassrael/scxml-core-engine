@@ -225,6 +225,16 @@ const en = {
   answerStateIgnored:
     "The model shown was made after you answered and still asks this question. Read what it did, or generate again.",
   answersRegenerate: "Generate again from these answers",
+  groundRelated: "The text this is about (requirement {id}):",
+  groundShow: "Show in the text",
+  groundNotInText:
+    "That sentence is not in the text as it is now: the requirement quotes an earlier text. Read the text again, or generate again.",
+  requirementGo: "Go to",
+  markInPage: "Mark in the pseudocode",
+  markClear: "Clear the mark",
+  markedLines: "Lit: the lines of the page that name the states requirement {id} is carried by ({states}).",
+  markNoLines: "No line of the page names {states}: the page does not show where this requirement is carried.",
+  markNoStates: "Requirement {id} is carried by places that name no state, so no line of the page can be tied to it.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -447,6 +457,16 @@ const ko: Record<Key, string> = {
   answerStateIgnored:
     "지금 보이는 모델은 답한 뒤에 만들었는데도 이 질문을 여전히 합니다. 모델이 한 일을 읽거나 다시 생성하세요.",
   answersRegenerate: "이 답으로 다시 생성",
+  groundRelated: "이 질문이 다루는 원문 (요구사항 {id}):",
+  groundShow: "원문에서 보기",
+  groundNotInText:
+    "그 문장은 지금 원문에 없습니다. 요구사항이 이전 원문을 인용하고 있습니다. 원문을 다시 읽거나 다시 생성하세요.",
+  requirementGo: "이동",
+  markInPage: "의사코드에 표시",
+  markClear: "표시 지우기",
+  markedLines: "강조: 요구사항 {id}이(가) 담긴 상태({states})를 이름으로 부르는 페이지의 줄입니다.",
+  markNoLines: "페이지에 {states}을(를) 부르는 줄이 없습니다. 이 페이지로는 이 요구사항이 어디에 담겼는지 보이지 않습니다.",
+  markNoStates: "요구사항 {id}은(는) 상태 이름이 없는 위치에 담겨 있어, 페이지의 어느 줄과도 이을 수 없습니다.",
 };
 
 export type Locale = "en" | "ko";

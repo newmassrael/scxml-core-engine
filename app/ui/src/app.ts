@@ -44,6 +44,7 @@ import {
   type Listing,
   type ReadAcceptance,
   type RequestHead,
+  type RequirementOutcome,
   type RequirementsReport,
   type SourceText,
   type Unresolved,
@@ -65,6 +66,7 @@ import {
   takeTheirs,
   type EditorModel,
 } from "./editor_model";
+import { findQuote, groundOf, linesNaming, quotesOf, statesOf } from "./grounding_model";
 import {
   connectedNames,
   controlsOf,
@@ -231,6 +233,8 @@ export class App {
   private bundleKey: string | null | undefined = undefined;
   /** The questions the model shown asks, for the state of each answer as it is typed. */
   private askedNow: ReadonlySet<string> = new Set();
+  /** A requirement the person marked in the pseudocode: the lines that name the states it is carried by are lit. */
+  private marked: { readonly requirement: string; readonly states: readonly string[] } | null = null;
   /** The server refused for want of a token, and the person can supply one. */
   private needsToken = false;
   /** A token has been supplied since, so a further refusal means it was wrong. */
@@ -344,6 +348,7 @@ export class App {
       this.bundleAnswers = null;
       this.bundleKey = undefined;
       this.askedNow = new Set();
+      this.marked = null;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -1945,7 +1950,7 @@ export class App {
             "details",
             { class: "page", open: true },
             h("summary", {}, this.t("reviewPageTitle")),
-            h("pre", { class: "pseudo" }, page),
+            this.pseudoPage(page),
           ),
       pageRefusal === null
         ? null
@@ -2052,6 +2057,7 @@ export class App {
       return sentence === undefined ? word : this.t(sentence);
     };
     const counted = tally(report.outcomes);
+    const quotes = this.grounding()?.quotes ?? {};
     return h(
       "div",
       { class: "measure" },
@@ -2096,21 +2102,41 @@ export class App {
               h("th", {}, this.t("requirementOutcome")),
               h("th", {}, this.t("requirementSection")),
               h("th", {}, this.t("requirementCarried")),
+              h("th", {}, this.t("requirementGo")),
             ),
           ),
           h(
             "tbody",
             {},
-            ...report.outcomes.map((o) =>
-              h(
+            ...report.outcomes.map((o) => {
+              const quote = quotes[o.id];
+              return h(
                 "tr",
-                {},
+                { "data-requirement": o.id },
                 h("td", {}, h("code", {}, o.id)),
                 h("td", {}, o.outcome),
                 h("td", {}, o.section ?? ""),
                 h("td", {}, o.node_paths.length === 0 ? this.t("requirementNowhere") : o.node_paths.join(", ")),
-              ),
-            ),
+                h(
+                  "td",
+                  { class: "goto" },
+                  quote === undefined
+                    ? null
+                    : h(
+                        "button",
+                        { type: "button", class: "quiet show-text", onclick: () => this.showInText(quote) },
+                        this.t("groundShow"),
+                      ),
+                  o.node_paths.length === 0
+                    ? null
+                    : h(
+                        "button",
+                        { type: "button", class: "quiet mark-lines", onclick: () => this.markRequirement(o) },
+                        this.marked?.requirement === o.id ? this.t("markClear") : this.t("markInPage"),
+                      ),
+                ),
+              );
+            }),
           ),
         ),
       ),
@@ -2239,7 +2265,7 @@ export class App {
       .sort();
     if (asked.length === 0 && orphans.length === 0) return null;
 
-    const field = (id: string, label: Child[]): HTMLElement => {
+    const field = (id: string, label: Child[], nodePath?: string): HTMLElement => {
       const input = h("textarea", {
         class: "answer-input",
         "data-qid": id,
@@ -2254,6 +2280,7 @@ export class App {
         "div",
         { class: "question" },
         h("div", { class: "question-text" }, ...label),
+        nodePath === undefined ? null : this.groundBlock(nodePath),
         input,
         entry === undefined
           ? null
@@ -2282,7 +2309,7 @@ export class App {
               ? this.t("reviewUnresolvedNoLine", { id: u.id })
               : this.t("reviewUnresolvedAt", { id: u.id, line: String(u.line) }),
           ),
-        ]),
+        ], u.node_path),
       ),
       orphans.length === 0
         ? null
@@ -2303,6 +2330,114 @@ export class App {
         h("button", { id: "save-answers", type: "button", onclick: () => void this.saveAnswers() }, this.t("answersSave")),
         this.regenerateButton(),
         h("span", { id: "answers-status", class: "status", role: "status", "aria-live": "polite" }),
+      ),
+    );
+  }
+
+  /**
+   * What ties a question or a place of the design to a sentence of the text: the product's own
+   * statement of where each requirement is carried, and the sentence the list quotes for it. Only
+   * when the design was measured against a list; otherwise there is nothing to tie it to.
+   */
+  private grounding(): { outcomes: readonly RequirementOutcome[]; quotes: Readonly<Record<string, string>> } | null {
+    const panel = this.acceptance;
+    if (panel === null || panel.phase !== "read") return null;
+    const report = panel.state.report;
+    if (report === null) return null;
+    return { outcomes: report.outcomes, quotes: quotesOf(panel.state.list.requirements?.sidecar ?? null) };
+  }
+
+  /** The sentence of the text a question is about, with the way to it. Nothing when none can be told. */
+  private groundBlock(nodePath: string): HTMLElement | null {
+    const data = this.grounding();
+    if (data === null) return null;
+    const ground = groundOf(nodePath, data.outcomes, data.quotes);
+    if (ground === null) return null;
+    return h(
+      "div",
+      { class: "ground", "data-ground": ground.requirement },
+      h("span", { class: "muted" }, this.t("groundRelated", { id: ground.requirement })),
+      ground.quote === null ? null : h("blockquote", {}, ground.quote),
+      ground.quote === null
+        ? null
+        : h(
+            "button",
+            { type: "button", class: "quiet", onclick: () => this.showInText(ground.quote as string) },
+            this.t("groundShow"),
+          ),
+    );
+  }
+
+  /** Select the sentence in the editor and bring it into view; say so when the text no longer holds it. */
+  private showInText(quote: string): void {
+    const editor = this.editor;
+    const textarea = this.root.querySelector<HTMLTextAreaElement>("#source");
+    if (editor === null || textarea === null || this.viewing !== null) return;
+    const place = findQuote(quote, editor.text);
+    if (place === null) {
+      this.notice = this.t("groundNotInText");
+      this.render();
+      return;
+    }
+    this.notice = null;
+    textarea.focus();
+    textarea.setSelectionRange(place.start, place.end);
+    // The sentence is brought into view: a few lines above it, so that it has its own context.
+    const line = editor.text.slice(0, place.start).split("\n").length - 1;
+    const lineHeight = Number.parseFloat(this.root.ownerDocument.defaultView?.getComputedStyle(textarea).lineHeight ?? "") || 18;
+    textarea.scrollTop = Math.max(0, (line - 2) * lineHeight);
+  }
+
+  /** Light the lines of the pseudocode that name the states a requirement is carried by; the same press clears it. */
+  private markRequirement(outcome: RequirementOutcome): void {
+    this.marked =
+      this.marked?.requirement === outcome.id
+        ? null
+        : { requirement: outcome.id, states: statesOf(outcome.node_paths) };
+    this.render();
+  }
+
+  /**
+   * The pseudocode page, with the lines that name the marked requirement's states lit. The page
+   * is the product's rendering and carries no address of what a line is for, so a state's name is
+   * what ties a line to a place; the screen says that is what it did.
+   */
+  private pseudoPage(page: string): HTMLElement {
+    const marked = this.marked;
+    if (marked === null) return h("pre", { class: "pseudo" }, page);
+    const lit = new Set(linesNaming(page, marked.states));
+    const lines = page.split("\n");
+    return h(
+      "div",
+      {},
+      h(
+        "p",
+        { class: "muted marked", "data-marked": marked.requirement },
+        marked.states.length === 0
+          ? this.t("markNoStates", { id: marked.requirement })
+          : lit.size === 0
+            ? this.t("markNoLines", { states: marked.states.join(", ") })
+            : this.t("markedLines", { id: marked.requirement, states: marked.states.join(", ") }),
+        " ",
+        h(
+          "button",
+          {
+            type: "button",
+            class: "quiet",
+            onclick: () => {
+              this.marked = null;
+              this.render();
+            },
+          },
+          this.t("markClear"),
+        ),
+      ),
+      h(
+        "pre",
+        { class: "pseudo" },
+        ...lines.map((line, index) =>
+          h("span", { class: lit.has(index) ? "lit" : undefined }, index === lines.length - 1 ? line : `${line}\n`),
+        ),
       ),
     );
   }

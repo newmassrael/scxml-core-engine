@@ -71,6 +71,20 @@ class FakeCore implements Transport {
   private listSaves = 0;
   private acceptSaves = 0;
   private readonly requestsOf = new Map<string, FakeRequest[]>();
+  /** Where each requirement of a work is carried, and the sentence the list quotes for it, when a test says. */
+  private readonly carriedOf = new Map<string, Record<string, string[]>>();
+  private readonly quotesOf = new Map<string, Record<string, string>>();
+
+  /** The places of the design each requirement is carried by, as SCE would say them. */
+  setCarried(id: string, carried: Record<string, string[]>): void {
+    this.carriedOf.set(id, carried);
+  }
+
+  /** The sentences the work's requirement list quotes, by requirement: its sidecar. */
+  setQuotes(id: string, quotes: Record<string, string>): void {
+    this.quotesOf.set(id, quotes);
+  }
+
   /** Every revision the owner's answers had, so that a request's own can be read back. */
   private readonly answersByRevision = new Map<
     string,
@@ -398,7 +412,15 @@ class FakeCore implements Transport {
           requirements:
             list === undefined
               ? null
-              : { revision: list.revision, written_for: list.writtenFor, manifest: "{}", sidecar: null },
+              : {
+                  revision: list.revision,
+                  written_for: list.writtenFor,
+                  manifest: "{}",
+                  sidecar:
+                    this.quotesOf.get(String(args["id"])) === undefined
+                      ? null
+                      : JSON.stringify({ doc_id: "door", rev: "1", text: this.quotesOf.get(String(args["id"])) }),
+                },
           source_head: head,
           standing: list === undefined ? null : standingOf(list.writtenFor, head),
         };
@@ -432,7 +454,9 @@ class FakeCore implements Transport {
                       ? "waived"
                       : "implemented",
             section: `S${i + 1}`,
-            node_paths: model.text.includes("MISSING") && i === 0 ? [] : [`states.s${i}`],
+            node_paths:
+              this.carriedOf.get(id)?.[requirement] ??
+              (model.text.includes("MISSING") && i === 0 ? [] : [`states.s${i}`]),
           })),
           page: `ACCEPTANCE REPORT\n  ${list.ids.length} requirements\n`,
           page_refusal: null,
@@ -1741,9 +1765,10 @@ describe("removing a work", () => {
 const acceptanceText = (): string => root.querySelector(".acceptance")?.textContent ?? "";
 const acceptButton = (): HTMLButtonElement => root.querySelector("#accept") as HTMLButtonElement;
 const acceptNote = (): string => root.querySelector("#accept-note")?.textContent ?? "";
+/** What SCE says of each requirement: its four cells. The last cell is the screen's own buttons (`goto`). */
 const requirementRows = (): string[][] =>
   [...root.querySelectorAll(".acceptance tbody tr")].map((row) =>
-    [...row.querySelectorAll("td")].map((cell) => cell.textContent ?? ""),
+    [...row.querySelectorAll("td:not(.goto)")].map((cell) => cell.textContent ?? ""),
   );
 
 /** The revision of the text a work holds now: what a model or a list says it was written for. */
@@ -2776,5 +2801,125 @@ describe("where an answer stands", () => {
     await click("Alpha");
 
     expect(stateOf("open-guard")).toBe("Saved. It is not in the model shown yet.");
+  });
+});
+
+// ---- what a question and a requirement are about --------------------------
+
+describe("the sentence a question or a requirement is about", () => {
+  const FIRST = "The door is closed until a card is shown.";
+  const SECOND = "A listed card opens it.";
+
+  beforeEach(async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["The door.", `A door controller.\n${FIRST}\n${SECOND}\n`]);
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setCarried("alpha", { R1: ["states.closed"], R2: ["states.opened"] });
+    core.setQuotes("alpha", { R1: FIRST, R2: SECOND });
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en" });
+    await app.start();
+    await settle();
+  });
+
+  const grounds = (): HTMLElement[] => [...root.querySelectorAll<HTMLElement>("[data-ground]")];
+  const groundOfQuestion = (id: string): HTMLElement | null =>
+    fieldOf(id).closest(".question")?.querySelector<HTMLElement>("[data-ground]") ?? null;
+  const selected = (): string => editor().value.slice(editor().selectionStart, editor().selectionEnd);
+  const rowButton = (requirement: string, cls: string): HTMLButtonElement =>
+    root.querySelector(`tr[data-requirement="${requirement}"] button.${cls}`) as HTMLButtonElement;
+
+  it("is shown with each question the model asks inside a part a requirement is carried by", async () => {
+    await click("Alpha");
+
+    expect(grounds().map((g) => g.dataset["ground"])).toEqual(["R1", "R2"]);
+    expect(groundOfQuestion("open-guard")?.textContent).toContain(FIRST);
+    expect(groundOfQuestion("open-guard")?.textContent).toContain("requirement R1");
+    expect(groundOfQuestion("close-delay")?.textContent).toContain(SECOND);
+  });
+
+  it("takes the person to the sentence in the text", async () => {
+    await click("Alpha");
+
+    groundOfQuestion("open-guard")?.querySelector("button")?.click();
+    await settle();
+
+    expect(selected()).toBe(FIRST);
+  });
+
+  it("says so when the text no longer holds the sentence, and leaves the text alone", async () => {
+    await click("Alpha");
+    await type("Something else entirely.");
+
+    groundOfQuestion("open-guard")?.querySelector("button")?.click();
+    await settle();
+
+    expect(root.textContent).toContain("not in the text as it is now");
+    expect(editor().value).toBe("Something else entirely.");
+  });
+
+  it("is not shown for a work with no requirement list", async () => {
+    core.addWork("beta", "Beta", ["Another door."]);
+    core.setModel("beta", "<scxml/>", headOf("beta"));
+    await core.call("list_works");
+    await app.start();
+    await settle();
+
+    await click("Beta");
+
+    expect(grounds()).toEqual([]);
+  });
+
+  it("takes the person from a requirement to its sentence", async () => {
+    await click("Alpha");
+
+    rowButton("R2", "show-text").click();
+    await settle();
+
+    expect(selected()).toBe(SECOND);
+  });
+
+  it("lights the lines of the pseudocode that name the states a requirement is carried by", async () => {
+    await click("Alpha");
+    expect(root.querySelectorAll(".pseudo .lit")).toHaveLength(0);
+
+    rowButton("R1", "mark-lines").click();
+    await settle();
+
+    expect([...root.querySelectorAll(".review .pseudo .lit")].map((l) => l.textContent?.trim())).toEqual([
+      "state closed:",
+    ]);
+    expect(root.querySelector("[data-marked]")?.textContent).toContain("closed");
+    expect(rowButton("R1", "mark-lines").textContent).toBe("Clear the mark");
+  });
+
+  it("marks one requirement at a time, and clears the mark with the same press", async () => {
+    await click("Alpha");
+    rowButton("R1", "mark-lines").click();
+    await settle();
+
+    rowButton("R2", "mark-lines").click();
+    await settle();
+    expect([...root.querySelectorAll(".review .pseudo .lit")].map((l) => l.textContent?.trim())).toEqual([
+      "on open   -> opened",
+    ]);
+
+    rowButton("R2", "mark-lines").click();
+    await settle();
+    expect(root.querySelectorAll(".pseudo .lit")).toHaveLength(0);
+    expect(root.querySelector("[data-marked]")).toBeNull();
+  });
+
+  it("says when no line of the page names the states", async () => {
+    core.setCarried("alpha", { R1: ["states.nowhere"], R2: ["states.opened"] });
+    await click("Alpha");
+
+    rowButton("R1", "mark-lines").click();
+    await settle();
+
+    expect(root.querySelectorAll(".pseudo .lit")).toHaveLength(0);
+    expect(root.querySelector("[data-marked]")?.textContent).toContain("No line of the page names nowhere");
   });
 });

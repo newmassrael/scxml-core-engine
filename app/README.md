@@ -250,6 +250,21 @@ shown as running.
   that the model means what the owner meant: the behaviour it led to is still the owner's to
   read. `Generate again from these answers` saves what is typed and asks about what is saved.
 
+- **The sentence a question or a requirement is about** (`grounding_model.ts`) is not guessed from
+  words. The product says where in the design each requirement is carried (`node_paths`, in SCE's
+  path syntax), the list keeps the sentence each requirement quotes (its sidecar), and a question
+  says where in the design it was asked (the same syntax). A question asked inside a part a
+  requirement is carried by is about that requirement's sentence, and the most specific such part
+  names it. The sentence is shown with the question and `Show in the text` selects it in the
+  editor (white space is not told apart, so a sentence the text broke across lines is found); when
+  the text no longer holds it, the screen says the requirement quotes an earlier text. Nothing is
+  shown for a work with no list, or for a place no requirement carries.
+- **From a requirement to the text and the pseudocode.** Each row of the requirement table can
+  select its sentence in the editor, and `Mark in the pseudocode` lights the lines of the page
+  that name the states the requirement is carried by. The page is the product's rendering and
+  carries no address of what a line is for, so a state's name is what ties a line to a place, and
+  the screen says that is what it did (and says so when no line names them).
+
 #### The executor the application hosts
 
 `runner.rs` is the host of an executor that is a process of the application: it finds the
