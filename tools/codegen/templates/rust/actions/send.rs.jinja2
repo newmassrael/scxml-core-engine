@@ -215,12 +215,10 @@
     // cannot be evaluated: either is the argument error.
     let _send_event_name: String = if _send_arg_error.is_none() {
 {% if action.native_event_fails %}
-        match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+        (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok({{ action.native_event }})
-        })() {
-            Ok(name) => name,
-            Err(_) => String::new(),
-        }
+        })()
+        .unwrap_or_default()
 {% else %}
         {{ action.native_event }}
 {% endif %}

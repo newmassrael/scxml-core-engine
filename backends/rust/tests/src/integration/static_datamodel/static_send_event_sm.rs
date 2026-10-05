@@ -857,12 +857,10 @@ impl StatePolicy for StaticSendEventPolicy {
                                 // that evaluates to nothing names no event, and an operation that fails
                                 // cannot be evaluated: either is the argument error.
                                 let _send_event_name: String = if _send_arg_error.is_none() {
-                                    match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+                                    (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
             Ok(if sce_forge_runtime::algorithm::mul::<u32>(self.scale, 2000000000)? > 1 { "big".to_string() } else { "small".to_string() })
-        })() {
-            Ok(name) => name,
-            Err(_) => String::new(),
-        }
+        })()
+        .unwrap_or_default()
                                 } else {
                                     String::new()
                                 };
