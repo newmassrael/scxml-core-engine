@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `<param>` of a
+  `<send>` the HOST serves whose value is a string literal, written beside one
+  that reads a field.
+
+  A literal is folded when the document is built and has no native code to
+  lower, where a field's `<param>` has. The Python lowering put every param of a
+  send that held any field through the same line, so the literal came out as the
+  empty tuple `()` and the machine stopped at its first send with
+  `AttributeError: 'tuple' object has no attribute 'to_python'`. The generator
+  exited 0 and said nothing: a document that sent only literals, or only fields,
+  was never the one that failed.
+
+  The run `bump`, `go` sends `notify` with a literal before the field, the
+  field, and a literal after it, so a lowering that handled the literal only
+  when it came first (or last) is told from one that handled it. `plain` carries
+  the literals alone, the arm that never failed, so the pairs `notify` shares
+  with it are told to cross as the same text and the same JSON in both.
+
+  Deliberately single-axis: no `<invoke>`, no delay, no failing value
+  (`statechart_static_host_params` owns what a field's pair does when it cannot
+  be computed). Generated with the host declaration naming the type x-sce-host
+  (scripts/regen_host_processor_python.sh names the flag; an XML comment cannot
+  spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_static_literal_param">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="3"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+    <transition event="go" target="done">
+      <send type="x-sce-host" target="somewhere" event="notify">
+        <param name="id" expr="'E24603'"/>
+        <param name="count" expr="count"/>
+        <param name="unit" expr="'ms'"/>
+      </send>
+      <send type="x-sce-host" target="somewhere" event="plain">
+        <param name="id" expr="'E24603'"/>
+        <param name="unit" expr="'ms'"/>
+      </send>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

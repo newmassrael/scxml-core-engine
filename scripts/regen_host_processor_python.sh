@@ -72,6 +72,13 @@ STATIC_PARAMS_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static
 "$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
 
+# SCE Accepted Subset §2.15: a string literal `<param>` written beside one that
+# reads a field. A separate document from the one above, whose assertions every
+# backend makes: the literal is the Python template's own arm.
+STATIC_LITERAL_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_literal_param.scxml"
+"$CODEGEN" generate "$STATIC_LITERAL_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
+
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
 for src in "$TMP"/*_sm.py; do
@@ -85,3 +92,4 @@ echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
+echo "  $STATIC_LITERAL_FIXTURE (--host-processor $HOST_PROCESSOR)"

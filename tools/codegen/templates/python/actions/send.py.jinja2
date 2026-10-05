@@ -288,11 +288,18 @@
 {{ indent }}_data = {}
 {{ indent }}_data_repeats: dict = {}
 {% for param in action.params %}
+{% if param.native_value %}
 {{ indent }}try:
 {{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())
 {{ indent }}except sce_algorithm.AlgorithmFailure:
 {{ indent }}    self._raise_error_execution(engine, "<send> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate")
 {{ indent }}    _param_failures.append({{ param.name | py_string_literal }})
+{% else %}
+{# A string literal is folded at build time and has no native code
+   (`Param::native_value` is empty): it is the pair as written, beside the
+   params that read the machine's fields. #}
+{{ indent }}self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})
+{% endif %}
 {% endfor %}
 {% elif action.native_content_value %}
 {# `datamodel="sce-static"`: the `<content expr>` is one value lowered to native

@@ -1,0 +1,57 @@
+# Mutation cases for a string-literal `<param>` of a host-served `<send>`
+# written beside a `<param>` that reads a field, in a `datamodel="sce-static"`
+# machine generated as Python (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_send_literal_param_crosses_as_written_python.cases`.
+#
+# A field's `<param>` is lowered to Python read from the policy's own
+# attributes. A literal is folded when the document is built and has no such
+# code, so the template places the pair as it was written. The send used to put
+# every pair of a send that held any field through the field's line: the
+# literal came out as the empty tuple, `().to_python()`, and the machine
+# stopped at its first send. The generator exited 0 and said nothing, and a
+# document of only literals, or only fields, never failed.
+#
+# What is easy to get wrong and reads as success: a pair left out is a request
+# that looks complete, and a value that is not the one the document wrote is a
+# request that looks right. `statechart_static_literal_param` writes a literal
+# before the field and one after it, and reads both back as the text they cross
+# as and as the JSON they are.
+#
+# Python compiles nothing and its generated machines are gitignored, so the
+# template reaches the tests only through the regeneration declared below. It is a
+# `mutation_runtime_targets` for the reason the other Python casefiles give: what
+# shows a mutation arrived is that the file on disk differed while the tests ran.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/host_processor/test_static_literal_param.py
+mutation_regen scripts/regen_host_processor_python.sh
+mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2
+mutation_oracles backends/python/tests/integration/host_processor/test_static_literal_param.py sce-build/tests/fixtures/host_processor/statechart_static_literal_param.scxml
+
+# ── A literal pair is carried ──────────────────────────────────────
+
+mutation_case "a literal pair is left out of a send that also reads a field" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})\n",
+     "{{ indent }}pass\n")
+PY
+
+# ── ... as the value the document wrote ────────────────────────────
+
+mutation_case "a literal pair carries its own name as its value" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, {{ param.static_value | py_string_literal }})\n",
+     "{{ indent }}self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, {{ param.name | py_string_literal }})\n")
+PY
+
+# ── ... and the field beside it is still read ──────────────────────
+
+mutation_case "a field's pair goes through the literal arm and carries nothing" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if param.native_value %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,",
+     "{% if false %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,")
+PY
