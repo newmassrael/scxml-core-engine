@@ -10,7 +10,7 @@
 // own save moves a head and the screen shows the saved text a moment later, and a
 // comparison with the previous answer would call that a change from elsewhere.
 
-import type { ClaimedHead, RequestHead, Revision, WorkHeads } from "./contract";
+import type { Basis, ClaimedHead, RequestHead, Revision, WorkHeads } from "./contract";
 
 /** The parts of a work that are read apart from each other, and so are read again apart. */
 export type Part = "source" | "model" | "answers" | "requirements" | "acceptance";
@@ -46,6 +46,14 @@ export interface WorkOnScreen {
   readonly answers: OnScreen<Revision>;
   readonly requirements: OnScreen<ClaimedOnScreen>;
   readonly acceptance: OnScreen<Revision>;
+  /**
+   * The states of the work the acceptance panel's reads name: the one SCE measured (the report's
+   * basis) and the one the acceptance's standing was judged of (`now`). Two reads that agree with
+   * each other can still both be of a state the work has left, and the acceptance record, which is
+   * all `acceptance` above compares, does not change when the model does. `undefined` when the
+   * panel has nothing read that names one.
+   */
+  readonly judged: readonly Basis[] | undefined;
 }
 
 function sameHead(a: ClaimedHead | null, b: ClaimedHead | null): boolean {
@@ -71,6 +79,16 @@ function claimedMoved(shown: OnScreen<ClaimedOnScreen>, head: ClaimedHead | null
   return !sameHead(shown.head, head) || shown.sourceHead !== sourceHead;
 }
 
+/** Whether `basis` names the work as the heads say it is now: its text, design, list and answers. */
+function basisIsOfTheHeads(basis: Basis, heads: WorkHeads): boolean {
+  return (
+    basis.source === heads.source &&
+    basis.model === (heads.model?.revision ?? null) &&
+    basis.requirements === (heads.requirements?.revision ?? null) &&
+    basis.answers === heads.answers
+  );
+}
+
 /** The parts of the work the core now says differently from what the screen shows, in the order they are read again. */
 export function movedParts(shown: WorkOnScreen, heads: WorkHeads): Part[] {
   const moved: Part[] = [];
@@ -78,7 +96,11 @@ export function movedParts(shown: WorkOnScreen, heads: WorkHeads): Part[] {
   if (revisionMoved(shown.answers, heads.answers)) moved.push("answers");
   if (claimedMoved(shown.model, heads.model, heads.source)) moved.push("model");
   if (claimedMoved(shown.requirements, heads.requirements, heads.source)) moved.push("requirements");
-  if (revisionMoved(shown.acceptance, heads.acceptance)) moved.push("acceptance");
+  // The acceptance record keeps its revision while the work it is judged against moves, so what
+  // the panel's reads name is compared with the heads too: against the core, and not against what
+  // is on screen, which can be the part that is behind (a text being typed over cannot be read).
+  const judgedOfAnother = shown.judged !== undefined && shown.judged.some((basis) => !basisIsOfTheHeads(basis, heads));
+  if (revisionMoved(shown.acceptance, heads.acceptance) || judgedOfAnother) moved.push("acceptance");
   return moved;
 }
 

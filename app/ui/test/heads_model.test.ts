@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { WorkHeads } from "../src/contract";
+import type { Basis, WorkHeads } from "../src/contract";
 import { movedParts, sameRequest, UNREAD, type WorkOnScreen } from "../src/heads_model";
 import { nextDelay, WATCH_MAX_MS, WATCH_MS } from "../src/watch";
 
@@ -33,6 +33,9 @@ const heads: WorkHeads = {
   request: null,
 };
 
+/** The work those heads say, as a basis names it: what the acceptance panel's reads are of when they are current. */
+const basisNow: Basis = { source: T2, model: M1, requirements: R1, answers: A1 };
+
 /** The screen showing exactly that. */
 const shown: WorkOnScreen = {
   source: T2,
@@ -40,6 +43,7 @@ const shown: WorkOnScreen = {
   answers: A1,
   requirements: { head: { revision: R1, written_for: T2 }, sourceHead: T2 },
   acceptance: C1,
+  judged: [basisNow, basisNow],
 };
 
 describe("a work that moved under the screen", () => {
@@ -70,8 +74,30 @@ describe("a work that moved under the screen", () => {
   it("includes a model whose text moved on beside it", () => {
     // Another window saved the text: the model on screen was read beside T2 and is now
     // behind, though neither the model nor what it was written for changed.
+    // The acceptance panel's reads name the work as it was (T2), so they are read again too.
     const moved: WorkHeads = { ...heads, source: T1 };
-    expect(movedParts({ ...shown, source: T1 }, moved)).toEqual(["model", "requirements"]);
+    expect(movedParts({ ...shown, source: T1 }, moved)).toEqual(["model", "requirements", "acceptance"]);
+  });
+
+  it("includes the acceptance when what its reads name is not the work as the core says it is", () => {
+    // The acceptance record keeps its revision while the model changes, and the panel's reads
+    // agree with each other: both are of the model before. Only the core's heads can say so.
+    const newer: WorkHeads = { ...heads, model: { revision: M2, written_for: T2 } };
+    const modelRead: WorkOnScreen = {
+      ...shown,
+      model: { head: { revision: M2, written_for: T2 }, sourceHead: T2 },
+    };
+    expect(movedParts(modelRead, newer)).toEqual(["acceptance"]);
+    // Either read naming another work is enough; the other agreeing with the heads is not.
+    expect(movedParts({ ...shown, judged: [basisNow, { ...basisNow, answers: null }] }, heads)).toEqual(["acceptance"]);
+    expect(movedParts({ ...shown, judged: [{ ...basisNow, requirements: R2 }] }, heads)).toEqual(["acceptance"]);
+  });
+
+  it("is nothing for acceptance reads of the work as it is, or when the panel has none that name one", () => {
+    expect(movedParts({ ...shown, judged: [] }, heads)).toEqual([]);
+    expect(movedParts({ ...shown, judged: undefined }, { ...heads, model: { revision: M2, written_for: T2 } })).toEqual(
+      ["model"],
+    );
   });
 
   it("includes a part that appeared, and one that went", () => {
@@ -90,6 +116,7 @@ describe("a work that moved under the screen", () => {
       answers: UNREAD,
       requirements: UNREAD,
       acceptance: UNREAD,
+      judged: undefined,
     };
     expect(movedParts(unread, heads)).toEqual(["answers", "model", "requirements", "acceptance"]);
     const empty: WorkHeads = { ...heads, model: null, answers: null, requirements: null, acceptance: null };
@@ -105,6 +132,7 @@ describe("a work that moved under the screen", () => {
       answers: undefined,
       requirements: undefined,
       acceptance: undefined,
+      judged: undefined,
     };
     const moved: WorkHeads = {
       source: T1,
@@ -116,7 +144,12 @@ describe("a work that moved under the screen", () => {
       request: null,
     };
     expect(movedParts(uncompared, moved)).toEqual([]);
-    expect(movedParts({ ...shown, source: undefined }, { ...heads, source: T1 })).toEqual(["model", "requirements"]);
+    // The text is held for what is typed, but the acceptance's reads are compared with the core, not with the screen.
+    expect(movedParts({ ...shown, source: undefined }, { ...heads, source: T1 })).toEqual([
+      "model",
+      "requirements",
+      "acceptance",
+    ]);
   });
 
   it("is nothing for a work with nothing in it, shown as nothing", () => {
@@ -129,7 +162,14 @@ describe("a work that moved under the screen", () => {
       bundle: null,
       request: null,
     };
-    const blank: WorkOnScreen = { source: null, model: null, answers: null, requirements: null, acceptance: null };
+    const blank: WorkOnScreen = {
+      source: null,
+      model: null,
+      answers: null,
+      requirements: null,
+      acceptance: null,
+      judged: undefined,
+    };
     expect(movedParts(blank, empty)).toEqual([]);
   });
 });

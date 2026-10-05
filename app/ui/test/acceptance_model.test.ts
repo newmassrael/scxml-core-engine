@@ -15,6 +15,7 @@ import {
   listIsTheOneMeasured,
   OUTCOME_WORDS,
   readsAgree,
+  standingIsOfWhatIsShown,
   standingIsOfWhatWasMeasured,
   tally,
   type AcceptanceState,
@@ -136,6 +137,21 @@ describe("the accept button", () => {
     // Where there is no acceptance there is no standing to be of another state.
     expect(standingIsOfWhatWasMeasured(state())).toBe(true);
     expect(readsAgree(state())).toBe(true);
+  });
+
+  it("says a standing of the work on screen only when every part the screen has is the one judged", () => {
+    // The report and the standing can agree and both be of the model before the one shown: the
+    // design on screen is read last when its read was the slow one.
+    const record = { revision: hex(9), accepted_at: "t", channel: "direct", basis, open: [] };
+    const holds = state({ acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis } });
+    expect(standingIsOfWhatIsShown(holds, shown)).toBe(true);
+    for (const part of ["source", "model", "answers", "requirements"] as const) {
+      expect(standingIsOfWhatIsShown(holds, { ...shown, [part]: hex(8) })).toBe(false);
+    }
+    // A part still being read is not held against it; it is the gate that waits for what is unread.
+    expect(standingIsOfWhatIsShown(holds, { ...shown, model: undefined })).toBe(true);
+    // Where there is no acceptance there is no standing to be of another work.
+    expect(standingIsOfWhatIsShown(state(), { ...shown, model: hex(8) })).toBe(true);
   });
 
   it("is withheld while what the screen shows is not what the report measured, whichever part differs", () => {

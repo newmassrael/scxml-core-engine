@@ -13,6 +13,7 @@ import {
   isUnsettled,
   listIsTheOneMeasured,
   readsAgree,
+  standingIsOfWhatIsShown,
   standingIsOfWhatWasMeasured,
   tally,
   type AcceptancePanel,
@@ -742,6 +743,15 @@ export class App {
               : list === null
                 ? undefined
                 : (list.acceptance.acceptance?.revision ?? null),
+      // What the panel's reads name, to be compared with the core's heads: two reads that agree
+      // can both be of a work that has moved on since, which the record's revision cannot tell.
+      judged:
+        list === null
+          ? undefined
+          : [
+              ...(list.report === null ? [] : [list.report.basis]),
+              ...(list.acceptance.now === null ? [] : [list.acceptance.now]),
+            ],
     };
   }
 
@@ -2197,15 +2207,17 @@ export class App {
   /**
    * Whether the owner has accepted, whether it still holds, and what SCE listed as open when they
    * did. Whether it holds is SCE's word about the work as it was when it was asked, and is said
-   * only of the work SCE measured beside it: when the two were read of different states of the work
-   * the acceptance is shown as not yet checked, and is neither held nor lapsed.
+   * only of the work SCE measured beside it and of the work on screen: when the reads were of
+   * different states of the work, or both of a state that is not the one shown (the design on
+   * screen is read last when its read was the slow one), the acceptance is shown as not yet
+   * checked, and is neither held nor lapsed.
    */
   private acceptedBanner(state: AcceptanceState): HTMLElement {
     const read = state.acceptance;
     const held = read.acceptance;
     if (held === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
     const time = formatTime(held.accepted_at, this.locale);
-    const checked = standingIsOfWhatWasMeasured(state);
+    const checked = standingIsOfWhatWasMeasured(state) && standingIsOfWhatIsShown(state, this.shown());
     return h(
       "div",
       { class: "accepted" },

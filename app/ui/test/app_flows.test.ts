@@ -2246,6 +2246,67 @@ describe("a work that moves under the screen", () => {
   /** What the panel says of whether the owner's acceptance holds: the banner, not the note under the button. */
   const verdict = (): string => root.querySelector(".accepted .banner")?.textContent ?? "";
 
+  it("review a404 regression: does not retain a matching old holds report beside a newer displayed model", async () => {
+    core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+
+    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
+    core.setAcceptance("alpha");
+    // Only the model read is slow. The report and acceptance finish together
+    // against the accepted model, so their bases agree with each other.
+    const slowModel = core.hold("read_model");
+    await ticker.fire();
+    expect(core.callsOf("requirements_report")).toHaveLength(2);
+    // The screen still shows the model before: a "holds" judged of the accepted one is not said of it.
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml><!-- initial --></scxml>");
+    expect(verdict()).toContain("not known yet");
+
+    const changed = "<scxml><!-- changed after both panel reads --></scxml>";
+    core.setModel("alpha", changed, headOf("alpha"));
+    slowModel.release();
+    for (let i = 0; i < 3; i += 1) await settle();
+    expect(root.querySelector(".scxml")?.textContent).toBe(changed);
+    // Agreement inside the panel is not agreement with the design shown: both reads are of the
+    // accepted model, and the model shown is a third.
+    expect(verdict()).toContain("not known yet");
+    expect(verdict()).not.toContain("It holds");
+    await ticker.fire();
+    await settle();
+    expect((await core.call("read_acceptance", { id: "alpha" }) as { standing: string }).standing).toBe("lapsed");
+    expect(verdict()).toContain("no longer holds");
+    expect(verdict()).not.toContain("It holds");
+  });
+
+  it("review a404 regression: does not retain a matching old lapse report beside the restored displayed model", async () => {
+    const accepted = "<scxml><!-- accepted and later restored --></scxml>";
+    core.setModel("alpha", accepted, headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setAcceptance("alpha");
+    await click("Alpha");
+
+    core.setModel("alpha", "<scxml><!-- temporary change --></scxml>", headOf("alpha"));
+    const slowModel = core.hold("read_model");
+    await ticker.fire();
+    expect(core.callsOf("requirements_report")).toHaveLength(2);
+    // The screen still shows the accepted model, which holds; "lapsed" is of the model that replaced it.
+    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
+    expect(verdict()).toContain("not known yet");
+
+    core.setModel("alpha", accepted, headOf("alpha"));
+    slowModel.release();
+    for (let i = 0; i < 3; i += 1) await settle();
+    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
+    // The model on screen is the accepted one again, and both reads are of the temporary change.
+    expect(verdict()).toContain("not known yet");
+    expect(verdict()).not.toContain("no longer holds");
+    await ticker.fire();
+    await settle();
+    expect((await core.call("read_acceptance", { id: "alpha" }) as { standing: string }).standing).toBe("holds");
+    expect(verdict()).toContain("It holds");
+    expect(verdict()).not.toContain("no longer holds");
+  });
+
   it("review db regression: does not keep an old holds verdict after the displayed model changes during refresh", async () => {
     core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));

@@ -127,6 +127,26 @@ export function readsAgree(state: AcceptanceState): boolean {
 }
 
 /**
+ * Whether the acceptance's standing was judged of the work the screen is showing. Reads that agree
+ * with each other (`readsAgree`) can both be of a state the work has since left: the design on
+ * screen is read last when its read was the slow one, and a "holds" judged of the model before
+ * it beside the model after it says nothing of the one shown. `now` is compared with every part
+ * the screen has on it; a part still being read is not held against the standing, and where there
+ * is no acceptance there is no standing to be of another work.
+ */
+export function standingIsOfWhatIsShown(state: AcceptanceState, shown: Shown): boolean {
+  const now = state.acceptance.now;
+  if (now === null) return true;
+  const same = (on: string | null | undefined, named: string | null): boolean => on === undefined || on === named;
+  return (
+    same(shown.source, now.source) &&
+    same(shown.model, now.model) &&
+    same(shown.answers, now.answers) &&
+    same(shown.requirements, now.requirements)
+  );
+}
+
+/**
  * Whether the owner may press accept now, and if not, why. The core refuses what is
  * not current and what moved; this keeps the button from offering what it will refuse,
  * and from offering what the owner is not looking at. `shown` has no default: a caller

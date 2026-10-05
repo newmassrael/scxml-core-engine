@@ -611,6 +611,13 @@ What this does not claim, stated so nothing on the screen is read as more:
   standing out itself; it holds `now` to the basis and reads the pair again, three times at
   most. What still differs is shown as not known yet (neither held nor lapsed), the accept
   waits (`unread`), and the next question reads it again because the part is compared as unread.
+  Two reads that agree with each other can still both be of a work that has moved on, and the
+  design on screen is read last when its read was the slow one: a "holds" judged of the model
+  before, beside the model after. So the reads' bases are also held to the core's heads on every
+  question (the record's revision does not change when the model does), and to the work on
+  screen: the standing is said only when every part the screen has is the one it was judged of.
+  The heads are the core's, not the screen's, so a text being typed over, which cannot be read
+  again, does not make the panel read the pair again every two seconds.
 
 ## Seeing the screen
 
