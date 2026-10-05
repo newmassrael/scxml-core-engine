@@ -2977,6 +2977,42 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15: a `<param>` name that repeats is one array in the
+    # event's data, in document order, in a send the host serves, in an invoke the
+    # host serves and in a final's `<donedata>`. A document of this channel alone,
+    # beside the C tests; the other engines are held to the case by
+    # tests/json_text/object_key_order.json. Linked WITHOUT `sce_c_scripting` and
+    # `lua54`: the machine has no script engine, so the link is the proof.
+    sce_generate_static_integration_c_test(static_param_repeat
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/static_param_repeat/static_param_repeat.scxml"
+        HOST_PROCESSOR x-sce-host
+        HOST_INVOKER x-sce-host
+    )
+    add_executable(sce_c_integration_static_param_repeat
+        integration/test_static_param_repeat.c
+        ${INTEGRATION_C_TEST_static_param_repeat_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_param_repeat PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_param_repeat PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_param_repeat PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_param_repeat
+        COMMAND sce_c_integration_static_param_repeat
+    )
+    set_tests_properties(c11_integration_static_param_repeat PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.2.4 + §scxml-6.3: the delay side of the same surface. A separate
     # document rather than a `delay` added to the one above, because that one is
     # driven with `_step` and this one can only be driven with `_tick`: folding
@@ -3758,6 +3794,27 @@ set_target_properties(sce_c_forge_concat_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_forge_concat COMMAND sce_c_forge_concat_unit_test)
 set_tests_properties(c11_unit_forge_concat PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── Forge wire repeat unit test ────────────────────────────────────
+#
+# A `<param>` name that repeats is one array in the event's data, in document
+# order, on every engine: the case `tests/json_text/object_key_order.json` holds
+# every writer to, and what a machine can do to it that the table cannot say (a
+# value left out, a run of three, an object that does not fit). Header-only code.
+add_executable(sce_c_forge_wire_repeat_unit_test unit/forge_wire_repeat_test.c)
+target_link_libraries(sce_c_forge_wire_repeat_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_forge_wire_repeat_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_forge_wire_repeat_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_wire_repeat COMMAND sce_c_forge_wire_repeat_unit_test)
+set_tests_properties(c11_unit_forge_wire_repeat PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

@@ -93,13 +93,21 @@ static inline sce_forge_wire_value_t sce_forge_wire_string(const char *v) {
     return value;
 }
 
-/* The object being written: `buf` holds `len` bytes of it, `cap` is its size. */
+/* The object being written: `buf` holds `len` bytes of it, `cap` is its size.
+ *
+ * The pairs of a name that repeats are written one after another (the generator
+ * lists them sorted by name, a name's values in document order), so what is
+ * remembered of the last pair is all it takes to collect them into one array:
+ * its key, where its value begins, and how many values the key holds so far. */
 typedef struct {
     char *buf;
     size_t cap;
     size_t len;
     bool any;
     bool overflow;
+    const char *last_key;
+    size_t last_value_at;
+    size_t last_count;
 } sce_forge_wire_t;
 
 static inline void sce_forge_wire_put(sce_forge_wire_t *w, const char *text, size_t n) {
@@ -118,6 +126,9 @@ static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t c
     w->len = 0;
     w->any = false;
     w->overflow = false;
+    w->last_key = NULL;
+    w->last_value_at = 0;
+    w->last_count = 0;
     sce_forge_wire_put(w, "{", 1u);
 }
 
@@ -191,15 +202,54 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
     }
 }
 
+/* End the array the last key's values were collected into, when it holds more
+ * than one: a name with a single value is written as that value alone. */
+static inline void sce_forge_wire_close_array(sce_forge_wire_t *w) {
+    if (w->last_count > 1u) {
+        sce_forge_wire_put(w, "]", 1u);
+    }
+    w->last_count = 0;
+}
+
 /* One pair: `key` is the JSON text of the name, quotes included, which the
- * generator has already escaped. */
+ * generator has already escaped, and a string literal, so that the pointer
+ * outlives the object.
+ *
+ * A name that repeats collects its values, in the order they are written, into
+ * one array (ARCHITECTURE.md, "JSON Object Key Order"; W3C SCXML test178): the
+ * second value of a key turns the first into the array's first element, which
+ * moves its text up one byte for the `[`. A key that has one value only — the
+ * others failed to compute and were left out — is that value, not an array of
+ * one. */
 static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
+    if (w->overflow) {
+        return;
+    }
+    if (w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {
+        if (w->last_count == 1u) {
+            if (w->len + 1u >= w->cap) {
+                w->overflow = true;
+                return;
+            }
+            memmove(w->buf + w->last_value_at + 1u, w->buf + w->last_value_at, w->len - w->last_value_at);
+            w->buf[w->last_value_at] = '[';
+            w->len += 1u;
+        }
+        sce_forge_wire_put(w, ",", 1u);
+        sce_forge_wire_put_value(w, value);
+        w->last_count += 1u;
+        return;
+    }
     if (w->any) {
+        sce_forge_wire_close_array(w);
         sce_forge_wire_put(w, ",", 1u);
     }
     w->any = true;
     sce_forge_wire_put(w, key, strlen(key));
     sce_forge_wire_put(w, ":", 1u);
+    w->last_key = key;
+    w->last_value_at = w->len;
+    w->last_count = 1u;
     sce_forge_wire_put_value(w, value);
 }
 
@@ -217,6 +267,9 @@ static inline bool sce_forge_wire_json(sce_forge_wire_value_t value, char *buf, 
     w.len = 0;
     w.any = false;
     w.overflow = false;
+    w.last_key = NULL;
+    w.last_value_at = 0;
+    w.last_count = 0;
     sce_forge_wire_put_value(&w, value);
     if (w.overflow) {
         buf[0] = '\0';
@@ -291,6 +344,7 @@ static inline char *sce_forge_concat_into(char *buf, size_t cap, const sce_forge
 
 /* Finish the object. False when it did not fit the buffer, which then holds `{}`. */
 static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {
+    sce_forge_wire_close_array(w);
     if (!w->overflow) {
         sce_forge_wire_put(w, "}", 1u);
     }

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a `<param>` name that
+  repeats collects its values, in document order, into one array of the event's
+  data (ARCHITECTURE.md, "JSON Object Key Order"; W3C SCXML test178), in a `<send>`
+  the host serves, in an `<invoke>` the host serves, and in a final's `<donedata>`.
+
+  `go` enters `working`, whose entry sends to the host and which starts the invoke:
+
+    the send     `n` is `count`, `count + 1` and `count + 2` around an `m`, so the
+                 request's `event_data` is `{"m":6,"n":[3,4,5]}`, the name's values
+                 in the order the document declares them although `m` is declared
+                 between them; the request's `params` carry the four pairs as text;
+    the invoke   `n` is `count`, a multiplication a 32-bit field cannot hold, and
+                 `count + 5`, so the value that cannot be computed is left out and
+                 reported (W3C SCXML 5.7.1) and the others are the array `[3,8]`;
+                 `p` has two values and the second cannot be computed, so one is
+                 left, and a name with one value left is that value and not an
+                 array of one: `{"n":[3,8],"p":3}`.
+
+  `finish` ends the run, and the final's `<donedata>` is `{"n":[3,4]}`.
+
+  `errors` counts the `error.execution` the document took, so a value dropped in
+  silence is told from one reported.
+
+  A document of the C11 channel alone, beside the C test: the other engines are held
+  to the same case by `tests/json_text/object_key_order.json`. Generated with both
+  host declarations naming the type x-sce-host (backends/c/tests/CMakeLists.txt
+  names the flags).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="static_param_repeat">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="3"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="go" target="working"/>
+  </state>
+
+  <state id="working">
+    <onentry>
+      <send type="x-sce-host" target="job://report" event="note">
+        <param name="n" expr="count"/>
+        <param name="m" expr="count * 2"/>
+        <param name="n" expr="count + 1"/>
+        <param name="n" expr="count + 2"/>
+      </send>
+    </onentry>
+    <invoke type="x-sce-host" id="h">
+      <param name="n" expr="count"/>
+      <param name="p" expr="count"/>
+      <param name="n" expr="count * 2000000000"/>
+      <param name="p" expr="count * 2000000000"/>
+      <param name="n" expr="count + 5"/>
+    </invoke>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done">
+    <donedata>
+      <param name="n" expr="count"/>
+      <param name="n" expr="count + 1"/>
+    </donedata>
+  </final>
+</scxml>

@@ -3077,15 +3077,22 @@ impl StaticTarget for CppTarget {
     }
 }
 
-/// The first of `names` that an earlier one already was — a `<param>` that repeats.
+/// The first name of `namelist` that a `<param>` of `params` or an earlier name of
+/// the namelist already is.
 ///
-/// A name that repeats collects its values, in document order, into one array of
-/// the event's data on every engine (ARCHITECTURE.md, "JSON Object Key Order"; W3C
-/// SCXML test178). A target whose writer writes one value a name does not spell it
-/// yet, and says so by name rather than write the object with a key twice.
-fn repeated_name<'a>(names: impl Iterator<Item = &'a str>) -> Option<&'a str> {
-    let mut seen = std::collections::BTreeSet::new();
-    names.into_iter().find(|name| !seen.insert(*name))
+/// A `<param>` name that repeats collects its values, in document order, into one
+/// array of the event's data on every engine (ARCHITECTURE.md, "JSON Object Key
+/// Order"; W3C SCXML test178), which a C writer writes by itself as it is given the
+/// pairs. A `namelist` name is a pair like a `<param>`, but where it stands
+/// among the `<param>`s that share its name is not a document order the engines
+/// were held to, so a target that writes only the `<param>`s' repeats refuses it by
+/// name rather than choose one.
+fn namelist_name_taken<'a>(
+    params: impl Iterator<Item = &'a str>,
+    namelist: &'a str,
+) -> Option<&'a str> {
+    let mut seen: std::collections::BTreeSet<&str> = params.collect();
+    namelist.split_whitespace().find(|name| !seen.insert(*name))
 }
 
 /// The first of `invokes` a target that lowers a `<invoke type="scxml">` has no
@@ -4165,14 +4172,13 @@ impl CTarget {
                     if !scxml_processor && !action.send_type_host_served {
                         return Some(format!("a <send> of type `{}`", action.send_type));
                     }
-                    if let Some(name) = repeated_name(
-                        action
-                            .params
-                            .iter()
-                            .map(|p| p.name.as_str())
-                            .chain(action.namelist.split_whitespace()),
+                    if let Some(name) = namelist_name_taken(
+                        action.params.iter().map(|p| p.name.as_str()),
+                        &action.namelist,
                     ) {
-                        return Some(format!("a <send> that names <param name=\"{name}\"> twice"));
+                        return Some(format!(
+                            "a <send> whose namelist names `{name}`, which a <param> or the namelist already does"
+                        ));
                     }
                 }
                 other => return Some(format!("<{other}>")),
@@ -4205,24 +4211,15 @@ impl CTarget {
                     info.common.base.invoke_id
                 ))
             }
-            // A name that repeats collects its values into one array of the
-            // event's data on every engine (ARCHITECTURE.md, "JSON Object Key
-            // Order"), which the wire writer of the forge runtime does not yet.
+            // A `namelist` name is a pair of the request like a `<param>`.
             crate::model::Invoke::Unsupported(info) if info.host_served => {
-                // A `namelist` name is a pair of the request like a `<param>`.
-                repeated_name(
-                    info.base
-                        .params
-                        .iter()
-                        .map(|p| p.name.as_str())
-                        .chain(info.namelist.split_whitespace()),
-                )
-                .map(|name| {
-                    format!(
-                        "an <invoke id=\"{}\"> that names <param name=\"{name}\"> twice",
-                        info.base.invoke_id
-                    )
-                })
+                namelist_name_taken(info.base.params.iter().map(|p| p.name.as_str()), &info.namelist)
+                    .map(|name| {
+                        format!(
+                            "an <invoke id=\"{}\"> whose namelist names `{name}`, which a <param> or the namelist already does",
+                            info.base.invoke_id
+                        )
+                    })
             }
             _ => None,
         })
@@ -4400,7 +4397,7 @@ impl StaticTarget for CTarget {
             // ([`crate::filters::static_content_wire`]) and copied into that
             // data. An evaluated `<content expr>` names a record, which the
             // model let through as the pairs of its fields. A name that repeats
-            // is not spelled yet.
+            // is one array, as in a `<send>`'s.
             if state.donedata.as_ref().is_some_and(|done| {
                 !matches!(
                     done.content,
@@ -4410,15 +4407,6 @@ impl StaticTarget for CTarget {
                 )
             }) {
                 return Some("a <donedata> with a <content> that is not inline text".to_string());
-            }
-            if let Some(name) = state
-                .donedata
-                .as_ref()
-                .and_then(|done| repeated_name(done.params.iter().map(|p| p.name.as_str())))
-            {
-                return Some(format!(
-                    "a <donedata> that names <param name=\"{name}\"> twice"
-                ));
             }
         }
         None

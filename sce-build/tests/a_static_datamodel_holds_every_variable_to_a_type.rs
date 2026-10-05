@@ -377,21 +377,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             "a <send> of type `x-sce-host`",
         ),
         (
-            "a <send> that names a <param> twice",
-            machine(
-                r#"<state id="s"><onentry><send event="x"><param name="k" expr="count"/><param name="k" expr="count + 1"/></send></onentry></state>"#,
-            ),
-            "a <send> that names <param name=\"k\"> twice",
-        ),
-        (
-            "a <donedata> that names a <param> twice",
-            machine(
-                r#"<state id="s"><transition event="go" target="fin"/></state>
-  <final id="fin"><donedata><param name="k" expr="count"/><param name="k" expr="count + 1"/></donedata></final>"#,
-            ),
-            "a <donedata> that names <param name=\"k\"> twice",
-        ),
-        (
             "a typed payload with a bytes field",
             r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -2052,9 +2037,11 @@ fn a_go_machine_that_joins_text_and_a_number_imports_what_it_names() {
 
 #[test]
 fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
-    // C11 writes the event's data as one JSON object, in which a name is carried
-    // once, so a `namelist` name that a `<param>` of the same send already names
-    // is refused by name, as two `<param>`s of one name are.
+    // C11 collects the `<param>`s of one name into one array, in document order,
+    // as every engine does. Where a `namelist` name stands among the `<param>`s
+    // that share it is not a document order the engines were held to, so a
+    // `namelist` name that a `<param>` of the same send already names is refused
+    // by name.
     let document = machine(
         r#"<state id="s"><onentry><send event="out" namelist="count"><param name="count" expr="1"/></send></onentry></state>"#,
     );
@@ -2070,7 +2057,88 @@ fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
         &document,
     );
     assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
-    assert!(out.contains("twice"), "it says why:\n{out}");
+    assert!(
+        out.contains("a <send> whose namelist names `count`"),
+        "it says why:\n{out}"
+    );
+}
+
+/// The text of the C source `generate -l c` writes for `document`, with `args`.
+fn generated_c_source(document: &str, args: &[&str]) -> String {
+    let out_dir = tempdir().expect("tempdir");
+    let mut all = vec![
+        "generate",
+        "-l",
+        "c",
+        "-o",
+        out_dir.path().to_str().expect("a path"),
+    ];
+    all.extend_from_slice(args);
+    let (ok, out) = run(&all, document);
+    assert!(ok, "C generation is not refused:\n{out}");
+    generated_c(out_dir.path())
+}
+
+/// How many times the generated `source` writes a pair named `name` into the wire.
+fn pairs_named(source: &str, name: &str) -> usize {
+    source
+        .matches(&format!(
+            "sce_forge_wire_pair(&sce_wire_, \"\\\"{name}\\\"\""
+        ))
+        .count()
+        + source
+            .matches(&format!(
+                "sce_forge_wire_pair(&_host_inv_wire, \"\\\"{name}\\\"\""
+            ))
+            .count()
+}
+
+#[test]
+fn a_param_name_that_repeats_is_written_as_pairs_the_wire_collects_for_c() {
+    // One array on every engine (ARCHITECTURE.md, "JSON Object Key Order"): the
+    // generated code lists the pairs of a name one after another, in document
+    // order, and the wire writer of the forge runtime collects them.
+    let send = generated_c_source(
+        &machine(
+            r#"<state id="s"><onentry><send event="x"><param name="k" expr="count"/><param name="j" expr="count"/><param name="k" expr="count + 1"/></send></onentry></state>"#,
+        ),
+        &[],
+    );
+    assert_eq!(pairs_named(&send, "k"), 2, "a <send>'s two `k`s:\n{send}");
+    assert_eq!(pairs_named(&send, "j"), 1, "and the one `j`:\n{send}");
+    let k = send.find("\\\"k\\\"").expect("the first pair of k");
+    let k2 = send[k + 1..]
+        .find("\\\"k\\\"")
+        .expect("the second pair of k")
+        + k
+        + 1;
+    assert!(
+        !send[k..k2].contains("\\\"j\\\""),
+        "the pairs of a name are listed together, `j` not between them:\n{send}"
+    );
+    let donedata = generated_c_source(
+        &machine(
+            r#"<state id="s"><transition event="go" target="fin"/></state>
+  <final id="fin"><donedata><param name="k" expr="count"/><param name="k" expr="count + 1"/></donedata></final>"#,
+        ),
+        &[],
+    );
+    assert_eq!(
+        pairs_named(&donedata, "k"),
+        2,
+        "a <donedata>'s two `k`s:\n{donedata}"
+    );
+    let invoke = generated_c_source(
+        &invoking_the_host(
+            r#"<invoke type="x-sce-host" id="h"><param name="k" expr="count"/><param name="k" expr="count + 1"/></invoke>"#,
+        ),
+        &["--host-invoker", "x-sce-host"],
+    );
+    assert_eq!(
+        pairs_named(&invoke, "k"),
+        2,
+        "a host-run <invoke>'s two `k`s:\n{invoke}"
+    );
 }
 
 /// A `sce-static` machine whose entry (line 8) sends with the attributes `send`.
@@ -3707,9 +3775,10 @@ fn a_host_run_invoke_namelist_name_is_held_to_the_rule_a_param_is() {
 
 #[test]
 fn a_host_run_invoke_namelist_name_that_repeats_a_param_is_refused_for_c() {
-    // C11 writes the request as one JSON object, in which a name is carried
-    // once, so a `namelist` name that a `<param>` of the same invoke already
-    // names is refused by name there, as two `<param>`s of one name are. The
+    // C11 collects the `<param>`s of one name into one array, as every engine
+    // does, but where a `namelist` name stands among the `<param>`s that share it
+    // is not a document order the engines were held to, so a `namelist` name that
+    // a `<param>` of the same invoke already names is refused by name there. The
     // other backends carry it as they carry any name written twice.
     let document = invoking_the_host(
         r#"<invoke type="x-sce-host" id="h" namelist="count"><param name="count" expr="1"/></invoke>"#,
@@ -3728,7 +3797,10 @@ fn a_host_run_invoke_namelist_name_that_repeats_a_param_is_refused_for_c() {
         &document,
     );
     assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
-    assert!(out.contains("twice"), "it says why:\n{out}");
+    assert!(
+        out.contains("whose namelist names `count`, which a <param> or the namelist already does"),
+        "it says why:\n{out}"
+    );
 }
 
 #[test]

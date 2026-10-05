@@ -75,6 +75,6 @@ PY
 # a pair's, from the one writer; the case writes it bare, and `"busy"` is `busy`.
 mutation_case "a string value is written without its quotes" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "    case SCE_FORGE_WIRE_STRING:\n        sce_forge_wire_put(w, \"\\\"\", 1u);\n        sce_forge_wire_put_text(w, value.as.s);\n        sce_forge_wire_put(w, \"\\\"\", 1u);\n        break;\n    }\n}\n\n/* One pair:",
-     "    case SCE_FORGE_WIRE_STRING:\n        sce_forge_wire_put_text(w, value.as.s);\n        break;\n    }\n}\n\n/* One pair:")
+     "    case SCE_FORGE_WIRE_STRING:\n        sce_forge_wire_put(w, \"\\\"\", 1u);\n        sce_forge_wire_put_text(w, value.as.s);\n        sce_forge_wire_put(w, \"\\\"\", 1u);\n        break;\n    }\n}\n\n/* End the array",
+     "    case SCE_FORGE_WIRE_STRING:\n        sce_forge_wire_put_text(w, value.as.s);\n        break;\n    }\n}\n\n/* End the array")
 PY

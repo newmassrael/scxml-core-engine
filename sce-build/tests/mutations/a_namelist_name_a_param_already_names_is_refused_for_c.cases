@@ -1,0 +1,28 @@
+# Mutation cases for "a `namelist` name that a `<param>` of the same send or invoke
+# already names is refused by name" under the C11 lowering
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_namelist_name_a_param_already_names_is_refused_for_c.cases`.
+#
+# A `<param>` name that repeats is one array on every engine, which the C writer
+# writes by itself as it is given the pairs of a name one after another. Where a
+# `namelist` name stands among the `<param>`s that share it is not a document order
+# the engines were held to, so the lowering refuses it by name rather than choose
+# one. The judge's two cases (`a_namelist_name_that_repeats_a_param_is_refused_for_c`
+# and its invoke twin) read the refusal; the case below takes it away:
+#
+#   a `namelist` name that a `<param>` or an earlier name already names is let through.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+mutation_case "a namelist name that is already taken is let through" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    namelist.split_whitespace().find(|name| !seen.insert(*name))",
+     "    namelist.split_whitespace().find(|name| !seen.insert(*name) && false)")
+PY

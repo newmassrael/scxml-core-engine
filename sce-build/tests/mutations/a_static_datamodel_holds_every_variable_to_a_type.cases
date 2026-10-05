@@ -274,8 +274,8 @@ PY
 
 mutation_case "a namelist name that repeats a param reaches C" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                            .map(|p| p.name.as_str())\n                            .chain(action.namelist.split_whitespace()),\n",
-     "                            .map(|p| p.name.as_str()),\n")
+     "                        action.params.iter().map(|p| p.name.as_str()),\n                        &action.namelist,\n",
+     "                        action.params.iter().map(|p| p.name.as_str()),\n                        \"\",\n")
 PY
 
 # A `<send>`'s `delayexpr` is a string the machine computes, read as a CSS2 time
@@ -331,8 +331,8 @@ PY
 
 mutation_case "a namelist name that repeats a host-run invoke's param reaches C" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                        .map(|p| p.name.as_str())\n                        .chain(info.namelist.split_whitespace()),\n",
-     "                        .map(|p| p.name.as_str()),\n")
+     "namelist_name_taken(info.base.params.iter().map(|p| p.name.as_str()), &info.namelist)",
+     "namelist_name_taken(info.base.params.iter().map(|p| p.name.as_str()), \"\")")
 PY
 
 mutation_case "a host-run invoke's namelist is not folded into its params" <<'PY'

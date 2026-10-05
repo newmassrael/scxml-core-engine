@@ -16,10 +16,11 @@
 // character after the basic plane's.
 //
 // Only the cases a C machine can state are read: a flat object of whole
-// numbers under names that do not repeat. A name that repeats is one array on
-// every engine, which the C writer does not write yet and refuses by name
-// (`a_repeated_param_name_is_refused_by_name`); an object or array value is not a
-// value a `sce-static` variable holds.
+// numbers. A name that repeats is one array on every engine, which the wire
+// writer collects as it is given the pairs of a name one after another: the
+// generated code lists them together, in the order they were declared in, and
+// `backends/c/tests/unit/forge_wire_repeat_test.c` holds the writer to the table's
+// case. An object or array value is not a value a `sce-static` variable holds.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -129,20 +130,25 @@ fn the_pairs_of_a_send_are_listed_in_the_order_the_shared_table_gives() {
             .iter()
             .map(|pair| pair[0].as_str().expect("a name").to_string())
             .collect();
-        let unique = names
-            .iter()
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            == names.len();
-        if !flat || !unique {
+        if !flat {
             continue;
         }
         let name = case["name"].as_str().expect("a case name");
         let source = generate_c(&sending(&names))
             .unwrap_or_else(|why| panic!("{name}: C generation was refused:\n{why}"));
+        // The table's keys are in the order under test; a name that repeats is
+        // one key there, and its pairs are listed together here, once for each
+        // time the document declares it.
+        let expected: Vec<String> = keys_of(case["data"].as_str().expect("data"))
+            .into_iter()
+            .flat_map(|key| {
+                let times = names.iter().filter(|name| **name == key).count();
+                std::iter::repeat_n(key, times)
+            })
+            .collect();
         assert_eq!(
             written_keys(&source),
-            keys_of(case["data"].as_str().expect("data")),
+            expected,
             "{name}: the pairs are not listed in the order the table gives"
         );
         held += 1;
@@ -154,15 +160,11 @@ fn the_pairs_of_a_send_are_listed_in_the_order_the_shared_table_gives() {
 }
 
 #[test]
-fn a_repeated_param_name_is_refused_by_name() {
-    // One array on every engine, which the C writer does not write yet: a
-    // refusal that names the construct, rather than an object with a key twice.
-    let doc = sending(&["k".to_string(), "k".to_string()]);
-    let why = generate_c(&doc).expect_err("a repeated name must be refused");
-    assert!(
-        why.contains("generate/unsupported-feature")
-            && why.contains("no C11 lowering yet")
-            && why.contains("a <send> that names <param name=\\\"k\\\"> twice"),
-        "expected the unsupported-feature refusal naming the repeated param:\n{why}"
-    );
+fn the_pairs_of_a_name_that_repeats_are_listed_together_in_document_order() {
+    // `k`, `j`, `k` is `j` and then the two `k`s: sorted by name, with a name's
+    // pairs in the order they were declared in (the values here are one number, so
+    // the order is the one the keys give).
+    let doc = sending(&["k".to_string(), "j".to_string(), "k".to_string()]);
+    let source = generate_c(&doc).expect("a repeated name is lowered");
+    assert_eq!(written_keys(&source), ["j", "k", "k"]);
 }

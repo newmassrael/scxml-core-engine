@@ -4019,8 +4019,9 @@ names as a static child is started — begun, handed the values it keeps, entere
 driven — evaluating the arguments it keeps no variable for. Bytes and a record with
 a string field, a `<send>` to
 another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
-type the host was not declared to serve, a `<param>` name that repeats in a
-`<send>`, an `<invoke>` or a `<donedata>` and a
+type the host was not declared to serve, a `namelist` name that a `<param>` of
+the same `<send>` or `<invoke>` or an earlier name of the `namelist` already names
+and a
 transition on an event whose payload carries a bytes field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
 not carry yet.
@@ -4032,10 +4033,19 @@ an event carries as its data, by the header-only wire writer of the forge runtim
 ascending by the name's UTF-8 bytes, whatever order the document declared its
 `<param>`s in (ARCHITECTURE.md, "JSON Object Key Order") — which the generator
 fixes once by listing the pairs sorted, a pair a failed value leaves out leaving
-the others' order as it was. A name that repeats is one array on every engine,
-which the writer does not write yet: it is refused by name, not written as an
-object with a key twice. `a_c_machines_event_data_follows_the_shared_key_order.rs`
-holds the order to the table the other engines' writers are held to. A `<send>`
+the others' order as it was. A `<param>` name that repeats is one array on every
+engine, its values in the order the document declares them: the generator lists a
+name's pairs one after another, and the writer, which remembers the last pair,
+turns the second value of a key into the array it joins (`[3,4,5]`), so a name
+with one value left — the others failed to compute — is that value and not an
+array of one. Where a `namelist` name stands among the `<param>`s that share it
+is not an order the engines were held to, so one that a `<param>` or an earlier
+name of the `namelist` already names is refused by name.
+`a_c_machines_event_data_follows_the_shared_key_order.rs` holds the order to the
+table the other engines' writers are held to, `unit/forge_wire_repeat_test.c`
+holds the writer to that table's case and to what it cannot say, and the C-only
+document `integration_resources/static_param_repeat/` holds a send, an invoke and a
+`<donedata>` of the generated machine to it. A `<send>`
 the host serves carries the same pairs as the text of its request's `params`, from
 the one value each is written from. A `<donedata>`'s go into the `done_data` buffer the machine
 holds, which a host reads through `<machine>_done_data(sm)` and a compound

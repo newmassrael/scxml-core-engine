@@ -1,0 +1,58 @@
+# Mutation cases for "a `<param>` name that repeats is one array in the event's
+# data, in document order" under the C11 wire writer
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15; ARCHITECTURE.md, "JSON Object Key Order").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c_wire_collects_a_name_that_repeats_into_one_array_ctest.cases`.
+#
+# The generator lists the pairs of a name one after another and the writer
+# remembers the last pair: its key, where its value begins and how many values the
+# key holds. The second value of a key moves the first up one byte for the `[`, the
+# next key or the end of the object closes the array, and a key with one value
+# left is that value alone. `unit/forge_wire_repeat_test.c` holds the writer to the
+# shared table's case and to what it cannot say, and `static_param_repeat` holds a
+# send, an invoke and a `<donedata>` of a generated machine to it. The mutants below
+# each take one decision away and leave a header that still compiles:
+#
+#   a key that repeats is a pair of its own, the key twice;
+#   the `[` is not written where the first value was;
+#   the array is not closed before the next key;
+#   the array is not closed at the end of the object;
+#   a key with one value is an array of one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_(unit_forge_wire_repeat|integration_static_param_repeat)$'
+mutation_targets backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/unit/forge_wire_repeat_test.c backends/c/tests/integration/test_static_param_repeat.c backends/c/tests/integration_resources/static_param_repeat/static_param_repeat.scxml
+
+mutation_case "a key that repeats is a pair of its own" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "    if (w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {",
+     "    if (false && w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {")
+PY
+
+mutation_case "the open bracket is not written where the first value was" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "            w->buf[w->last_value_at] = '[';\n",
+     "            w->buf[w->last_value_at] = ' ';\n")
+PY
+
+mutation_case "the array is not closed before the next key" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "    if (w->any) {\n        sce_forge_wire_close_array(w);\n        sce_forge_wire_put(w, \",\", 1u);\n    }",
+     "    if (w->any) {\n        sce_forge_wire_put(w, \",\", 1u);\n    }")
+PY
+
+mutation_case "the array is not closed at the end of the object" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {\n    sce_forge_wire_close_array(w);\n",
+     "static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {\n")
+PY
+
+mutation_case "a key with one value is an array of one" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "    if (w->last_count > 1u) {\n        sce_forge_wire_put(w, \"]\", 1u);\n    }",
+     "    if (w->last_count > 0u) {\n        sce_forge_wire_put(w, \"]\", 1u);\n    }")
+PY
