@@ -253,6 +253,33 @@
         }
       ]
     },
+    "transform_single_sum": {
+      "fixture": "compute_total",
+      "signature": "(level: f32, step: f32) -> f32",
+      "formula": "level + step, rounded to binary32 where it is made; the arguments and the expected values are binary32 values written as the doubles they widen to",
+      "cases": [
+        {
+          "args": [16777216.0, 1.0],
+          "expected": 16777216.0,
+          "note": "THE discriminator — above 2^24 a binary32 holds no odd integer, so 16777216 + 1 is 16777216; a backend that adds in a double returns 16777217"
+        },
+        {
+          "args": [8388608.0, 1.0],
+          "expected": 8388609.0,
+          "note": "below 2^24 the 1 is kept — every backend agrees"
+        },
+        {
+          "args": [0.10000000149011612, 0.20000000298023224],
+          "expected": 0.30000001192092896,
+          "note": "the binary32 nearest 0.1 and 0.2, added and rounded to binary32 (0x3E99999A); a double sum of the two widened singles is 0.30000000447034836"
+        },
+        {
+          "args": [1.0, 2.0],
+          "expected": 3.0,
+          "note": "small whole values — every backend agrees"
+        }
+      ]
+    },
     "transform_mixed_width_or": {
       "fixture": "compute_merged",
       "signature": "(word: i64, flags: u8) -> i64",
@@ -1305,6 +1332,28 @@
           ],
           "expected": 0,
           "note": "miss -> default fallback (above any key)"
+        }
+      ]
+    },
+    "algorithm_single_sum": {
+      "fixture": "algorithm_single_sum",
+      "signature": "(level: f32, step: f32) -> f32",
+      "formula": "total = level + step, stored in a float32 local and returned; the arguments and the expected values are binary32 values written as the doubles they widen to",
+      "cases": [
+        {
+          "args": [16777216.0, 1.0],
+          "expected": 16777216.0,
+          "note": "THE discriminator — above 2^24 a binary32 holds no odd integer, so 16777216 + 1 is 16777216; a backend that adds in a double returns 16777217"
+        },
+        {
+          "args": [8388608.0, 1.0],
+          "expected": 8388609.0,
+          "note": "below 2^24 the 1 is kept — every backend agrees"
+        },
+        {
+          "args": [0.10000000149011612, 0.20000000298023224],
+          "expected": 0.30000001192092896,
+          "note": "the binary32 nearest 0.1 and 0.2, added and rounded to binary32 (0x3E99999A); a double sum of the two widened singles is 0.30000000447034836"
         }
       ]
     },

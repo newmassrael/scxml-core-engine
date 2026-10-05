@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: an operation on `float32` values is rounded to binary32
+  where it is made (SCE_FORGE.md, "Single-precision reals").
+
+  ⚠ WHY 2^24 IS THE WHOLE POINT. A binary32 has 24 significant bits, so above
+  2^24 it holds no odd integer: 16777216 + 1 is 16777216 again. A backend that
+  holds a `float32` in a double — Python's `float`, ECMAScript's `Number` — and
+  adds in it makes 16777217, and nothing about the sum looks wrong until it is
+  compared with what a backend with a real single made of it. The other five
+  have one (C `float`, C++ `float`, Rust `f32`, Go `float32`, Kotlin `Float`) and
+  compute the sum as one; Python lowers the operation through `sce_algorithm.to_f32`
+  so that it does too, and this is what holds that lowering in place.
+
+  The arguments are binary32 values written as the doubles they widen to — which
+  is how every harness reads a single — and so are the expected values:
+
+      16777216 + 1         -> 16777216          (a double makes 16777217)
+      8388608 + 1          -> 8388609           (below 2^24 the 1 is kept)
+      0.1f + 0.2f          -> 0.30000001192092896 (0x3E99999A; a double sum of the
+                                                  two widened singles is
+                                                  0.30000000447034836)
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="single_sum">
+  <datamodel>
+    <data id="level" sce:type="float32" sce:direction="in"/>
+    <data id="step" sce:type="float32" sce:direction="in"/>
+    <data id="total" sce:type="float32" sce:direction="out" expr="level + step"/>
+  </datamodel>
+</scxml>

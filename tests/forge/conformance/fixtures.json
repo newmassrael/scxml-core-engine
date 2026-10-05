@@ -113,6 +113,20 @@
       }
     },
     {
+      "name": "transform_single_sum",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "f32",
+        "f32"
+      ],
+      "output": {
+        "function": "compute_total",
+        "type": "f32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "transform_mixed_width_or",
       "kind": "transform",
       "ref_section": "pure_functions",
@@ -1039,6 +1053,20 @@
       ],
       "output": {
         "type": "string",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_single_sum",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_single_sum",
+      "args": [
+        "f32",
+        "f32"
+      ],
+      "output": {
+        "type": "f32",
         "compare": "equality"
       }
     },

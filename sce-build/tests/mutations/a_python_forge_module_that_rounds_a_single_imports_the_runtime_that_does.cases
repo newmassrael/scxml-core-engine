@@ -1,0 +1,50 @@
+# Mutation cases for "a Python module that rounds an operation on 32-bit reals to
+# binary32 names the runtime that does" (SCE_FORGE.md, "Single-precision reals").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_python_forge_module_that_rounds_a_single_imports_the_runtime_that_does.cases`.
+#
+# Python's `float` is a binary64, so the generator writes the rounding of every kind
+# (`sce_algorithm.to_f32`), and a module's own template cannot know whether an
+# expression it was handed needed it. The import is added once, where the module is
+# complete (`import_the_single_rounding`): after the `from __future__` line, before
+# the first import, or, for a module that imports nothing, before its first
+# statement. The two unit tests read that placement and the cases that need none;
+# the conformance fixtures `transform_single_sum` and `algorithm_single_sum` run the
+# generated module. The mutants below each take one decision away:
+#
+#   no module is given the import;
+#   a module that already names the runtime is given a second import;
+#   the import goes before the `from __future__` line;
+#   a module with no import gets it with no blank lines around it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/src/forge/generator.rs
+
+mutation_case "no module is given the import" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "    if !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {",
+     "    if true || !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {")
+PY
+
+mutation_case "a module that names the runtime is given a second import" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "    if !code.contains(\"sce_algorithm.to_f32(\") || code.contains(\"as sce_algorithm\") {",
+     "    if !code.contains(\"sce_algorithm.to_f32(\") {")
+PY
+
+mutation_case "the import goes before the future line" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "    if let Some(at) = after_future.or(before_first_import) {",
+     "    if let Some(at) = before_first_import.or(after_future) {")
+PY
+
+mutation_case "a module with no import gets it with no blank lines around it" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        lines.splice(at..at, [IMPORT, \"\", \"\"]);",
+     "        lines.splice(at..at, [IMPORT]);")
+PY

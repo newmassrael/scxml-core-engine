@@ -1070,9 +1070,12 @@ pub struct TypeCtx<'a> {
     /// Whether an operation on 32-bit reals is rounded to binary32 where it is
     /// made, by the target that holds a real in a double — Python and the
     /// Interpreter's ECMAScript, whose `float` and `Number` are binary64. True
-    /// where a document declares its reals' widths and every engine must give
-    /// it one answer (a `sce-static` statechart); false elsewhere, where a
-    /// 32-bit real is the language's own and no pass rewrites it.
+    /// by default, for every kind: a document declares its reals' widths and
+    /// every engine must give it one answer (SCE_FORGE.md, "Single-precision
+    /// reals"). The pass acts only where a 32-bit real is an operand or the
+    /// place a value lands, and only for those two targets, so a document with
+    /// none, and every other target, is written as it always was. False is the
+    /// opt-out for a test that wants the language's own arithmetic.
     pub rounds_to_single: bool,
 }
 
@@ -1106,7 +1109,7 @@ impl<'a> TypeCtx<'a> {
             previous_cells: HashMap::new(),
             string_capacities: HashMap::new(),
             joins_into_buffers: false,
-            rounds_to_single: false,
+            rounds_to_single: true,
         }
     }
 

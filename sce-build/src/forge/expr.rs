@@ -8745,12 +8745,28 @@ mod tests {
             tp_with("wide + 0.5", ExprTarget::Python, &ctx),
             "wide + 0.5"
         );
-        // Where nothing declares the widths, a single is the language's own.
+        // The opt-out is the language's own arithmetic.
         let mut unrounded = single_ctx();
         unrounded.rounds_to_single = false;
         assert_eq!(
             tp_with("tenth + 0.2", ExprTarget::Python, &unrounded),
             "tenth + 0.2"
+        );
+    }
+
+    #[test]
+    fn a_context_that_says_nothing_rounds_a_single_for_every_kind() {
+        // A forge kind's context is built with no word about rounding: it is on
+        // by default, since every kind's `float32` is one answer on every engine.
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("tenth", InferredType::Float { bits: 32 });
+        assert_eq!(
+            tp_with("tenth + 0.2", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(tenth + sce_algorithm.to_f32(0.2))"
+        );
+        assert_eq!(
+            tp_with("tenth + 0.2", ExprTarget::Js, &ctx),
+            "Math.fround(tenth + Math.fround(0.2))"
         );
     }
 

@@ -24,7 +24,7 @@
 #   a negation does not pass the precision on to what it negates;
 #   a literal beside a single is not written as one;
 #   the pass is not run;
-#   the data model of a statechart does not ask for it;
+#   a context does not round by default, for a forge kind or a statechart;
 #   C does not hold a `float` variable or a list of them, has no wire value for
 #   one, or refuses one on the wire.
 #
@@ -32,7 +32,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib
-mutation_targets sce-build/src/forge/expr.rs sce-build/src/forge/type_ctx.rs sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/expr.rs sce-build/src/forge/types.rs sce-build/src/forge/static_lowering.rs
 mutation_oracles sce-build/src/forge/expr.rs sce-build/src/forge/static_lowering.rs
 
 # ── What is rounded ─────────────────────────────────────────────────
@@ -83,10 +83,10 @@ edit("sce-build/src/forge/expr.rs",
      "    if false && ctx.rounds_to_single {")
 PY
 
-mutation_case "a statechart's data model does not ask for the rounding" <<'PY'
-edit("sce-build/src/forge/type_ctx.rs",
-     "    ctx.rounds_to_single = true;",
-     "    ctx.rounds_to_single = false;")
+mutation_case "a context does not round by default" <<'PY'
+edit("sce-build/src/forge/types.rs",
+     "            rounds_to_single: true,\n        }",
+     "            rounds_to_single: false,\n        }")
 PY
 
 # ── C holds a float ─────────────────────────────────────────────────

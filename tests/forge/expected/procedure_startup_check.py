@@ -8,6 +8,7 @@
 # Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
 # Pure decision trees (no events/sends) execute via Event.NONE transitions.
 
+import sce_forge_runtime.algorithm as sce_algorithm
 from enum import IntEnum
 from typing import Callable, Optional, Tuple
 
@@ -82,13 +83,13 @@ class ProcedureStartupCheck(ProcedureStateMachine):
     ) -> Optional[Tuple[int, int, bool]]:
         if state == State.CheckVoltage:
             if event == Event.NONE:
-                if self._voltage >= 11.5 and self._voltage <= 14.5:
+                if self._voltage >= sce_algorithm.to_f32(11.5) and self._voltage <= sce_algorithm.to_f32(14.5):
                     return (State.CheckTemp, 0, False)
             if event == Event.NONE:
                 return (State.FailVoltage, 1, False)
         if state == State.CheckTemp:
             if event == Event.NONE:
-                if self._temperature < 80.0:
+                if self._temperature < sce_algorithm.to_f32(80.0):
                     return (State.Success, 0, False)
             if event == Event.NONE:
                 return (State.FailOvertemp, 1, False)

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md, "Single-precision reals": an operation on `float32` values is
+  rounded to binary32 where it is made, and a `float32` local holds a binary32.
+
+  `transform_single_sum` holds the expression of a transform to it; this holds
+  an algorithm's — a sum stored in a `float32` local and returned — in the
+  languages that hold a real in a double as well as in the five that have a
+  single: Python lowers the operation through `sce_algorithm.to_f32`, and the
+  Interpreter, which runs the lowered algorithm in ECMAScript, through
+  `Math.fround`. 16777216 + 1 is 16777216 where a double makes 16777217.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="level" type="float32"/>
+    <sce:param name="step" type="float32"/>
+    <sce:return type="float32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="total" type="float32" init="0"/>
+    <sce:assign target="total" expr="level + step"/>
+    <sce:return expr="total"/>
+  </sce:body>
+</scxml>

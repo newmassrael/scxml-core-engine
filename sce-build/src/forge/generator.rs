@@ -19363,6 +19363,44 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
     }
 }
 
+/// A generated Python module that rounds an operation on 32-bit reals to
+/// binary32 names the runtime's `to_f32` (`sce_algorithm.to_f32`), which Python's
+/// `float`, a binary64, has no operation for. The module's own template does not
+/// know whether an expression it was handed needed it, so the import is added
+/// here, once, where every kind's module is complete: after the module's
+/// `from __future__` line, which must stay the first import, or before its first
+/// import where there is none, or, for a module that imports nothing, before its
+/// first statement, set off by the two blank lines a top-level definition takes.
+fn import_the_single_rounding(code: String) -> String {
+    const IMPORT: &str = "import sce_forge_runtime.algorithm as sce_algorithm";
+    if !code.contains("sce_algorithm.to_f32(") || code.contains("as sce_algorithm") {
+        return code;
+    }
+    let mut lines: Vec<&str> = code.lines().collect();
+    let after_future = lines
+        .iter()
+        .position(|line| line.starts_with("from __future__ import"))
+        .map(|i| i + 1);
+    let before_first_import = lines
+        .iter()
+        .position(|line| line.starts_with("import ") || line.starts_with("from "));
+    if let Some(at) = after_future.or(before_first_import) {
+        lines.insert(at, IMPORT);
+    } else if let Some(at) = lines
+        .iter()
+        .position(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        lines.splice(at..at, [IMPORT, "", ""]);
+    } else {
+        return code;
+    }
+    let mut out = lines.join("\n");
+    if code.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
 /// Generate code from a ForgeDocument for Python using Jinja2 templates.
 pub fn generate_python(
     doc: &ForgeDocument,
@@ -19464,6 +19502,7 @@ pub fn generate_python_with_imports(
             render_event_schema(&env, m, imports, crate::generator::Language::Python)?
         }
     };
+    let code = import_the_single_rounding(code);
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
@@ -28938,6 +28977,43 @@ mod tests {
         assert_eq!(go_type(&SceType::Bool), "bool");
         assert_eq!(go_type(&SceType::String), "string");
         assert_eq!(go_type(&SceType::Bytes), "[]byte");
+    }
+
+    // ── The runtime a Python module that rounds a single names ─
+
+    const ROUNDING: &str = "import sce_forge_runtime.algorithm as sce_algorithm";
+
+    #[test]
+    fn a_module_that_rounds_a_single_imports_the_runtime_that_does() {
+        let body = "def f(a: float) -> float:\n    return sce_algorithm.to_f32(a + a)\n";
+        // A module that imports nothing: before its first statement, set off by
+        // the two blank lines a top-level definition takes.
+        let bare = format!("# header\n\n\n{body}");
+        assert_eq!(
+            import_the_single_rounding(bare),
+            format!("# header\n\n\n{ROUNDING}\n\n\n{body}")
+        );
+        // After the `from __future__` line, which stays the first import.
+        let future = format!("from __future__ import annotations\nimport math\n\n{body}");
+        assert_eq!(
+            import_the_single_rounding(future),
+            format!("from __future__ import annotations\n{ROUNDING}\nimport math\n\n{body}")
+        );
+        // Before the first import where there is no `__future__` line.
+        let imports = format!("import math\n\n{body}");
+        assert_eq!(
+            import_the_single_rounding(imports),
+            format!("{ROUNDING}\nimport math\n\n{body}")
+        );
+    }
+
+    #[test]
+    fn a_module_that_does_not_round_a_single_is_left_as_it_is() {
+        let plain = "import math\n\ndef f(a: float) -> float:\n    return a + a\n".to_string();
+        assert_eq!(import_the_single_rounding(plain.clone()), plain);
+        // One that already names the runtime is not given a second import.
+        let named = format!("{ROUNDING}\n\ndef f(a):\n    return sce_algorithm.to_f32(a)\n");
+        assert_eq!(import_the_single_rounding(named.clone()), named);
     }
 
     // ── Type mapping: python ─────────────────────────────────
