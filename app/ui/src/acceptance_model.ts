@@ -61,6 +61,8 @@ export interface Shown {
   readonly source: string | null | undefined;
   readonly model: string | null | undefined;
   readonly answers: string | null | undefined;
+  /** The requirement list the screen read: the sentences it quotes are what the owner reads each requirement by. */
+  readonly requirements: string | null | undefined;
 }
 
 /**
@@ -74,11 +76,34 @@ export interface Shown {
  * one, and the saved answers could then be accepted before the owner had been shown them.
  */
 function whatIsNotShown(shown: Shown, basis: Basis): "unread" | "differs" | null {
-  if (shown.source === undefined || shown.model === undefined || shown.answers === undefined) return "unread";
+  if (
+    shown.source === undefined ||
+    shown.model === undefined ||
+    shown.answers === undefined ||
+    shown.requirements === undefined
+  ) {
+    return "unread";
+  }
   const same = (a: string | null, b: string | null): boolean => a === b;
-  return same(shown.source, basis.source) && same(shown.model, basis.model) && same(shown.answers, basis.answers)
+  return same(shown.source, basis.source) &&
+    same(shown.model, basis.model) &&
+    same(shown.answers, basis.answers) &&
+    same(shown.requirements, basis.requirements)
     ? null
     : "differs";
+}
+
+/**
+ * Whether the requirement list the screen read is the one SCE measured. The list and the measure
+ * are asked for apart, so a list an authoring client saves between the two leaves the screen
+ * with the sentences of one list beside the outcomes and the acceptance's basis of another: the
+ * owner would read a requirement by the sentence of the old list and accept the new one. Nothing
+ * is claimed of a design SCE did not measure, or of a work with no list.
+ */
+export function listIsTheOneMeasured(state: AcceptanceState): boolean {
+  const list = state.list.requirements;
+  const report = state.report;
+  return list === null || report === null || report.basis.requirements === list.revision;
 }
 
 /**

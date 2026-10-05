@@ -3018,8 +3018,10 @@ describe("where an answer stands", () => {
 describe("the sentence a question or a requirement is about", () => {
   const FIRST = "The door is closed until a card is shown.";
   const SECOND = "A listed card opens it.";
+  let ticker: ManualTicker;
 
   beforeEach(async () => {
+    ticker = new ManualTicker();
     document.body.innerHTML = '<div id="app"></div>';
     root = document.getElementById("app") as HTMLElement;
     core = new FakeCore();
@@ -3028,7 +3030,7 @@ describe("the sentence a question or a requirement is about", () => {
     core.setRequirements("alpha", headOf("alpha"));
     core.setCarried("alpha", { R1: ["states.closed"], R2: ["states.opened"] });
     core.setQuotes("alpha", { R1: FIRST, R2: SECOND });
-    app = new App(root, { transport: core, storage: null, browserLanguage: "en" });
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
     await app.start();
     await settle();
   });
@@ -3039,6 +3041,61 @@ describe("the sentence a question or a requirement is about", () => {
   const selected = (): string => editor().value.slice(editor().selectionStart, editor().selectionEnd);
   const rowButton = (requirement: string, cls: string): HTMLButtonElement =>
     root.querySelector(`tr[data-requirement="${requirement}"] button.${cls}`) as HTMLButtonElement;
+
+  /** The revision of the requirement list the screen would accept against: the one the core holds now. */
+  const listRevisionNow = async (): Promise<string> =>
+    ((await core.call("read_requirements", { id: "alpha" })) as { requirements: { revision: string } }).requirements
+      .revision;
+
+  it("reads the list again when it was saved while SCE measured it, so a sentence is of the list measured", async () => {
+    // The text, the model and the answers stay the same; only the requirement list and the
+    // sentences it quotes change, after the old list was read and before SCE measures it.
+    const slow = core.hold("requirements_report");
+    await click("Alpha");
+    expect(core.callsOf("read_requirements")).toHaveLength(1);
+
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setQuotes("alpha", { R1: SECOND, R2: FIRST });
+    slow.release();
+    await settle();
+    await settle();
+
+    // The owner reads R1 by the sentence of the list SCE measured, and accepts that list.
+    expect(core.callsOf("read_requirements").length).toBeGreaterThan(1);
+    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBe(SECOND);
+    await click("Accept this design");
+    const accepted = core.callsOf("accept");
+    expect(accepted).toHaveLength(1);
+    expect((accepted[0]?.["expect"] as { requirements: string }).requirements).toBe(await listRevisionNow());
+  });
+
+  it("shows no sentence and offers no accept while a list keeps moving, and settles when it stops", async () => {
+    // The list is saved again each time it is read, three times: the screen never holds a list that
+    // SCE measured. It does not show an old sentence beside the outcomes of another list, and it
+    // does not offer the accept; the next question reads the pair again and it settles.
+    const held = [0, 1, 2].map(() => core.hold("requirements_report"));
+    await click("Alpha");
+    for (const [i, gate] of held.entries()) {
+      core.setRequirements("alpha", headOf("alpha"));
+      core.setQuotes("alpha", { R1: i % 2 === 0 ? SECOND : FIRST, R2: i % 2 === 0 ? FIRST : SECOND });
+      gate.release();
+      await settle();
+    }
+    await settle();
+
+    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+    expect(acceptNote()).toContain("not the one the design was measured against");
+    acceptButton().click();
+    await settle();
+    expect(core.callsOf("accept")).toHaveLength(0);
+
+    await ticker.fire();
+    await settle();
+
+    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBeTruthy();
+    expect(acceptButton().disabled).toBe(false);
+  });
 
   it("is shown with each question the model asks inside a part a requirement is carried by", async () => {
     await click("Alpha");

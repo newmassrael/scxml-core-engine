@@ -594,6 +594,14 @@ What this does not claim, stated so nothing on the screen is read as more:
   being read: the screen is read again before it can be accepted). An answer sheet the
   screen has not read yet is not "no answers": the button waits for it and says so
   (`unread`), because a page measured with answers cannot be shown against none.
+- **The list is the one that was measured.** The requirement list and SCE's measure of it
+  are asked for apart, and a list saved between the two is not the one SCE measured: the
+  sentences the screen quotes would be of one list, and the outcomes and the basis an accept
+  names of another, so the owner would read a requirement by a sentence of the old list and
+  accept the new one. The list read is therefore held to the measure's basis (`requirements`
+  is part of what the button compares). When they differ the pair is read again, three
+  times at most, and a list that keeps moving shows no sentence and offers no accept until a
+  later question reads a pair that agrees.
 
 ## Seeing the screen
 

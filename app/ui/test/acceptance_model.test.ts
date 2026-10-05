@@ -12,6 +12,7 @@ import {
   accepting,
   gate,
   isUnsettled,
+  listIsTheOneMeasured,
   OUTCOME_WORDS,
   tally,
   type AcceptanceState,
@@ -48,8 +49,29 @@ const state = (over: Partial<AcceptanceState> = {}): AcceptanceState => ({
   ...over,
 });
 
-// What the screen shows when it shows what `report()` measured: the text, the design, and no answers.
-const shown: Shown = { source: basis.source, model: basis.model, answers: null };
+// What the screen shows when it shows what `report()` measured: the text, the design, the list, and no answers.
+const shown: Shown = { source: basis.source, model: basis.model, answers: null, requirements: basis.requirements };
+
+describe("a requirement list and SCE's measure of it", () => {
+  const listed = (revision: string): AcceptanceState["list"] => ({
+    requirements: { revision, written_for: basis.source, manifest: "{}", sidecar: null },
+    source_head: basis.source,
+    standing: "current",
+  });
+
+  it("are the same list when the measure's basis names the revision that was read", () => {
+    expect(listIsTheOneMeasured(state({ list: listed(basis.requirements) }))).toBe(true);
+  });
+
+  it("are not when a list was saved between reading it and measuring it", () => {
+    expect(listIsTheOneMeasured(state({ list: listed(hex(8)) }))).toBe(false);
+  });
+
+  it("say nothing against a work with no list, or a design SCE did not measure", () => {
+    expect(listIsTheOneMeasured(state())).toBe(true);
+    expect(listIsTheOneMeasured(state({ list: listed(hex(8)), report: null, measureFailure: "too slow" }))).toBe(true);
+  });
+});
 
 describe("the accept button", () => {
   it("is offered for a measured design written for the text as it is", () => {
@@ -103,13 +125,20 @@ describe("the accept button", () => {
     // Answers on screen that are not the ones measured, and answers measured that are not on screen.
     expect(gate(state(), false, { ...shown, answers: hex(8) })).toBe("differs");
     expect(gate(state({ report: report({ basis: { ...basis, answers: hex(4) } }) }), false, shown)).toBe("differs");
+    // The list the screen read is not the list SCE measured: its sentences are not the ones the outcomes are about.
+    expect(gate(state(), false, { ...shown, requirements: hex(8) })).toBe("differs");
+    expect(gate(state({ report: report({ basis: { ...basis, requirements: hex(8) } }) }), false, shown)).toBe(
+      "differs",
+    );
   });
 
   it("is withheld for a part that is not on the screen, which is not a part that matches", () => {
-    for (const part of ["source", "model", "answers"] as const) {
+    for (const part of ["source", "model", "answers", "requirements"] as const) {
       expect(gate(state(), false, { ...shown, [part]: undefined })).toBe("unread");
     }
-    expect(gate(state(), false, { source: undefined, model: undefined, answers: undefined })).toBe("unread");
+    expect(
+      gate(state(), false, { source: undefined, model: undefined, answers: undefined, requirements: undefined }),
+    ).toBe("unread");
     // Not even when the report measured no answers: the screen has not said there are none.
     expect(gate(state(), false, { ...shown, answers: undefined })).toBe("unread");
   });

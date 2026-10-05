@@ -11,6 +11,7 @@ import {
   accepting,
   gate,
   isUnsettled,
+  listIsTheOneMeasured,
   tally,
   type AcceptancePanel,
   type AcceptanceState,
@@ -97,6 +98,9 @@ import { nextDelay, WATCH_MS, type Ticker } from "./watch";
 
 const LOCALE_KEY = "sce.locale";
 const ZOOM_KEY = "sce.zoom";
+
+/** How many times the requirement list and SCE's measure of it are read again for a list that moved between the two. */
+const LIST_AND_MEASURE_ROUNDS = 3;
 
 /**
  * What came of reading a part of the work again because the core said it moved: it was read
@@ -1078,26 +1082,39 @@ export class App {
     // an accept or a save does not flash a "reading" over what the person is looking at.
     if (this.acceptance === null) this.acceptance = { phase: "reading" };
     try {
-      const list = await this.api.readRequirements(id);
-      if (!current()) return true;
-      if (list.requirements === null) {
-        this.acceptance = { phase: "no-list" };
-        this.render();
-        return true;
-      }
-      const [acceptance, measured] = await Promise.all([this.api.readAcceptance(id), this.measure(id)]);
-      if (!current()) return true;
-      this.acceptance = {
-        phase: "read",
-        state: {
+      // The list and SCE's measure are asked for apart, and a list saved between the two is not
+      // the one SCE measured: its sentences would be shown beside the outcomes of another list.
+      // The pair is read again, up to a few times, until the measure is of the list that was
+      // read. A list that keeps moving leaves the last pair on screen as it is, said not to
+      // agree (`gate` withholds the accept and `grounding` shows no sentence), and the failure
+      // is the watch's to ask about again.
+      let state: AcceptanceState | null = null;
+      for (let round = 1; round <= LIST_AND_MEASURE_ROUNDS; round += 1) {
+        const list = await this.api.readRequirements(id);
+        if (!current()) return true;
+        if (list.requirements === null) {
+          this.acceptance = { phase: "no-list" };
+          this.render();
+          return true;
+        }
+        const [acceptance, measured] = await Promise.all([this.api.readAcceptance(id), this.measure(id)]);
+        if (!current()) return true;
+        state = {
           list,
           acceptance,
           report: measured.report,
           measureFailure: measured.failure,
           accepting: false,
           refusal: null,
-        },
-      };
+        };
+        if (listIsTheOneMeasured(state)) break;
+      }
+      if (state === null) return true;
+      this.acceptance = { phase: "read", state };
+      if (!listIsTheOneMeasured(state)) {
+        this.render();
+        return false;
+      }
     } catch (error) {
       if (!current()) return true;
       // A token wanted is the sign-in form's to answer; anything else is the panel's own message.
@@ -2369,10 +2386,13 @@ export class App {
       model !== null && (model.phase === "drawing" || model.phase === "drawn" || model.phase === "not-drawn")
         ? model.read.model.revision
         : undefined;
+    const panel = this.acceptance;
     return {
       source: this.editor === null ? undefined : this.editor.base,
       model: shownModel,
       answers: this.answers === null ? undefined : this.answers.base,
+      requirements:
+        panel !== null && panel.phase === "read" ? (panel.state.list.requirements?.revision ?? null) : undefined,
     };
   }
 
@@ -2510,7 +2530,10 @@ export class App {
     if (panel === null || panel.phase !== "read") return null;
     const report = panel.state.report;
     if (report === null) return null;
-    return { outcomes: report.outcomes, quotes: quotesOf(panel.state.list.requirements?.sidecar ?? null) };
+    // A sentence is the list's and the outcomes are the measure's: only a measure of this very list
+    // says what a sentence is about. Of two lists, no sentence is shown rather than an old one.
+    const quotes = listIsTheOneMeasured(panel.state) ? quotesOf(panel.state.list.requirements?.sidecar ?? null) : {};
+    return { outcomes: report.outcomes, quotes };
   }
 
   /** The sentence of the text a question is about, with the way to it. Nothing when none can be told. */
