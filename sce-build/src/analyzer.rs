@@ -682,12 +682,14 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             // §scxml-6.2.4: the generated sendid is written to `idlocation`
             // through the `<assign>` path. Under `sce-static` the machine
             // writes it to the variable itself (`Action::native_idlocation`),
-            // so no store helper that goes through an engine is wanted, and
-            // the machine counts the ids it generates.
+            // so no store helper that goes through an engine is wanted. Either
+            // way the id is generated when the send runs — one per execution,
+            // not one per element — so the machine counts the ids it generates.
             if !action.idlocation.is_empty() {
-                if model.datamodel == crate::model::Datamodel::SceStatic {
+                if action.id.is_empty() {
                     model.needs_auto_send_id = true;
-                } else {
+                }
+                if model.datamodel != crate::model::Datamodel::SceStatic {
                     model.needs_idlocation_store = true;
                 }
             }

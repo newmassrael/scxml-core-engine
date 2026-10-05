@@ -1015,20 +1015,23 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
 
-	// W3C SCXML 6.2: send id="__send_4"
 	{
+	// W3C SCXML 6.2.4: the id the document is handed is generated now, one per
+	// execution of the element.
+	sendID := engine.NextAutoSendID()
+	_ = sendID
 	p.ensureScriptEngine()
 	sendArgError := ""
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
-	if err := p.storeIDInLocation(`obj.missing.deep`, "__send_4"); err != nil {
+	if err := p.storeIDInLocation(`obj.missing.deep`, sendID); err != nil {
 		sendArgError = "<send idlocation='obj.missing.deep'> could not take the send id"
 	}
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_4"
+		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -1038,7 +1041,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(ABadSendArgumentDiscardsItsMessageEventSent)
-		meta.Metadata = sce.ExternalMetadata("__send_4", p.SessionID)
+		meta.Metadata = sce.ExternalMetadata(sendID, p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

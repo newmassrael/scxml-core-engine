@@ -885,13 +885,13 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    (`Action::native_idlocation`, `Action::native_sendid`). The local is declared
    where the element begins (`emit_action`), so every route below reads it. #}
 {% macro send_id_c_expr(action) -%}
-{%- if action.native_idlocation -%}_sce_send_id{%- else -%}"{{ action.auto_send_id | default('', true) | escape_c }}"{%- endif -%}
+{%- if action.native_idlocation or (action.idlocation and not action.id) -%}_sce_send_id{%- else -%}"{{ action.auto_send_id | default('', true) | escape_c }}"{%- endif -%}
 {%- endmacro %}
 {# The id a delivered event carries, as a C expression: only one the author
    could know — one written as `id`, or one `idlocation` handed over — and
    nothing (so false) for any other. #}
 {% macro send_meta_id_c_expr(action) -%}
-{%- if action.native_idlocation -%}_sce_send_id{%- elif action.id -%}"{{ action.id | escape_c }}"{%- elif action.idlocation -%}{{ send_id_c_expr(action) }}{%- endif -%}
+{%- if action.native_idlocation or (action.idlocation and not action.id) -%}_sce_send_id{%- elif action.id -%}"{{ action.id | escape_c }}"{%- endif -%}
 {%- endmacro %}
 {#- §scxml-6.2.5 host-served send: the one hand-off every host-served `<send>`
     takes, whether its type named a host processor or its evaluated target
@@ -1872,6 +1872,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                below reads as `_sce_send_id`. */
             {{ action.native_idlocation }}
             const char *_sce_send_id = {{ action.native_sendid }};
+            (void)_sce_send_id;
+{% elif action.idlocation and not action.id %}
+            /* W3C SCXML 6.2.4: the id the document is handed is generated now,
+               one per execution of the element, from the machine's own count. */
+            const char *_sce_send_id = sce_next_auto_send_id(&sm->auto_send_seq, sm->auto_send_id);
             (void)_sce_send_id;
 {% endif %}
 {% if action.delay_invalid and not action.delayexpr %}

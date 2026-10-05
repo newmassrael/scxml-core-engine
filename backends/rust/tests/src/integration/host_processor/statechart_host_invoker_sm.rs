@@ -3226,7 +3226,11 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        // W3C SCXML 6.2.4: the id a send hands the document is generated when the
+                        // send runs — one per execution of the element, not one per element, so a
+                        // `<cancel>` by the id the document holds removes the send it was handed
+                        // for and no other.
+                        let send_id = engine.next_auto_send_id();
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3281,7 +3285,11 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        // W3C SCXML 6.2.4: the id a send hands the document is generated when the
+                        // send runs — one per execution of the element, not one per element, so a
+                        // `<cancel>` by the id the document holds removes the send it was handed
+                        // for and no other.
+                        let send_id = engine.next_auto_send_id();
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();

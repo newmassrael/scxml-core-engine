@@ -135,6 +135,12 @@
     let send_id = ::sce_rust_runtime::sce_string_from_str(&send_id_text);
 {% elif action.id %}
     let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.id }}");
+{% elif action.idlocation %}
+    // W3C SCXML 6.2.4: the id a send hands the document is generated when the
+    // send runs — one per execution of the element, not one per element, so a
+    // `<cancel>` by the id the document holds removes the send it was handed
+    // for and no other.
+    let send_id = engine.next_auto_send_id();
 {% elif action.auto_send_id %}
     let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.auto_send_id }}");
 {% else %}

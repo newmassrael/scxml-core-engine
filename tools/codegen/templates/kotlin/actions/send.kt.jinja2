@@ -119,7 +119,11 @@
    send starts by taking from the variable the machine has just written the id it
    generated to. An expression and not the text inside a literal, because a value
    written inside a literal is escaped for it. #}
-{% set send_id_kt = 'sendIdGenerated' if action.native_idlocation else '"' ~ (action.auto_send_id | escape_kotlin) ~ '"' %}
+{# An `idlocation` with no `id` hands the document an id generated when the send
+   runs, one per execution of the element (W3C SCXML 6.2.4): the local the send
+   starts by taking from the engine's count. #}
+{% set generates_id = action.idlocation and not action.id and not action.native_idlocation %}
+{% set send_id_kt = 'sendIdGenerated' if (action.native_idlocation or generates_id) else '"' ~ (action.auto_send_id | escape_kotlin) ~ '"' %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {# A <content expr> that fails costs what a failing <param> does (§scxml-5.6.2):
    the message still goes and the block ends after it. #}
@@ -165,6 +169,10 @@
             // is then the id the send is known by (`Action::native_sendid`).
             {{ action.native_idlocation }}
             val sendIdGenerated: String = {{ action.native_sendid }}
+{% elif generates_id %}
+            // W3C SCXML 6.2.4: the id the document is handed is generated now, one
+            // per execution of the element.
+            val sendIdGenerated: String = nextAutoSendId()
 {% endif %}
 {% if action.delay_invalid and not action.delayexpr %}
             // W3C SCXML 6.2: the written delay is not a CSS2 time

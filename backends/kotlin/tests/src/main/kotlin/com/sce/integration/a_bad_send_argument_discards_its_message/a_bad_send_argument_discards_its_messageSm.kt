@@ -721,6 +721,9 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
 
 
             if (run send@{
+            // W3C SCXML 6.2.4: the id the document is handed is generated now, one
+            // per execution of the element.
+            val sendIdGenerated: String = nextAutoSendId()
             ensureScriptEngine()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -729,10 +732,10 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), "__send_4", "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ABadSendArgumentDiscardsItsMessageEvent.Sent, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            send(ABadSendArgumentDiscardsItsMessageEvent.Sent, EventMetadata.external(sendId = sendIdGenerated, origin = scriptSessionId ?: "", data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

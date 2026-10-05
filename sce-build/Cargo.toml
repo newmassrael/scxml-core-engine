@@ -839,6 +839,11 @@ path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_send_idlocation_hands_a_distinct_id_for_each_execution"
+path = "tests/a_send_idlocation_hands_a_distinct_id_for_each_execution.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_c_machines_event_data_follows_the_shared_key_order"
 path = "tests/a_c_machines_event_data_follows_the_shared_key_order.rs"
 required-features = ["cli"]

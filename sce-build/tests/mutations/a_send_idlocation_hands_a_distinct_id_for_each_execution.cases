@@ -1,0 +1,56 @@
+# Mutation cases for "a send's idlocation hands a distinct id for each execution".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_send_idlocation_hands_a_distinct_id_for_each_execution.cases
+#
+# A `<send idlocation>` hands the document an id it may name in a `<cancel>`, so
+# the id belongs to one execution of the element and not to the element. Each
+# case puts one step back: the analyzer stops saying the machine hands out ids,
+# so a C machine is built with no count to draw from; a backend writes the
+# build's id into its code again, so every execution shares it; the C
+# expression for the id falls back to its literal; and an `id` the author wrote
+# stops being the send's own.
+#
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while the
+# tests ran.
+
+mutation_tests -p sce-build --features cli --test a_send_idlocation_hands_a_distinct_id_for_each_execution
+mutation_targets sce-build/tests/a_send_idlocation_hands_a_distinct_id_for_each_execution.rs
+mutation_runtime_targets sce-build/src/analyzer.rs tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+
+mutation_case "a machine that hands out ids is not told to carry a count" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "                if action.id.is_empty() {\n                    model.needs_auto_send_id = true;\n                }",
+     "                if false && action.id.is_empty() {\n                    model.needs_auto_send_id = true;\n                }")
+PY
+
+mutation_case "Rust writes the build's id for every execution to share" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "    let send_id = engine.next_auto_send_id();\n{% elif action.auto_send_id %}",
+     "    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.auto_send_id }}\");\n{% elif action.auto_send_id %}")
+PY
+
+mutation_case "Go writes the build's id for every execution to share" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% set generates_id = action.idlocation and not action.id and not action.native_idlocation %}",
+     "{% set generates_id = false %}")
+PY
+
+mutation_case "Kotlin writes the build's id for every execution to share" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     "{% set generates_id = action.idlocation and not action.id and not action.native_idlocation %}",
+     "{% set generates_id = false %}")
+PY
+
+mutation_case "C hands the send the build's id and not the one it drew" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "{%- if action.native_idlocation or (action.idlocation and not action.id) -%}_sce_send_id{%- else -%}\"{{ action.auto_send_id | default('', true) | escape_c }}\"{%- endif -%}",
+     "{%- if action.native_idlocation -%}_sce_send_id{%- else -%}\"{{ action.auto_send_id | default('', true) | escape_c }}\"{%- endif -%}")
+PY
+
+mutation_case "Rust draws an id for a send that was given one" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "{% elif action.id %}\n    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.id }}\");",
+     "{% elif action.id and false %}\n    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.id }}\");")
+PY

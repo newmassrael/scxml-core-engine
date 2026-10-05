@@ -2399,20 +2399,23 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
 
-	// W3C SCXML 6.2: send id="__send_0"
 	{
+	// W3C SCXML 6.2.4: the id the document is handed is generated now, one per
+	// execution of the element.
+	sendID := engine.NextAutoSendID()
+	_ = sendID
 	p.ensureScriptEngine()
 	sendArgError := ""
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
-	if err := p.storeIDInLocation(`slot.sid`, "__send_0"); err != nil {
+	if err := p.storeIDInLocation(`slot.sid`, sendID); err != nil {
 		sendArgError = "<send idlocation='slot.sid'> could not take the send id"
 	}
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_0"
+		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -2422,27 +2425,30 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(StatechartHostInvokerEventPing)
-		meta.Metadata = sce.ExternalMetadata("__send_0", p.SessionID)
+		meta.Metadata = sce.ExternalMetadata(sendID, p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
 	}
 	}
 
-	// W3C SCXML 6.2: send id="__send_1"
 	{
+	// W3C SCXML 6.2.4: the id the document is handed is generated now, one per
+	// execution of the element.
+	sendID := engine.NextAutoSendID()
+	_ = sendID
 	p.ensureScriptEngine()
 	sendArgError := ""
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
-	if err := p.storeIDInLocation(`n.nope.deeper`, "__send_1"); err != nil {
+	if err := p.storeIDInLocation(`n.nope.deeper`, sendID); err != nil {
 		sendArgError = "<send idlocation='n.nope.deeper'> could not take the send id"
 	}
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_1"
+		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -2452,7 +2458,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	// W3C SCXML 6.2: External send
 	{
 		meta := sce.NewEventWithMetadata(StatechartHostInvokerEventLeak)
-		meta.Metadata = sce.ExternalMetadata("__send_1", p.SessionID)
+		meta.Metadata = sce.ExternalMetadata(sendID, p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}

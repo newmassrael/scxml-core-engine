@@ -455,6 +455,9 @@ class Test332StateMachine(
 
 
             if (run send@{
+            // W3C SCXML 6.2.4: the id the document is handed is generated now, one
+            // per execution of the element.
+            val sendIdGenerated: String = nextAutoSendId()
             ensureScriptEngine()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
@@ -463,10 +466,10 @@ class Test332StateMachine(
             // through the assignment `<assign>` makes — the location is lowered,
             // so a member path lands. A location that cannot take the id is an
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
-            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send true
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), sendIdGenerated, "<send>")) return@send true
             // W3C SCXML 6.2.4 (test194): a target this processor cannot address
             // — `Action::target_unsupported`, decided once at build time.
-            raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
+            raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", sendIdGenerated)
             true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

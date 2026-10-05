@@ -103,7 +103,11 @@
 {# The Go expression every site below hands the id as: the literal the build knows,
    or — under `datamodel="sce-static"` with an `idlocation` — the local the block
    starts by taking from the variable the machine has just written it to. #}
-{% set send_id_go = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_go) ~ '"' %}
+{# An `idlocation` with no `id` hands the document an id generated when the send
+   runs, one per execution of the element (W3C SCXML 6.2.4), which is the local
+   the block starts by taking from the engine's count. #}
+{% set generates_id = action.idlocation and not action.id and not action.native_idlocation %}
+{% set send_id_go = 'sendID' if (action.native_idlocation or generates_id) else '"' ~ (send_id | default('') | escape_go) ~ '"' %}
 {% set in_block = in_action_block is defined and in_action_block %}
 {% set has_params = action.params and action.params | length > 0 %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
@@ -116,10 +120,16 @@
    costs what a failing <param> does — reported, the message sent with '' as
    its value, the block ended — so it rides the same flag. #}
 {% set content_expr = action.contentexpr and model.needs_script_engine and not has_params and not has_namelist and not action.content %}
-{% if send_id and not action.native_idlocation %}
+{% if send_id and not action.native_idlocation and not generates_id %}
 	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
 	{
+{% if generates_id %}
+	// W3C SCXML 6.2.4: the id the document is handed is generated now, one per
+	// execution of the element.
+	sendID := engine.NextAutoSendID()
+	_ = sendID
+{% endif %}
 {% if action.native_idlocation %}
 	// W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the
 	// id and writes it to the variable `idlocation` names before it reads any
@@ -170,7 +180,7 @@
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
-	if err := p.storeIDInLocation(`{{ action.idlocation | to_lua_location }}`, "{{ send_id | escape_go }}"); err != nil {
+	if err := p.storeIDInLocation(`{{ action.idlocation | to_lua_location }}`, {{ send_id_go }}); err != nil {
 		sendArgError = "<send idlocation='{{ action.idlocation | escape_go }}'> could not take the send id"
 	}
 {% endif %}
