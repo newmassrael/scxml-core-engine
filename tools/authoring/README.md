@@ -2105,6 +2105,7 @@ the one a real platform receives. Four keys say so:
 |---|---|
 | `event` | the event to send the machine when this rule fires |
 | `becomes` | the value the address must take first; omitted, any change drives it |
+| `carries` | the field of the event's data that takes the address's VALUE (below) |
 | `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
 | `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
 
@@ -2135,18 +2136,38 @@ reset four latches on any latch's ERROR and failed a shipped case, and the
 reference document — which passed every shipped case — reset them on any
 change of a fault input.
 
-⚠⚠ **A statechart is handed the event and nothing else.** The driver reads
-`event`, `address` and `becomes` off an input rule and sends the event bare, so
-any other key on a statechart's input rule — `equals`, `protocol`,
+⚠⚠ **A statechart is handed the event, and a value only through `carries`.**
+The driver reads `event`, `address`, `becomes` and `carries` off an input rule,
+so any other key on a statechart's input rule — `equals`, `protocol`,
 `when_absent` — computes a value no part of the machine receives, and `check`
 and `verify` both refuse it in the same words. A `sce:direction="in"`
 declaration in a statechart is refused for the same reason: nothing outside the
 machine writes its datamodel, and the generated code offers the host a reader
-for each variable and a writer for none. A value reaches a statechart as an
-event's data (`_event.data`), which no key here attaches yet, so a component
-that compares levels is written as a transform. Measured 2026-09-22: these
-were DROPPED rather than refused, and a machine that flashes above a level of
-3, driven at 5, stayed dark — reported as a correct document failing.
+for each variable and a writer for none. Measured 2026-09-22: these were
+DROPPED rather than refused, and a machine that flashes above a level of 3,
+driven at 5, stayed dark — reported as a correct document failing.
+
+A value reaches a statechart as an event's data (`_event.data`), and
+`carries: <field>` is the key that attaches it:
+
+    inputs:
+      hours: {address: plant/in/stored-hours,
+              event: stored.hours, carries: value}
+
+The document declares the field in an event-schema it imports, one per event,
+whose `sce:event-name` is the rule's `event` (`sce-build/tests/fixtures/
+static_datamodel/schema_day.scxml` is a complete one), and reads it as
+`_event.data.value`. The value is read as the field's declared `sce:type` by the
+reading a computation's input gets — a whole number into an `int`/`uint` field,
+a number into a `float`, a truth value into a `bool`, a text into a `string` —
+and `check` refuses a rule whose event has no such schema or field, or whose
+address cannot be read as the field's type, in the words `verify` uses. An
+enumeration field is not carried yet. The event is sent whenever the case drove
+the address (and, with `becomes`, only at that value), so a stored value that
+the platform hands the component every round reaches the machine when it
+changes, not every round. Without `carries` a component that compares a level
+and keeps nothing is written as a transform; with it, a statechart can count
+time AND read a number.
 
 An address named with nothing that compares it — `level`, `caption` — hands
 the document that address's OWN value, read as the type the document declares

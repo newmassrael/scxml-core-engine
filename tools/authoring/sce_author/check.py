@@ -84,7 +84,7 @@ STATECHART_KINDS = frozenset({"statechart"})
 # to the machine. ⚠ Listed as what IS read rather than as what is not, so a
 # key the vocabulary grows later is refused on a statechart until the driver
 # learns it, instead of being dropped the way every value key was.
-_STATECHART_DRIVER_READS = frozenset({"event", "address", "becomes"})
+_STATECHART_DRIVER_READS = frozenset({"event", "address", "becomes", "carries"})
 _ANNOTATIONS = frozenset({"unresolved", "assumed", "note"})
 
 # `previous(<field>)` in a transform output's expression, as the product reads
@@ -144,6 +144,11 @@ class Document:
     # its number. An `enum:<alias>` input takes the platform's number, and
     # this is what says which variant that number is.
     enums: dict = dataclasses.field(default_factory=dict)
+    # Event name -> {field id -> its `sce:type`} for every event-schema this
+    # imports. A statechart is handed a value only as an event's data, and the
+    # schema is where the document says which fields that data has, so it is
+    # what a rule's `carries` is held to.
+    payloads: dict = dataclasses.field(default_factory=dict)
     # Every field a transform reads through `previous()`: what it keeps from
     # one activation to the next. Empty for any other kind, as the product
     # has it -- only a transform has a holder. `verify` asks the product
@@ -450,8 +455,36 @@ def read_document(path: pathlib.Path) -> Document:
         listeners=_listeners(root),
         types=types,
         enums=_imported_enums(root, path),
+        payloads=_imported_payloads(root, path),
         reentries=_parallel_reentries(root),
     )
+
+
+def _imported_payloads(root, path: pathlib.Path) -> dict:
+    """Event name -> {field id -> `sce:type`} for every event-schema this imports.
+
+    Resolved against the importing document, as the generator resolves it, and
+    refused by name when it cannot be read, for the reason `_imported_enums`
+    gives: a payload nobody can read the fields of is a rule nobody can check.
+    A schema that names no event is skipped here and reported by the product,
+    whose grammar owns what an event-schema must say.
+    """
+    found: dict = {}
+    for node in root.iter(f"{SCE_NS}import"):
+        if node.get("kind") != "event-schema" or not node.get("src"):
+            continue
+        source = (pathlib.Path(path).parent / node.get("src")).resolve()
+        try:
+            schema = ET.parse(source).getroot()
+        except (ET.ParseError, OSError) as exc:
+            raise PackError(f"{path}: imports the event-schema {node.get('as')!r} "
+                            f"from {source}, which cannot be read ({exc})") from exc
+        event = schema.get(f"{SCE_NS}event-name")
+        if not event:
+            continue
+        found[event] = {data.get("id"): data.get(f"{SCE_NS}type") or ""
+                        for data in schema.iter(f"{SCXML_NS}data") if data.get("id")}
+    return found
 
 
 def _imported_enums(root, path: pathlib.Path) -> dict:
@@ -602,7 +635,9 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
 
     A STATECHART is handed nothing but events (W3C SCXML 3.12). The driver
     sends a rule's `event` when the case drove its `address` -- to the value
-    `becomes` names, if it names one -- and sends it BARE. So:
+    `becomes` names, if it names one -- and sends it BARE, unless the rule says
+    `carries`: then the address's value travels as the named field of the
+    event's data, and the document declares that field in an event-schema. So:
 
       a declared input   nothing outside the machine writes its datamodel;
                          the generated code offers the host a reader for each
@@ -637,9 +672,12 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
             f"every guard reading {ident!r} reads the value it was declared "
             f"with, whatever a case drove. What reaches a statechart from "
             f"outside is an event, and a value travels as that event's data "
-            f"(`_event.data`), which a binding cannot attach yet. A component "
-            f"that compares levels is a transform, which is handed its inputs "
-            f"every activation and keeps what it needs with `previous()`."))
+            f"(`_event.data`): import an event-schema for the event, declare "
+            f"{ident!r} as a field of it, and give the rule `carries: "
+            f"{ident}`. A component that only compares levels, with no clock "
+            f"and nothing remembered, is a transform, which is handed its "
+            f"inputs every activation and keeps what it needs with "
+            f"`previous()`."))
     drives = any(rule.get("event") for rule in inputs.values())
     if not drives:
         undeclared = "" if document.kind_declared else (
@@ -666,6 +704,10 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
                             "nothing but events: this rule would reach no part "
                             "of the machine in any case"))
             continue
+        if "carries" in rule:
+            why = payload_refusal(document, rule)
+            if why:
+                out.append((f"input {name}", why))
         extra = sorted(k for k in rule
                        if k not in _STATECHART_DRIVER_READS | _ANNOTATIONS)
         if extra:
@@ -680,6 +722,39 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
                 f"the machine, so a guard comparing it compares whatever the "
                 f"variable started as"))
     return out
+
+
+def payload_refusal(document: Document, rule: dict) -> str:
+    """Why a rule's `carries` names no field the document can read, or ''.
+
+    The document says what an event's data holds (an event-schema imported
+    under the event's name), and the rule only says which field takes the
+    address's value. A field the schema does not have would reach the machine
+    as data its guards never read, so the run is refused here and by `verify`
+    in the same words, before a single case is driven.
+    """
+    event, field_ = rule.get("event"), rule.get("carries")
+    schema = document.payloads.get(event)
+    if schema is None:
+        return (f"carries {field_!r} on the event {event!r}, and the document "
+                f"imports no event-schema whose `sce:event-name` is {event!r}, "
+                f"so nothing says what that event's data holds. Import one "
+                f"(`<sce:import kind=\"event-schema\" src=\"...\" as=\"...\"/>`) "
+                f"with a `<data>` for {field_!r}")
+    if field_ not in schema:
+        return (f"carries {field_!r}, and the event-schema for {event!r} has "
+                f"no such field (it has {', '.join(sorted(schema)) or 'none'})")
+    declared = schema[field_]
+    try:
+        kind = delivery.document_class(declared)
+    except delivery.DeliveryError as exc:
+        return str(exc)
+    if kind not in ("number", "bool", "text"):
+        return (f"carries {field_!r}, which the event-schema for {event!r} "
+                f"declares `{declared or 'with no sce:type'}`: only a number, a "
+                f"truth value or a text is carried, and an enumeration is not "
+                f"carried yet")
+    return ""
 
 
 def activation_unsaid(document_name: str) -> str:
@@ -1388,6 +1463,23 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
             model.field_at(rule["address"]) if rule.get("address") else None,
             remembered_type=document.types.get(remembered) if remembered else None,
             variants=document.variants_of(name))
+        if why:
+            out.append(Finding(f"input {name}", why))
+
+    # ⚠ A statechart rule that `carries` is held to the same judgement, against
+    # the type of the event-schema field it fills and not of a declared input:
+    # the value is read as that field's type, so a text address into a number
+    # field is found here and not when a case fails.
+    for name, rule in sorted(declared_inputs.items()):
+        if (document.kind not in STATECHART_KINDS or "carries" not in rule
+                or rule.get("unresolved")):
+            continue
+        field_type = document.payloads.get(rule.get("event"), {}).get(rule["carries"])
+        if not field_type:
+            continue  # `driving_refusals` says why there is no field
+        why = delivery.refusal(
+            name, {k: v for k, v in rule.items() if k not in ("event", "carries", "becomes")},
+            field_type, model.field_at(rule["address"]) if rule.get("address") else None)
         if why:
             out.append(Finding(f"input {name}", why))
 

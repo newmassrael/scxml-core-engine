@@ -373,11 +373,14 @@ class AStatechartIsHandedOnlyEvents(Both):
         schema = json.loads((SCHEMA_DIR / "binding.v1.schema.json").read_text(
             encoding="utf-8"))
         keys = set(schema["$defs"]["input"]["properties"])
+        # `carries` names a FIELD, so it is tried against a document whose
+        # event-schema has one; the refusal of a field it lacks is below.
         document = Document(path=pathlib.Path("signal.scxml"), inputs=(),
-                            outputs=(), kind=next(iter(STATECHART_KINDS)))
+                            outputs=(), kind=next(iter(STATECHART_KINDS)),
+                            payloads={"train.approaching": {"level": "int32"}})
         for key in sorted(keys):
             rule = {"address": "plant/in/approach", "event": "train.approaching",
-                    key: 1}
+                    key: "level" if key == "carries" else 1}
             refused = driving_refusals(document, {"approaching": rule})
             with self.subTest(key=key):
                 if key in _STATECHART_DRIVER_READS | _ANNOTATIONS:

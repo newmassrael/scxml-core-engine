@@ -120,4 +120,27 @@ def check_engine(module, engine) -> str | None:
     return stopped_run(engine, engine.policy)
 
 
-PROCEDURES = {"trace": trace, "advance": advance_engine, "check": check_engine}
+def send_with_data(module, engine, event, data) -> str | None:
+    """Send an engine this process holds an external event WITH data, and run it.
+
+    The data is the JSON text of an object keyed by the event-schema's field
+    ids, which is what the generated machine lifts into its typed payload
+    (`sce_runtime.event_payload`). It is built HERE and not by the caller
+    because `EventMetadata` is a dataclass, and one that crossed the boundary
+    would arrive as a copy of itself: a request to make one and hand it back
+    would return a stand-in the engine cannot take.
+
+    None when it was sent. Otherwise why it was not, as data: an event the
+    document does not declare would leave the machine where it was.
+    """
+    from sce_runtime.event import EventMetadata  # the worker has the runtime on its path
+
+    found = engine.policy.get_event_from_name(event)
+    if found is None:
+        return f"the document declares no event named {event!r}"
+    engine.send_event(found, EventMetadata(data=data))
+    return None
+
+
+PROCEDURES = {"trace": trace, "advance": advance_engine, "check": check_engine,
+              "send_with_data": send_with_data}

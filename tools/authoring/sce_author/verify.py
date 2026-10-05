@@ -2344,12 +2344,17 @@ class StatechartRun:
     verify a machine that forgets, and that is a different document.
     """
 
-    def __init__(self, module, build: Build, model=None):
+    def __init__(self, module, build: Build, model=None, payloads=None,
+                 absence_tokens=()):
         # The interface model, so `becomes` is compared as the position means
         # it rather than as the record happens to spell it.
         self.model = model
         self.build = build
         self.module = module
+        # Event name -> {field -> `sce:type`}: what a `carries` rule fills, as
+        # the document declares it (`Document.payloads`).
+        self.payloads = payloads or {}
+        self.absence_tokens = absence_tokens
         self.readers = _host_names(module, "readers")
         # The sink lives where the machine does: the sends are made in the
         # process that plays the design and come back as copies (`sandbox`).
@@ -2414,9 +2419,47 @@ class StatechartRun:
         field_ = _field_at(self.model, address) if self.model is not None else None
         if becomes is not None and not _same(case.given.get(address), becomes, field_):
             return False
-        self.engine.send_event(self.event(rule["event"]))
+        if rule.get("carries"):
+            self.send_carrying(rule, case, field_)
+        else:
+            self.engine.send_event(self.event(rule["event"]))
         self.check()
         return True
+
+    def send_carrying(self, rule: dict, case, field_) -> None:
+        """Send the rule's event with the address's value as the event's data.
+
+        ⚠ The value is read as the TYPE THE EVENT-SCHEMA DECLARES for the field,
+        by the reading a computation's input gets (`delivery.read_as_is`), so a
+        record that writes `0x21` or `33` hands the machine the number 33 and a
+        value the field cannot hold is refused by name and not truncated. A whole
+        number into an integer field is sent as an integer: the reading returns
+        every number as a float, and the runtime refuses a float for an `int32`
+        (`event_payload._as`), which would drop the event and leave the guard
+        reading the value the machine started with.
+        """
+        event, name = rule["event"], rule["carries"]
+        self.event(event)  # the refusal for an event the document does not declare
+        sce_type = self.payloads.get(event, {}).get(name)
+        address = rule["address"]
+        reading = {k: v for k, v in rule.items() if k not in ("event", "carries", "becomes")}
+        try:
+            value = delivery.read_as_is(
+                address, reading, case.given.get(address), address in case.given,
+                sce_type, field_, self.absence_tokens)
+        except delivery.DeliveryError as exc:
+            raise VerifyError(str(exc)) from exc
+        if (delivery.document_class(sce_type) == "number"
+                and sce_type.startswith(("int", "uint"))):
+            if value != int(value):
+                raise VerifyError(
+                    f"{address} is {value!r}, and the event-schema declares "
+                    f"{name!r} `{sce_type}`, which holds a whole number only")
+            value = int(value)
+        why = self.module.procedure("send_with_data", engine=self.engine,
+                                    event=event, data=json.dumps({name: value}))
+        if why:
+            raise VerifyError(why)
 
     def acting_on(self, event_name: str, declared) -> str | None:
         """An active state that could act on this event now, if any.
@@ -2704,7 +2747,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         verification.results.append(result)
 
     try:
-        run = StatechartRun(module, build, pack.model)
+        run = StatechartRun(module, build, pack.model, payloads=declared.payloads,
+                            absence_tokens=pack.conventions.absence_tokens)
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 

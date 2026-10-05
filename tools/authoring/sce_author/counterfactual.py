@@ -280,7 +280,7 @@ def alternatives(rule: dict, kind: str, model, number_space=None) -> tuple[list,
                 out.append((f"map[{source}]", ("map", source), alt))
     # Decisions a rule can make that have no alternatives worked out here: the
     # guess may rest on them, so the rule's alternatives are not exhausted.
-    unexplored = (("equals_any", "not_equals", "becomes", "protocol", "range")
+    unexplored = (("equals_any", "not_equals", "becomes", "carries", "protocol", "range")
                   if kind == "input" else ("passthrough", "when_nothing_sent"))
     for key in unexplored:
         if key in rule:
