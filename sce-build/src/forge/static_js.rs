@@ -460,6 +460,12 @@ impl StaticTarget for JsTarget {
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(value.to_string())
     }
+    // The Interpreter's own `<send>` evaluates its `delayexpr` and reads the
+    // string as a time, so the expression is lowered in the attribute it is
+    // written in.
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a

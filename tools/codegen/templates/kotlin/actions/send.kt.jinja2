@@ -132,7 +132,7 @@
 {% endfor %}
 {% set dyn_event = action.eventexpr and model.needs_script_engine and not action.event %}
 {% set dyn_target = action.targetexpr and model.needs_script_engine %}
-{% set dyn_delay = action.delayexpr and model.needs_script_engine %}
+{% set dyn_delay = (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 {% set has_delay = action.delay or action.delayexpr %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {# A `targetexpr` that may name a Mesh peer at run time (SCE_MESH.md
@@ -148,7 +148,10 @@
    first failure is one error.execution carrying the send id, the message goes
    nowhere, and — the error having been raised while the element was
    processed — the block ends (W3C SCXML 4.9): `return@send true`. #}
-{% set send_prologue = model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation) %}
+{# Under `datamodel="sce-static"` a `delayexpr` is lowered to the string it
+   computes (`Action::native_delay`), so it is an argument like the others but
+   needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay %}
             if (run send@{
 {% if action.delay_invalid and not action.delayexpr %}
             // W3C SCXML 6.2: the written delay is not a CSS2 time
@@ -162,9 +165,11 @@
             var paramFailed = false
 {% endif %}
 {% if send_prologue %}
+{% if model.needs_script_engine %}
             ensureScriptEngine()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
 {% if action.idlocation %}
             // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
             // there even when a later argument fails (test183, test332),
@@ -215,7 +220,27 @@
                 return@send true
             }
 {% endif %}
-{% if action.delayexpr %}
+{% if action.native_delay %}
+            // The delay is a string computed from the machine's fields now, and
+            // read as the CSS2 time it must be (ARCHITECTURE.md, "Durations"):
+            // an operation that fails, or a value that is no time, is the
+            // argument error, and the message is not scheduled under some
+            // default wait.
+{% if action.native_delay_fails %}
+            val sendDelayText: String = try {
+                {{ action.native_delay }}
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr could not be evaluated", "{{ send_id_kt }}")
+                return@send true
+            }
+{% else %}
+            val sendDelayText: String = {{ action.native_delay }}
+{% endif %}
+            val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr is not a CSS2 time", "{{ send_id_kt }}")
+                return@send true
+            }
+{% elif action.delayexpr %}
             // The expression failing is the argument error, and so is a value
             // that is not the CSS2 time the clause names (ARCHITECTURE.md,
             // "Durations"): the message is not scheduled under some default wait.

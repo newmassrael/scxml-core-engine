@@ -1,0 +1,52 @@
+{
+  "machine": "static_send_delay",
+  "about": "The `delayexpr` of a <send> is a string computed from the machine's fields when the send runs, and read as the CSS2 time it must be: `wait + 'ms'` over a uint32 holding 100 is 100ms. A step with `advance_ms` moves the machine's time on by that many milliseconds before the machine is read; the margins are wide (nothing is due within a few milliseconds of a step's end) so an engine on a real clock reads the same answer as one on a manual clock. `slow` doubles the wait of the NEXT send, the one armed already keeps the wait it was armed with. `soon` is no CSS2 time and `huge` overflows the uint32, each raises error.execution and the message is not sent at all. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been armed",
+      "expect": { "state": "idle", "variables": { "wait": 100, "beats": 0, "refusals": 0 } } },
+
+    { "note": "armed: due in 100ms, not delivered yet",
+      "event": "arm",
+      "expect": { "variables": { "beats": 0 } } },
+
+    { "note": "50ms later it is still waiting",
+      "advance_ms": 50,
+      "expect": { "variables": { "beats": 0 } } },
+
+    { "note": "100ms later it has been delivered, once",
+      "advance_ms": 100,
+      "expect": { "variables": { "beats": 1 } } },
+
+    { "note": "the wait changes; nothing is armed",
+      "event": "slow",
+      "expect": { "variables": { "wait": 200, "beats": 1 } } },
+
+    { "note": "the next send is armed with the wait it holds now: 200ms",
+      "event": "arm",
+      "expect": { "variables": { "beats": 1 } } },
+
+    { "note": "100ms later it is not due: the wait was read when the send ran",
+      "advance_ms": 100,
+      "expect": { "variables": { "beats": 1 } } },
+
+    { "note": "another 200ms later it has been delivered",
+      "advance_ms": 200,
+      "expect": { "variables": { "beats": 2 } } },
+
+    { "note": "a string that is no CSS2 time: an argument that cannot be evaluated",
+      "event": "soon",
+      "expect": { "variables": { "beats": 2, "refusals": 1 } } },
+
+    { "note": "and the message is never delivered, however long it waits",
+      "advance_ms": 400,
+      "expect": { "variables": { "beats": 2, "refusals": 1 } } },
+
+    { "note": "a delay that does not fit its type fails as any other operation does",
+      "event": "huge",
+      "expect": { "variables": { "beats": 2, "refusals": 2 } } },
+
+    { "note": "and that message is not delivered either",
+      "advance_ms": 400,
+      "expect": { "variables": { "beats": 2, "refusals": 2 } } }
+  ]
+}

@@ -209,6 +209,14 @@ protected:
             const auto &step = steps[n];
             const std::string note = step.value("note", std::string{});
             SCOPED_TRACE("step " + std::to_string(n) + (note.empty() ? "" : " (" + note + ")"));
+            // A step that moves the machine's time on, for a scenario of a delayed
+            // send. The Interpreter's scheduler runs on the wall clock, so the
+            // time is waited out; the scenario's margins are wide enough for the
+            // wait to be the one the step names.
+            if (step.contains("advance_ms")) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(step.at("advance_ms").get<int64_t>()));
+                eventRaiser->processQueuedEvents();
+            }
             if (step.contains("event")) {
                 const std::string data = step.contains("data") ? step.at("data").dump() : std::string{};
                 machine->processEvent(step.at("event").get<std::string>(), data);

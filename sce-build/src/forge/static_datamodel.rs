@@ -97,7 +97,6 @@ impl<'a> WireParam<'a> {
 const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[
     ("send", "eventexpr"),
     ("send", "targetexpr"),
-    ("send", "delayexpr"),
     ("send", "typeexpr"),
     ("send", "idlocation"),
     ("cancel", "sendidexpr"),
@@ -777,6 +776,39 @@ impl<'a> Judge<'a> {
         )
     }
 
+    /// A `<send>`'s `delayexpr`: a string, the CSS2 time the delay is written
+    /// in (`5s`, `100ms`), computed from the machine's fields when the send
+    /// runs — `wait + 'ms'` for an integer `wait`. A number alone is no time and
+    /// is refused where it is written, as the type of any other string slot is;
+    /// the delay's own text is read as a time when the send runs, and one that
+    /// is none is an argument that cannot be evaluated. The element takes one
+    /// delay, a written one or an expression, so a `delay` beside it is refused.
+    fn delay_expr(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("delayexpr");
+        if !action.delay.trim().is_empty() {
+            return Err(self.rule_at(
+                format!("delayexpr=\"{}\"", action.delayexpr),
+                "a <send> carries its delay as `delay` or as `delayexpr`, and never as both",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.delayexpr,
+            ));
+        }
+        self.expr(
+            ctx,
+            &action.delayexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        Ok(())
+    }
+
     /// The `<content expr>` of a `<send>` or of a `<final>`'s `<donedata>`
     /// (`element`): the one value this model has that is an object, a record,
     /// taken whole by name — a record variable, the item of a `<foreach>` over a
@@ -1107,6 +1139,9 @@ impl<'a> Judge<'a> {
                 for name in action.namelist.split_whitespace() {
                     let namelist = WireParam::of_namelist_name(name, action);
                     self.wire_param(ctx, &namelist, "<send>", state)?;
+                }
+                if !action.delayexpr.is_empty() {
+                    self.delay_expr(ctx, action, state)?;
                 }
                 if !action.contentexpr.is_empty() {
                     self.content_record(

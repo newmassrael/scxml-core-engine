@@ -185,12 +185,17 @@
    the error having been raised while the element was processed — the block
    ends (W3C SCXML 4.9). A <param> is not one of these: §5.7.1 leaves its pair
    out and the message still goes, which the payload below keeps. #}
-{% set send_prologue = model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation) %}
+{# Under `datamodel="sce-static"` a `delayexpr` is lowered to the string it
+   computes (`Action::native_delay`), so it is an argument like the others but
+   needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay %}
 {% if send_prologue %}
+{% if model.needs_script_engine %}
     self.ensure_script_engine();
     let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
     let __sce_arg_se = self.script_engine.clone();
     let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
+{% endif %}
     let mut _send_arg_error: Option<&'static str> = None;
 {% if action.idlocation %}
     // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
@@ -265,7 +270,36 @@
         }
     }
 {% endif %}
-{% if action.delayexpr %}
+{% if action.native_delay %}
+    // The delay is a string computed from the machine's fields now, and read as
+    // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
+    // fails, or a value that is no time, is the argument error, and the message
+    // is not scheduled under some default wait.
+    let _send_delay_ms: u64 = if _send_arg_error.is_none() {
+{% if action.native_delay_fails %}
+        match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok({{ action.native_delay }})
+        })() {
+            Ok(s) => sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
+                _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+                0
+            }),
+            Err(_) => {
+                _send_arg_error = Some("<send> delayexpr could not be evaluated");
+                0
+            }
+        }
+{% else %}
+        let s: String = {{ action.native_delay }};
+        sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
+            _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+            0
+        })
+{% endif %}
+    } else {
+        0
+    };
+{% elif action.delayexpr %}
     // The expression failing is the argument error, and so is a value that is
     // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
     // message is not scheduled under some default wait.
@@ -625,7 +659,7 @@
 {# W3C SCXML 6.2: the wait, as a `Duration`, or none for an immediate send. A
    delay postpones a send and does not change where it goes, so each delivery
    arm below takes it rather than one arm taking every delayed send. #}
-{% if action.delayexpr and model.needs_script_engine %}
+{% if (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 {% set delay_rs = 'core::time::Duration::from_millis(_send_delay_ms)' %}
 {% elif (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) or (action.delay and action.delay != '0s' and action.delay != '0ms') %}
 {% set delay_rs = 'core::time::Duration::from_millis(' ~ (action.delay_ms | default(0, true)) ~ '_u64)' %}

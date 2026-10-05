@@ -541,6 +541,23 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_content: String,
+    /// Codegen-internal: the `delayexpr` of a `<send>` in a `sce-static`
+    /// document, as an owned string expression in the backend's own language,
+    /// read from the machine's fields when the send runs — the text the delay is
+    /// written in, which the backend reads as the CSS2 time it is (as it reads
+    /// a `delay` written out). Empty for a `<send>` with no `delayexpr`, and for
+    /// one of a document under another data model, which a script engine
+    /// evaluates. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_delay: String,
+    /// Codegen-internal: whether [`Self::native_delay`] can fail — a checked
+    /// integer operation in the expression. A failure is an argument that cannot
+    /// be evaluated: the message is not sent and the block ends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_delay_fails: bool,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

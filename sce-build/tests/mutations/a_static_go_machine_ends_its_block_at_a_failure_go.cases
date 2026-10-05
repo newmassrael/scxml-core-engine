@@ -68,6 +68,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_record_fi
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_list/static_record_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_real/static_record_real_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_content/static_send_content_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_send_delay/static_send_delay_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_namelist/static_send_namelist_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_params/static_send_params_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go

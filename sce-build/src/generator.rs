@@ -3735,27 +3735,43 @@ fn render_go(
     let tmpl = env
         .get_template("state_machine.go.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
-    let ctx = minijinja::context! {
-        model => minijinja::Value::from_serialize(model),
-        machine_name => machine_name,
-        license_config => minijinja::Value::from_serialize(license_config()),
-        event_payload_defs => &payload.defs,
-        event_payload_active => payload.active,
-        event_payload_policy_fields => &payload.policy_fields,
-        event_payload_populate => &payload.populate,
-        event_payload_lift => &payload.lift,
-        event_payload_clear => &payload.clear,
-        host_invoker_interface => &host_invoker_interface,
-        host_invoke_request_checks => &host_invoke_request_checks,
-        has_native_actions => native.any,
-        native_actions_defs => &native.interface_def,
-        native_actions_interface => &native.interface_name,
-        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
-        static_published => minijinja::Value::from_serialize(&static_published),
-        static_type_defs => static_lowering.type_defs.join("\n\n"),
-        static_imports => &static_lowering.imports,
+    let render_with = |static_imports: &[String]| {
+        let ctx = minijinja::context! {
+            model => minijinja::Value::from_serialize(model),
+            machine_name => &machine_name,
+            license_config => minijinja::Value::from_serialize(license_config()),
+            event_payload_defs => &payload.defs,
+            event_payload_active => payload.active,
+            event_payload_policy_fields => &payload.policy_fields,
+            event_payload_populate => &payload.populate,
+            event_payload_lift => &payload.lift,
+            event_payload_clear => &payload.clear,
+            host_invoker_interface => &host_invoker_interface,
+            host_invoke_request_checks => &host_invoke_request_checks,
+            has_native_actions => native.any,
+            native_actions_defs => &native.interface_def,
+            native_actions_interface => &native.interface_name,
+            static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+            static_published => minijinja::Value::from_serialize(&static_published),
+            static_type_defs => static_lowering.type_defs.join("\n\n"),
+            static_imports => static_imports,
+        };
+        tmpl.render(ctx).map_err(render_error)
     };
-    tmpl.render(ctx).map_err(render_error)
+    let first = render_with(&static_lowering.imports)?;
+    // A Go file that names a package it does not import does not compile, and
+    // what a `sce-static` machine names is a fact about the text its lowering
+    // wrote — `strconv.FormatUint` for a string joined to a number — which no
+    // template can know before it exists: the machine is rendered, the standard
+    // packages its own text reaches for and does not import are read from it, and
+    // it is rendered again with them listed.
+    let unimported = crate::std_imports::go_unimported_in(&first);
+    if unimported.is_empty() {
+        return Ok(first);
+    }
+    let mut imports = static_lowering.imports.clone();
+    imports.extend(unimported.iter().map(|package| format!("\t\"{package}\"")));
+    render_with(&imports)
 }
 
 // ── Template loading helpers ─────────────────────────────────────

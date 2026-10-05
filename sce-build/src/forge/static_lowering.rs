@@ -300,6 +300,13 @@ pub trait StaticTarget {
     fn unsupported(&self, _model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         None
     }
+    /// Whether a `<send>`'s `delayexpr` is lowered to the string it computes
+    /// ([`Action::native_delay`]) that the backend reads as a CSS2 time when the
+    /// send runs. A target that does not is refused where the `<send>` is
+    /// walked, by name, rather than left to emit a send with no delay.
+    fn lowers_delay_expr(&self) -> bool {
+        false
+    }
     /// Whether a transition may read the payload of an event whose schema
     /// declares an enum field: the target holds the field in the machine's own
     /// type for the enum and reads it off the wire as the variant's declared
@@ -941,6 +948,11 @@ impl StaticTarget for KotlinTarget {
     fn payload_enum_fields(&self) -> bool {
         true
     }
+    // The send template reads the string it computes as a CSS2 time
+    // (`SendHelper.parseDelayMs`).
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1070,6 +1082,11 @@ impl StaticTarget for RustTarget {
     // the variant's declared name and written back as it
     // (`forge::generator::build_rust_event_payload`).
     fn payload_enum_fields(&self) -> bool {
+        true
+    }
+    // The send template reads the string it computes as a CSS2 time
+    // (`helpers::send::parse_delay_to_ms`).
+    fn lowers_delay_expr(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -2800,6 +2817,11 @@ impl StaticTarget for CppTarget {
     fn payload_enum_fields(&self) -> bool {
         true
     }
+    // The send template reads the string it computes as a CSS2 time
+    // (`SendSchedulingHelper::parseDelayString`).
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3290,6 +3312,11 @@ impl StaticTarget for GoTarget<'_> {
     fn payload_enum_fields(&self) -> bool {
         true
     }
+    // The send template reads the string it computes as a CSS2 time
+    // (`sce.ParseDelayToMs`).
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3704,6 +3731,11 @@ impl StaticTarget for PythonTarget {
     // from the variant's declared name and written back as its `sce_name`
     // (`build_python_event_payload`).
     fn payload_enum_fields(&self) -> bool {
+        true
+    }
+    // The send template reads the string it computes as a CSS2 time
+    // (`parse_delay_ms`).
+    fn lowers_delay_expr(&self) -> bool {
         true
     }
     // The attribute the payload channel fills when the engine dequeues an
@@ -4520,6 +4552,12 @@ impl StaticTarget for CTarget {
     fn payload_enum_fields(&self) -> bool {
         true
     }
+    // The send template reads the string it computes as a CSS2 time
+    // (`sce_parse_delay_ms`). A string C has no storage to build — a
+    // concatenation — is refused where the expression is lowered.
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
     // The member of the channel's union the event's payload is lifted into
     // (`build_c11_event_payload`), whose fields carry the schema's own ids.
     fn payload_accessor(&self, event: &str) -> String {
@@ -5175,6 +5213,26 @@ fn lower_action(
             // their own to be rewritten at.
             if !content.is_empty() {
                 rewrites.sites.borrow_mut().truncate(noted);
+            }
+            // A delay computed from the machine's fields is the string it
+            // spells, read as a CSS2 time when the send runs; a value that is
+            // none, or an operation that fails, is an argument that cannot be
+            // evaluated, which keeps the message from being sent.
+            if !action.delayexpr.trim().is_empty() {
+                if !target.lowers_delay_expr() {
+                    return Err(GenerateError::unsupported(format!(
+                        "a <send> with a delayexpr has no {lang} lowering yet"
+                    )));
+                }
+                reads_payload |= reads(&action.delayexpr);
+                let value = lower(&action.delayexpr, InferredType::Str)?;
+                rewrites.note(
+                    &action.delayexpr,
+                    action.spellings.get("delayexpr"),
+                    &value.text,
+                );
+                action.native_delay = value.text;
+                action.native_delay_fails = value.can_fail;
             }
             // A literal `<content>` is the event's data as written, finished
             // here ([`crate::filters::static_content_wire`]): the machine has

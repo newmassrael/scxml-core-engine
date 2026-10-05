@@ -1681,6 +1681,54 @@ fn a_send_content_record_is_lowered_to_the_pairs_of_its_fields_and_needs_no_engi
 }
 
 #[test]
+fn a_go_machine_that_joins_text_and_a_number_imports_what_it_names() {
+    // The join is written as `strconv.FormatUint` where the statement stands, and
+    // a Go file that names a package without importing it does not compile: the
+    // import is read from the text the machine's own lowering wrote.
+    let document = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    <data id="n" sce:type="uint32" expr="7"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="''"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      <assign location="label" expr="'n' + n"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("strconv.Format"),
+        "the join is written with strconv:\n{source}"
+    );
+    assert!(
+        source.contains("\t\"strconv\""),
+        "and the file imports the package it names"
+    );
+}
+
+#[test]
 fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
     // C11 writes the event's data as one JSON object, in which a name is carried
     // once, so a `namelist` name that a `<param>` of the same send already names
@@ -1701,6 +1749,146 @@ fn a_namelist_name_that_repeats_a_param_is_refused_for_c() {
     );
     assert!(!ok, "a name carried twice has no C11 lowering:\n{out}");
     assert!(out.contains("twice"), "it says why:\n{out}");
+}
+
+/// A `sce-static` machine whose entry (line 8) sends with the attributes `send`.
+fn sending_with(send: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry><send event="notify" {send}/></onentry></state>"#
+    ))
+}
+
+#[test]
+fn a_send_delayexpr_is_a_string_the_machine_computes() {
+    // A literal, and a number joined to its unit: the CSS2 time a delay is
+    // written in, read from the machine's fields when the send runs.
+    for expr in ["'100ms'", "count + 'ms'", "count + 's'"] {
+        let (ok, out) = run(&["check"], &sending_with(&format!(r#"delayexpr="{expr}""#)));
+        assert!(ok, "`{expr}` is a string:\n{out}");
+    }
+}
+
+#[test]
+fn a_send_delayexpr_that_is_no_string_or_is_doubled_is_refused_on_its_line() {
+    // Each is refused on the line of the send, under the code of the rule it
+    // breaks: a type is the expression pass's, a delay written twice the model's.
+    for (what, send, code) in [
+        (
+            "a number, which is no time",
+            r#"delayexpr="count""#,
+            "expression/type-mismatch",
+        ),
+        (
+            "a delay beside it",
+            r#"delay="1s" delayexpr="'2s'""#,
+            "scxml/static-datamodel-rule",
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &sending_with(send));
+        assert!(!ok, "{what}: no delay is had from it:\n{out}");
+        assert_refused_at(&out, code, 8);
+    }
+    // A name nothing declares reads no variable, whatever the pass that says so.
+    let (ok, out) = run(&["check"], &sending_with(r#"delayexpr="missing + 'ms'""#));
+    assert!(!ok, "a name no variable declares is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+}
+
+#[test]
+fn a_send_delayexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
+    // Read from the machine's fields when the send runs, as a `<param>`'s value
+    // is, so no engine evaluates it: the manifest says so, and says that the
+    // machine must be driven with `tick()` for the delay to come due.
+    let document = sending_with(r#"delayexpr="count + 'ms'""#);
+    for language in ["rust", "go", "kotlin", "python", "cpp"] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "--go-module-prefix",
+                "x/y",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &document,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: a delay computed from the fields needs no engine:\n{out}"
+        );
+        assert!(
+            out.contains("\"needs_event_scheduler\":true"),
+            "{language}: a delayed send needs the host to drive tick():\n{out}"
+        );
+    }
+
+    // Go writes the delay as the string it computes and reads it with the one
+    // duration reader every engine shares, with no engine to ask.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("sce.ParseDelayToMs(sceDelay)"),
+        "the computed string is read as a CSS2 time"
+    );
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no engine evaluates the delay"
+    );
+}
+
+#[test]
+fn a_send_delayexpr_that_joins_text_is_refused_for_c_by_name() {
+    // A C string has no storage for the joined text, so the expression is
+    // refused where it is lowered and the message says why; a literal is not.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &sending_with(r#"delayexpr="count + 'ms'""#),
+    );
+    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
+    assert!(out.contains("concatenation"), "it says why:\n{out}");
+
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &sending_with(r#"delayexpr="'100ms'""#),
+    );
+    assert!(
+        ok,
+        "a string that is only written generates for C11:\n{out}"
+    );
 }
 
 /// A `sce-static` machine holding the record variable `shown` whose `<final>`

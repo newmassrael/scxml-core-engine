@@ -15,7 +15,7 @@ mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -274,4 +274,27 @@ mutation_case "a namelist name that repeats a param reaches C" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "                            .map(|p| p.name.as_str())\n                            .chain(action.namelist.split_whitespace()),\n",
      "                            .map(|p| p.name.as_str()),\n")
+PY
+
+# A `<send>`'s `delayexpr` is a string the machine computes, read as a CSS2 time
+# when the send runs. The first mutant counts it as an engine need again, which
+# the manifest of a machine with none would deny; the second admits a `delay`
+# beside it, a delay written twice; the third leaves a Go machine that joins
+# text and a number without the `strconv` its text names, which does not compile.
+mutation_case "a delayexpr needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "        || (!static_model && !action.delayexpr.is_empty())",
+     "        || !action.delayexpr.is_empty()")
+PY
+
+mutation_case "a delay is admitted beside a delayexpr" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.delay.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"delayexpr=",
+     "        if false && !action.delay.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"delayexpr=")
+PY
+
+mutation_case "a Go machine's imports are not read from its text" <<'PY'
+edit("sce-build/src/generator.rs",
+     "    if unimported.is_empty() {\n        return Ok(first);\n    }\n",
+     "    if true {\n        return Ok(first);\n    }\n")
 PY

@@ -42,7 +42,7 @@
 		}
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}
-{% if action.delayexpr and model.needs_script_engine %}
+{% if (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 		hostDelayMs := int64(sendDelayMs)
 {% else %}
 		hostDelayMs := int64({{ host_delay_ms }})
@@ -143,9 +143,14 @@
 
    The whole element is one Go block, so two sends in one action block do not
    declare the same locals twice. #}
-{% set send_prologue = model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation) %}
+{# Under `datamodel="sce-static"` a `delayexpr` is lowered to the string it
+   computes (`Action::native_delay`), so it is an argument like the others but
+   needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay %}
 {% if send_prologue %}
+{% if model.needs_script_engine %}
 	p.ensureScriptEngine()
+{% endif %}
 	sendArgError := ""
 {% if action.idlocation %}
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
@@ -203,7 +208,31 @@
 		}
 	}
 {% endif %}
-{% if action.delayexpr %}
+{% if action.native_delay %}
+	sendDelayMs := uint64(0)
+	if sendArgError == "" {
+		// The delay is a string computed from the machine's fields now, and
+		// read as the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an
+		// operation that fails, or a value that is no time, is the argument
+		// error, and the message is not scheduled under some default wait.
+{% if action.native_delay_fails %}
+		var sceFailure scealgorithm.Failure
+{% endif %}
+		sceDelay := {{ action.native_delay }}
+{% if action.native_delay_fails %}
+		if sceFailure.Failed() {
+			sendArgError = "<send> delayexpr could not be evaluated"
+		} else if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
+{% else %}
+		if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
+{% endif %}
+			sendDelayMs = ms
+		} else {
+			sendArgError = "<send> delayexpr is not a CSS2 time"
+		}
+	}
+	_ = sendDelayMs
+{% elif action.delayexpr %}
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
@@ -521,7 +550,7 @@
    delivery arm below takes it rather than one arm taking every delayed send.
    The build read a static delay once, by the grammar every engine shares
    (ARCHITECTURE.md, "Durations"). #}
-{% if action.delayexpr and model.needs_script_engine %}
+{% if (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 {% set delay_go = 'time.Duration(sendDelayMs) * time.Millisecond' %}
 {% elif action.delay %}
 {% set delay_go = 'time.Duration(' ~ action.delay_ms ~ ') * time.Millisecond' %}

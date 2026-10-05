@@ -96,6 +96,11 @@ def replay(name: str, machine: str | None = None) -> None:
     readers = module.SCE_HOST_NAMES["readers"]
     for n, step in enumerate(steps):
         where = f"{name} step {n}: {step.get('note', '')}"
+        # A step that moves the machine's time on, for a scenario of a delayed
+        # send: the engine never reads a clock of its own, so a wait is the one
+        # the step names.
+        if "advance_ms" in step:
+            engine.advance_time(step["advance_ms"])
         event_name = step.get("event")
         if event_name is not None:
             event = policy.resolve_event_by_name(event_name)
@@ -271,6 +276,13 @@ def test_a_guard_calls_an_imported_algorithm() -> None:
 # standard event schemas'.
 def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
+
+
+# The `delayexpr` of a `<send>` is a string computed from the machine's fields when
+# the send runs, and read as the CSS2 time it must be; the scenario's
+# `advance_ms` steps move the engine's time on.
+def test_a_sends_delay_is_computed_when_it_runs() -> None:
+    replay("static_send_delay")
 
 
 # The `<content expr>` of a `<send>` names a record, which crosses as the pairs of

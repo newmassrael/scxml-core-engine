@@ -997,6 +997,24 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    never sees the act. */
 {% if resolved_delay %}
                 const uint64_t _host_delay_ms = {{ resolved_delay }};
+{% elif action.native_delay %}
+                /* The wait is a string the machine computed from its own
+                   fields (`Action::native_delay`), read by the same duration
+                   reader; an operation that fails, or a value that is not a
+                   CSS2 time, is the W3C SCXML 6.2 argument error. */
+                uint64_t _host_delay_ms = 0u;
+                {
+                    sce_forge_algorithm_failure_t sce_failure_ = {0};
+                    const char *_host_delay_text = {{ action.native_delay }};
+                    if (sce_failure_.failed || !sce_parse_delay_ms(_host_delay_text, &_host_delay_ms)) {
+                        {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                            sce_failure_.failed ? "<send> delayexpr could not be evaluated"
+                                                : "<send> delayexpr is not a CSS2 time",
+                            _host_req.send_id);
+                        return;
+                    }
+                }
 {% elif action.delayexpr %}
                 /* The wait is read by the one duration reader every engine
                    shares (ARCHITECTURE.md, "Durations"); an expression that
@@ -1250,7 +1268,26 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
             }
 {% endif %}
 {% endif %}
-{% if action.delayexpr %}
+{% if action.native_delay %}
+            /* The wait is a string the machine computed from its own fields
+               (`Action::native_delay`) and read by the same duration reader; an
+               operation that fails, and a value that is not a CSS2 time, are
+               both the argument error: nothing is scheduled under some default
+               wait. */
+            uint64_t _send_delay_ms = 0u;
+            {
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                const char *_send_delay_text = {{ action.native_delay }};
+                if (sce_failure_.failed || !sce_parse_delay_ms(_send_delay_text, &_send_delay_ms)) {
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                        sce_failure_.failed ? "<send> delayexpr could not be evaluated"
+                                            : "<send> delayexpr is not a CSS2 time",
+                        "{{ send_id_c }}");
+                    return;
+                }
+            }
+{% elif action.delayexpr %}
             /* W3C SCXML 6.2 (test175): the wait is named by an expression
                evaluated now and read by the one duration reader every engine
                shares (ARCHITECTURE.md, "Durations"). An expression that

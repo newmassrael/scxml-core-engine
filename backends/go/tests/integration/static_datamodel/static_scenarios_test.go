@@ -55,6 +55,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
@@ -106,7 +107,10 @@ type machine struct {
 	send func(name, data string)
 	// resolves is whether an event arriving under `name` reaches the machine at
 	// all, as the engine decides it (§scxml-3.12.1) — false is a name it drops.
-	resolves  func(name string) bool
+	resolves func(name string) bool
+	// advance moves the machine's time on by `ms` and runs what that made due:
+	// the machine runs on a manual clock, so a wait is the one a step names.
+	advance   func(ms int64)
 	state     func() string
 	ended     func() bool
 	donedata  func() string
@@ -119,12 +123,14 @@ func drive[S interface {
 	String() string
 }, E comparable](policy sce.StatePolicy[S, E], variables map[string]func() any) machine {
 	engine := sce.NewEngine[S, E](policy)
+	engine.SetClock(sce.NewManualClock(0))
 	engine.Initialize()
 	return machine{
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
 			engine.Step()
 		},
+		advance: engine.AdvanceTimeMs,
 		resolves: func(name string) bool {
 			_, ok := engine.ResolveEventByName(name)
 			return ok
@@ -190,10 +196,11 @@ func replay(t *testing.T, name string, m machine) {
 	}
 	var scenario struct {
 		Steps []struct {
-			Note    string          `json:"note"`
-			Event   *string         `json:"event"`
-			Dropped bool            `json:"dropped"`
-			Data    json.RawMessage `json:"data"`
+			Note      string          `json:"note"`
+			Event     *string         `json:"event"`
+			AdvanceMs *int64          `json:"advance_ms"`
+			Dropped   bool            `json:"dropped"`
+			Data      json.RawMessage `json:"data"`
 			Expect  struct {
 				State     *string        `json:"state"`
 				Ended     bool           `json:"ended"`
@@ -210,6 +217,9 @@ func replay(t *testing.T, name string, m machine) {
 	}
 	for n, step := range scenario.Steps {
 		where := func() string { return fmt.Sprintf("%s step %d: %s", name, n, step.Note) }
+		if step.AdvanceMs != nil {
+			m.advance(*step.AdvanceMs)
+		}
 		if step.Event != nil {
 			if m.resolves(*step.Event) == step.Dropped {
 				t.Errorf("%s: the machine's events %s `%s`", where(), map[bool]string{true: "match", false: "do not match"}[step.Dropped], *step.Event)
@@ -589,6 +599,19 @@ func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata_content", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// The `delayexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, and read as the CSS2 time it must be; the machine runs on a
+// manual clock, which the scenario's `advance_ms` steps move on.
+func TestASendsDelayIsComputedWhenItRuns(t *testing.T) {
+	policy := static_send_delay.NewStaticSendDelayPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_delay", drive[static_send_delay.StaticSendDelayState, static_send_delay.StaticSendDelayEvent](&policy, map[string]func() any{
+		"wait":     func() any { return policy.Wait() },
+		"beats":    func() any { return policy.Beats() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `delayexpr` of
+  a <send>. It is a string, the CSS2 time the delay is written in, computed from
+  the machine's fields when the send runs: `wait + 'ms'` is a number of
+  milliseconds. The value is read then, not when the document was read, so
+  `slow` doubles the wait of the next send and not of the one already armed.
+
+  A delay that cannot be had is an argument that cannot be evaluated
+  (§scxml-6.2.4): `huge` overflows a uint32 and `soon` is no CSS2 time, each
+  raises error.execution and the message is not sent at all, not sent under some
+  default wait.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_delay">
+  <datamodel>
+    <data id="wait" sce:type="uint32" expr="100" sce:direction="out"/>
+    <data id="beats" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="arm" type="internal">
+      <send event="beat" delayexpr="wait + 'ms'"/>
+    </transition>
+    <transition event="slow" type="internal">
+      <assign location="wait" expr="wait * 2"/>
+    </transition>
+    <transition event="soon" type="internal">
+      <send event="beat" delayexpr="'soon'"/>
+    </transition>
+    <transition event="huge" type="internal">
+      <send event="beat" delayexpr="wait * 100000000 + 'ms'"/>
+    </transition>
+    <transition event="beat" type="internal">
+      <assign location="beats" expr="beats + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

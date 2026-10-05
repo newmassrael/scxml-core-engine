@@ -163,7 +163,23 @@
 {{ indent }}if not _is_supported_send_type(self._eval_send_argument(engine, _sid, {{ action.typeexpr | to_lua_expr | py_string_literal }}, "<send> typeexpr could not be evaluated"{{ route_ns.type_arg }}).to_wire_string()):
 {{ indent }}    self._send_argument_error(engine, _sid, "<send> typeexpr names a processor this platform does not support"{{ route_ns.type_arg }})
 {% endif %}
-{% if action.delayexpr %}
+{% if action.native_delay %}
+{# Under `datamodel="sce-static"` the delay is a string computed from the
+   machine's fields now (`Action::native_delay`), and read as the CSS2 time it
+   must be: an operation that fails, or a value that is no time, is the argument
+   error, and the message is not scheduled under some default wait. #}
+{% if action.native_delay_fails %}
+{{ indent }}try:
+{{ indent }}    _delay_text = {{ action.native_delay }}
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> delayexpr could not be evaluated")
+{% else %}
+{{ indent }}_delay_text = {{ action.native_delay }}
+{% endif %}
+{{ indent }}_delay_ms = _parse_delay_ms(_delay_text)
+{{ indent }}if _delay_ms is None:
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> delayexpr is not a CSS2 time")
+{% elif action.delayexpr %}
 {# The expression failing is the argument error; the message is not scheduled
    under some default wait. #}
 {{ indent }}_delay_ms = self._eval_send_delay(engine, _sid, {{ action.delayexpr | to_lua_expr | py_string_literal }})

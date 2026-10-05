@@ -60,6 +60,15 @@ pub fn go_used_in(source: &str) -> Vec<&'static str> {
         .collect()
 }
 
+/// The Go packages in [`GO_PACKAGES`] that `source` uses and does not import:
+/// the quoted path of an import is what says a file already has one.
+pub fn go_unimported_in(source: &str) -> Vec<&'static str> {
+    go_used_in(source)
+        .into_iter()
+        .filter(|package| !source.contains(&format!("\"{package}\"")))
+        .collect()
+}
+
 /// The C++ headers in [`CPP_HEADERS`] that `source` needs, in that order.
 pub fn cpp_used_in(source: &str) -> Vec<&'static str> {
     let mut found = [false; CPP_HEADERS.len()];
@@ -208,7 +217,15 @@ fn skip_raw(bytes: &[u8], open: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{cpp_used_in, go_used_in};
+    use super::{cpp_used_in, go_unimported_in, go_used_in};
+
+    #[test]
+    fn a_go_package_a_file_already_imports_is_not_missing() {
+        let imported = "import (\n\t\"strconv\"\n)\nvar s = strconv.Itoa(1) + math.Pi";
+        assert_eq!(go_unimported_in(imported), ["math"]);
+        assert!(go_unimported_in("import \"math\"\nvar x = math.Pi").is_empty());
+        assert_eq!(go_unimported_in("var s = strconv.Itoa(1)"), ["strconv"]);
+    }
 
     #[test]
     fn a_go_call_names_its_package() {

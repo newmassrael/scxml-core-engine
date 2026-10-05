@@ -657,11 +657,13 @@ fn collect_action_causes(
 /// Whether a `<send>` carries an attribute whose value is evaluated at run
 /// time. Under `sce-static` a `<content expr>` is not one: the model admits it
 /// only where it names a record, which is lowered as the pairs of its fields
-/// ([`crate::forge::static_datamodel`]), so it costs no engine.
+/// ([`crate::forge::static_datamodel`]), so it costs no engine. Nor is a
+/// `delayexpr`, which is lowered to the string it computes, read as a CSS2 time
+/// when the send runs.
 fn send_has_dynamic_attr(action: &Action, static_model: bool) -> bool {
     !action.eventexpr.is_empty()
         || !action.targetexpr.is_empty()
-        || !action.delayexpr.is_empty()
+        || (!static_model && !action.delayexpr.is_empty())
         || !action.typeexpr.is_empty()
         || (!static_model && !action.contentexpr.is_empty())
         || !action.idlocation.is_empty()

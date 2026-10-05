@@ -16,7 +16,7 @@
 // `scripts/regen_static_datamodel_rust.sh`.
 
 use sce_rust_runtime::saved_state::SavedState;
-use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_runtime::{Engine, SceClock, StatePolicy};
 use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
     StaticBlockEndsListPersist, StaticBlockEndsListPolicy,
 };
@@ -83,6 +83,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_content_sm::{
     StaticSendContentPersist, StaticSendContentPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_delay_sm::{
+    StaticSendDelayPersist, StaticSendDelayPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
     StaticSendNamelistPersist, StaticSendNamelistPolicy,
 };
@@ -121,6 +124,12 @@ fn replay<P: StatePolicy>(
     assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
     engine.initialize();
     for (n, step) in steps.iter().enumerate() {
+        // A step that moves the machine's time on, for a scenario of a delayed
+        // send: the engine is handed a manual clock by its caller, so the wait
+        // is the one the step names and not the one the test happened to take.
+        if let Some(ms) = step.get("advance_ms").and_then(Value::as_u64) {
+            engine.advance_time_ms(ms);
+        }
         if let Some(event) = step.get("event").and_then(Value::as_str) {
             let dropped = step.get("dropped").and_then(Value::as_bool) == Some(true);
             assert_eq!(
@@ -433,6 +442,22 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// The `delayexpr` of a <send> is a string computed from the machine's fields
+// when the send runs, and read as the CSS2 time it must be; the engine runs on a
+// manual clock, which the scenario's `advance_ms` steps move on.
+#[test]
+fn static_send_delay_is_computed_when_the_send_runs() {
+    let mut engine = Engine::new(StaticSendDelayPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay(
+        engine,
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_delay.json"
         ),
     );
 }

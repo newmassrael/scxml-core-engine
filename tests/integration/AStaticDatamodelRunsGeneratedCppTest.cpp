@@ -25,6 +25,7 @@
 //     arguments, and `static_host_call_arguments` (beside this file): an
 //     argument that overflows stops the call and raises `error.execution`.
 
+#include "common/SceClock.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_counter_sm.h"
@@ -51,6 +52,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
+#include "static_send_delay_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -96,8 +98,16 @@ public:
 
     explicit Driver(std::map<std::string, Reader> variables) : variables_(std::move(variables)) {}
 
+    /// The machine runs on a manual clock, so a delayed send waits exactly the
+    /// time a step names (`advance`) and not the time the test happened to take.
     void start() {
+        machine_.setClock(std::make_shared<SCE::ManualClock>(0));
         machine_.initialize();
+    }
+
+    /// The machine's time moves on by `ms`, and what that made due runs.
+    void advance(uint64_t ms) {
+        machine_.advanceTimeMs(ms);
     }
 
     /// An event goes in, and the macrostep it starts runs to the end. `data` is
@@ -150,6 +160,9 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
     int index = 0;
     for (const auto &step : scenario["steps"]) {
         SCOPED_TRACE(machine + " step " + std::to_string(index++) + ": " + step.value("note", std::string{}));
+        if (step.contains("advance_ms")) {
+            driver.advance(step["advance_ms"].get<uint64_t>());
+        }
         if (step.contains("event")) {
             const auto event = step["event"].get<std::string>();
             const bool dropped = step.value("dropped", false);
@@ -431,6 +444,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTex
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata_content", driver);
+}
+
+// The `delayexpr` of a `<send>` is a string computed from the machine's fields when
+// the send runs, and read as the CSS2 time it must be; the machine runs on a manual
+// clock, which the scenario's `advance_ms` steps move on.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsDelayIsComputedWhenItRuns) {
+    using Machine = G::static_send_delay::static_send_delay;
+    Driver<Machine> driver({
+        {"wait", [](const Machine &m) { return json(m.wait()); }},
+        {"beats", [](const Machine &m) { return json(m.beats()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_send_delay", driver);
 }
 
 // The `<content expr>` of a `<send>` names a record, which crosses as the pairs of

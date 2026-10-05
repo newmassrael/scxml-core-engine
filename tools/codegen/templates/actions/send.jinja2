@@ -422,7 +422,28 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 // is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
 // message is not scheduled under some default wait.
 [[maybe_unused]] std::chrono::milliseconds delayMs{0};
-{% if has_script %}
+{% if action.native_delay %}
+{# `datamodel="sce-static"`: the wait is a string computed from the machine's
+   fields (`Action::native_delay`) and read as the CSS2 time it must be; no
+   script engine is asked. One that can fail — a checked operation — is the same
+   argument error an expression an engine could not evaluate is. #}
+{
+{% if action.native_delay_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    const std::string delayText = {{ action.native_delay }};
+{% if action.native_delay_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+{{ send_arg_error("<send> delayexpr could not be evaluated", block_end, '        ') }}
+    }
+{% endif %}
+    const auto parsedDelay = ::SCE::SendSchedulingHelper::parseDelayString(delayText);
+    if (!parsedDelay) {
+{{ send_arg_error("<send> delayexpr is not a CSS2 time", block_end, '        ') }}
+    }
+    delayMs = *parsedDelay;
+}
+{% elif has_script %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();

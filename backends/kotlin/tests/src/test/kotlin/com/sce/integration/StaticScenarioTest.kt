@@ -42,6 +42,7 @@ import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_content.StaticSendContentStateMachine
+import com.sce.integration.static_send_delay.StaticSendDelayStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -49,6 +50,7 @@ import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import java.io.File
 import kotlinx.serialization.json.Json
@@ -98,12 +100,17 @@ class StaticScenarioTest {
         save: () -> SavedState,
         ended: () -> Boolean,
         donedata: () -> String = { "" },
+        advance: (Long) -> Unit = { error("this machine runs on no manual clock to advance") },
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
         steps.forEachIndexed { n, element ->
             val step = element.jsonObject
             val note = step["note"]?.jsonPrimitive?.content ?: ""
+            // A step that moves the machine's time on, for a scenario of a delayed
+            // send: the machine runs on a manual clock, so a wait is the one the
+            // step names and not the one the test happened to take.
+            step["advance_ms"]?.jsonPrimitive?.content?.let { ms -> advance(ms.toLong()) }
             step["event"]?.jsonPrimitive?.content?.let { event ->
                 send(event, step["data"]?.toString() ?: "")
                 tick()
@@ -530,6 +537,28 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `delayexpr` of a <send> is a string computed from the machine's fields
+    // when the send runs, and read as the CSS2 time it must be; the machine runs
+    // on a manual clock, which the scenario's `advance_ms` steps move on.
+    @Test
+    fun staticSendDelayIsComputedWhenTheSendRuns() {
+        val sm = StaticSendDelayStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_delay"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
             )
         } finally {
             sm.cleanup()

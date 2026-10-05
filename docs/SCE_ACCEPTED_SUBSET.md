@@ -2800,7 +2800,7 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation>`, a `<send><content expr>` that names no record, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send eventexpr/targetexpr/typeexpr/idlocation>`, a `<send><content expr>` that names no record, `<cancel sendidexpr>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), a host-run `<invoke>`'s `srcexpr` / `namelist` / `<content expr>`, a `<donedata><content expr>` that names no record | No typed form: each is evaluated as script-engine text by every backend's templates |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
@@ -2875,7 +2875,18 @@ The Interpreter reads the record as the object it holds
 (`scenarios/static_send_content.json`, on the six generated backends and the
 Interpreter). A `<final>`'s `<donedata><content expr>` is the same, for a record
 variable alone, since no event's payload is in scope where a state is entered, and
-its pairs are read then (`scenarios/static_donedata_record.json`). The value
+its pairs are read then (`scenarios/static_donedata_record.json`). A `<send>`'s
+`delayexpr` is a string, the CSS2 time the delay is written in (`wait + 'ms'` for
+an integer `wait`), computed from the machine's fields when the send runs and read
+as a time by the one duration reader every backend shares: a value that is no
+time, a bare number included, and an operation that fails are the argument error
+of W3C SCXML 6.2.4, so `error.execution` is raised and the message is not sent
+under some default wait. It takes no `delay` beside it. A machine that has one
+must be driven with `tick()`, as one with a written delay is
+(`scenarios/static_send_delay.json`, whose `advance_ms` steps move a manual clock;
+the Interpreter waits the time out). C11 refuses an expression that joins text,
+because a C string has no storage for the joined text, and generates a
+`delayexpr` that is only a string written out or held by a variable. The value
 crosses twice, as the text a form or a
 host's `params` carries and as a JSON value in `_event.data`, and both are
 rendered from one typed value: a bool is `true` / `false` and a JSON boolean, a
