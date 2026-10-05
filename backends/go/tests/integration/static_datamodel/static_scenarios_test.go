@@ -57,6 +57,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real32"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_event"
@@ -114,6 +115,28 @@ type reading32Record interface {
 // float64 it widens to, which is exact, since JSON would print the float32 itself.
 func reading32JSON(reading reading32Record) any {
 	return map[string]any{"sensor": reading.Sensor(), "value": float64(reading.Value())}
+}
+
+// labelledRecord is a `record:Labelled` as a host reads it: a small integer and a
+// string of at most eight UTF-8 bytes.
+type labelledRecord interface {
+	Sensor() uint8
+	Label() string
+}
+
+// labelledJSON is a labelled record as a scenario states it: its fields by the
+// schema's ids.
+func labelledJSON(labelled labelledRecord) any {
+	return map[string]any{"sensor": labelled.Sensor(), "label": labelled.Label()}
+}
+
+// labelledsJSON is a list of such records, in order.
+func labelledsJSON[R labelledRecord](labelleds []R) any {
+	out := make([]any, len(labelleds))
+	for i, labelled := range labelleds {
+		out[i] = labelledJSON(labelled)
+	}
+	return out
 }
 
 // scenarioDir is where the scenarios live, from this package's directory.
@@ -553,6 +576,21 @@ func TestARecordHoldsASingleFieldAsTheSingleNearestThePayload(t *testing.T) {
 	replay(t, "static_record_real32", drive[static_record_real32.StaticRecordReal32State, static_record_real32.StaticRecordReal32Event](&policy, map[string]func() any{
 		"last":   func() any { return reading32JSON(policy.Last()) },
 		"sum":    func() any { return float64(policy.Sum()) },
+		"errors": func() any { return policy.Errors() },
+	}))
+}
+
+// A record's string field is held to the UTF-8 bytes its schema declares: an
+// assignment past the bound — from a literal, a string variable or a payload —
+// writes nothing, raises error.execution and ends its block, and a list of such
+// records holds copies with their text.
+func TestARecordHoldsAStringFieldWithinTheBoundItsSchemaDeclares(t *testing.T) {
+	policy := static_record_string.NewStaticRecordStringPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_string", drive[static_record_string.StaticRecordStringState, static_record_string.StaticRecordStringEvent](&policy, map[string]func() any{
+		"last":   func() any { return labelledJSON(policy.Last()) },
+		"note":   func() any { return policy.Note() },
+		"labels": func() any { return labelledsJSON(policy.Labels()) },
 		"errors": func() any { return policy.Errors() },
 	}))
 }
