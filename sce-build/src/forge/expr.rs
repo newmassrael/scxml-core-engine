@@ -5713,6 +5713,9 @@ fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
 // * Hex/bin/oct literal in float context: hard error.
 
 fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    // The context a quantity-annotated output asks for is its numeric base
+    // (see `rust_coerce`), or the push-downs below never see a float.
+    let expected = expected.strip_quantity();
     // Push-down: for arithmetic binary ops with a concrete-float expected
     // type, emit operands at the expected type directly. Without this, a
     // mixed expression like `raw * 0.1` (raw: UInt16, expected: Float64)
@@ -6094,6 +6097,11 @@ fn rust_coerce(
     node: &TypedExpr,
 ) -> Result<String, Refusal> {
     use InferredType::*;
+    // A quantity is emitted as its numeric base: the unit is a check the
+    // document passed, not a type Rust has. Left on, `raw_temp * 0.5` with
+    // `raw_temp: i8` carrying `sce:quantity` fell through to the final arm and
+    // lost the `as f64` that the same expression without the annotation has.
+    let (from, to) = (from.strip_quantity(), to.strip_quantity());
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return Ok(raw);
     }
@@ -6239,6 +6247,9 @@ fn rust_int_type(signed: bool, bits: u8) -> &'static str {
 // `go_conditional` for how one is lowered.
 
 fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    // The context a quantity-annotated output asks for is its numeric base
+    // (see `rust_coerce`), or the push-down below never sees a float.
+    let expected = expected.strip_quantity();
     if let ExprKind::Conditional {
         condition,
         consequent,
@@ -6572,6 +6583,10 @@ fn go_binop(op: BinOp) -> &'static str {
 
 fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    // A quantity is emitted as its numeric base (see `rust_coerce`): Go has no
+    // implicit int-to-float conversion, so `raw_temp * 0.5` with an annotated
+    // `int8` input was `0.5 truncated to int8`.
+    let (from, to) = (from.strip_quantity(), to.strip_quantity());
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }

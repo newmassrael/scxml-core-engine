@@ -96,13 +96,15 @@ fn transform_quantity_rust() {
     let code = compile_first_file(TRANSFORM_FIXTURE, sce_build::generator::Language::Rust)
         .expect("Rust transform compile");
     assert_doc_block_contains(&code, sce_build::generator::Language::Rust);
-    // Body expression should retain the integer raw_temp identifier
-    // and the literal `0.5` (untyped float adopts the f64 base, the
-    // emitter then keeps the literal as-is since the surrounding
-    // arithmetic is float-typed).
+    // The input is an `i8` and the arithmetic is `f64`: Rust has no implicit
+    // integer-to-float conversion, so the operand must be converted. The
+    // quantity annotation does not change what Rust is asked to compile, and
+    // the same body without it already carried the cast; this body used to be
+    // `raw_temp * 0.5 + -40.0`, which `rustc` refuses (`cannot multiply i8 by
+    // {float}`) and which a check that only looked for the two names accepted.
     assert!(
-        code.contains("raw_temp") && code.contains("0.5"),
-        "Rust body should reference raw_temp and the scale literal — got:\n{code}",
+        code.contains("raw_temp as f64 * 0.5"),
+        "Rust body should convert the i8 operand before the float arithmetic — got:\n{code}",
     );
 }
 
@@ -132,6 +134,13 @@ fn transform_quantity_go() {
     let code = compile_first_file(TRANSFORM_FIXTURE, sce_build::generator::Language::Go)
         .expect("Go transform compile");
     assert_doc_block_contains(&code, sce_build::generator::Language::Go);
+    // Go has no implicit integer-to-float conversion either: an `int8` times
+    // `0.5` is `0.5 truncated to int8`. The Go kind oracle builds this
+    // document, so the cast is held to the compiler there as well.
+    assert!(
+        code.contains("float64(raw_temp) * 0.5"),
+        "Go body should convert the int8 operand before the float arithmetic — got:\n{code}",
+    );
 }
 
 #[test]
