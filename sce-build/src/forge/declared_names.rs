@@ -214,6 +214,20 @@ const HELPER_ROWS: &[Row] = &[Row {
     attr: "name",
 }];
 
+/// A procedure's states, final or not: the members of one enum.
+const STATE_ROWS: &[Row] = &[
+    Row {
+        ns: Ns::Scxml,
+        element: "state",
+        attr: "id",
+    },
+    Row {
+        ns: Ns::Scxml,
+        element: "final",
+        attr: "id",
+    },
+];
+
 /// Every namespace a forge document's declarations share, in the order a
 /// refusal prefers: the narrow scopes first, so that the message names the
 /// pair as the author would.
@@ -351,6 +365,22 @@ pub const SCOPES: &[Scope] = &[
                 cases: [S, N, N, N, S, S],
             },
         ],
+    },
+    // A procedure's states are the members of one enum, spelled Pascal in Rust,
+    // C++, Kotlin and Python, so `init` and `init__` are both `Init`: Python
+    // refuses the class (`TypeError: 'Init' already defined`) and the other
+    // three declare one variant twice. Go and C11 write a state under a
+    // prefix, which the measurement cannot see, so nothing is claimed for them;
+    // the refusal is for every backend all the same.
+    Scope {
+        id: "procedure-state",
+        slots: &[Slot {
+            noun: "state",
+            rows: STATE_ROWS,
+            kinds: &["procedure"],
+            direction: None,
+            cases: [P, P, P, N, P, N],
+        }],
     },
     // In C++, Go and Python a member and a method of one name are one name:
     // the class (the struct) holds both in one table. Rust and Kotlin keep a

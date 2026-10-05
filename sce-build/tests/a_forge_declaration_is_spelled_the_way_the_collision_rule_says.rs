@@ -461,6 +461,9 @@ fn measure_the_spelling_of_every_declaring_attribute() {
         (Ns::Sce, "cycle", "id"),
         (Ns::Sce, "import", "as"),
         (Ns::Sce, "context", "id"),
+        // A procedure's states are the members of an enum.
+        (Ns::Scxml, "state", "id"),
+        (Ns::Scxml, "final", "id"),
     ];
     let documents = forge_fixtures();
 

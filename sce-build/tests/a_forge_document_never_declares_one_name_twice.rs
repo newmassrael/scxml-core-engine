@@ -152,6 +152,25 @@ fn procedure_with_datum_and_helper(datum: &str, helper: &str) -> String {
     )
 }
 
+/// Two states of one procedure: members of one enum, which Rust, C++, Kotlin
+/// and Python spell Pascal. The second is declared before anything names it, so
+/// that the refusal's row and column are the declaration's.
+fn procedure_with_two_states(first: &str, second: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="{first}" version="1.0">
+  <state id="{first}">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
+    </onentry>
+    <transition event="ok" target="{first}"/>
+  </state>
+  <final id="{second}"/>
+</scxml>"#
+    )
+}
+
 fn parse(document: &str) -> Result<(), Located<ForgeError>> {
     let label = sce_build::DocumentLabel {
         identifier: "probe",
@@ -232,6 +251,15 @@ const CASES: &[Pair] = &[
         second: "seed_key",
         document: procedure_with_datum_and_helper,
         noun: "helper",
+    },
+    // `init` and `init__` are both the enum member `Init`, which Python refuses
+    // at import and the other three declare twice.
+    Pair {
+        scope: "procedure-state",
+        first: "init",
+        second: "init__",
+        document: procedure_with_two_states,
+        noun: "state",
     },
     // The scope that compares two kinds of declaration: a member
     // `has_x` and a flag `hasX` are one name in C++, Go and Python, where a
