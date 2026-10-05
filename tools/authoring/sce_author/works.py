@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import threading
+import uuid
 
 from . import process
 from .errors import AuthoringError
@@ -120,19 +122,28 @@ def read_work(work: str) -> dict:
     open, the requirement list the text was read into, and whether the owner has
     accepted the design (`acceptance`, only for a work that has a list and a model).
 
-    Several reads of the command layer, so a save between them is possible. That is
-    not hidden: every revision in the answer is the one that was read, and each
-    `standing` is the command layer's own comparison of a `written_for` with the
-    text's head at the moment of that read.
+    The text, the model, the answers and the list are ONE state of the work
+    (`read_work_snapshot`), so a save or a publication cannot land between them: a
+    model of one generation is never read beside a list of another. `bundle` is the
+    bundle they are the ones of, for a work that keeps bundles, and `request` is
+    where the work's latest request stands (the owner may have asked for a model that
+    nobody has taken yet). The acceptance is the product's to answer and is asked
+    after, so it is the one part that is not of the same moment; each `standing` is
+    the command layer's own comparison of a `written_for` with the text's head.
     """
-    head = call_work("read_work", {"id": work})
-    source = call_work("read_source", {"id": work})["source"]
-    model = call_work("read_model", {"id": work})
-    requirements = read_requirements(work)
-    return {"work": head["work"], "source": source, "model": _model_of(model),
-            "answers": read_answers(work), "requirements": requirements,
+    state = call_work("read_work_snapshot", {"id": work})
+    source = state["source"]
+    source_head = source["revision"] if source is not None else None
+    requirements = _requirements_of(state["requirements"], state["requirements_standing"],
+                                    source_head)
+    return {"work": state["work"], "source": source,
+            "model": _model_of({"model": state["model"], "standing": state["model_standing"],
+                                "source_head": source_head}),
+            "answers": state["answers"], "requirements": requirements,
             "acceptance": (read_acceptance(work)
-                           if requirements is not None and model["model"] is not None else None)}
+                           if requirements is not None and state["model"] is not None else None),
+            "bundle": state["bundle"],
+            "request": call_work("read_work_heads", {"id": work})["request"]}
 
 
 def read_answers(work: str) -> dict | None:
@@ -152,11 +163,16 @@ def read_requirements(work: str) -> dict | None:
     sidecar is left out for a list that came without one.
     """
     answer = call_work("read_requirements", {"id": work})
-    held = answer["requirements"]
+    return _requirements_of(answer["requirements"], answer["standing"], answer["source_head"])
+
+
+def _requirements_of(held: dict | None, standing: str | None,
+                     source_head: str | None) -> dict | None:
+    """The requirement list as a client reads it, from what the command layer answered."""
     if held is None:
         return None
     read = {"revision": held["revision"], "written_for": held["written_for"],
-            "standing": answer["standing"], "source_head": answer["source_head"],
+            "standing": standing, "source_head": source_head,
             "manifest_text": held["manifest"]}
     if held["sidecar"] is not None:
         read["sidecar_text"] = held["sidecar"]
@@ -241,3 +257,212 @@ def save_model(work: str, base: str | None, written_for: str | None, *,
              {"documents": documents, **({"entry": entry} if entry is not None else {})})
     return call_work("save_model", {"id": work, "base": base,
                                     "written_for": written_for, **model})
+
+
+# What a request's holder is told when the request is no longer its to work on: the owner
+# called it off, a save moved the text it was asked about, or somebody took it.
+_ENDED_KINDS = frozenset({"request-ended", "not-holder", "request-held", "not-found"})
+
+# A lease is sixty seconds unless asked otherwise. A quarter of it is time enough for three
+# renewals to fail before the request is read as let go of.
+HEARTBEAT_SECONDS = 15.0
+
+# How many requests that ended under a client are remembered, to tell it at its next word.
+_LOST_KEPT = 64
+
+
+class Generation:
+    """A request this process holds for an authoring client: whose it is to work on, which
+    attempt, and what was said of the work along the way."""
+
+    def __init__(self, work: str, request: str, attempt: int, source: str):
+        self.work = work
+        self.request = request
+        self.attempt = attempt
+        # The text revision the request was asked about: what a model written for it is
+        # written for, whatever the client says.
+        self.source = source
+        # Checks only the client's side ran, kept as it reports them when the generation
+        # is finished (the core runs its own check of the model at that step).
+        self.checks: list[dict] = []
+
+
+class Generations:
+    """The generations begun through this process, and the renewing of their leases.
+
+    A request is held for a lease that runs out. A client in a person's own terminal
+    thinks, drafts and checks for longer than a lease, and never says it is still there:
+    the only thing that can is this process, which is why it renews them itself. A
+    request whose lease is not renewed is read as interrupted, by the clock, by every
+    screen of the owner -- so a process that dies leaves the owner told, and a process
+    that lives leaves the request running.
+
+    What ends a generation is the core's word: a renewal or a save that is refused
+    because the request ended (the owner called it off, the text it was asked about was
+    saved) or is somebody else's. It is remembered and told at the client's next word,
+    and nothing is renewed for it again.
+    """
+
+    def __init__(self, call=None, interval: float = HEARTBEAT_SECONDS,
+                 holder: str | None = None):
+        self._call = call_work if call is None else call
+        self._interval = interval
+        # The name every word to the core is said under; a request names its holder.
+        self.holder = holder if holder is not None else f"mcp-{os.getpid()}"
+        self._held: dict[str, Generation] = {}
+        self._lost: dict[str, WorksError] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def begin(self, work: str) -> Generation:
+        """Take the work's request for this process, or ask for one when there is none.
+
+        The request the owner made is the one taken (`queued`, or `interrupted` as the
+        next attempt); one held by somebody else is refused as the core refuses it
+        (`request-held`). A work nobody asked a model for is asked for one here, from
+        the text and the answers as they are now, so that every model written to a work
+        is the answer to a request and the owner sees it as one. Beginning again for a
+        work this process already holds is the generation it holds.
+        """
+        with self._lock:
+            for held in self._held.values():
+                if held.work == work:
+                    return held
+        state = self._call("read_work_snapshot", {"id": work})
+        source = state["source"]
+        if source is None:
+            raise WorksError(
+                "no-text", f"work `{work}` has no text yet: there is nothing to write a model "
+                           f"from, and the owner writes it in the application")
+        latest = self._call("read_work_heads", {"id": work})["request"]
+        resume = False
+        if latest is not None and latest["state"] in ("queued", "running", "interrupted"):
+            request = latest["id"]
+            resume = latest["state"] == "interrupted"
+        else:
+            answers = state["answers"]
+            made = self._call("request_generation", {
+                "id": work, "key": f"mcp-{uuid.uuid4().hex}", "origin": "mcp",
+                "expect": {"source": source["revision"],
+                           "answers": answers["revision"] if answers is not None else None}})
+            request = made["request"]["id"]
+        claimed = self._call("claim_request", {
+            "id": work, "request": request, "holder": self.holder, "resume": resume})["request"]
+        generation = Generation(work, request, claimed["attempt"], claimed["inputs"]["source"])
+        with self._lock:
+            self._held[request] = generation
+            self._lost.pop(request, None)
+            self._start()
+        return generation
+
+    def get(self, request: str) -> Generation:
+        """The generation of `request`, or why it is not this process's to speak for."""
+        with self._lock:
+            held = self._held.get(request)
+            lost = self._lost.get(request)
+        if held is not None:
+            return held
+        if lost is not None:
+            raise WorksError(
+                "generation-ended",
+                f"request {request} is no longer yours to work on ({lost}): read the work "
+                f"again, and begin another generation if the owner still wants one",
+                {"reason": lost.kind, **(lost.detail if isinstance(lost.detail, dict) else {})})
+        raise WorksError(
+            "unknown-generation",
+            f"this server did not begin request {request}, or let go of it: begin it with "
+            f"works_begin_generation (a request that was let go of is taken again there)")
+
+    def save_candidate(self, request: str, model: dict | None = None,
+                       requirements: dict | None = None) -> dict:
+        """Write the model, the requirement list, or both for the request, as its holder.
+        What is written is the request's and not the work's: it becomes the work's when
+        the generation is finished."""
+        generation = self.get(request)
+        return self._said(generation, "save_request_candidate", {
+            **(model or {}), **(requirements or {})})
+
+    def finish(self, request: str) -> dict:
+        """Say the generation is done: the core checks the model itself and, when it
+        accepts, publishes the model and the list together as one bundle. A refusal leaves
+        the generation held, to be said again once the candidate is fixed."""
+        generation = self.get(request)
+        done = self._said(generation, "complete_request", {"checks": list(generation.checks)})
+        self._release(request)
+        return done
+
+    def fail(self, request: str, reason: str) -> dict:
+        """Say the generation could not be done, and why, and let go of it."""
+        generation = self.get(request)
+        failed = self._said(generation, "fail_request", {"reason": reason})
+        self._release(request)
+        return failed
+
+    def _said(self, generation: Generation, command: str, extra: dict) -> dict:
+        try:
+            return self._call(command, {"id": generation.work, "request": generation.request,
+                                        "holder": self.holder, "attempt": generation.attempt,
+                                        **extra})
+        except WorksError as exc:
+            if exc.kind in _ENDED_KINDS:
+                self._lose(generation.request, exc)
+            raise
+
+    def beat(self) -> None:
+        """Renew every held generation once. A renewal the core did not answer is tried
+        again at the next beat: the lease runs out only if it keeps not answering."""
+        if self._stop.is_set():
+            return
+        with self._lock:
+            held = list(self._held.values())
+        for generation in held:
+            try:
+                self._call("heartbeat_request", {
+                    "id": generation.work, "request": generation.request,
+                    "holder": self.holder, "attempt": generation.attempt})
+            except WorksError as exc:
+                if exc.kind in _ENDED_KINDS:
+                    self._lose(generation.request, exc)
+
+    def close(self) -> None:
+        """Stop renewing. What is held is let go of by the lease running out."""
+        self._stop.set()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5)
+
+    def _lose(self, request: str, why: WorksError) -> None:
+        with self._lock:
+            if self._held.pop(request, None) is not None:
+                self._lost[request] = why
+                while len(self._lost) > _LOST_KEPT:
+                    del self._lost[next(iter(self._lost))]
+
+    def _release(self, request: str) -> None:
+        with self._lock:
+            self._held.pop(request, None)
+
+    def _start(self) -> None:
+        """Start the renewing, once. Called with the lock held."""
+        if self._thread is None and not self._stop.is_set():
+            self._thread = threading.Thread(target=self._run, name="generation-leases",
+                                            daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            self.beat()
+
+
+_GENERATIONS: Generations | None = None
+_GENERATIONS_LOCK = threading.Lock()
+
+
+def generations() -> Generations:
+    """The generations of this process: one set, because one process is one holder."""
+    global _GENERATIONS
+    with _GENERATIONS_LOCK:
+        if _GENERATIONS is None:
+            _GENERATIONS = Generations()
+        return _GENERATIONS

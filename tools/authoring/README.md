@@ -918,7 +918,9 @@ on the pseudocode page, whose steps are the reading, and in its field table.
 The review artefact follows the kind's shape.
 
 **Works: the specification the owner keeps in the workbench application.**
-`works_list`, `works_read`, `works_save_model` and `works_save_requirements`
+`works_list`, `works_read`, `works_save_model`, `works_save_requirements` and
+the three that take, finish and give up a generation (`works_begin_generation`,
+`works_finish_generation`, `works_fail_generation`)
 connect this server to the application (`app/`, `app-core/`). The owner writes the specification there and
 asks an AI client to model it; the client reads the text from the work, writes
 and checks the model as above, and saves it back, where the owner sees the
@@ -976,6 +978,33 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   `sidecar_text` byte for byte (the owner's acceptance pins their hash), the text
   revision it was `written_for`, and its `standing` against the text, so a list
   read from an earlier text is `behind` and the client is told to build it again.
+- **A model can be asked for, and written for the request.** The owner asks for a
+  model in the application (`works_read` gives `request`: `queued` means nobody
+  has taken it). `works_begin_generation` takes that request, or makes one for a
+  work nobody asked for, and answers with the work as `works_read` gives it and
+  `generation` (`request`, `attempt`, and the `source` revision the request is about).
+  `works_save_model` and `works_save_requirements` then take that `request`: what
+  they save is written for the request and is not the work's model until
+  `works_finish_generation`, which has SCE check the model itself and publishes the
+  model and the requirement list together as one bundle, so the owner never sees a
+  model of one draft beside a list of another. What the client ran that the core
+  cannot (the decisions the draft was held to) is kept beside the core's check as
+  the client reported it. A draft is written for the text its request is about:
+  a `source_revision` that says another is refused. `works_fail_generation` says
+  the model could not be written and why, and the owner is told in the application.
+  - **This process keeps the claim alive.** A request is held for a lease that runs
+    out, and a client that thinks for longer never says it is still there; the
+    server renews the lease itself (`works.Generations`, a thread, every fifteen
+    seconds of a sixty-second lease) for as long as it runs, so the owner reads
+    the request as running, and as interrupted if the process dies. A request the
+    owner called off, or whose text was saved, is refused at the client's next word
+    (`request-ended`, then `generation-ended`), and nothing is renewed for it again.
+    A request the application's own executor holds is refused (`request-held`).
+  - **A work that has had a model published this way refuses the plain saves**
+    (`bundled-work`): one half saved alone is the pair the bundle exists to keep
+    from being read. A work that never asked for a generation is saved to as it
+    always was. `works_read` reads the text, model, answers and list as one state of
+    the work, and says the `bundle` they are the ones of.
 - **The owner's acceptance is read and never written here.** `works_read` gives
   `acceptance` for a work that has a list and a model: `standing` is `none`,
   `holds`, or `lapsed`, with the product's own sentence of what moved (`lapse`,

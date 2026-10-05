@@ -34,6 +34,9 @@ So the shape a caller gets is:
     works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
     works_save_model        save the model written for it, once the product accepts it
     works_save_requirements save the requirement list read from its text, once the product loads it
+    works_begin_generation  take the work's request for a model (or make one), and hold it while you write
+    works_finish_generation say it is done: the model and the list become the work's together
+    works_fail_generation   say it could not be done, and why
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -246,7 +249,17 @@ SERVER_INSTRUCTIONS = (
     "exists (`acceptance`) and whether it still holds. When it holds, the "
     "owner has accepted this design: do not write a new draft unless they "
     "ask for one, because a new draft of the same specification is never "
-    "the same document. When it lapsed, tell the owner what SCE says moved."
+    "the same document. When it lapsed, tell the owner what SCE says moved. "
+    "The owner can also ask for a model in the application (works_read "
+    "gives `request`: queued means nobody has taken it). Take it with "
+    "works_begin_generation, which this server then keeps alive while you "
+    "write; save the model and the requirement list with works_save_model "
+    "and works_save_requirements giving that `request`, and say "
+    "works_finish_generation: SCE checks the model itself and the model and "
+    "the list become the work's together, as one. A work that has had a "
+    "model published that way refuses the plain saves (`bundled-work`): "
+    "begin a generation. If you cannot finish, say works_fail_generation "
+    "with the reason, so the owner is told."
 )
 
 _PACK_ARG = {
@@ -1357,7 +1370,14 @@ TOOLS = [
                     "The `source.revision` of the specification text the model was "
                     "written from.")},
                 "base": {"type": "string", "description": (
-                    "The `model.revision` read from the work; omit for a first model.")},
+                    "The `model.revision` read from the work; omit for a first model. "
+                    "Not used with `request`.")},
+                "request": {"type": "string", "description": (
+                    "The `request.id` works_begin_generation returned. With it the model is "
+                    "written for that request and is not the work's until "
+                    "works_finish_generation; without it the model is saved as the work's "
+                    "now, which a work that has had a model published by a generation "
+                    "refuses (`bundled-work`).")},
                 # The check that gates the save is validate_scxml's, so it is held
                 # to the owner's profile the same way.
                 **_PROFILE_INPUT,
@@ -1395,7 +1415,82 @@ TOOLS = [
                 "source_revision": {"type": "string", "description": (
                     "The `source.revision` of the specification text the list was read from.")},
                 "base": {"type": "string", "description": (
-                    "The `requirements.revision` read from the work; omit for a first list.")},
+                    "The `requirements.revision` read from the work; omit for a first list. "
+                    "Not used with `request`.")},
+                "request": {"type": "string", "description": (
+                    "The `request.id` works_begin_generation returned. With it the list is "
+                    "written for that request and is not the work's until "
+                    "works_finish_generation; without it the list is saved as the work's "
+                    "now, which a work that has had a model published by a generation "
+                    "refuses (`bundled-work`).")},
+            },
+        },
+    },
+    {
+        "name": "works_begin_generation",
+        "description": (
+            "Take a work's request for a model, and hold it while you write one. The "
+            "owner asks for a model in the application (works_read says so: `request` "
+            "is queued); this takes that request, or makes one when none is open, so "
+            "that the owner sees the work being written and what comes of it. The "
+            "answer is the work as works_read gives it, and `generation`: the request "
+            "you hold (`generation.request`: give it as `request` to works_save_model, "
+            "works_save_requirements and works_finish_generation) and the text it was "
+            "asked about (`generation.source`). This server renews the claim itself while "
+            "it runs, so the owner reads the request as running and not as let go of; "
+            "when the owner calls it off, or saves the text it was asked about, your "
+            "next word is refused (`generation-ended`) and you read the work again. A "
+            "request the owner's own application is working on is refused "
+            "(`request-held`): say so, and write nothing. Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+            },
+        },
+    },
+    {
+        "name": "works_finish_generation",
+        "description": (
+            "Say the generation is done: SCE checks the model you saved for the request, "
+            "and when it accepts, the model and the requirement list become the work's "
+            "together, as one bundle (`bundle`), so the owner never sees a model of one "
+            "draft beside a list of another. Save both first, with works_save_model and "
+            "works_save_requirements giving `request`: a request with only one of them is "
+            "refused (`no-candidate`). A model SCE refuses is not published, and the "
+            "generation is still yours to fix and finish again (`check-refused`). Saying "
+            "it again is the same publication. Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work", "request"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "request": {"type": "string", "description": (
+                    "The `request.id` works_begin_generation returned.")},
+            },
+        },
+    },
+    {
+        "name": "works_fail_generation",
+        "description": (
+            "Say the generation could not be done, and why, so the owner is told in the "
+            "application and nothing is left running that is not. Use it when the "
+            "specification does not let you write a model (a contradiction, a missing "
+            "decision the owner has to make), not for a draft SCE refused: fix that and "
+            "finish again. Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work", "request", "reason"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "request": {"type": "string", "description": (
+                    "The `request.id` works_begin_generation returned.")},
+                "reason": {"type": "string", "description": (
+                    "Why, in a sentence the owner reads.")},
             },
         },
     },
@@ -2774,12 +2869,42 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
+# What a client does about a refusal that is not a mistake in its arguments: the state of
+# the work is not what it assumed, and the next step is a read or a different tool.
+_WORKS_REFUSED_NEXT = {
+    "bundled-work": (
+        "this work's model and requirement list are published by a generation, and are not "
+        "saved one half at a time: take the request with works_begin_generation, save both "
+        "with works_save_model and works_save_requirements giving its `request`, then say "
+        "works_finish_generation"),
+    "generation-ended": (
+        "the request is not yours any more: read the work again with works_read, and begin "
+        "another generation only if the owner still wants one"),
+    "request-ended": (
+        "the request ended (the owner called it off, or the text it was asked about was "
+        "saved): read the work again with works_read"),
+    "request-held": (
+        "the owner's application, or another client, is working on this request: write nothing, "
+        "and tell the owner"),
+    "no-candidate": (
+        "save both the model and the requirement list giving the request, then say "
+        "works_finish_generation again"),
+    "check-refused": (
+        "SCE refused what was written for the request, and it is still yours: fix the draft, "
+        "save it again giving the request, and say works_finish_generation again"),
+    "candidate-moved": (
+        "the request was written to after the check ran: say works_finish_generation again"),
+}
+
+
 def _works_refused(exc: works.WorksError) -> dict:
     """A refusal of the works folder, as the data a client branches on and the
     sentence it reads: the command layer's `kind`, its words, and its facts."""
     answer = {"refused": exc.kind, "message": str(exc)}
     if exc.detail is not None:
         answer["detail"] = exc.detail
+    if exc.kind in _WORKS_REFUSED_NEXT:
+        answer["next"] = _WORKS_REFUSED_NEXT[exc.kind]
     return _failure(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -2818,9 +2943,18 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
     staging.refuse_works("works_read")
     work = _name_arg(args, "work", "a work's id", required=True)
     try:
-        read = works.read_work(work)
+        read = _work_reading(work, staging)
     except works.WorksError as exc:
         return _works_refused(exc)
+    return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
+
+
+def _work_reading(work: str, staging: _Staging,
+                  generation: works.Generation | None = None) -> dict:
+    """A work as a client reads it, and what to do next: the one reading `works_read` and
+    `works_begin_generation` give, so that what a client is told when it begins is what it
+    would have been told by reading. `generation` is the one this call is the beginning of."""
+    read = works.read_work(work)
     answers = (read["answers"] or {}).get("entries") or {}
     markers: list[dict] = []
     if read["model"] is not None:
@@ -2844,10 +2978,8 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
     if read["source"] is None:
         read["next"] = "this work has no text yet: tell the owner, and write no model"
     else:
-        read["next"] = (
-            "write the model from `source.text`, check it with validate_scxml, then "
-            "save it with works_save_model giving source_revision = source.revision"
-            + (" and base = model.revision" if read["model"] is not None else ""))
+        read["next"] = ("write the model from `source.text`, check it with validate_scxml, then "
+                        + _saving_next(read, generation))
         if answers:
             read["next"] += (
                 "; the owner has answered " + str(len(answers)) + " question(s) (`answers`): "
@@ -2855,14 +2987,47 @@ def _works_read_tool(args: dict, staging: _Staging) -> dict:
                 "leave an answered question sce:unresolved, and hand `decisions_text` to "
                 "validate_scxml and decisions as the decision record. works_save_model "
                 "holds the draft to these answers")
-        read["next"] += _requirements_next(read["requirements"])
+        read["next"] += _requirements_next(read["requirements"], generation is not None
+                                           or _by_generation(read))
         read["next"] = _acceptance_next(read["acceptance"], read["next"])
-    return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
+    return read
 
 
-def _requirements_next(requirements: dict | None) -> str:
+def _by_generation(read: dict) -> bool:
+    """Whether a work's model is written for a request and published, and not saved as it
+    is: the work has had one published, or the owner has asked for one nobody has finished."""
+    request = read.get("request")
+    return read.get("bundle") is not None or (
+        request is not None and request["state"] in ("queued", "running", "interrupted"))
+
+
+def _saving_next(read: dict, generation: works.Generation | None) -> str:
+    """How the model gets to the work: written for a request and published with the
+    requirement list, or saved as it is for a work that has only ever been written to so."""
+    if generation is not None:
+        return (f"save it with works_save_model giving request = {generation.request}, save "
+                f"the requirement list with works_save_requirements giving the same request, "
+                f"then say works_finish_generation: SCE checks the model, and the model and the "
+                f"list become the work's together")
+    if _by_generation(read):
+        return ("begin a generation with works_begin_generation (the owner's request for a "
+                "model, or one made for you), save the model and the requirement list giving "
+                "its request, then say works_finish_generation; a work that has had a model "
+                "published refuses the plain saves")
+    return ("save it with works_save_model giving source_revision = source.revision"
+            + (" and base = model.revision" if read["model"] is not None else ""))
+
+
+def _requirements_next(requirements: dict | None, by_generation: bool = False) -> str:
     """What a client is told to do about a work's requirement list: save one when there
     is none, and again when the text moved on after the list was read from it."""
+    # A generation publishes the model and the list together, so the list is part of what it
+    # makes, whatever the list now is, and a plain save of one half is not what is asked.
+    if by_generation:
+        return ("; the requirement list is written with the model, for the same request: build "
+                "it from `source.text` with scxml_requirement_set and save it with "
+                "works_save_requirements giving the request, so the owner can accept a design "
+                "against it")
     if requirements is None:
         return ("; this work keeps no requirement list yet: build one from `source.text` with "
                 "scxml_requirement_set and save it with works_save_requirements, so the owner "
@@ -2903,6 +3068,16 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
     work = _name_arg(args, "work", "a work's id", required=True)
     source_revision = _revision_arg(args, "source_revision")
     base = _revision_arg(args, "base")
+    request = _name_arg(args, "request", "the request id works_begin_generation returned")
+    generation = None
+    if request is not None:
+        # Before the product is asked anything: a request that is no longer this process's
+        # makes everything after it work for nobody.
+        try:
+            generation = _generation_for(work, request, source_revision)
+        except works.WorksError as exc:
+            return _works_refused(exc)
+        source_revision = generation.source
     documents, document, model = _model_given(args, staging)
     profile = _profile_file(args, staging)
     # One document is checked as one; several are checked as the SET they are, which
@@ -2918,7 +3093,11 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         held, refused = _held_to_the_answers(work, document, source_revision, args, staging)
         if refused:
             return _failure(refused)
-        saved = works.save_model(work, base, source_revision, **model)
+        if generation is None:
+            saved = works.save_model(work, base, source_revision, **model)
+        else:
+            saved = works.generations().save_candidate(request, model=model)
+            _note_decisions(generation, held)
     except works.WorksError as exc:
         return _works_refused(exc)
     answer = {"version": 1, "work": work, **saved}
@@ -2929,7 +3108,47 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         answer["open"] = matters
         answer["next"] = ("saved is not finished: tell the owner each line of `open` -- "
                           "the model leaves them to a person")
+    if generation is not None:
+        answer["next"] = _candidate_next(saved["request"], answer.get("next"))
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _generation_for(work: str, request: str, source_revision: str | None) -> works.Generation:
+    """The generation a client names, when it is this process's, for this work, and about
+    the text the client says it wrote from."""
+    generation = works.generations().get(request)
+    if generation.work != work:
+        raise ToolArgumentError(
+            f"request {request} is a request of work `{generation.work}`, not of `{work}`")
+    if source_revision is not None and source_revision != generation.source:
+        raise ToolArgumentError(
+            f"request {request} was asked about the text {generation.source}, and "
+            f"'source_revision' says the draft was written from {source_revision}: read the "
+            f"work again; a draft is written for the text its request is about")
+    return generation
+
+
+def _note_decisions(generation: works.Generation, held: dict | None) -> None:
+    """Keep what is said of the owner's answers for the generation's finish: the draft that
+    was just saved was held to them, or the owner has answered nothing to hold it to."""
+    generation.checks[:] = [c for c in generation.checks if c["name"] != "decisions"]
+    if held is not None:
+        generation.checks.append({"name": "decisions", "verdict": "accepted"})
+
+
+def _candidate_next(request: dict, before: str | None) -> str:
+    """What a client is told after it wrote for a request: the half that is still missing,
+    or that it can say it is done."""
+    candidate = request.get("candidate") or {}
+    missing = [what for key, what in (("model", "the model (works_save_model)"),
+                                      ("requirements",
+                                       "the requirement list (works_save_requirements)"))
+               if candidate.get(key) is None]
+    after = (f"still to write for the request: {' and '.join(missing)}, giving "
+             f"request = {request['id']}" if missing else
+             "both halves are written: say works_finish_generation, and SCE checks the model "
+             "and publishes it with the list")
+    return f"{before}; {after}" if before else after
 
 
 # The loader of a requirement list does not look at a design, so an empty statechart
@@ -2953,6 +3172,13 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
     work = _name_arg(args, "work", "a work's id", required=True)
     source_revision = _revision_arg(args, "source_revision")
     base = _revision_arg(args, "base")
+    request = _name_arg(args, "request", "the request id works_begin_generation returned")
+    generation = None
+    if request is not None:
+        try:
+            generation = _generation_for(work, request, source_revision)
+        except works.WorksError as exc:
+            return _works_refused(exc)
     manifest_text, sidecar_text = args.get("manifest_text"), args.get("sidecar_text")
     if not isinstance(manifest_text, str) or not manifest_text.strip():
         raise ToolArgumentError(
@@ -2968,14 +3194,83 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
                         "work keeps the list it has. Build it again with scxml_requirement_set "
                         "and save it unchanged.\n" + refusal)
     try:
-        saved = works.save_requirements(work, base, source_revision,
-                                        manifest=manifest_text, sidecar=sidecar_text)
+        if generation is None:
+            saved = works.save_requirements(work, base, source_revision,
+                                            manifest=manifest_text, sidecar=sidecar_text)
+        else:
+            saved = works.generations().save_candidate(request, requirements={
+                "manifest": manifest_text,
+                **({"sidecar": sidecar_text} if sidecar_text is not None else {})})
     except works.WorksError as exc:
         return _works_refused(exc)
     answer = {"version": 1, "work": work, **saved,
               "next": "saved is not accepted: the owner accepts a design against this list "
                       "in the application, and nothing here records it"}
+    if generation is not None:
+        answer["next"] = _candidate_next(saved["request"], None)
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _works_begin_generation_tool(args: dict, staging: _Staging) -> dict:
+    """Take a work's request for this client, and hold it while the client writes.
+
+    ⚠ The claim is this process's to keep: a client that thinks for longer than a lease
+    never says it is still there, and the owner's application would read the request as
+    let go of while it is being worked on. `works.generations()` renews it from a thread,
+    for as long as this server runs.
+    """
+    staging.refuse_works("works_begin_generation")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    try:
+        generation = works.generations().begin(work)
+        read = _work_reading(work, staging, generation)
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    read["generation"] = {"request": generation.request, "attempt": generation.attempt,
+                          "source": generation.source}
+    return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
+
+
+def _generation_of(args: dict, tool: str, staging: _Staging) -> tuple[str, str]:
+    """The `work` and the `request` a generation tool names."""
+    staging.refuse_works(tool)
+    work = _name_arg(args, "work", "a work's id", required=True)
+    request = _name_arg(args, "request", "the request id works_begin_generation returned",
+                        required=True)
+    return work, request
+
+
+def _works_finish_generation_tool(args: dict, staging: _Staging) -> dict:
+    """Say a generation is done, and let the core check what was written and publish it.
+
+    ⚠ The check that decides is the core's own, run on the model as it is stored for the
+    request: what this client says it ran (the decisions it held the draft to) is kept
+    beside it as reported, and is not what makes a bundle.
+    """
+    work, request = _generation_of(args, "works_finish_generation", staging)
+    try:
+        _generation_for(work, request, None)
+        done = works.generations().finish(request)
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    answer = {"version": 1, "work": work, **done,
+              "next": "published: the model and the requirement list are the work's now. Tell "
+                      "the owner; the acceptance of the design is theirs, in the application"}
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+def _works_fail_generation_tool(args: dict, staging: _Staging) -> dict:
+    work, request = _generation_of(args, "works_fail_generation", staging)
+    reason = args.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ToolArgumentError("'reason' has to be a sentence the owner reads, as a string")
+    try:
+        _generation_for(work, request, None)
+        failed = works.generations().fail(request, reason.strip())
+    except works.WorksError as exc:
+        return _works_refused(exc)
+    return _text(json.dumps({"version": 1, "work": work, **failed}, indent=2,
+                            ensure_ascii=False) + "\n")
 
 
 def _model_given(args: dict, staging: _Staging) -> tuple[list[pathlib.Path], pathlib.Path, dict]:
@@ -3057,6 +3352,9 @@ _PACK_FREE = {
     "works_read": _works_read_tool,
     "works_save_model": _works_save_model_tool,
     "works_save_requirements": _works_save_requirements_tool,
+    "works_begin_generation": _works_begin_generation_tool,
+    "works_finish_generation": _works_finish_generation_tool,
+    "works_fail_generation": _works_fail_generation_tool,
     "scxml_kinds": _kinds_tool,
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,

@@ -519,12 +519,236 @@ class TheRequirementsAndTheOwnersAcceptance(unittest.TestCase):
             self.assertNotIn(forbidden, names)
 
 
+@BUILT
+class TheClientTakesTheOwnersRequestForAModel(unittest.TestCase):
+    """The owner asks for a model in the application, and the client that writes it takes the
+    request, writes for it, and says it is done: what it wrote is the work's only then, the
+    model and the requirement list together."""
+
+    QUOTE = "The door opens when the card matches."
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        patch = unittest.mock.patch.dict(
+            os.environ, {"SCE_WORKS_DIR": str(pathlib.Path(self._tmp.name) / "works")})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+        # A keeper of this test's own, that renews nothing while the case runs: what is held
+        # is the case's, and the process's other tests do not find it.
+        keeper = works.Generations(interval=3600.0)
+        self.addCleanup(keeper.close)
+        patch_keeper = unittest.mock.patch.object(works, "_GENERATIONS", keeper)
+        patch_keeper.start()
+        self.addCleanup(patch_keeper.stop)
+        self.work = works.call_work("create_work", {"title": "Door lock"})["id"]
+        self.revision = works.call_work(
+            "save_source", {"id": self.work, "text": SPEC})["revision"]
+        built = data(call("scxml_requirement_set", specification_text=SPEC, requirements=[
+            {"quote": self.QUOTE, "statement": "The door opens for a matching card."}]))
+        self.manifest, self.sidecar = built["manifest_text"], built["sidecar_text"]
+
+    def owner_asks(self, key: str = "press-1") -> str:
+        """The owner's side: the press of the application's button."""
+        return works.call_work("request_generation", {
+            "id": self.work, "key": key, "origin": "gui",
+            "expect": {"source": self.revision}})["request"]["id"]
+
+    def begin(self) -> dict:
+        answer = call("works_begin_generation", work=self.work)
+        self.assertFalse(answer.get("isError"), body(answer))
+        return data(answer)
+
+    def write_both(self, request: str, model: str = DOOR) -> None:
+        saved = call("works_save_model", work=self.work, model_text=model, request=request)
+        self.assertFalse(saved.get("isError"), body(saved))
+        listed = call("works_save_requirements", work=self.work, manifest_text=self.manifest,
+                      sidecar_text=self.sidecar, request=request)
+        self.assertFalse(listed.get("isError"), body(listed))
+
+    def request_of(self, request: str) -> dict:
+        return works.call_work("read_request", {"id": self.work, "request": request})["request"]
+
+    def test_the_request_the_owner_made_is_the_one_the_client_takes(self):
+        asked = self.owner_asks()
+
+        read = data(call("works_read", work=self.work))
+        self.assertEqual(asked, read["request"]["id"])
+        self.assertEqual("queued", read["request"]["state"])
+        self.assertIn("works_begin_generation", read["next"])
+
+        begun = self.begin()
+
+        self.assertEqual(asked, begun["generation"]["request"])
+        self.assertEqual(1, begun["generation"]["attempt"])
+        self.assertEqual(self.revision, begun["generation"]["source"])
+        self.assertIn(f"request = {asked}", begun["next"])
+        seen = self.request_of(asked)
+        self.assertEqual("running", seen["state"])
+        self.assertTrue(seen["lease"]["holder"].startswith("mcp-"), seen["lease"])
+
+    def test_a_work_nobody_asked_for_a_model_is_asked_for_one_by_the_client_that_begins(self):
+        begun = self.begin()
+
+        made = self.request_of(begun["generation"]["request"])
+        self.assertEqual("mcp", made["origin"])
+        self.assertEqual({"source": self.revision, "answers": None}, made["inputs"])
+
+    def test_what_is_written_for_the_request_is_the_works_only_when_it_is_finished(self):
+        request = self.begin()["generation"]["request"]
+
+        saved = data(call("works_save_model", work=self.work, model_text=DOOR, request=request))
+        self.assertIn("requirement list", saved["next"], "the other half is still to write")
+        read = data(call("works_read", work=self.work))
+        self.assertIsNone(read["model"], "a candidate is not the work's model")
+
+        self.write_both(request)
+        finished = call("works_finish_generation", work=self.work, request=request)
+        self.assertFalse(finished.get("isError"), body(finished))
+        done = data(finished)
+
+        self.assertEqual("completed", done["request"]["state"])
+        self.assertRegex(done["bundle"], r"^[0-9a-f]{64}$")
+        read = data(call("works_read", work=self.work))
+        self.assertEqual(DOOR, read["model"]["text"])
+        self.assertEqual("current", read["model"]["standing"])
+        self.assertEqual(self.manifest, read["requirements"]["manifest_text"])
+        self.assertEqual(done["bundle"], read["bundle"])
+        # The core ran its own check of the model, and the bundle says so.
+        bundle = works.call_work("read_bundle", {"id": self.work})["bundle"]["bundle"]
+        self.assertEqual(["core"], [c["by"] for c in bundle["checks"]])
+        self.assertEqual("accepted", bundle["checks"][0]["verdict"])
+
+    def test_a_work_that_had_a_model_published_refuses_the_plain_saves_and_says_what_to_do(self):
+        request = self.begin()["generation"]["request"]
+        self.write_both(request)
+        call("works_finish_generation", work=self.work, request=request)
+
+        refused = call("works_save_model", work=self.work, model_text=DOOR + "<!-- by hand -->\n",
+                       source_revision=self.revision)
+
+        self.assertTrue(refused.get("isError"), body(refused))
+        self.assertEqual("bundled-work", data(refused)["refused"])
+        self.assertIn("works_begin_generation", data(refused)["next"])
+        self.assertIn("works_begin_generation", data(call("works_read", work=self.work))["next"])
+
+    def test_finishing_with_one_half_written_is_refused_and_the_request_stays_the_clients(self):
+        request = self.begin()["generation"]["request"]
+        call("works_save_model", work=self.work, model_text=DOOR, request=request)
+
+        refused = call("works_finish_generation", work=self.work, request=request)
+
+        self.assertEqual("no-candidate", data(refused)["refused"])
+        self.assertEqual(["requirements"], data(refused)["detail"]["missing"])
+        self.assertEqual("running", self.request_of(request)["state"])
+        # Written, and said again: the same generation finishes.
+        call("works_save_requirements", work=self.work, manifest_text=self.manifest,
+             sidecar_text=self.sidecar, request=request)
+        self.assertFalse(call("works_finish_generation", work=self.work,
+                              request=request).get("isError"))
+
+    def test_a_request_the_owner_called_off_is_told_at_the_next_word_and_then_not_spoken_for(self):
+        request = self.begin()["generation"]["request"]
+        works.call_work("cancel_request", {"id": self.work, "request": request})
+
+        told = call("works_save_model", work=self.work, model_text=DOOR, request=request)
+        self.assertEqual("request-ended", data(told)["refused"])
+        self.assertEqual("cancelled", data(told)["detail"]["state"])
+        again = call("works_save_model", work=self.work, model_text=DOOR, request=request)
+
+        self.assertEqual("generation-ended", data(again)["refused"])
+        self.assertIn("works_read", data(again)["next"])
+
+    def test_a_text_the_owner_saved_after_the_client_began_ends_the_request_it_was_asked_about(self):
+        request = self.begin()["generation"]["request"]
+        works.call_work("save_source", {"id": self.work, "text": SPEC + "A second sentence.\n",
+                                        "base": self.revision})
+
+        told = call("works_save_model", work=self.work, model_text=DOOR, request=request)
+
+        self.assertEqual("request-ended", data(told)["refused"])
+        self.assertEqual("superseded", data(told)["detail"]["state"])
+
+    def test_a_request_the_applications_own_executor_holds_is_not_taken(self):
+        asked = self.owner_asks()
+        works.call_work("claim_request",
+                        {"id": self.work, "request": asked, "holder": "adapter-a"})
+
+        refused = call("works_begin_generation", work=self.work)
+
+        self.assertEqual("request-held", data(refused)["refused"])
+        self.assertIn("write nothing", data(refused)["next"])
+
+    def test_a_work_with_no_text_is_not_begun(self):
+        empty = works.call_work("create_work", {"title": "Empty"})["id"]
+
+        refused = call("works_begin_generation", work=empty)
+
+        self.assertEqual("no-text", data(refused)["refused"])
+
+    def test_a_draft_is_written_for_the_text_its_request_is_about(self):
+        request = self.begin()["generation"]["request"]
+
+        refused = call("works_save_model", work=self.work, model_text=DOOR, request=request,
+                       source_revision="f" * 64)
+
+        self.assertTrue(refused.get("isError"))
+        self.assertIn("source_revision", body(refused))
+
+    def test_a_request_is_spoken_for_only_in_its_own_work(self):
+        request = self.begin()["generation"]["request"]
+        other = works.call_work("create_work", {"title": "Other"})["id"]
+
+        refused = call("works_save_model", work=other, model_text=DOOR, request=request)
+
+        self.assertTrue(refused.get("isError"))
+        self.assertIn(f"`{self.work}`", body(refused))
+
+    def test_a_generation_this_server_did_not_begin_is_not_spoken_for(self):
+        asked = self.owner_asks()
+
+        refused = call("works_save_model", work=self.work, model_text=DOOR, request=asked)
+
+        self.assertEqual("unknown-generation", data(refused)["refused"])
+
+    def test_a_client_that_cannot_write_the_model_says_why_and_the_owner_is_told(self):
+        request = self.begin()["generation"]["request"]
+
+        failed = call("works_fail_generation", work=self.work, request=request,
+                      reason="The text never says which cards open the door.")
+
+        self.assertFalse(failed.get("isError"), body(failed))
+        seen = self.request_of(request)
+        self.assertEqual("failed", seen["state"])
+        self.assertEqual("The text never says which cards open the door.", seen["note"])
+
+    def test_the_decisions_the_draft_was_held_to_are_kept_beside_the_cores_check(self):
+        works.call_work("save_answers", {
+            "id": self.work, "answers": {"open-guard": "Any card on the list opens it."}})
+        request = self.begin()["generation"]["request"]
+        # The same door, applying the owner's answer to the question it asked.
+        call("works_save_model", work=self.work, model_text=APPLIES, request=request)
+        call("works_save_requirements", work=self.work, manifest_text=self.manifest,
+             sidecar_text=self.sidecar, request=request)
+
+        finished = call("works_finish_generation", work=self.work, request=request)
+
+        self.assertFalse(finished.get("isError"), body(finished))
+        bundle = works.call_work("read_bundle", {"id": self.work})["bundle"]["bundle"]
+        self.assertEqual([("core", "model"), ("client", "decisions")],
+                         [(c["by"], c["name"]) for c in bundle["checks"]])
+
+
 class TheWorksFolderIsThisMachinesOwn(unittest.TestCase):
     """What needs no binary: the refusals that come before one is run."""
 
     def test_a_remote_caller_is_not_offered_it(self):
         for name, arguments in (("works_list", {}),
                                 ("works_read", {"work": "x"}),
+                                ("works_begin_generation", {"work": "x"}),
+                                ("works_finish_generation", {"work": "x", "request": "req-1"}),
+                                ("works_fail_generation",
+                                 {"work": "x", "request": "req-1", "reason": "no"}),
                                 ("works_save_requirements", {"work": "x", "manifest_text": "{}"}),
                                 ("works_save_model", {"work": "x", "model_text": DOOR})):
             with self.subTest(tool=name):
