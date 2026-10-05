@@ -8,6 +8,9 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
 use sce_forge_runtime::observer::{EventDomain, EventQueue, ThresholdState};
 
 {% if has_event_domain %}

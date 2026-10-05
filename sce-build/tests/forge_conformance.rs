@@ -10589,6 +10589,90 @@ fn forge_crossfile_validator_condition_python() {
     );
 }
 
+// An observer's monitor expression calls the condition it imported. These pin
+// the call as the imported document emits it and the import that makes it
+// resolve: the cross-file matrix below only asks that generation succeed (and
+// that Rust parse), and an observer used to emit the bare alias with no
+// import in all five.
+#[test]
+fn forge_crossfile_observer_condition_cpp() {
+    assert_standalone_forge(
+        "crossfile_observer_condition",
+        "crossfile_observer_condition.h",
+    );
+}
+
+#[test]
+fn forge_crossfile_observer_condition_kotlin() {
+    assert_standalone_forge_kotlin(
+        "crossfile_observer_condition",
+        "CrossfileObserverCondition.kt",
+    );
+}
+
+#[test]
+fn forge_crossfile_observer_condition_rust() {
+    assert_standalone_forge_rust(
+        "crossfile_observer_condition",
+        "crossfile_observer_condition.rs",
+    );
+}
+
+#[test]
+fn forge_crossfile_observer_condition_go() {
+    assert_standalone_forge_go(
+        "crossfile_observer_condition",
+        "crossfile_observer_condition.go",
+    );
+}
+
+#[test]
+fn forge_crossfile_observer_condition_python() {
+    assert_standalone_forge_python(
+        "crossfile_observer_condition",
+        "crossfile_observer_condition.py",
+    );
+}
+
+/// An observer holds a threshold state per monitor and nothing else, so it has
+/// no member for the state of a stateful kind it imports. Accepting the import
+/// emitted `smoother.update(x)` against a member nothing declared, in every
+/// backend and with nothing said; it is refused, in all six.
+#[test]
+fn an_observer_importing_a_stateful_kind_is_refused_in_every_backend() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="observer" version="1.0">
+  <sce:import src="filter_moving_average.scxml" kind="filter" as="smoother"/>
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="alarm" sce:monitor="threshold"
+          sce:enter="smoother.update(coolantTemp) &gt; 110.0"
+          sce:leave="smoother.update(coolantTemp) &lt; 100.0"
+          sce:on-enter="raiseAlarm" sce:on-leave="clearAlarm"/>
+  </datamodel>
+</scxml>"#;
+    for lang in SIX_BACKENDS {
+        let refusal = match sce_build::compile_forge_with_imports(
+            document,
+            sce_build::DocumentLabel::symmetric("observer_with_a_filter"),
+            *lang,
+            &resource_dir(),
+            &golden_options(*lang),
+        ) {
+            Ok(_) => panic!("{lang:?}: an observer cannot hold a filter's state"),
+            Err(refusal) => refusal,
+        };
+        let message = refusal.error.to_string();
+        assert!(
+            message.contains("observer 'observer_with_a_filter'")
+                && message.contains("'smoother'")
+                && message.contains("holds state"),
+            "{lang:?}: the refusal names the observer, the import and why: {message}"
+        );
+    }
+}
+
 #[test]
 fn forge_crossfile_validator_lookup_cpp() {
     assert_standalone_forge("crossfile_validator_lookup", "crossfile_validator_lookup.h");

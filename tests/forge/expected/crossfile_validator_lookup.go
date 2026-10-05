@@ -7,7 +7,7 @@
 package crossfile_validator_lookup
 
 import (
-	"example.com/sce-forge/lookup_severity_default"
+	sce_lookup_severity_default "example.com/sce-forge/lookup_severity_default"
 )
 
 // ValidationResult holds the outcome of a validation check.
@@ -40,7 +40,7 @@ func (sceSelf *CrossfileValidatorLookup) Validate(code int32) ValidationResult {
 	if code < 0 || code > 1000 {
 		return ValidationResult{Valid: false, Reason: "code_out_of_range"}
 	}
-	if !(lookup_severity_default.LookupSeverity(code) > 0) {
+	if !(sce_lookup_severity_default.LookupSeverity(code) > 0) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

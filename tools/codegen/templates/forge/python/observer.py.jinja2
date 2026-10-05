@@ -10,6 +10,9 @@
 
 from enum import Enum
 
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
 from sce_forge_runtime.observer import EventDomain, EventQueue, ThresholdState
 
 {% if has_event_domain %}

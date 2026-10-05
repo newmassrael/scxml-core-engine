@@ -558,11 +558,25 @@ pub(crate) fn forge_import_identity(
         Language::Go => {
             let prefix = normalized_go_prefix(options)
                 .expect("resolve_imports must validate go_module_prefix before reaching Go arm");
+            // A STATELESS import is reached through the package qualifier in
+            // the body of the importing function (`snake.Func(…)`), where an
+            // author's local of that name would hide it, so the package is
+            // imported under `go_package_alias`. A STATEFUL one is held as a
+            // member and used by its type at the package level, never beside
+            // an author's locals, and a codec reaches its sibling through
+            // the package's own name in a dozen places that are not names an
+            // author chooses: it keeps the package's name.
+            let (include_stmt, qualifier) = if is_stateful {
+                (format!("\t\"{prefix}/{snake}\""), snake.clone())
+            } else {
+                let alias = go_package_alias(&snake);
+                (format!("\t{alias} \"{prefix}/{snake}\""), alias)
+            };
             ImportIdentity {
-                include_stmt: format!("\t\"{prefix}/{snake}\""),
+                include_stmt,
                 type_name: pascal.clone(),
-                namespace: snake.clone(),
-                member_type: format!("{snake}.{pascal}"),
+                namespace: qualifier.clone(),
+                member_type: format!("{qualifier}.{pascal}"),
             }
         }
         // Stateful kinds expose a dataclass (`from .snake import Pascal`);
@@ -2142,7 +2156,8 @@ pub(crate) fn event_schema_payload_type(
         Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}Payload"),
         Language::Rust => format!("{snake}::{pascal}Payload"),
         Language::Kotlin => format!("{pascal}Payload"),
-        Language::Go | Language::Python => format!("{snake}.{pascal}Payload"),
+        Language::Go => format!("{}.{pascal}Payload", go_package_alias(&snake)),
+        Language::Python => format!("{snake}.{pascal}Payload"),
         Language::C11 => format!("{pascal}Payload_t"),
     }
 }
@@ -16795,13 +16810,7 @@ fn render_validator(
     //      collapse for all six backends including C11
     //      (`_st->frame_.msg_id`).
     //   5. Go: builtin-keyword escapes for input identifiers.
-    let mut owned_renames: std::collections::HashMap<&str, String> =
-        std::collections::HashMap::new();
-    for imp in imports {
-        if !imp.is_stateful && !imp.qualified_call.is_empty() {
-            owned_renames.insert(imp.alias.as_str(), imp.qualified_call.clone());
-        }
-    }
+    let mut owned_renames = stateless_import_renames(imports);
     // Per-language alias bare-Ident rewrite. The rename map's qualified
     // key collapse handles `alias.field` and `alias.method` separately
     // through entries 3-4; this entry catches the bare-alias case (e.g.
@@ -18431,7 +18440,9 @@ fn render_bounded_collection_go(
         }
     };
 
-    // Element-type is qualified via the package name (snake_case).
+    // Element-type is qualified via the package name (snake_case): the element
+    // is a codec, a STATEFUL import, which keeps the package's own name
+    // (`forge_import_identity`).
     let element_qualified = format!("{element_snake}.{element_pascal}");
 
     // Go codec emits struct fields in PascalCase (`codec_field_id`
@@ -19056,6 +19067,25 @@ const GO_RUNTIME_PACKAGES: &[&str] = &[
 /// than a list because the temporaries are numbered, and a list of the ones the
 /// committed output shows is stale the day a body needs one more.
 const GO_GENERATED_PREFIX: &str = "sce";
+
+/// The name a generated Go file imports a sibling generated package under, and
+/// the qualifier every reference to it carries (`sce_condition_threshold.New…`).
+///
+/// The package's own name (`condition_threshold`) is the imported document's
+/// name, which the author of the IMPORTING document never chose and cannot
+/// see: an input, a variable or a parameter that happens to carry it hides the
+/// package for the rest of the function, and a call through it is a call on
+/// that local (`not enough arguments`, or `imported and not used`). Under the
+/// generator's own prefix the alias cannot be one of the author's names, which
+/// the shift keeps off every name that begins `sce`; the underscore after the
+/// prefix keeps it off the generator's own camelCase names (`sceSelf`), which a
+/// document named `self` would otherwise reach.
+///
+/// One function for every site that writes the qualifier, so the import and
+/// the references to it cannot name different packages.
+pub(crate) fn go_package_alias(snake: &str) -> String {
+    format!("{GO_GENERATED_PREFIX}_{snake}")
+}
 
 /// The receiver of a generated Go method of a forge kind whose inputs are the
 /// method's PARAMETERS (filter, validator, observer): under the generator's own
@@ -20681,6 +20711,19 @@ fn build_rename_map<'a>(var_names: &'a [&'a str]) -> std::collections::HashMap<&
     var_names
         .iter()
         .map(|name| (*name, format!("{}_", name)))
+        .collect()
+}
+
+/// The rename entries for every STATELESS import: the alias an expression
+/// calls (`isOverheat(…)`) becomes the qualified call the imported document
+/// emits (`condition_threshold.ConditionThreshold`). The layer every host
+/// that lets an expression call an imported function installs first, so a
+/// kind that did not install it emitted the alias, a name nothing declares.
+fn stateless_import_renames(imports: &[ImportContext]) -> std::collections::HashMap<&str, String> {
+    imports
+        .iter()
+        .filter(|imp| !imp.is_stateful && !imp.qualified_call.is_empty())
+        .map(|imp| (imp.alias.as_str(), imp.qualified_call.clone()))
         .collect()
 }
 
@@ -23382,12 +23425,40 @@ fn render_observer(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    // An observer calls the functions of the kinds it imports in its monitor
+    // expressions, and holds a threshold state per monitor and nothing else:
+    // it has no member for the state of a stateful kind, in any backend. The
+    // import used to be accepted, and the expression that named it
+    // (`smoother.update(x)`) was emitted against a member nothing declared.
+    if let Some(imp) = imports.iter().find(|imp| imp.is_stateful) {
+        return Err(GenerateError::UnsupportedFeature {
+            detail: format!(
+                "observer '{}' imports the {} '{}' as '{}', which holds state: an observer \
+                 calls the functions of the kinds it imports and has no member to hold \
+                 another kind's state",
+                m.name, imp.kind, imp.document_name, imp.alias
+            ),
+            at: None,
+        }
+        .into());
+    }
+
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
     let obs_type_ctx = crate::forge::type_ctx::observer(m, imports);
-    let obs_empty_renames = std::collections::HashMap::new();
+    // A monitor expression may call a function it imported
+    // (`isOverheat(coolantTemp, oilTemp, 110.0)`), and the call is spelled as
+    // the imported document emits it. This map used to be EMPTY, so the alias
+    // reached the output as a name nothing declares, in every backend, and no
+    // test compiled it (the cross-file matrix only asks that generation
+    // succeed and that Rust parse).
+    let obs_owned_renames = stateless_import_renames(imports);
+    let obs_renames: std::collections::HashMap<&str, &str> = obs_owned_renames
+        .iter()
+        .map(|(alias, call)| (*alias, call.as_str()))
+        .collect();
 
     // ⚠ A monitor expression that does not lower is refused, as every other
     // kind's is. Both used to fall back to the EMPTY string
@@ -23399,7 +23470,7 @@ fn render_observer(
             site.source,
             l.expr_target(),
             &obs_type_ctx,
-            &obs_empty_renames,
+            &obs_renames,
             crate::forge::types::InferredType::Bool,
         )
         .map_err(|refusal| site.place(refusal))
@@ -29233,11 +29304,28 @@ mod tests {
             ..Default::default()
         };
         let ctx = resolve_single_import(&imp, &crate::generator::Language::Go, &opts);
+        // A stateless import is reached through its package qualifier in a
+        // function body, so it is imported under the generator's own prefix and
+        // no name an author gave a local can hide it.
         assert_eq!(
             ctx.include_stmt,
-            "\t\"github.com/acme/gen/temperature_transform\""
+            "\tsce_temperature_transform \"github.com/acme/gen/temperature_transform\""
         );
-        assert_eq!(ctx.namespace, "temperature_transform");
+        assert_eq!(ctx.namespace, "sce_temperature_transform");
+    }
+
+    /// A stateful import is a member used by its type, and a codec reaches its
+    /// sibling through the package's own name: it is not aliased.
+    #[test]
+    fn resolve_import_go_stateful() {
+        let imp = stateful_import();
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme/gen".to_string()),
+            ..Default::default()
+        };
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Go, &opts);
+        assert_eq!(ctx.include_stmt, "\t\"github.com/acme/gen/simple_codec\"");
+        assert_eq!(ctx.namespace, "simple_codec");
     }
 
     #[test]

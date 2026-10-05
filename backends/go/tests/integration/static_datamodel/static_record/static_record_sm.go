@@ -32,7 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
-	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/days_in_month"
+	sce_days_in_month "github.com/newmassrael/sce-go-tests/integration/static_datamodel/days_in_month"
 )
 
 // Ensure imports are used
@@ -607,7 +607,7 @@ func (p *StaticRecordPolicy) FirstEnabledTransition(state StaticRecordState, eve
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "shown.dayOfMonth < DaysInMonth(shown.year, shown.month)" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.vShown.dayOfMonth < days_in_month.DaysInMonth(p.vShown.year, p.vShown.month) {
+			if p.vShown.dayOfMonth < sce_days_in_month.DaysInMonth(p.vShown.year, p.vShown.month) {
 				return sce.EnabledTransition[StaticRecordState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 0,

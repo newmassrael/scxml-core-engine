@@ -7,7 +7,7 @@
 package crossfile_validator_transform_widening
 
 import (
-	"example.com/sce-forge/transform_temperature"
+	sce_transform_temperature "example.com/sce-forge/transform_temperature"
 )
 
 // ValidationResult holds the outcome of a validation check.
@@ -40,7 +40,7 @@ func (sceSelf *CrossfileValidatorTransformWidening) Validate(rawByte uint8) Vali
 	if rawByte > 200 {
 		return ValidationResult{Valid: false, Reason: "raw_byte_out_of_range"}
 	}
-	if !(transform_temperature.ComputeTemperature(uint16(rawByte)) > transform_temperature.ComputeTemperature(0)) {
+	if !(sce_transform_temperature.ComputeTemperature(uint16(rawByte)) > sce_transform_temperature.ComputeTemperature(0)) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

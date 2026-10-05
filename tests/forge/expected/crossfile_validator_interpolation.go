@@ -7,7 +7,7 @@
 package crossfile_validator_interpolation
 
 import (
-	"example.com/sce-forge/interpolation_1d_linear"
+	sce_interpolation_1d_linear "example.com/sce-forge/interpolation_1d_linear"
 )
 
 // ValidationResult holds the outcome of a validation check.
@@ -40,7 +40,7 @@ func (sceSelf *CrossfileValidatorInterpolation) Validate(rpm uint16) ValidationR
 	if rpm < 500 || rpm > 7000 {
 		return ValidationResult{Valid: false, Reason: "rpm_out_of_range"}
 	}
-	if !(interpolation_1d_linear.Lookup(rpm) > 200.0) {
+	if !(sce_interpolation_1d_linear.Lookup(rpm) > 200.0) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

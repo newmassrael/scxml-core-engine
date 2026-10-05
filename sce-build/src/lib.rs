@@ -4672,7 +4672,9 @@ fn validate_and_enrich_imports(
                     // wildcard from `resolve_single_import` brings the
                     // enum class name into unqualified scope.
                     generator::Language::Kotlin => pascal.clone(),
-                    generator::Language::Go => format!("{snake}.{pascal}"),
+                    generator::Language::Go => {
+                        format!("{}.{pascal}", forge::generator::go_package_alias(&snake))
+                    }
                     generator::Language::Python => format!("{snake}.{pascal}"),
                     // C11 has no namespace mechanism — the enum's
                     // typedef name carries a `_t` discriminator so

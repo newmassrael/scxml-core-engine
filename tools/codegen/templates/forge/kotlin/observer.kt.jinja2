@@ -10,6 +10,11 @@
 
 package com.sce.generated.{{ package }}
 
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
 import com.sce.forge.runtime.EventDomain
 import com.sce.forge.runtime.EventQueue
 import com.sce.forge.runtime.ThresholdState

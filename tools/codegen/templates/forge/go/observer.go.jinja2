@@ -10,10 +10,13 @@
 
 package {{ package }}
 
-{% if std_imports %}
+{% if std_imports or all_imports %}
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
+{% endfor %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
 {% endfor %}
 	"github.com/newmassrael/sce-forge-runtime/observer"
 )

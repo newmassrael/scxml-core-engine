@@ -3671,13 +3671,15 @@ fn a_go_machine_calls_the_package_its_algorithms_generation_put_it_in() {
         .collect();
     assert_eq!(generated.len(), 1, "one machine: {generated:?}");
     let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    // The package is imported under the alias a forge kind importing the same
+    // algorithm uses (a name no author's local can be), and the call carries it.
     assert!(
-        source.contains("\t\"github.com/acme/gen/clamp\"\n"),
+        source.contains("\tsce_clamp \"github.com/acme/gen/clamp\"\n"),
         "the machine imports the algorithm's package by the module path"
     );
     assert!(
-        source.contains("clamp.Clamp(p.vCount, 5)"),
-        "the call names the package and the exported function"
+        source.contains("sce_clamp.Clamp(p.vCount, 5)"),
+        "the call names the package's alias and the exported function"
     );
 }
 

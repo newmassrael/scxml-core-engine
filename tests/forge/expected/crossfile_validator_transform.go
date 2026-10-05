@@ -7,7 +7,7 @@
 package crossfile_validator_transform
 
 import (
-	"example.com/sce-forge/transform_temperature"
+	sce_transform_temperature "example.com/sce-forge/transform_temperature"
 )
 
 // ValidationResult holds the outcome of a validation check.
@@ -40,7 +40,7 @@ func (sceSelf *CrossfileValidatorTransform) Validate(rawTemp uint16) ValidationR
 	if rawTemp > 4095 {
 		return ValidationResult{Valid: false, Reason: "raw_temp_out_of_range"}
 	}
-	if !(transform_temperature.ComputeTemperature(rawTemp) > -40.0 && transform_temperature.ComputeTemperature(rawTemp) < 200.0) {
+	if !(sce_transform_temperature.ComputeTemperature(rawTemp) > -40.0 && sce_transform_temperature.ComputeTemperature(rawTemp) < 200.0) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

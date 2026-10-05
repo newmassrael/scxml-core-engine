@@ -7,7 +7,7 @@
 package crossfile_validator_condition
 
 import (
-	"example.com/sce-forge/condition_threshold"
+	sce_condition_threshold "example.com/sce-forge/condition_threshold"
 )
 
 // ValidationResult holds the outcome of a validation check.
@@ -37,7 +37,7 @@ func NewCrossfileValidatorCondition() *CrossfileValidatorCondition {
 
 // Validate checks all validation rules and returns the result.
 func (sceSelf *CrossfileValidatorCondition) Validate(coolantTemp float64, oilTemp float64, maxTemp float64) ValidationResult {
-	if !(!condition_threshold.ConditionThreshold(coolantTemp, oilTemp, maxTemp)) {
+	if !(!sce_condition_threshold.ConditionThreshold(coolantTemp, oilTemp, maxTemp)) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

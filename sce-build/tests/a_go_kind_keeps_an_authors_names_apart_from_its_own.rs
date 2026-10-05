@@ -321,6 +321,56 @@ fn generate(unique: &str, text: &str) -> Result<Vec<GoFile>, String> {
     })
 }
 
+/// Write one generated package into the module under test, once.
+fn write_package(proj: &Path, written: &mut BTreeSet<String>, file: &GoFile) {
+    if written.insert(file.package.clone()) {
+        let dir = proj.join(&file.package);
+        std::fs::create_dir_all(&dir).expect("mkdir package");
+        std::fs::write(dir.join(format!("{}.go", file.package)), &file.source)
+            .expect("write package");
+    }
+}
+
+/// The packages of the module under test that a generated file imports. Each is
+/// another document's own output, which the file does not build without.
+fn module_imports(source: &str) -> Vec<String> {
+    let import = Regex::new(&format!(
+        r#""{}/([A-Za-z0-9_]+)""#,
+        regex::escape(GO_MODULE_PREFIX)
+    ))
+    .expect("regex");
+    import
+        .captures_iter(source)
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
+/// Write `files`, and before each the sibling packages it imports, every one
+/// generated from its own document under its own name (the import path is the
+/// document's, so a renamed sibling would not be found). The siblings are not
+/// renamed: it is the importing document's names that are asked, and a sibling
+/// that does not build is the module's defect and is reported as one.
+fn write_with_siblings(
+    proj: &Path,
+    written: &mut BTreeSet<String>,
+    files: &[GoFile],
+) -> Result<(), String> {
+    for file in files {
+        for package in module_imports(&file.source) {
+            if written.contains(&package) {
+                continue;
+            }
+            let path = resource_dir().join(format!("{package}.scxml"));
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| format!("the sibling `{package}` is not a document here: {e}"))?;
+            let sibling = generate(&package, &text)?;
+            write_with_siblings(proj, written, &sibling)?;
+        }
+        write_package(proj, written, file);
+    }
+    Ok(())
+}
+
 /// Build errors by package: `go build` prints `# <package>` and then what is
 /// wrong with it, and keeps compiling the packages that are not.
 fn failed_packages(build_stderr: &str) -> BTreeMap<String, String> {
@@ -389,14 +439,6 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     .expect("write go.mod");
 
     let mut written: BTreeSet<String> = BTreeSet::new();
-    let mut write_package = |file: &GoFile| {
-        if written.insert(file.package.clone()) {
-            let dir = proj.join(&file.package);
-            std::fs::create_dir_all(&dir).expect("mkdir package");
-            std::fs::write(dir.join(format!("{}.go", file.package)), &file.source)
-                .expect("write package");
-        }
-    };
 
     // The unrenamed documents are the control: each must build, or a failure of
     // its renamings is not about the name.
@@ -404,23 +446,12 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     let mut skipped: Vec<String> = Vec::new();
     for doc in &docs {
         let unique = format!("{}__base", doc.stem);
-        match generate(&unique, &doc.text) {
-            // A document that needs a sibling module (it imports another
-            // generated package) cannot be built on its own and is not a case,
-            // as the Python oracle does not run one that imports a sibling.
-            Ok(files)
-                if files
-                    .iter()
-                    .any(|f| f.source.contains(&format!("\"{GO_MODULE_PREFIX}/"))) =>
-            {
-                skipped.push(doc.stem.clone());
-            }
-            Ok(files) => {
-                for file in &files {
-                    write_package(file);
-                }
-                baseline.push((doc.stem.clone(), unique));
-            }
+        // A document that imports another generated package builds with that
+        // package beside it, which `write_with_siblings` supplies.
+        match generate(&unique, &doc.text)
+            .and_then(|files| write_with_siblings(&proj, &mut written, &files))
+        {
+            Ok(()) => baseline.push((doc.stem.clone(), unique)),
             Err(_) => skipped.push(doc.stem.clone()),
         }
     }
@@ -433,6 +464,22 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
         .output()
         .expect("go builds the controls");
     let control_broken = failed_packages(&String::from_utf8_lossy(&control.stderr));
+    // A sibling package that does not build is nobody's control: `go build`
+    // reports it and leaves its importers uncompiled and unreported, which
+    // would count every renaming of them as built.
+    let controls: BTreeSet<&String> = baseline.iter().map(|(_, package)| package).collect();
+    let stray: Vec<&String> = control_broken
+        .keys()
+        .filter(|package| !controls.contains(package))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "a sibling package does not build, and its importers were never compiled: {:?}",
+        stray
+            .iter()
+            .map(|p| (p, &control_broken[*p]))
+            .collect::<Vec<_>>()
+    );
     let mut unbuildable: Vec<String> = Vec::new();
     baseline.retain(|(stem, package)| {
         let keep = !control_broken.contains_key(package);
@@ -501,9 +548,8 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
                         }
                     }
                     Ok(files) => {
-                        for file in &files {
-                            write_package(file);
-                        }
+                        write_with_siblings(&proj, &mut written, &files)
+                            .expect("a sibling that built for the control builds for a case");
                         cases.push(Case {
                             kind: doc.kind.clone(),
                             stem: doc.stem.clone(),
@@ -546,6 +592,21 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     assert!(
         left_out.is_empty(),
         "packages the build did not include, so they were never compiled: {left_out:?}"
+    );
+    // A broken package that is neither a control nor a case is a sibling, and
+    // its importers were not compiled (see the control build above).
+    let asked: BTreeSet<&String> = baseline
+        .iter()
+        .map(|(_, package)| package)
+        .chain(cases.iter().map(|case| &case.package))
+        .collect();
+    let stray: Vec<(&String, &String)> = broken
+        .iter()
+        .filter(|(package, _)| !asked.contains(package))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "a sibling package does not build, and its importers were never compiled: {stray:?}"
     );
     assert!(
         build.status.success() || !broken.is_empty(),
@@ -615,6 +676,9 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
         skipped.len(),
         cases.len()
     );
+    // What was not asked is named, so that a count that shrinks or grows is a
+    // list that can be read and not a number to be trusted.
+    eprintln!("go kind name oracle: not renamed (the unrenamed document is refused, or a sibling it imports cannot be built): {skipped:?}");
     assert!(
         cases.len() * 10 >= attempts * 7,
         "only {} of {attempts} renamings generated ({refused} refused); the oracle is mostly \

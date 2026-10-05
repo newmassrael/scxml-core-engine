@@ -2673,10 +2673,25 @@ shifted off them. And the names a file declares at the package level at a
 fixed spelling (`ValidationResult`, `ForgeDomainTag` and its constants, a
 lookup's `<Output><Value>` constants) are kept off the locals that read them,
 and an observer monitor called `Update` is a struct field beside the method of
-that name, so it is spelled `Update_`. The final run built 13 981 accepted
-renamings of 75 documents (2 213 refused in the document, 26 left out because
-two of the author's own names fold to one) and none failed to compile. Two
-tests derive the lists rather than hold them: the predeclared names are read
+that name, so it is spelled `Update_`. A fifth cause appeared when the oracle
+was taught to write the sibling packages a document imports beside it, each
+generated from its own document under its own name, so that the documents that
+import one are renamed like the rest: an input, a variable or a parameter
+called `condition_threshold` hid the package a condition of that name was
+generated into, and a call through it was a call on a float (`imported and not
+used`, or `not enough arguments`). The package's name is the imported
+document's, which the author of the importing one never chose, so a STATELESS
+import (the kinds called as a function in a body) is imported under
+`sce_<package>`, a name that begins with the generator's prefix and which the
+shift keeps every author name off. A stateful one is held as a member and used
+by its type at the package level, and a codec reaches its sibling through the
+package's own name in a dozen places that are not names an author chooses, so
+it keeps the name. The final run built 17 640 accepted renamings of 75
+documents (2 711 refused in the document, 47 left out because two of the
+author's own names fold to one) and none failed to compile; 10 documents are
+not renamed because their own text is refused (the fixtures refused on purpose
+and the ones that need an option a bare run does not give). Two tests derive
+the lists rather than hold them: the predeclared names are read
 from `go doc -all builtin`, and the packages from the import blocks of the
 committed Go, so a Go release that adds a builtin or a template that imports
 one more package fails with the name in the message.
@@ -2685,20 +2700,26 @@ The oracle builds, it does not run, and it counts a renaming as built only
 when the package was in the build: a file name that ends in `_386` is a
 build constraint to Go, `go build ./...` leaves it out without a word, and the
 case numbered 386 had been counted as built without being compiled, which
-`go list ./...` now rules out. Two documents whose unrenamed text does not
-build as Go are not cases, and that is a defect of their own and not of a
-name: a transform of an `int8` read as `raw * 0.5` writes an integer times a
-float, which Go (and Rust) refuse, and an observer that imports a condition
-calls it unqualified and imports nothing.
+`go list ./...` now rules out, and a sibling that does not build is reported as
+the module's defect, since `go build` reports it and leaves its importers
+uncompiled and unreported.
 
-What the oracle does not reach is a document that imports a sibling generated
-package: it writes one package per renaming and not the siblings, so 21 of the
-75 documents are not renamed at all. The conformance build of the committed
-fixtures covers them with their names as written, and that is where a
-validator's receiver was found renamed in the template and not in the member
-accesses an import is reached by (`p.Smoother.Update` beside a receiver called
-`sceSelf`). An author's name that hides the package an import is generated
-into is therefore not measured.
+Building the controls first found two documents whose unrenamed text did not
+build as Go, and both were defects of their own and not of a name. A transform
+of an `int8` carrying `sce:quantity`, read as `raw * 0.5`, lost the conversion
+the same body without the annotation carries: the emitters' coercion did not
+see through a quantity to its numeric base, so Go wrote an integer times a
+float (`0.5 truncated to int8`) and Rust the same (`i8 * 0.5`). A quantity is
+now emitted as its numeric base, on the operand and on the context it is
+asked for. And an observer that imports a condition emitted the alias it was
+given (`isOverheat`) and no import, in every backend: its expression map was
+empty. It resolves a stateless import as a validator does now, and the
+committed outputs of that document are pinned in five backends. What an
+observer does not do is hold a STATEFUL import (a filter, a codec): it keeps a
+threshold state per monitor and no member for another kind's state, and the
+import used to be accepted and the member it names left undeclared, in every
+backend. It is refused, in all six, as `generate/unsupported-feature` naming
+the observer, the import and why.
 
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
