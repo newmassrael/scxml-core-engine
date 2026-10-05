@@ -2108,6 +2108,21 @@ the one a real platform receives. Four keys say so:
 | `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
 | `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
 
+⚠⚠ **An output reads the LAST send to its processor in the round, not every
+send.** A machine that crosses two states in one round sends twice, and what the
+position holds when the round ends is what the record describes, so the verifier
+takes the last `<send>` whose `type` is the output's `processor` and reads the
+`param` (or the `content`) from that one. A document that sends each value in a
+send of its own to the SAME processor —
+`<send type="x-sce-host" event="out.hour"><param name="hv"/></send>` followed by
+`<send type="x-sce-host" event="out.min"><param name="mv"/></send>` — leaves
+`hv` unread: the last send carries `mv` only, and the verifier answers
+"reads the param `hv`, which this send carried 0 time(s)". Measured 2026-10-05:
+all four documents a writer built under the static data model did this, and
+nearly every case was left unjudged. Either put every value the round produces
+in ONE send as `<param>`s, or give each group of outputs its own processor
+(`x-sce-<name>`, which `generate` declares) and name it in `sent.processor`.
+
 ⚠⚠ **A `<parallel>` is never a transition's domain.** W3C SCXML 3.13 takes
 the domain from the nearest ancestor that is a compound state or `<scxml>`, so
 a transition written on one region — or from one region into another — exits
