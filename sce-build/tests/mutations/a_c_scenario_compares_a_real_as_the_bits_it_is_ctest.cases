@@ -42,6 +42,6 @@ PY
 
 mutation_case "the machine's list of reals answers no elements" <<'PY'
 edit("backends/c/tests/integration/test_static_scalars.c",
-     "    *len = view.len;\n    return view.len <= cap;",
-     "    *len = 0;\n    return view.len <= cap;")
+     "        out[i] = view.data[i];\n    }\n    *len = view.len;\n    return view.len <= cap;",
+     "        out[i] = view.data[i];\n    }\n    *len = 0;\n    return view.len <= cap;")
 PY
