@@ -208,6 +208,12 @@ const CONST_ROWS: &[Row] = &[Row {
     attr: "name",
 }];
 
+const HELPER_ROWS: &[Row] = &[Row {
+    ns: Ns::Sce,
+    element: "helper",
+    attr: "name",
+}];
+
 /// Every namespace a forge document's declarations share, in the order a
 /// refusal prefers: the narrow scopes first, so that the message names the
 /// pair as the author would.
@@ -319,6 +325,32 @@ pub const SCOPES: &[Scope] = &[
             direction: None,
             cases: [U, U, U, U, U, U],
         }],
+    },
+    // A procedure keeps its data and its helpers as members of one record: a
+    // field in Rust and C11, `self._<name>` in Python. They share that
+    // namespace whatever a datum's direction, and an input and a helper are
+    // also two parameters of the generated `execute`. `seedKey` and `seed_key`
+    // are one Python attribute, so the helper replaced the datum and the call
+    // `seed_key(seedKey)` called the helper with itself. C++, Go and Kotlin
+    // write both as written, and two names that differ are two members there.
+    Scope {
+        id: "procedure-member",
+        slots: &[
+            Slot {
+                noun: "data id",
+                rows: &[DATA_ID],
+                kinds: &["procedure"],
+                direction: None,
+                cases: [S, N, N, N, S, S],
+            },
+            Slot {
+                noun: "helper",
+                rows: HELPER_ROWS,
+                kinds: &["procedure"],
+                direction: None,
+                cases: [S, N, N, N, S, S],
+            },
+        ],
     },
     // In C++, Go and Python a member and a method of one name are one name:
     // the class (the struct) holds both in one table. Rust and Kotlin keep a

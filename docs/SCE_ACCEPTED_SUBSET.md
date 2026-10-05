@@ -2743,15 +2743,18 @@ they do not cause. What is compared is `SCOPES` in
 `sce-build/src/forge/declared_names.rs`: a forge document's input (its
 `<data id>` where `sce:direction="in"`, for the kinds that spell it
 snake_case; an algorithm's `<sce:param>`), a codec's members and its flag
-accessors and inputs, and a const.
+accessors and inputs, a const, and a procedure's data of every direction beside
+its helpers: `seedKey` and a helper `seed_key` were one `self._seed_key` in
+Python, so the helper replaced the datum and `seed_key(seedKey)` called the
+helper with itself, and one field in Rust and one member in C11.
 `a_forge_declaration_is_spelled_the_way_the_collision_rule_says` holds the
 table to the templates: it renames every declaration of every committed forge
 document and reads the name back in each backend, so a convention that
 changes fails there.
 
 What the rule does not compare is stated, not assumed safe. An output, an
-internal and a lookup's output type are spelled by the role they play and are
-not claimed; a `<sce:var>` is function-local and two of them in different
+internal (a procedure's excepted) and a lookup's output type are spelled by
+the role they play and are not claimed; a `<sce:var>` is function-local and two of them in different
 blocks are legitimately two; a C++ embed is a member written as written and a
 decode local in snake_case, which is two spellings and compares as neither; a
 codec's field local in a Rust decoder and a flag input of the same spelling

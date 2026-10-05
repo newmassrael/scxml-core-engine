@@ -129,6 +129,29 @@ fn algorithm_with_consts(first: &str, second: &str) -> String {
     )
 }
 
+/// A procedure's internal datum and one of its helpers: two kinds of
+/// declaration that are members of one record in Rust, C11 and Python.
+fn procedure_with_datum_and_helper(datum: &str, helper: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="ask" version="1.0">
+  <datamodel>
+    <data id="{datum}" sce:type="bytes" sce:direction="internal" sce:max-size="64"/>
+    <sce:helper name="{helper}" args="bytes" returns="bytes" sce:returns-max-size="64"/>
+  </datamodel>
+  <state id="ask">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"#
+    )
+}
+
 fn parse(document: &str) -> Result<(), Located<ForgeError>> {
     let label = sce_build::DocumentLabel {
         identifier: "probe",
@@ -200,6 +223,15 @@ const CASES: &[Pair] = &[
         second: "MAX_RPM",
         document: algorithm_with_consts,
         noun: "const",
+    },
+    // A procedure's datum and its helper are one `self._seed_key` in Python,
+    // one field in Rust and one member in C11: the helper replaced the datum.
+    Pair {
+        scope: "procedure-member",
+        first: "seedKey",
+        second: "seed_key",
+        document: procedure_with_datum_and_helper,
+        noun: "helper",
     },
     // The scope that compares two kinds of declaration: a member
     // `has_x` and a flag `hasX` are one name in C++, Go and Python, where a
