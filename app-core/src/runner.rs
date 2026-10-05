@@ -127,6 +127,13 @@ pub trait Generator: Send + Sync {
         None
     }
 
+    /// The version of the working instructions it gives the client (`claude-code/<digest>`),
+    /// which changes when the wording does: a bundle records it, so that a result can be told
+    /// apart from one made to other instructions.
+    fn instructions(&self) -> Option<String> {
+        None
+    }
+
     /// What it can do; the screen offers only what is here (`cancel`, for a generator that
     /// stops when told to).
     fn capabilities(&self) -> Vec<String> {
@@ -399,6 +406,7 @@ where
                 CandidateWrite {
                     model: Some(draft.model.stored_text()),
                     requirements: Some(draft.requirements.stored_text()),
+                    instructions: self.generator.instructions(),
                 },
             );
             match written {

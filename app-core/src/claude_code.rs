@@ -34,7 +34,9 @@ use serde_json::{json, Value};
 
 use crate::model_set::{Document, ModelFiles};
 use crate::requirements::Requirements;
+use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
+use crate::store::WorkId;
 
 /// What the SCE authoring server is called to the client, and so the prefix of its tools.
 const SERVER: &str = "sce-author";
@@ -173,6 +175,21 @@ impl Generator for ClaudeCode {
 
     fn version(&self) -> Option<String> {
         self.version.clone()
+    }
+
+    /// Named by what the client is told and allowed: the system prompt, the wording of the
+    /// task (as it reads for a work with nothing in it), the form it must answer in, and the
+    /// tools it may use. A change to any of them is another version, with no one to remember
+    /// to say so.
+    fn instructions(&self) -> Option<String> {
+        let material = format!(
+            "{SYSTEM_PROMPT}\n{}\n{}\n{}",
+            prompt(&blank_job()),
+            schema(),
+            ALLOWED_TOOLS.join(",")
+        );
+        let digest = Revision::of(material.as_bytes()).to_string();
+        Some(format!("claude-code/{}", &digest[..12]))
     }
 
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
@@ -358,6 +375,21 @@ decision the specification does not make is marked in the model as the authoring
 (sce:unresolved), never guessed. You can read the work and check what you write, and you \
 cannot save anything: the application saves what you answer, in the form it asks for. Your \
 last message is that answer and nothing else.";
+
+/// A job with nothing of a work in it: the task's wording, for naming a version of it.
+fn blank_job() -> Job {
+    Job {
+        work: WorkId::parse("work").expect("a valid id"),
+        title: String::new(),
+        request: String::new(),
+        attempt: 0,
+        source: String::new(),
+        source_revision: Revision::of(b""),
+        answers: Default::default(),
+        previous: None,
+        refusal: None,
+    }
+}
 
 /// What the client is asked to do for `job`.
 fn prompt(job: &Job) -> String {

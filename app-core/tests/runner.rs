@@ -62,6 +62,10 @@ impl Generator for Scripted {
         Some("test 1".to_string())
     }
 
+    fn instructions(&self) -> Option<String> {
+        Some("scripted/v1".to_string())
+    }
+
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
         let n = {
             let mut jobs = self.jobs.lock().unwrap();
@@ -194,6 +198,12 @@ fn a_queued_request_is_taken_written_for_and_completed() {
     let published = f.store.read_bundle(&f.id, None).unwrap().expect("a bundle");
     assert_eq!(published.revision, bundle);
     assert_eq!(published.bundle.executor, "desktop");
+    // What the generator was given is on the bundle, said by the generator and not by the host.
+    assert_eq!(
+        published.bundle.instructions.as_deref(),
+        Some("scripted/v1")
+    );
+    assert_eq!(published.bundle.replaces, None);
     assert_eq!(published.bundle.checks.len(), 1);
     assert_eq!(published.bundle.checks[0].name, "model");
 }

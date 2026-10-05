@@ -96,6 +96,7 @@ impl Fixture {
                 CandidateWrite {
                     model: Some(format!("<scxml>{tag}</scxml>")),
                     requirements: Some(format!("{{\"list\":\"{tag}\"}}")),
+                    instructions: None,
                 },
             )
             .unwrap();
@@ -139,6 +140,7 @@ fn what_the_executor_writes_is_kept_for_the_request_and_is_not_the_works_model()
             CandidateWrite {
                 model: Some("<scxml>draft</scxml>".to_string()),
                 requirements: None,
+                instructions: None,
             },
         )
         .unwrap();
@@ -168,6 +170,7 @@ fn a_later_word_names_the_other_half_and_a_later_model_replaces_the_earlier() {
                 CandidateWrite {
                     model: model.map(str::to_string),
                     requirements: requirements.map(str::to_string),
+                    instructions: None,
                 },
             )
             .unwrap()
@@ -189,6 +192,7 @@ fn only_the_holder_writes_and_only_something_is_written() {
     let draft = || CandidateWrite {
         model: Some("<scxml/>".to_string()),
         requirements: None,
+        instructions: None,
     };
 
     let stranger = f
@@ -211,6 +215,7 @@ fn only_the_holder_writes_and_only_something_is_written() {
             CandidateWrite {
                 model: None,
                 requirements: None,
+                instructions: None,
             },
         )
         .unwrap_err();
@@ -273,6 +278,7 @@ fn a_bundle_is_not_published_without_both_halves() {
             CandidateWrite {
                 model: Some("<scxml/>".to_string()),
                 requirements: None,
+                instructions: None,
             },
         )
         .unwrap();
@@ -583,6 +589,105 @@ fn a_work_that_never_asked_for_a_generation_is_read_and_written_as_it_always_was
     assert_eq!(model.written_for, Some(source));
     assert!(f.store.read_bundle(&f.id, None).unwrap().is_none());
     assert!(f.store.read_work_heads(&f.id).unwrap().bundle.is_none());
+}
+
+#[test]
+fn a_bundle_says_which_instructions_its_executor_worked_to_and_which_bundle_it_replaced() {
+    let f = fixture("bundles-instructions");
+    let first = f.generate("press-1", "one");
+    let request = f.running("press-2");
+    let write = |model: Option<&str>, requirements: Option<&str>, instructions: Option<&str>| {
+        f.store
+            .save_candidate(
+                &f.id,
+                &request,
+                "adapter-a",
+                1,
+                CandidateWrite {
+                    model: model.map(str::to_string),
+                    requirements: requirements.map(str::to_string),
+                    instructions: instructions.map(str::to_string),
+                },
+            )
+            .unwrap()
+    };
+
+    // Said with the first half, and kept when the other half is written without saying it again.
+    let said = write(
+        Some("<scxml>two</scxml>"),
+        None,
+        Some("claude-code/0123456789ab"),
+    );
+    let kept = write(None, Some("{\"list\":\"two\"}"), None);
+    let second = f.publish(&request);
+
+    assert_eq!(
+        said.request.candidate.unwrap().instructions.as_deref(),
+        Some("claude-code/0123456789ab")
+    );
+    assert_eq!(
+        kept.request.candidate.unwrap().instructions.as_deref(),
+        Some("claude-code/0123456789ab")
+    );
+    let first_read = f
+        .store
+        .read_bundle(&f.id, Some(&first.bundle))
+        .unwrap()
+        .unwrap();
+    let second_read = f
+        .store
+        .read_bundle(&f.id, Some(&second.bundle))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        first_read.bundle.instructions, None,
+        "an executor that said nothing of its instructions"
+    );
+    assert_eq!(
+        first_read.bundle.replaces, None,
+        "the first bundle replaced none"
+    );
+    assert_eq!(
+        second_read.bundle.instructions.as_deref(),
+        Some("claude-code/0123456789ab")
+    );
+    assert_eq!(second_read.bundle.replaces, Some(first.bundle));
+}
+
+#[test]
+fn instructions_are_named_in_plain_visible_characters_and_nothing_else_is_kept() {
+    let f = fixture("bundles-bad-instructions");
+    let request = f.running("press-1");
+    for bad in [
+        "",
+        "two words",
+        "tab\tinside",
+        &"x".repeat(129),
+        "caf\u{e9}",
+    ] {
+        let refused = f
+            .store
+            .save_candidate(
+                &f.id,
+                &request,
+                "adapter-a",
+                1,
+                CandidateWrite {
+                    model: Some("<scxml/>".to_string()),
+                    requirements: None,
+                    instructions: Some(bad.to_string()),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(refused.kind(), "bad-instructions", "{bad:?}");
+    }
+    // Nothing was written for any of them.
+    assert!(f
+        .store
+        .read_candidate(&f.id, &request)
+        .unwrap()
+        .model
+        .is_none());
 }
 
 #[test]

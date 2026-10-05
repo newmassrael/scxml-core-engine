@@ -375,13 +375,17 @@ class Generations:
             f"works_begin_generation (a request that was let go of is taken again there)")
 
     def save_candidate(self, request: str, model: dict | None = None,
-                       requirements: dict | None = None) -> dict:
+                       requirements: dict | None = None,
+                       instructions: str | None = None) -> dict:
         """Write the model, the requirement list, or both for the request, as its holder.
         What is written is the request's and not the work's: it becomes the work's when
-        the generation is finished."""
+        the generation is finished. `instructions` names the version of what the client
+        was told to do (its server's own instructions), which the bundle records so that a
+        result can be told apart from one made to other instructions."""
         generation = self.get(request)
         return self._said(generation, "save_request_candidate", {
-            **(model or {}), **(requirements or {})})
+            **(model or {}), **(requirements or {}),
+            **({"instructions": instructions} if instructions is not None else {})})
 
     def finish(self, request: str) -> dict:
         """Say the generation is done: the core checks the model itself and, when it

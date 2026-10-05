@@ -189,6 +189,25 @@ class AGenerationIsHeld(unittest.TestCase):
         self.assertEqual({"id": "door", "request": "req-new", "holder": "mcp-test",
                           "attempt": 1, "text": "<scxml/>"}, saved)
 
+    def test_the_instructions_the_client_works_to_are_said_with_what_it_writes(self):
+        keeper, core = self.keeper()
+        keeper.begin("door")
+
+        keeper.save_candidate("req-new", model={"text": "<scxml/>"},
+                              instructions="sce-author-mcp/0123456789ab")
+
+        (saved,) = core.asked("save_request_candidate")
+        self.assertEqual("sce-author-mcp/0123456789ab", saved["instructions"])
+
+    def test_instructions_nobody_named_are_not_said(self):
+        keeper, core = self.keeper()
+        keeper.begin("door")
+
+        keeper.save_candidate("req-new", model={"text": "<scxml/>"})
+
+        (saved,) = core.asked("save_request_candidate")
+        self.assertNotIn("instructions", saved)
+
     def test_a_refusal_that_says_the_request_ended_ends_the_generation_here_too(self):
         keeper, core = self.keeper()
         keeper.begin("door")

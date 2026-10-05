@@ -69,6 +69,7 @@
       "request": {
         "attempt": 1,
         "candidate": {
+          "instructions": "claude-code/0123456789ab",
           "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
           "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
         },
@@ -149,6 +150,7 @@
       "request": {
         "attempt": 1,
         "candidate": {
+          "instructions": null,
           "model": "1344d1705ea72e1a9d59e791afa2f806dc8d9dfec8f983f41ca9eb33647eefac",
           "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
         },
@@ -284,6 +286,7 @@
         {
           "attempt": 1,
           "candidate": {
+            "instructions": null,
             "model": "1344d1705ea72e1a9d59e791afa2f806dc8d9dfec8f983f41ca9eb33647eefac",
             "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
           },
@@ -312,6 +315,7 @@
         {
           "attempt": 1,
           "candidate": {
+            "instructions": "claude-code/0123456789ab",
             "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
             "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
           },
@@ -489,12 +493,14 @@
           ],
           "executor": "adapter-a",
           "format": "sce-bundle",
+          "instructions": "claude-code/0123456789ab",
           "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
           "previous": {
             "model": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
             "requirements": null
           },
           "published_at": "2026-10-03T09:00:00Z",
+          "replaces": null,
           "request": "<request-id>",
           "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d",
           "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
@@ -1053,6 +1059,7 @@
       "request": {
         "attempt": 1,
         "candidate": {
+          "instructions": "claude-code/0123456789ab",
           "model": "8e37512f05cf0768db14bf8ccb30378ff51f90bf8256bacea44dc4b2fc74d428",
           "requirements": "d870d562d4ac3c38bf299a6cf9166ade93248682b3c3b423fbea5611bfa0a69d"
         },

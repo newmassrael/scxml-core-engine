@@ -215,6 +215,14 @@ one it was, and `read_request_candidate` reads what was written. It becomes the 
 - **The bundle keeps what it took over.** The first bundle of a work that had a model or a list
   says which (`previous`), so the model's history continues where the chain stopped, and
   `bundle_history` lists the bundles. `read_bundle` reads one, or the current.
+- **The bundle says what it replaced and what its executor worked to.** `replaces` is the bundle
+  that was the work's model and list before it (none for the first), and `instructions` is the
+  version of the working instructions the executor was given, in the executor's own words
+  (`claude-code/<digest>` is the digest of the wording, the form of the answer and the tools the
+  client may use; `sce-author-mcp/<digest>` is the digest of the instructions the authoring
+  server gives its client), so a result can be told apart from one made to other wording. An
+  executor that says nothing of them has none recorded. A selected house-rule pack is recorded
+  only where one is applied, and the generation flow applies none.
 
 #### What the screen shows of a request
 

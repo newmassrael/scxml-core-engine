@@ -618,6 +618,10 @@ class TheClientTakesTheOwnersRequestForAModel(unittest.TestCase):
         bundle = works.call_work("read_bundle", {"id": self.work})["bundle"]["bundle"]
         self.assertEqual(["core"], [c["by"] for c in bundle["checks"]])
         self.assertEqual("accepted", bundle["checks"][0]["verdict"])
+        # The bundle says what the client was told to do, named by the wording of it.
+        self.assertEqual(mcp.INSTRUCTIONS_VERSION, bundle["instructions"])
+        self.assertRegex(bundle["instructions"], r"^sce-author-mcp/[0-9a-f]{12}$")
+        self.assertIsNone(bundle["replaces"], "the first bundle replaced none")
 
     def test_a_work_that_had_a_model_published_refuses_the_plain_saves_and_says_what_to_do(self):
         request = self.begin()["generation"]["request"]

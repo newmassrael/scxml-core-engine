@@ -92,6 +92,13 @@ pub struct Bundle {
     /// Set on a work's first bundle, when it had a model or a list before.
     #[serde(default)]
     pub previous: Option<Previous>,
+    /// The bundle this one replaced as the work's model and list; none for a work's first.
+    #[serde(default)]
+    pub replaces: Option<Revision>,
+    /// The version of the working instructions its executor was given, in the executor's own
+    /// words; none when it did not say.
+    #[serde(default)]
+    pub instructions: Option<String>,
     pub checks: Vec<BundleCheck>,
     pub published_at: String,
 }
@@ -156,6 +163,8 @@ mod tests {
             model: revision("model"),
             requirements: revision("list"),
             previous: None,
+            replaces: None,
+            instructions: None,
             checks: vec![BundleCheck {
                 by: CheckedBy::Core,
                 name: "model".to_string(),

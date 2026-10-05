@@ -473,6 +473,37 @@ fn a_client_that_is_not_there_is_a_failure_that_says_so() {
 }
 
 #[test]
+fn the_instructions_are_named_by_what_the_client_is_told_and_allowed() {
+    let fake = Fake::new("claude-instructions", "true");
+    let named = client(&fake)
+        .instructions()
+        .expect("a version of its instructions");
+
+    assert!(
+        regex_like(&named),
+        "`claude-code/` and twelve hex digits, got {named}"
+    );
+    // The same wording is the same version, wherever and however often it is asked.
+    assert_eq!(named, client(&fake).instructions().unwrap());
+    // The model and the budget are not instructions: they are how a run is bounded.
+    let bounded = ClaudeCode::new(
+        fake.binary.clone(),
+        author(),
+        ClaudeCodeConfig {
+            model: Some("opus".to_string()),
+            max_budget_usd: Some(1.0),
+            ..ClaudeCodeConfig::default()
+        },
+    );
+    assert_eq!(bounded.instructions().unwrap(), named);
+}
+
+fn regex_like(name: &str) -> bool {
+    name.strip_prefix("claude-code/")
+        .is_some_and(|digest| digest.len() == 12 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+#[test]
 fn the_version_is_what_the_client_says_it_is() {
     let fake = Fake::new("claude-version", "true");
 

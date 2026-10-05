@@ -90,6 +90,7 @@ impl Fixture {
             CandidateWrite {
                 model: Some(format!("<scxml>{request}</scxml>")),
                 requirements: Some(format!("{{\"list\":\"{request}\"}}")),
+                instructions: None,
             },
         )?;
         self.publish(request, holder, attempt)

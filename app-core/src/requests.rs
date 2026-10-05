@@ -149,6 +149,12 @@ pub struct Candidate {
     pub model: Option<Revision>,
     #[serde(default)]
     pub requirements: Option<Revision>,
+    /// The version of the working instructions the executor was given, in its own words
+    /// (`claude-code/<digest>`): what a bundle says it was made to, so that a result can be
+    /// told apart from one made to other instructions. An executor that says nothing of them
+    /// has none recorded.
+    #[serde(default)]
+    pub instructions: Option<String>,
 }
 
 impl Candidate {
@@ -380,6 +386,7 @@ impl Request {
             candidate: Some(Candidate {
                 model: written.model.or(before.model),
                 requirements: written.requirements.or(before.requirements),
+                instructions: written.instructions.or(before.instructions),
             }),
             ..self.clone()
         })
@@ -794,7 +801,7 @@ mod tests {
                 1,
                 Candidate {
                     model: Some(model.clone()),
-                    requirements: None,
+                    ..Candidate::default()
                 },
             )
             .unwrap();
@@ -809,8 +816,8 @@ mod tests {
                 "adapter-a",
                 1,
                 Candidate {
-                    model: None,
                     requirements: Some(list.clone()),
+                    ..Candidate::default()
                 },
             )
             .unwrap();
@@ -823,7 +830,7 @@ mod tests {
                 1,
                 Candidate {
                     model: Some(revision("model, again")),
-                    requirements: None,
+                    ..Candidate::default()
                 },
             )
             .unwrap();
@@ -840,7 +847,7 @@ mod tests {
         let held = running();
         let written = Candidate {
             model: Some(revision("model")),
-            requirements: None,
+            ..Candidate::default()
         };
 
         assert_eq!(

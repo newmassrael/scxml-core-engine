@@ -370,6 +370,8 @@ export interface GenerationRequest {
 export interface RequestCandidate {
   readonly model: Revision | null;
   readonly requirements: Revision | null;
+  /** The version of the working instructions the executor was given, in its own words; `null` when it did not say. */
+  readonly instructions: string | null;
 }
 
 /** `read_request_candidate`: what the executor wrote, as texts. */
@@ -414,6 +416,10 @@ export interface Bundle {
   readonly requirements: Revision;
   /** Set on a work's first bundle, when it had a model or a list before. */
   readonly previous: { readonly model: Revision | null; readonly requirements: Revision | null } | null;
+  /** The bundle this one replaced as the work's model and list; `null` for a work's first. */
+  readonly replaces: Revision | null;
+  /** The version of the working instructions its executor was given; `null` when it did not say. */
+  readonly instructions: string | null;
   readonly checks: readonly BundleCheck[];
   readonly published_at: string;
 }
@@ -963,6 +969,7 @@ function parseRequestCandidate(value: unknown, where: string): RequestCandidate 
   return {
     model: nullableRevision(r["model"], `${where}.model`),
     requirements: nullableRevision(r["requirements"], `${where}.requirements`),
+    instructions: nullableText(r, "instructions", where),
   };
 }
 
@@ -1037,6 +1044,8 @@ function parseBundle(value: unknown, where: string): Bundle {
             model: nullableRevision(earlier["model"], `${where}.previous.model`),
             requirements: nullableRevision(earlier["requirements"], `${where}.previous.requirements`),
           },
+    replaces: nullableRevision(r["replaces"], `${where}.replaces`),
+    instructions: nullableText(r, "instructions", where),
     checks: list(r, "checks", where).map((c, i) => parseBundleCheck(c, `${where}.checks[${i}]`)),
     published_at: text(r, "published_at", where),
   };

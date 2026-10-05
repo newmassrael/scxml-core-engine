@@ -593,7 +593,8 @@ fn replies() -> Value {
             &store,
             "save_request_candidate",
             json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1,
-                   "text": "<scxml><!-- candidate --></scxml>", "manifest": list}),
+                   "text": "<scxml><!-- candidate --></scxml>", "manifest": list,
+                   "instructions": "claude-code/0123456789ab"}),
         ),
     );
     answers.insert(

@@ -541,6 +541,8 @@ class FakeCore implements Transport {
               model: bundle.model,
               requirements: bundle.requirements,
               previous: null,
+              replaces: null,
+              instructions: null,
               checks: [{ by: "core", name: "model", verdict: "accepted", generator: "fake-sce 0", digest: null, subject: bundle.model }],
               published_at: "2026-10-05T09:00:30Z",
             },

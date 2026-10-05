@@ -262,6 +262,12 @@ SERVER_INSTRUCTIONS = (
     "with the reason, so the owner is told."
 )
 
+# What a result is told to have been made to: named by the instructions this server gives its
+# client, so that the bundle of a model records them and one made to other wording is told apart.
+# Changes with the wording and with nobody remembering to say so.
+INSTRUCTIONS_VERSION = ("sce-author-mcp/"
+                        + hashlib.sha256(SERVER_INSTRUCTIONS.encode("utf-8")).hexdigest()[:12])
+
 _PACK_ARG = {
     "type": "string",
     "description": "Directory holding the interface model and the conventions.",
@@ -3096,7 +3102,8 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
         if generation is None:
             saved = works.save_model(work, base, source_revision, **model)
         else:
-            saved = works.generations().save_candidate(request, model=model)
+            saved = works.generations().save_candidate(
+                request, model=model, instructions=INSTRUCTIONS_VERSION)
             _note_decisions(generation, held)
     except works.WorksError as exc:
         return _works_refused(exc)
@@ -3198,7 +3205,8 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
             saved = works.save_requirements(work, base, source_revision,
                                             manifest=manifest_text, sidecar=sidecar_text)
         else:
-            saved = works.generations().save_candidate(request, requirements={
+            saved = works.generations().save_candidate(
+                request, instructions=INSTRUCTIONS_VERSION, requirements={
                 "manifest": manifest_text,
                 **({"sidecar": sidecar_text} if sidecar_text is not None else {})})
     except works.WorksError as exc:

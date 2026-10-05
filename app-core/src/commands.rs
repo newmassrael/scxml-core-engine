@@ -434,6 +434,10 @@ struct SaveCandidate {
     manifest: Option<String>,
     #[serde(default)]
     sidecar: Option<String>,
+    /// The version of the working instructions the executor was given, in its own words
+    /// (`claude-code/0123456789ab`); a bundle records it.
+    #[serde(default)]
+    instructions: Option<String>,
 }
 
 /// A check only the executor's side can run, as it reports it.
@@ -1284,6 +1288,7 @@ pub fn call<C: Clock>(
                 entry,
                 manifest,
                 sidecar,
+                instructions,
             } = arguments(args)?;
             let model = match (&text, &documents, &entry) {
                 (None, None, None) => None,
@@ -1309,6 +1314,7 @@ pub fn call<C: Clock>(
                 CandidateWrite {
                     model,
                     requirements,
+                    instructions,
                 },
             )?;
             Ok(json!({ "request": request_json(&id, &view) }))

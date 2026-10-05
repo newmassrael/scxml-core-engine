@@ -350,6 +350,12 @@ describe("the replies the core gives", () => {
       ["client", "decisions", "accepted"],
     ]);
     expect(read?.bundle.checks[0]?.subject).toBe(read?.bundle.model);
+    // What the executor said it worked to is on the bundle, and a first bundle replaced none.
+    expect(read?.bundle.instructions).toBe("claude-code/0123456789ab");
+    expect(read?.bundle.replaces).toBeNull();
+    expect(parseRequestReply(replies.answers["save_request_candidate"]).candidate?.instructions).toBe(
+      "claude-code/0123456789ab",
+    );
     // The work had a model before the first bundle, and the bundle says what it took over from.
     expect(read?.bundle.previous?.model).toMatch(/^[0-9a-f]{64}$/);
     expect(parseHistory(replies.answers["bundle_history"]).map((h) => h.revision)).toEqual([done.bundle]);

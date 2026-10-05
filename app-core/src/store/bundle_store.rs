@@ -48,6 +48,9 @@ use crate::revision::Revision;
 pub struct CandidateWrite {
     pub model: Option<String>,
     pub requirements: Option<String>,
+    /// The version of the working instructions the executor was given, in its own words; a
+    /// word kept until another is said. A bundle records it.
+    pub instructions: Option<String>,
 }
 
 /// The candidate's texts, by revision.
@@ -177,6 +180,11 @@ fn store_revision(dir: &Path, artifact: Artifact, text: &str) -> Result<Revision
     Ok(revision)
 }
 
+/// The name of a version of instructions: visible ASCII, no space, at most 128 characters.
+fn valid_instructions(name: &str) -> bool {
+    (1..=128).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_graphic())
+}
+
 fn bad_candidate(what: &str) -> StoreError {
     StoreError::refused("bad-candidate", what.to_string(), json!(null))
 }
@@ -201,6 +209,16 @@ impl<C: Clock> WorkStore<C> {
                 "a candidate is a model, a requirement list, or both: nothing was written",
             ));
         }
+        if let Some(instructions) = &write.instructions {
+            if !valid_instructions(instructions) {
+                return Err(StoreError::refused(
+                    "bad-instructions",
+                    "instructions are named by 1 to 128 visible characters without spaces \
+                     (`claude-code/0123456789ab`)",
+                    json!(null),
+                ));
+            }
+        }
         let dir = self.existing(id)?;
         let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
         if is_removed(&dir) {
@@ -219,6 +237,7 @@ impl<C: Clock> WorkStore<C> {
                 .requirements
                 .as_ref()
                 .map(|t| Revision::of(t.as_bytes())),
+            instructions: write.instructions.clone(),
         };
         let next = current
             .with_candidate(holder, attempt, named)
@@ -413,6 +432,8 @@ impl<C: Clock> WorkStore<C> {
             model: candidate.model.clone().expect("whole"),
             requirements: candidate.requirements.clone().expect("whole"),
             previous,
+            replaces: head.as_ref().map(|p| p.revision.clone()),
+            instructions: candidate.instructions.clone(),
             checks,
             published_at: now.text.clone(),
         };
