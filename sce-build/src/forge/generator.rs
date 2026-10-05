@@ -3675,17 +3675,14 @@ pub struct CppEventPayload {
     pub guard_writes: Vec<NativeGuardWrite>,
 }
 
-/// The C++ `Event` enum value spelling for an event name — mirrors the
-/// `event | replace('.','_') | replace('-','_') | capitalize` the
-/// `state_machine.jinja2` Event enum applies (capitalize = upper-first,
-/// lower-rest).
+/// The C++ `Event` enum value spelling for an event name — the same filter the
+/// `state_machine.jinja2` Event enum and every template that names a member
+/// apply, and the one [`crate::member_names`] asks of each name. It used to be
+/// a copy of an older rule (upper-first, REST LOWERED), so an event `mem.hF`
+/// was declared `Mem_hF` and its payload lifted under `Mem_hf`, a member the
+/// enum does not have.
 fn cpp_event_enum_value(event: &str) -> String {
-    let token = event.replace(['.', '-'], "_");
-    let mut chars = token.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
-        None => token,
-    }
+    filters::to_cpp_event_variant(std::borrow::Cow::Borrowed(event))
 }
 
 /// The C++ runtime call that reads one EventSchema field out of a decoded

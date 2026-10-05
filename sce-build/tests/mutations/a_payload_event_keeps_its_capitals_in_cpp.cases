@@ -1,0 +1,32 @@
+# Mutation cases for "an event that carries a typed payload keeps the capitals of
+# its name in the C++ the machine is generated as".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_payload_event_keeps_its_capitals_in_cpp.cases`.
+#
+# The C++ `Event` enum spells an event name as a state is — first letter up, the
+# rest as written — and the payload code that lifts `_event.data` names the same
+# member. The case puts the defect back: the lift spells the member with the
+# older rule, first letter up and the REST LOWERED, so an event `mem.hF` is
+# declared `Mem_hF` and lifted under `Mem_hf`. The test generates that machine
+# and refuses the spelling twice — by the text the header carries, and by asking
+# g++ whether the member exists.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_payload_event_keeps_its_capitals_in_cpp
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/a_payload_event_keeps_its_capitals_in_cpp.rs
+
+mutation_case "the payload lift lowers the rest of the event name" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    filters::to_cpp_event_variant(std::borrow::Cow::Borrowed(event))
+}''',
+     r'''    let token = event.replace(['.', '-'], "_");
+    let mut chars = token.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        None => token,
+    }
+}''')
+PY
