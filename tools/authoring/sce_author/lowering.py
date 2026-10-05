@@ -34,6 +34,17 @@ def default_runtime() -> pathlib.Path:
     return root / "backends" / "python" / "runtime"
 
 
+def default_forge_runtime() -> pathlib.Path:
+    """Where the Python runtime of a `sce-static` machine sits in this tree.
+
+    A document under the static data model is lowered by the forge generator, and what it
+    generates imports `sce_forge_runtime`, not the `sce_runtime` of `default_runtime`.
+    Derived the same way, for the same reason.
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    return root / "backends" / "python" / "forge-runtime"
+
+
 class SendRecorder:
     """Every host-served send the machine made, in the order it made them."""
 
@@ -280,9 +291,12 @@ def load(into: pathlib.Path, document: pathlib.Path):
     # was driven. Without it the import died with `No module named
     # 'sce_runtime'` -- a traceback out of a verifier, about the verifier's
     # environment rather than about the document it was asked to judge.
-    runtime = default_runtime()
-    if runtime.is_dir() and str(runtime) not in sys.path:
-        sys.path.insert(0, str(runtime))
+    # ⚠ And a `sce-static` statechart imports a second runtime, `sce_forge_runtime`. Measured
+    # 2026-10-05: three of four documents a writer built under that data model died here with
+    # `No module named 'sce_forge_runtime'` and were reported as the generator's defect.
+    for runtime in (default_runtime(), default_forge_runtime()):
+        if runtime.is_dir() and str(runtime) not in sys.path:
+            sys.path.insert(0, str(runtime))
     emitted = [p for p in into.glob("*.py") if p.name != "__init__.py"]
     if not emitted:
         raise VerifyError(f"{document}: the generator wrote no python")
