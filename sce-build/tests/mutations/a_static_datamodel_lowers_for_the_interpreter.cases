@@ -136,8 +136,8 @@ PY
 # A `namelist` name that hands a child a string it bounds is no longer refused.
 mutation_case "a bounded namelist string is not refused" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "        if bounded_string {\n",
-     "        if false && bounded_string {\n")
+     "    namelist.split_whitespace().find(|name| {\n",
+     "    namelist.split_whitespace().filter(|_| false).find(|name| {\n")
 PY
 
 # The text of a `<send>`'s inline `<content>` is left as the author wrote it: an
@@ -177,4 +177,57 @@ mutation_case "a cancel's sendidexpr is refused" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
      "    fn lowers_cancel_expr(&self) -> bool {\n        true\n    }\n",
      "    fn lowers_cancel_expr(&self) -> bool {\n        false\n    }\n")
+PY
+
+# A hybrid `<invoke>` starts a document of its own (§2.13), so its lowering is the
+# set of documents the Interpreter loads from beside the invoking one. These take
+# one part of that lowering away each, and a test of the set must go red.
+
+# The `srcexpr` is left as the author wrote it: the Interpreter would load the
+# value as a path, and the set holds no call that names the lowered candidate.
+mutation_case "a hybrid srcexpr is left as the author wrote it" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        Some(format!(\n            \"{RUNTIME_GLOBAL}.candidate({native_src}, [{}])\",\n            names.join(\", \")\n        ))\n",
+     "        let _ = (native_src, &names);\n        None\n")
+PY
+
+# An argument the candidates take two ways is lowered once: the Interpreter carries
+# one expression in an attribute, so the candidate that took it the other way
+# would be handed the first's bound without a word.
+mutation_case "an argument the candidates take two ways is lowered once" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "                if *text == site.text {\n                    continue;\n                }\n",
+     "                if *text == site.text || true {\n                    continue;\n                }\n")
+PY
+
+# A `namelist` name that lands in a string a candidate bounds is carried as the
+# Interpreter holds it, with no expression to carry the bound.
+mutation_case "a namelist name a candidate bounds is carried as it is held" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    info.candidates.iter().find_map(|candidate| {\n        let declared = candidate.child_static_variables.as_deref().unwrap_or(&[]);\n        bounded_namelist_name(&info.namelist, declared)",
+     "    info.candidates.iter().find_map(|candidate| {\n        let declared = candidate.child_static_variables.as_deref().unwrap_or(&[]);\n        bounded_namelist_name(\"\", declared)")
+PY
+
+# Two candidates of one stem stand in one directory: the lowered one written
+# second overwrites the first, and a value names either.
+mutation_case "two candidates of one stem are taken for one file" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    a == b\n        || matches!(",
+     "    true\n        || matches!(")
+PY
+
+# The candidates a candidate names are not lowered: only the first ring of the set
+# is written, and what the second starts is not there to load.
+mutation_case "the candidates of a candidate are not lowered" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "                    pending.push_back((beside, name));\n",
+     "                    let _ = (beside, name);\n")
+PY
+
+# One document is asked for and the set is handed back as its first: the
+# candidates it would have to start are silently missing.
+mutation_case "a set is handed back as its first document" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    if set.len() > 1 {\n",
+     "    if set.len() > 1 && false {\n")
 PY

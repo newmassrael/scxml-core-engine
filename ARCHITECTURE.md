@@ -858,6 +858,14 @@ held to it:
 | Python | `sce_runtime.document_stem` | `backends/python/tests/document_stem/test_document_stem.py` |
 | C11 | `sce_document_stem` | `backends/c/tests/unit/document_stem_test.c` |
 | Kotlin | `DocumentStem.of` | `backends/kotlin/tests/.../runtime/DocumentStemTest.kt` |
+| Interpreter, lowered document (ECMAScript) | `SceStatic.candidate` (`sce-build/src/forge/static_js/sce_static.js`) | `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp` |
+
+The last row is the one reader that is not a runtime's `DocumentStem`: a
+`sce-static` document lowered for the Interpreter (docs/SCE_ACCEPTED_SUBSET.md
+§2.15) keeps its hybrid `<invoke>` in the script engine's language, and the
+Interpreter loads the document the `srcexpr` names at run time, so the
+lowered `srcexpr` is a call of the library that reduces the value to its stem
+and answers the file name the lowered candidate is written under.
 
 Do NOT write a new stem reader; call the engine's reader above.
 

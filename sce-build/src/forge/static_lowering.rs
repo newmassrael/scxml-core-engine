@@ -342,6 +342,15 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
+    /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
+    /// a target that runs the document's own attribute and so has no field of
+    /// the machine to read the value from: `native_src`, the string the
+    /// attribute computes, reduced to the candidate it names among `stems`.
+    /// `None` for a target whose machine reads
+    /// [`crate::model::HybridInvokeInfo::native_src`] itself.
+    fn hybrid_src_site(&self, _native_src: &str, _stems: &[&str]) -> Option<String> {
+        None
+    }
     /// Whether the `srcexpr` and the `<content expr>` of an `<invoke>` a host
     /// runs are lowered to the string each computes
     /// ([`UnsupportedInvokeInfo::native_src`],
@@ -5954,6 +5963,10 @@ fn lower_hybrid_invoke(
             info.srcexpr, r.error
         ))
     })?;
+    let stems: Vec<&str> = info.candidates.iter().map(|c| c.stem.as_str()).collect();
+    if let Some(site) = target.hybrid_src_site(&value.text, &stems) {
+        rewrites.note(&info.srcexpr, info.srcexpr_spelling.as_ref(), &site);
+    }
     info.native_src = value.text;
     info.native_src_fails = value.can_fail;
     info.srcexpr.clear();

@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::static_js::{lower_file, lower_source};
+use sce_build::forge::static_js::{lower_file, lower_file_set, lower_source, LoweredDocument};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/static_datamodel")
@@ -58,35 +58,41 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     let mut refused = Vec::new();
     for path in static_statecharts() {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
-        match lower_file(path.to_str().unwrap(), Vec::new()) {
-            Ok(document) => {
-                let parsed = roxmltree::Document::parse(&document)
-                    .unwrap_or_else(|e| panic!("{name}: the lowered document is not XML: {e}"));
-                let root = parsed.root_element();
-                assert_eq!(
-                    root.attribute("datamodel"),
-                    Some("ecmascript"),
-                    "{name}: the Interpreter runs an ecmascript document"
-                );
-                // The library is installed before anything that reads it, and
-                // only when something does.
-                let calls_the_library = document.contains("SceStatic.");
-                let first_data = scxml_element(root, "datamodel")
-                    .and_then(|datamodel| scxml_element(datamodel, "data"));
-                if calls_the_library {
+        // The set, not the document: a hybrid `<invoke>` starts a document of
+        // its own, which is lowered beside the one that invokes it.
+        match lower_file_set(path.to_str().unwrap(), Vec::new()) {
+            Ok(documents) => {
+                for LoweredDocument { file_name, text } in &documents {
+                    let name = format!("{name} ({file_name})");
+                    let document = text;
+                    let parsed = roxmltree::Document::parse(document)
+                        .unwrap_or_else(|e| panic!("{name}: the lowered document is not XML: {e}"));
+                    let root = parsed.root_element();
                     assert_eq!(
-                        first_data.and_then(|d| d.attribute("id")),
-                        Some("SceStaticInstalled"),
-                        "{name}: the library is the document's first <data>"
+                        root.attribute("datamodel"),
+                        Some("ecmascript"),
+                        "{name}: the Interpreter runs an ecmascript document"
+                    );
+                    // The library is installed before anything that reads it,
+                    // and only when something does.
+                    let calls_the_library = document.contains("SceStatic.");
+                    let first_data = scxml_element(root, "datamodel")
+                        .and_then(|datamodel| scxml_element(datamodel, "data"));
+                    if calls_the_library {
+                        assert_eq!(
+                            first_data.and_then(|d| d.attribute("id")),
+                            Some("SceStaticInstalled"),
+                            "{name}: the library is the document's first <data>"
+                        );
+                    }
+                    // A lowered document is an ecmascript one, and lowering
+                    // that again changes nothing.
+                    assert_eq!(
+                        &lower_source(document, &name).expect("lowers again"),
+                        document,
+                        "{name}: lowering is idempotent"
                     );
                 }
-                // A lowered document is an ecmascript one, and lowering that
-                // again changes nothing.
-                assert_eq!(
-                    lower_source(&document, &name).expect("lowers again"),
-                    document,
-                    "{name}: lowering is idempotent"
-                );
                 lowered.push(name);
             }
             Err(refusal) => {
@@ -103,7 +109,8 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // Floor: a scan that found nothing to lower would pass. What is lowered
     // today — scalars, checked integers, the typed payload, lists, records,
     // calls of scalar algorithms, a `<send>`'s `<param>`s, a `<final>`'s
-    // `<donedata>` and a child session written inline — is at least these
+    // `<donedata>`, a child session written inline and a hybrid `<invoke>`
+    // with the candidates it may start — is at least these
     // thirty-seven machines, which is every one the fixture directory holds, and
     // the floor rises as the lowering grows.
     assert!(
@@ -138,6 +145,8 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_invoke",
         "static_invoke_params",
         "static_invoke_string",
+        "static_invoke_hybrid",
+        "static_invoke_hybrid_saved",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),
@@ -454,5 +463,173 @@ fn a_namelist_name_that_hands_a_child_a_bounded_string_is_refused_by_name() {
     assert!(
         text.contains("UnsupportedFeature") && text.contains("namelist"),
         "the refusal names the construct: {text}"
+    );
+}
+
+/// The `<invoke>` of a hybrid parent: `srcexpr="pick"` among `candidates`, with
+/// `attributes` beside them and `params` inside.
+fn hybrid_parent(candidates: &str, attributes: &str, params: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="32" expr="'a.scxml'"/>
+    <data id="text" sce:type="string" sce:capacity="16" expr="'abc'"/>
+  </datamodel>
+  <state id="s">
+    <invoke type="scxml" id="c" srcexpr="pick" sce:candidates="{candidates}" {attributes}>{params}</invoke>
+  </state>
+</scxml>"#
+    )
+}
+
+/// A candidate that declares the string `t`, bounded to `capacity`.
+fn candidate_holding(capacity: u32) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="w">
+  <datamodel><data id="t" sce:type="string" sce:capacity="{capacity}" expr="'ab'"/></datamodel>
+  <state id="w"/>
+</scxml>"#
+    )
+}
+
+/// `files` written into a fresh directory, and the path of the first.
+fn written(files: &[(&str, String)]) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    for (name, text) in files {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("a directory");
+        std::fs::write(path, text).expect("a document is written");
+    }
+    let first = dir.path().join(files[0].0);
+    (dir, first)
+}
+
+/// A hybrid `<invoke>` starts a document of its own, which the Interpreter loads
+/// at run time from beside the invoking one: the lowering is the invoking
+/// document and each candidate, lowered, and the value is reduced to the stem of
+/// the one it names by the library, which answers the name that candidate is
+/// written under.
+#[test]
+fn a_hybrid_invoke_is_lowered_with_the_candidates_it_may_start() {
+    let path = fixtures().join("static_invoke_hybrid.scxml");
+    let set = lower_file_set(path.to_str().unwrap(), Vec::new()).expect("lowers");
+    let names: Vec<&str> = set.iter().map(|d| d.file_name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "static_invoke_hybrid.scxml",
+            "static_hybrid_first.scxml",
+            "static_hybrid_second.scxml"
+        ],
+        "the document asked for, then each candidate under its stem"
+    );
+    let parent = &set[0].text;
+    assert_eq!(
+        parent
+            .matches(
+                r#"srcexpr="SceStatic.candidate(pick, [&quot;static_hybrid_first&quot;, &quot;static_hybrid_second&quot;])""#
+            )
+            .count(),
+        4,
+        "each of the four invokes names its candidate through the library: {parent}"
+    );
+    for candidate in &set[1..] {
+        assert!(
+            candidate.text.contains(r#"datamodel="ecmascript""#),
+            "{}: a candidate is lowered as a document of its own",
+            candidate.file_name
+        );
+    }
+}
+
+/// The documents it would have to start are other files, so the single-document
+/// entry refuses one, naming the way to ask for the set.
+#[test]
+fn a_hybrid_invoke_is_refused_where_one_document_is_asked_for() {
+    let path = fixtures().join("static_invoke_hybrid.scxml");
+    let refusal = lower_file(path.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("--out-dir"),
+        "the refusal names the option: {text}"
+    );
+}
+
+/// The Interpreter carries one expression in an attribute, and an argument is
+/// handed to every candidate: two candidates that take it as strings bounded
+/// differently would need two expressions for the one written, so it is refused,
+/// naming it.
+#[test]
+fn an_argument_the_candidates_bound_differently_is_refused_by_name() {
+    let params = r#"<param name="t" expr="text"/>"#;
+    let (_dir, parent) = written(&[
+        ("parent.scxml", hybrid_parent("a.scxml b.scxml", "", params)),
+        ("a.scxml", candidate_holding(4)),
+        ("b.scxml", candidate_holding(8)),
+    ]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("`text`") && text.contains("two ways"),
+        "the refusal names the argument: {text}"
+    );
+
+    // Bounded alike, the one expression serves both.
+    let (_dir, parent) = written(&[
+        ("parent.scxml", hybrid_parent("a.scxml b.scxml", "", params)),
+        ("a.scxml", candidate_holding(4)),
+        ("b.scxml", candidate_holding(4)),
+    ]);
+    let set = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect("lowers");
+    assert!(
+        set[0]
+            .text
+            .contains(r#"<param name="t" expr="SceStatic.bounded(text, 4)"/>"#),
+        "{}",
+        set[0].text
+    );
+}
+
+/// A `namelist` name is carried as the Interpreter holds it, with no expression
+/// to carry a bound: one that lands in a string a candidate bounds is refused,
+/// naming the candidate.
+#[test]
+fn a_namelist_name_a_candidate_bounds_is_refused_by_name() {
+    let (_dir, parent) = written(&[
+        (
+            "parent.scxml",
+            hybrid_parent("a.scxml b.scxml", r#"namelist="t""#, "")
+                .replace(r#"<data id="text""#, r#"<data id="t""#),
+        ),
+        ("a.scxml", candidate_holding(4)),
+        ("b.scxml", candidate_holding(4)),
+    ]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature")
+            && text.contains("namelist")
+            && text.contains("hybrid")
+            && text.contains("`a`"),
+        "the refusal names the construct and the candidate: {text}"
+    );
+}
+
+/// A candidate is written under its stem and a value is matched by it, so two
+/// candidates of one stem — even one a candidate names in turn — cannot stand in
+/// one directory.
+#[test]
+fn two_candidates_of_one_stem_are_refused_by_name() {
+    let (_dir, parent) = written(&[
+        ("parent.scxml", hybrid_parent("a.scxml b.scxml", "", "")),
+        ("a.scxml", candidate_holding(4)),
+        ("b.scxml", hybrid_parent("sub/a.scxml", "", "")),
+        ("sub/a.scxml", candidate_holding(4)),
+    ]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("the one stem `a`"),
+        "the refusal names the stem: {text}"
     );
 }

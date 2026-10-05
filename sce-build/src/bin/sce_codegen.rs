@@ -2791,6 +2791,14 @@ enum Commands {
     ///
     /// The document goes to stdout as raw bytes with no trailing newline, as
     /// `expand` does, so a caller can capture it exactly.
+    ///
+    /// A hybrid `<invoke>` starts one of the documents it declares in
+    /// `sce:candidates`, which the Interpreter loads at run time from beside the
+    /// invoking one, so each is lowered too and the lowering is several
+    /// documents. With `--out-dir` they are written there, each under the name
+    /// the lowered document starts it by, and one JSON line names them:
+    /// `{"v":1,"kind":"lower","documents":[{"path":...}]}`, the document asked
+    /// for first. Without it such a document is refused, naming the option.
     Lower {
         /// Input SCXML file path
         scxml: String,
@@ -2798,6 +2806,10 @@ enum Commands {
         /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
+        /// Write the lowered document and the documents its hybrid `<invoke>`s
+        /// may start into this directory, instead of printing the document.
+        #[arg(short = 'o', long = "out-dir", value_name = "DIR")]
+        out_dir: Option<String>,
     },
     /// Lower one `sce:kind="algorithm"` document for a script engine, without
     /// a statechart around it.
@@ -3444,7 +3456,11 @@ fn main() {
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
-        Commands::Lower { scxml, include_dir } => cmd_lower(&scxml, &include_dir, error_format),
+        Commands::Lower {
+            scxml,
+            include_dir,
+            out_dir,
+        } => cmd_lower(&scxml, &include_dir, out_dir.as_deref(), error_format),
         Commands::LowerAlgorithm { document } => cmd_lower_algorithm(&document, error_format),
         Commands::Verify {
             out_dir,
@@ -10645,11 +10661,44 @@ fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
 // judge that holds the document to its types has already run, and refuses
 // through the same error format as `generate` does.
 
-fn cmd_lower(scxml_path: &str, include_dirs: &[String], error_format: ErrorFormat) {
+fn cmd_lower(
+    scxml_path: &str,
+    include_dirs: &[String],
+    out_dir: Option<&str>,
+    error_format: ErrorFormat,
+) {
     let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
-    let lowered = sce_build::forge::static_js::lower_file(scxml_path, extra_dirs)
+    let Some(out_dir) = out_dir else {
+        let lowered = sce_build::forge::static_js::lower_file(scxml_path, extra_dirs)
+            .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+        out_bytes(lowered.as_bytes());
+        return;
+    };
+    // A hybrid `<invoke>` starts a document of its own, which the Interpreter
+    // loads from beside the invoking one: the set is written together, each
+    // under the name the lowered document starts it by.
+    let documents = sce_build::forge::static_js::lower_file_set(scxml_path, extra_dirs)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
-    out_bytes(lowered.as_bytes());
+    let dir = Path::new(out_dir);
+    fs::create_dir_all(dir).unwrap_or_else(|source| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out_dir.to_string(),
+            source,
+        })
+    });
+    let mut written = Vec::new();
+    for document in &documents {
+        let path = dir.join(&document.file_name);
+        fs::write(&path, document.text.as_bytes()).unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.display().to_string(),
+                source,
+            })
+        });
+        written.push(serde_json::json!({ "path": path.display().to_string() }));
+    }
+    let line = serde_json::json!({ "v": 1, "kind": "lower", "documents": written });
+    outln!("{line}");
 }
 
 // ── Subcommand: lower-algorithm ────────────────────────────────

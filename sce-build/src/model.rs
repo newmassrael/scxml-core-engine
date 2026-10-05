@@ -2312,9 +2312,10 @@ pub struct InvokeCandidate {
 /// a `file:` scheme, without the extension that follows its last `.`. A `.`
 /// that opens the name is a name, not an extension.
 ///
-/// ⚠ One rule, in seven places: this function, and the `DocumentStem` of each
-/// of the six generated runtimes, are held to the one table
-/// `tests/document_stem/document_stem.json`. The build reads each declared
+/// ⚠ One rule, in eight places: this function, the `DocumentStem` of each of
+/// the six generated runtimes and the `candidate` of the library a document
+/// lowered for the Interpreter installs (`sce_static.js`), are held to the one
+/// table `tests/document_stem/document_stem.json`. The build reads each declared
 /// candidate by it ([`InvokeCandidate::from_path`]) and a runtime reads the
 /// value by it, so the two cannot disagree about the stem of one document — as
 /// they could when this was `Path::file_stem`, which does not split on `\` on

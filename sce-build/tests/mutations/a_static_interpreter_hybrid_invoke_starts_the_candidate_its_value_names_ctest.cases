@@ -1,0 +1,67 @@
+# Mutation cases for the hybrid `<invoke>` of a `datamodel="sce-static"` document
+# lowered for the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): the
+# `srcexpr` becomes a call of the library's `candidate`, which reduces the value to
+# the stem of the document it names (W3C SCXML 6.4) by the one table every engine
+# reads, and answers the file name the lowered candidate is written under.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_interpreter_hybrid_invoke_starts_the_candidate_its_value_names_ctest.cases`.
+#
+# Two tests of `static_datamodel_lowered` judge it: the table of document stems,
+# each value handed to the library with a list that holds its stem (it answers the
+# file name) and with one that does not (it throws), and `static_invoke_hybrid.scxml`
+# run by the Interpreter from the directory `sce-codegen lower --out-dir` wrote,
+# whose `done.invoke` events add a power of ten each, so the sum 111 and the two
+# errors say which candidates ended and what was reported. The mutants below each
+# take one decision out of the library and leave a document that still lowers:
+#
+#   the extension is kept in the stem, so no value names a candidate;
+#   the `file:` scheme is kept, so a `file:` value names none;
+#   a `\` is no separator, so a Windows path names none;
+#   a document the invoke did not declare is started all the same;
+#   a name that opens with a `.` has its whole self taken for an extension.
+#
+# The library reaches the test only through the generator that embeds it, so the
+# target is the file the generator reads and the build of the generator is what
+# carries a mutated one into the run.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp tests/document_stem/document_stem.json sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
+
+# ── The value is reduced to the stem of the document it names ───────
+
+mutation_case "the extension is kept in the stem" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      var dot = name.lastIndexOf('.');\n      var stem = dot > 0 ? name.slice(0, dot) : name;\n",
+     "      var stem = name;\n")
+PY
+
+mutation_case "the file: scheme is kept in the stem" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      while (name.indexOf('file:') === 0) {\n        name = name.slice(5);\n      }\n",
+     "")
+PY
+
+mutation_case "a backslash is no separator" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      var name = value.split('/').pop().split('\\\\').pop();\n",
+     "      var name = value.split('/').pop();\n")
+PY
+
+mutation_case "a name that opens with a dot is all extension" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      var stem = dot > 0 ? name.slice(0, dot) : name;\n",
+     "      var stem = dot >= 0 ? name.slice(0, dot) : name;\n")
+PY
+
+# ── A document the invoke did not declare starts nothing ────────────
+
+mutation_case "a document the invoke did not declare is started all the same" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      if (stems.indexOf(stem) < 0) {\n        fail('the document ",
+     "      if (false) {\n        fail('the document ")
+PY

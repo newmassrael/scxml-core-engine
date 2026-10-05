@@ -47,6 +47,15 @@
      none, since a backend answers that with error.execution as well, and only
      ever for the shape of the event.
 
+     A hybrid invoke names the document it starts by a value its srcexpr
+     computes, and the document is one its sce:candidates declares, each lowered
+     beside the invoking one under the name its stem gives it. candidate() reduces
+     the value to its stem by the rule every engine reads from the one table
+     (tests/document_stem/document_stem.json) and answers the file name of the
+     lowered candidate, which the Interpreter loads beside the invoking document.
+     A value that names no declared document throws, so the srcexpr cannot be
+     evaluated: error.execution, and nothing starts.
+
      The library is embedded in one attribute and its newlines collapse, so it
      holds no line comment and no statement that relies on a line break. */
   var SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -286,6 +295,21 @@
       }
     },
     algorithms: {},
+    candidate: function (value, stems) {
+      if (typeof value !== 'string') {
+        fail('expected the string a hybrid invoke names its document by, read ' + String(value));
+      }
+      var name = value.split('/').pop().split('\\').pop();
+      while (name.indexOf('file:') === 0) {
+        name = name.slice(5);
+      }
+      var dot = name.lastIndexOf('.');
+      var stem = dot > 0 ? name.slice(0, dot) : name;
+      if (stems.indexOf(stem) < 0) {
+        fail('the document ' + value + ' is not one the invoke declares in sce:candidates');
+      }
+      return stem + '.scxml';
+    },
     at: function (collection, index) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= collection.length) {
         fail('the index ' + String(index) + ' is outside the collection', 'out-of-range');

@@ -120,6 +120,41 @@ Lowered lower(const std::filesystem::path &fixture) {
     return lowered;
 }
 
+/// `sce-codegen lower <fixture> --out-dir <dir>`: the lowered document and the
+/// documents its hybrid `<invoke>`s may start, written into `dir`, and the paths
+/// the one JSON line on stdout names, the document asked for first.
+struct LoweredSet {
+    bool ok = false;
+    std::vector<std::filesystem::path> documents;
+    nlohmann::json refusal;
+};
+
+LoweredSet lowerSet(const std::filesystem::path &fixture, const std::filesystem::path &dir) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    EXPECT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    LoweredSet set;
+    if (bin == nullptr) {
+        return set;
+    }
+    const std::string base = std::string("\"") + bin + "\" lower \"" + fixture.string() + "\" --out-dir \"" +
+                             dir.string() + "\" --error-format=json";
+    const Ran ran = capture(base + " 2>/dev/null");
+    if (ran.status == 0) {
+        const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+        if (line.is_object() && line.value("kind", std::string{}) == "lower") {
+            set.ok = true;
+            for (const auto &document : line.at("documents")) {
+                set.documents.emplace_back(document.at("path").get<std::string>());
+            }
+        }
+        return set;
+    }
+    const Ran refused = capture(base + " 2>&1 >/dev/null");
+    const auto eol = refused.output.find('\n');
+    set.refusal = nlohmann::json::parse(refused.output.substr(0, eol), nullptr, false);
+    return set;
+}
+
 /// Whether a value the script engine holds is the scenario's. Both are read
 /// as JSON, so `253` and `253.0`, or `true` and `true`, are the same value.
 bool holds(const nlohmann::json &got, const nlohmann::json &want) {
@@ -465,6 +500,88 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildTakesTheEventsI
     machine->processEvent("abort", "");
     raiser->processQueuedEvents();
     EXPECT_EQ("idle", machine->getCurrentState());
+}
+
+// A hybrid `<invoke>` starts the candidate its `srcexpr` value names, by the stem of
+// the document it names (`static_invoke_hybrid.scxml`; the generated backends' halves
+// are `a_static_hybrid_invoke_starts_the_candidate_its_value_names`). The Interpreter
+// loads the document at run time from beside the one that invokes it, so the lowering
+// is a directory: the invoking document and each candidate, lowered. Four phases —
+// a `file:` value, an absolute path, an argument no 32-bit field can hold, and a
+// document the invoke did not declare — and each `done.invoke` adds a power of ten, so
+// the sum 111 and the two errors say which candidates ended and what was reported.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHybridInvokeStartsTheCandidateItsValueNames) {
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-lower-hybrid-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(kFixtures / "static_invoke_hybrid.scxml", dir);
+    ASSERT_TRUE(set.ok) << "a hybrid `<invoke>` is lowered for the Interpreter now: " << set.refusal.dump();
+    ASSERT_EQ(3u, set.documents.size()) << "the invoking document and its two candidates";
+    EXPECT_EQ(dir / "static_invoke_hybrid.scxml", set.documents[0]);
+
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXML(set.documents[0].string())) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+
+    // The candidate each value names ends on the two values it is waiting for. One
+    // handed the other's names would never end, and the run would stop short.
+    EXPECT_TRUE(
+        settles(raiser, [&] { return variable(*machine, "completed") == 111 && variable(*machine, "errors") == 2; }))
+        << "completed is " << variable(*machine, "completed").dump() << " and errors "
+        << variable(*machine, "errors").dump();
+    EXPECT_TRUE(machine->isInFinalState()) << "the run ended in `over`";
+    std::filesystem::remove_all(dir, ec);
+}
+
+// The library's `candidate` reduces the value to a document stem by the rule every
+// engine reads from the one table, `tests/document_stem/document_stem.json`: the
+// build's reader, the six runtimes' and this one cannot disagree about the stem of
+// one document. A value that names a declared stem answers the file name the lowered
+// candidate is written under; one that names none throws, which the Interpreter
+// reports as an `srcexpr` that could not be evaluated.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReducesAValueToTheStemEveryEngineReducesItTo) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    // Any document that is lowered installs the library; an algorithm is the
+    // smallest, and `lower-algorithm` hands over the expression that installs it.
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "document_stem_lowered";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    const auto table = nlohmann::json::parse(
+        slurp(std::filesystem::path(SCE_PROJECT_ROOT) / "tests/document_stem/document_stem.json"), nullptr, false);
+    ASSERT_FALSE(table.is_discarded()) << "the table is JSON";
+    ASSERT_GE(table.at("cases").size(), 15u) << "the table lost cases";
+    for (const auto &entry : table.at("cases")) {
+        const std::string value = entry.at("value").get<std::string>();
+        const std::string stem = entry.at("stem").get<std::string>();
+        SCOPED_TRACE(entry.at("name").get<std::string>() + ": " + value);
+        // JSON text of a string is a string literal of the script, escapes included.
+        const std::string literal = nlohmann::json(value).dump();
+        if (!stem.empty()) {
+            const auto named = engine_
+                                   ->evaluateExpression(session, "SceStatic.candidate(" + literal + ", [" +
+                                                                     nlohmann::json(stem).dump() + "])")
+                                   .get();
+            ASSERT_TRUE(named.isSuccess()) << named.getErrorMessage();
+            EXPECT_EQ(stem + ".scxml", named.getValue<std::string>());
+        }
+        // A list that does not hold the stem names no document.
+        const auto other = engine_
+                               ->evaluateExpression(session, "SceStatic.candidate(" + literal + ", [" +
+                                                                 nlohmann::json(stem + "-other").dump() + "])")
+                               .get();
+        EXPECT_FALSE(other.isSuccess()) << "a value naming a document the invoke does not declare";
+    }
+    engine_->destroySession(session);
 }
 
 }  // namespace Tests

@@ -34,9 +34,9 @@
 //!
 //! `<sce:action>`, an algorithm with a construct
 //! [`crate::forge::static_js_algorithm`] does not spell, an `<invoke>` that is
-//! not a child session written inline (one by `src`, a hybrid, a mesh or a
-//! host-run one) and the executable content the walk does not lower are refused
-//! with `generate/unsupported-feature` naming the
+//! neither a child session written inline nor a hybrid one (one by `src`, a
+//! mesh or a host-run one) and the executable content the walk does not lower
+//! are refused with `generate/unsupported-feature` naming the
 //! construct, never passed through: an expression left as the author wrote it
 //! would be run by the script engine as ECMAScript, which is the
 //! mis-execution the refusal exists to prevent.
@@ -51,6 +51,23 @@
 //! fails as it does on the generated backends and is left out. A `namelist` name
 //! cannot carry one, and a child that bounds a string it hands is refused by
 //! name.
+//!
+//! # Hybrid invokes
+//!
+//! A hybrid `<invoke>` names the document it starts by a value (`srcexpr`)
+//! among the documents it declares (`sce:candidates`), each a `sce-static`
+//! document beside the invoking one. The Interpreter loads that document at run
+//! time, so every candidate is lowered as a document of its own and written
+//! beside the invoking one under its stem ([`lower_file_set`]), and the
+//! `srcexpr` becomes the library's `candidate` call, which reduces the value to
+//! its stem by the rule every engine reads from one table and answers that
+//! file's name. A value that names none throws: the attribute cannot be
+//! evaluated, `error.execution` is raised and nothing starts. The `<param>`s
+//! and the `namelist` go to every candidate, each keeping the names it declares;
+//! the Interpreter carries one expression in an attribute, so an argument the
+//! candidates take as variables of different types or bounds is refused by
+//! name (`site_edits`), as is a `namelist` name that lands in a string a
+//! candidate bounds.
 //!
 //! # Algorithms
 //!
@@ -95,8 +112,8 @@ use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::StaticScope;
 use crate::forge::types::InferredType;
-use crate::model::{Action, Datamodel, SCXMLModel};
-use crate::model::{DoneDataContent, Invoke};
+use crate::model::{Action, Datamodel, SCXMLModel, Variable};
+use crate::model::{DoneDataContent, HybridInvokeInfo, Invoke};
 
 /// The global of the script engine the library is bound to, so every lowered
 /// expression reads `SceStatic.<member>`.
@@ -488,6 +505,25 @@ impl StaticTarget for JsTarget {
     fn lowers_scalar_content(&self) -> bool {
         true
     }
+    // Its own `<invoke>` evaluates the `srcexpr` and loads the document it
+    // names, so the attribute becomes the call that reduces the value to its
+    // stem and answers the lowered candidate that stem names, written beside the
+    // invoking document ([`lower_file_set`]). A value naming no declared document
+    // throws: the attribute cannot be evaluated, `error.execution` is raised and
+    // nothing starts, as on the generated backends.
+    fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
+    fn hybrid_src_site(&self, native_src: &str, stems: &[&str]) -> Option<String> {
+        let names: Vec<String> = stems
+            .iter()
+            .map(|stem| serde_json::to_string(stem).expect("a string is JSON"))
+            .collect();
+        Some(format!(
+            "{RUNTIME_GLOBAL}.candidate({native_src}, [{}])",
+            names.join(", ")
+        ))
+    }
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a
@@ -499,7 +535,7 @@ impl StaticTarget for JsTarget {
 fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
     let info = match invoke {
         Invoke::Scxml(info) => info,
-        Invoke::Hybrid(_) => return Some(format!("a hybrid <invoke> in state `{state}`")),
+        Invoke::Hybrid(info) => return unsupported_hybrid_invoke(info, state),
         Invoke::MeshRpc(_) => return Some(format!("a mesh <invoke> in state `{state}`")),
         Invoke::Unsupported(_) => {
             return Some(format!("a host-run <invoke> in state `{state}`"));
@@ -508,25 +544,47 @@ fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
     if info.inline_child.is_none() || info.inline_child_range.is_none() {
         return Some(format!("an <invoke> by `src` in state `{state}`"));
     }
-    // A `namelist` name is handed to the child by the Interpreter as it holds it,
-    // with no expression to carry the bound the child declared for a string.
     let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
-    for name in info.namelist.split_whitespace() {
-        let bounded_string = declared.iter().find(|v| v.id == name).is_some_and(|v| {
+    bounded_namelist_name(&info.namelist, declared).map(|name| {
+        format!(
+            "the `namelist` name `{name}` of the <invoke> in state `{state}`, which hands \
+             a child a string it bounds"
+        )
+    })
+}
+
+/// What of a hybrid `<invoke>` has no lowering for the Interpreter. The
+/// candidates it may start are documents of their own, lowered beside the
+/// invoking one ([`lower_file_set`]), so what is left is what the `<invoke>`
+/// hands them: a `namelist` name is carried by the Interpreter as it holds the
+/// value, with no expression to carry a bound, so one that lands in a string
+/// any candidate bounds is refused.
+fn unsupported_hybrid_invoke(info: &HybridInvokeInfo, state: &str) -> Option<String> {
+    info.candidates.iter().find_map(|candidate| {
+        let declared = candidate.child_static_variables.as_deref().unwrap_or(&[]);
+        bounded_namelist_name(&info.namelist, declared).map(|name| {
+            format!(
+                "the `namelist` name `{name}` of the hybrid <invoke> in state `{state}`, which \
+                 hands the candidate `{}` a string it bounds",
+                candidate.stem
+            )
+        })
+    })
+}
+
+/// The first name of `namelist` that lands in a string `declared` bounds. A
+/// `namelist` name is handed to a child by the Interpreter as it holds it, with
+/// no expression to carry the bound the child declared for a string.
+fn bounded_namelist_name<'a>(namelist: &'a str, declared: &[Variable]) -> Option<&'a str> {
+    namelist.split_whitespace().find(|name| {
+        declared.iter().find(|v| v.id == *name).is_some_and(|v| {
             v.capacity.is_some()
                 && matches!(
                     v.value_type.as_ref().and_then(|t| t.scalar()),
                     Some(SceType::String)
                 )
-        });
-        if bounded_string {
-            return Some(format!(
-                "the `namelist` name `{name}` of the <invoke> in state `{state}`, which hands \
-                 a child a string it bounds"
-            ));
-        }
-    }
-    None
+        })
+    })
 }
 
 /// The first action of `actions`, or of anything nested in one, that is not
@@ -631,12 +689,37 @@ fn apply(text: &str, mut edits: Vec<Edit>) -> Result<String, GenerateError> {
 /// The replacement each lowered expression asks for. An expression that
 /// lowered to what the author wrote is left alone.
 fn site_edits(sites: &[LoweredSite]) -> Result<Vec<Edit>, GenerateError> {
-    let mut edits = Vec::new();
+    let mut edits: Vec<Edit> = Vec::new();
+    // The places already lowered, and to what. A hybrid `<invoke>` hands every
+    // candidate the arguments it writes once, so the walk lowers each of them
+    // once per candidate: the same place, and the same text when the candidates
+    // take the value alike. The Interpreter carries one expression in an
+    // attribute, so a place the walk lowered two ways has no lowering here.
+    let mut lowered: Vec<(Range<usize>, &str)> = Vec::new();
     for site in sites {
+        let place = site
+            .spelling
+            .as_ref()
+            .and_then(|s| s.value())
+            .map(|written| written.range());
+        if let Some(range) = &place {
+            if let Some((_, text)) = lowered.iter().find(|(held, _)| held == range) {
+                if *text == site.text {
+                    continue;
+                }
+                return Err(GenerateError::unsupported(format!(
+                    "`{}` is written once and lowered two ways: the candidates of a hybrid \
+                     <invoke> take the value as variables of different types or bounds, and \
+                     the Interpreter carries one expression in an attribute",
+                    site.source.trim()
+                )));
+            }
+            lowered.push((range.clone(), site.text.as_str()));
+        }
         if site.text.trim() == site.source.trim() {
             continue;
         }
-        let Some(written) = site.spelling.as_ref().and_then(|s| s.value()) else {
+        let Some(range) = place else {
             return Err(GenerateError::unsupported(format!(
                 "`{}` has no place in the document to be rewritten at: the model holds it \
                  as something the document does not spell",
@@ -644,7 +727,7 @@ fn site_edits(sites: &[LoweredSite]) -> Result<Vec<Edit>, GenerateError> {
             )));
         };
         edits.push(Edit {
-            range: written.range(),
+            range,
             text: xml_attribute_value(&site.text),
         });
     }
@@ -1034,7 +1117,104 @@ pub fn lower_algorithm_document(
 /// reading `generate` gives it, so `<xi:include>` and `<sce:use>` are expanded
 /// and the imports beside it are resolved. The lowered document is the
 /// expanded one, and stands alone.
+///
+/// A document whose hybrid `<invoke>` starts a document of its own is refused:
+/// the lowered candidates are other files, which [`lower_file_set`] returns.
 pub fn lower_file(path: &str, include_dirs: Vec<PathBuf>) -> Result<String, Located<ForgeError>> {
+    let mut set = lower_file_set(path, include_dirs)?;
+    if set.len() > 1 {
+        return Err(Located::in_file(
+            ForgeError::from(GenerateError::unsupported(format!(
+                "a hybrid <invoke> starts a document of its own, so the lowering is {} \
+                 documents that stand in one directory; ask for the set (`--out-dir`)",
+                set.len()
+            ))),
+            path,
+        ));
+    }
+    Ok(set.remove(0).text)
+}
+
+/// A document lowered for the Interpreter, under the name it is read by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoweredDocument {
+    /// The file name the document is written as, in the directory the set it is
+    /// part of stands in.
+    pub file_name: String,
+    /// The lowered document.
+    pub text: String,
+}
+
+/// The document `path` names, lowered as [`lower_file`] lowers it, with every
+/// document a hybrid `<invoke>` of it may start (`sce:candidates`) — each
+/// lowered the same way, and so the ones those start. The first is the
+/// document asked for, under the name it has.
+///
+/// A hybrid `<invoke>`'s `srcexpr` names the document to start by a value, so
+/// the Interpreter loads it at run time, from beside the invoking document. The
+/// lowered `srcexpr` answers `<stem>.scxml` for the candidate the value names
+/// ([`JsTarget::hybrid_src_site`]), and that is the name each candidate is
+/// written under, so the set is the documents the lowered one can start and the
+/// directory they stand in together is what a run needs.
+///
+/// Refused by name: two candidates, however far apart in the set, with one stem
+/// — the name a lowered one is written under, and what the value is matched by.
+pub fn lower_file_set(
+    path: &str,
+    include_dirs: Vec<PathBuf>,
+) -> Result<Vec<LoweredDocument>, Located<ForgeError>> {
+    let root = PathBuf::from(path);
+    let root_name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string();
+    let mut claimed: BTreeMap<String, PathBuf> = BTreeMap::new();
+    claimed.insert(root_name.clone(), root.clone());
+    let mut pending = std::collections::VecDeque::from([(root, root_name)]);
+    let mut documents = Vec::new();
+    while let Some((source, file_name)) = pending.pop_front() {
+        let label = source.to_string_lossy().into_owned();
+        let (text, candidates) = lower_one(&label, include_dirs.clone())?;
+        documents.push(LoweredDocument { file_name, text });
+        for candidate in candidates {
+            let name = format!("{}.scxml", candidate.stem);
+            let beside = source
+                .parent()
+                .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+                .join(&candidate.path);
+            match claimed.get(&name) {
+                Some(held) if same_file(held, &beside) => {}
+                Some(held) => {
+                    return Err(Located::in_file(
+                        ForgeError::from(GenerateError::unsupported(format!(
+                            "`{}` and `{}` have the one stem `{}`: a candidate is lowered \
+                             under its stem and a value names it by that, so the two cannot \
+                             stand in one directory",
+                            held.display(),
+                            beside.display(),
+                            candidate.stem
+                        ))),
+                        &label,
+                    ));
+                }
+                None => {
+                    claimed.insert(name.clone(), beside.clone());
+                    pending.push_back((beside, name));
+                }
+            }
+        }
+    }
+    Ok(documents)
+}
+
+/// The document `path` names, lowered, and the candidates the hybrid
+/// `<invoke>`s of it declare: the ones it was written with, as the model holds
+/// them.
+fn lower_one(
+    path: &str,
+    include_dirs: Vec<PathBuf>,
+) -> Result<(String, Vec<crate::model::InvokeCandidate>), Located<ForgeError>> {
     let mut parser = crate::parser::SCXMLParser::new().with_include_dirs(include_dirs);
     let model = parser.parse_file(path)?;
     let expanded = model
@@ -1049,7 +1229,42 @@ pub fn lower_file(path: &str, include_dirs: Vec<PathBuf>) -> Result<String, Loca
                 path,
             )
         })?;
-    lower_parsed(&expanded, &model, path, Path::new(path).parent())
+    let text = lower_parsed(&expanded, &model, path, Path::new(path).parent())?;
+    let mut candidates = Vec::new();
+    hybrid_candidates(&model, &mut candidates);
+    Ok((text, candidates))
+}
+
+/// Every candidate a hybrid `<invoke>` of `model` declares, in a child session
+/// written inline in it too. A document under another data model is not
+/// lowered, so what its invokes start is not either.
+fn hybrid_candidates(model: &SCXMLModel, into: &mut Vec<crate::model::InvokeCandidate>) {
+    if model.datamodel != Datamodel::SceStatic {
+        return;
+    }
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            match invoke {
+                Invoke::Hybrid(info) => into.extend(info.candidates.iter().cloned()),
+                Invoke::Scxml(info) => {
+                    if let Some(child) = info.inline_child.as_deref() {
+                        hybrid_candidates(child, into);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Whether `a` and `b` name one file: the same path, or one the file system
+/// resolves to the same place.
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (std::fs::canonicalize(a), std::fs::canonicalize(b)),
+            (Ok(a), Ok(b)) if a == b
+        )
 }
 
 /// `text`, a document read from memory, lowered for the Interpreter. Nothing
@@ -1109,6 +1324,7 @@ mod tests {
             "field: field",
             "out: function",
             "extend: function",
+            "candidate: function",
         ] {
             assert!(text.contains(member), "no `{member}` in the library");
         }

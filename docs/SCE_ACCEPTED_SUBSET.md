@@ -2566,8 +2566,15 @@ start reads `srcexpr` from the restored variables and hands the arguments'
 current values to every candidate. Rust and Kotlin, the backends that have the
 API, drive it (`a_static_hybrid_invoke_is_started_again_by_a_restore` in each).
 
-Not yet: the Interpreter refuses such a document by name
-(`has no ecmascript lowering`).
+The Interpreter runs one once it is lowered (§2.15, "It runs once lowered"):
+`sce-codegen lower --out-dir` writes the document and each candidate, lowered,
+into one directory, the `srcexpr` becomes a call of the library's `candidate`,
+which reduces the value to its stem by the same table and answers the file name
+the lowered candidate is written under, and the Interpreter loads that file from
+beside the invoking one. A value naming no declared document throws, so the
+attribute cannot be evaluated: `error.execution`, and nothing starts.
+`static_invoke_hybrid.scxml` runs under it as on the others, to 111 and two
+errors (`AHybridInvokeStartsTheCandidateItsValueNames`).
 
 The runtime witness for the selection itself is
 `integration_resources/invoke_candidate_selects_the_child/`, driven on
@@ -4521,21 +4528,46 @@ handed through that bound (`SceStatic.bounded`), so that a value past it fails a
 is left out as on the generated backends, with an `error.execution`. A child
 under another data model is left as it was written.
 
+A hybrid `<invoke>` (§2.13) starts one of the documents its `sce:candidates`
+declares, which the Interpreter loads at run time from beside the invoking
+document, so its lowering is a set of documents and not one: the invoking
+document and each candidate, lowered as a document of its own and written under
+its stem, and the candidates of those in turn. `sce-codegen lower <document>
+--out-dir <dir>` writes the set and prints one JSON line naming the files, the
+document asked for first; without `--out-dir` a document of the kind is refused,
+naming the option, since there is no one document to print. The `srcexpr`
+becomes `SceStatic.candidate(<the value>, [<the stems>])`, which reduces the
+value to its stem by the one table every engine reads
+(`tests/document_stem/document_stem.json`) and answers `<stem>.scxml`, the file
+name the lowered candidate is written under; a value that names none of the
+stems throws, so the attribute cannot be evaluated, `error.execution` is raised
+and nothing starts, as on the generated backends. The `<param>`s and the
+`namelist` go to every candidate, each keeping the names it declares, and the
+Interpreter carries ONE expression in an attribute, so an argument the
+candidates take as variables of different types or bounds — one candidate
+bounding a string another bounds otherwise or leaves unbounded — has no single
+lowering and is refused by name, as is a `namelist` name that lands in a string a
+candidate bounds. Two candidates of one stem, however far apart in the set, are
+refused: the stem is the name each is written under.
+
 A construct with no lowering yet — a `bytes` literal, a top-level `<script>`, an
-`<invoke>` that is not an inline child (by `src`, a hybrid, a mesh or a host-run
-one) or whose `namelist` hands a child a string it bounds, a `<donedata>` or a
-`<send>` whose `<content>` is an expression or holds an element — is refused with
-`generate/unsupported-feature` naming it, never passed through half lowered.
+`<invoke>` that is not an inline child or a hybrid one (by `src`, a mesh or a
+host-run one) or whose `namelist` hands a child a string it bounds, a `<donedata>`
+or a `<send>` whose `<content>` is an expression or holds an element — is
+refused with `generate/unsupported-feature` naming it, never passed through half
+lowered.
 `<sce:action>` is lowered (§2.11): its `<sce:arg>` expressions are lowered as
 any expression is, and the action is performed by the host installed on the
 machine.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the generated backends replay
 (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
-lowered documents, so one oracle judges the engines; the three fixtures that
+lowered documents, so one oracle judges the engines; the four fixtures that
 invoke a child have no scenario of their own, and the same file runs each of them
 under the Interpreter and holds it to what the generated backends'
-`a_static_child_is_handed_its_params` and its siblings hold them to.
+`a_static_child_is_handed_its_params` and its siblings hold them to — the fourth,
+`static_invoke_hybrid`, from the directory `lower --out-dir` writes. The same
+file runs the table of document stems through the library's `candidate`.
 
 **An algorithm on its own.** `sce-codegen lower-algorithm <document>` lowers one
 `sce:kind="algorithm"` document without a statechart around it — an
