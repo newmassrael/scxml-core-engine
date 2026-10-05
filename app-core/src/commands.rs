@@ -53,6 +53,7 @@ pub const COMMANDS: &[&str] = &[
     "accept",
     "read_acceptance",
     "read_work_snapshot",
+    "read_work_heads",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -86,7 +87,13 @@ pub const COMMANDS: &[&str] = &[
 /// that is told something changed and must not show a text of one moment beside a model
 /// of another. A screen written for 7 has no use for it, and a screen written for 8
 /// cannot run on a core of 7.
-pub const COMMAND_SET_VERSION: u32 = 8;
+///
+/// 9: where each chain of a work stands can be read without reading the work
+/// (`read_work_heads`), so that a screen can ask often whether the work moved under it
+/// (a save from another window, an authoring client's next model) and read it only
+/// when it did. A screen written for 9 asks for it, and a core of 8 would refuse with
+/// `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 9;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -823,6 +830,10 @@ pub fn call<C: Clock>(
                 "requirements_standing": requirements_standing,
                 "acceptance": acceptance,
             }))
+        }
+        "read_work_heads" => {
+            let OneWork { id } = arguments(args)?;
+            answer(&store.read_work_heads(&work_id(&id)?)?)
         }
         "remove_work" => {
             let OneWork { id } = arguments(args)?;

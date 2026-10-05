@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 8;
+export const SUPPORTED_COMMAND_SET_VERSION = 9;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -265,6 +265,29 @@ export interface WorkSnapshot {
   /** `null` exactly when there is no list. */
   readonly requirements_standing: Standing | null;
   readonly acceptance: AcceptanceRecord | null;
+}
+
+/**
+ * The revision at the head of the model or of the requirement list, and the source it
+ * was written for. The same text kept again for a later source is the same revision
+ * with another `written_for`, and that moves where it stands to the text.
+ */
+export interface ClaimedHead {
+  readonly revision: Revision;
+  readonly written_for: Revision | null;
+}
+
+/**
+ * `read_work_heads`: where each chain of the work stands, and nothing it holds. A screen
+ * compares it with what it shows to know whether the work moved under it, and reads the
+ * work only when it did.
+ */
+export interface WorkHeads {
+  readonly source: Revision | null;
+  readonly model: ClaimedHead | null;
+  readonly answers: Revision | null;
+  readonly requirements: ClaimedHead | null;
+  readonly acceptance: Revision | null;
 }
 
 /** A command that did not do what was asked, as the core words it. */
@@ -673,6 +696,29 @@ export function parseReadAcceptance(value: unknown): ReadAcceptance {
     standing: state,
     lapse,
     now: parseBasis(r["now"], `${where}.now`),
+  };
+}
+
+function parseClaimedHead(value: unknown, where: string): ClaimedHead {
+  const r = record(value, where);
+  return {
+    revision: revision(r["revision"], `${where}.revision`),
+    written_for: nullableRevision(r["written_for"], `${where}.written_for`),
+  };
+}
+
+/** `read_work_heads`. */
+export function parseWorkHeads(value: unknown): WorkHeads {
+  const where = "read_work_heads";
+  const r = record(value, where);
+  const model = r["model"];
+  const requirements = r["requirements"];
+  return {
+    source: nullableRevision(r["source"], `${where}.source`),
+    model: model === null ? null : parseClaimedHead(model, `${where}.model`),
+    answers: nullableRevision(r["answers"], `${where}.answers`),
+    requirements: requirements === null ? null : parseClaimedHead(requirements, `${where}.requirements`),
+    acceptance: nullableRevision(r["acceptance"], `${where}.acceptance`),
   };
 }
 

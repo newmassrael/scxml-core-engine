@@ -12,7 +12,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 8,
+      "command_set_version": 9,
       "commands": [
         "describe",
         "list_works",
@@ -34,7 +34,8 @@
         "requirements_report",
         "accept",
         "read_acceptance",
-        "read_work_snapshot"
+        "read_work_snapshot",
+        "read_work_heads"
       ],
       "root": "<root>"
     },
@@ -268,6 +269,36 @@
         "id": "<work-id>",
         "title": "Door lock"
       }
+    },
+    "read_work_heads": {
+      "acceptance": null,
+      "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "requirements": null,
+      "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+    },
+    "read_work_heads_accepted": {
+      "acceptance": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c",
+      "answers": null,
+      "model": {
+        "revision": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "requirements": {
+        "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "written_for": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+    },
+    "read_work_heads_empty": {
+      "acceptance": null,
+      "answers": null,
+      "model": null,
+      "requirements": null,
+      "source": null
     },
     "read_work_no_text": {
       "head": null,
@@ -578,7 +609,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 8,
+  "command_set_version": 9,
   "refusals": {
     "bad-request": {
       "kind": "bad-request",
@@ -677,7 +708,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads"
     }
   }
 }

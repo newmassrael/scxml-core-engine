@@ -31,6 +31,7 @@ import {
   parseSaved,
   parseWork,
   parseWorkAndHead,
+  parseWorkHeads,
   parseWorkSnapshot,
   SUPPORTED_COMMAND_SET_VERSION,
 } from "../src/contract";
@@ -67,6 +68,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   accept: parseSaved,
   read_acceptance: parseReadAcceptance,
   read_work_snapshot: parseWorkSnapshot,
+  read_work_heads: parseWorkHeads,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -239,6 +241,29 @@ describe("the replies the core gives", () => {
     expect(garage.requirements_standing).toBe("current");
     expect(garage.requirements).toEqual(parseReadRequirements(replies.answers["read_requirements"]).requirements);
     expect(garage.acceptance).toEqual(parseReadAcceptance(replies.answers["read_acceptance"]).acceptance);
+  });
+
+  it("give where each chain of a work stands, with what the model and the list were written for", () => {
+    expect(parseWorkHeads(replies.answers["read_work_heads_empty"])).toEqual({
+      source: null,
+      model: null,
+      answers: null,
+      requirements: null,
+      acceptance: null,
+    });
+    const door = parseWorkHeads(replies.answers["read_work_heads"]);
+    const snapshot = parseWorkSnapshot(replies.answers["read_work_snapshot"]);
+    expect(door.source).toBe(snapshot.source?.revision);
+    expect(door.model).toEqual({ revision: snapshot.model?.revision, written_for: snapshot.model?.written_for });
+    expect(door.answers).toBe(snapshot.answers?.revision);
+    expect(door.requirements).toBeNull();
+    const garage = parseWorkHeads(replies.answers["read_work_heads_accepted"]);
+    const held = parseWorkSnapshot(replies.answers["read_work_snapshot_accepted"]);
+    expect(garage.requirements).toEqual({
+      revision: held.requirements?.revision,
+      written_for: held.requirements?.written_for,
+    });
+    expect(garage.acceptance).toBe(held.acceptance?.revision);
   });
 
   it("refuse an acceptance of what moved, or of a design for an earlier text, and say which", () => {

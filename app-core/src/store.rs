@@ -360,6 +360,26 @@ pub struct WorkSnapshot {
     pub acceptance: Option<AcceptanceText>,
 }
 
+/// The revision at the head of a chain whose saves say which source they were written
+/// for, and that source. The same text kept again for a later source is the same
+/// revision with another `written_for`, and that is a change a screen has to see.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ClaimedHead {
+    pub revision: Revision,
+    pub written_for: Option<Revision>,
+}
+
+/// Where each chain of a work stands, read as one state (see [`WorkStore::read_work_heads`]):
+/// what a screen compares with what it shows to know whether the work moved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkHeads {
+    pub source: Option<Revision>,
+    pub model: Option<ClaimedHead>,
+    pub answers: Option<Revision>,
+    pub requirements: Option<ClaimedHead>,
+    pub acceptance: Option<Revision>,
+}
+
 /// One line of a work's history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -579,15 +599,74 @@ impl<C: Clock> WorkStore<C> {
     fn snapshot_between(
         &self,
         id: &WorkId,
-        mut between_reads: impl FnMut(),
+        between_reads: impl FnMut(),
     ) -> Result<WorkSnapshot, StoreError> {
+        self.read_stable(id, between_reads, |dir, pointers| {
+            self.read_state(dir, id, pointers)
+        })
+    }
+
+    /// Where each chain of the work stands, and nothing it holds: the revision at each
+    /// head and, for the two chains that say which source they were written for, that
+    /// source. Read as one state, as [`Self::read_work_snapshot`] is, but without a
+    /// text, so a screen can ask it often and read the work only when it moved.
+    pub fn read_work_heads(&self, id: &WorkId) -> Result<WorkHeads, StoreError> {
+        self.heads_between(id, || {})
+    }
+
+    /// [`Self::read_work_heads`], with the seam of [`Self::snapshot_between`].
+    fn heads_between(
+        &self,
+        id: &WorkId,
+        between_reads: impl FnMut(),
+    ) -> Result<WorkHeads, StoreError> {
+        self.read_stable(id, between_reads, |dir, pointers| {
+            let [source, model, answers, requirements, acceptance] = pointers;
+            let claimed = |artifact: Artifact, pointer: &Option<Pointer>| {
+                pointer
+                    .as_ref()
+                    .map(|p| {
+                        Ok::<_, StoreError>(ClaimedHead {
+                            revision: p.revision.clone(),
+                            written_for: chain_to(dir, artifact, Some(p))?.claim(),
+                        })
+                    })
+                    .transpose()
+            };
+            let revision = |pointer: &Option<Pointer>| pointer.as_ref().map(|p| p.revision.clone());
+            Ok(WorkHeads {
+                source: revision(source),
+                model: claimed(Artifact::Model, model)?,
+                answers: revision(answers),
+                requirements: claimed(Artifact::Requirements, requirements)?,
+                acceptance: revision(acceptance),
+            })
+        })
+    }
+
+    /// `read` of the pointers of every chain, taken as one state: the pointers are read,
+    /// `read` runs on them, and the pointers are read again; when any moved it starts over.
+    /// What is returned is what `read` made of the pointers as the second look found them.
+    ///
+    /// No lock is taken, which is sound for the reason [`read_chain`] is. After
+    /// [`READ_TRIES`] the read takes the lock a save takes and reads once.
+    ///
+    /// `between_reads` runs after the first look and before `read`: a seam for the test that
+    /// makes writers land exactly there. It never runs while the lock is held, because a
+    /// save made from it would wait for the reader to finish.
+    fn read_stable<T>(
+        &self,
+        id: &WorkId,
+        mut between_reads: impl FnMut(),
+        read: impl Fn(&Path, &Pointers) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
         let dir = self.existing(id)?;
         for _ in 0..READ_TRIES {
             let pointers = read_pointers(&dir)?;
             between_reads();
-            let snapshot = self.read_state(&dir, id, &pointers)?;
+            let state = read(&dir, &pointers)?;
             if read_pointers(&dir)? == pointers {
-                return Ok(snapshot);
+                return Ok(state);
             }
         }
         let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
@@ -596,7 +675,7 @@ impl<C: Clock> WorkStore<C> {
             return Err(removed_work(id));
         }
         let pointers = read_pointers(&dir)?;
-        self.read_state(&dir, id, &pointers)
+        read(&dir, &pointers)
     }
 
     /// The work and what each of `pointers` names. The two chains whose saves say which
@@ -1834,6 +1913,161 @@ mod tests {
         store.remove_work(&id).unwrap();
 
         let refused = store.read_work_snapshot(&id).unwrap_err();
+
+        assert_eq!(refused.kind(), "not-found");
+    }
+
+    #[test]
+    fn the_heads_of_a_work_nothing_was_saved_to_are_all_absent() {
+        let scratch = Scratch::new("heads-empty");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Empty").unwrap().id;
+
+        let heads = store.read_work_heads(&id).unwrap();
+
+        assert_eq!(
+            heads,
+            WorkHeads {
+                source: None,
+                model: None,
+                answers: None,
+                requirements: None,
+                acceptance: None,
+            }
+        );
+    }
+
+    /// The head of each chain, and for the model and the list the source each was written
+    /// for: the text moved on, so they are of the one before.
+    #[test]
+    fn the_heads_name_each_chain_and_what_the_model_and_the_list_were_written_for() {
+        let scratch = Scratch::new("heads-all");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("All").unwrap().id;
+        let t1 = Revision::of(b"T1");
+        let t2 = Revision::of(b"T2");
+        store.save_source(&id, "T1", None).unwrap();
+        store.save_model(&id, "M1", None, Some(&t1)).unwrap();
+        store.save_requirements(&id, "R1", None, Some(&t1)).unwrap();
+        store.save_answers(&id, "A1", None).unwrap();
+        store.save_acceptance(&id, "C1", None).unwrap();
+        store.save_source(&id, "T2", Some(&t1)).unwrap();
+
+        let heads = store.read_work_heads(&id).unwrap();
+
+        assert_eq!(heads.source, Some(t2));
+        assert_eq!(
+            heads.model,
+            Some(ClaimedHead {
+                revision: Revision::of(b"M1"),
+                written_for: Some(t1.clone()),
+            })
+        );
+        assert_eq!(
+            heads.requirements,
+            Some(ClaimedHead {
+                revision: Revision::of(b"R1"),
+                written_for: Some(t1),
+            })
+        );
+        assert_eq!(heads.answers, Some(Revision::of(b"A1")));
+        assert_eq!(heads.acceptance, Some(Revision::of(b"C1")));
+    }
+
+    /// The same model kept for a later text is the same revision, and where it stands to
+    /// the text has changed. A head that named only the revision would not move, and a
+    /// screen comparing it with what it shows would go on saying "behind".
+    #[test]
+    fn a_model_kept_for_a_later_text_moves_its_head_though_its_revision_does_not() {
+        let scratch = Scratch::new("heads-kept");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Kept").unwrap().id;
+        let t1 = Revision::of(b"T1");
+        let t2 = Revision::of(b"T2");
+        let m1 = Revision::of(b"M1");
+        store.save_source(&id, "T1", None).unwrap();
+        store.save_model(&id, "M1", None, Some(&t1)).unwrap();
+        store.save_source(&id, "T2", Some(&t1)).unwrap();
+        let before = store.read_work_heads(&id).unwrap();
+
+        store.save_model(&id, "M1", Some(&m1), Some(&t2)).unwrap();
+        let after = store.read_work_heads(&id).unwrap();
+
+        let head = |heads: &WorkHeads| heads.model.clone().unwrap();
+        assert_eq!(head(&before).revision, head(&after).revision);
+        assert_eq!(head(&before).written_for, Some(t1));
+        assert_eq!(head(&after).written_for, Some(t2));
+    }
+
+    /// Two saves that landed after the reader looked at the pointers: the heads it holds
+    /// are the old ones, so the read starts over and answers the folder as the second look
+    /// found it.
+    #[test]
+    fn heads_whose_pointers_moved_while_they_were_read_answer_the_state_after_the_saves() {
+        let scratch = Scratch::new("heads-seam");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let t1 = Revision::of(b"T1");
+        let t2 = Revision::of(b"T2");
+        let m1 = Revision::of(b"M1");
+        store.save_source(&id, "T1", None).unwrap();
+        store.save_model(&id, "M1", None, Some(&t1)).unwrap();
+
+        let mut looks = 0;
+        let heads = store
+            .heads_between(&id, || {
+                looks += 1;
+                if looks == 1 {
+                    store.save_source(&id, "T2", Some(&t1)).unwrap();
+                    store.save_model(&id, "M2", Some(&m1), Some(&t2)).unwrap();
+                }
+            })
+            .unwrap();
+
+        assert_eq!(
+            looks, 2,
+            "the read starts over once, and the second look holds"
+        );
+        assert_eq!(heads.source, Some(t2.clone()));
+        let model = heads.model.unwrap();
+        assert_eq!(model.revision, Revision::of(b"M2"));
+        assert_eq!(model.written_for, Some(t2));
+    }
+
+    #[test]
+    fn heads_of_a_folder_that_never_holds_still_are_read_under_the_lock() {
+        let scratch = Scratch::new("heads-bound");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Seam").unwrap().id;
+        let dir = store.existing(&id).unwrap();
+        store.save_source(&id, "T0", None).unwrap();
+
+        let mut looks = 0;
+        let heads = store
+            .heads_between(&id, || {
+                looks += 1;
+                let base = read_head(&dir, Artifact::Source).unwrap();
+                store
+                    .save_source(&id, &format!("T{looks}"), base.as_ref())
+                    .unwrap();
+            })
+            .unwrap();
+
+        assert_eq!(looks, READ_TRIES);
+        assert_eq!(
+            heads.source,
+            Some(Revision::of(format!("T{READ_TRIES}").as_bytes()))
+        );
+    }
+
+    #[test]
+    fn the_heads_of_a_removed_work_are_refused_as_every_other_read_is() {
+        let scratch = Scratch::new("heads-removed");
+        let store = WorkStore::at(&scratch.root);
+        let id = store.create_work("Gone").unwrap().id;
+        store.remove_work(&id).unwrap();
+
+        let refused = store.read_work_heads(&id).unwrap_err();
 
         assert_eq!(refused.kind(), "not-found");
     }

@@ -7,6 +7,7 @@ import { App } from "./app";
 import type { Desktop } from "./desktop";
 import { httpTransport, insideTauri, type Transport } from "./ipc";
 import { credentials, takeToken, type Credentials } from "./token";
+import { browserTicker } from "./watch";
 
 interface Connection {
   readonly transport: Transport;
@@ -53,6 +54,7 @@ const app = new App(root, {
   ...connection,
   storage,
   browserLanguage: navigator.language,
+  ticker: browserTicker,
 });
 void app.start();
 

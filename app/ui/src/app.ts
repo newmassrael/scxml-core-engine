@@ -42,6 +42,7 @@ import {
   type SourceText,
   type Unresolved,
   type Work,
+  type WorkHeads,
 } from "./contract";
 import type { Desktop } from "./desktop";
 import { h, type Child } from "./dom";
@@ -58,6 +59,7 @@ import {
   takeTheirs,
   type EditorModel,
 } from "./editor_model";
+import { movedParts, sameHeads, type WorkOnScreen } from "./heads_model";
 import { initialLocale, languageName, LOCALES, translate, type Key, type Locale } from "./i18n";
 import { CommandFailure, TRANSPORT, UNAUTHORIZED, type Transport } from "./ipc";
 import {
@@ -71,6 +73,7 @@ import {
   type ReviewPanel,
 } from "./model_view";
 import { tokenFromPaste, type Credentials } from "./token";
+import { nextDelay, WATCH_MS, type Ticker } from "./watch";
 
 const LOCALE_KEY = "sce.locale";
 const ZOOM_KEY = "sce.zoom";
@@ -108,6 +111,12 @@ export interface Environment {
   readonly desktop?: Desktop | undefined;
   readonly storage: Pick<Storage, "getItem" | "setItem"> | null;
   readonly browserLanguage: string | undefined;
+  /**
+   * What wakes the screen to ask whether the selected work moved under it (a save from
+   * another window, an authoring client's next model). Absent: it asks only when the
+   * person does something.
+   */
+  readonly ticker?: Ticker | undefined;
 }
 
 export class App {
@@ -168,6 +177,14 @@ export class App {
   private reportedUnsaved: boolean | null = null;
   /** What is typed in the new-work field, kept across redraws. */
   private draftTitle = "";
+  /** Stops the questions about whether the selected work moved, and the one waiting to be asked. */
+  private stopWatching: (() => void) | null = null;
+  /**
+   * What the core said when the screen last read the work again because it had moved. A
+   * question that gets the same answer is not acted on twice: a read that is slow, or one
+   * that failed, is not started over every few seconds.
+   */
+  private reactedTo: WorkHeads | null = null;
   /** The server refused for want of a token, and the person can supply one. */
   private needsToken = false;
   /** A token has been supplied since, so a further refusal means it was wrong. */
@@ -210,6 +227,8 @@ export class App {
     this.fatal = null;
     this.loading = true;
     await this.start();
+    // The questions about the work on screen stopped when the server asked for the token.
+    if (this.selected !== null && !this.needsToken && this.fatal === null) this.watch();
   }
 
   // ---- actions ----------------------------------------------------------
@@ -268,6 +287,7 @@ export class App {
       this.answersUnreadable = null;
       this.acceptanceTicket += 1;
       this.acceptance = null;
+      this.reactedTo = null;
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -277,6 +297,179 @@ export class App {
     if (opened) {
       void this.loadModel(work.id, true);
       void this.loadAnswers(work.id);
+      this.watch();
+    }
+  }
+
+  // ---- the work moving under the screen ------------------------------------
+
+  /**
+   * Ask the core every few seconds whether the selected work moved under what is shown,
+   * and read again only what did. An authoring client's model, a save from another window
+   * and an acceptance made elsewhere appear without the person pressing anything, and
+   * what they are typing is not touched.
+   *
+   * One question at a time: the next is scheduled when the last, and what it led to, is
+   * done. A question that fails is asked again later (twice as late each time, up to a
+   * limit), and one the server answers with a refusal for want of a token stops the
+   * questions until the person signs in.
+   */
+  private watch(): void {
+    this.stopWatching?.();
+    this.stopWatching = null;
+    const ticker = this.env.ticker;
+    if (ticker === undefined) return;
+    const session = this.session;
+    let cancelled = false;
+    let cancelTimer: (() => void) | null = null;
+    let delay = WATCH_MS;
+    const schedule = (): void => {
+      cancelTimer = ticker.after(delay, () => void ask());
+    };
+    const ask = async (): Promise<void> => {
+      const work = this.selected;
+      if (cancelled || session !== this.session || work === null) return;
+      try {
+        await this.lookAgain(work, session);
+        delay = WATCH_MS;
+      } catch (error) {
+        if (cancelled || session !== this.session) return;
+        if (this.askForToken(error)) {
+          // The sign-in form is drawn, and the questions start again when the person has signed in.
+          this.render();
+          return;
+        }
+        if (error instanceof CommandFailure && error.kind === "not-found") {
+          // The work was taken away from another window: there is nothing to ask about.
+          this.notice = this.explain(error);
+          this.render();
+          return;
+        }
+        delay = nextDelay(delay);
+      }
+      if (!cancelled && session === this.session) schedule();
+    };
+    this.stopWatching = () => {
+      cancelled = true;
+      cancelTimer?.();
+    };
+    schedule();
+  }
+
+  /** Ask the core where the work stands and read again what is shown differently. */
+  private async lookAgain(work: Work, session: number): Promise<void> {
+    const heads = await this.api.readWorkHeads(work.id);
+    if (session !== this.session) return;
+    const moved = movedParts(this.onScreen(), heads);
+    if (moved.length === 0 || sameHeads(this.reactedTo, heads)) return;
+    this.reactedTo = heads;
+    if (moved.includes("source")) await this.refreshSource(work.id, session);
+    const answersRead = moved.includes("answers") && (await this.refreshAnswers(work.id, session));
+    if (session !== this.session) return;
+    // A model that moved, or whose text moved under it (`movedParts` says so), is read
+    // again, and the acceptance with it. Otherwise a list, an acceptance or answers that
+    // moved are the acceptance's to read again.
+    if (moved.includes("model")) {
+      await this.loadModel(work.id, false);
+    } else if (moved.includes("requirements") || moved.includes("acceptance") || answersRead) {
+      await this.loadAcceptance(work.id);
+    }
+  }
+
+  /**
+   * What is on screen of each part of the work, for comparing with the core's heads. A
+   * part is left out (`undefined`) while it is being read or saved, holds what the person
+   * typed, or could not be read: it is not read again over their head.
+   */
+  private onScreen(): WorkOnScreen {
+    const editor = this.editor;
+    const answers = this.answers;
+    const model = this.model;
+    const panel = this.acceptance;
+    const list = panel !== null && panel.phase === "read" && !panel.state.accepting ? panel.state : null;
+    return {
+      source: editor === null || editor.phase !== "idle" || isDirty(editor) ? undefined : editor.base,
+      model:
+        model === null || model.phase === "reading" || model.phase === "failed"
+          ? undefined
+          : model.phase === "none"
+            ? null
+            : {
+                head: { revision: model.read.model.revision, written_for: model.read.model.written_for },
+                sourceHead: model.read.sourceHead,
+              },
+      answers: answers === null || answers.phase !== "idle" || isAnswersDirty(answers) ? undefined : answers.base,
+      requirements:
+        panel === null
+          ? undefined
+          : panel.phase === "no-list"
+            ? null
+            : list === null
+              ? undefined
+              : list.list.requirements === null
+                ? null
+                : {
+                    head: {
+                      revision: list.list.requirements.revision,
+                      written_for: list.list.requirements.written_for,
+                    },
+                    sourceHead: list.list.source_head,
+                  },
+      acceptance:
+        panel === null
+          ? undefined
+          : panel.phase === "no-list"
+            ? null
+            : list === null
+              ? undefined
+              : (list.acceptance.acceptance?.revision ?? null),
+    };
+  }
+
+  /**
+   * Another entrance saved the text. When the editor holds nothing of the person's it is
+   * shown as it now is; typed text is not replaced, and the conflict a save would meet is
+   * the person's to resolve. Answers whether the text was read again.
+   */
+  private async refreshSource(id: string, session: number): Promise<boolean> {
+    const asked = this.editor;
+    if (asked === null || asked.phase !== "idle" || isDirty(asked)) return false;
+    try {
+      const [source, entries] = await Promise.all([this.api.readSource(id), this.api.history(id)]);
+      if (session !== this.session) return false;
+      const editor = this.editor;
+      // Loading replaces what is in the editor, so it is done only to the text it was
+      // asked about: anything typed or saved while the answer was on its way is the person's.
+      if (editor === null || editor.phase !== "idle" || editor.text !== asked.text || editor.base !== asked.base) {
+        return false;
+      }
+      this.editor = open(id, source);
+      this.entries = entries;
+      this.render();
+      return true;
+    } catch (error) {
+      if (session === this.session && this.askForToken(error)) this.render();
+      return false;
+    }
+  }
+
+  /** The owner's answers were saved from another entrance and none are typed here: they are shown. */
+  private async refreshAnswers(id: string, session: number): Promise<boolean> {
+    const asked = this.answers;
+    if (asked === null || asked.phase !== "idle" || isAnswersDirty(asked)) return false;
+    try {
+      const read = await this.api.readAnswers(id);
+      if (session !== this.session) return false;
+      const answers = this.answers;
+      if (answers === null || answers.phase !== "idle" || isAnswersDirty(answers) || answers.base !== asked.base) {
+        return false;
+      }
+      this.answers = openAnswers(read);
+      this.render();
+      return true;
+    } catch (error) {
+      if (session === this.session && this.askForToken(error)) this.render();
+      return false;
     }
   }
 

@@ -20,6 +20,7 @@ import {
   parseSaved,
   parseWork,
   parseWorkAndHead,
+  parseWorkHeads,
   parseWorkSnapshot,
   type Answers,
   type Basis,
@@ -37,6 +38,7 @@ import {
   type SourceText,
   type Work,
   type WorkAndHead,
+  type WorkHeads,
   type WorkSnapshot,
 } from "./contract";
 import type { Transport } from "./ipc";
@@ -102,6 +104,11 @@ export interface Api {
    * still holds; that is SCE's answer (`readAcceptance`).
    */
   readWorkSnapshot(id: string): Promise<WorkSnapshot>;
+  /**
+   * Where each chain of the work stands, and nothing it holds, read as one state. Cheap
+   * enough to ask every few seconds; what it says is compared with what the screen shows.
+   */
+  readWorkHeads(id: string): Promise<WorkHeads>;
   /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
@@ -173,6 +180,9 @@ export function apiOver(transport: Transport): Api {
     },
     async readWorkSnapshot(id) {
       return parseWorkSnapshot(await transport.call("read_work_snapshot", { id }));
+    },
+    async readWorkHeads(id) {
+      return parseWorkHeads(await transport.call("read_work_heads", { id }));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

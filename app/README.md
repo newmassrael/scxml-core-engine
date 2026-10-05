@@ -122,6 +122,32 @@ words: `source`, `model` with `model_standing`, `answers`, `requirements` with
 acceptance still holds. That is the product's to say and asking it is not a read of the
 folder, so the screen still asks `read_acceptance` for it.
 
+`read_work_heads` is the same read without the texts: the revision at the head of each
+chain and, for the model and the requirement list, the source each was written for. The
+same model kept again for a later source is the same revision with another `written_for`,
+and that is a change a screen has to see. It is read as one state too, and it is cheap
+enough to ask every few seconds.
+
+### The screen follows the work
+
+The screen asks `read_work_heads` every two seconds for the work it shows, and compares
+the answer with what is ON SCREEN, not with the previous answer: its own save moves a
+head and the screen shows the saved text a moment later, and that is not a change from
+elsewhere. What differs is read again, and only that: a model or a list an authoring
+client saved, a text or answers saved from another window, an acceptance made elsewhere.
+A model that is the same revision is not drawn again.
+
+What the person typed is never replaced. A text or answers they are typing are left as
+they are, and the conflict a save would meet stays theirs to resolve. One question is
+asked at a time, and the next is scheduled when the last and what it led to are done. A
+question that fails is asked again after twice the wait, up to thirty seconds, and a
+refusal for want of a token stops the questions until the person signs in. A work taken
+away from another window is said so, and the questions stop.
+
+The desktop shell and the browser shell take this same path (`call`), so neither needs a
+window permission, a stream or a file watcher the other does not. A change that was missed
+is found by the next question instead of being lost with a notice.
+
 ### Removing a work
 
 `remove_work` (the screen's "Remove this work", after it asks) takes a work out
@@ -346,7 +372,7 @@ else: it has no file-system, shell or network permission.
 | The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |
 | The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |
 | Browser shell: handler, sockets | `cargo test -p sce-web-shell` (from `app/`) |
-| Screen: guards, editor model, model panel, acceptance, transport, words | `npm test` (in `app/ui`) |
+| Screen: guards, editor model, model panel, acceptance, heads, following the work, transport, words | `npm test` (in `app/ui`) |
 | Screen types and build | `npm run build` (in `app/ui`) |
 
 `app-core/contract/replies.json` is every command's reply, written by running

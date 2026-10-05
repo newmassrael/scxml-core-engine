@@ -17,7 +17,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { App } from "../src/app";
-import { CommandFailure, type Args, type Transport } from "../src/ipc";
+import { CommandFailure, UNAUTHORIZED, type Args, type Transport } from "../src/ipc";
+import type { Ticker } from "../src/watch";
 
 const hex = (n: number): string => n.toString(16).padStart(64, "0");
 
@@ -126,6 +127,11 @@ class FakeCore implements Transport {
     this.works.set(id, { title, revisions: texts.map((text) => ({ revision: this.revision(text), text })) });
   }
 
+  /** A text saved from another entrance: a new head, as `save_source` makes one. */
+  saveElsewhere(id: string, text: string): void {
+    this.works.get(id)?.revisions.push({ revision: this.revision(text), text });
+  }
+
   /**
    * The work's model, and the text revision its writer says it read. `others` makes it
    * a model of several documents: `text` is then the entry `door.scxml`, and each of
@@ -189,7 +195,20 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 8, commands: [], root: "/fake/works" };
+        return { command_set_version: 9, commands: [], root: "/fake/works" };
+      case "read_work_heads": {
+        if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
+        const id = String(args["id"]);
+        const model = this.models.get(id);
+        const list = this.lists.get(id);
+        return {
+          source: work?.revisions.at(-1)?.revision ?? null,
+          model: model === undefined ? null : { revision: this.revision(`model:${model.text}`), written_for: model.writtenFor },
+          answers: this.answersOf.get(id)?.revision ?? null,
+          requirements: list === undefined ? null : { revision: list.revision, written_for: list.writtenFor },
+          acceptance: this.acceptances.get(id)?.revision ?? null,
+        };
+      }
       case "read_requirements": {
         const list = typeof args["id"] === "string" ? this.lists.get(args["id"]) : undefined;
         const head = work?.revisions.at(-1)?.revision ?? null;
@@ -1824,5 +1843,254 @@ describe("accepting the design", () => {
 
     expect(core.callsOf("accept")).toHaveLength(1);
     expect(acceptanceText()).toContain("It holds");
+  });
+});
+
+/** A timer the test holds: a question waits until it is let go, so what follows it can be looked at. */
+class ManualTicker implements Ticker {
+  private readonly waiting: Array<{ run: () => void; cancelled: boolean; ms: number }> = [];
+
+  after(ms: number, run: () => void): () => void {
+    const entry = { run, cancelled: false, ms };
+    this.waiting.push(entry);
+    return () => {
+      entry.cancelled = true;
+    };
+  }
+
+  /** The waits asked for and neither let go nor cancelled, in the order they were asked. */
+  get pending(): number[] {
+    return this.waiting.filter((w) => !w.cancelled).map((w) => w.ms);
+  }
+
+  /** Let the next wait end, and let the question it starts and what follows from it finish. */
+  async fire(): Promise<void> {
+    const next = this.waiting.find((w) => !w.cancelled);
+    if (next === undefined) throw new Error("no question is waiting to be asked");
+    next.cancelled = true;
+    next.run();
+    for (let i = 0; i < 3; i += 1) await settle();
+  }
+}
+
+describe("a work that moves under the screen", () => {
+  let ticker: ManualTicker;
+
+  beforeEach(async () => {
+    ticker = new ManualTicker();
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    core.addWork("beta", "Beta", ["beta one"]);
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+  });
+
+  it("shows a model an authoring client saved after the work was opened, without being asked", async () => {
+    await click("Alpha");
+    expect(modelText()).toContain("No model yet");
+
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await ticker.fire();
+
+    expect(images()).toHaveLength(2);
+    expect(modelText()).toContain("written for the text as it is now");
+  });
+
+  it("keeps what the person typed when the work moves under them", async () => {
+    await click("Alpha");
+    await type("alpha edited");
+
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await ticker.fire();
+
+    expect(images()).toHaveLength(2);
+    expect(editor().value).toBe("alpha edited");
+    expect(status()).toBe("Unsaved changes");
+  });
+
+  it("shows a text another entrance saved when the editor holds nothing of the person's", async () => {
+    await click("Alpha");
+    expect(editor().value).toBe("alpha two");
+
+    core.saveElsewhere("alpha", "alpha three");
+    await ticker.fire();
+
+    expect(editor().value).toBe("alpha three");
+  });
+
+  it("does not replace typed text with a text saved elsewhere, and says where the model now stands", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    expect(modelText()).toContain("written for the text as it is now");
+
+    await type("mine");
+    core.saveElsewhere("alpha", "theirs");
+    await ticker.fire();
+
+    expect(editor().value).toBe("mine");
+    expect(root.querySelector(".model .banner-warn")?.textContent ?? "").toContain("earlier text");
+  });
+
+  it("reads a model kept for a later text again, and does not draw it again", async () => {
+    core.setModel("alpha", "<scxml/>", core.revision("alpha one"));
+    await click("Alpha");
+    expect(root.querySelector(".model .banner-warn")?.textContent ?? "").toContain("earlier text");
+
+    // The authoring client read the new text and kept the model: the same revision, written for another text.
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await ticker.fire();
+
+    expect(root.querySelector(".model .banner-warn")).toBeNull();
+    expect(modelText()).toContain("written for the text as it is now");
+    expect(core.callsOf("figures")).toHaveLength(1);
+  });
+
+  it("shows an acceptance made elsewhere", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+    expect(acceptanceText()).toContain("Nothing has been accepted yet.");
+    // The page always says what an acceptance holds for; only an acceptance says that it does.
+    expect(acceptanceText()).not.toContain("It holds: the text");
+
+    core.setAcceptance("alpha");
+    await ticker.fire();
+
+    expect(acceptanceText()).toContain("It holds: the text, the list, the design and your answers are as they were.");
+  });
+
+  it("shows answers saved from another window when none are typed here", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    expect(fieldOf("open-guard").value).toBe("");
+
+    core.setAnswers("alpha", { "open-guard": "Any card on the list opens it." });
+    await ticker.fire();
+
+    expect(fieldOf("open-guard").value).toBe("Any card on the list opens it.");
+  });
+
+  it("does not replace answers being typed with answers saved from another window", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    await answer("open-guard", "Typed here.");
+
+    core.setAnswers("alpha", { "open-guard": "Saved there." });
+    await ticker.fire();
+
+    expect(fieldOf("open-guard").value).toBe("Typed here.");
+    expect(core.callsOf("read_answers")).toHaveLength(1);
+  });
+
+  it("reads nothing again while the work stays as it is shown", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+    const read = (name: string): number => core.callsOf(name).length;
+    const before = [read("read_model"), read("read_source"), read("read_answers"), read("requirements_report")];
+
+    await ticker.fire();
+    await ticker.fire();
+
+    expect(core.callsOf("read_work_heads")).toHaveLength(2);
+    expect([read("read_model"), read("read_source"), read("read_answers"), read("requirements_report")]).toEqual(before);
+  });
+
+  it("does not take its own save for a change from elsewhere", async () => {
+    await click("Alpha");
+    await type("alpha edited");
+    await click("Save");
+    const reads = core.callsOf("read_source").length;
+
+    await ticker.fire();
+
+    expect(core.callsOf("read_source")).toHaveLength(reads);
+    expect(editor().value).toBe("alpha edited");
+  });
+
+  it("asks again only when the read it started is done, and then reads nothing more", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    const slow = core.hold("read_model");
+    core.setModel("alpha", "<scxml>next</scxml>", headOf("alpha"));
+    await ticker.fire();
+
+    // The read is on its way: the next question is not scheduled, so it cannot start the read over.
+    expect(core.callsOf("read_model")).toHaveLength(2);
+    expect(ticker.pending).toEqual([]);
+    slow.release();
+    await settle();
+    await settle();
+    expect(ticker.pending).toEqual([2000]);
+    await ticker.fire();
+
+    // The read answered and the screen shows it: nothing more is read.
+    expect(core.callsOf("read_model")).toHaveLength(2);
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml>next</scxml>");
+  });
+
+  it("waits twice as long after the core fails to answer, and the usual time again once it does", async () => {
+    await click("Alpha");
+    expect(ticker.pending).toEqual([2000]);
+
+    core.failNext("read_work_heads", new CommandFailure("io", "the works folder could not be read"));
+    await ticker.fire();
+    expect(ticker.pending).toEqual([4000]);
+
+    await ticker.fire();
+    expect(ticker.pending).toEqual([2000]);
+  });
+
+  it("stops asking about a work the person left", async () => {
+    await click("Alpha");
+    await click("Beta");
+    expect(ticker.pending).toEqual([2000]);
+
+    await ticker.fire();
+
+    expect(core.callsOf("read_work_heads").map((a) => a["id"])).toEqual(["beta"]);
+  });
+
+  it("stops asking when the server wants a token, and asks again once the person has signed in", async () => {
+    const held: { token: string | null } = { token: null };
+    app = new App(root, {
+      transport: core,
+      storage: null,
+      browserLanguage: "en",
+      ticker,
+      credentials: { token: () => held.token, save: (token) => (held.token = token) },
+    });
+    await app.start();
+    await settle();
+    await click("Alpha");
+    core.failNext("read_work_heads", new CommandFailure(UNAUTHORIZED, "no token"));
+
+    await ticker.fire();
+
+    expect(root.querySelector("form.token-form")).not.toBeNull();
+    expect(ticker.pending).toEqual([]);
+
+    const field = root.querySelector('input[name="token"]') as HTMLInputElement;
+    field.value = "0123456789abcdef";
+    field.form?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    await settle();
+    await settle();
+
+    expect(held.token).toBe("0123456789abcdef");
+    expect(root.querySelector("form.token-form")).toBeNull();
+    expect(ticker.pending).toEqual([2000]);
+  });
+
+  it("says so when the work was taken away from another window, and stops asking", async () => {
+    await click("Alpha");
+    await core.call("remove_work", { id: "alpha" });
+
+    await ticker.fire();
+
+    expect(root.textContent).toContain("work `absent`");
+    expect(ticker.pending).toEqual([]);
   });
 });
