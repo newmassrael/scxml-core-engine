@@ -6,6 +6,7 @@
 
 import {
   parseAdapterListing,
+  parseBundleRead,
   parseDescribed,
   parseFigures,
   parseHistory,
@@ -29,6 +30,7 @@ import {
   type AdapterListing,
   type Answers,
   type Basis,
+  type BundleRead,
   type Described,
   type Figures,
   type GenerationRequest,
@@ -75,8 +77,18 @@ export interface Api {
    * refusal with a `sce-*` kind.
    */
   review(id: string, revision?: Revision, lexicon?: string): Promise<Review>;
-  /** The owner's answers to the model's open questions; `null` when they have answered nothing. */
-  readAnswers(id: string): Promise<Answers | null>;
+  /**
+   * The owner's answers to the model's open questions (the current ones, or `revision`'s);
+   * `null` when they have answered nothing.
+   */
+  readAnswers(id: string, revision?: Revision): Promise<Answers | null>;
+  /**
+   * The bundle that is the work's model and requirement list now, with the text and answers
+   * the request that made it was about; `null` for a work whose model was not made by a request.
+   */
+  readBundle(id: string): Promise<BundleRead | null>;
+  /** The revisions of the work's model, oldest first, each with the one it followed. */
+  modelHistory(id: string): Promise<HistoryEntry[]>;
   /**
    * Save the answers as the owner now has them (question id to words; a question
    * left out is not answered) on top of `base` (`null` for a work's first answers).
@@ -188,8 +200,15 @@ export function apiOver(transport: Transport): Api {
       };
       return parseReview(await transport.call("review", args));
     },
-    async readAnswers(id) {
-      return parseReadAnswers(await transport.call("read_answers", { id }));
+    async readAnswers(id, revision) {
+      const args = revision === undefined ? { id } : { id, revision };
+      return parseReadAnswers(await transport.call("read_answers", args));
+    },
+    async readBundle(id) {
+      return parseBundleRead(await transport.call("read_bundle", { id }));
+    },
+    async modelHistory(id) {
+      return parseHistory(await transport.call("model_history", { id }));
     },
     async saveAnswers(id, answers, base) {
       return parseSaved(await transport.call("save_answers", { id, answers, base }));

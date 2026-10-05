@@ -18,6 +18,7 @@ import {
   type Withheld,
 } from "./acceptance_model";
 import { apiOver, type Api } from "./api";
+import { answerState, type AnswerState } from "./answer_states";
 import {
   answersConflicted,
   answersFailed,
@@ -34,7 +35,9 @@ import {
   conflictRevisions,
   ContractError,
   SUPPORTED_COMMAND_SET_VERSION,
+  isOpenRequest,
   type AdapterListing,
+  type BundleRead,
   type Described,
   type GenerationRequest,
   type HistoryEntry,
@@ -103,6 +106,15 @@ const OUTCOME_SENTENCES: Record<string, Key> = {
   delegated: "outcomeDelegated",
   "out-of-scope": "outcomeOutOfScope",
   "system-level": "outcomeSystemLevel",
+};
+
+/** The words for where an answer stands. */
+const ANSWER_STATE_WORDS: Record<AnswerState, Key> = {
+  unsaved: "answerStateUnsaved",
+  saved: "answerStateSaved",
+  writing: "answerStateWriting",
+  "in-model": "answerStateInModel",
+  ignored: "answerStateIgnored",
 };
 
 /** The sentence that says why the accept button is not offered; `accepting` is said by the button itself. */
@@ -209,6 +221,16 @@ export class App {
   private offerReplace = false;
   /** The person pressed save while a request was open, and has not yet said what to do. */
   private guarding = false;
+  /**
+   * The bundle that is the model shown, and the answers it was made about. `bundleKey` is the
+   * revision last read (`null`: the work has none, `undefined`: not asked yet), so that a bundle
+   * is read when it changes and not at every question.
+   */
+  private bundle: BundleRead | null = null;
+  private bundleAnswers: Readonly<Record<string, string>> | null = null;
+  private bundleKey: string | null | undefined = undefined;
+  /** The questions the model shown asks, for the state of each answer as it is typed. */
+  private askedNow: ReadonlySet<string> = new Set();
   /** The server refused for want of a token, and the person can supply one. */
   private needsToken = false;
   /** A token has been supplied since, so a further refusal means it was wrong. */
@@ -318,6 +340,10 @@ export class App {
       this.requestNotice = null;
       this.offerReplace = false;
       this.guarding = false;
+      this.bundle = null;
+      this.bundleAnswers = null;
+      this.bundleKey = undefined;
+      this.askedNow = new Set();
       opened = true;
     } catch (error) {
       if (ticket !== this.opening) return;
@@ -355,8 +381,9 @@ export class App {
     if (head === null) {
       this.requestDetail = null;
     } else if (changed || this.requestDetail?.id !== head.id) {
-      // Who holds it, and why it failed, are in the request and not in the heads.
-      if (head.state === "running" || head.state === "failed") {
+      // Who holds it, why it failed, and which answers it was made about are in the request
+      // and not in the heads.
+      if (isOpenRequest(head.state) || head.state === "failed") {
         try {
           const read = await this.api.readRequest(id, head.id);
           if (session !== this.session) return;
@@ -377,7 +404,43 @@ export class App {
       if (session !== this.session) return;
       this.askForToken(error);
     }
+    if (await this.noteBundle(id, session, heads.bundle)) changed = true;
+    if (session !== this.session) return;
     if (changed) this.render();
+  }
+
+  /**
+   * What the model shown was made from, when a request made it: the bundle, and the answers it
+   * was about. Read when the bundle the core names is not the one held; a model that no request
+   * made has none, and an answer is then only saved. Answers whether anything changed.
+   */
+  private async noteBundle(id: string, session: number, revision: string | null): Promise<boolean> {
+    if (this.bundleKey === revision) return false;
+    if (revision === null) {
+      const had = this.bundle !== null;
+      this.bundleKey = null;
+      this.bundle = null;
+      this.bundleAnswers = null;
+      return had;
+    }
+    try {
+      const read = await this.api.readBundle(id);
+      if (session !== this.session) return false;
+      let answers: Record<string, string> = {};
+      if (read !== null && read.bundle.answers !== null) {
+        const made = await this.api.readAnswers(id, read.bundle.answers);
+        if (session !== this.session) return false;
+        answers = Object.fromEntries(Object.entries(made?.entries ?? {}).map(([q, e]) => [q, e.answer]));
+      }
+      this.bundle = read;
+      this.bundleAnswers = read === null ? null : answers;
+      this.bundleKey = revision;
+      return true;
+    } catch (error) {
+      // Asked again at the next question: the answers read as saved until then.
+      if (session === this.session) this.askForToken(error);
+      return false;
+    }
   }
 
   /**
@@ -767,6 +830,7 @@ export class App {
           : model.base === null
             ? ""
             : this.t("answersSaved");
+    this.refreshAnswerStates();
     this.reportUnsaved();
   }
 
@@ -2169,6 +2233,7 @@ export class App {
           );
     }
     const askedIds = new Set(asked.map((u) => u.id));
+    this.askedNow = askedIds;
     const orphans = Object.keys(model.saved)
       .filter((id) => !askedIds.has(id))
       .sort();
@@ -2197,6 +2262,7 @@ export class App {
               { class: "muted answered-at" },
               this.t("answerAt", { time: formatTime(entry.answered_at, this.locale) }),
             ),
+        h("p", { class: "muted answer-state", "data-answer-state": id }, this.answerStateWords(id)),
       );
     };
 
@@ -2235,8 +2301,52 @@ export class App {
         "div",
         { class: "bar" },
         h("button", { id: "save-answers", type: "button", onclick: () => void this.saveAnswers() }, this.t("answersSave")),
+        this.regenerateButton(),
         h("span", { id: "answers-status", class: "status", role: "status", "aria-live": "polite" }),
       ),
+    );
+  }
+
+  /**
+   * The answer's state in words, or nothing for a question nobody answered. Where it stands is
+   * what the core records: typed, saved, being written into a model, or in the model shown.
+   */
+  private answerStateWords(id: string): string {
+    const model = this.answers;
+    if (model === null) return "";
+    const state = answerState(id, {
+      typed: wordsOf(model, id),
+      saved: model.saved[id]?.answer ?? null,
+      asked: this.askedNow.has(id),
+      madeFrom: this.bundleAnswers === null ? null : { answers: this.bundleAnswers },
+      head: this.requestHead,
+      detail: this.requestDetail,
+      answersNow: model.base,
+    });
+    return state === null ? "" : this.t(ANSWER_STATE_WORDS[state]);
+  }
+
+  /** Each answer's state follows every keystroke, like the save button, without redrawing the field. */
+  private refreshAnswerStates(): void {
+    for (const line of this.root.querySelectorAll<HTMLElement>("[data-answer-state]")) {
+      line.textContent = this.answerStateWords(line.dataset["answerState"] ?? "");
+    }
+  }
+
+  /**
+   * "Generate again from these answers": the answers typed are saved first and a request is made
+   * about what is then saved, which is what generating does. Offered when a request can be made.
+   */
+  private regenerateButton(): HTMLElement | null {
+    const controls = controlsOf(
+      statusOf(this.requestHead, this.requestDetail, this.adapters),
+      this.requestBusy !== null,
+    );
+    if (!controls.canGenerate) return null;
+    return h(
+      "button",
+      { id: "regenerate", type: "button", onclick: () => void this.generate(controls.replaces) },
+      this.t("answersRegenerate"),
     );
   }
 

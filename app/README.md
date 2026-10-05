@@ -240,6 +240,15 @@ shown as running.
   that is the person's to decide (`Save and cancel the request`, or `Do not save`).
 - **Which AIs are there** (`read_adapter_status`) is read with every question about the work,
   so that "no AI is connected" and "connected: desktop" follow the executor coming and going.
+- **Where an answer stands** (`answer_states.ts`) is said under each answer, as four different
+  facts and not one "saved": typed and not saved; saved, and not in the model shown; being
+  written into a new model (an open request was made about these answers); in the model shown
+  (the model was made after this very answer was given, from the bundle's own record of the
+  answers it was about, and it no longer asks the question); or the model was made after the
+  answer and still asks the question, which is said as it is. A model that no request made says
+  nothing of what it was made from, and an answer is then only saved. None of it is a claim
+  that the model means what the owner meant: the behaviour it led to is still the owner's to
+  read. `Generate again from these answers` saves what is typed and asks about what is saved.
 
 #### The executor the application hosts
 

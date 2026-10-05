@@ -71,6 +71,15 @@ class FakeCore implements Transport {
   private listSaves = 0;
   private acceptSaves = 0;
   private readonly requestsOf = new Map<string, FakeRequest[]>();
+  /** Every revision the owner's answers had, so that a request's own can be read back. */
+  private readonly answersByRevision = new Map<
+    string,
+    { revision: string; entries: Record<string, { answer: string; answered_at: string }> }
+  >();
+  private readonly bundleOf = new Map<
+    string,
+    { revision: string; request: string; source: string; answers: string | null; model: string; requirements: string }
+  >();
   private adapterList: Array<{ name: string; kind: string; capabilities: string[]; live: boolean }> = [];
   private requestSeq = 0;
 
@@ -114,12 +123,21 @@ class FakeCore implements Transport {
   }
 
   /** The executor is done and the core published what it wrote: the model and the list, for the text the request was about. */
-  completeRequest(id: string): void {
+  completeRequest(id: string, model = "<scxml><!-- generated --></scxml>"): void {
     const request = this.latestRequest(id);
     if (request === undefined) throw new Error(`${id} has no request`);
     request.state = "completed";
-    this.setModel(id, "<scxml><!-- generated --></scxml>", request.source);
+    this.setModel(id, model, request.source);
     this.setRequirements(id, request.source);
+    // The bundle names what the request was about, as the core records it.
+    this.bundleOf.set(id, {
+      revision: this.revision(`bundle:${request.id}`),
+      request: request.id,
+      source: request.source,
+      answers: request.answers,
+      model: this.revision(`model:${model}`),
+      requirements: this.lists.get(id)?.revision ?? this.revision("list"),
+    });
   }
 
   /** A save of the text or the answers ends the request that was open, in the same step. */
@@ -205,12 +223,14 @@ class FakeCore implements Transport {
   /** The owner's answers as saved, from another entrance or an earlier session. */
   setAnswers(id: string, entries: Record<string, string>): void {
     this.answerSaves += 1;
-    this.answersOf.set(id, {
+    const held = {
       revision: this.revision(`answers:${this.answerSaves}`),
       entries: Object.fromEntries(
         Object.entries(entries).map(([question, answer]) => [question, { answer, answered_at: "2026-10-03T09:00:00Z" }]),
       ),
-    });
+    };
+    this.answersOf.set(id, held);
+    this.answersByRevision.set(held.revision, held);
   }
 
   /** What the core holds of the owner's answers, as words by question. */
@@ -302,7 +322,7 @@ class FakeCore implements Transport {
           answers: this.answersOf.get(id)?.revision ?? null,
           requirements: list === undefined ? null : { revision: list.revision, written_for: list.writtenFor },
           acceptance: this.acceptances.get(id)?.revision ?? null,
-          bundle: null,
+          bundle: this.bundleOf.get(id)?.revision ?? null,
           request: ((r) => (r === undefined ? null : { id: r.id, state: r.state, attempt: r.attempt }))(this.latestRequest(id)),
         };
       }
@@ -465,8 +485,34 @@ class FakeCore implements Transport {
         return { outcome: "saved", revision, parent: null };
       }
       case "read_answers": {
-        const held = typeof args["id"] === "string" ? this.answersOf.get(args["id"]) : undefined;
+        const held =
+          typeof args["revision"] === "string"
+            ? this.answersByRevision.get(args["revision"])
+            : typeof args["id"] === "string"
+              ? this.answersOf.get(args["id"])
+              : undefined;
         return { answers: held ?? null };
+      }
+      case "read_bundle": {
+        const bundle = this.bundleOf.get(String(args["id"]));
+        if (bundle === undefined) return { bundle: null };
+        return {
+          bundle: {
+            revision: bundle.revision,
+            bundle: {
+              request: bundle.request,
+              attempt: 1,
+              executor: "desktop",
+              source: bundle.source,
+              answers: bundle.answers,
+              model: bundle.model,
+              requirements: bundle.requirements,
+              previous: null,
+              checks: [{ by: "core", name: "model", verdict: "accepted", generator: "fake-sce 0", digest: null, subject: bundle.model }],
+              published_at: "2026-10-05T09:00:30Z",
+            },
+          },
+        };
       }
       case "save_answers": {
         const id = String(args["id"]);
@@ -486,6 +532,7 @@ class FakeCore implements Transport {
         this.answerSaves += 1;
         const revision = this.revision(`answers:${this.answerSaves}`);
         this.answersOf.set(id, { revision, entries });
+        this.answersByRevision.set(revision, { revision, entries });
         this.supersedeOpen(id);
         return { outcome: "saved", revision, parent: held?.revision ?? null };
       }
@@ -520,10 +567,11 @@ class FakeCore implements Transport {
             verdict: "accepted",
             kind: "statechart",
             open: ["1 question(s) the specification leaves open (open-guard)"],
+            // A model that applied the owner's answer to `open-guard` no longer asks it.
             unresolved: [
               { id: "open-guard", node_path: "states.closed.transitions[0]", line: 3, reason: "Which cards open the door?" },
               { id: "close-delay", node_path: "states.opened.transitions[0]", line: 4, reason: null },
-            ],
+            ].filter((q) => !model.text.includes(`APPLIED:${q.id}`)),
             records: [],
           },
           // Indented, with a run of spaces and a final newline: the screen keeps them.
@@ -2614,5 +2662,119 @@ describe("asking for a model", () => {
 
     expect(generationStatus()).toContain("no pseudocode yet");
     expect(button("cancel-request")).toBeNull();
+  });
+});
+
+// ---- where an answer stands -----------------------------------------------
+
+describe("where an answer stands", () => {
+  let ticker: ManualTicker;
+
+  beforeEach(async () => {
+    ticker = new ManualTicker();
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
+    core.setAdapters([{ name: "desktop" }]);
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+  });
+
+  const stateOf = (id: string): string => root.querySelector(`[data-answer-state="${id}"]`)?.textContent ?? "(none)";
+  const regenerate = (): HTMLButtonElement | null => root.querySelector<HTMLButtonElement>("#regenerate");
+
+  async function pressRegenerate(): Promise<void> {
+    const found = regenerate();
+    if (found === null) throw new Error(`no regenerate button in: ${root.textContent}`);
+    found.click();
+    await settle();
+  }
+
+  it("says nothing of a question nobody answered, and that an answer is typed and not saved", async () => {
+    await click("Alpha");
+    expect(stateOf("open-guard")).toBe("");
+
+    await answer("open-guard", "Any card on the list opens it.");
+
+    expect(stateOf("open-guard")).toBe("Typed, not saved yet.");
+    expect(stateOf("close-delay")).toBe("");
+  });
+
+  it("says it is saved, and not in the model shown, once it is saved", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+
+    await click("Save answers");
+
+    expect(stateOf("open-guard")).toBe("Saved. It is not in the model shown yet.");
+  });
+
+  it("saves the answers typed, asks about what is then saved, and says the AI is writing it in", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+
+    await pressRegenerate();
+
+    expect(core.callsOf("save_answers")).toHaveLength(1);
+    const asked = core.callsOf("request_generation")[0];
+    expect(asked?.["expect"]).toMatchObject({ source: headOf("alpha") });
+    expect((asked?.["expect"] as { answers: string }).answers).toMatch(/^[0-9a-f]{64}$/);
+    expect(stateOf("open-guard")).toBe("Saved. The AI is writing it into a new model.");
+    expect(regenerate()).toBeNull();
+  });
+
+  it("says a model made after the answer that still asks the question did not take it in", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+    await pressRegenerate();
+    core.takeRequest("alpha");
+    await ticker.fire();
+
+    core.completeRequest("alpha");
+    await ticker.fire();
+
+    expect(stateOf("open-guard")).toContain("still asks this question");
+    expect(regenerate()).not.toBeNull();
+  });
+
+  it("says a model made after the answer that no longer asks the question has it in", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+    await pressRegenerate();
+    core.takeRequest("alpha");
+    await ticker.fire();
+
+    core.completeRequest("alpha", "<scxml><!-- APPLIED:open-guard --></scxml>");
+    await ticker.fire();
+
+    // The question is no longer asked, so its answer is listed with the ones the model does not ask.
+    expect(fields().map((f) => f.dataset["qid"])).toEqual(["close-delay", "open-guard"]);
+    expect(stateOf("open-guard")).toContain("In the model shown");
+  });
+
+  it("goes back to saved when the answer is changed after the model was made", async () => {
+    await click("Alpha");
+    await answer("open-guard", "Any card on the list opens it.");
+    await pressRegenerate();
+    core.takeRequest("alpha");
+    await ticker.fire();
+    core.completeRequest("alpha", "<scxml><!-- APPLIED:open-guard --></scxml>");
+    await ticker.fire();
+
+    await answer("open-guard", "Only cards of today.");
+    expect(stateOf("open-guard")).toBe("Typed, not saved yet.");
+    await click("Save answers");
+
+    expect(stateOf("open-guard")).toBe("Saved. It is not in the model shown yet.");
+  });
+
+  it("is not claimed for a model that no request made", async () => {
+    core.setAnswers("alpha", { "open-guard": "Any card on the list opens it." });
+    await click("Alpha");
+
+    expect(stateOf("open-guard")).toBe("Saved. It is not in the model shown yet.");
   });
 });

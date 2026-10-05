@@ -217,6 +217,14 @@ const en = {
     "Saving changes the text or the answers the request is about, so what it writes will not be published. Save and cancel the request, or leave this unsaved.",
   guardSave: "Save and cancel the request",
   guardLeave: "Do not save",
+  answerStateUnsaved: "Typed, not saved yet.",
+  answerStateSaved: "Saved. It is not in the model shown yet.",
+  answerStateWriting: "Saved. The AI is writing it into a new model.",
+  answerStateInModel:
+    "In the model shown: the model was made after you answered, and it no longer asks this. Read the behaviour it led to.",
+  answerStateIgnored:
+    "The model shown was made after you answered and still asks this question. Read what it did, or generate again.",
+  answersRegenerate: "Generate again from these answers",
 } as const;
 
 export type Key = keyof typeof en;
@@ -431,6 +439,14 @@ const ko: Record<Key, string> = {
     "저장하면 요청이 기준으로 삼은 사양이나 답변이 바뀌어, AI가 쓰는 결과는 공개되지 않습니다. 저장하고 요청을 취소하거나, 저장하지 않고 두세요.",
   guardSave: "저장하고 요청 취소",
   guardLeave: "저장하지 않음",
+  answerStateUnsaved: "입력했지만 아직 저장하지 않았습니다.",
+  answerStateSaved: "저장했습니다. 지금 보이는 모델에는 아직 없습니다.",
+  answerStateWriting: "저장했습니다. AI가 새 모델에 반영하고 있습니다.",
+  answerStateInModel:
+    "지금 보이는 모델에 반영됨: 답한 뒤에 만든 모델이고 더는 이 질문을 하지 않습니다. 이어진 동작을 읽어 보세요.",
+  answerStateIgnored:
+    "지금 보이는 모델은 답한 뒤에 만들었는데도 이 질문을 여전히 합니다. 모델이 한 일을 읽거나 다시 생성하세요.",
+  answersRegenerate: "이 답으로 다시 생성",
 };
 
 export type Locale = "en" | "ko";
