@@ -438,6 +438,85 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 }
 
 #[test]
+fn a_record_with_a_string_field_is_refused_by_name_in_every_language() {
+    // Measured 2026-10-06: `check` answered ok for Rust, Kotlin, Go, C++ and
+    // Python, and Rust wrote `#[derive(Clone, Copy)]` over a `String` field,
+    // which does not compile (E0204); only C11 refused. A string is bounded
+    // where it is declared and a schema's field has no bound the machine reads
+    // yet, so no language holds the field until one is written.
+    let held_by = |data: &str| {
+        format!(
+            r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_label.scxml" as="Label"/>
+  <datamodel>
+    {data}
+  </datamodel>
+  <state id="idle"/>
+</scxml>
+"##
+        )
+    };
+    let documents = [
+        (
+            "a record variable",
+            held_by(
+                r#"<data id="last" sce:type="record:Label" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="label" expr="'a'"/>
+    </data>"#,
+            ),
+        ),
+        (
+            "a list of records",
+            held_by(
+                r#"<data id="labels" sce:type="list&lt;record:Label&gt;" sce:capacity="4" sce:direction="out"/>"#,
+            ),
+        ),
+    ];
+    let schema = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_label" sce:event-name="label.taken">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##;
+    let siblings = [("schema_label.scxml", schema)];
+    for (held, document) in &documents {
+        for (lang, name) in [
+            ("rust", "Rust"),
+            ("kotlin", "Kotlin"),
+            ("cpp", "C++"),
+            ("python", "Python"),
+            ("c11", "C11"),
+        ] {
+            let (ok, out) = run_beside(&["check", "-l", lang], document, &siblings);
+            assert!(!ok, "{lang}, {held}: no lowering for it yet:\n{out}");
+            assert!(
+                out.contains("generate/unsupported-feature")
+                    && out.contains(&format!("no {name} lowering yet"))
+                    && out.contains("record:Label with the field `label` of type string"),
+                "{lang}, {held}: expected the refusal naming {name} and the field:\n{out}"
+            );
+        }
+        let (ok, out) = run_beside(
+            &["check", "-l", "go", "--go-module-prefix", "x/y"],
+            document,
+            &siblings,
+        );
+        assert!(!ok, "go, {held}: no lowering for it yet:\n{out}");
+        assert!(
+            out.contains("no Go lowering yet")
+                && out.contains("record:Label with the field `label` of type string"),
+            "go, {held}: expected the refusal naming Go and the field:\n{out}"
+        );
+    }
+}
+
+#[test]
 fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every_language() {
     // Measured 2026-10-04: Rust, Go, Kotlin, Python and C++ stopped with a panic
     // (exit 101, "SceType::Enum(alias='ViewMode') reached a context built by

@@ -3604,6 +3604,17 @@ names each enum field's variants as a variable's are.
 `scenarios/static_record_enum.json` holds this on every engine that runs the
 model.
 
+**A record's string field.** A record variable (or a list of records) whose
+schema has a `string` field is refused at the `<data>` by every backend, as
+`generate/unsupported-feature` (`record:Label with the field `label` of type
+string has no Rust lowering yet`). Measured 2026-10-06, `check` had answered ok for
+Rust, Kotlin, Go, C++ and Python while Rust wrote a `Copy` record over a `String`
+field, which does not compile (E0204); only C11 refused. The field will be bounded
+by the `sce:max-size` its schema writes — required, no default — and held as a
+string variable's `sce:capacity` is (`docs/adr/0005`, decision 1). Each backend
+lifts the refusal (`StaticTarget::lowers_record_string_fields`) in the commit that
+lowers the field and runs `static_record_string`.
+
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one
 that holds a name the enum does not declare is refused when read. The saved
@@ -4025,8 +4036,7 @@ the host serves (`--host-invoker`) with its `<param>`s, and a hybrid `<invoke>`
 whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
-driven — evaluating the arguments it keeps no variable for. Bytes and a record with
-a string field, a `<send>` to
+driven — evaluating the arguments it keeps no variable for. Bytes, a `<send>` to
 another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `namelist` name that a `<param>` of
 the same `<send>` or `<invoke>` or an earlier name of the `namelist` already names

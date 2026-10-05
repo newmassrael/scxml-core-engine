@@ -342,6 +342,14 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
+    /// Whether a record variable (or a list of records) may hold a `string`
+    /// field, bounded by the `sce:max-size` its schema declares. A target that
+    /// does not is refused where the record is declared, by name, rather than
+    /// left to write a record that does not build — Rust's is a `Copy` struct, which
+    /// a `String` field cannot be a member of.
+    fn lowers_record_string_fields(&self) -> bool {
+        false
+    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -1548,8 +1556,9 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) =
-        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))
+    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)
+        .or_else(|| record_with_a_string_field(model, &scope, target))
+        .or_else(|| target.unsupported(model, &scope))
     {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
@@ -3148,6 +3157,39 @@ fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
             }
             _ => None,
         })
+}
+
+/// The first record variable of `scope` — or list of records — whose schema has a
+/// `string` field, described for a refusal, when `target` does not hold one
+/// ([`StaticTarget::lowers_record_string_fields`]). Asked once for every target:
+/// a string is bounded where it is declared, and a schema's field is bounded by
+/// the `sce:max-size` the schema writes, so a target that holds the field holds
+/// that bound too, as it holds a variable's `sce:capacity`.
+fn record_with_a_string_field(
+    model: &SCXMLModel,
+    scope: &StaticScope,
+    target: &dyn StaticTarget,
+) -> Option<String> {
+    if target.lowers_record_string_fields() {
+        return None;
+    }
+    scope.variables.iter().find_map(|var| {
+        let alias = var.value_type.as_ref().and_then(|t| {
+            t.record_alias()
+                .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
+        })?;
+        let field = model
+            .imported_records
+            .get(alias)?
+            .fields
+            .iter()
+            .find(|f| matches!(f.sce_type, SceType::String))?;
+        Some(format!(
+            "record:{alias} with the field `{}` of type {}",
+            field.id,
+            field.sce_type.as_attr()
+        ))
+    })
 }
 
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of
