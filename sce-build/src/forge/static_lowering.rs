@@ -3119,6 +3119,12 @@ impl StaticTarget for CppTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // A string field of a record is a `std::string` of an aggregate that is
+    // copied by value, which the machine bounds by the `sce:max-size` its schema
+    // writes, as it bounds a string variable.
+    fn lowers_record_string_fields(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.

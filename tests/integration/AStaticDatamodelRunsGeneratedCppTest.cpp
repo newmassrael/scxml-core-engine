@@ -56,6 +56,7 @@
 #include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_record_string_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
@@ -214,6 +215,20 @@ template <typename Days> json daysJson(const Days &days) {
     json listed = json::array();
     for (const auto &day : days) {
         listed.push_back(dayJson(day));
+    }
+    return listed;
+}
+
+/// A `record:Labelled` value as a scenario states it: its fields by the schema's ids.
+template <typename Labelled> json labelledJson(const Labelled &labelled) {
+    return json{{"sensor", labelled.sensor}, {"label", labelled.label}};
+}
+
+/// A list of such values, in order.
+template <typename Labelleds> json labelledsJson(const Labelleds &labelleds) {
+    json listed = json::array();
+    for (const auto &labelled : labelleds) {
+        listed.push_back(labelledJson(labelled));
     }
     return listed;
 }
@@ -447,6 +462,21 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsASingleFieldAsTheSingleNe
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_record_real32", driver);
+}
+
+// A record's string field is held to the UTF-8 bytes its schema declares: an
+// assignment past the bound — from a literal, a string variable or a payload —
+// writes nothing, raises error.execution and ends its block, and a list of such
+// records holds copies with their text.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAStringFieldWithinTheBoundItsSchemaDeclares) {
+    using Machine = G::static_record_string::static_record_string;
+    Driver<Machine> driver({
+        {"last", [](const Machine &m) { return labelledJson(m.last()); }},
+        {"note", [](const Machine &m) { return json(m.note()); }},
+        {"labels", [](const Machine &m) { return labelledsJson(m.labels()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_record_string", driver);
 }
 
 // A top-level final's `<donedata>` params are computed from the machine's own

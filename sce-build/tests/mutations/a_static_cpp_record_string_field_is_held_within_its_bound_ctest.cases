@@ -1,0 +1,27 @@
+# Mutation cases for "a record's string field is held within the `sce:max-size` its
+# schema declares" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string field"; docs/adr/0005,
+# decision 1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_record_string_field_is_held_within_its_bound_ctest.cases`.
+#
+# `static_record_string` writes the field from a literal, from a string variable and
+# from a typed payload, and expects a value past eight UTF-8 bytes to leave the record
+# as it was and `errors` to count it. A C++ machine is not saved, so there is no restore
+# to refuse here; the bound is the assignment's. The mutant takes it away:
+#
+#   a record's string field is not among the strings an `<assign>` is held to.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json
+
+mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(variables.iter().flat_map(|v| {",
+     "        .chain(variables.iter().take(0).flat_map(|v| {")
+PY

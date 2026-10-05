@@ -427,7 +427,7 @@ const RECORD_STRING_FIELD: &[(&str, &str, bool)] = &[
     ("rust", "Rust", true),
     ("kotlin", "Kotlin", true),
     ("go", "Go", true),
-    ("cpp", "C++", false),
+    ("cpp", "C++", true),
     ("python", "Python", true),
     ("c11", "C11", false),
 ];
