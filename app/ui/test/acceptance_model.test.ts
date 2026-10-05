@@ -14,6 +14,8 @@ import {
   isUnsettled,
   listIsTheOneMeasured,
   OUTCOME_WORDS,
+  readsAgree,
+  standingIsOfWhatWasMeasured,
   tally,
   type AcceptanceState,
   type Shown,
@@ -112,11 +114,28 @@ describe("the accept button", () => {
     });
     expect(gate(lapsed, false, shown)).toBeNull();
     // Answers given since are a different basis, which holds no longer says; the screen shows them.
+    // `now` is the work as it is, which is what the report measured: both name the answers.
     const answered = state({
-      acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis },
+      acceptance: { acceptance: record, standing: "holds", lapse: null, now: { ...basis, answers: hex(4) } },
       report: report({ basis: { ...basis, answers: hex(4) } }),
     });
     expect(gate(answered, false, { ...shown, answers: hex(4) })).toBeNull();
+  });
+
+  it("is withheld while the standing was judged of another state of the work than the one measured", () => {
+    // `read_acceptance` and the report are asked for apart, and the model saved between the two
+    // leaves a "holds" beside a design it was not judged of: whether this design is accepted already
+    // is not said, and the button waits for a pair that agrees.
+    const record = { revision: hex(9), accepted_at: "t", channel: "direct", basis, open: [] };
+    const apart = state({
+      acceptance: { acceptance: record, standing: "holds", lapse: null, now: { ...basis, model: hex(8) } },
+    });
+    expect(gate(apart, false, shown)).toBe("unread");
+    expect(standingIsOfWhatWasMeasured(apart)).toBe(false);
+    expect(readsAgree(apart)).toBe(false);
+    // Where there is no acceptance there is no standing to be of another state.
+    expect(standingIsOfWhatWasMeasured(state())).toBe(true);
+    expect(readsAgree(state())).toBe(true);
   });
 
   it("is withheld while what the screen shows is not what the report measured, whichever part differs", () => {

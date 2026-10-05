@@ -602,6 +602,15 @@ What this does not claim, stated so nothing on the screen is read as more:
   is part of what the button compares). When they differ the pair is read again, three
   times at most, and a list that keeps moving shows no sentence and offers no accept until a
   later question reads a pair that agrees.
+- **Whether the acceptance holds is said of the work that was measured.** `read_acceptance`
+  says whether an acceptance still holds and names, as `now`, the work it judged; the report
+  names the work it measured as its `basis`. Both come from the same reading of the work, and
+  they are asked for apart, so a model saved between the two leaves a "holds" beside a design it
+  was not judged of, or a "lapsed" of the model before it was put back, and nothing about the
+  acceptance record changes for a later question to notice. The screen does not work the
+  standing out itself; it holds `now` to the basis and reads the pair again, three times at
+  most. What still differs is shown as not known yet (neither held nor lapsed), the accept
+  waits (`unread`), and the next question reads it again because the part is compared as unread.
 
 ## Seeing the screen
 

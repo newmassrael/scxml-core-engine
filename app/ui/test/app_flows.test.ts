@@ -2243,6 +2243,96 @@ describe("a work that moves under the screen", () => {
     await settle();
   });
 
+  /** What the panel says of whether the owner's acceptance holds: the banner, not the note under the button. */
+  const verdict = (): string => root.querySelector(".accepted .banner")?.textContent ?? "";
+
+  it("review db regression: does not keep an old holds verdict after the displayed model changes during refresh", async () => {
+    core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+
+    // An external client writes and accepts one model. The refresh reads that
+    // acceptance, while model/report reads remain in flight.
+    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
+    core.setAcceptance("alpha");
+    const slowModel = core.hold("read_model");
+    const slowReport = core.hold("requirements_report");
+    await ticker.fire();
+    expect(core.callsOf("read_acceptance")).toHaveLength(2);
+
+    const changed = "<scxml><!-- changed after acceptance --></scxml>";
+    core.setModel("alpha", changed, headOf("alpha"));
+    slowModel.release();
+    slowReport.release();
+    for (let i = 0; i < 3; i += 1) await settle();
+    expect(root.querySelector(".scxml")?.textContent).toBe(changed);
+    // Even after another poll, this model must not be shown with the prior
+    // model's claim that the acceptance still holds: SCE's word for this model is "lapsed".
+    await ticker.fire();
+    expect(verdict()).toContain("no longer holds");
+    expect(verdict()).not.toContain("It holds");
+  });
+
+  it("review db regression: does not keep an old lapse after the accepted model is restored during refresh", async () => {
+    const accepted = "<scxml><!-- accepted and later restored --></scxml>";
+    core.setModel("alpha", accepted, headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setAcceptance("alpha");
+    await click("Alpha");
+    expect(acceptanceText()).toContain("It holds");
+
+    core.setModel("alpha", "<scxml><!-- temporary change --></scxml>", headOf("alpha"));
+    const slowModel = core.hold("read_model");
+    const slowReport = core.hold("requirements_report");
+    await ticker.fire();
+    expect(core.callsOf("read_acceptance")).toHaveLength(2);
+
+    core.setModel("alpha", accepted, headOf("alpha"));
+    slowModel.release();
+    slowReport.release();
+    for (let i = 0; i < 3; i += 1) await settle();
+    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
+    await ticker.fire();
+    expect(verdict()).toContain("It holds");
+    expect(verdict()).not.toContain("no longer holds");
+  });
+
+  it("does not say whether an acceptance holds while the model keeps moving, and says it once it stops", async () => {
+    // The standing is asked for beside SCE's measure, and each time the model is saved between the
+    // two, the standing was judged of another model than the one measured. Three times in a row, and
+    // the screen has read nothing it can say the acceptance holds or lapsed of. The model on screen
+    // is read last (held until the model stopped moving), so it is the core's: nothing but the
+    // unsettled acceptance is left to ask about, and the next question has to ask.
+    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setAcceptance("alpha");
+    await click("Alpha");
+    expect(verdict()).toContain("It holds");
+
+    core.setModel("alpha", "<scxml><!-- changed --></scxml>", headOf("alpha"));
+    const slowModel = core.hold("read_model");
+    const held = [0, 1, 2].map(() => core.hold("requirements_report"));
+    await ticker.fire();
+    for (const [i, gate] of held.entries()) {
+      core.setModel("alpha", `<scxml><!-- moving ${i} --></scxml>`, headOf("alpha"));
+      gate.release();
+      await settle();
+    }
+    slowModel.release();
+    for (let i = 0; i < 3; i += 1) await settle();
+
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml><!-- moving 2 --></scxml>");
+    expect(verdict()).toContain("not known yet");
+    expect(verdict()).not.toContain("It holds");
+    expect(acceptButton().disabled).toBe(true);
+
+    // The model has stopped moving: the next question reads the pair again, and SCE's word is shown.
+    await ticker.fire();
+    await settle();
+
+    expect(verdict()).toContain("no longer holds");
+  });
+
   it("shows a model an authoring client saved after the work was opened, without being asked", async () => {
     await click("Alpha");
     expect(modelText()).toContain("No model yet");
@@ -3046,6 +3136,26 @@ describe("the sentence a question or a requirement is about", () => {
   const listRevisionNow = async (): Promise<string> =>
     ((await core.call("read_requirements", { id: "alpha" })) as { requirements: { revision: string } }).requirements
       .revision;
+
+  it("review previous regression: does not accept a new requirement list beside an old source quotation", async () => {
+    const slow = core.hold("requirements_report");
+    await click("Alpha");
+    expect(core.callsOf("read_requirements")).toHaveLength(1);
+
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setQuotes("alpha", { R1: SECOND, R2: FIRST });
+    slow.release();
+    await settle();
+    await settle();
+
+    const shownQuote = groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent;
+    if (shownQuote === FIRST) {
+      await click("Accept this design");
+      expect(core.callsOf("accept")).toHaveLength(0);
+    } else {
+      expect(shownQuote).toBe(SECOND);
+    }
+  });
 
   it("reads the list again when it was saved while SCE measured it, so a sentence is of the list measured", async () => {
     // The text, the model and the answers stay the same; only the requirement list and the

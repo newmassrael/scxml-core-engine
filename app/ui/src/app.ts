@@ -12,6 +12,8 @@ import {
   gate,
   isUnsettled,
   listIsTheOneMeasured,
+  readsAgree,
+  standingIsOfWhatWasMeasured,
   tally,
   type AcceptancePanel,
   type AcceptanceState,
@@ -45,7 +47,6 @@ import {
   type HistoryEntry,
   type HostListing,
   type Listing,
-  type ReadAcceptance,
   type RequestHead,
   type RequirementOutcome,
   type RequirementsReport,
@@ -687,6 +688,11 @@ export class App {
     const model = this.model;
     const panel = this.acceptance;
     const list = panel !== null && panel.phase === "read" && !panel.state.accepting ? panel.state : null;
+    // Reads that were not of one state of the work (it kept moving while they were asked for) are
+    // compared as unread. As what they show they would equal what the core says, since the model
+    // on screen is the core's and the acceptance record has not changed, and nothing would ask
+    // again; but the standing they carry was judged of another model.
+    const unmatched = list !== null && !readsAgree(list);
     return {
       source: editor === null || editor.phase !== "idle" || isDirty(editor) ? undefined : editor.base,
       model:
@@ -713,7 +719,7 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed"
+            : panel.phase === "failed" || unmatched
               ? UNREAD
               : list === null
                 ? undefined
@@ -731,7 +737,7 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed"
+            : panel.phase === "failed" || unmatched
               ? UNREAD
               : list === null
                 ? undefined
@@ -1082,11 +1088,14 @@ export class App {
     // an accept or a save does not flash a "reading" over what the person is looking at.
     if (this.acceptance === null) this.acceptance = { phase: "reading" };
     try {
-      // The list and SCE's measure are asked for apart, and a list saved between the two is not
-      // the one SCE measured: its sentences would be shown beside the outcomes of another list.
-      // The pair is read again, up to a few times, until the measure is of the list that was
-      // read. A list that keeps moving leaves the last pair on screen as it is, said not to
-      // agree (`gate` withholds the accept and `grounding` shows no sentence), and the failure
+      // The list, SCE's measure and the acceptance's standing are asked for apart, and the work can
+      // be saved between them: a list saved after it was read is not the one SCE measured (its
+      // sentences would sit beside the outcomes of another list), and a model saved while the
+      // standing was read leaves a "holds" or a "lapsed" that was judged of another model. They
+      // are read again, up to a few times, until the measure is of the list that was read and the
+      // standing is of the work that was measured. What keeps moving leaves the last reads on
+      // screen as they are, said not to agree (`gate` withholds the accept, `grounding` shows no
+      // sentence and `acceptedBanner` does not say whether the acceptance holds), and the failure
       // is the watch's to ask about again.
       let state: AcceptanceState | null = null;
       for (let round = 1; round <= LIST_AND_MEASURE_ROUNDS; round += 1) {
@@ -1107,11 +1116,11 @@ export class App {
           accepting: false,
           refusal: null,
         };
-        if (listIsTheOneMeasured(state)) break;
+        if (readsAgree(state)) break;
       }
       if (state === null) return true;
       this.acceptance = { phase: "read", state };
-      if (!listIsTheOneMeasured(state)) {
+      if (!readsAgree(state)) {
         this.render();
         return false;
       }
@@ -2170,7 +2179,7 @@ export class App {
         : standing === "unstated"
           ? h("p", { class: "banner", role: "status" }, this.t("requirementsUnstated"))
           : null,
-      this.acceptedBanner(state.acceptance),
+      this.acceptedBanner(state),
       report === null
         ? h(
             "p",
@@ -2185,20 +2194,29 @@ export class App {
     );
   }
 
-  /** Whether the owner has accepted, whether it still holds, and what SCE listed as open when they did. */
-  private acceptedBanner(read: ReadAcceptance): HTMLElement {
+  /**
+   * Whether the owner has accepted, whether it still holds, and what SCE listed as open when they
+   * did. Whether it holds is SCE's word about the work as it was when it was asked, and is said
+   * only of the work SCE measured beside it: when the two were read of different states of the work
+   * the acceptance is shown as not yet checked, and is neither held nor lapsed.
+   */
+  private acceptedBanner(state: AcceptanceState): HTMLElement {
+    const read = state.acceptance;
     const held = read.acceptance;
     if (held === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
     const time = formatTime(held.accepted_at, this.locale);
+    const checked = standingIsOfWhatWasMeasured(state);
     return h(
       "div",
       { class: "accepted" },
       h(
         "p",
-        { class: read.standing === "holds" ? "banner banner-ok" : "banner banner-warn", role: "status" },
-        read.standing === "holds"
-          ? this.t("acceptedHolds", { time })
-          : this.t("acceptedLapsed", { time, lapse: read.lapse ?? "" }),
+        { class: checked && read.standing === "holds" ? "banner banner-ok" : "banner banner-warn", role: "status" },
+        !checked
+          ? this.t("acceptedUnchecked", { time })
+          : read.standing === "holds"
+            ? this.t("acceptedHolds", { time })
+            : this.t("acceptedLapsed", { time, lapse: read.lapse ?? "" }),
       ),
       h("p", { class: "muted" }, this.channelSentence(held.channel)),
       held.open.length === 0

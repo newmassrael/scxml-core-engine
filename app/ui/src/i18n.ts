@@ -182,6 +182,8 @@ const en = {
   acceptedHolds:
     "Accepted {time}. It holds: the text, the list, the design and your answers are as they were.",
   acceptedLapsed: "Accepted {time}, and it no longer holds. SCE says: {lapse}",
+  acceptedUnchecked:
+    "Accepted {time}. Whether it holds for the design shown is not known yet: the work changed while it was being read. The screen reads it again.",
   channelDirect: "Accepted here, in this application.",
   channelRelayed: "Relayed by an authoring client: it was not accepted in this application.",
   channelUnknown: "Accepted through: {channel}",
@@ -427,6 +429,8 @@ const ko: Record<Key, string> = {
   acceptedNone: "아직 수락한 것이 없습니다.",
   acceptedHolds: "{time}에 수락. 유효합니다: 원문, 목록, 설계, 내 답이 수락 때와 같습니다.",
   acceptedLapsed: "{time}에 수락했지만 더는 유효하지 않습니다. SCE의 말: {lapse}",
+  acceptedUnchecked:
+    "{time}에 수락했습니다. 지금 보이는 설계에 대해 유효한지는 아직 알 수 없습니다. 읽는 동안 작업이 바뀌었습니다. 화면이 다시 읽는 중입니다.",
   channelDirect: "이 애플리케이션에서 직접 수락했습니다.",
   channelRelayed: "AI 클라이언트가 전한 것으로, 이 애플리케이션에서 직접 수락한 것이 아닙니다.",
   channelUnknown: "수락 경로: {channel}",

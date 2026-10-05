@@ -107,6 +107,26 @@ export function listIsTheOneMeasured(state: AcceptanceState): boolean {
 }
 
 /**
+ * Whether the acceptance's standing was judged of the work SCE measured. `read_acceptance` says
+ * whether the acceptance still holds, and `now` is the work it was judged against; the report's
+ * basis is the work it measured. They are asked for apart, so a model saved between the two leaves
+ * the screen with the design and the outcomes of one work beside a "holds" of another (or a
+ * "lapsed" of the one before the model was put back). The standing is SCE's and is not worked
+ * out here: when the two bases differ it is only not said, and read again. Nothing is claimed
+ * where there is no acceptance (`now` is null) or no measure.
+ */
+export function standingIsOfWhatWasMeasured(state: AcceptanceState): boolean {
+  const now = state.acceptance.now;
+  const report = state.report;
+  return now === null || report === null || sameBasis(now, report.basis);
+}
+
+/** Whether the parts of the panel that were read apart are of one state of the work: the list and the standing. */
+export function readsAgree(state: AcceptanceState): boolean {
+  return listIsTheOneMeasured(state) && standingIsOfWhatWasMeasured(state);
+}
+
+/**
  * Whether the owner may press accept now, and if not, why. The core refuses what is
  * not current and what moved; this keeps the button from offering what it will refuse,
  * and from offering what the owner is not looking at. `shown` has no default: a caller
@@ -120,6 +140,9 @@ export function gate(state: AcceptanceState, unsaved: boolean, shown: Shown): Wi
   if (report.model_standing !== "current" || report.requirements_standing !== "current") return "behind";
   const notShown = whatIsNotShown(shown, report.basis);
   if (notShown !== null) return notShown;
+  // Whether this very design is accepted already is the standing's to say, and a standing judged of
+  // another state of the work is not said of this one.
+  if (!standingIsOfWhatWasMeasured(state)) return "unread";
   const accepted = state.acceptance;
   if (accepted.standing === "holds" && accepted.acceptance !== null && sameBasis(accepted.acceptance.basis, report.basis)) {
     return "already";
