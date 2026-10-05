@@ -399,7 +399,10 @@ installer and not from the machine. It also holds the `.deb`'s `Depends` to that
 modules, since a machine that has a module the `.deb` never asks for would start it and pass it
 (`python3-jsonschema` was missing until this check existed). An installer whose application looks for its bundle under
 another name fails it (tried by renaming the folder in the shell and rebuilding). CI runs it as
-the `installer` gate (`.github/workflows/installer.yml`); that lane has not run in CI yet.
+the `installer` gate (`.github/workflows/installer.yml`); its first two runs passed (the first
+cold, about twelve minutes). A stand-in row in
+`sce-build/tests/ci_supersession_policy.rs` stands for the lane until it has runs of its own to
+measure.
 
 **A shell says what it is doing where the owner looks.** `host::start` never fails: that nothing
 could be hosted is a state, and the shell reports it the way an adapter does (`.sce-hosts/<name>.json`,
