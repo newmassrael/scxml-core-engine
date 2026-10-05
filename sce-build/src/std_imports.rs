@@ -27,7 +27,7 @@
 
 /// The Go standard packages generated expression code reaches for, in the order
 /// a Go import block lists them.
-const GO_PACKAGES: &[&str] = &["math", "strconv"];
+pub(crate) const GO_PACKAGES: &[&str] = &["math", "strconv"];
 
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in

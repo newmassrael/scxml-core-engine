@@ -8,12 +8,12 @@ package interpolation_1d_linear
 
 import "github.com/newmassrael/sce-forge-runtime/interpolation"
 
-var axisRpm = []float64{ 800.0, 1200.0, 2000.0, 3000.0, 4000.0, 6000.0 }
-var values = []float64{ 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 }
+var sceAxisRpm = []float64{ 800.0, 1200.0, 2000.0, 3000.0, 4000.0, 6000.0 }
+var sceValues = []float64{ 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 }
 
 func Lookup(rpm uint16) float64 {
 	return interpolation.Linear(
-		axisRpm, values,
+		sceAxisRpm, sceValues,
 		float64(rpm),
 	)
 }

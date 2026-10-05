@@ -1772,10 +1772,17 @@ fn render_lookup(
     // this materialization site via forge_stateless_def_symbol.
     let func_name =
         forge_stateless_def_symbol(&m.name, &forge_lookup_symbol(&m.output.id, lang), lang);
-    let input_id = l.local_id(&m.input.id);
-
     let output_is_string = m.output_is_string();
     let on_miss_error = m.miss_policy.is_error();
+    // A string-output Go lookup returns the constants `{enum_name}{value}` from
+    // the body that reads the input, so an input under the enum's name would
+    // hide them; `local_id` shifts it like any other local.
+    let input_id = match lang {
+        Language::Go if output_is_string => {
+            go_local_spelling_beside(&m.input.id, &[enum_name.as_str()])
+        }
+        _ => l.local_id(&m.input.id),
+    };
 
     // String-enum strategy: entries grouped by output value.
     let (entries_by_value, unique_values, default_value) = if output_is_string {
@@ -16811,18 +16818,20 @@ fn render_validator(
         let alias_expansion: Option<String> = match lang {
             Language::Cpp => Some(imp.member_name.clone()),
             Language::Rust | Language::Python => Some(format!("self.{}", imp.member_name)),
-            Language::Go => Some(format!("p.{}", imp.member_name)),
+            Language::Go => Some(format!("{GO_FORGE_RECEIVER}.{}", imp.member_name)),
             Language::Kotlin | Language::C11 => None,
         };
         if let Some(exp) = alias_expansion {
             owned_renames.insert(imp.alias.as_str(), exp);
         }
     }
-    let validator_method_renames = stateful_import_method_renames(imports, &lang);
+    let validator_method_renames =
+        stateful_import_method_renames(imports, &lang, Some(GO_FORGE_RECEIVER));
     for (k, v) in &validator_method_renames {
         owned_renames.insert(k.as_str(), v.clone());
     }
-    let validator_field_renames = stateful_import_field_renames(imports, &lang);
+    let validator_field_renames =
+        stateful_import_field_renames(imports, &lang, Some(GO_FORGE_RECEIVER));
     for (k, v) in &validator_field_renames {
         owned_renames.insert(k.as_str(), v.clone());
     }
@@ -18974,17 +18983,161 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
     }
 }
 
-/// Go builtin identifiers that should not be used as variable/parameter names.
-/// Keywords (func, return, etc.) are already impossible as SCXML ids.
-/// Builtins (byte, string, int, etc.) compile but shadow the built-in type.
-fn go_escape_builtin(name: &str) -> String {
-    match name {
-        "byte" | "rune" | "error" | "string" | "bool" | "int" | "uint" | "int8" | "int16"
-        | "int32" | "int64" | "uint8" | "uint16" | "uint32" | "uint64" | "float32" | "float64"
-        | "complex64" | "complex128" | "uintptr" | "len" | "cap" | "make" | "new" | "append"
-        | "copy" | "close" | "delete" | "panic" | "recover" | "print" | "println" | "true"
-        | "false" | "nil" | "iota" => format!("{name}_"),
-        _ => name.to_string(),
+/// Go's predeclared identifiers: the universe scope the language fixes. A
+/// parameter or a variable of one of these names is legal Go and hides what the
+/// body calls (`uint16(b)` after a local `uint16`, `len(data)` after a local
+/// `len`), so each is spelled under the shift ([`go_local_spelling`]).
+const GO_UNIVERSE_NAMES: &[&str] = &[
+    "any",
+    "append",
+    "bool",
+    "byte",
+    "cap",
+    "clear",
+    "close",
+    "comparable",
+    "complex",
+    "complex128",
+    "complex64",
+    "copy",
+    "delete",
+    "error",
+    "false",
+    "float32",
+    "float64",
+    "imag",
+    "int",
+    "int16",
+    "int32",
+    "int64",
+    "int8",
+    "iota",
+    "len",
+    "make",
+    "max",
+    "min",
+    "new",
+    "nil",
+    "panic",
+    "print",
+    "println",
+    "real",
+    "recover",
+    "rune",
+    "string",
+    "true",
+    "uint",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uint8",
+    "uintptr",
+];
+
+/// The runtime packages a generated Go file of a forge kind imports and names in
+/// a body (`lookup.…`, `filter.…`): a local of that name hides the package, and
+/// the file then imports one it no longer uses. The standard packages the
+/// expression emitters reach for are `std_imports::GO_PACKAGES`.
+const GO_RUNTIME_PACKAGES: &[&str] = &[
+    "codec",
+    "filter",
+    "fmt",
+    "forge",
+    "interpolation",
+    "lookup",
+    "observer",
+    "testing",
+    "timer",
+];
+
+/// The prefix the Go generator keeps for what it writes itself: the temporaries
+/// of a `may-fail` body (`sceErr`, `sceFailure`, `sceValue`, `sceCond1`) and the
+/// alias it imports another algorithm under (`scealgorithm`). A prefix rather
+/// than a list because the temporaries are numbered, and a list of the ones the
+/// committed output shows is stale the day a body needs one more.
+const GO_GENERATED_PREFIX: &str = "sce";
+
+/// The receiver of a generated Go method of a forge kind whose inputs are the
+/// method's PARAMETERS (filter, validator, observer): under the generator's own
+/// prefix, so no input an author names can be it, and the one spelling the
+/// templates (`go_receiver`) and the member accesses an import is reached by
+/// (`stateful_import_method_renames`) both read.
+pub(crate) const GO_FORGE_RECEIVER: &str = "sceSelf";
+
+/// A procedure's receiver. Its inputs are FIELDS reached through the receiver,
+/// never locals beside it, so an input called `p` is `p.p` and meets nothing.
+const GO_PROCEDURE_RECEIVER: &str = "p";
+
+/// The package-level names a generated Go file of a forge kind declares at fixed
+/// spellings (not derived from the document's own names) and reads in a body: the
+/// validator's `ValidationResult`, and the observer's `ForgeDomainTag` with the
+/// `ForgeDomainTag<Event>` constants after it. A local of one of these hides it
+/// in the function that returns it.
+const GO_GENERATED_PACKAGE_NAMES: &[&str] = &["ValidationResult"];
+const GO_GENERATED_PACKAGE_PREFIXES: &[&str] = &["ForgeDomainTag"];
+
+/// The methods a generated observer's struct declares. A monitor's state is a
+/// field of that struct, and Go keeps a field and a method of one name in one
+/// table, so a monitor called `Update` would declare it twice.
+const GO_OBSERVER_METHODS: &[&str] = &["Update"];
+
+/// How a generated Go function of a forge kind spells a name the author gave a
+/// parameter, a variable or a datum: as written, and with one more trailing `_`
+/// when it is one the generated code reaches for itself — a predeclared
+/// identifier, a package it names, or a name under the generator's own prefix.
+///
+/// One function for the declaration, every read and every call, so a name is
+/// never escaped in one place and not another: a parameter declared `append_`
+/// and read as `append` is the same defect from the other side (the declaration
+/// was escaped and the read, which went through the expression emitter, was
+/// not, and `append (built-in) must be called` was the compile error).
+///
+/// The escape is a SHIFT, not a suffix: a name whose stem (the name without its
+/// trailing underscores) is reserved gets one more underscore, so `len` is
+/// `len_` and an author's own `len_` is `len__`. Appending `_` to a listed name
+/// would send `len` and `len_` to one spelling, and two variables the document
+/// keeps apart would be one in the generated code; the shift is injective, so
+/// no pair of names can meet and nothing has to be refused for it.
+///
+/// A Go KEYWORD is not escaped here: it is refused in the document, for every
+/// backend at once, like any other reserved word.
+pub fn go_local_spelling(id: &str) -> String {
+    go_local_spelling_beside(id, &[])
+}
+
+/// `go_local_spelling` for a function that also has package-level names of its
+/// own to keep a local off: a name whose stem starts with one of `prefixes` is
+/// shifted too (a lookup's `Gear` enum and its `GearFirst` constants, which an
+/// input called `GearFirst` would hide in the body that returns them).
+///
+/// Still one shift decided by the stem alone, so still injective.
+pub(crate) fn go_local_spelling_beside(id: &str, prefixes: &[&str]) -> String {
+    let stem = id.trim_end_matches('_');
+    let reserved = GO_UNIVERSE_NAMES.contains(&stem)
+        || GO_RUNTIME_PACKAGES.contains(&stem)
+        || crate::std_imports::GO_PACKAGES.contains(&stem)
+        || stem.starts_with(GO_GENERATED_PREFIX)
+        || GO_GENERATED_PACKAGE_NAMES.contains(&stem)
+        || GO_GENERATED_PACKAGE_PREFIXES
+            .iter()
+            .any(|p| stem.starts_with(p))
+        || prefixes.iter().any(|p| stem.starts_with(p));
+    if reserved {
+        format!("{id}_")
+    } else {
+        id.to_string()
+    }
+}
+
+/// How a generated Go struct spells a field the author named, when the struct
+/// also has methods the generator named: with one more trailing `_` when the
+/// name's stem is one of `methods`. The same shift as `go_local_spelling`, so a
+/// field `Update` is `Update_` and an author's own `Update_` is `Update__`.
+pub(crate) fn go_field_spelling(id: &str, methods: &[&str]) -> String {
+    if methods.contains(&id.trim_end_matches('_')) {
+        format!("{id}_")
+    } else {
+        id.to_string()
     }
 }
 
@@ -19730,11 +19883,12 @@ fn render_procedure_cpp(
     // `frame_.encode` (C++). Site-owned Vec keeps the qualified keys alive so
     // the `HashMap<&str, String>` can borrow them. See
     // `stateful_import_method_renames` for the rationale.
-    let cpp_method_renames = stateful_import_method_renames(imports, &generator::Language::Cpp);
+    let cpp_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Cpp, None);
     for (k, v) in &cpp_method_renames {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
-    let cpp_field_renames = stateful_import_field_renames(imports, &generator::Language::Cpp);
+    let cpp_field_renames = stateful_import_field_renames(imports, &generator::Language::Cpp, None);
     for (k, v) in &cpp_field_renames {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
@@ -20179,7 +20333,8 @@ fn render_procedure_c_l2(
     // `frame.encode()` → `codec_simple_frame_encode(&_st->frame_)`) flows
     // through the C11 AST lowering, not this rename map — see
     // `stateful_import_method_renames` for the rationale.
-    let import_field_renames = stateful_import_field_renames(imports, &generator::Language::C11);
+    let import_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::C11, None);
     for (k, v) in &import_field_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
@@ -20549,10 +20704,16 @@ fn build_rename_map<'a>(var_names: &'a [&'a str]) -> std::collections::HashMap<&
 /// forms from `Member{Ident("frame"), "encode"}`. Callers own the returned
 /// `Vec<(String, String)>` so its borrowed keys can feed into the existing
 /// `HashMap<&str, String>` rename maps at each procedure generator site.
+///
+/// `go_receiver` is the name a Go method writes its receiver with where that
+/// is not a procedure's `p` (a validator's, [`GO_FORGE_RECEIVER`]); `None` is a
+/// procedure's, and no other language reads it.
 fn stateful_import_method_renames(
     imports: &[ImportContext],
     language: &generator::Language,
+    go_receiver: Option<&str>,
 ) -> Vec<(String, String)> {
+    let go_receiver = go_receiver.unwrap_or(GO_PROCEDURE_RECEIVER);
     let mut out = Vec::new();
     for imp in imports {
         if !imp.is_stateful {
@@ -20651,7 +20812,7 @@ fn stateful_import_method_renames(
                     } else {
                         filters::to_pascal_case(method.to_string())
                     };
-                    format!("p.{}.{}", imp.member_name, target_method)
+                    format!("{go_receiver}.{}.{}", imp.member_name, target_method)
                 }
                 // C11 cannot express method-call lowering through a
                 // string rename: the kind's emit shape is a free
@@ -20684,10 +20845,14 @@ fn stateful_import_method_renames(
 /// rename pass collapses `Member{Ident(alias), field}` into a `Raw` node
 /// with the correct target-language spelling (snake_case for Rust/Python,
 /// PascalCase for Go, verbatim for C++/Kotlin).
+///
+/// `go_receiver` is as for [`stateful_import_method_renames`].
 fn stateful_import_field_renames(
     imports: &[ImportContext],
     language: &generator::Language,
+    go_receiver: Option<&str>,
 ) -> Vec<(String, String)> {
+    let go_receiver = go_receiver.unwrap_or(GO_PROCEDURE_RECEIVER);
     let mut out = Vec::new();
     for imp in imports {
         if !imp.is_stateful {
@@ -20713,7 +20878,7 @@ fn stateful_import_field_renames(
                 }
                 generator::Language::Go => {
                     let pascal_field = filters::to_pascal_case(field.to_string());
-                    format!("p.{}.{}", imp.member_name, pascal_field)
+                    format!("{go_receiver}.{}.{}", imp.member_name, pascal_field)
                 }
                 generator::Language::Python => {
                     let snake_field = filters::to_snake_case(field.to_string());
@@ -21403,11 +21568,12 @@ fn render_procedure_kotlin(
     let mut owned_rename: std::collections::HashMap<&str, String> =
         std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
     let kotlin_method_renames =
-        stateful_import_method_renames(imports, &generator::Language::Kotlin);
+        stateful_import_method_renames(imports, &generator::Language::Kotlin, None);
     for (k, v) in &kotlin_method_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
-    let kotlin_field_renames = stateful_import_field_renames(imports, &generator::Language::Kotlin);
+    let kotlin_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Kotlin, None);
     for (k, v) in &kotlin_field_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
@@ -21520,11 +21686,13 @@ fn render_procedure_rust(
     owned_rename_with_event.insert("_event.data", "self.pending_event_data".to_string());
     // Method-level rename entries for stateful imports (Rust expansion:
     // `self.{member}.{method}`). Site-owned Vec keeps qualified keys alive.
-    let rust_method_renames = stateful_import_method_renames(imports, &generator::Language::Rust);
+    let rust_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Rust, None);
     for (k, v) in &rust_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let rust_field_renames = stateful_import_field_renames(imports, &generator::Language::Rust);
+    let rust_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Rust, None);
     for (k, v) in &rust_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -21782,7 +21950,7 @@ fn render_procedure_go(
         .collect();
     let owned_rename: std::collections::HashMap<&str, String> = var_name_strings
         .iter()
-        .map(|name| (name.as_str(), format!("p.{}", go_escape_builtin(name))))
+        .map(|name| (name.as_str(), format!("p.{}", go_local_spelling(name))))
         .collect();
     // Add import alias renames: `frame` → `p.Frame` for Go struct field access
     let mut owned_rename_with_event = owned_rename;
@@ -21797,11 +21965,11 @@ fn render_procedure_go(
     // `Decode`), so this is the load-bearing consumer for the helper: the
     // existing byte golden `p.Frame.encode()` fails to compile and must
     // become `p.Frame.Encode()`.
-    let go_method_renames = stateful_import_method_renames(imports, &generator::Language::Go);
+    let go_method_renames = stateful_import_method_renames(imports, &generator::Language::Go, None);
     for (k, v) in &go_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let go_field_renames = stateful_import_field_renames(imports, &generator::Language::Go);
+    let go_field_renames = stateful_import_field_renames(imports, &generator::Language::Go, None);
     for (k, v) in &go_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -21811,7 +21979,7 @@ fn render_procedure_go(
     let go_helper_rename_pairs: Vec<(String, String)> = m
         .helpers
         .iter()
-        .map(|h| (h.name.clone(), format!("p.{}", go_escape_builtin(&h.name))))
+        .map(|h| (h.name.clone(), format!("p.{}", go_local_spelling(&h.name))))
         .collect();
     for (k, v) in &go_helper_rename_pairs {
         owned_rename_with_event.insert(k.as_str(), v.clone());
@@ -21837,7 +22005,7 @@ fn render_procedure_go(
         .inputs
         .iter()
         .map(|f| {
-            let go_id = go_escape_builtin(&f.id);
+            let go_id = go_local_spelling(&f.id);
             serde_json::json!({
                 "id": go_id,
                 "raw_id": f.id,
@@ -21858,7 +22026,7 @@ fn render_procedure_go(
         .helpers
         .iter()
         .map(|h| {
-            let escaped_id = go_escape_builtin(&h.name);
+            let escaped_id = go_local_spelling(&h.name);
             let params_ty: Vec<String> =
                 h.args.iter().map(|a| l.type_name(a).into_owned()).collect();
             let ret_ty = l.type_name(&h.returns);
@@ -21896,7 +22064,7 @@ fn render_procedure_go(
         .internals
         .iter()
         .map(|f| -> Result<serde_json::Value, ForgeError> {
-            let go_id = go_escape_builtin(&f.id);
+            let go_id = go_local_spelling(&f.id);
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
@@ -22024,11 +22192,12 @@ fn render_procedure_python(
     // Method-level rename entries for stateful imports (Python expansion:
     // `self.{member}.{method}`).
     let python_method_renames =
-        stateful_import_method_renames(imports, &generator::Language::Python);
+        stateful_import_method_renames(imports, &generator::Language::Python, None);
     for (k, v) in &python_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let python_field_renames = stateful_import_field_renames(imports, &generator::Language::Python);
+    let python_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Python, None);
     for (k, v) in &python_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -22589,7 +22758,7 @@ impl LangCtx {
     fn place_param(&self, id: &str, ty: &str) -> String {
         match self.lang {
             crate::generator::Language::Cpp => format!("{ty} {id}"),
-            crate::generator::Language::Go => format!("{} {ty}", go_escape_builtin(id)),
+            crate::generator::Language::Go => format!("{} {ty}", go_local_spelling(id)),
             crate::generator::Language::C11 => {
                 format!("{ty} {}", filters::to_snake_case(id.to_string()))
             }
@@ -22654,6 +22823,7 @@ impl LangCtx {
                     "package".into(),
                     filters::to_snake_case(name.to_string()).into(),
                 );
+                m.insert("go_receiver".into(), GO_FORGE_RECEIVER.into());
             }
             crate::generator::Language::Kotlin => {
                 m.insert(
@@ -22688,7 +22858,7 @@ impl LangCtx {
         if !matches!(self.lang, crate::generator::Language::Go) {
             return Vec::new();
         }
-        ids.map(|id| (id.to_string(), go_escape_builtin(id)))
+        ids.map(|id| (id.to_string(), go_local_spelling(id)))
             .filter(|(f, t)| f != t)
             .collect()
     }
@@ -22980,8 +23150,14 @@ fn render_filter(
     // Rust function parameters are deny-warnings strict on snake_case; other
     // backends keep the SCXML-author identifier verbatim per their language
     // conventions. Mirrors the per-language emit pattern used by `param_str`.
+    //
+    // Go declares the input in the template and reads it in the same one, so
+    // it takes the one spelling every Go local takes: an input called
+    // `float64` would otherwise hide the conversion the body applies to it,
+    // and one called `sceSelf` would redeclare the receiver.
     let input_id_emit = match lang {
         crate::generator::Language::Rust => filters::to_snake_case(m.input.id.clone()),
+        crate::generator::Language::Go => go_local_spelling(&m.input.id),
         _ => m.input.id.clone(),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
@@ -23035,9 +23211,13 @@ fn render_interpolation(
         .iter()
         .map(|a| {
             let var_name = match lang {
-                crate::generator::Language::Go => {
-                    format!("axis{}", filters::to_pascal_case(a.input_id.clone()))
-                }
+                // Package-level, so under the generator's own prefix: an
+                // input, a type or a function the author names `axisRpm`
+                // cannot hide or redeclare it.
+                crate::generator::Language::Go => format!(
+                    "{GO_GENERATED_PREFIX}Axis{}",
+                    filters::to_pascal_case(a.input_id.clone())
+                ),
                 _ => format!("AXIS_{}", a.input_id.to_uppercase()),
             };
             serde_json::json!({
@@ -23255,6 +23435,9 @@ fn render_observer(
 
             Ok(serde_json::json!({
                 "id": mon.id,
+                // The Go struct's field for this monitor, kept off the
+                // struct's own `Update` method.
+                "field": go_field_spelling(&mon.id, GO_OBSERVER_METHODS),
                 "active_var": active_var,
                 "enter_expr": enter_expr,
                 "leave_expr": leave_expr,
@@ -25850,7 +26033,7 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
     match language {
         Language::Rust | Language::C11 => filters::to_snake_case(id.to_string()),
         Language::Python => python_local_spelling(id),
-        Language::Go => go_escape_builtin(id),
+        Language::Go => go_local_spelling(id),
         Language::Cpp | Language::Kotlin => id.to_string(),
     }
 }
@@ -28597,25 +28780,96 @@ mod tests {
         let _ = l.type_name(&enum_ref("Result"));
     }
 
-    // ── go_escape_builtin ────────────────────────────────────
+    // ── go_local_spelling ────────────────────────────────────
 
     #[test]
     fn go_escape_builtins() {
-        assert_eq!(go_escape_builtin("byte"), "byte_");
-        assert_eq!(go_escape_builtin("string"), "string_");
-        assert_eq!(go_escape_builtin("int"), "int_");
-        assert_eq!(go_escape_builtin("len"), "len_");
-        assert_eq!(go_escape_builtin("make"), "make_");
-        assert_eq!(go_escape_builtin("true"), "true_");
-        assert_eq!(go_escape_builtin("nil"), "nil_");
-        assert_eq!(go_escape_builtin("iota"), "iota_");
+        assert_eq!(go_local_spelling("byte"), "byte_");
+        assert_eq!(go_local_spelling("string"), "string_");
+        assert_eq!(go_local_spelling("int"), "int_");
+        assert_eq!(go_local_spelling("len"), "len_");
+        assert_eq!(go_local_spelling("make"), "make_");
+        assert_eq!(go_local_spelling("true"), "true_");
+        assert_eq!(go_local_spelling("nil"), "nil_");
+        assert_eq!(go_local_spelling("iota"), "iota_");
+        // The builtins Go added after the first list was written.
+        assert_eq!(go_local_spelling("min"), "min_");
+        assert_eq!(go_local_spelling("max"), "max_");
+        assert_eq!(go_local_spelling("clear"), "clear_");
+        assert_eq!(go_local_spelling("any"), "any_");
     }
 
     #[test]
     fn go_escape_non_builtin_unchanged() {
-        assert_eq!(go_escape_builtin("myVar"), "myVar");
-        assert_eq!(go_escape_builtin("temperature"), "temperature");
-        assert_eq!(go_escape_builtin("rpm"), "rpm");
+        assert_eq!(go_local_spelling("myVar"), "myVar");
+        assert_eq!(go_local_spelling("temperature"), "temperature");
+        assert_eq!(go_local_spelling("rpm"), "rpm");
+    }
+
+    #[test]
+    fn go_escape_a_package_the_body_names_and_the_generators_own_prefix() {
+        for name in ["math", "strconv", "lookup", "filter", "interpolation"] {
+            assert_eq!(go_local_spelling(name), format!("{name}_"), "{name}");
+        }
+        for name in [
+            "sceErr",
+            "sceFailure",
+            "sceValue",
+            "sceCond1",
+            "scealgorithm",
+        ] {
+            assert_eq!(go_local_spelling(name), format!("{name}_"), "{name}");
+        }
+    }
+
+    /// The escape is a shift, so two names the document keeps apart are never
+    /// one spelling: `len` is `len_` and an author's own `len_` is `len__`.
+    #[test]
+    fn go_escape_is_injective() {
+        assert_eq!(go_local_spelling("len"), "len_");
+        assert_eq!(go_local_spelling("len_"), "len__");
+        assert_eq!(go_local_spelling("len__"), "len___");
+        let names = [
+            "len", "len_", "len__", "x", "x_", "sceErr", "sceErr_", "min", "min_",
+        ];
+        let spelled: std::collections::BTreeSet<String> =
+            names.iter().map(|n| go_local_spelling(n)).collect();
+        assert_eq!(spelled.len(), names.len(), "{spelled:?}");
+    }
+
+    /// A forge kind's receiver sits in one scope with the author's inputs, so
+    /// it must be a name the shift keeps them off: under the generated prefix.
+    /// The member accesses of an import are written with the same constant the
+    /// templates read, so the two cannot name different receivers.
+    #[test]
+    fn the_receiver_a_forge_kind_writes_is_one_no_author_name_can_be() {
+        assert!(GO_FORGE_RECEIVER.starts_with(GO_GENERATED_PREFIX));
+        assert_eq!(
+            go_local_spelling(GO_FORGE_RECEIVER),
+            format!("{GO_FORGE_RECEIVER}_")
+        );
+        let mut import = import_with_enum_qualified("smoother", "");
+        import.kind = "filter".to_string();
+        import.is_stateful = true;
+        import.member_name = "Smoother".to_string();
+        let renames = stateful_import_method_renames(
+            std::slice::from_ref(&import),
+            &generator::Language::Go,
+            Some(GO_FORGE_RECEIVER),
+        );
+        assert_eq!(
+            renames,
+            vec![(
+                "smoother.update".to_string(),
+                format!("{GO_FORGE_RECEIVER}.Smoother.Update")
+            )]
+        );
+        let procedure = stateful_import_method_renames(
+            std::slice::from_ref(&import),
+            &generator::Language::Go,
+            None,
+        );
+        assert_eq!(procedure[0].1, "p.Smoother.Update");
     }
 
     // ── looks_like_int ───────────────────────────────────────

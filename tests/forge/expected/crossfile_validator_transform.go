@@ -36,7 +36,7 @@ func NewCrossfileValidatorTransform() *CrossfileValidatorTransform {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorTransform) Validate(rawTemp uint16) ValidationResult {
+func (sceSelf *CrossfileValidatorTransform) Validate(rawTemp uint16) ValidationResult {
 	if rawTemp > 4095 {
 		return ValidationResult{Valid: false, Reason: "raw_temp_out_of_range"}
 	}

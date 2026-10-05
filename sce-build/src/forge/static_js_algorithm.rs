@@ -973,13 +973,16 @@ mod tests {
             "{bytes}"
         );
 
+        // A word only ECMAScript reserves: one every backend reserves (`default`
+        // is a C++ keyword) is refused by the parser before it reaches here, and
+        // this is the guard for the rest.
         let keyword = lowered(
             false,
-            r#"<sce:param name="default" type="uint8"/>"#,
-            r#"<sce:return expr="default"/>"#,
+            r#"<sce:param name="debugger" type="uint8"/>"#,
+            r#"<sce:return expr="debugger"/>"#,
         )
         .expect_err("a keyword cannot be a parameter");
-        assert!(keyword.contains("`default`"), "{keyword}");
+        assert!(keyword.contains("`debugger`"), "{keyword}");
     }
 
     #[test]

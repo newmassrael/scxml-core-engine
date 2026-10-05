@@ -37,11 +37,11 @@ func NewCrossfileValidatorCodec() *CrossfileValidatorCodec {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorCodec) Validate(msgId uint8, payload uint16) ValidationResult {
+func (sceSelf *CrossfileValidatorCodec) Validate(msgId uint8, payload uint16) ValidationResult {
 	if payload > 4095 {
 		return ValidationResult{Valid: false, Reason: "payload_out_of_range"}
 	}
-	if !(p.Frame.MsgId == msgId && p.Frame.Payload == payload) {
+	if !(sceSelf.Frame.MsgId == msgId && sceSelf.Frame.Payload == payload) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

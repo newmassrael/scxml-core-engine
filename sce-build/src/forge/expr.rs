@@ -6334,7 +6334,10 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::BytesLit { bytes } => format!("[]byte{{{}}}", bytes_as_hex_list(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nil".to_string(),
-        ExprKind::Ident(s) => s.clone(),
+        // The spelling the function DECLARED the name with: one function spells
+        // the parameter, the variable and every read, so a name that hides a
+        // builtin is escaped in the read as it was in the declaration.
+        ExprKind::Ident(s) => crate::forge::generator::go_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // Go refuses `string + int64`, and `string(n)` is not the digits

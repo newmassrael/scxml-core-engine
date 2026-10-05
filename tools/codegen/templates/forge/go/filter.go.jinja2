@@ -34,14 +34,17 @@ func New{{ struct_name }}() *{{ struct_name }} {
 	}
 }
 
-func (f *{{ struct_name }}) Update({{ input_id }} {{ input_type }}) {{ output_type }} {
+{# The receiver is `go_receiver`, under the `sce` prefix the generator keeps
+   for itself, so an author's input called `f` cannot be redeclared by it
+   (`go_local_spelling`). #}
+func ({{ go_receiver }} *{{ struct_name }}) Update({{ input_id }} {{ input_type }}) {{ output_type }} {
 {% if input_type == output_type %}
-	return f.impl.Update({{ input_id }})
+	return {{ go_receiver }}.impl.Update({{ input_id }})
 {% else %}
-	return f.impl.Update({{ output_type }}({{ input_id }}))
+	return {{ go_receiver }}.impl.Update({{ output_type }}({{ input_id }}))
 {% endif %}
 }
 
-func (f *{{ struct_name }}) Reset() {
-	f.impl.Reset()
+func ({{ go_receiver }} *{{ struct_name }}) Reset() {
+	{{ go_receiver }}.impl.Reset()
 }

@@ -36,7 +36,7 @@ func NewCrossfileValidatorTransformWidening() *CrossfileValidatorTransformWideni
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorTransformWidening) Validate(rawByte uint8) ValidationResult {
+func (sceSelf *CrossfileValidatorTransformWidening) Validate(rawByte uint8) ValidationResult {
 	if rawByte > 200 {
 		return ValidationResult{Valid: false, Reason: "raw_byte_out_of_range"}
 	}

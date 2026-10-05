@@ -36,7 +36,7 @@ func NewCrossfileValidatorCondition() *CrossfileValidatorCondition {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorCondition) Validate(coolantTemp float64, oilTemp float64, maxTemp float64) ValidationResult {
+func (sceSelf *CrossfileValidatorCondition) Validate(coolantTemp float64, oilTemp float64, maxTemp float64) ValidationResult {
 	if !(!condition_threshold.ConditionThreshold(coolantTemp, oilTemp, maxTemp)) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}

@@ -31,7 +31,7 @@ func NewValidatorPlausibilityOnly() *ValidatorPlausibilityOnly {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *ValidatorPlausibilityOnly) Validate(voltage float64, current float64) ValidationResult {
+func (sceSelf *ValidatorPlausibilityOnly) Validate(voltage float64, current float64) ValidationResult {
 	if !(voltage * current <= 1000.0) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}

@@ -35,7 +35,7 @@ func NewValidatorSignedRoc() *ValidatorSignedRoc {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *ValidatorSignedRoc) Validate(speed int32, altitude float64) ValidationResult {
+func (sceSelf *ValidatorSignedRoc) Validate(speed int32, altitude float64) ValidationResult {
 	if speed < -100 || speed > 500 {
 		return ValidationResult{Valid: false, Reason: "speed_out_of_range"}
 	}
@@ -43,18 +43,18 @@ func (p *ValidatorSignedRoc) Validate(speed int32, altitude float64) ValidationR
 		return ValidationResult{Valid: false, Reason: "altitude_out_of_range"}
 	}
 	{
-		delta := int64(speed) - int64(p.prevSpeed)
-		if delta < 0 {
-			delta = -delta
+		sceDelta := int64(speed) - int64(sceSelf.prevSpeed)
+		if sceDelta < 0 {
+			sceDelta = -sceDelta
 		}
-		if delta > 50 {
+		if sceDelta > 50 {
 			return ValidationResult{Valid: false, Reason: "speed_rate_of_change_exceeded"}
 		}
 	}
-	if math.Abs(float64(altitude)-float64(p.prevAltitude)) > 100.0 {
+	if math.Abs(float64(altitude)-float64(sceSelf.prevAltitude)) > 100.0 {
 		return ValidationResult{Valid: false, Reason: "altitude_rate_of_change_exceeded"}
 	}
-	p.prevSpeed = speed
-	p.prevAltitude = altitude
+	sceSelf.prevSpeed = speed
+	sceSelf.prevAltitude = altitude
 	return ValidationResult{Valid: true, Reason: ""}
 }

@@ -2651,6 +2651,55 @@ name the kind's committed Python uses, and compares what the generated module
 does — about 15 000 renamings — and a second test fails when the committed
 output starts to use a name that list does not carry.
 
+The same kinds in Go were measured the same way and were not safe. A Go
+function writes an author's name as written, in the scope of the predeclared
+names its body calls, so `a_go_kind_keeps_an_authors_names_apart_from_its_own`
+renames every name each document declares to every predeclared identifier,
+every package a generated file imports and every name the kind's committed Go
+uses, builds the result, and its first run found 1 982 of about 14 000 accepted
+renamings that did not compile. The causes were four. An `<sce:param name>` was
+the one declaration of the function that was not held to the reserved-word
+check, so a parameter called `for` or `func` was accepted and generated; it is
+refused now, as a variable is. A local that hides a predeclared name or a
+package the body names (`len`, `uint16`, `math`, `lookup`) is spelled with a
+trailing `_`, by one function (`go_local_spelling`) for the declaration, every
+read and every call, as a shift, so an author's own `len_` is `len__` and two
+names never meet. What the generator itself declares inside a function — the
+receiver, the queue of an observer, the temporary of a rate-of-change check —
+is under the prefix `sce` (`sceSelf`, `sceEvents`, `sceDelta`), and so are the
+package-level tables (`sceKeys`, `sceValues`, `sceAxisRpm`), which an author's
+`values` or `axisRpm` used to hide or redeclare; a name that begins `sce` is
+shifted off them. And the names a file declares at the package level at a
+fixed spelling (`ValidationResult`, `ForgeDomainTag` and its constants, a
+lookup's `<Output><Value>` constants) are kept off the locals that read them,
+and an observer monitor called `Update` is a struct field beside the method of
+that name, so it is spelled `Update_`. The final run built 13 981 accepted
+renamings of 75 documents (2 213 refused in the document, 26 left out because
+two of the author's own names fold to one) and none failed to compile. Two
+tests derive the lists rather than hold them: the predeclared names are read
+from `go doc -all builtin`, and the packages from the import blocks of the
+committed Go, so a Go release that adds a builtin or a template that imports
+one more package fails with the name in the message.
+
+The oracle builds, it does not run, and it counts a renaming as built only
+when the package was in the build: a file name that ends in `_386` is a
+build constraint to Go, `go build ./...` leaves it out without a word, and the
+case numbered 386 had been counted as built without being compiled, which
+`go list ./...` now rules out. Two documents whose unrenamed text does not
+build as Go are not cases, and that is a defect of their own and not of a
+name: a transform of an `int8` read as `raw * 0.5` writes an integer times a
+float, which Go (and Rust) refuse, and an observer that imports a condition
+calls it unqualified and imports nothing.
+
+What the oracle does not reach is a document that imports a sibling generated
+package: it writes one package per renaming and not the siblings, so 21 of the
+75 documents are not renamed at all. The conformance build of the committed
+fixtures covers them with their names as written, and that is where a
+validator's receiver was found renamed in the template and not in the member
+accesses an import is reached by (`p.Smoother.Update` beside a receiver called
+`sceSelf`). An author's name that hides the package an import is generated
+into is therefore not measured.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called

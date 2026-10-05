@@ -438,9 +438,18 @@ fn package_of(file_name: &str) -> String {
         .to_string()
 }
 
+/// What a generated document is called: by position and never by the
+/// candidate. The position is written `c<n>` and not as a bare number because
+/// Go reads a file name that ends in `_<GOARCH>` as a build constraint, and a
+/// document numbered 386 was `g_<shape>_386.go`, a file no build of ours
+/// includes.
+fn document_name(shape: &Shape, index: usize) -> String {
+    format!("g_{}_c{}", shape.id, index)
+}
+
 /// Generate one document, naming it by position and never by the candidate.
 fn generate(shape: &Shape, index: usize, name: &str) -> Result<Outcome, String> {
-    let doc_name = format!("g_{}_{}", shape.id, index);
+    let doc_name = document_name(shape, index);
     let imports: String = shape
         .imports
         .iter()
@@ -711,7 +720,7 @@ fn an_authors_field_name_never_decides_what_the_generated_go_does() {
                         }
                     }
                     generated.entry(shape.id).or_default().push((
-                        format!("g_{}_{}", shape.id, index),
+                        document_name(shape, index),
                         name.clone(),
                         decode,
                         type_name,

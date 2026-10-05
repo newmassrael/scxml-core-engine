@@ -38,8 +38,8 @@ func NewCrossfileValidatorFilter() *CrossfileValidatorFilter {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorFilter) Validate(rawSample float64, threshold float64) ValidationResult {
-	if !(p.Smoother.Update(rawSample) < threshold) {
+func (sceSelf *CrossfileValidatorFilter) Validate(rawSample float64, threshold float64) ValidationResult {
+	if !(sceSelf.Smoother.Update(rawSample) < threshold) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

@@ -18,10 +18,10 @@ func NewFilterMovingAverage() *FilterMovingAverage {
 	}
 }
 
-func (f *FilterMovingAverage) Update(rawTemp float64) float64 {
-	return f.impl.Update(rawTemp)
+func (sceSelf *FilterMovingAverage) Update(rawTemp float64) float64 {
+	return sceSelf.impl.Update(rawTemp)
 }
 
-func (f *FilterMovingAverage) Reset() {
-	f.impl.Reset()
+func (sceSelf *FilterMovingAverage) Reset() {
+	sceSelf.impl.Reset()
 }

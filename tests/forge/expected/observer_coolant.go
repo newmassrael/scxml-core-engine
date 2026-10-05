@@ -25,17 +25,17 @@ type ObserverCoolant struct {
 	critical observer.ThresholdState
 }
 
-func (o *ObserverCoolant) Update(coolantTemp float64) *observer.EventQueue[ForgeDomainTag] {
-	events := observer.NewEventQueue[ForgeDomainTag]()
-	if o.warning.EnterIf(coolantTemp > 110.0) {
-		events.Push(ForgeDomainTagEmitWarning)
-	} else if o.warning.LeaveIf(coolantTemp < 100.0) {
-		events.Push(ForgeDomainTagClearWarning)
+func (sceSelf *ObserverCoolant) Update(coolantTemp float64) *observer.EventQueue[ForgeDomainTag] {
+	sceEvents := observer.NewEventQueue[ForgeDomainTag]()
+	if sceSelf.warning.EnterIf(coolantTemp > 110.0) {
+		sceEvents.Push(ForgeDomainTagEmitWarning)
+	} else if sceSelf.warning.LeaveIf(coolantTemp < 100.0) {
+		sceEvents.Push(ForgeDomainTagClearWarning)
 	}
-	if o.critical.EnterIf(coolantTemp > 120.0) {
-		events.Push(ForgeDomainTagEmergencyShutdown)
+	if sceSelf.critical.EnterIf(coolantTemp > 120.0) {
+		sceEvents.Push(ForgeDomainTagEmergencyShutdown)
 	} else {
-		o.critical.LeaveIf(coolantTemp < 105.0)
+		sceSelf.critical.LeaveIf(coolantTemp < 105.0)
 	}
-	return events
+	return sceEvents
 }

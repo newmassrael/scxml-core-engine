@@ -44,25 +44,27 @@ const (
 
 type {{ struct_name }} struct {
 {% for mon in monitors %}
-	{{ mon.id }} observer.ThresholdState
+	{{ mon.field }} observer.ThresholdState
 {% endfor %}
 }
 
-func (o *{{ struct_name }}) Update({{ params }}) *observer.EventQueue[ForgeDomainTag] {
-	events := observer.NewEventQueue[ForgeDomainTag]()
+{# The receiver and the queue carry the `sce` prefix, the generator's own: an
+   author's input called `o` or `events` cannot meet them (`go_local_spelling`). #}
+func ({{ go_receiver }} *{{ struct_name }}) Update({{ params }}) *observer.EventQueue[ForgeDomainTag] {
+	sceEvents := observer.NewEventQueue[ForgeDomainTag]()
 {% for mon in monitors %}
-	if o.{{ mon.id }}.EnterIf({{ mon.enter_expr }}) {
-		events.Push(ForgeDomainTag{{ mon.event_enter }})
+	if {{ go_receiver }}.{{ mon.field }}.EnterIf({{ mon.enter_expr }}) {
+		sceEvents.Push(ForgeDomainTag{{ mon.event_enter }})
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
-	} else if o.{{ mon.id }}.LeaveIf({{ mon.leave_expr }}) {
-		events.Push(ForgeDomainTag{{ mon.event_leave }})
+	} else if {{ go_receiver }}.{{ mon.field }}.LeaveIf({{ mon.leave_expr }}) {
+		sceEvents.Push(ForgeDomainTag{{ mon.event_leave }})
 {% else %}
 	} else {
-		o.{{ mon.id }}.LeaveIf({{ mon.leave_expr }})
+		{{ go_receiver }}.{{ mon.field }}.LeaveIf({{ mon.leave_expr }})
 {% endif %}
 {% endif %}
 	}
 {% endfor %}
-	return events
+	return sceEvents
 }

@@ -32,24 +32,24 @@ func NewValidatorRpmCheck() *ValidatorRpmCheck {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *ValidatorRpmCheck) Validate(rpm uint16, engineState string) ValidationResult {
+func (sceSelf *ValidatorRpmCheck) Validate(rpm uint16, engineState string) ValidationResult {
 	if rpm > 8000 {
 		return ValidationResult{Valid: false, Reason: "rpm_out_of_range"}
 	}
 	{
-		var delta uint16
-		if rpm > p.prevRpm {
-			delta = rpm - p.prevRpm
+		var sceDelta uint16
+		if rpm > sceSelf.prevRpm {
+			sceDelta = rpm - sceSelf.prevRpm
 		} else {
-			delta = p.prevRpm - rpm
+			sceDelta = sceSelf.prevRpm - rpm
 		}
-		if delta > 500 {
+		if sceDelta > 500 {
 			return ValidationResult{Valid: false, Reason: "rpm_rate_of_change_exceeded"}
 		}
 	}
 	if !(rpm == 0 || engineState != "STOP") {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
-	p.prevRpm = rpm
+	sceSelf.prevRpm = rpm
 	return ValidationResult{Valid: true, Reason: ""}
 }

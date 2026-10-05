@@ -36,7 +36,7 @@ func NewCrossfileValidatorInterpolation() *CrossfileValidatorInterpolation {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorInterpolation) Validate(rpm uint16) ValidationResult {
+func (sceSelf *CrossfileValidatorInterpolation) Validate(rpm uint16) ValidationResult {
 	if rpm < 500 || rpm > 7000 {
 		return ValidationResult{Valid: false, Reason: "rpm_out_of_range"}
 	}

@@ -18,10 +18,10 @@ func NewFilterLowPass() *FilterLowPass {
 	}
 }
 
-func (f *FilterLowPass) Update(rawSignal float64) float64 {
-	return f.impl.Update(rawSignal)
+func (sceSelf *FilterLowPass) Update(rawSignal float64) float64 {
+	return sceSelf.impl.Update(rawSignal)
 }
 
-func (f *FilterLowPass) Reset() {
-	f.impl.Reset()
+func (sceSelf *FilterLowPass) Reset() {
+	sceSelf.impl.Reset()
 }

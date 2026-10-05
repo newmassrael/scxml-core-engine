@@ -31,7 +31,7 @@ func NewValidatorRangeOnly() *ValidatorRangeOnly {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *ValidatorRangeOnly) Validate(temperature float64) ValidationResult {
+func (sceSelf *ValidatorRangeOnly) Validate(temperature float64) ValidationResult {
 	if temperature < -40.0 || temperature > 150.0 {
 		return ValidationResult{Valid: false, Reason: "temperature_out_of_range"}
 	}

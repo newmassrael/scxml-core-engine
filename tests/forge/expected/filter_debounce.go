@@ -18,10 +18,10 @@ func NewFilterDebounce() *FilterDebounce {
 	}
 }
 
-func (f *FilterDebounce) Update(rawButton bool) bool {
-	return f.impl.Update(rawButton)
+func (sceSelf *FilterDebounce) Update(rawButton bool) bool {
+	return sceSelf.impl.Update(rawButton)
 }
 
-func (f *FilterDebounce) Reset() {
-	f.impl.Reset()
+func (sceSelf *FilterDebounce) Reset() {
+	sceSelf.impl.Reset()
 }

@@ -256,6 +256,9 @@ pub const SCE_IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
     ("extern", "name", Grammar::CodeIdentifier),
     ("action", "name", Grammar::CodeIdentifier),
     ("arg", "name", Grammar::CodeIdentifier),
+    // An algorithm's parameter: a name in the same function as its variables,
+    // spelled by the same rule, and held to the same grammar and reserved words.
+    ("param", "name", Grammar::CodeIdentifier),
     // ── References to one name of this document or its imports. ──
     ("flag-bind", "input", Grammar::CodeIdentifier),
     ("entry-flag-bind", "input", Grammar::CodeIdentifier),
@@ -539,7 +542,9 @@ fn spellings_of(
             ("flag", "name") => &FLAG,
             ("flag-input", "name") => &FLAG_INPUT,
             ("variant", "name") => &VARIANT,
-            ("var", "name") => &VAR,
+            // A parameter and a variable are names of one function, spelled by
+            // one rule in every backend (`LangCtx::place_param`, `forge_local_id`).
+            ("var" | "param", "name") => &VAR,
             ("const", "name") => &CONST,
             ("helper", "name") => &HELPER,
             ("extern", "name") => &EXTERN,

@@ -15,26 +15,29 @@ import "github.com/newmassrael/sce-forge-runtime/interpolation"
 {% for axis in axes %}
 var {{ axis.var_name }} = []float64{ {% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %} }
 {% endfor %}
+{# The tables are package-level, so they carry the `sce` prefix, the
+   generator's own: an input called `values` or `axisRpm` cannot hide them. The
+   body reads each input under the name the signature declared it with. #}
 {% if is_bilinear %}
-var values = [][]float64{
+var sceValues = [][]float64{
 {% for r in range(rows) %}
 	{ {% for c in range(cols) %}{{ values[r * cols + c] }}{% if not loop.last %}, {% endif %}{% endfor %} },
 {% endfor %}
 }
 {% else %}
-var values = []float64{ {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} }
+var sceValues = []float64{ {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} }
 {% endif %}
 
 func {{ member_symbol }}({{ params }}) {{ output_type }} {
 {% if is_bilinear %}
 	return interpolation.Bilinear(
-		{{ axes[0].var_name }}, {{ axes[1].var_name }}, values,
-		float64({{ axes[0].input_id }}), float64({{ axes[1].input_id }}),
+		{{ axes[0].var_name }}, {{ axes[1].var_name }}, sceValues,
+		float64({{ axes[0].input_local }}), float64({{ axes[1].input_local }}),
 	)
 {% else %}
 	return interpolation.Linear(
-		{{ axes[0].var_name }}, values,
-		float64({{ axes[0].input_id }}),
+		{{ axes[0].var_name }}, sceValues,
+		float64({{ axes[0].input_local }}),
 	)
 {% endif %}
 }

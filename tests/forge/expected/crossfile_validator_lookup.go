@@ -36,7 +36,7 @@ func NewCrossfileValidatorLookup() *CrossfileValidatorLookup {
 }
 
 // Validate checks all validation rules and returns the result.
-func (p *CrossfileValidatorLookup) Validate(code int32) ValidationResult {
+func (sceSelf *CrossfileValidatorLookup) Validate(code int32) ValidationResult {
 	if code < 0 || code > 1000 {
 		return ValidationResult{Valid: false, Reason: "code_out_of_range"}
 	}

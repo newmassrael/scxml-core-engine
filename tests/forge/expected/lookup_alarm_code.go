@@ -8,10 +8,10 @@ package lookup_alarm_code
 
 import "github.com/newmassrael/sce-forge-runtime/lookup"
 
-var keys = [5]int32{ 100, 200, 300, 400, 500 }
-var values = [5]int32{ 1, 2, 3, 2, 4 }
+var sceKeys = [5]int32{ 100, 200, 300, 400, 500 }
+var sceValues = [5]int32{ 1, 2, 3, 2, 4 }
 
 // LookupSeverity returns the value paired with code, or (zero, false) on miss.
 func LookupSeverity(code int32) (int32, bool) {
-	return lookup.Lookup(keys[:], values[:], code)
+	return lookup.Lookup(sceKeys[:], sceValues[:], code)
 }
