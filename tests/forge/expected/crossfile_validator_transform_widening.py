@@ -4,7 +4,7 @@
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.
 
-from . import transform_temperature
+from . import transform_temperature as sce_transform_temperature
 from dataclasses import dataclass
 
 
@@ -21,6 +21,6 @@ class CrossfileValidatorTransformWidening:
     def validate(self, raw_byte: int) -> ValidationResult:
         if raw_byte > 200:
             return ValidationResult(False, "raw_byte_out_of_range")
-        if not (transform_temperature.compute_temperature(raw_byte) > transform_temperature.compute_temperature(0)):
+        if not (sce_transform_temperature.compute_temperature(raw_byte) > sce_transform_temperature.compute_temperature(0)):
             return ValidationResult(False, "plausibility_failed")
         return ValidationResult(True, "")

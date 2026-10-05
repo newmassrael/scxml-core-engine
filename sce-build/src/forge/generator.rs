@@ -581,17 +581,23 @@ pub(crate) fn forge_import_identity(
         }
         // Stateful kinds expose a dataclass (`from .snake import Pascal`);
         // stateless kinds only emit free functions (import the module so
-        // `build_qualified_call`'s `snake.func(...)` resolves).
-        Language::Python => ImportIdentity {
-            include_stmt: if is_stateful {
-                format!("from .{snake} import {pascal}")
+        // `build_qualified_call`'s `alias.func(...)` resolves), and are
+        // imported under `python_module_alias` so that no name an author gave a
+        // local can replace the module in the function that calls it.
+        Language::Python => {
+            let (include_stmt, qualifier) = if is_stateful {
+                (format!("from .{snake} import {pascal}"), snake.clone())
             } else {
-                format!("from . import {snake}")
-            },
-            type_name: pascal.clone(),
-            namespace: snake,
-            member_type: pascal,
-        },
+                let alias = python_module_alias(&snake);
+                (format!("from . import {snake} as {alias}"), alias)
+            };
+            ImportIdentity {
+                include_stmt,
+                type_name: pascal.clone(),
+                namespace: qualifier,
+                member_type: pascal,
+            }
+        }
         // RFC §synth-5-J-1: C11 has no namespace concept — plain
         // `#include "<snake>.h"`; the module name rides as a function
         // prefix at every callsite (see `build_qualified_call`). For
@@ -2157,7 +2163,7 @@ pub(crate) fn event_schema_payload_type(
         Language::Rust => format!("{snake}::{pascal}Payload"),
         Language::Kotlin => format!("{pascal}Payload"),
         Language::Go => format!("{}.{pascal}Payload", go_package_alias(&snake)),
-        Language::Python => format!("{snake}.{pascal}Payload"),
+        Language::Python => format!("{}.{pascal}Payload", python_module_alias(&snake)),
         Language::C11 => format!("{pascal}Payload_t"),
     }
 }
@@ -26178,10 +26184,38 @@ pub const PYTHON_GENERATED_NAMES: &[&str] = &[
 /// that the document keeps apart would be one in the generated code; the shift
 /// is injective, so no pair of names can meet and nothing has to be refused.
 pub(crate) fn python_local_spelling(id: &str) -> String {
-    shift_escape(
-        filters::to_snake_case(id.to_string()),
-        PYTHON_GENERATED_NAMES,
-    )
+    let snake = filters::to_snake_case(id.to_string());
+    // A name under the generator's prefix is never the author's: the module
+    // aliases a stateless import is brought in under (`python_module_alias`)
+    // are, and a list could not name them, since each is a document's own name.
+    if snake
+        .trim_end_matches('_')
+        .starts_with(PYTHON_GENERATED_PREFIX)
+    {
+        return format!("{snake}_");
+    }
+    shift_escape(snake, PYTHON_GENERATED_NAMES)
+}
+
+/// The prefix the Python generator keeps for what it writes itself and cannot
+/// list: the module a stateless import is brought in under, and the runtime
+/// alias an algorithm imports (`sce_algorithm`).
+const PYTHON_GENERATED_PREFIX: &str = "sce_";
+
+/// The name a generated Python module imports a stateless sibling module under,
+/// and the qualifier every reference to it carries
+/// (`sce_condition_threshold.condition_threshold(…)`).
+///
+/// The module's own name is the imported document's, which the author of the
+/// importing one never chose: an input, a variable or a parameter that happens
+/// to carry it replaces the module for the rest of the function, and a call
+/// through it is an `AttributeError`. Under the generator's prefix the alias is
+/// a name no author's can be, because [`python_local_spelling`] shifts every
+/// one that begins with it. One function for every site that writes the
+/// qualifier, so the import and the references to it cannot name different
+/// modules.
+pub(crate) fn python_module_alias(snake: &str) -> String {
+    format!("{PYTHON_GENERATED_PREFIX}{snake}")
 }
 
 /// `snake` with one more trailing `_` when its stem is one of `reserved`: the
@@ -29333,7 +29367,32 @@ mod tests {
         let imp = test_import();
         let opts = crate::ForgeCompileOptions::default();
         let ctx = resolve_single_import(&imp, &crate::generator::Language::Python, &opts);
-        assert_eq!(ctx.include_stmt, "from . import temperature_transform");
+        // Called through its module in a function body, so imported under the
+        // generator's prefix: no author's local can replace the module.
+        assert_eq!(
+            ctx.include_stmt,
+            "from . import temperature_transform as sce_temperature_transform"
+        );
+        assert_eq!(ctx.namespace, "sce_temperature_transform");
+    }
+
+    /// An author's name under the generator's prefix is shifted off the aliases
+    /// a stateless import is brought in under, injectively.
+    #[test]
+    fn python_names_under_the_generators_prefix_are_shifted() {
+        assert_eq!(python_local_spelling("sce_x"), "sce_x_");
+        assert_eq!(python_local_spelling("sce_x_"), "sce_x__");
+        assert_eq!(python_local_spelling("sceX"), "sce_x_");
+        assert_eq!(python_local_spelling("scene"), "scene");
+        assert_eq!(
+            python_module_alias("condition_threshold"),
+            "sce_condition_threshold"
+        );
+        // The alias is itself a name the shift keeps an author off.
+        assert_ne!(
+            python_local_spelling(&python_module_alias("condition_threshold")),
+            python_module_alias("condition_threshold")
+        );
     }
 
     #[test]

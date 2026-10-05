@@ -2721,6 +2721,19 @@ import used to be accepted and the member it names left undeclared, in every
 backend. It is refused, in all six, as `generate/unsupported-feature` naming
 the observer, the import and why.
 
+Python has the fault the Go oracle found in a stateless import, and the Python
+oracle found it when it was taught to run the documents that import a sibling
+(it loads each module as a member of the package its directory is, with the
+siblings it imports beside it, instead of skipping them): an input called
+`condition_threshold` replaced the module of that name for the rest of the
+function, and the call through it was an `AttributeError`. A stateless import is
+brought in as `from . import condition_threshold as sce_condition_threshold`
+and called through the alias (`python_module_alias`), and a name that begins
+`sce_` is shifted off it as every other name the generator keeps is. A stateful
+one (`from .simple_codec import SimpleCodec`) is used by its type and keeps its
+spelling. It ran 74 of 85 documents and 28 673 renamings and found nothing else
+that a name decides, besides the two states above.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called
@@ -2767,7 +2780,12 @@ snake_case; an algorithm's `<sce:param>`), a codec's members and its flag
 accessors and inputs, a const, and a procedure's data of every direction beside
 its helpers: `seedKey` and a helper `seed_key` were one `self._seed_key` in
 Python, so the helper replaced the datum and `seed_key(seedKey)` called the
-helper with itself, and one field in Rust and one member in C11.
+helper with itself, and one field in Rust and one member in C11. A procedure's
+states are the members of one enum, spelled Pascal in Rust, C++, Kotlin and
+Python, so `init` and `init__` are both `Init`: Python refuses the class at
+import (`TypeError: 'Init' already defined`) and the others declare one variant
+twice. The Python oracle found it when it began to run the documents that
+import a sibling, as a rename of a state to `init__`.
 `a_forge_declaration_is_spelled_the_way_the_collision_rule_says` holds the
 table to the templates: it renames every declaration of every committed forge
 document and reads the name back in each backend, so a convention that

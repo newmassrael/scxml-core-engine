@@ -4,7 +4,7 @@
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.
 
-from . import interpolation_1d_linear
+from . import interpolation_1d_linear as sce_interpolation_1d_linear
 from dataclasses import dataclass
 
 
@@ -21,6 +21,6 @@ class CrossfileValidatorInterpolation:
     def validate(self, rpm: int) -> ValidationResult:
         if rpm < 500 or rpm > 7000:
             return ValidationResult(False, "rpm_out_of_range")
-        if not (interpolation_1d_linear.lookup(rpm) > 200.0):
+        if not (sce_interpolation_1d_linear.lookup(rpm) > 200.0):
             return ValidationResult(False, "plausibility_failed")
         return ValidationResult(True, "")

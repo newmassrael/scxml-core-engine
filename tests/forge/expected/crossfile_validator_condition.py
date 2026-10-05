@@ -4,7 +4,7 @@
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.
 
-from . import condition_threshold
+from . import condition_threshold as sce_condition_threshold
 from dataclasses import dataclass
 
 
@@ -19,6 +19,6 @@ class CrossfileValidatorCondition:
         pass
 
     def validate(self, coolant_temp: float, oil_temp: float, max_temp: float) -> ValidationResult:
-        if not (not condition_threshold.condition_threshold(coolant_temp, oil_temp, max_temp)):
+        if not (not sce_condition_threshold.condition_threshold(coolant_temp, oil_temp, max_temp)):
             return ValidationResult(False, "plausibility_failed")
         return ValidationResult(True, "")

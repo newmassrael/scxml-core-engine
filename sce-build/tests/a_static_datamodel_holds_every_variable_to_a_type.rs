@@ -3912,13 +3912,15 @@ fn a_python_machine_calls_the_module_its_algorithms_generation_put_it_in() {
         .collect();
     assert_eq!(generated.len(), 1, "one machine: {generated:?}");
     let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    // The module is imported under the alias a forge kind importing the same
+    // algorithm uses (a name no author's local can be), and the call carries it.
     assert!(
-        source.contains("\nfrom . import clamp\n"),
+        source.contains("\nfrom . import clamp as sce_clamp\n"),
         "the machine imports the algorithm's module as a sibling"
     );
     assert!(
-        source.contains("clamp.clamp(self.v_count, 5)"),
-        "the call names the module and the function"
+        source.contains("sce_clamp.clamp(self.v_count, 5)"),
+        "the call names the module's alias and the function"
     );
 }
 

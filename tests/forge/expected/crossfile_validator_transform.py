@@ -4,7 +4,7 @@
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.
 
-from . import transform_temperature
+from . import transform_temperature as sce_transform_temperature
 from dataclasses import dataclass
 
 
@@ -21,6 +21,6 @@ class CrossfileValidatorTransform:
     def validate(self, raw_temp: int) -> ValidationResult:
         if raw_temp > 4095:
             return ValidationResult(False, "raw_temp_out_of_range")
-        if not (transform_temperature.compute_temperature(raw_temp) > -40 and transform_temperature.compute_temperature(raw_temp) < 200):
+        if not (sce_transform_temperature.compute_temperature(raw_temp) > -40 and sce_transform_temperature.compute_temperature(raw_temp) < 200):
             return ValidationResult(False, "plausibility_failed")
         return ValidationResult(True, "")

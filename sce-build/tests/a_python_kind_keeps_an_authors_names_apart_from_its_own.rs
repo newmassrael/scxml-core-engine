@@ -533,6 +533,51 @@ fn generate(stem: &str, text: &str) -> Result<String, String> {
     })
 }
 
+/// The sibling modules a generated module imports: `from . import condition`
+/// (a stateless kind, imported as a module) and `from .simple_codec import
+/// SimpleCodec` (a stateful one, imported by its type).
+fn sibling_modules(source: &str) -> Vec<String> {
+    let import =
+        Regex::new(r"(?m)^from \.([A-Za-z0-9_]*) import ([A-Za-z0-9_, ]+)$").expect("regex");
+    let mut found = Vec::new();
+    for caps in import.captures_iter(source) {
+        if caps[1].is_empty() {
+            // `from . import condition_threshold as sce_condition_threshold`:
+            // the module is the first word of each item, the rest is its alias.
+            found.extend(
+                caps[2]
+                    .split(',')
+                    .filter_map(|item| item.split_whitespace().next())
+                    .map(str::to_string),
+            );
+        } else {
+            found.push(caps[1].to_string());
+        }
+    }
+    found
+}
+
+/// Write the sibling modules `source` imports beside it, each generated from its
+/// own document under its own name (the import is the document's name, so a
+/// renamed sibling would not be found), and theirs in turn. It is the importing
+/// document's names that are asked, never the sibling's.
+fn write_siblings(proj: &Path, written: &mut BTreeSet<String>, source: &str) -> Result<(), String> {
+    for module in sibling_modules(source) {
+        if written.contains(&module) {
+            continue;
+        }
+        let path = resource_dir().join(format!("{module}.scxml"));
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("the sibling `{module}` is not a document here: {e}"))?;
+        let sibling = generate(&module, &text)?;
+        // A sibling's own siblings first, so that the set is closed.
+        write_siblings(proj, written, &sibling)?;
+        std::fs::write(proj.join(format!("{module}.py")), sibling).expect("write sibling");
+        written.insert(module);
+    }
+    Ok(())
+}
+
 /// Runs each (baseline, renamed) pair under one schedule and reports the pairs
 /// that differ. Reads a JSON list of `[base_path, case_path, from, to]`.
 const RUNNER: &str = r#"
@@ -681,8 +726,22 @@ def conv(v, tr):
 
 
 def load(path, tag):
-    spec = importlib.util.spec_from_file_location("sce_under_test_" + tag, path)
+    # A module is a member of the package its directory is, and the siblings
+    # it imports (`from . import condition_threshold`) are the files beside it.
+    # Loaded as a lone file it has no parent package, and a document that
+    # imports a sibling could not be run at all.
+    import os
+    import types
+    directory, file = os.path.split(path)
+    package = "sce_under_test_pkg_" + re.sub(r"\W", "_", directory)
+    if package not in sys.modules:
+        parent = types.ModuleType(package)
+        parent.__path__ = [directory]
+        sys.modules[package] = parent
+    name = package + "." + "sce_under_test_" + tag + "_" + os.path.splitext(file)[0]
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -790,14 +849,16 @@ fn an_authors_name_never_decides_what_the_generated_python_of_a_kind_does() {
     let mut other_refusals: BTreeMap<String, usize> = BTreeMap::new();
     let mut folded_together = 0usize;
 
+    let mut written: BTreeSet<String> = BTreeSet::new();
     for doc in &docs {
-        // A document that does not generate on its own (it needs a sibling
-        // module the test does not write) cannot be run, and is not a case.
+        // A document that does not generate (a fixture refused on purpose, or
+        // one whose sibling is not a document here) cannot be run, and is not a
+        // case. One that imports a sibling runs with it beside it.
         let Ok(baseline) = generate(&doc.stem, &doc.text) else {
             skipped_documents.push(doc.stem.clone());
             continue;
         };
-        if baseline.contains("\nfrom .") || baseline.contains("\nimport .") {
+        if write_siblings(&proj, &mut written, &baseline).is_err() {
             skipped_documents.push(doc.stem.clone());
             continue;
         }
@@ -841,13 +902,16 @@ fn an_authors_name_never_decides_what_the_generated_python_of_a_kind_does() {
                             || why.contains("duplicate")
                             || why.contains("read-only")
                             || why.contains("not declared")
-                            || why.contains("unknown"))
+                            || why.contains("unknown")
+                            || why.contains("so it would declare one name twice"))
                         {
                             let key: String = why.chars().take(70).collect();
                             *other_refusals.entry(key).or_default() += 1;
                         }
                     }
                     Ok(source) => {
+                        write_siblings(&proj, &mut written, &source)
+                            .expect("a sibling that built for the baseline builds for a case");
                         let case_path =
                             proj.join(format!("{}__{}__{}.py", doc.stem, declared, candidate));
                         std::fs::write(&case_path, source).expect("write case");
@@ -875,6 +939,12 @@ fn an_authors_name_never_decides_what_the_generated_python_of_a_kind_does() {
         pairs.len()
     );
     let documents_run = docs.len() - skipped_documents.len();
+    eprintln!(
+        "python kind name oracle: {documents_run} of {} documents run, {} renamings; \
+         not run (refused unrenamed, or a sibling is not a document here): {skipped_documents:?}",
+        docs.len(),
+        pairs.len()
+    );
     assert!(
         documents_run >= 40 && pairs.len() >= 2000,
         "only {documents_run} documents and {} renamings were run; skipped: {skipped_documents:?}",

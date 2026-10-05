@@ -6,7 +6,7 @@
 
 from enum import Enum
 
-from . import condition_threshold
+from . import condition_threshold as sce_condition_threshold
 from sce_forge_runtime.observer import EventDomain, EventQueue, ThresholdState
 
 # No sce:event-domain declared on this <scxml> root: the observer falls back
@@ -30,8 +30,8 @@ class CrossfileObserverCondition:
 
     def update(self, coolant_temp: float, oil_temp: float) -> EventQueue[ForgeDomainTag]:
         _events: EventQueue[ForgeDomainTag] = EventQueue()
-        if self._alarm.enter_if(condition_threshold.condition_threshold(coolant_temp, oil_temp, 110.0)):
+        if self._alarm.enter_if(sce_condition_threshold.condition_threshold(coolant_temp, oil_temp, 110.0)):
             _events.push(ForgeDomainTag.RAISE_ALARM)
-        elif self._alarm.leave_if(condition_threshold.condition_threshold(coolant_temp, oil_temp, 120.0) == False):
+        elif self._alarm.leave_if(sce_condition_threshold.condition_threshold(coolant_temp, oil_temp, 120.0) == False):
             _events.push(ForgeDomainTag.CLEAR_ALARM)
         return _events

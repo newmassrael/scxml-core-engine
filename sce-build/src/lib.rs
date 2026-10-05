@@ -4675,7 +4675,9 @@ fn validate_and_enrich_imports(
                     generator::Language::Go => {
                         format!("{}.{pascal}", forge::generator::go_package_alias(&snake))
                     }
-                    generator::Language::Python => format!("{snake}.{pascal}"),
+                    generator::Language::Python => {
+                        format!("{}.{pascal}", forge::generator::python_module_alias(&snake))
+                    }
                     // C11 has no namespace mechanism — the enum's
                     // typedef name carries a `_t` discriminator so
                     // cross-doc references resolve via the typedef
