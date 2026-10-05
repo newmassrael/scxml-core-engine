@@ -104,7 +104,6 @@ const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[
     ("send", "targetexpr"),
     ("send", "typeexpr"),
     ("send", "idlocation"),
-    ("cancel", "sendidexpr"),
 ];
 
 /// Judge every expression of a `sce-static` document; a document under any
@@ -846,6 +845,37 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// A `<cancel>`'s `sendidexpr`: a string, the id of the send to cancel,
+    /// computed from the machine's fields when the cancel runs. An id no send
+    /// holds cancels nothing, as it does under every data model. The element
+    /// names the send one way, a written id or an expression, so a `sendid`
+    /// beside it is refused.
+    fn sendid_expr(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("sendidexpr");
+        if !action.sendid.trim().is_empty() {
+            return Err(self.rule_at(
+                format!("sendidexpr=\"{}\"", action.sendidexpr),
+                "a <cancel> names its send as `sendid` or as `sendidexpr`, and never as both",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.sendidexpr,
+            ));
+        }
+        self.expr(
+            ctx,
+            &action.sendidexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        Ok(())
+    }
+
     /// The `<content expr>` of a `<send>` or of a `<final>`'s `<donedata>`
     /// (`element`): the one value this model has that is an object, a record,
     /// taken whole by name — a record variable, the item of a `<foreach>` over a
@@ -1193,6 +1223,11 @@ impl<'a> Judge<'a> {
                         !action.params.is_empty() || !action.namelist.trim().is_empty(),
                         state,
                     )?;
+                }
+            }
+            "cancel" => {
+                if !action.sendidexpr.is_empty() {
+                    self.sendid_expr(ctx, action, state)?;
                 }
             }
             // SCE Accepted Subset §2.15: the value appended is judged
@@ -1681,13 +1716,11 @@ impl<'a> Judge<'a> {
 /// The value of one of [`UNTYPED_ACTION_ATTRIBUTES`] on `action`.
 fn action_attribute<'a>(action: &'a Action, attr: &str) -> &'a str {
     match attr {
-        "eventexpr" => &action.eventexpr,
         "targetexpr" => &action.targetexpr,
-        "delayexpr" => &action.delayexpr,
         "typeexpr" => &action.typeexpr,
         "idlocation" => &action.idlocation,
-        "namelist" => &action.namelist,
-        "sendidexpr" => &action.sendidexpr,
-        _ => "",
+        // An attribute listed in [`UNTYPED_ACTION_ATTRIBUTES`] and read nowhere
+        // here would be refused never, which is the worst way to fail.
+        other => unreachable!("`{other}` is read by no arm of action_attribute"),
     }
 }

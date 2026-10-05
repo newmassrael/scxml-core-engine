@@ -10,6 +10,21 @@
 {%- macro emit(action, indent, machine_name, model) -%}
 {% if action.sendid %}
 {{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})
+{% elif action.native_sendid %}
+{# `datamodel="sce-static"`: the id is a string computed from the machine's
+   fields now (`Action::native_sendid`); no script engine is asked. An id no send
+   holds cancels nothing; an operation that fails cannot be evaluated, which
+   raises error.execution and ends the block. #}
+{% if action.native_sendid_fails %}
+{{ indent }}try:
+{{ indent }}    _cancel_id = {{ action.native_sendid }}
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    self._raise_error_execution(engine, "<cancel> sendidexpr failed to evaluate")
+{{ indent }}    raise _ActionAbort
+{{ indent }}engine.cancel_send(_cancel_id)
+{% else %}
+{{ indent }}engine.cancel_send({{ action.native_sendid }})
+{% endif %}
 {% else %}
 {{ indent }}engine.cancel_send(self._eval_sendid(engine, {{ action.sendidexpr | to_lua_expr | py_string_literal }}))
 {% endif %}

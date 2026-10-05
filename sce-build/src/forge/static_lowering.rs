@@ -315,6 +315,13 @@ pub trait StaticTarget {
     fn lowers_event_expr(&self) -> bool {
         false
     }
+    /// Whether a `<cancel>`'s `sendidexpr` is lowered to the string it computes
+    /// ([`Action::native_sendid`]) that the backend hands the scheduler when the
+    /// cancel runs. A target that does not is refused where the `<cancel>` is
+    /// walked, by name, rather than left to emit a cancel of nothing.
+    fn lowers_cancel_expr(&self) -> bool {
+        false
+    }
     /// Whether a transition may read the payload of an event whose schema
     /// declares an enum field: the target holds the field in the machine's own
     /// type for the enum and reads it off the wire as the variant's declared
@@ -966,6 +973,10 @@ impl StaticTarget for KotlinTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The cancel template hands the scheduler the id it computes (`cancelSend`).
+    fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1105,6 +1116,11 @@ impl StaticTarget for RustTarget {
     // The send template names the event it delivers by the string it computes
     // (`send_named_external`, `Self::resolve_event_by_name`).
     fn lowers_event_expr(&self) -> bool {
+        true
+    }
+    // The cancel template hands the scheduler the id it computes
+    // (`engine.cancel_event`).
+    fn lowers_cancel_expr(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -2853,6 +2869,11 @@ impl StaticTarget for CppTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The cancel template hands the scheduler the id it computes
+    // (`engine.cancelEvent`).
+    fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3353,6 +3374,11 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The cancel template hands the scheduler the id it computes
+    // (`engine.CancelEvent`).
+    fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3777,6 +3803,11 @@ impl StaticTarget for PythonTarget {
     // The send template names the event it delivers by the string it computes
     // (`resolve_event_by_name`).
     fn lowers_event_expr(&self) -> bool {
+        true
+    }
+    // The cancel template hands the scheduler the id it computes
+    // (`engine.cancel_send`).
+    fn lowers_cancel_expr(&self) -> bool {
         true
     }
     // The attribute the payload channel fills when the engine dequeues an
@@ -4613,6 +4644,12 @@ impl StaticTarget for CTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The cancel template hands the scheduler the id it computes
+    // (`scheduled_cancel`), held by a variable or written out; one that joins
+    // text is refused for the reason a delay is.
+    fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
     // The member of the channel's union the event's payload is lifted into
     // (`build_c11_event_payload`), whose fields carry the schema's own ids.
     fn payload_accessor(&self, event: &str) -> String {
@@ -5324,6 +5361,27 @@ fn lower_action(
                     &action.native_content,
                 );
             }
+        }
+        // The id of the send a `<cancel>` removes is the string its expression
+        // computes, read from the machine's fields when the cancel runs. An id
+        // no send holds cancels nothing; an operation that fails is an argument
+        // that cannot be evaluated, which raises `error.execution` and ends the
+        // block, as every error in executable content does.
+        "cancel" if !action.sendidexpr.trim().is_empty() => {
+            if !target.lowers_cancel_expr() {
+                return Err(GenerateError::unsupported(format!(
+                    "a <cancel> with a sendidexpr has no {lang} lowering yet"
+                )));
+            }
+            reads_payload |= reads(&action.sendidexpr);
+            let value = lower(&action.sendidexpr, InferredType::Str)?;
+            rewrites.note(
+                &action.sendidexpr,
+                action.spellings.get("sendidexpr"),
+                &value.text,
+            );
+            action.native_sendid = value.text;
+            action.native_sendid_fails = value.can_fail;
         }
         _ => {}
     }

@@ -23,6 +23,9 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
     StaticBlockEndsPersist, StaticBlockEndsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_cancel_expr_sm::{
+    StaticCancelExprPersist, StaticCancelExprPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
@@ -474,6 +477,22 @@ fn static_send_delay_is_computed_when_the_send_runs() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_delay.json"
+        ),
+    );
+}
+
+// The `sendidexpr` of a <cancel> is a string computed when the cancel runs, the
+// id of the delayed send it removes. The machine's clock is a manual one, which
+// the scenario's `advance_ms` steps move on.
+#[test]
+fn static_cancel_expr_removes_the_send_its_id_names() {
+    let mut engine = Engine::new(StaticCancelExprPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay(
+        engine,
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_cancel_expr.json"
         ),
     );
 }

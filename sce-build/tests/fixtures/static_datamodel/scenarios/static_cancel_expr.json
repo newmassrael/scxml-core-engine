@@ -1,0 +1,68 @@
+{
+  "machine": "static_cancel_expr",
+  "about": "The `sendidexpr` of a <cancel> is a string computed from the machine's fields when the cancel runs, and names the id of the delayed send it removes: `which` holds `a` to begin with, so `cancel` removes the send `a` and `b` comes due, and `pick.b` makes the same <cancel> remove the other. An id no send holds cancels nothing and raises nothing: `pick.none` empties `which`. An operation that fails cannot be evaluated, so `overflow` raises error.execution and removes neither send. Both sends wait 200 ms and every check stands at least 50 ms from a deadline. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has come due yet",
+      "expect": { "state": "idle", "variables": { "a_fired": 0, "b_fired": 0, "refusals": 0 } } },
+
+    { "note": "both sends are armed, and neither is due",
+      "event": "arm",
+      "expect": { "variables": { "a_fired": 0, "b_fired": 0, "refusals": 0 } } },
+
+    { "note": "the wait is not over",
+      "advance_ms": 100,
+      "expect": { "variables": { "a_fired": 0, "b_fired": 0, "refusals": 0 } } },
+
+    { "note": "`which` holds `a`: the send `a` is removed",
+      "event": "cancel",
+      "expect": { "variables": { "a_fired": 0, "b_fired": 0, "refusals": 0 } } },
+
+    { "note": "the wait is over: only `b` comes due",
+      "advance_ms": 150,
+      "expect": { "variables": { "a_fired": 0, "b_fired": 1, "refusals": 0 } } },
+
+    { "note": "armed again, and `which` is made empty",
+      "event": "arm",
+      "expect": { "variables": { "a_fired": 0, "b_fired": 1, "refusals": 0 } } },
+
+    { "note": "the name is empty",
+      "event": "pick.none",
+      "expect": { "variables": { "a_fired": 0, "b_fired": 1, "refusals": 0 } } },
+
+    { "note": "an empty id names no send: nothing is removed and nothing is raised",
+      "event": "cancel",
+      "expect": { "variables": { "a_fired": 0, "b_fired": 1, "refusals": 0 } } },
+
+    { "note": "both sends come due",
+      "advance_ms": 250,
+      "expect": { "variables": { "a_fired": 1, "b_fired": 2, "refusals": 0 } } },
+
+    { "note": "armed again",
+      "event": "arm",
+      "expect": { "variables": { "a_fired": 1, "b_fired": 2, "refusals": 0 } } },
+
+    { "note": "the id cannot be computed: error.execution is raised and no send is removed",
+      "event": "overflow",
+      "expect": { "variables": { "a_fired": 1, "b_fired": 2, "refusals": 1 } } },
+
+    { "note": "both sends come due",
+      "advance_ms": 250,
+      "expect": { "variables": { "a_fired": 2, "b_fired": 3, "refusals": 1 } } },
+
+    { "note": "the name is `b`, and the sends are armed again",
+      "event": "pick.b",
+      "expect": { "variables": { "a_fired": 2, "b_fired": 3, "refusals": 1 } } },
+
+    { "note": "armed",
+      "event": "arm",
+      "expect": { "variables": { "a_fired": 2, "b_fired": 3, "refusals": 1 } } },
+
+    { "note": "the same <cancel> now removes the send `b`",
+      "event": "cancel",
+      "expect": { "variables": { "a_fired": 2, "b_fired": 3, "refusals": 1 } } },
+
+    { "note": "only `a` comes due",
+      "advance_ms": 250,
+      "expect": { "variables": { "a_fired": 3, "b_fired": 3, "refusals": 1 } } }
+  ]
+}

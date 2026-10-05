@@ -88,6 +88,7 @@
 
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
+#include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -257,8 +258,10 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // machine itself resolves (§scxml-3.12.1), the state by its document name, the
 // variable by its, the lists and records by theirs, and the replay of its
 // scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
-// that has one.
-#define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
+// that has one. INIT starts the machine in `sm`, and ADVANCE moves the clock of a
+// machine that waits on one, or is NULL for a machine that does not.
+#define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
+                             ADVANCE)                                                                                  \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -332,7 +335,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
     }                                                                                                                  \
     static int M##_scenario(const char *scenario, int min_steps) {                                                     \
         M##_t sm;                                                                                                      \
-        M##_init(&sm);                                                                                                 \
+        INIT;                                                                                                          \
         const sce_scenario_driver_t driver = {#M,                                                                      \
                                               &sm,                                                                     \
                                               M##_raise_event,                                                         \
@@ -347,7 +350,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               DONE,                                                                    \
                                               REAL,                                                                    \
                                               REAL_LIST,                                                               \
-                                              RECORD_REAL};                                                            \
+                                              RECORD_REAL,                                                             \
+                                              ADVANCE};                                                                \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -360,6 +364,22 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         }                                                                                                              \
         return bad;                                                                                                    \
     }
+
+// A machine that waits on no clock, started as `_init` starts it.
+#define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
+                         M##_init(&sm), NULL)
+
+// A machine whose delayed sends wait on a clock the scenario owns: it is started
+// on a manual one, and an `advance_ms` step moves it on and runs what came due.
+#define STATIC_SCENARIO_TIMED(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                              \
+    static bool M##_advance_clock(void *sm, int64_t ms) {                                                              \
+        M##_advance_time_ms((M##_t *)sm, (uint64_t)ms);                                                                \
+        M##_run((M##_t *)sm);                                                                                          \
+        return true;                                                                                                   \
+    }                                                                                                                  \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -1051,6 +1071,25 @@ static const variable_t send_event_variables[] = {
 };
 STATIC_SCENARIO(static_send_event, send_event_states, send_event_variables, NULL, no_lists, no_records)
 
+// static_cancel_expr: the `sendidexpr` of a `<cancel>` is a string the machine
+// holds, the id of the delayed send it removes, read when the cancel runs; an id
+// no send holds cancels nothing, and one that cannot be computed is an
+// `error.execution` that removes none. The machine's sends wait on a clock the
+// scenario owns.
+VARIABLE_READER(static_cancel_expr, a_fired)
+VARIABLE_READER(static_cancel_expr, b_fired)
+VARIABLE_READER(static_cancel_expr, refusals)
+
+static const name_value_t cancel_expr_states[] = {
+    {"idle", STATIC_CANCEL_EXPR_STATE_IDLE},
+};
+static const variable_t cancel_expr_variables[] = {
+    {"a_fired", static_cancel_expr_read_a_fired},
+    {"b_fired", static_cancel_expr_read_b_fired},
+    {"refusals", static_cancel_expr_read_refusals},
+};
+STATIC_SCENARIO_TIMED(static_cancel_expr, cancel_expr_states, cancel_expr_variables, NULL, no_lists, no_records)
+
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
 // when the state is entered — an enum field as the name its enum declares.
@@ -1208,6 +1247,7 @@ int main(void) {
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= static_send_content_scenario("static_send_content", 5);
     bad |= static_send_event_scenario("static_send_event", 11);
+    bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

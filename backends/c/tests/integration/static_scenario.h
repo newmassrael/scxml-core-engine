@@ -96,6 +96,11 @@ typedef struct {
     // field with a fraction or an exponent, and a driver with no record that holds
     // a real may leave this unset.
     bool (*record_real)(void *sm, const char *name, size_t index, const char *field, double *out);
+    // Move the clock the machine measures its delayed sends from forward by `ms`,
+    // and run whatever that made due. A scenario states it as an `advance_ms`
+    // step, and a driver whose machine waits on no clock may leave this unset: a
+    // step that asks for it then fails.
+    bool (*advance)(void *sm, int64_t ms);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -826,6 +831,9 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     char data[256];
     bool has_event = false;
     bool has_data = false;
+    // The time the step moves the machine's clock on by, once its event is sent.
+    int64_t advance_ms = 0;
+    bool has_advance = false;
     // The step expects the machine to drop its event, so that no event of the
     // machine matches the name. Without it, a name nothing matches is a misspelt
     // step.
@@ -850,6 +858,11 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
                     return sce_scenario_fail(d, step, "`dropped` is not a bool");
                 }
                 dropped = want != 0;
+            } else if (strcmp(key, "advance_ms") == 0) {
+                if (!sce_scenario_number(c, &advance_ms) || advance_ms < 0) {
+                    return sce_scenario_fail(d, step, "`advance_ms` is not a time");
+                }
+                has_advance = true;
             } else if (strcmp(key, "data") == 0) {
                 sce_scenario_space(c);
                 const char *from = c->at;
@@ -885,6 +898,14 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
         (void)snprintf(message, sizeof(message), "the machine's events %s `%s`", dropped ? "match" : "do not match",
                        event);
         return sce_scenario_fail(d, step, message);
+    }
+    if (has_advance) {
+        if (d->advance == NULL) {
+            return sce_scenario_fail(d, step, "the machine waits on no clock a step could move");
+        }
+        if (!d->advance(d->sm, advance_ms)) {
+            return sce_scenario_fail(d, step, "the machine's clock could not be moved");
+        }
     }
     return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step);
 }

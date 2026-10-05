@@ -291,6 +291,13 @@ def test_a_sends_delay_is_computed_when_it_runs() -> None:
     replay("static_send_delay")
 
 
+# The `sendidexpr` of a `<cancel>` is a string computed from the machine's fields
+# when the cancel runs, the id of the delayed send it removes; the scenario's
+# `advance_ms` steps move the engine's time on.
+def test_a_cancel_removes_the_send_its_id_names() -> None:
+    replay("static_cancel_expr")
+
+
 # The `<content expr>` of a `<send>` names a record, which crosses as the pairs of
 # its fields: a record variable and the payload of the event the transition is
 # on, taken whole.

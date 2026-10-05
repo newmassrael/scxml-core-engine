@@ -8,7 +8,32 @@
    wire `validation/require-either`). No `{% else %}` arm — parser
    guarantees one branch matches. #}
 {% import 'block_exit.kt.jinja2' as block_exit %}
-{% if action.sendidexpr and model.needs_script_engine %}
+{% if action.native_sendid %}
+            // `datamodel="sce-static"`: the id is a string computed from the
+            // machine's fields now (`Action::native_sendid`); no script engine is
+            // asked. An id no send holds cancels nothing; an operation that fails
+            // cannot be evaluated, which raises error.execution and ends the block.
+{% if action.native_sendid_fails %}
+            if (run cancel@{
+                val sendidToCancel: String? = try {
+                    {{ action.native_sendid }}
+                } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                    null
+                }
+                if (sendidToCancel == null) {
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    true
+                } else {
+                    cancelSend(sendidToCancel)
+                    false
+                }
+            }) {
+                {{ block_exit.stmt(_in_foreach_body is defined and _in_foreach_body, in_run_block is defined and in_run_block) }}
+            }
+{% else %}
+            cancelSend({{ action.native_sendid }})
+{% endif %}
+{% elif action.sendidexpr and model.needs_script_engine %}
             // W3C SCXML 6.3: Dynamic sendid evaluation (test210). A sendidexpr
             // that fails raises error.execution (W3C SCXML 5.9), and the error
             // ends the block (W3C SCXML 4.9).

@@ -573,6 +573,21 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_event_fails: bool,
+    /// Codegen-internal: the `sendidexpr` of a `<cancel>` in a `sce-static`
+    /// document, as an owned string expression in the backend's own language,
+    /// read from the machine's fields when the cancel runs — the id of the send
+    /// it cancels. Empty for a `<cancel>` with no `sendidexpr`, and for one of a
+    /// document under another data model, which a script engine evaluates.
+    /// Transient and outside the AST contract, as [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_sendid: String,
+    /// Codegen-internal: whether [`Self::native_sendid`] can fail — a checked
+    /// integer operation in the expression. A failure is an argument that cannot
+    /// be evaluated: `error.execution` is raised and the block ends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_sendid_fails: bool,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

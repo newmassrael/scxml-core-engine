@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `sendidexpr` of
+  a <cancel>. It is a string, the id of the send to cancel, computed from the
+  machine's fields when the cancel runs: `which` holds `a` to begin with, so
+  `cancel` removes the delayed send `a` and leaves `b` to come due, and
+  `pick.b` makes the one <cancel> remove the other. The value is read when the
+  cancel runs, not when the document was read.
+
+  An id no send holds cancels nothing, and raises nothing: `pick.none` makes
+  `which` empty, and the cancel that follows removes neither send. An operation
+  that fails cannot be evaluated, so `overflow` raises error.execution and
+  removes neither (§scxml-5.9): `refusals` counts it.
+
+  Both sends wait 200 ms, so a machine driven by a clock it owns and one that
+  waits in real time see the same order: every check stands 50 ms or more from
+  a deadline.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_cancel_expr">
+  <datamodel>
+    <data id="which" sce:type="string" sce:capacity="8" expr="'a'"/>
+    <data id="scale" sce:type="uint32" expr="3"/>
+    <data id="a_fired" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="b_fired" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="arm" type="internal">
+      <send id="a" event="a.due" delay="200ms"/>
+      <send id="b" event="b.due" delay="200ms"/>
+    </transition>
+    <transition event="cancel" type="internal">
+      <cancel sendidexpr="which"/>
+    </transition>
+    <transition event="overflow" type="internal">
+      <cancel sendidexpr="(scale * 2000000000) &gt; 1 ? 'a' : 'b'"/>
+    </transition>
+    <transition event="pick.b" type="internal">
+      <assign location="which" expr="'b'"/>
+    </transition>
+    <transition event="pick.none" type="internal">
+      <assign location="which" expr="''"/>
+    </transition>
+    <transition event="a.due" type="internal">
+      <assign location="a_fired" expr="a_fired + 1"/>
+    </transition>
+    <transition event="b.due" type="internal">
+      <assign location="b_fired" expr="b_fired + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

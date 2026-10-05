@@ -6,7 +6,36 @@
    is rejected at parse time by the SCXML parser (parser.rs cancel branch,
    wire `validation/require-either`). No `{% else %}` arm — parser
    guarantees one branch matches. #}
-{% if action.sendidexpr %}
+{% if action.native_sendid %}
+{# `datamodel="sce-static"`: the id is a string computed from the machine's
+   fields now (`Action::native_sendid`); no script engine is asked. An id no send
+   holds cancels nothing; an operation that fails cannot be evaluated, which
+   raises error.execution and ends the block. #}
+// W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr }}">
+{
+{% if action.native_sendid_fails %}
+    match (|| -> Result<String, sce_forge_runtime::algorithm::AlgorithmError> {
+        Ok({{ action.native_sendid }})
+    })() {
+        Ok(send_id_val) => {
+            engine.cancel_event(&send_id_val);
+        }
+        Err(_) => {
+            ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{}'", "{{ action.sendidexpr | escape_rust }}");
+{% if 'error.execution' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"));
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+            break 'action_block;
+{% endif %}
+        }
+    }
+{% else %}
+    let send_id_val: String = {{ action.native_sendid }};
+    engine.cancel_event(&send_id_val);
+{% endif %}
+}
+{% elif action.sendidexpr %}
 // W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr }}">
 {
     self.ensure_script_engine();

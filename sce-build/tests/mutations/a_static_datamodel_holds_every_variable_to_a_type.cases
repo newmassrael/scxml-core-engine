@@ -232,8 +232,11 @@ PY
 
 mutation_case "a namelist needs a script engine again" <<'PY'
 edit("sce-build/src/script_engine_analyzer.rs",
-     "            | C::StaticInvokeNamelist { .. }\n            // A `<send>`'s `namelist` names variables the machine holds, and\n            // is lowered as the `<param>`s it abbreviates\n            // (`Action::fold_namelist_into_params`).\n            | C::SendNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n",
-     "            | C::StaticInvokeNamelist { .. } => true,\n            C::GlobalScript\n            | C::UnresolvedExternalScript\n            | C::SendNamelist { .. }\n")
+     "            // (`Action::fold_namelist_into_params`).\n            | C::SendNamelist { .. }\n",
+     "            // (`Action::fold_namelist_into_params`).\n")
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            C::GlobalScript\n            | C::UnresolvedExternalScript\n",
+     "            C::GlobalScript\n            | C::SendNamelist { .. }\n            | C::UnresolvedExternalScript\n")
 PY
 
 # A `<send>`'s `<content expr>` that names a record is the pairs of its fields.
@@ -343,4 +346,33 @@ mutation_case "a host-run invoke's namelist stands after it is folded" <<'PY'
 edit("sce-build/src/model.rs",
      "        let at = self.base.source_location.clone();\n        let names = std::mem::take(&mut self.namelist);\n",
      "        let at = self.base.source_location.clone();\n        let names = self.namelist.clone();\n")
+PY
+
+# A `<cancel>`'s `sendidexpr` is a string the machine computes, the id of the send
+# it removes. Four mutants take one step away: the analyzer counts it as an engine
+# need again, which the manifest of a machine with none would deny; a `sendid` is
+# admitted beside it, a send named twice; it is not held to a string, so a number
+# names a send; and it is not lowered, so a backend with no engine cancels nothing.
+mutation_case "a cancel sendidexpr needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            | C::SendNamelist { .. }\n            // A `<cancel>`'s `sendidexpr` the model admits is a string over the\n            // machine's fields, lowered to the id the scheduler is handed\n            // (`Action::native_sendid`).\n            | C::CancelExpr { .. } => true,\n            C::GlobalScript\n",
+     "            | C::SendNamelist { .. } => true,\n            C::GlobalScript\n            | C::CancelExpr { .. }\n")
+PY
+
+mutation_case "a sendid is admitted beside a cancel sendidexpr" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.sendid.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"sendidexpr=",
+     "        if false && !action.sendid.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"sendidexpr=")
+PY
+
+mutation_case "a cancel sendidexpr is not held to a string" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            &action.sendidexpr,\n            spelling,\n            Expected::Slot(InferredType::Str),\n",
+     "            &action.sendidexpr,\n            spelling,\n            Expected::Hint(InferredType::Unknown),\n")
+PY
+
+mutation_case "a cancel sendidexpr is not lowered to the string it computes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            action.native_sendid = value.text;\n",
+     "            let _ = &value.text;\n")
 PY

@@ -2059,6 +2059,23 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
            `cancel.jinja2`. */
 {% if action.sendid %}
         scheduled_cancel(sm, "{{ action.sendid | escape_c }}");
+{% elif action.native_sendid %}
+        {
+            /* `datamodel="sce-static"`: the id is a string the machine computed
+               from its own fields (`Action::native_sendid`), no script engine
+               asked. An id no send holds cancels nothing; an operation that
+               failed cannot be evaluated, which raises error.execution and ends
+               the block. */
+            sce_forge_algorithm_failure_t sce_failure_ = {0};
+            const char *_cancel_id = {{ action.native_sendid }};
+            if (sce_failure_.failed) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<cancel> sendidexpr failed to evaluate");
+                return;
+            }
+            scheduled_cancel(sm, _cancel_id);
+        }
 {% elif action.sendidexpr %}
         {
             char _cancel_buf[64];

@@ -7,7 +7,31 @@
    wire `validation/require-either`). No else arm — parser guarantees one
    branch matches. #}
 // W3C SCXML 6.3: Cancel delayed send event
-{% if action.sendidexpr %}
+{% if action.native_sendid %}
+{# `datamodel="sce-static"`: the id is a string computed from the machine's
+   fields now (`Action::native_sendid`); no script engine is asked. An id no send
+   holds cancels nothing; an operation that fails cannot be evaluated, which
+   raises error.execution and ends the block. #}
+{
+{% if action.native_sendid_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    std::string sendidToCancel = {{ action.native_sendid }};
+{% if action.native_sendid_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<cancel> sendidexpr failed to evaluate"));
+{% if block_exit is defined and block_exit %}
+        {{ block_exit }}
+{% endif %}
+    } else {
+        engine.cancelEvent(sendidToCancel);
+    }
+{% else %}
+    engine.cancelEvent(sendidToCancel);
+{% endif %}
+}
+{% elif action.sendidexpr %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();

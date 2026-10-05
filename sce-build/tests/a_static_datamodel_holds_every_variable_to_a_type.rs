@@ -2024,6 +2024,136 @@ fn a_send_eventexpr_that_joins_text_is_refused_for_c_by_name() {
     assert!(ok, "a name that is only written generates for C11:\n{out}");
 }
 
+// ── A `<cancel>`'s `sendidexpr` is a string the machine computes ────────
+
+/// A `sce-static` machine whose entry (line 8) cancels with the attributes
+/// `cancel`.
+fn cancelling(cancel: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry><cancel {cancel}/></onentry></state>"#
+    ))
+}
+
+#[test]
+fn a_cancel_sendidexpr_is_a_string_the_machine_computes() {
+    // The id of the send to remove is a string, written out or joined from the
+    // machine's fields, read when the cancel runs.
+    for expr in ["'timer'", "'timer.' + count", "ready ? 'a' : 'b'"] {
+        let (ok, out) = run(&["check"], &cancelling(&format!(r#"sendidexpr="{expr}""#)));
+        assert!(ok, "`{expr}` is a string:\n{out}");
+    }
+}
+
+#[test]
+fn a_cancel_sendidexpr_that_is_no_string_or_is_doubled_is_refused_on_its_line() {
+    for (what, cancel, code) in [
+        (
+            "a number, which names no send",
+            r#"sendidexpr="count""#,
+            "expression/type-mismatch",
+        ),
+        (
+            "a sendid beside it",
+            r#"sendid="a" sendidexpr="'b'""#,
+            "scxml/static-datamodel-rule",
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &cancelling(cancel));
+        assert!(!ok, "{what}: no send is named by it:\n{out}");
+        assert_refused_at(&out, code, 8);
+    }
+    let (ok, out) = run(&["check"], &cancelling(r#"sendidexpr="missing + 'x'""#));
+    assert!(!ok, "an id no variable declares is refused:\n{out}");
+    assert!(out.contains("missing"), "it names the name:\n{out}");
+}
+
+#[test]
+fn a_cancel_sendidexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
+    // Read from the machine's fields when the cancel runs, so no engine
+    // evaluates it and the manifest says so.
+    let document = cancelling(r#"sendidexpr="'timer.' + count""#);
+    for language in ["rust", "go", "kotlin", "python", "cpp"] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "--go-module-prefix",
+                "x/y",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &document,
+        );
+        assert!(ok, "{language}: the machine generates:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "{language}: an id computed from the fields needs no engine:\n{out}"
+        );
+    }
+    // Go hands the scheduler the id it computed, with no engine to ask.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "go",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("engine.CancelEvent(cancelSendID)"),
+        "the computed id is the one cancelled"
+    );
+    assert!(
+        !source.contains("EvaluateExpression"),
+        "no engine evaluates the id"
+    );
+}
+
+#[test]
+fn a_cancel_sendidexpr_that_joins_text_is_refused_for_c_by_name() {
+    // A C string has no storage for the joined text; an id that is only
+    // written out is generated.
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &cancelling(r#"sendidexpr="'timer.' + count""#),
+    );
+    assert!(!ok, "a joined string has no C11 lowering:\n{out}");
+    assert!(out.contains("concatenation"), "it says why:\n{out}");
+
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &cancelling(r#"sendidexpr="'timer'""#),
+    );
+    assert!(ok, "an id that is only written generates for C11:\n{out}");
+}
+
 /// A `sce-static` machine holding the record variable `shown` whose `<final>`
 /// carries a `<donedata>` of `content`, all on line 12.
 fn finishing_with_a_record(content: &str) -> String {

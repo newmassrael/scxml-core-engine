@@ -33,6 +33,7 @@ import (
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_cancel_expr"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
@@ -624,6 +625,19 @@ func TestASendsDelayIsComputedWhenItRuns(t *testing.T) {
 	replay(t, "static_send_delay", drive[static_send_delay.StaticSendDelayState, static_send_delay.StaticSendDelayEvent](&policy, map[string]func() any{
 		"wait":     func() any { return policy.Wait() },
 		"beats":    func() any { return policy.Beats() },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// The `sendidexpr` of a <cancel> is a string computed from the machine's fields
+// when the cancel runs, the id of the delayed send it removes; the machine runs
+// on a manual clock, which the scenario's `advance_ms` steps move on.
+func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
+	policy := static_cancel_expr.NewStaticCancelExprPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_cancel_expr", drive[static_cancel_expr.StaticCancelExprState, static_cancel_expr.StaticCancelExprEvent](&policy, map[string]func() any{
+		"a_fired":  func() any { return policy.AFired() },
+		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
 }

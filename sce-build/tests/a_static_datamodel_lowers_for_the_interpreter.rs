@@ -104,10 +104,10 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // today — scalars, checked integers, the typed payload, lists, records,
     // calls of scalar algorithms, a `<send>`'s `<param>`s, a `<final>`'s
     // `<donedata>` and a child session written inline — is at least these
-    // thirty-six machines, which is every one the fixture directory holds, and
+    // thirty-seven machines, which is every one the fixture directory holds, and
     // the floor rises as the lowering grows.
     assert!(
-        lowered.len() >= 36,
+        lowered.len() >= 37,
         "lowered {lowered:?}, refused {:?}",
         refused.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
@@ -119,13 +119,15 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // what the event it is on carried, and one that names the variables it sends
     // in a `namelist` or names a record in a `<content expr>`, a `<send>`'s or a
     // `<donedata>`'s, or computes its delay in a `delayexpr` or the name of its
-    // event in an `eventexpr`, which the Interpreter reads itself.
+    // event in an `eventexpr`, or the id of the send a `<cancel>` removes in a
+    // `sendidexpr`, which the Interpreter reads itself.
     for name in [
         "static_send_params",
         "static_send_namelist",
         "static_send_content",
         "static_send_delay",
         "static_send_event",
+        "static_cancel_expr",
         "static_wire_enum",
         "static_payload_relay",
         "static_donedata",

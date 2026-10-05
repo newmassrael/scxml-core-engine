@@ -31,7 +31,7 @@
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_regen scripts/regen_static_datamodel_python.sh
 mutation_runtime_targets backends/python/runtime/sce_runtime/event_payload.py
-mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/native_action.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
+mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/native_action.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/actions/cancel.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py backends/python/tests/integration/static_datamodel/test_a_static_host_action.py
 
 # ── A failed statement ends its block ──────────────────────────────
@@ -220,6 +220,25 @@ mutation_case "an empty event name is delivered" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "{{ indent }}if not _evt_name:\n{{ indent }}    self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")\n{% elif action.eventexpr %}",
      "{{ indent }}if not _evt_name:\n{{ indent }}    pass\n{% elif action.eventexpr %}")
+PY
+
+# ── A cancel's send id is a string the machine computes ──────────────
+#
+# `static_cancel_expr`: `sendidexpr="which"` is read from the machine's fields
+# when the cancel runs and names the send it removes. An id that cannot be
+# computed (`scale * 2000000000` overflows its type) cannot be evaluated: it
+# raises `error.execution`, which `refusals` counts, and removes no send.
+
+mutation_case "a cancel's sendidexpr is not lowered to the string it computes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            action.native_sendid = value.text;\n",
+     "            let _ = &value.text;\n")
+PY
+
+mutation_case "a cancel id that failed to compute is not reported" <<'PY'
+edit("tools/codegen/templates/python/actions/cancel.py.jinja2",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    self._raise_error_execution(engine, \"<cancel> sendidexpr failed to evaluate\")\n{{ indent }}    raise _ActionAbort\n",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    _cancel_id = \"\"\n")
 PY
 
 # ── A send param that failed is left out and the message goes ─────

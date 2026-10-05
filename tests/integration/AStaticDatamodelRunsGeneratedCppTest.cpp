@@ -28,6 +28,7 @@
 #include "common/SceClock.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
+#include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -470,6 +471,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsDelayIsComputedWhenItRuns) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_send_delay", driver);
+}
+
+// The `sendidexpr` of a `<cancel>` is a string computed from the machine's fields
+// when the cancel runs, the id of the delayed send it removes; the machine runs on
+// a manual clock, which the scenario's `advance_ms` steps move on.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
+    using Machine = G::static_cancel_expr::static_cancel_expr;
+    Driver<Machine> driver({
+        {"a_fired", [](const Machine &m) { return json(m.a_fired()); }},
+        {"b_fired", [](const Machine &m) { return json(m.b_fired()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_cancel_expr", driver);
 }
 
 // The `<content expr>` of a `<send>` names a record, which crosses as the pairs of

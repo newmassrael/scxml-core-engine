@@ -185,12 +185,15 @@ impl ScriptEngineCauseKind {
             // A `<send>`'s `namelist` names variables the machine holds, and
             // is lowered as the `<param>`s it abbreviates
             // (`Action::fold_namelist_into_params`).
-            | C::SendNamelist { .. } => true,
+            | C::SendNamelist { .. }
+            // A `<cancel>`'s `sendidexpr` the model admits is a string over the
+            // machine's fields, lowered to the id the scheduler is handed
+            // (`Action::native_sendid`).
+            | C::CancelExpr { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
-            | C::CancelExpr { .. }
             | C::HybridInvoke { .. }
             | C::MeshRpcSrcExpr { .. }
             | C::MeshRpcRequestExpr { .. }

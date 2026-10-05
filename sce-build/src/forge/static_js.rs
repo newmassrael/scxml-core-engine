@@ -471,6 +471,11 @@ impl StaticTarget for JsTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // Its own `<cancel>` evaluates the `sendidexpr` and removes the send that
+    // holds the id it computes.
+    fn lowers_cancel_expr(&self) -> bool {
+        true
+    }
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a

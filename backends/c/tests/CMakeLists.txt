@@ -2430,6 +2430,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_event.scxml"
     )
+    # The `sendidexpr` of a `<cancel>`: the id of the send it removes is a
+    # string the machine holds, so the machine stands alone; its delayed sends
+    # wait on a clock the scenario owns.
+    sce_generate_static_integration_c_test(static_cancel_expr
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_cancel_expr.scxml"
+    )
     # The `namelist` of a `<send>`: variables carried as the pairs of the
     # `<param>`s it abbreviates, an enum value among them, so the schema and
     # the enum it names travel beside the machine.
@@ -2557,6 +2564,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_namelist_SOURCES}
         ${INTEGRATION_C_TEST_static_send_content_SOURCES}
         ${INTEGRATION_C_TEST_static_send_event_SOURCES}
+        ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}

@@ -3,6 +3,7 @@
 pub mod days_in_month;
 pub mod static_block_ends_list_sm;
 pub mod static_block_ends_sm;
+pub mod static_cancel_expr_sm;
 pub mod static_counter_sm;
 pub mod static_donedata_content_sm;
 pub mod static_donedata_record_sm;

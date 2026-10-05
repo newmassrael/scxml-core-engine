@@ -22,6 +22,7 @@ package com.sce.integration
 
 import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
+import com.sce.integration.static_cancel_expr.StaticCancelExprStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
@@ -574,6 +575,29 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_send_delay"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `sendidexpr` of a <cancel> is a string computed from the machine's
+    // fields when the cancel runs, the id of the delayed send it removes; the
+    // machine runs on a manual clock, which the scenario's `advance_ms` steps
+    // move on.
+    @Test
+    fun staticCancelRemovesTheSendItsIdNames() {
+        val sm = StaticCancelExprStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_cancel_expr"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -170,3 +170,11 @@ edit("sce-build/src/forge/static_js.rs",
      "    fn lowers_event_expr(&self) -> bool {\n        true\n    }\n",
      "    fn lowers_event_expr(&self) -> bool {\n        false\n    }\n")
 PY
+
+# A `<cancel>` whose send id is an expression is refused again: the fixture that
+# cancels by one leaves the replay.
+mutation_case "a cancel's sendidexpr is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn lowers_cancel_expr(&self) -> bool {\n        true\n    }\n",
+     "    fn lowers_cancel_expr(&self) -> bool {\n        false\n    }\n")
+PY
