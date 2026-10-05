@@ -90,7 +90,9 @@ pub struct Slot {
     /// The kinds of document (`sce:kind`) it holds for; empty is every kind.
     pub kinds: &'static [&'static str],
     /// The `sce:direction` the declaring element carries, where the role
-    /// decides the spelling; `None` is any.
+    /// decides the spelling; `None` is any, and [`NO_DIRECTION`] is an element
+    /// that carries none (an observer's monitor is a `<data>` that is not an
+    /// input and is not an output).
     pub direction: Option<&'static str>,
     /// How each backend spells it, in [`Language::ALL`] order. `None` is a
     /// backend that does not put this declaration in the scope's namespace:
@@ -116,6 +118,10 @@ const N: Option<Case> = None;
 
 /// Every kind of document.
 const ANY: &[&str] = &[];
+
+/// The `direction` of a slot whose declaring element carries no
+/// `sce:direction`, written the way the measurement writes the role of one.
+pub const NO_DIRECTION: &str = "-";
 
 const DATA_ID: Row = Row {
     ns: Ns::Scxml,
@@ -382,6 +388,23 @@ pub const SCOPES: &[Scope] = &[
             cases: [P, P, P, N, P, N],
         }],
     },
+    // An observer's monitor is a field of its struct. Rust writes it snake_case,
+    // as it does every name an author gives (a field called `coolantTemp` is a
+    // `non_snake_case` warning, an error where warnings are denied), so
+    // `coolantTemp` and `coolant_temp` are one field. C11 writes a flag
+    // `<snake>_active`, which is the same fold; the measurement cannot see a
+    // name behind a suffix, so nothing is claimed for it, and the refusal is for
+    // every backend all the same. C++, Kotlin, Go and Python write it as written.
+    Scope {
+        id: "observer-monitor",
+        slots: &[Slot {
+            noun: "monitor",
+            rows: &[DATA_ID],
+            kinds: &["observer"],
+            direction: Some(NO_DIRECTION),
+            cases: [S, N, N, N, N, N],
+        }],
+    },
     // In C++, Go and Python a member and a method of one name are one name:
     // the class (the struct) holds both in one table. Rust and Kotlin keep a
     // field and a function apart, so they are not here.
@@ -457,10 +480,10 @@ pub fn declares(slot: &Slot, node: &roxmltree::Node, attr: &str, dialect: Dialec
     if !slot.kinds.is_empty() && !kind_of(node).is_some_and(|k| slot.kinds.contains(&k)) {
         return false;
     }
+    let carried = node.attribute((crate::forge::model::SCE_NAMESPACE, "direction"));
     match slot.direction {
-        Some(direction) => {
-            node.attribute((crate::forge::model::SCE_NAMESPACE, "direction")) == Some(direction)
-        }
+        Some(NO_DIRECTION) => carried.is_none(),
+        Some(direction) => carried == Some(direction),
         None => true,
     }
 }

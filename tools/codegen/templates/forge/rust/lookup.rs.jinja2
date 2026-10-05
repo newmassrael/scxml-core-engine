@@ -31,18 +31,18 @@ pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error 
     }
 }
 {% else %}
-use sce_forge_runtime::lookup::lookup;
+use sce_forge_runtime::lookup::lookup as sce_lookup;
 
 const KEYS: [{{ input_type }}; {{ n }}] = [{{ keys_literal | join(", ") }}];
 const VALUES: [{{ value_type }}; {{ n }}] = [{{ values_literal | join(", ") }}];
 
 {% if on_miss_error %}
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> Option<{{ value_type }}> {
-    lookup(&KEYS, &VALUES, {{ input_id }})
+    sce_lookup(&KEYS, &VALUES, {{ input_id }})
 }
 {% else %}
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ value_type }} {
-    lookup(&KEYS, &VALUES, {{ input_id }}).unwrap_or({{ default_literal }})
+    sce_lookup(&KEYS, &VALUES, {{ input_id }}).unwrap_or({{ default_literal }})
 }
 {% endif %}
 {% endif %}

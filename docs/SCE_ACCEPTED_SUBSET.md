@@ -2793,6 +2793,33 @@ derivation that cannot tell those apart would need a list of exceptions. The
 oracle's candidates are every identifier the committed C++ writes, so a template
 that starts to write one more library name bare is asked about it.
 
+Rust keeps a local, a type, a module and a field in namespaces of their own, and
+an imported document's function is called through its module, so far fewer names
+decide anything there, and what it found is four faults.
+`a_rust_kind_keeps_an_authors_names_apart_from_its_own` compiles every renaming
+of the eight kinds as a module of a crate (`--edition=2021 --crate-type=lib -D
+warnings`) against the two runtime crates a generated file names, built once from
+this tree with the workspace's lock file. The first run built 15 723 accepted
+renamings and 103 did not; the last built 15 763 and none failed. A function the
+file brings in with `use`
+(`lookup`, `linear`, `bilinear`) was hidden by an input of that name, so each is
+imported under the generator's prefix (`use … as sce_lookup`), and the
+observer's own queue is `sce_events`, so an input called `events` no longer
+reads it. An author's name is spelled by one function (`rust_local_spelling`) for
+the declaration, every read and every call: snake_case, which the compiler holds
+a binding to where warnings are denied, with one more trailing `_` when that
+begins `sce_`. Two faults were not about a collision at all. An interpolation
+declared its inputs snake_case in the signature and read them as the author wrote
+them in the body, so any camelCase input was `cannot find value`; the body reads
+the name the signature declared. And an observer wrote each monitor as a struct
+field as written, so `coolantTemp` was a `non_snake_case` warning, an error where
+warnings are denied (66 of the renamings). It is now snake_case like every other
+name an author gives, which makes two monitors that fold to one field a refusal:
+`overHeat` beside `over_heat` is `validation/colliding-code-identifier`, as
+`observer-monitor` in the table. Three changes at once (the shift, the monitor
+field and the interpolation body each undone) turned the oracle red with 85
+renamings that did not build, in those three classes.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called
@@ -2844,7 +2871,11 @@ states are the members of one enum, spelled Pascal in Rust, C++, Kotlin and
 Python, so `init` and `init__` are both `Init`: Python refuses the class at
 import (`TypeError: 'Init' already defined`) and the others declare one variant
 twice. The Python oracle found it when it began to run the documents that
-import a sibling, as a rename of a state to `init__`.
+import a sibling, as a rename of a state to `init__`. An observer's monitors are
+fields of one struct, which Rust spells snake_case, so `overHeat` beside
+`over_heat` is one field there; C11 spells its flag `<snake>_active`, which is
+the same fold behind a suffix the measurement cannot see, and the refusal is for
+every backend all the same.
 `a_forge_declaration_is_spelled_the_way_the_collision_rule_says` holds the
 table to the templates: it renames every declaration of every committed forge
 document and reads the name back in each backend, so a convention that

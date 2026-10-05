@@ -32,7 +32,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::native_oracle::{run, Native};
+use common::native_oracle::{include_probe_line, run, Native, INCLUDE_SIBLING};
 use common::source_lexing::Lang;
 use sce_build::generator::Language;
 
@@ -73,6 +73,11 @@ fn an_authors_name_never_decides_whether_the_generated_cpp_of_a_kind_builds() {
         include_dirs: vec![
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/cpp/forge-runtime/include")
         ],
+        include_flag: Some("-I"),
+        extra_flags: Vec::new(),
+        unit_suffix: ".h",
+        sibling_pattern: INCLUDE_SIBLING,
+        probe_line: include_probe_line,
         imported_function: None,
     });
 }

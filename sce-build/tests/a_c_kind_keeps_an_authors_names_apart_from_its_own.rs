@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use common::name_oracle::names_by_kind;
-use common::native_oracle::{run, Native};
+use common::native_oracle::{include_probe_line, run, Native, INCLUDE_SIBLING};
 use common::source_lexing::Lang;
 use regex::Regex;
 use sce_build::generator::Language;
@@ -147,6 +147,11 @@ fn c() -> Native {
         compilers: &["clang", "gcc", "cc"],
         compile_flags: &["-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only"],
         include_dirs: c_runtime_includes(),
+        include_flag: Some("-I"),
+        extra_flags: Vec::new(),
+        unit_suffix: ".h",
+        sibling_pattern: INCLUDE_SIBLING,
+        probe_line: include_probe_line,
         imported_function: Some(r"(?m)^static inline [^;{(]*?\b([A-Za-z_][A-Za-z0-9_]*)\("),
     }
 }

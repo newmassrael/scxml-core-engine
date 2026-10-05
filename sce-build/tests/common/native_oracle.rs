@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! The name oracle for the backends whose generated code is a HEADER that a
-//! translation unit includes, and a compiler checks: C and C++.
+//! The name oracle for the backends whose generated code is a UNIT that a
+//! probe pulls in and a compiler checks: C and C++ (a header a translation unit
+//! includes) and Rust (a module a crate root declares).
 //!
 //! What a backend differs in is a [`Native`]: the language it generates, the
 //! committed outputs its candidate names are read from, its compiler and the
-//! flags that hold its output to the contract, and whether it can call an
-//! imported function through a qualifier (C++ can, C cannot). [`run`] is the
-//! rest: every document of the eight kinds is generated with each name it
-//! declares renamed to each candidate, written beside the sibling headers it
-//! includes, and compiled as a translation unit. A name the generator refuses is
-//! an answer. What may not happen is a name that is accepted and then makes the
-//! generated code not compile.
+//! flags that hold its output to the contract, how a unit names a sibling and
+//! how a probe pulls one in, and whether it can call an imported function
+//! through a qualifier (C++ and Rust can, C cannot). [`run`] is the rest: every
+//! document of the eight kinds is generated with each name it declares renamed
+//! to each candidate, written beside the sibling units it names, and compiled
+//! as a probe. A name the generator refuses is an answer. What may not happen
+//! is a name that is accepted and then makes the generated code not compile.
 //!
 //! The generated code is compiled, not run: a name that is accepted, compiles
 //! and does something else is not seen here.
@@ -33,13 +34,22 @@ use super::name_oracle::{
 };
 use super::source_lexing::Lang;
 
-/// A generated header: the file name it is written under and its source.
+/// A generated unit: the file name it is written under and its source.
 pub struct Header {
     pub file: String,
     pub source: String,
 }
 
-/// Everything that differs between two header-and-translation-unit backends.
+/// How a C or C++ unit names a sibling: `#include "condition_threshold.h"`, as
+/// opposed to the runtime's (`sce/forge/…`).
+pub const INCLUDE_SIBLING: &str = r#"(?m)^#include "([A-Za-z0-9_]+)\.h""#;
+
+/// The probe line of a C or C++ unit: the include of its header.
+pub fn include_probe_line(file: &str) -> String {
+    format!("#include \"{file}\"\n")
+}
+
+/// Everything that differs between two unit-and-probe backends.
 pub struct Native {
     /// What the oracle calls itself where it speaks (`c`, `c++`).
     pub label: &'static str,
@@ -61,6 +71,21 @@ pub struct Native {
     /// generated headers need beside the one they are written to.
     pub compile_flags: &'static [&'static str],
     pub include_dirs: Vec<PathBuf>,
+    /// The flag that names an include directory (`-I`), or `None` where the
+    /// compiler has no such flag and finds a sibling by the probe (Rust).
+    pub include_flag: Option<&'static str>,
+    /// Flags that are known only at run time, after the compile of what the
+    /// units need (the runtime crates a Rust unit names), placed after
+    /// `compile_flags`.
+    pub extra_flags: Vec<String>,
+    /// The suffix of a generated unit (`.h`, `.rs`): what of the generator's
+    /// output the oracle writes and compiles.
+    pub unit_suffix: &'static str,
+    /// A pattern whose first group is the name of a sibling unit a generated unit
+    /// names ([`INCLUDE_SIBLING`]).
+    pub sibling_pattern: &'static str,
+    /// The line a probe holds to pull one unit in ([`include_probe_line`]).
+    pub probe_line: fn(&str) -> String,
     /// A pattern whose first group is the name of a function a header declares,
     /// where the language cannot call an imported function through a qualifier
     /// and so cannot keep an author's name off it (C): such a name is counted and
@@ -69,7 +94,7 @@ pub struct Native {
     pub imported_function: Option<&'static str>,
 }
 
-/// Generate `text` under the unique name `unique`: the headers, or the reason it
+/// Generate `text` under the unique name `unique`: the units, or the reason it
 /// was refused.
 fn generate(native: &Native, unique: &str, text: &str) -> Result<Vec<Header>, String> {
     compile_forge_with_imports(
@@ -84,24 +109,24 @@ fn generate(native: &Native, unique: &str, text: &str) -> Result<Vec<Header>, St
         output
             .files
             .into_iter()
-            .filter(|(file, _)| file.ends_with(".h"))
+            .filter(|(file, _)| file.ends_with(native.unit_suffix))
             .map(|(file, source)| Header { file, source })
             .collect()
     })
 }
 
-/// The sibling headers a generated header includes by name (`#include
-/// "condition_threshold.h"`), as opposed to the runtime's (`sce/forge/…`).
-fn sibling_includes(source: &str) -> Vec<String> {
-    let include = Regex::new(r#"(?m)^#include "([A-Za-z0-9_]+)\.h""#).expect("regex");
-    include
+/// The sibling units a generated unit names (`#include "condition_threshold.h"`,
+/// `use super::condition_threshold`), as opposed to the runtime's.
+fn sibling_includes(native: &Native, source: &str) -> Vec<String> {
+    let sibling = Regex::new(native.sibling_pattern).expect("regex");
+    sibling
         .captures_iter(source)
         .map(|c| c[1].to_string())
         .collect()
 }
 
-/// The functions the sibling headers `headers` include declare, when the
-/// language has the limit [`Native::imported_function`] names.
+/// The functions the sibling units `headers` name declare, when the language has
+/// the limit [`Native::imported_function`] names.
 fn imported_symbols(native: &Native, proj: &Path, headers: &[Header]) -> BTreeSet<String> {
     let Some(pattern) = native.imported_function else {
         return BTreeSet::new();
@@ -109,8 +134,10 @@ fn imported_symbols(native: &Native, proj: &Path, headers: &[Header]) -> BTreeSe
     let function = Regex::new(pattern).expect("regex");
     let mut symbols = BTreeSet::new();
     for header in headers {
-        for sibling in sibling_includes(&header.source) {
-            if let Ok(source) = std::fs::read_to_string(proj.join(format!("{sibling}.h"))) {
+        for sibling in sibling_includes(native, &header.source) {
+            if let Ok(source) =
+                std::fs::read_to_string(proj.join(format!("{sibling}{}", native.unit_suffix)))
+            {
                 symbols.extend(function.captures_iter(&source).map(|c| c[1].to_string()));
             }
         }
@@ -118,8 +145,8 @@ fn imported_symbols(native: &Native, proj: &Path, headers: &[Header]) -> BTreeSe
     symbols
 }
 
-/// Write `headers`, and before each the sibling headers it includes, every one
-/// generated from its own document under its own name (the include is the
+/// Write `headers`, and before each the sibling units it names, every one
+/// generated from its own document under its own name (the name is the
 /// document's, so a renamed sibling would not be found). It is the importing
 /// document's names that are asked, never the sibling's.
 fn write_with_siblings(
@@ -129,8 +156,8 @@ fn write_with_siblings(
     headers: &[Header],
 ) -> Result<(), String> {
     for header in headers {
-        for sibling in sibling_includes(&header.source) {
-            let file = format!("{sibling}.h");
+        for sibling in sibling_includes(native, &header.source) {
+            let file = format!("{sibling}{}", native.unit_suffix);
             if written.contains(&file) {
                 continue;
             }
@@ -141,21 +168,44 @@ fn write_with_siblings(
             write_with_siblings(native, proj, written, &generated)?;
         }
         if written.insert(header.file.clone()) {
-            std::fs::write(proj.join(&header.file), &header.source).expect("write a header");
+            std::fs::write(proj.join(&header.file), &header.source).expect("write a unit");
         }
     }
     Ok(())
+}
+
+/// Every file `headers` need, themselves and the siblings they name, however
+/// deep, read from what is written: a probe pulls in what a language does not
+/// pull in by itself (a Rust crate root declares every module of the crate).
+fn needed_files(native: &Native, proj: &Path, headers: &[Header]) -> Vec<String> {
+    let mut needed: Vec<String> = headers.iter().map(|h| h.file.clone()).collect();
+    let mut next = 0;
+    while next < needed.len() {
+        let source = std::fs::read_to_string(proj.join(&needed[next])).unwrap_or_default();
+        for sibling in sibling_includes(native, &source) {
+            let file = format!("{sibling}{}", native.unit_suffix);
+            if !needed.contains(&file) {
+                needed.push(file);
+            }
+        }
+        next += 1;
+    }
+    needed
 }
 
 /// Compile one probe and answer with the compiler's first complaint, if it has
 /// one.
 fn compile(native: &Native, cc: &Path, proj: &Path, probe: &str) -> Option<String> {
     let mut command = Command::new(cc);
-    command.args(native.compile_flags).arg("-I").arg(proj);
-    for include in &native.include_dirs {
-        command.arg("-I").arg(include);
+    command.args(native.compile_flags);
+    if let Some(flag) = native.include_flag {
+        command.arg(flag).arg(proj);
+        for include in &native.include_dirs {
+            command.arg(flag).arg(include);
+        }
     }
     let out = command
+        .args(&native.extra_flags)
         .arg(format!("{probe}.{}", native.probe_extension))
         .current_dir(proj)
         .output()
@@ -164,9 +214,14 @@ fn compile(native: &Native, cc: &Path, proj: &Path, probe: &str) -> Option<Strin
         return None;
     }
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // A C compiler says `file:1:2: error: why`; rustc says `error: why` or, for
+    // an error with a code, `error[E0425]: why` and ends with a count of them
+    // (`error: aborting due to 2 previous errors`), which is not a cause.
     let first = stderr
         .lines()
-        .find(|l| l.contains("error:"))
+        .find(|l| {
+            (l.contains("error:") || l.starts_with("error[")) && !l.contains("aborting due to")
+        })
         .or_else(|| stderr.lines().next())
         .unwrap_or("the compiler failed without saying why");
     Some(first.trim().to_string())
@@ -228,15 +283,16 @@ pub fn run(native: &Native) {
     std::fs::create_dir_all(&proj).expect("mkdir");
     let mut written: BTreeSet<String> = BTreeSet::new();
 
-    // A probe is the translation unit that includes the headers under test.
+    // A probe is the unit that pulls in what is under test: the translation unit
+    // that includes the headers, the crate root that declares the modules.
     let write_probe = |unique: &str, headers: &[Header]| {
-        let includes: String = headers
+        let lines: String = needed_files(native, &proj, headers)
             .iter()
-            .map(|h| format!("#include \"{}\"\n", h.file))
+            .map(|file| (native.probe_line)(file))
             .collect();
         std::fs::write(
             proj.join(format!("probe_{unique}.{}", native.probe_extension)),
-            includes,
+            lines,
         )
         .expect("write a probe");
     };
@@ -247,7 +303,7 @@ pub fn run(native: &Native) {
     let mut skipped: Vec<String> = Vec::new();
     let mut symbols: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for doc in &docs {
-        let unique = format!("{}__base", doc.stem);
+        let unique = format!("{}_base", doc.stem);
         match generate(native, &unique, &doc.text).and_then(|headers| {
             write_with_siblings(native, &proj, &mut written, &headers).map(|()| headers)
         }) {
@@ -309,8 +365,11 @@ pub fn run(native: &Native) {
                 attempts += 1;
                 let renamed = rename(&doc.text, declared, candidate);
                 // `c<n>`, not a bare number: a file name is a name, and none of
-                // ours is allowed to be one the toolchain reads for itself.
-                let unique = format!("{}__c{}", doc.stem, cases.len());
+                // ours is allowed to be one the toolchain reads for itself. One
+                // underscore, not two: a Rust module of that name is a snake-case
+                // warning of the probe's, which `-D warnings` would make the
+                // generated code's.
+                let unique = format!("{}_c{}", doc.stem, cases.len());
                 match generate(native, &unique, &renamed) {
                     Err(why) => {
                         refused += 1;

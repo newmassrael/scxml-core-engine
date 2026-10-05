@@ -40,14 +40,14 @@ impl CrossfileObserverCondition {
     }
 
     pub fn update(&mut self, coolant_temp: f64, oil_temp: f64) -> EventQueue<ForgeDomain> {
-        let mut events: EventQueue<ForgeDomain> = EventQueue::new();
+        let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
         if self.alarm.enter_if(condition_threshold::condition_threshold(coolant_temp, oil_temp, 110.0)) {
-            events.push(ForgeDomainTag::RAISE_ALARM);
+            sce_events.push(ForgeDomainTag::RAISE_ALARM);
         }
         else if self.alarm.leave_if(condition_threshold::condition_threshold(coolant_temp, oil_temp, 120.0) == false) {
-            events.push(ForgeDomainTag::CLEAR_ALARM);
+            sce_events.push(ForgeDomainTag::CLEAR_ALARM);
         }
-        events
+        sce_events
     }
 }
 

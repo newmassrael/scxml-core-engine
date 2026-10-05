@@ -5885,7 +5885,9 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
-        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        // The one spelling the declaration of the name takes
+        // (`rust_local_spelling`).
+        ExprKind::Ident(s) => crate::forge::generator::rust_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `&str + i64` does not compile in Rust, and `&str + &str` does

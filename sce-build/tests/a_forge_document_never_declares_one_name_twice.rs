@@ -112,6 +112,27 @@ fn codec_with_flag_inputs(first: &str, second: &str) -> String {
     )
 }
 
+/// An observer with two threshold monitors: each is a field of the generated
+/// struct, which Rust writes snake_case.
+fn observer_with_monitors(first: &str, second: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="observer"
+       name="two_monitors"
+       version="1.0">
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="{first}" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 110.0" sce:leave="coolantTemp &lt; 100.0"
+          sce:on-enter="warn" sce:on-leave="clear"/>
+    <data id="{second}" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 120.0" sce:on-enter="shutdown"/>
+  </datamodel>
+</scxml>"#
+    )
+}
+
 fn algorithm_with_consts(first: &str, second: &str) -> String {
     format!(
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -260,6 +281,15 @@ const CASES: &[Pair] = &[
         second: "init__",
         document: procedure_with_two_states,
         noun: "state",
+    },
+    // An observer's monitors are fields of one struct, and Rust writes a field
+    // snake_case: `coolantTemp` and `coolant_temp` would be one.
+    Pair {
+        scope: "observer-monitor",
+        first: "overHeat",
+        second: "over_heat",
+        document: observer_with_monitors,
+        noun: "monitor",
     },
     // The scope that compares two kinds of declaration: a member
     // `has_x` and a flag `hasX` are one name in C++, Go and Python, where a

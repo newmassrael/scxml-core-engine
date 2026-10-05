@@ -9,9 +9,9 @@
 // Do not edit — regenerate from the source SCXML file.
 
 {% if is_bilinear %}
-use sce_forge_runtime::interpolation::bilinear;
+use sce_forge_runtime::interpolation::bilinear as sce_bilinear;
 {% else %}
-use sce_forge_runtime::interpolation::linear;
+use sce_forge_runtime::interpolation::linear as sce_linear;
 {% endif %}
 
 pub struct {{ struct_name }};
@@ -31,19 +31,22 @@ impl {{ struct_name }} {
 {% endif %}
 
     pub fn {{ member_symbol }}({{ params }}) -> {{ output_type }} {
+{# The body reads each input under the name the signature declared it with
+   (`input_local`), not as the author wrote it: `rawValue` is `raw_value` in the
+   parameter list. #}
 {% if is_bilinear %}
-        bilinear(
+        sce_bilinear(
             &Self::{{ axes[0].var_name }},
             &Self::{{ axes[1].var_name }},
             &Self::VALUES,
-            {{ axes[0].input_id }} as {{ output_type }},
-            {{ axes[1].input_id }} as {{ output_type }},
+            {{ axes[0].input_local }} as {{ output_type }},
+            {{ axes[1].input_local }} as {{ output_type }},
         )
 {% else %}
-        linear(
+        sce_linear(
             &Self::{{ axes[0].var_name }},
             &Self::VALUES,
-            {{ axes[0].input_id }} as {{ output_type }},
+            {{ axes[0].input_local }} as {{ output_type }},
         )
 {% endif %}
     }

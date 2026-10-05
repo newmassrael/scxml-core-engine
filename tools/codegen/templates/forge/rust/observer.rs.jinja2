@@ -58,7 +58,7 @@ impl EventDomain for ForgeDomain {
 
 pub struct {{ struct_name }} {
 {% for mon in monitors %}
-    {{ mon.id }}: ThresholdState,
+    {{ mon.field }}: ThresholdState,
 {% endfor %}
 }
 
@@ -66,30 +66,30 @@ impl {{ struct_name }} {
     pub fn new() -> Self {
         Self {
 {% for mon in monitors %}
-            {{ mon.id }}: ThresholdState::new(),
+            {{ mon.field }}: ThresholdState::new(),
 {% endfor %}
         }
     }
 
     pub fn update(&mut self, {{ params }}) -> EventQueue<ForgeDomain> {
-        let mut events: EventQueue<ForgeDomain> = EventQueue::new();
+        let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
 {% for mon in monitors %}
-        if self.{{ mon.id }}.enter_if({{ mon.enter_expr }}) {
-            events.push(ForgeDomainTag::{{ mon.event_enter }});
+        if self.{{ mon.field }}.enter_if({{ mon.enter_expr }}) {
+            sce_events.push(ForgeDomainTag::{{ mon.event_enter }});
         }
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
-        else if self.{{ mon.id }}.leave_if({{ mon.leave_expr }}) {
-            events.push(ForgeDomainTag::{{ mon.event_leave }});
+        else if self.{{ mon.field }}.leave_if({{ mon.leave_expr }}) {
+            sce_events.push(ForgeDomainTag::{{ mon.event_leave }});
         }
 {% else %}
         else {
-            self.{{ mon.id }}.leave_if({{ mon.leave_expr }});
+            self.{{ mon.field }}.leave_if({{ mon.leave_expr }});
         }
 {% endif %}
 {% endif %}
 {% endfor %}
-        events
+        sce_events
     }
 }
 

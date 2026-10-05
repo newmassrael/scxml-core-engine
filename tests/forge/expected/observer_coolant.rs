@@ -42,20 +42,20 @@ impl ObserverCoolant {
     }
 
     pub fn update(&mut self, coolant_temp: f64) -> EventQueue<ForgeDomain> {
-        let mut events: EventQueue<ForgeDomain> = EventQueue::new();
+        let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
         if self.warning.enter_if(coolant_temp > 110.0) {
-            events.push(ForgeDomainTag::EMIT_WARNING);
+            sce_events.push(ForgeDomainTag::EMIT_WARNING);
         }
         else if self.warning.leave_if(coolant_temp < 100.0) {
-            events.push(ForgeDomainTag::CLEAR_WARNING);
+            sce_events.push(ForgeDomainTag::CLEAR_WARNING);
         }
         if self.critical.enter_if(coolant_temp > 120.0) {
-            events.push(ForgeDomainTag::EMERGENCY_SHUTDOWN);
+            sce_events.push(ForgeDomainTag::EMERGENCY_SHUTDOWN);
         }
         else {
             self.critical.leave_if(coolant_temp < 105.0);
         }
-        events
+        sce_events
     }
 }
 

@@ -5,7 +5,7 @@
 // Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::interpolation::linear;
+use sce_forge_runtime::interpolation::linear as sce_linear;
 
 pub struct Interpolation1dLinear;
 
@@ -14,7 +14,7 @@ impl Interpolation1dLinear {
     const VALUES: [f64; 6] = [120.0, 145.0, 200.0, 230.0, 210.0, 180.0];
 
     pub fn lookup(rpm: u16) -> f64 {
-        linear(
+        sce_linear(
             &Self::AXIS_RPM,
             &Self::VALUES,
             rpm as f64,

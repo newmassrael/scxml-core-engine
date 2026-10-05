@@ -5,7 +5,7 @@
 // Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::interpolation::bilinear;
+use sce_forge_runtime::interpolation::bilinear as sce_bilinear;
 
 pub struct Interpolation2dBilinear;
 
@@ -20,7 +20,7 @@ impl Interpolation2dBilinear {
     ];
 
     pub fn lookup(rpm: u16, load: u8) -> f64 {
-        bilinear(
+        sce_bilinear(
             &Self::AXIS_RPM,
             &Self::AXIS_LOAD,
             &Self::VALUES,

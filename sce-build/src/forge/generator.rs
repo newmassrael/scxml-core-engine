@@ -22811,7 +22811,7 @@ impl LangCtx {
             crate::generator::Language::C11 => format!("{ty} {}", c11_local_spelling(id)),
             crate::generator::Language::Kotlin => format!("{id}: {ty}"),
             crate::generator::Language::Rust => {
-                format!("{}: {ty}", filters::to_snake_case(id.to_string()))
+                format!("{}: {ty}", rust_local_spelling(id))
             }
             crate::generator::Language::Python => {
                 format!("{}: {ty}", python_local_spelling(id))
@@ -23203,7 +23203,7 @@ fn render_filter(
     // `float64` would otherwise hide the conversion the body applies to it,
     // and one called `sceSelf` would redeclare the receiver.
     let input_id_emit = match lang {
-        crate::generator::Language::Rust => filters::to_snake_case(m.input.id.clone()),
+        crate::generator::Language::Rust => rust_local_spelling(&m.input.id),
         crate::generator::Language::Go => go_local_spelling(&m.input.id),
         crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
         _ => m.input.id.clone(),
@@ -23514,11 +23514,21 @@ fn render_observer(
                 }
             };
 
+            // The struct field this monitor is. Go keeps it off the struct's own
+            // `Update` method; Rust writes it snake_case, as it does every name an
+            // author gives, so that a monitor called `coolantTemp` is not a
+            // `non_snake_case` warning (an error where warnings are denied). The
+            // rest write it as written. Two monitors that fold to one Rust field
+            // are refused with every other pair that folds (`observer-monitor`).
+            let field = match lang {
+                crate::generator::Language::Go => go_field_spelling(&mon.id, GO_OBSERVER_METHODS),
+                crate::generator::Language::Rust => filters::to_snake_case(mon.id.clone()),
+                _ => mon.id.clone(),
+            };
+
             Ok(serde_json::json!({
                 "id": mon.id,
-                // The Go struct's field for this monitor, kept off the
-                // struct's own `Update` method.
-                "field": go_field_spelling(&mon.id, GO_OBSERVER_METHODS),
+                "field": field,
                 "active_var": active_var,
                 "enter_expr": enter_expr,
                 "leave_expr": leave_expr,
@@ -26112,7 +26122,7 @@ pub(crate) fn forge_transform_holder_symbols(
 pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> String {
     use crate::generator::Language;
     match language {
-        Language::Rust => filters::to_snake_case(id.to_string()),
+        Language::Rust => rust_local_spelling(id),
         Language::C11 => c11_local_spelling(id),
         Language::Python => python_local_spelling(id),
         Language::Go => go_local_spelling(id),
@@ -26293,6 +26303,28 @@ pub fn cpp_local_spelling(id: &str) -> String {
         format!("{id}_")
     } else {
         id.to_string()
+    }
+}
+
+/// How a generated Rust function of a forge kind spells a name the author gave
+/// a parameter, a variable or a datum: snake_case, which is the language's own
+/// convention and the one its compiler holds a binding to where warnings are
+/// denied (`non_snake_case`), and with one more trailing `_` when that spelling
+/// begins with the generator's own prefix (`sce_events`, `sce_lookup`).
+///
+/// One function for the declaration, every read and every call. Rust keeps a
+/// local, a type, a module and a field in namespaces of their own, so the
+/// prefix is the only part of the generated code's own names an author's local
+/// can meet: the library functions the file brings in are imported under it
+/// (`use … as sce_lookup`), and the observer's own queue is `sce_events`. The
+/// shift is injective, as the other backends' are: `sce_x` is `sce_x_` and an
+/// author's own `sce_x_` is `sce_x__`.
+pub fn rust_local_spelling(id: &str) -> String {
+    let snake = filters::to_snake_case(id.to_string());
+    if snake.trim_end_matches('_').starts_with("sce_") {
+        format!("{snake}_")
+    } else {
+        snake
     }
 }
 
@@ -29537,6 +29569,27 @@ mod tests {
         ];
         let spelled: std::collections::BTreeSet<String> =
             names.iter().map(|n| cpp_local_spelling(n)).collect();
+        assert_eq!(spelled.len(), names.len(), "{spelled:?}");
+    }
+
+    /// What the Rust generator keeps — the snake_case its compiler holds a
+    /// binding to, and its own `sce_` prefix — is how an author's local is
+    /// spelled and shifted off, injectively, and nothing else is.
+    #[test]
+    fn rust_names_the_generator_keeps_are_shifted_off_an_authors() {
+        assert_eq!(rust_local_spelling("engineRpm"), "engine_rpm");
+        assert_eq!(rust_local_spelling("rawValue"), "raw_value");
+        assert_eq!(rust_local_spelling("rpm"), "rpm");
+        assert_eq!(rust_local_spelling("lookup"), "lookup");
+        assert_eq!(rust_local_spelling("events"), "events");
+        assert_eq!(rust_local_spelling("sce_events"), "sce_events_");
+        assert_eq!(rust_local_spelling("sceEvents"), "sce_events_");
+        assert_eq!(rust_local_spelling("sce_events_"), "sce_events__");
+        assert_eq!(rust_local_spelling("scene"), "scene");
+        // Injective on what is already spelled: no two names meet.
+        let names = ["sce_a", "sce_a_", "sce_a__", "a", "a_"];
+        let spelled: std::collections::BTreeSet<String> =
+            names.iter().map(|n| rust_local_spelling(n)).collect();
         assert_eq!(spelled.len(), names.len(), "{spelled:?}");
     }
 
