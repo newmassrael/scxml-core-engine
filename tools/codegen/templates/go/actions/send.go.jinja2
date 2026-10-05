@@ -79,7 +79,7 @@
 {% if delay_go %}
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
 	// origin is this session, as on the immediate path.
-{% if action.eventexpr and model.needs_script_engine %}
+{% if (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
 	// document's names resolve it to, and `_event.name` is the whole name.
 	engine.SendNamedExternal({{ event_name_go }}, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
@@ -88,7 +88,7 @@
 		engine.ScheduleEvent(delayEvt, {{ delay_go }}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 	}
 {% endif %}
-{% elif action.eventexpr and model.needs_script_engine %}
+{% elif (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	engine.SendNamedExternal({{ event_name_go }}, 0, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
 {% elif action.event %}
 	{
@@ -143,10 +143,10 @@
 
    The whole element is one Go block, so two sends in one action block do not
    declare the same locals twice. #}
-{# Under `datamodel="sce-static"` a `delayexpr` is lowered to the string it
-   computes (`Action::native_delay`), so it is an argument like the others but
-   needs no engine to be read. #}
-{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay %}
+{# Under `datamodel="sce-static"` a `delayexpr` and an `eventexpr` are lowered to
+   the strings they compute (`Action::native_delay`, `Action::native_event`), so
+   each is an argument like the others but needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event %}
 {% if send_prologue %}
 {% if model.needs_script_engine %}
 	p.ensureScriptEngine()
@@ -161,7 +161,27 @@
 		sendArgError = "<send idlocation='{{ action.idlocation | escape_go }}'> could not take the send id"
 	}
 {% endif %}
-{% if action.eventexpr %}
+{% if action.native_event %}
+	// The event's name is a string computed from the machine's fields now. A name
+	// that evaluates to nothing names no event, and an operation that fails cannot
+	// be evaluated: either is the argument error.
+	sendEventName := ""
+	if sendArgError == "" {
+{% if action.native_event_fails %}
+		var sceFailure scealgorithm.Failure
+{% endif %}
+		sendEventName = {{ action.native_event }}
+{% if action.native_event_fails %}
+		if sceFailure.Failed() {
+			sendEventName = ""
+		}
+{% endif %}
+		if sendEventName == "" {
+			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+		}
+	}
+	_ = sendEventName
+{% elif action.eventexpr %}
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -536,7 +556,7 @@
 {% endif %}
 {# The event name every event-carrying arm below uses: the prologue's
    evaluation when there is an `eventexpr`, the literal otherwise. #}
-{% if action.eventexpr and model.needs_script_engine %}
+{% if (action.eventexpr and model.needs_script_engine) or action.native_event %}
 {% set event_name_go = 'sendEventName' %}
 {% else %}
 {% set event_name_go = '"' ~ (action.event | default('', true) | escape_go) ~ '"' %}
@@ -627,7 +647,7 @@
 		engine.Raise(meta)
 	}
 {% endif %}
-{% elif action.eventexpr and model.needs_script_engine %}
+{% elif (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
 	// document's names resolve it to, and `_event.name` is the whole name.
 	engine.SendNamedInternal({{ event_name_go }}, {% if delay_go %}{{ delay_go }}{% else %}0{% endif %}, "{{ send_id | default('') | escape_go }}", eventDataStr, p.SessionID)
@@ -683,7 +703,7 @@
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
 	if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
-{% if action.event or (action.eventexpr and model.needs_script_engine) %}
+{% if action.event or (action.eventexpr and model.needs_script_engine) or action.native_event %}
 {% if delay_go %}
 		// W3C SCXML 6.2: named now, reached when the delay has elapsed — or
 		// reported then, if the invocation has ended by that time (C.1).

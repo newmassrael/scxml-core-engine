@@ -155,3 +155,18 @@ edit("sce-build/src/forge/static_js.rs",
      "        \"send\" if !action.content.trim().is_empty() && action.content_text_spelling.is_none() => {\n",
      "        \"send\" if false => {\n")
 PY
+
+# A `<send>` whose delay or event is an expression is refused again, as it was
+# before the engine was given the expression to evaluate: the fixture that sends
+# one leaves the replay.
+mutation_case "a send's delayexpr is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn lowers_delay_expr(&self) -> bool {\n        true\n    }\n",
+     "    fn lowers_delay_expr(&self) -> bool {\n        false\n    }\n")
+PY
+
+mutation_case "a send's eventexpr is refused" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn lowers_event_expr(&self) -> bool {\n        true\n    }\n",
+     "    fn lowers_event_expr(&self) -> bool {\n        false\n    }\n")
+PY

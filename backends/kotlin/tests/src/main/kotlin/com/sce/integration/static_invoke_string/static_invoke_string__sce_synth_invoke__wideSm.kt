@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1fe728b521f52adf866bb0e0fb56e6c9d8272ffd7fa321459c53679f859508c9
+// source-hash: 84b6331bcf0ef34c6565b1d423f12b50d2d0b0eb1a0f6a1390be9636bc970cad
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string__sce_synth_invoke__wide.scxml

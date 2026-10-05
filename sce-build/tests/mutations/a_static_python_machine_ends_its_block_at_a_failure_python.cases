@@ -197,6 +197,31 @@ edit("tools/codegen/templates/python/actions/send.py.jinja2",
      "{{ indent }}if _delay_ms is None:\n{{ indent }}    _delay_ms = 0\n{% elif action.delayexpr %}")
 PY
 
+# ── A send's event is a string the machine computes ──────────────────
+#
+# `static_send_event`: `eventexpr="name"` is read from the machine's fields when
+# the send runs and names the event it delivers. A name that is empty names no
+# event, and one that cannot be computed (`scale * 2000000000` overflows its
+# type) cannot be evaluated: each raises `error.execution` and nothing is sent.
+
+mutation_case "a send's eventexpr is not lowered to the string it computes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                action.native_event = value.text;\n",
+     "                let _ = &value.text;\n")
+PY
+
+mutation_case "an event name that failed to compute is delivered" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    _evt_name = \"\"\n",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    _evt_name = \"ping\"\n")
+PY
+
+mutation_case "an empty event name is delivered" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}if not _evt_name:\n{{ indent }}    self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")\n{% elif action.eventexpr %}",
+     "{{ indent }}if not _evt_name:\n{{ indent }}    pass\n{% elif action.eventexpr %}")
+PY
+
 # ── A send param that failed is left out and the message goes ─────
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'

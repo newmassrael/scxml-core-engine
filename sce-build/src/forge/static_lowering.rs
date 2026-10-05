@@ -307,6 +307,14 @@ pub trait StaticTarget {
     fn lowers_delay_expr(&self) -> bool {
         false
     }
+    /// Whether a `<send>`'s `eventexpr` is lowered to the string it computes
+    /// ([`Action::native_event`]) that the backend resolves to the event it
+    /// delivers when the send runs. A target that does not is refused where the
+    /// `<send>` is walked, by name, rather than left to emit a send with no
+    /// event.
+    fn lowers_event_expr(&self) -> bool {
+        false
+    }
     /// Whether a transition may read the payload of an event whose schema
     /// declares an enum field: the target holds the field in the machine's own
     /// type for the enum and reads it off the wire as the variant's declared
@@ -953,6 +961,11 @@ impl StaticTarget for KotlinTarget {
     fn lowers_delay_expr(&self) -> bool {
         true
     }
+    // The send template names the event it delivers by the string it computes
+    // (`resolveArrivingEvent`).
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1087,6 +1100,11 @@ impl StaticTarget for RustTarget {
     // The send template reads the string it computes as a CSS2 time
     // (`helpers::send::parse_delay_to_ms`).
     fn lowers_delay_expr(&self) -> bool {
+        true
+    }
+    // The send template names the event it delivers by the string it computes
+    // (`send_named_external`, `Self::resolve_event_by_name`).
+    fn lowers_event_expr(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -2828,6 +2846,11 @@ impl StaticTarget for CppTarget {
     fn lowers_delay_expr(&self) -> bool {
         true
     }
+    // The send template names the event it delivers by the string it computes
+    // (`engine.resolveEventByName`).
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3323,6 +3346,11 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_delay_expr(&self) -> bool {
         true
     }
+    // The send template names the event it delivers by the string it computes
+    // (`engine.SendNamedExternal`).
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
     // The field the payload channel fills when the engine dequeues an event of
     // this name (`build_go_event_payload`), read by the typed guards and by a
     // `<sce:action>`'s arguments alike.
@@ -3742,6 +3770,11 @@ impl StaticTarget for PythonTarget {
     // The send template reads the string it computes as a CSS2 time
     // (`parse_delay_ms`).
     fn lowers_delay_expr(&self) -> bool {
+        true
+    }
+    // The send template names the event it delivers by the string it computes
+    // (`resolve_event_by_name`).
+    fn lowers_event_expr(&self) -> bool {
         true
     }
     // The attribute the payload channel fills when the engine dequeues an
@@ -4564,6 +4597,12 @@ impl StaticTarget for CTarget {
     fn lowers_delay_expr(&self) -> bool {
         true
     }
+    // The send template names the event it delivers by the string it computes,
+    // held by a variable or written out; one that joins text is refused for the
+    // reason a delay is.
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
     // The member of the channel's union the event's payload is lifted into
     // (`build_c11_event_payload`), whose fields carry the schema's own ids.
     fn payload_accessor(&self, event: &str) -> String {
@@ -5239,6 +5278,26 @@ fn lower_action(
                 );
                 action.native_delay = value.text;
                 action.native_delay_fails = value.can_fail;
+            }
+            // An event named by an expression is the string it computes, which
+            // the backend resolves to the event it delivers; a name that is empty,
+            // or an operation that fails, is an argument that cannot be
+            // evaluated, which keeps the message from being sent.
+            if !action.eventexpr.trim().is_empty() {
+                if !target.lowers_event_expr() {
+                    return Err(GenerateError::unsupported(format!(
+                        "a <send> with an eventexpr has no {lang} lowering yet"
+                    )));
+                }
+                reads_payload |= reads(&action.eventexpr);
+                let value = lower(&action.eventexpr, InferredType::Str)?;
+                rewrites.note(
+                    &action.eventexpr,
+                    action.spellings.get("eventexpr"),
+                    &value.text,
+                );
+                action.native_event = value.text;
+                action.native_event_fails = value.can_fail;
             }
             // A literal `<content>` is the event's data as written, finished
             // here ([`crate::filters::static_content_wire`]): the machine has

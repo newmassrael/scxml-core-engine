@@ -95,7 +95,6 @@ impl<'a> WireParam<'a> {
 /// The attributes of executable content that carry an expression this model
 /// does not type, with the element each belongs to. Refused where written.
 const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[
-    ("send", "eventexpr"),
     ("send", "targetexpr"),
     ("send", "typeexpr"),
     ("send", "idlocation"),
@@ -809,6 +808,38 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// A `<send>`'s `eventexpr`: a string, the name of the event the send
+    /// delivers, computed from the machine's fields when the send runs. A name
+    /// that is empty names no event and is an argument that cannot be
+    /// evaluated, as it is under every data model. The element names its event
+    /// one way, a written one or an expression, so an `event` beside it is
+    /// refused.
+    fn event_expr(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("eventexpr");
+        if !action.event.trim().is_empty() {
+            return Err(self.rule_at(
+                format!("eventexpr=\"{}\"", action.eventexpr),
+                "a <send> names its event as `event` or as `eventexpr`, and never as both",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.eventexpr,
+            ));
+        }
+        self.expr(
+            ctx,
+            &action.eventexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        Ok(())
+    }
+
     /// The `<content expr>` of a `<send>` or of a `<final>`'s `<donedata>`
     /// (`element`): the one value this model has that is an object, a record,
     /// taken whole by name — a record variable, the item of a `<foreach>` over a
@@ -1139,6 +1170,9 @@ impl<'a> Judge<'a> {
                 for name in action.namelist.split_whitespace() {
                     let namelist = WireParam::of_namelist_name(name, action);
                     self.wire_param(ctx, &namelist, "<send>", state)?;
+                }
+                if !action.eventexpr.is_empty() {
+                    self.event_expr(ctx, action, state)?;
                 }
                 if !action.delayexpr.is_empty() {
                     self.delay_expr(ctx, action, state)?;

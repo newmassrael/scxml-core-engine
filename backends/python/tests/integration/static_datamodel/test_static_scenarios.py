@@ -278,6 +278,12 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
 
 
+# The `eventexpr` of a `<send>` is a string computed from the machine's fields when
+# the send runs, and names the event the send delivers.
+def test_a_sends_event_is_named_when_it_runs() -> None:
+    replay("static_send_event")
+
+
 # The `delayexpr` of a `<send>` is a string computed from the machine's fields when
 # the send runs, and read as the CSS2 time it must be; the scenario's
 # `advance_ms` steps move the engine's time on.

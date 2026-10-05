@@ -2424,6 +2424,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_content.scxml"
         STAGE_ALSO schema_view.scxml schema_view_relayed.scxml enum_view_mode.scxml
     )
+    # The `eventexpr` of a `<send>`: the name of the event it delivers is a
+    # string the machine holds, so the machine stands alone.
+    sce_generate_static_integration_c_test(static_send_event
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_event.scxml"
+    )
     # The `namelist` of a `<send>`: variables carried as the pairs of the
     # `<param>`s it abbreviates, an enum value among them, so the schema and
     # the enum it names travel beside the machine.
@@ -2550,6 +2556,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_params_SOURCES}
         ${INTEGRATION_C_TEST_static_send_namelist_SOURCES}
         ${INTEGRATION_C_TEST_static_send_content_SOURCES}
+        ${INTEGRATION_C_TEST_static_send_event_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}

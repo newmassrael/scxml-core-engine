@@ -53,6 +53,7 @@
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
+#include "static_send_event_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -444,6 +445,18 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ATopLevelFinalHandsTheDoneEventTheTex
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_donedata_content", driver);
+}
+
+// The `eventexpr` of a `<send>` is a string computed from the machine's fields when
+// the send runs, and names the event the send delivers.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsEventIsNamedWhenItRuns) {
+    using Machine = G::static_send_event::static_send_event;
+    Driver<Machine> driver({
+        {"pings", [](const Machine &m) { return json(m.pings()); }},
+        {"pongs", [](const Machine &m) { return json(m.pongs()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_send_event", driver);
 }
 
 // The `delayexpr` of a `<send>` is a string computed from the machine's fields when

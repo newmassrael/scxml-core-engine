@@ -141,7 +141,22 @@
    comes first, so an `idlocation` holds it even when a later argument fails
    (test332). #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{% if action.eventexpr %}
+{% if action.native_event %}
+{# Under `datamodel="sce-static"` the event's name is a string computed from the
+   machine's fields now (`Action::native_event`). A name that evaluates to nothing
+   names no event, and an operation that fails cannot be evaluated: either is the
+   argument error. #}
+{% if action.native_event_fails %}
+{{ indent }}try:
+{{ indent }}    _evt_name = {{ action.native_event }}
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    _evt_name = ""
+{% else %}
+{{ indent }}_evt_name = {{ action.native_event }}
+{% endif %}
+{{ indent }}if not _evt_name:
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> eventexpr could not be evaluated to an event name")
+{% elif action.eventexpr %}
 {# An event name that evaluates to nothing names no event: the same failure as
    one that does not evaluate. #}
 {{ indent }}_evt_name = self._eval_send_argument(engine, _sid, {{ action.eventexpr | to_lua_expr | py_string_literal }}, "<send> eventexpr could not be evaluated to an event name").to_wire_string()

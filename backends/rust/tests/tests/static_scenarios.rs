@@ -86,6 +86,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_content_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_delay_sm::{
     StaticSendDelayPersist, StaticSendDelayPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_event_sm::{
+    StaticSendEventPersist, StaticSendEventPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
     StaticSendNamelistPersist, StaticSendNamelistPolicy,
 };
@@ -442,6 +445,19 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// The `eventexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, and names the event the send delivers.
+#[test]
+fn static_send_event_is_named_when_the_send_runs() {
+    replay(
+        Engine::new(StaticSendEventPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_event.json"
         ),
     );
 }

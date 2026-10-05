@@ -108,6 +108,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
+#include "static_send_event_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_string_capacity_sm.h"
@@ -1033,6 +1034,23 @@ static const record_variable_t send_content_records[] = {RECORD_ROW(static_send_
 STATIC_SCENARIO(static_send_content, send_content_states, send_content_variables, static_send_content_text, no_lists,
                 send_content_records)
 
+// static_send_event: the `eventexpr` of a `<send>` is a string the machine holds,
+// the name of the event the send delivers, read when the send runs; a name that is
+// empty names no event, which is an `error.execution` and nothing sent.
+VARIABLE_READER(static_send_event, pings)
+VARIABLE_READER(static_send_event, pongs)
+VARIABLE_READER(static_send_event, refusals)
+
+static const name_value_t send_event_states[] = {
+    {"idle", STATIC_SEND_EVENT_STATE_IDLE},
+};
+static const variable_t send_event_variables[] = {
+    {"pings", static_send_event_read_pings},
+    {"pongs", static_send_event_read_pongs},
+    {"refusals", static_send_event_read_refusals},
+};
+STATIC_SCENARIO(static_send_event, send_event_states, send_event_variables, NULL, no_lists, no_records)
+
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
 // when the state is entered — an enum field as the name its enum declares.
@@ -1189,6 +1207,7 @@ int main(void) {
     bad |= static_send_params_scenario("static_send_params", 5);
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= static_send_content_scenario("static_send_content", 5);
+    bad |= static_send_event_scenario("static_send_event", 11);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

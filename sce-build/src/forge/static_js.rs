@@ -466,6 +466,11 @@ impl StaticTarget for JsTarget {
     fn lowers_delay_expr(&self) -> bool {
         true
     }
+    // Nor does it need the name of the event it delivers to be known before it
+    // runs: its own `<send>` evaluates the `eventexpr` and delivers that name.
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a

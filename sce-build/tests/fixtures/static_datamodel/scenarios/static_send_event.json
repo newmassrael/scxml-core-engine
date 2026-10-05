@@ -1,0 +1,48 @@
+{
+  "machine": "static_send_event",
+  "about": "The `eventexpr` of a <send> is a string computed from the machine's fields when the send runs, and names the event the send delivers: `name` holds `ping` to begin with, so `go` delivers `ping`; `use.pong` makes it `pong`, and the same <send> then delivers `pong`. A name that is empty names no event: an argument that cannot be evaluated, so error.execution is raised and nothing is sent. The machine goes on once the name is a name again. A name that cannot be computed is the same argument error: `overflow` sends one whose product does not fit its type, and nothing is delivered. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been sent yet",
+      "expect": { "state": "idle", "variables": { "pings": 0, "pongs": 0, "refusals": 0 } } },
+
+    { "note": "the name the machine holds is the event delivered",
+      "event": "go",
+      "expect": { "variables": { "pings": 1, "pongs": 0, "refusals": 0 } } },
+
+    { "note": "and again: the send reads the name each time it runs",
+      "event": "go",
+      "expect": { "variables": { "pings": 2, "pongs": 0, "refusals": 0 } } },
+
+    { "note": "the name changes; nothing is sent",
+      "event": "use.pong",
+      "expect": { "variables": { "pings": 2, "pongs": 0, "refusals": 0 } } },
+
+    { "note": "the same send delivers the other event now",
+      "event": "go",
+      "expect": { "variables": { "pings": 2, "pongs": 1, "refusals": 0 } } },
+
+    { "note": "an empty name names no event",
+      "event": "blank",
+      "expect": { "variables": { "pings": 2, "pongs": 1, "refusals": 0 } } },
+
+    { "note": "the send is an argument that cannot be evaluated: reported, and nothing delivered",
+      "event": "go",
+      "expect": { "variables": { "pings": 2, "pongs": 1, "refusals": 1 } } },
+
+    { "note": "the name is a name again, and the machine goes on",
+      "event": "use.ping",
+      "expect": { "variables": { "pings": 2, "pongs": 1, "refusals": 1 } } },
+
+    { "note": "go delivers it",
+      "event": "go",
+      "expect": { "variables": { "pings": 3, "pongs": 1, "refusals": 1 } } },
+
+    { "note": "a name whose computation overflows is an argument that cannot be evaluated: reported, nothing delivered",
+      "event": "overflow",
+      "expect": { "variables": { "pings": 3, "pongs": 1, "refusals": 2 } } },
+
+    { "note": "the machine goes on",
+      "event": "go",
+      "expect": { "variables": { "pings": 4, "pongs": 1, "refusals": 2 } } }
+  ]
+}

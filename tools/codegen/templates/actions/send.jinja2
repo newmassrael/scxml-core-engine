@@ -353,7 +353,26 @@ if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
 // evaluates to nothing names no event: the same failure as one that does not
 // evaluate.
 std::string eventName;
-{% if has_script %}
+{% if action.native_event %}
+{# `datamodel="sce-static"`: the event's name is a string computed from the
+   machine's fields (`Action::native_event`); no script engine is asked. One that
+   can fail — a checked operation — is the same argument error an expression an
+   engine could not evaluate is. #}
+{
+{% if action.native_event_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    eventName = {{ action.native_event }};
+{% if action.native_event_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+        eventName.clear();
+    }
+{% endif %}
+}
+if (eventName.empty()) {
+{{ send_arg_error("<send> eventexpr could not be evaluated to an event name", block_end, '    ') }}
+}
+{% elif has_script %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();

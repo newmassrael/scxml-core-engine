@@ -56,6 +56,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_event"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
@@ -599,6 +600,18 @@ func TestAFinalHandsItsDoneEventTheTextItsContentSpells(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_donedata_content", drive[static_donedata_content.StaticDonedataContentState, static_donedata_content.StaticDonedataContentEvent](&policy, map[string]func() any{
 		"count": func() any { return policy.Count() },
+	}))
+}
+
+// The `eventexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, and names the event the send delivers.
+func TestASendsEventIsNamedWhenItRuns(t *testing.T) {
+	policy := static_send_event.NewStaticSendEventPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_event", drive[static_send_event.StaticSendEventState, static_send_event.StaticSendEventEvent](&policy, map[string]func() any{
+		"pings":    func() any { return policy.Pings() },
+		"pongs":    func() any { return policy.Pongs() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

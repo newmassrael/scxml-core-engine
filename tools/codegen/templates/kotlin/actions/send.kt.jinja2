@@ -130,7 +130,7 @@
 {% set param_ns.can_fail = true %}
 {% endif %}
 {% endfor %}
-{% set dyn_event = action.eventexpr and model.needs_script_engine and not action.event %}
+{% set dyn_event = (action.eventexpr and model.needs_script_engine and not action.event) or action.native_event %}
 {% set dyn_target = action.targetexpr and model.needs_script_engine %}
 {% set dyn_delay = (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 {% set has_delay = action.delay or action.delayexpr %}
@@ -148,10 +148,10 @@
    first failure is one error.execution carrying the send id, the message goes
    nowhere, and — the error having been raised while the element was
    processed — the block ends (W3C SCXML 4.9): `return@send true`. #}
-{# Under `datamodel="sce-static"` a `delayexpr` is lowered to the string it
-   computes (`Action::native_delay`), so it is an argument like the others but
-   needs no engine to be read. #}
-{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay %}
+{# Under `datamodel="sce-static"` a `delayexpr` and an `eventexpr` are lowered to
+   the strings they compute (`Action::native_delay`, `Action::native_event`), so
+   each is an argument like the others but needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event %}
             if (run send@{
 {% if action.delay_invalid and not action.delayexpr %}
             // W3C SCXML 6.2: the written delay is not a CSS2 time
@@ -178,7 +178,24 @@
             // argument that cannot be evaluated (W3C SCXML 5.9.2).
             if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, "{{ send_id_kt }}", "<send>")) return@send true
 {% endif %}
-{% if action.eventexpr %}
+{% if action.native_event %}
+            // The event's name is a string computed from the machine's fields now.
+            // A name that evaluates to nothing names no event, and an operation
+            // that fails cannot be evaluated: either is the argument error.
+{% if action.native_event_fails %}
+            val sendEventName: String = try {
+                {{ action.native_event }}
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                ""
+            }
+{% else %}
+            val sendEventName: String = {{ action.native_event }}
+{% endif %}
+            if (sendEventName.isEmpty()) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "{{ send_id_kt }}")
+                return@send true
+            }
+{% elif action.eventexpr %}
             // An event name that evaluates to nothing names no event: the same
             // failure as one that does not evaluate (test172).
             val sendEventName = try {

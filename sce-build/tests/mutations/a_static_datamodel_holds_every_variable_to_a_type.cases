@@ -48,11 +48,11 @@ edit("sce-build/src/forge/type_ctx.rs",
     ctx.insert_record("_event", RecordShape::Open);""")
 PY
 
-# `eventexpr` stops being refused, so script text reaches a document that
+# `targetexpr` stops being refused, so script text reaches a document that
 # declared it has none.
 mutation_case "an attribute with no typed form is admitted" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     """    ("send", "eventexpr"),
+     """    ("send", "targetexpr"),
 """,
      "")
 PY
@@ -291,6 +291,22 @@ mutation_case "a delay is admitted beside a delayexpr" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        if !action.delay.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"delayexpr=",
      "        if false && !action.delay.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"delayexpr=")
+PY
+
+# A `<send>`'s `eventexpr` is a string the machine computes, and it names the
+# event the send delivers. The first mutant counts it as an engine need again,
+# which the manifest of a machine with none would deny; the second admits an
+# `event` beside it, an event named twice.
+mutation_case "an eventexpr needs a script engine again" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "    (!static_model && !action.eventexpr.is_empty())",
+     "    !action.eventexpr.is_empty()")
+PY
+
+mutation_case "an event is admitted beside an eventexpr" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.event.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"eventexpr=",
+     "        if false && !action.event.trim().is_empty() {\n            return Err(self.rule_at(\n                format!(\"eventexpr=")
 PY
 
 mutation_case "a Go machine's imports are not read from its text" <<'PY'

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the `eventexpr` of
+  a <send>. It is a string, the name of the event the send delivers, computed
+  from the machine's fields when the send runs: `name` holds `ping` to begin
+  with, `use.pong` makes it `pong`, and the one <send> then delivers the other
+  event. The value is read when the send runs, not when the document was read.
+
+  A name that is empty names no event: an argument that cannot be evaluated
+  (§scxml-6.2.4), so error.execution is raised and nothing is sent, which `blank`
+  makes `go` do. The machine goes on once the name is a name again.
+
+  A name that cannot be computed is the same argument error: `overflow` sends
+  one whose product does not fit its type, and nothing is delivered.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_event">
+  <datamodel>
+    <data id="name" sce:type="string" sce:capacity="16" expr="'ping'"/>
+    <data id="scale" sce:type="uint32" expr="3"/>
+    <data id="pings" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="pongs" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" type="internal">
+      <send eventexpr="name"/>
+    </transition>
+    <transition event="overflow" type="internal">
+      <send eventexpr="(scale * 2000000000) &gt; 1 ? 'big' : 'small'"/>
+    </transition>
+    <transition event="use.pong" type="internal">
+      <assign location="name" expr="'pong'"/>
+    </transition>
+    <transition event="use.ping" type="internal">
+      <assign location="name" expr="'ping'"/>
+    </transition>
+    <transition event="blank" type="internal">
+      <assign location="name" expr="''"/>
+    </transition>
+    <transition event="ping" type="internal">
+      <assign location="pings" expr="pings + 1"/>
+    </transition>
+    <transition event="pong" type="internal">
+      <assign location="pongs" expr="pongs + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -36,6 +36,7 @@ pub mod static_record_real_sm;
 pub mod static_record_sm;
 pub mod static_send_content_sm;
 pub mod static_send_delay_sm;
+pub mod static_send_event_sm;
 pub mod static_send_namelist_sm;
 pub mod static_send_params_sm;
 pub mod static_string_capacity_sm;

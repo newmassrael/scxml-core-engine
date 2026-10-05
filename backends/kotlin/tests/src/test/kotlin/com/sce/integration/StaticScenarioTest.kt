@@ -43,6 +43,7 @@ import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_send_content.StaticSendContentStateMachine
 import com.sce.integration.static_send_delay.StaticSendDelayStateMachine
+import com.sce.integration.static_send_event.StaticSendEventStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -533,6 +534,25 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `eventexpr` of a <send> is a string computed from the machine's fields
+    // when the send runs, and names the event the send delivers.
+    @Test
+    fun staticSendEventIsNamedWhenTheSendRuns() {
+        val sm = StaticSendEventStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_event"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

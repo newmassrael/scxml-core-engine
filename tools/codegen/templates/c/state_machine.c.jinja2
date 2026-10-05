@@ -894,7 +894,19 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
     into, so the expression runs once — not the JSON a host is handed. -#}
 {% macro host_send_arm(action, processor_type, resolved_target=none, resolved_event=none, resolved_delay=none, basic_http=false, content_buf=none) %}
             {
-{% if action.eventexpr and not resolved_event %}
+{% if action.native_event and not resolved_event %}
+                /* The event's name is a string the machine computed from its own
+                   fields (`Action::native_event`); one that failed, or is empty,
+                   names no event. */
+                const char *_host_event = "";
+                {
+                    sce_forge_algorithm_failure_t sce_failure_ = {0};
+                    _host_event = {{ action.native_event }};
+                    if (sce_failure_.failed) {
+                        _host_event = "";
+                    }
+                }
+{% elif action.eventexpr and not resolved_event %}
                 char _host_event[SCE_MAX_ID_LEN];
                 bool _host_event_ok = false;
 {{ se.lua_eval_to_string(action.eventexpr, '_host_event', 'sizeof(_host_event)', '_host_event_ok') }}
@@ -1201,7 +1213,27 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 }
             }
 {% endif %}
-{% if action.eventexpr %}
+{% if action.native_event %}
+            /* The event's name is a string the machine computed from its own
+               fields (`Action::native_event`), no script engine asked. A name
+               that evaluates to nothing names no event, and an operation that
+               failed cannot be evaluated: either is the argument error. */
+            const char *_send_evt_name = "";
+            {
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                _send_evt_name = {{ action.native_event }};
+                if (sce_failure_.failed) {
+                    _send_evt_name = "";
+                }
+            }
+            if (_send_evt_name[0] == '\0') {
+                {{ P }}_raise_platform_error_with_send_id(
+                    sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                    "<send> eventexpr could not be evaluated to an event name",
+                    "{{ send_id_c }}");
+                return;
+            }
+{% elif action.eventexpr %}
             /* W3C SCXML 6.2 (test172): an event name that evaluates to nothing
                names no event — the same failure as one that does not
                evaluate. */

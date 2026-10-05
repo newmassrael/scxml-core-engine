@@ -161,8 +161,8 @@ PY
 
 mutation_case "an event name that evaluates to nothing is told the route's questions" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")",
-     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\"{{ route_ns.arg }})")
+     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")\n{% endif %}\n{% if action.targetexpr %}",
+     "self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\"{{ route_ns.arg }})\n{% endif %}\n{% if action.targetexpr %}")
 PY
 
 mutation_case "a route expression that fails to evaluate loses its questions" <<'PY'
