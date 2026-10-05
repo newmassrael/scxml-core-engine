@@ -16,8 +16,8 @@ package com.sce.generated.algorithm_crc16
 
 fun algorithmCrc16(data: ByteArray): UShort {
     var crc: UShort = 0xFFFF.toUShort()
-    for (__raw_b in data) {
-        val b: UByte = __raw_b.toUByte()
+    for (sceRaw_b in data) {
+        val b: UByte = sceRaw_b.toUByte()
         var hi: UShort = b.toUShort()
         crc = (crc.toInt() xor (hi.toInt() shl 8)).toUShort()
         var i: UByte = 0.toUByte()

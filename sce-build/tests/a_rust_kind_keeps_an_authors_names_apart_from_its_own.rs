@@ -209,7 +209,9 @@ fn an_authors_name_never_decides_whether_the_generated_rust_of_a_kind_builds() {
         extra_flags: flags,
         unit_suffix: ".rs",
         sibling_pattern: r"(?m)^use super::([A-Za-z0-9_]+)",
+        file_name: None,
         probe_line,
+        batch: None,
         imported_function: None,
     });
 }

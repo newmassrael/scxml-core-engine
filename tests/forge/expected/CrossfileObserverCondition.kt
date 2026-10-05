@@ -26,13 +26,13 @@ class CrossfileObserverCondition {
     private val alarm = ThresholdState()
 
     fun update(coolantTemp: Double, oilTemp: Double): EventQueue<ForgeDomainTag> {
-        val events = EventQueue<ForgeDomainTag>()
+        val sceEvents = EventQueue<ForgeDomainTag>()
         if (alarm.enterIf(conditionThreshold(coolantTemp, oilTemp, 110.0))) {
-            events.push(ForgeDomainTag.RAISE_ALARM)
+            sceEvents.push(ForgeDomainTag.RAISE_ALARM)
         }
         else if (alarm.leaveIf(conditionThreshold(coolantTemp, oilTemp, 120.0) == false)) {
-            events.push(ForgeDomainTag.CLEAR_ALARM)
+            sceEvents.push(ForgeDomainTag.CLEAR_ALARM)
         }
-        return events
+        return sceEvents
     }
 }

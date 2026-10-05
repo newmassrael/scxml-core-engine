@@ -5176,7 +5176,9 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         }
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "null".to_string(),
-        ExprKind::Ident(s) => s.clone(),
+        // The one spelling the declaration of the name takes
+        // (`kotlin_local_spelling`).
+        ExprKind::Ident(s) => crate::forge::generator::kotlin_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `String.plus` takes `Any`, so Kotlin concatenated this by

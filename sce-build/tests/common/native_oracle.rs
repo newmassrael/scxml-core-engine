@@ -23,14 +23,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use regex::Regex;
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 
 use super::name_oracle::{
-    candidates, documents, group, is_name_refusal, names_by_kind, rename, run_parallel, snake,
-    with_name, Failure,
+    candidates, documents, group, identifiers, is_name_refusal, names_by_kind, rename,
+    run_parallel, run_parallel_on, snake, with_name, Failure,
 };
 use super::source_lexing::Lang;
 
@@ -47,6 +48,25 @@ pub const INCLUDE_SIBLING: &str = r#"(?m)^#include "([A-Za-z0-9_]+)\.h""#;
 /// The probe line of a C or C++ unit: the include of its header.
 pub fn include_probe_line(file: &str) -> String {
     format!("#include \"{file}\"\n")
+}
+
+/// A compiler that is slow to start (a JVM) is run once on many units, and what
+/// it says is told back to the unit it is about by the file it names.
+pub struct Batch {
+    /// How many cases one compiler run holds.
+    pub per_run: usize,
+    /// How many compiler runs are at once: a JVM holds gigabytes, so the
+    /// machine's cores are not the limit.
+    pub threads: usize,
+    /// The flag that names the directory the compiler writes its output to
+    /// (`-d`), one for each run.
+    pub output_flag: &'static str,
+    /// A pattern for one diagnostic, whose first group is the file it is about
+    /// and whose second is what it says (`file.kt:1:2: error: why`). A warning
+    /// is one too, where the contract is that there are none.
+    pub diagnostic: &'static str,
+    /// The environment of the compiler (`JAVA_OPTS`, the heap it may take).
+    pub env: &'static [(&'static str, &'static str)],
 }
 
 /// Everything that differs between two unit-and-probe backends.
@@ -84,14 +104,30 @@ pub struct Native {
     /// A pattern whose first group is the name of a sibling unit a generated unit
     /// names ([`INCLUDE_SIBLING`]).
     pub sibling_pattern: &'static str,
+    /// The file a document's unit is written to, where it is not the document's
+    /// name and the suffix (Kotlin writes `ConditionThreshold.kt`).
+    pub file_name: Option<fn(&str) -> String>,
     /// The line a probe holds to pull one unit in ([`include_probe_line`]).
     pub probe_line: fn(&str) -> String,
+    /// A compiler run once on many units, with no probe, or `None` for one run
+    /// of the compiler on one probe.
+    pub batch: Option<Batch>,
     /// A pattern whose first group is the name of a function a header declares,
     /// where the language cannot call an imported function through a qualifier
     /// and so cannot keep an author's name off it (C): such a name is counted and
     /// not asked. `None` where a call is qualified and the question has no such
     /// case.
     pub imported_function: Option<&'static str>,
+}
+
+impl Native {
+    /// The file the unit of the document `stem` is written to.
+    fn file_of(&self, stem: &str) -> String {
+        match self.file_name {
+            Some(file_name) => file_name(stem),
+            None => format!("{stem}{}", self.unit_suffix),
+        }
+    }
 }
 
 /// Generate `text` under the unique name `unique`: the units, or the reason it
@@ -135,9 +171,7 @@ fn imported_symbols(native: &Native, proj: &Path, headers: &[Header]) -> BTreeSe
     let mut symbols = BTreeSet::new();
     for header in headers {
         for sibling in sibling_includes(native, &header.source) {
-            if let Ok(source) =
-                std::fs::read_to_string(proj.join(format!("{sibling}{}", native.unit_suffix)))
-            {
+            if let Ok(source) = std::fs::read_to_string(proj.join(native.file_of(&sibling))) {
                 symbols.extend(function.captures_iter(&source).map(|c| c[1].to_string()));
             }
         }
@@ -157,7 +191,7 @@ fn write_with_siblings(
 ) -> Result<(), String> {
     for header in headers {
         for sibling in sibling_includes(native, &header.source) {
-            let file = format!("{sibling}{}", native.unit_suffix);
+            let file = native.file_of(&sibling);
             if written.contains(&file) {
                 continue;
             }
@@ -183,7 +217,7 @@ fn needed_files(native: &Native, proj: &Path, headers: &[Header]) -> Vec<String>
     while next < needed.len() {
         let source = std::fs::read_to_string(proj.join(&needed[next])).unwrap_or_default();
         for sibling in sibling_includes(native, &source) {
-            let file = format!("{sibling}{}", native.unit_suffix);
+            let file = native.file_of(&sibling);
             if !needed.contains(&file) {
                 needed.push(file);
             }
@@ -227,16 +261,123 @@ fn compile(native: &Native, cc: &Path, proj: &Path, probe: &str) -> Option<Strin
     Some(first.trim().to_string())
 }
 
-/// Compile every probe.
+/// What one case needs compiled: the files it wrote itself, which an error is
+/// about, and every file the compile needs, those and the siblings they name.
+struct Plan {
+    unique: String,
+    own: Vec<String>,
+    needed: Vec<String>,
+}
+
+/// Compile every plan; answers with the reason for each that does not build.
 fn compile_all(
     native: &Native,
     cc: &Path,
     proj: &Path,
-    uniques: &[String],
+    plans: &[Plan],
 ) -> BTreeMap<String, String> {
-    run_parallel(uniques, |unique| {
-        compile(native, cc, proj, &format!("probe_{unique}"))
-    })
+    match &native.batch {
+        None => {
+            let uniques: Vec<String> = plans.iter().map(|p| p.unique.clone()).collect();
+            run_parallel(&uniques, |unique| {
+                compile(native, cc, proj, &format!("probe_{unique}"))
+            })
+        }
+        Some(batch) => compile_in_batches(native, batch, cc, proj, plans),
+    }
+}
+
+/// Compile the plans a run at a time, one compiler process on all the units of a
+/// run, and tell each error back to the case whose file it names. A diagnostic
+/// about a file no case owns (a sibling every case shares) is not a case's; and a
+/// run that failed without a diagnostic about any case is not read as a pass: it
+/// stops the oracle, because what it says is that the compiler said nothing
+/// about the units it was asked to judge.
+fn compile_in_batches(
+    native: &Native,
+    batch: &Batch,
+    cc: &Path,
+    proj: &Path,
+    plans: &[Plan],
+) -> BTreeMap<String, String> {
+    let owner: BTreeMap<&str, &str> = plans
+        .iter()
+        .flat_map(|p| {
+            p.own
+                .iter()
+                .map(move |file| (file.as_str(), p.unique.as_str()))
+        })
+        .collect();
+    let runs: Vec<&[Plan]> = plans.chunks(batch.per_run).collect();
+    let items: Vec<String> = (0..runs.len()).map(|i| i.to_string()).collect();
+    let diagnostic = Regex::new(batch.diagnostic).expect("regex");
+    let answers: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+    let unattributed = run_parallel_on(&items, batch.threads, |item| {
+        let index: usize = item.parse().expect("a run index");
+        let files: BTreeSet<&str> = runs[index]
+            .iter()
+            .flat_map(|p| p.needed.iter().map(String::as_str))
+            .collect();
+        let mut command = Command::new(cc);
+        command
+            .args(native.compile_flags)
+            .args(&native.extra_flags)
+            .arg(batch.output_flag)
+            .arg(proj.join(format!("out_{index}")));
+        for (key, value) in batch.env {
+            command.env(key, value);
+        }
+        let out = command
+            .args(&files)
+            .current_dir(proj)
+            .output()
+            .expect("the compiler runs");
+        if out.status.success() {
+            return None;
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let mut about_a_case = false;
+        for caps in diagnostic.captures_iter(&stderr) {
+            let file = caps[1].rsplit('/').next().unwrap_or(&caps[1]).to_string();
+            if let Some(unique) = owner.get(file.as_str()) {
+                about_a_case = true;
+                answers
+                    .lock()
+                    .expect("no run panics while holding the lock")
+                    .entry((*unique).to_string())
+                    .or_insert_with(|| caps[2].trim().to_string());
+            }
+        }
+        if about_a_case {
+            None
+        } else {
+            Some(stderr.lines().take(12).collect::<Vec<_>>().join("\n"))
+        }
+    });
+    assert!(
+        unattributed.is_empty(),
+        "the compiler failed on a run of units and said nothing about any of them (a sibling \
+         that does not build, or the compiler itself):\n{unattributed:#?}"
+    );
+    answers.into_inner().expect("no run panics")
+}
+
+/// Every identifier the generator writes for any document of the corpus, read
+/// from the code it generates now and not from the committed outputs, which are
+/// a subset of the corpus. What a pin test asks about the names a template
+/// reaches for must be asked of all of them: a library function used by one
+/// document with no committed output is a name nothing else would show.
+pub fn generated_names(native: &Native) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for doc in documents(&native.resource_dir) {
+        let unique = format!("{}_base", doc.stem);
+        if let Ok(headers) = generate(native, &unique, &doc.text) {
+            for header in &headers {
+                names.extend(identifiers(&header.source, native.lang));
+            }
+        }
+    }
+    names
 }
 
 struct Case {
@@ -283,52 +424,77 @@ pub fn run(native: &Native) {
     std::fs::create_dir_all(&proj).expect("mkdir");
     let mut written: BTreeSet<String> = BTreeSet::new();
 
-    // A probe is the unit that pulls in what is under test: the translation unit
-    // that includes the headers, the crate root that declares the modules.
-    let write_probe = |unique: &str, headers: &[Header]| {
-        let lines: String = needed_files(native, &proj, headers)
-            .iter()
-            .map(|file| (native.probe_line)(file))
-            .collect();
-        std::fs::write(
-            proj.join(format!("probe_{unique}.{}", native.probe_extension)),
-            lines,
-        )
-        .expect("write a probe");
+    // What one case is compiled from. A probe is the unit that pulls in what is
+    // under test (the translation unit that includes the headers, the crate root
+    // that declares the modules); a compiler that is run on the units themselves
+    // has none.
+    let plan_of = |unique: &str, headers: &[Header]| -> Plan {
+        let needed = needed_files(native, &proj, headers);
+        if native.batch.is_none() {
+            let lines: String = needed
+                .iter()
+                .map(|file| (native.probe_line)(file))
+                .collect();
+            std::fs::write(
+                proj.join(format!("probe_{unique}.{}", native.probe_extension)),
+                lines,
+            )
+            .expect("write a probe");
+        }
+        Plan {
+            unique: unique.to_string(),
+            own: headers.iter().map(|h| h.file.clone()).collect(),
+            needed,
+        }
     };
 
     // The unrenamed documents are the control: each must build, or a failure of
     // its renamings is not about the name.
-    let mut baseline: Vec<(String, String)> = Vec::new();
+    let mut baseline_stems: Vec<String> = Vec::new();
+    let mut baseline_plans: Vec<Plan> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     let mut symbols: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // What the generator writes for a document itself, as read from its own
+    // unrenamed output: a candidate for its renamings besides what the committed
+    // outputs of its kind use, so that a name the generator derives from the
+    // document's own (a member, a local) is asked about whether or not a
+    // committed output still spells it.
+    let mut own_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for doc in &docs {
         let unique = format!("{}_base", doc.stem);
         match generate(native, &unique, &doc.text).and_then(|headers| {
             write_with_siblings(native, &proj, &mut written, &headers).map(|()| headers)
         }) {
             Ok(headers) => {
-                write_probe(&unique, &headers);
+                baseline_plans.push(plan_of(&unique, &headers));
                 symbols.insert(doc.stem.clone(), imported_symbols(native, &proj, &headers));
-                baseline.push((doc.stem.clone(), unique));
+                // The document's own unique name is spelled into some of what it
+                // writes (a package, a class): a name of the oracle's, not the
+                // generator's.
+                let mine = doc.stem.replace('_', "").to_lowercase();
+                let written_names: BTreeSet<String> = headers
+                    .iter()
+                    .flat_map(|h| identifiers(&h.source, native.lang))
+                    .filter(|n| !n.to_lowercase().replace('_', "").contains(&mine))
+                    .collect();
+                own_names.insert(doc.stem.clone(), written_names);
+                baseline_stems.push(doc.stem.clone());
             }
             Err(_) => skipped.push(doc.stem.clone()),
         }
     }
-    let control_uniques: Vec<String> = baseline.iter().map(|(_, u)| u.clone()).collect();
-    let control_broken = compile_all(native, &cc, &proj, &control_uniques);
+    let control_broken = compile_all(native, &cc, &proj, &baseline_plans);
     let mut unbuildable: Vec<(String, String)> = Vec::new();
-    baseline.retain(|(stem, unique)| match control_broken.get(unique) {
-        Some(why) => {
+    for (stem, plan) in baseline_stems.iter().zip(&baseline_plans) {
+        if let Some(why) = control_broken.get(&plan.unique) {
             unbuildable.push((stem.clone(), why.clone()));
-            false
         }
-        None => true,
-    });
+    }
     eprintln!("{label} kind name oracle: controls that do not build: {unbuildable:?}");
     skipped.extend(unbuildable.iter().map(|(stem, _)| stem.clone()));
 
     let mut cases: Vec<Case> = Vec::new();
+    let mut case_plans: Vec<Plan> = Vec::new();
     let mut attempts = 0usize;
     let mut refused = 0usize;
     let mut folded_together = 0usize;
@@ -338,7 +504,8 @@ pub fn run(native: &Native) {
         if skipped.contains(&doc.stem) {
             continue;
         }
-        let names = candidates(doc, &from_outputs, native.universe);
+        let mut names = candidates(doc, &from_outputs, native.universe);
+        names.extend(own_names[&doc.stem].iter().cloned());
         let folded: BTreeSet<String> = doc.declared.iter().map(|n| snake(n)).collect();
         let imported = &symbols[&doc.stem];
         for declared in &doc.declared {
@@ -381,7 +548,7 @@ pub fn run(native: &Native) {
                     Ok(headers) => {
                         write_with_siblings(native, &proj, &mut written, &headers)
                             .expect("a sibling that built for the control builds for a case");
-                        write_probe(&unique, &headers);
+                        case_plans.push(plan_of(&unique, &headers));
                         cases.push(Case {
                             kind: doc.kind.clone(),
                             stem: doc.stem.clone(),
@@ -395,8 +562,7 @@ pub fn run(native: &Native) {
         }
     }
 
-    let uniques: Vec<String> = cases.iter().map(|c| c.unique.clone()).collect();
-    let broken = compile_all(native, &cc, &proj, &uniques);
+    let broken = compile_all(native, &cc, &proj, &case_plans);
     let _ = std::fs::remove_dir_all(&proj);
 
     let failures: Vec<Failure> = cases

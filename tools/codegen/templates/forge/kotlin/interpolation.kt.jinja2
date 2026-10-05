@@ -32,15 +32,17 @@ object {{ struct_name }} {
 {% endif %}
 
     fun {{ member_symbol }}({{ params }}): {{ output_type }} {
+{# Each input is read under the name the signature declared it with
+   (`input_local`), not as the author wrote it. #}
 {% if is_bilinear %}
         return bilinear(
             {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
-            {{ axes[0].input_id }}.toDouble(), {{ axes[1].input_id }}.toDouble()
+            {{ axes[0].input_local }}.toDouble(), {{ axes[1].input_local }}.toDouble()
         )
 {% else %}
         return linear(
             {{ axes[0].var_name }}, VALUES,
-            {{ axes[0].input_id }}.toDouble()
+            {{ axes[0].input_local }}.toDouble()
         )
 {% endif %}
     }

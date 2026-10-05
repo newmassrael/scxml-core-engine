@@ -94,8 +94,11 @@ impl {{ holder.symbols.holder }} {
 
     /// One activation.
     pub fn {{ holder.symbols.update }}(&mut self{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }} {
+{# The call is qualified: a function is named from an output (`compute_delta`)
+   and an author's input of that name, a parameter of this method, would hide an
+   unqualified one. #}
 {% for o in holder.outputs %}
-        let {{ o.name }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{% if c.is_string %}&{% endif %}self.{{ c.name }}{% endfor %});
+        let {{ o.name }} = self::{{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{% if c.is_string %}&{% endif %}self.{{ c.name }}{% endfor %});
 {% endfor %}
 {% for c in holder.cells %}
 {% if c.is_string and c.from_output %}

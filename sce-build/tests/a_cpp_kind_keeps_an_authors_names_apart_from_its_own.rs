@@ -77,7 +77,9 @@ fn an_authors_name_never_decides_whether_the_generated_cpp_of_a_kind_builds() {
         extra_flags: Vec::new(),
         unit_suffix: ".h",
         sibling_pattern: INCLUDE_SIBLING,
+        file_name: None,
         probe_line: include_probe_line,
+        batch: None,
         imported_function: None,
     });
 }

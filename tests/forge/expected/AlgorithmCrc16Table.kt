@@ -19,8 +19,8 @@ val CRC16_TABLE: UShortArray = ushortArrayOf((0).toUShort(), (4129).toUShort(), 
 
 fun algorithmCrc16Table(data: ByteArray): UShort {
     var crc: UShort = 0xFFFF.toUShort()
-    for (__raw_b in data) {
-        val b: UByte = __raw_b.toUByte()
+    for (sceRaw_b in data) {
+        val b: UByte = sceRaw_b.toUByte()
         var idx: UShort = (crc.toInt() shr 8 xor b.toInt() and 0xFF).toUShort()
         crc = (crc.toInt() shl 8 xor CRC16_TABLE[(idx).toInt()].toInt()).toUShort()
     }

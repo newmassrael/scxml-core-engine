@@ -1787,6 +1787,12 @@ fn render_lookup(
     let l = LangCtx::new(lang, imports);
 
     let enum_name = filters::to_pascal_case(m.output.id.clone());
+    // The enum is declared in the file that also writes the input's own type
+    // (`UByte`), so a Kotlin enum is kept off the standard type names.
+    let enum_name = match lang {
+        Language::Kotlin => kotlin_declared_type_name(&enum_name),
+        _ => enum_name,
+    };
     // W1 symbol-name SSOT: the bare call-base comes from forge_lookup_symbol
     // (shared with the cross-doc resolver); the C11 flat prefix is applied at
     // this materialization site via forge_stateless_def_symbol.
@@ -22809,7 +22815,9 @@ impl LangCtx {
             crate::generator::Language::Cpp => format!("{ty} {}", cpp_local_spelling(id)),
             crate::generator::Language::Go => format!("{} {ty}", go_local_spelling(id)),
             crate::generator::Language::C11 => format!("{ty} {}", c11_local_spelling(id)),
-            crate::generator::Language::Kotlin => format!("{id}: {ty}"),
+            crate::generator::Language::Kotlin => {
+                format!("{}: {ty}", kotlin_local_spelling(id))
+            }
             crate::generator::Language::Rust => {
                 format!("{}: {ty}", rust_local_spelling(id))
             }
@@ -23156,6 +23164,12 @@ impl LangCtx {
             | crate::generator::Language::C11 => {
                 format!("prev_{}", filters::to_snake_case(id.to_string()))
             }
+            // A member of the class that the method reads bare, so under the
+            // generator's own prefix: an input called `prevSpeed` beside the
+            // member for the input `speed` would otherwise be assigned to.
+            crate::generator::Language::Kotlin => {
+                format!("scePrev{}", filters::to_pascal_case(id.to_string()))
+            }
             _ => format!("prev{}", filters::to_pascal_case(self.local_id(id))),
         }
     }
@@ -23206,6 +23220,7 @@ fn render_filter(
         crate::generator::Language::Rust => rust_local_spelling(&m.input.id),
         crate::generator::Language::Go => go_local_spelling(&m.input.id),
         crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
+        crate::generator::Language::Kotlin => kotlin_local_spelling(&m.input.id),
         _ => m.input.id.clone(),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
@@ -23523,6 +23538,9 @@ fn render_observer(
             let field = match lang {
                 crate::generator::Language::Go => go_field_spelling(&mon.id, GO_OBSERVER_METHODS),
                 crate::generator::Language::Rust => filters::to_snake_case(mon.id.clone()),
+                // A property the method reads bare, and a name written as
+                // written, so it is spelled as every Kotlin local is.
+                crate::generator::Language::Kotlin => kotlin_local_spelling(&mon.id),
                 _ => mon.id.clone(),
             };
 
@@ -25261,11 +25279,14 @@ fn lower_algorithm_stmt(
                 match lang {
                     Language::Rust => {
                         let type_name = &imp.type_name;
+                        // The slot index and, below, every local this loop adds are
+                        // under the generator's own prefix: an author's parameter
+                        // or variable of the same name is otherwise hidden by it.
                         out.push_str(&format!(
-                            "{pad}for slot_idx in 0..({type_name}::capacity() as u32) {{\n"
+                            "{pad}for sce_slot_idx in 0..({type_name}::capacity() as u32) {{\n"
                         ));
                         out.push_str(&format!(
-                            "{pad}    if let Some({it}) = {alias}.get_by_slot(slot_idx) {{\n"
+                            "{pad}    if let Some({it}) = {alias}.get_by_slot(sce_slot_idx) {{\n"
                         ));
                     }
                     Language::Cpp => {
@@ -25279,14 +25300,14 @@ fn lower_algorithm_stmt(
                         // signature already carries.
                         let type_name = &imp.member_type;
                         out.push_str(&format!(
-                            "{pad}for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>({type_name}::capacity()); ++slot_idx) {{\n"
+                            "{pad}for (std::uint32_t sce_slot_idx = 0; sce_slot_idx < static_cast<std::uint32_t>({type_name}::capacity()); ++sce_slot_idx) {{\n"
                         ));
                         out.push_str(&format!(
-                            "{pad}    auto {it}_opt = {alias}.get_by_slot(slot_idx);\n"
+                            "{pad}    auto sce_{it}_opt = {alias}.get_by_slot(sce_slot_idx);\n"
                         ));
-                        out.push_str(&format!("{pad}    if ({it}_opt.has_value()) {{\n"));
+                        out.push_str(&format!("{pad}    if (sce_{it}_opt.has_value()) {{\n"));
                         out.push_str(&format!(
-                            "{pad}        const auto& {it} = {it}_opt.value();\n"
+                            "{pad}        const auto& {it} = sce_{it}_opt.value();\n"
                         ));
                     }
                     Language::C11 => {
@@ -25316,13 +25337,15 @@ fn lower_algorithm_stmt(
                             ))
                         })?;
                         out.push_str(&format!(
-                            "{pad}for (uint32_t slot_idx = 0u; slot_idx < {upper}_CAPACITY; ++slot_idx) {{\n"
+                            "{pad}for (uint32_t sce_slot_idx = 0u; sce_slot_idx < {upper}_CAPACITY; ++sce_slot_idx) {{\n"
                         ));
                         out.push_str(&format!(
-                            "{pad}    const {element_snake}_t *{it}_ptr = {snake}_get_by_slot({alias}, slot_idx);\n"
+                            "{pad}    const {element_snake}_t *sce_{it}_ptr = {snake}_get_by_slot({alias}, sce_slot_idx);\n"
                         ));
-                        out.push_str(&format!("{pad}    if ({it}_ptr == NULL) continue;\n"));
-                        out.push_str(&format!("{pad}    {element_snake}_t {it} = *{it}_ptr;\n"));
+                        out.push_str(&format!("{pad}    if (sce_{it}_ptr == NULL) continue;\n"));
+                        out.push_str(&format!(
+                            "{pad}    {element_snake}_t {it} = *sce_{it}_ptr;\n"
+                        ));
                         out.push_str(&format!("{pad}    {{\n"));
                     }
                     Language::Kotlin => {
@@ -25333,28 +25356,25 @@ fn lower_algorithm_stmt(
                         // at for-loop scope (`body_inner_indent =
                         // indent + 1`); no extra `run {}` wrapper.
                         out.push_str(&format!(
-                            "{pad}for (slotIdx in 0u until {alias}.capacity().toUInt()) {{\n"
+                            "{pad}for (sceSlotIdx in 0u until {alias}.capacity().toUInt()) {{\n"
                         ));
                         out.push_str(&format!(
-                            "{pad}    val {it} = {alias}.getBySlot(slotIdx) ?: continue\n"
+                            "{pad}    val {it} = {alias}.getBySlot(sceSlotIdx) ?: continue\n"
                         ));
                     }
                     Language::Go => {
-                        // The BC package-level capacity constant
-                        // `<Pascal>Capacity` (per the BC template) is exported
-                        // from the BC's own Go package, so a foreign
-                        // algorithm must qualify it with the package selector.
-                        // `member_type` (`<snake>.<Pascal>`) already carries
-                        // that selector — the same fully-qualified spelling
-                        // the Cpp arm above uses for `capacity()`.
-                        let member_type = &imp.member_type;
+                        // The bound is the collection's own `Capacity()` method,
+                        // not the package-level constant `<Pascal>Capacity`: that
+                        // is written through the BC's package name
+                        // (`local_sub_table.LocalSubTableCapacity`), which a
+                        // parameter of the same name, read in this body, hides.
                         out.push_str(&format!(
-                            "{pad}for slotIdx := uint32(0); slotIdx < {member_type}Capacity; slotIdx++ {{\n"
+                            "{pad}for sceSlotIdx := uint32(0); sceSlotIdx < uint32({alias}.Capacity()); sceSlotIdx++ {{\n"
                         ));
                         out.push_str(&format!(
-                            "{pad}    {it}, ok := {alias}.GetBySlot(slotIdx)\n"
+                            "{pad}    {it}, sceOk := {alias}.GetBySlot(sceSlotIdx)\n"
                         ));
-                        out.push_str(&format!("{pad}    if !ok {{ continue }}\n"));
+                        out.push_str(&format!("{pad}    if !sceOk {{ continue }}\n"));
                     }
                     Language::Python => {
                         // Python BC static method `capacity()` returns
@@ -25364,9 +25384,11 @@ fn lower_algorithm_stmt(
                         // the other backends.
                         let type_name = &imp.type_name;
                         out.push_str(&format!(
-                            "{pad}for slot_idx in range({type_name}.capacity()):\n"
+                            "{pad}for sce_slot_idx in range({type_name}.capacity()):\n"
                         ));
-                        out.push_str(&format!("{pad}    {it} = {alias}.get_by_slot(slot_idx)\n"));
+                        out.push_str(&format!(
+                            "{pad}    {it} = {alias}.get_by_slot(sce_slot_idx)\n"
+                        ));
                         out.push_str(&format!("{pad}    if {it} is None:\n"));
                         out.push_str(&format!("{pad}        continue\n"));
                     }
@@ -25474,8 +25496,10 @@ fn lower_algorithm_stmt(
                     // widenings via `.toUShort()` zero-extend correctly. A list
                     // parameter's primitive array already yields its element.
                     Language::Kotlin if source_ty == InferredType::Bytes => {
+                        // The signed element is under the generator's own prefix, like
+                        // every local it adds, so an author's local cannot be it.
                         format!(
-                            "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
+                            "{pad}for (sceRaw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = sceRaw_{it}.toUByte()\n"
                         )
                     }
                     Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
@@ -26127,7 +26151,7 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
         Language::Python => python_local_spelling(id),
         Language::Go => go_local_spelling(id),
         Language::Cpp => cpp_local_spelling(id),
-        Language::Kotlin => id.to_string(),
+        Language::Kotlin => kotlin_local_spelling(id),
     }
 }
 
@@ -26229,18 +26253,24 @@ pub(crate) fn python_local_spelling(id: &str) -> String {
 /// committed C uses as an author's name, and the pin test beside it reads the
 /// headers' own declarations, so a template that starts to use one more library
 /// name extends this list or fails there.
+///
+/// The names that end `_t` are not listed: every typedef the generated C declares
+/// is `<name>_t`, the library's (`size_t`, `uint32_t`) and the document's (an
+/// element type `subscription_entry_t`), so a local of that shape is shifted off
+/// them all at once ([`c11_local_spelling`]) and no list has to name one.
 pub const C11_RESERVED_NAMES: &[&str] = &[
-    "abs", "bool", "ceil", "false", "floor", "int16_t", "int32_t", "int64_t", "int8_t", "memcmp",
-    "memcpy", "memmove", "memset", "round", "size_t", "sqrt", "strcmp", "strlen", "true",
-    "uint16_t", "uint32_t", "uint64_t", "uint8_t",
+    "abs", "bool", "ceil", "false", "floor", "fprintf", "llround", "memcmp", "memcpy", "memmove",
+    "memset", "round", "sqrt", "stderr", "strcmp", "strlen", "true",
 ];
 
 /// How a generated C function of a forge kind spells a name the author gave a
 /// parameter, a variable or a datum: snake_case, and with one more trailing `_`
 /// when it is one the generated code reaches for itself — a name in
 /// [`C11_RESERVED_NAMES`], one that begins `sce_` (the generator's own prefix:
-/// `sce_failure_`, `sce_self`, `sce_x`), or one that begins `_` (`_st`, which is
-/// the state a validator is handed).
+/// `sce_failure_`, `sce_self`, `sce_x`), one that begins `_` (`_st`, which is
+/// the state a validator is handed), or one that ends `_t`, which is a typedef
+/// name (POSIX reserves the suffix for them, and the generated code declares
+/// one for each type of the document).
 ///
 /// One function for the declaration, every read and every call, and a SHIFT
 /// like the other backends': a name whose stem (the name without its trailing
@@ -26249,7 +26279,11 @@ pub const C11_RESERVED_NAMES: &[&str] = &[
 pub fn c11_local_spelling(id: &str) -> String {
     let snake = filters::to_snake_case(id.to_string());
     let stem = snake.trim_end_matches('_');
-    if snake.starts_with('_') || stem.starts_with("sce_") || C11_RESERVED_NAMES.contains(&stem) {
+    if snake.starts_with('_')
+        || stem.starts_with("sce_")
+        || stem.ends_with("_t")
+        || C11_RESERVED_NAMES.contains(&stem)
+    {
         format!("{snake}_")
     } else {
         snake
@@ -26325,6 +26359,80 @@ pub fn rust_local_spelling(id: &str) -> String {
         format!("{snake}_")
     } else {
         snake
+    }
+}
+
+/// The names a generated Kotlin file writes a package through, bare, in the
+/// middle of an expression (`kotlin.math.abs(…)`, `com.sce.forge.runtime.…`): a
+/// local of that name is read in its place, and the next segment is not found
+/// on it.
+pub const KOTLIN_PACKAGE_ROOTS: &[&str] = &["com", "kotlin"];
+
+/// The standard type names the generator writes for an author's SCE types
+/// ([`kotlin_type`]). A top-level type the generator declares from an author's
+/// id (a lookup's enum, named for its output) shares the file with them, so one
+/// of that name would stand in for the standard type everywhere the file writes
+/// it: an output called `uByte` is the enum `UByte`, and the input of type
+/// `UByte` is then an enum. Pinned to the mapping by
+/// `kotlin_type_names_are_the_ones_the_mapping_writes`.
+pub const KOTLIN_TYPE_NAMES: &[&str] = &[
+    "Boolean",
+    "Byte",
+    "ByteArray",
+    "Double",
+    "Float",
+    "Int",
+    "Long",
+    "Short",
+    "String",
+    "UByte",
+    "UInt",
+    "ULong",
+    "UShort",
+];
+
+/// How a generated Kotlin file spells the name of a type it declares from an
+/// author's id: as derived, and with one more trailing `_` when that is one of
+/// [`KOTLIN_TYPE_NAMES`] (`UByte_`), so that the type is not the standard one's.
+pub fn kotlin_declared_type_name(derived: &str) -> String {
+    if KOTLIN_TYPE_NAMES.contains(&derived.trim_end_matches('_')) {
+        format!("{derived}_")
+    } else {
+        derived.to_string()
+    }
+}
+
+/// How a generated Kotlin function of a forge kind spells a name the author gave
+/// a parameter, a variable or a datum: as written, and with one more trailing `_`
+/// when it is a name the generated code reaches through.
+///
+/// A name that begins with a capital is a class to Kotlin, and a class in
+/// qualifier position wins over a local of the same name: an input called
+/// `UByte` reads as the type's companion in `UByte.toInt()`, one called like the
+/// observer's `ForgeDomainTag` or a sibling document's class does not reach the
+/// object it names. The classes in scope are every one of the standard library's
+/// and the platform's besides the generated ones, so no list of them is
+/// complete, and the rule is the shape and not the list: the name of a local is
+/// not a capitalised one. The package roots a call is written through
+/// ([`KOTLIN_PACKAGE_ROOTS`]) and the generator's own prefix (`sceEvents`,
+/// `sce_x`, `SCE_X`) are the rest.
+///
+/// One function for the declaration, every read and every call, and a SHIFT like
+/// the other backends': a name whose stem (the name without its trailing
+/// underscores) is one of those gets one more underscore, so an author's own
+/// `Foo_` is `Foo__` and no two names meet.
+pub fn kotlin_local_spelling(id: &str) -> String {
+    let stem = id.trim_end_matches('_');
+    let capital = stem.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    let own_prefix = stem.starts_with("sce_")
+        || stem
+            .strip_prefix("sce")
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_ascii_uppercase());
+    if capital || own_prefix || KOTLIN_PACKAGE_ROOTS.contains(&stem) {
+        format!("{id}_")
+    } else {
+        id.to_string()
     }
 }
 
@@ -29591,6 +29699,65 @@ mod tests {
         let spelled: std::collections::BTreeSet<String> =
             names.iter().map(|n| rust_local_spelling(n)).collect();
         assert_eq!(spelled.len(), names.len(), "{spelled:?}");
+    }
+
+    /// What the Kotlin generator reaches through — a capitalised name (a class
+    /// in qualifier position), the package roots a call is written through and
+    /// its own `sce` prefix — is shifted off an author's local, injectively, and
+    /// nothing else is.
+    #[test]
+    fn kotlin_names_the_generator_reaches_through_are_shifted_off_an_authors() {
+        assert_eq!(kotlin_local_spelling("UByte"), "UByte_");
+        assert_eq!(kotlin_local_spelling("ForgeDomainTag"), "ForgeDomainTag_");
+        assert_eq!(kotlin_local_spelling("MY_CONST"), "MY_CONST_");
+        assert_eq!(kotlin_local_spelling("Foo_"), "Foo__");
+        assert_eq!(kotlin_local_spelling("com"), "com_");
+        assert_eq!(kotlin_local_spelling("kotlin"), "kotlin_");
+        assert_eq!(kotlin_local_spelling("sceEvents"), "sceEvents_");
+        assert_eq!(kotlin_local_spelling("sce_x"), "sce_x_");
+        assert_eq!(kotlin_local_spelling("engineRpm"), "engineRpm");
+        assert_eq!(kotlin_local_spelling("rpm"), "rpm");
+        assert_eq!(kotlin_local_spelling("events"), "events");
+        assert_eq!(kotlin_local_spelling("scene"), "scene");
+        assert_eq!(kotlin_local_spelling("comma"), "comma");
+        assert_eq!(kotlin_local_spelling("x_"), "x_");
+        // Injective: no two names the document keeps apart meet.
+        let names = [
+            "Foo", "Foo_", "Foo__", "com", "com_", "x", "x_", "sce_a", "sce_a_",
+        ];
+        let spelled: std::collections::BTreeSet<String> =
+            names.iter().map(|n| kotlin_local_spelling(n)).collect();
+        assert_eq!(spelled.len(), names.len(), "{spelled:?}");
+    }
+
+    /// The standard type names the generator keeps a declared type off are the
+    /// ones its type mapping writes, and nothing else is shifted.
+    #[test]
+    fn kotlin_type_names_are_the_ones_the_mapping_writes() {
+        let written: std::collections::BTreeSet<&str> = [
+            SceType::Uint8,
+            SceType::Uint16,
+            SceType::Uint32,
+            SceType::Uint64,
+            SceType::Int8,
+            SceType::Int16,
+            SceType::Int32,
+            SceType::Int64,
+            SceType::Float32,
+            SceType::Float64,
+            SceType::Bool,
+            SceType::String,
+            SceType::Bytes,
+        ]
+        .iter()
+        .map(kotlin_type)
+        .collect();
+        let kept: std::collections::BTreeSet<&str> = KOTLIN_TYPE_NAMES.iter().copied().collect();
+        assert_eq!(written, kept);
+        assert_eq!(kotlin_declared_type_name("UByte"), "UByte_");
+        assert_eq!(kotlin_declared_type_name("UByte_"), "UByte__");
+        assert_eq!(kotlin_declared_type_name("Status"), "Status");
+        assert_eq!(kotlin_declared_type_name("Integer"), "Integer");
     }
 
     #[test]

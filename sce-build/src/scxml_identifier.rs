@@ -505,14 +505,22 @@ fn spellings_of(
         &[UpperSnake],
         &[UpperSnake],
     ];
+    // Python writes a helper where it is called (`compute_key(seed)`), so the
+    // name reaches source there as it does in the rest, even though a procedure
+    // stores it as `self._<name>`: a helper called `def` was `def(seed)`.
     const HELPER: Spellings = [
         &[Snake],
         &[Verbatim],
         &[Verbatim],
         &[Verbatim],
-        &[],
+        &[Snake],
         &[Snake],
     ];
+    // A procedure's states are the members of one enum, spelled Pascal in Rust,
+    // C++, Kotlin and Python (`procedure-state` in `forge::declared_names`); Go
+    // and C11 write one under a prefix, so no keyword can be one there. A state
+    // called `false` is the member `False` in Python, which cannot be assigned.
+    const STATE: Spellings = [&[Pascal], &[Pascal], &[Pascal], &[], &[Pascal], &[]];
     // Go, Kotlin and Python refuse `<sce:extern>`.
     const EXTERN: Spellings = [&[Verbatim], &[Verbatim], &[], &[], &[], &[Verbatim]];
     const ACTION: Spellings = [&[Snake], &[Camel], &[Camel], &[Pascal], &[Snake], &[Snake]];
@@ -526,6 +534,15 @@ fn spellings_of(
             } else {
                 &STATIC_DATA
             }
+        }
+        // A forge procedure's `<state>` and `<final>`. A statechart's are the
+        // reader's (`reader_names`), spelled and escaped there.
+        Some(crate::model::SCXML_NAMESPACE)
+            if matches!(element, "state" | "final")
+                && attr == "id"
+                && dialect == Dialect::Forge =>
+        {
+            &STATE
         }
         Some(crate::forge::model::SCE_NAMESPACE) => match (element, attr) {
             ("import", "as") => &IMPORT_AS,
@@ -622,8 +639,15 @@ pub fn reject_malformed(
                 // A code identifier of the right shape can still be a word a
                 // target language reserves, and then that backend cannot
                 // declare it. A path only references names declared
-                // elsewhere, and those are refused where they are declared.
-                if grammar == Grammar::CodeIdentifier {
+                // elsewhere, and those are refused where they are declared. A
+                // forge procedure's state and final ids are `xs:ID` and still
+                // become the members of an enum (`spellings_of`), so a keyword
+                // is as much a name they cannot be.
+                let declares_code_name = grammar == Grammar::CodeIdentifier
+                    || (grammar == Grammar::Id
+                        && dialect == Dialect::Forge
+                        && matches!(node.tag_name().name(), "state" | "final"));
+                if declares_code_name {
                     // A keyword is not the only thing Python cannot take: a
                     // field is the generated class's attribute, a flag its
                     // accessor, a flag-input a parameter of its calls, and the
@@ -748,6 +772,36 @@ mod tests {
         assert_eq!(
             offending_token(Grammar::EventDescriptors, "ok go*/Y"),
             Some("go*/Y")
+        );
+    }
+
+    /// A forge procedure's `<state id>` is `xs:ID` and still the member of an enum
+    /// the backends spell Pascal, so a name that is a keyword there is refused
+    /// where the id is written (`false` is the Python member `False`, which cannot
+    /// be assigned). A statechart's state is the reader's, escaped and spelled
+    /// there, and is not refused here.
+    #[test]
+    fn a_forge_procedures_state_id_is_as_much_a_name_as_a_data_id() {
+        let refuse = |kind: &str, id: &str| -> bool {
+            let text = format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                          xmlns:sce="http://sce.dev/ext"
+                          {kind} version="1.0" initial="{id}">
+                     <state id="{id}"/>
+                   </scxml>"#
+            );
+            let parsed = roxmltree::Document::parse(&text).expect("a well-formed document");
+            let root = parsed.root_element();
+            let dialect = Dialect::of(&root);
+            reject_malformed(&root, "t", dialect).is_err()
+        };
+        let procedure = r#"sce:kind="procedure""#;
+        assert!(refuse(procedure, "false"), "a state named `false`");
+        assert!(refuse(procedure, "none"), "a state named `none`");
+        assert!(!refuse(procedure, "running"), "an ordinary state name");
+        assert!(
+            !refuse("", "false"),
+            "a statechart's state is not this rule's"
         );
     }
 

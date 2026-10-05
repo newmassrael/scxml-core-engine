@@ -27,19 +27,19 @@ class ObserverCoolant {
     private val critical = ThresholdState()
 
     fun update(coolantTemp: Double): EventQueue<ForgeDomainTag> {
-        val events = EventQueue<ForgeDomainTag>()
+        val sceEvents = EventQueue<ForgeDomainTag>()
         if (warning.enterIf(coolantTemp > 110.0)) {
-            events.push(ForgeDomainTag.EMIT_WARNING)
+            sceEvents.push(ForgeDomainTag.EMIT_WARNING)
         }
         else if (warning.leaveIf(coolantTemp < 100.0)) {
-            events.push(ForgeDomainTag.CLEAR_WARNING)
+            sceEvents.push(ForgeDomainTag.CLEAR_WARNING)
         }
         if (critical.enterIf(coolantTemp > 120.0)) {
-            events.push(ForgeDomainTag.EMERGENCY_SHUTDOWN)
+            sceEvents.push(ForgeDomainTag.EMERGENCY_SHUTDOWN)
         }
         else {
             critical.leaveIf(coolantTemp < 105.0)
         }
-        return events
+        return sceEvents
     }
 }

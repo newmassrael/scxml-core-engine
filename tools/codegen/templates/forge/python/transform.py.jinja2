@@ -40,6 +40,14 @@ def {{ func.name }}({{ func.params }}) -> {{ func.ret_type }}:
 
 
 {% set this = holder.self_name %}
+{# A module-level function is reached from `update` under a name no parameter
+   can be: the function is named from an output (`compute_delta`), and an
+   author's input of that name is a parameter of the method. #}
+{% for o in holder.outputs %}
+sce_{{ o.fn }} = {{ o.fn }}
+{% endfor %}
+
+
 @dataclass(frozen=True)
 class {{ holder.symbols.outputs }}:
     """Every output of one activation."""
@@ -86,7 +94,7 @@ class {{ holder.symbols.holder }}:
 
     def {{ holder.symbols.update }}({{ this }}{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }}:
 {% for o in holder.outputs %}
-        {{ o.name }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
+        {{ o.name }} = sce_{{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
 {% endfor %}
 {% for c in holder.cells %}
         {{ this }}.{{ c.name }} = {{ c.source }}

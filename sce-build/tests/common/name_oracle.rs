@@ -282,11 +282,22 @@ pub fn run_parallel<F>(items: &[String], build: F) -> BTreeMap<String, String>
 where
     F: Fn(&str) -> Option<String> + Sync,
 {
-    let next = AtomicUsize::new(0);
-    let failed = std::sync::Mutex::new(BTreeMap::new());
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
+    run_parallel_on(items, threads, build)
+}
+
+/// [`run_parallel`] on at most `threads` threads, for a build that is heavy
+/// enough that the machine's cores are not the limit (a JVM compiler holds
+/// gigabytes).
+pub fn run_parallel_on<F>(items: &[String], threads: usize, build: F) -> BTreeMap<String, String>
+where
+    F: Fn(&str) -> Option<String> + Sync,
+{
+    let next = AtomicUsize::new(0);
+    let failed = std::sync::Mutex::new(BTreeMap::new());
+    let threads = threads.max(1);
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| loop {

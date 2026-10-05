@@ -2865,6 +2865,61 @@ name an author gives, which makes two monitors that fold to one field a refusal:
 field and the interpolation body each undone) turned the oracle red with 85
 renamings that did not build, in those three classes.
 
+Kotlin has the most to hide, because a class in qualifier position wins over a
+local of the same name: an input called `UByte` is read as the type's companion
+in `UByte.toInt()`, and one called `ForgeDomainTag`, or like a sibling document's
+class, does not reach the object it names. The classes in scope are every one of
+the standard library's and the platform's, so no list of them is complete and
+the rule is the shape and not the list. `kotlin_local_spelling` shifts a name
+that begins with a capital, the package roots a call is written through (`com`,
+`kotlin`) and the generator's own prefix, for the declaration, every read and
+every call. The generator's own names follow it: the observer's queue is
+`sceEvents`, a validator's kept value is `scePrev<Name>` (an input called
+`prevSpeed` beside the member for `speed` was assigned to), and the signed
+element a bytes loop iterates is `sceRaw_<item>`. A lookup's enum is named for its
+output, so an output called `uByte` was the enum `UByte` and stood in for the
+type of the input in the same file: a type the generator declares from an
+author's id is kept off the standard type names (`kotlin_declared_type_name`,
+with `KOTLIN_TYPE_NAMES` pinned to the type mapping), and an interpolation read
+each input as the author wrote it where the signature spelled it, as the Rust
+one did. `a_kotlin_kind_keeps_an_authors_names_apart_from_its_own` compiles the
+renamings against the forge runtime built once from this tree, hundreds in a run
+because `kotlinc` is a JVM that takes seconds to start, and tells each error back
+to the renaming whose file it names. The first run built 15 456 accepted
+renamings and 73 did not; the last built 15 757 and none failed. Three controls
+are not renamed because they do not build alone: one reads a record type the host
+supplies, one is a test file that imports `kotlin.test`, and one is a defect of
+its own that is not about a name, a scalar `<sce:const>` of an unsigned type
+written as a `const val` whose initializer is not a constant.
+
+What each oracle asks was widened when Kotlin showed what a list of committed
+outputs leaves out. The candidates of a renaming are the identifiers of the
+committed outputs of its kind and of the language, and now also every identifier
+the generator writes for the document itself, read from its own unrenamed output:
+a name the generator derives from a document's names (a member, a loop index) is
+asked about whether or not a committed output still spells it, and a document
+with no committed output is asked at all. That found names every backend had
+written plainly. The loop over a bounded collection used `slot_idx` (`slotIdx`)
+and an item-derived `<item>_ptr` or `<item>_opt`, now under the generator's
+prefix, and Go reads the collection's bound through its `Capacity()` method and
+no longer through the package-qualified constant, which a parameter named like the
+package hid. A transform that reads `previous()` calls a function named from each
+output (`computeDelta`) from a method that has the inputs as parameters, and an
+input of that name hid it: C++ and Rust qualify the call, and Python and Go call
+it through a name under the prefix. C reads library names too (`llround`,
+`fprintf`, `stderr`) that no committed output holds, so its pin reads the
+generated output of every document, and a C name that ends `_t` is shifted whole,
+because every typedef the generated C declares is `<name>_t` and the suffix is
+POSIX's. Three kinds of name that no keyword list holds were accepted and read as
+something else, and are refused for every backend like a keyword: `_` (the
+wildcard in Rust, an unnamed parameter in Kotlin, the blank identifier in Go), a
+Python `__x__` name (`__init__` as a field replaced the constructor, `__import__`
+as a parameter replaced the builtin), and a forge procedure's state or final id
+that is a keyword once spelled as the enum member it becomes (`false` is Python's
+`False`). A Python helper is written bare where it is called, so its name is
+checked as Python writes it. The Python oracle now reports a case whose source
+does not parse as a case, where it stopped the run without saying which.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called

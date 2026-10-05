@@ -444,13 +444,29 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     // its renamings is not about the name.
     let mut baseline: Vec<(String, String)> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
+    // What the generator writes for a document itself, read from its own
+    // unrenamed output: a candidate for its renamings besides what the committed
+    // outputs of its kind use, so that a name the generator derives from the
+    // document's own is asked about whether or not a committed output still
+    // spells it. The document's own name is spelled into its package and is the
+    // oracle's, not the generator's.
+    let mut own_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for doc in &docs {
         let unique = format!("{}__base", doc.stem);
         // A document that imports another generated package builds with that
         // package beside it, which `write_with_siblings` supplies.
-        match generate(&unique, &doc.text)
-            .and_then(|files| write_with_siblings(&proj, &mut written, &files))
-        {
+        match generate(&unique, &doc.text).and_then(|files| {
+            let mine = doc.stem.replace('_', "").to_lowercase();
+            own_names.insert(
+                doc.stem.clone(),
+                files
+                    .iter()
+                    .flat_map(|f| identifiers_of(&f.source))
+                    .filter(|n| !n.to_lowercase().replace('_', "").contains(&mine))
+                    .collect(),
+            );
+            write_with_siblings(&proj, &mut written, &files)
+        }) {
             Ok(()) => baseline.push((doc.stem.clone(), unique)),
             Err(_) => skipped.push(doc.stem.clone()),
         }
@@ -507,6 +523,7 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
             .into_iter()
             .chain(UNIVERSE.iter().map(|s| s.to_string()))
             .chain(SHAPES.iter().map(|s| s.to_string()))
+            .chain(own_names[&doc.stem].iter().cloned())
             .filter(|n| n != "_")
             .collect();
         let folded: BTreeSet<String> = doc.declared.iter().map(|n| snake(n)).collect();

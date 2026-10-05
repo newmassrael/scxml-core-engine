@@ -110,11 +110,11 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     // the minimal exemplar — this fixture exercises the same surface
     // under cross-algo dispatch).
     assert!(
-        code.contains("for slot_idx in 0..(LocalSubTable::capacity() as u32) {"),
+        code.contains("for sce_slot_idx in 0..(LocalSubTable::capacity() as u32) {"),
         "Rust foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("if let Some(entry) = subs.get_by_slot(slot_idx) {"),
+        code.contains("if let Some(entry) = subs.get_by_slot(sce_slot_idx) {"),
         "Rust foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — `km(entry.callback_id, target)`
@@ -141,11 +141,11 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Cpp);
     assert!(
-        code.contains("for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>(::SCE::Generated::LocalSubTable::LocalSubTable::capacity()); ++slot_idx) {"),
+        code.contains("for (std::uint32_t sce_slot_idx = 0; sce_slot_idx < static_cast<std::uint32_t>(::SCE::Generated::LocalSubTable::LocalSubTable::capacity()); ++sce_slot_idx) {"),
         "Cpp foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("auto entry_opt = subs.get_by_slot(slot_idx);"),
+        code.contains("auto sce_entry_opt = subs.get_by_slot(sce_slot_idx);"),
         "Cpp foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — Cpp qualified call form. Identity SSOT:
@@ -171,11 +171,11 @@ fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn kotlin_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Kotlin);
     assert!(
-        code.contains("for (slotIdx in 0u until subs.capacity().toUInt()) {"),
+        code.contains("for (sceSlotIdx in 0u until subs.capacity().toUInt()) {"),
         "Kotlin foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("val entry = subs.getBySlot(slotIdx) ?: continue"),
+        code.contains("val entry = subs.getBySlot(sceSlotIdx) ?: continue"),
         "Kotlin foreach-BC missing getBySlot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — Kotlin wildcard import brings the
@@ -202,12 +202,12 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Go);
     assert!(
         code.contains(
-            "for slotIdx := uint32(0); slotIdx < local_sub_table.LocalSubTableCapacity; slotIdx++ {"
+            "for sceSlotIdx := uint32(0); sceSlotIdx < uint32(subs.Capacity()); sceSlotIdx++ {"
         ),
         "Go foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("entry, ok := subs.GetBySlot(slotIdx)"),
+        code.contains("entry, sceOk := subs.GetBySlot(sceSlotIdx)"),
         "Go foreach-BC missing GetBySlot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — Go package-qualified form. Identity SSOT:
@@ -225,11 +225,11 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn python_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Python);
     assert!(
-        code.contains("for slot_idx in range(LocalSubTable.capacity()):"),
+        code.contains("for sce_slot_idx in range(LocalSubTable.capacity()):"),
         "Python foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("entry = subs.get_by_slot(slot_idx)"),
+        code.contains("entry = subs.get_by_slot(sce_slot_idx)"),
         "Python foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — Python module-qualified form
@@ -255,13 +255,13 @@ fn c11_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::C11);
     assert!(
         code.contains(
-            "for (uint32_t slot_idx = 0u; slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++slot_idx) {"
+            "for (uint32_t sce_slot_idx = 0u; sce_slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++sce_slot_idx) {"
         ),
         "C11 foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
         code.contains(
-            "const subscription_entry_t *entry_ptr = local_sub_table_get_by_slot(subs, slot_idx);"
+            "const subscription_entry_t *sce_entry_ptr = local_sub_table_get_by_slot(subs, sce_slot_idx);"
         ),
         "C11 foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
@@ -310,8 +310,8 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
         let code = compile_match_first_for(lang);
         // Axis 1: BC iteration surfaces.
         let slot_marker = match lang {
-            Language::Kotlin | Language::Go => "slotIdx",
-            _ => "slot_idx",
+            Language::Kotlin | Language::Go => "sceSlotIdx",
+            _ => "sce_slot_idx",
         };
         assert!(
             code.contains(slot_marker),

@@ -46,10 +46,14 @@
 //! a digit) because a spelling that is wrong for a shape is wrong for every
 //! author who writes in it.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::name_oracle::identifiers;
+use common::source_lexing::Lang;
 use regex::Regex;
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
@@ -747,8 +751,14 @@ def load(path, tag):
 
 
 def schedule(path, tag, tr):
-    with open(path, encoding="utf-8") as handle:
-        tree = ast.parse(handle.read())
+    # A case whose Python does not parse is a result like any other, and a
+    # difference from its baseline: it is told with the pair it is, not left to
+    # stop the run.
+    try:
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+    except SyntaxError as e:
+        return [["syntax error " + str(e.msg)[:60], None]]
     try:
         mod = load(path, tag)
     except BaseException as e:  # noqa: BLE001
@@ -862,6 +872,17 @@ fn an_authors_name_never_decides_what_the_generated_python_of_a_kind_does() {
             skipped_documents.push(doc.stem.clone());
             continue;
         }
+        // What the generator writes for the document itself, read from its own
+        // unrenamed output: a candidate for its renamings besides what the
+        // committed outputs of its kind use, so that a name the generator derives
+        // from the document's own is asked about whether or not a committed
+        // output still spells it. The document's own name is spelled into what it
+        // writes and is the oracle's, not the generator's.
+        let mine = doc.stem.replace('_', "").to_lowercase();
+        let own_names: BTreeSet<String> = identifiers(&baseline, Lang::Python)
+            .into_iter()
+            .filter(|n| !n.to_lowercase().replace('_', "").contains(&mine))
+            .collect();
         let base_path = proj.join(format!("{}__base.py", doc.stem));
         std::fs::write(&base_path, baseline).expect("write baseline");
 
@@ -872,6 +893,7 @@ fn an_authors_name_never_decides_what_the_generated_python_of_a_kind_does() {
             .unwrap_or_default()
             .into_iter()
             .chain(SHAPES.iter().map(|s| s.to_string()))
+            .chain(own_names)
             .collect();
         let folded: BTreeSet<String> = doc.declared.iter().map(|n| snake(n)).collect();
         for declared in &doc.declared {

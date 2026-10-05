@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use common::name_oracle::names_by_kind;
-use common::native_oracle::{include_probe_line, run, Native, INCLUDE_SIBLING};
+use common::native_oracle::{generated_names, include_probe_line, run, Native, INCLUDE_SIBLING};
 use common::source_lexing::Lang;
 use regex::Regex;
 use sce_build::generator::Language;
@@ -151,7 +151,9 @@ fn c() -> Native {
         extra_flags: Vec::new(),
         unit_suffix: ".h",
         sibling_pattern: INCLUDE_SIBLING,
+        file_name: None,
         probe_line: include_probe_line,
+        batch: None,
         imported_function: Some(r"(?m)^static inline [^;{(]*?\b([A-Za-z_][A-Za-z0-9_]*)\("),
     }
 }
@@ -246,9 +248,14 @@ fn every_library_name_the_generated_c_uses_is_one_the_generator_escapes() {
         declared.extend(found.captures_iter(&text).map(|c| c[1].to_string()));
     }
 
+    // The committed outputs are a subset of the corpus: what the generator writes
+    // for every document is what is asked about (`llround` is called by a
+    // transform no committed output holds).
+    let generated = generated_names(&c());
     let needed: BTreeSet<String> = from_outputs
         .values()
         .flatten()
+        .chain(generated.iter())
         .filter(|name| declared.contains(*name))
         .filter(|name| **name == name.to_lowercase())
         .filter(|name| !C_KEYWORDS.contains(&name.as_str()))

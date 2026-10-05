@@ -52,27 +52,27 @@ class ForgeDomain : EventDomain<ForgeDomainTag>
 
 class {{ struct_name }} {
 {% for mon in monitors %}
-    private val {{ mon.id }} = ThresholdState()
+    private val {{ mon.field }} = ThresholdState()
 {% endfor %}
 
     fun update({{ params }}): EventQueue<ForgeDomainTag> {
-        val events = EventQueue<ForgeDomainTag>()
+        val sceEvents = EventQueue<ForgeDomainTag>()
 {% for mon in monitors %}
-        if ({{ mon.id }}.enterIf({{ mon.enter_expr }})) {
-            events.push(ForgeDomainTag.{{ mon.event_enter }})
+        if ({{ mon.field }}.enterIf({{ mon.enter_expr }})) {
+            sceEvents.push(ForgeDomainTag.{{ mon.event_enter }})
         }
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
-        else if ({{ mon.id }}.leaveIf({{ mon.leave_expr }})) {
-            events.push(ForgeDomainTag.{{ mon.event_leave }})
+        else if ({{ mon.field }}.leaveIf({{ mon.leave_expr }})) {
+            sceEvents.push(ForgeDomainTag.{{ mon.event_leave }})
         }
 {% else %}
         else {
-            {{ mon.id }}.leaveIf({{ mon.leave_expr }})
+            {{ mon.field }}.leaveIf({{ mon.leave_expr }})
         }
 {% endif %}
 {% endif %}
 {% endfor %}
-        return events
+        return sceEvents
     }
 }

@@ -431,6 +431,23 @@ const C_ONLY_KEYWORDS: &[&str] = &[
 /// way to declare as a plain name. One list per language, shared by the
 /// reader spelling above and by the forge code-identifier rule.
 pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
+    // `_` is not a name in Rust (the wildcard pattern: a parameter of that name
+    // is not read back), Kotlin (an unnamed parameter) or Go (the blank
+    // identifier, which discards what it is given), though each takes it where
+    // an identifier is written: a keyword list cannot say so.
+    if spelled == "_" && matches!(language, Language::Rust | Language::Kotlin | Language::Go) {
+        return true;
+    }
+    // A `__x__` name is Python's own: `__debug__` cannot be assigned, and
+    // `__init__` or `__import__`, written as a field or a parameter, replaces what
+    // the class or the module is made of. Python reserves the whole form.
+    if matches!(language, Language::Python)
+        && spelled.len() > 4
+        && spelled.starts_with("__")
+        && spelled.ends_with("__")
+    {
+        return true;
+    }
     match language {
         Language::Rust => filters::RUST_KEYWORDS.contains(&spelled),
         Language::Kotlin => KOTLIN_HARD_KEYWORDS.contains(&spelled),
@@ -959,5 +976,26 @@ mod tests {
         assert!(reserved(Language::Cpp).covers("machinePolicy", m));
         assert!(!reserved(Language::Rust).covers("slot", m));
         assert!(!reserved(Language::Go).covers("AiLoopStateRun", m));
+    }
+
+    /// `_` binds nothing where it is written as a name in Rust, Kotlin and Go,
+    /// and Python reserves the whole `__x__` form: neither is in a keyword list,
+    /// and each was a name the generator accepted and a compiler or an
+    /// interpreter then read as something else.
+    #[test]
+    fn a_name_that_binds_nothing_or_that_python_owns_is_reserved() {
+        for language in [Language::Rust, Language::Kotlin, Language::Go] {
+            assert!(is_reserved_word(language, "_"), "{language:?}");
+        }
+        for language in [Language::Cpp, Language::C11, Language::Python] {
+            assert!(!is_reserved_word(language, "_"), "{language:?}");
+        }
+        assert!(is_reserved_word(Language::Python, "__init__"));
+        assert!(is_reserved_word(Language::Python, "__import__"));
+        // Nothing shorter or looser than the form, and no other language.
+        assert!(!is_reserved_word(Language::Python, "__"));
+        assert!(!is_reserved_word(Language::Python, "____"));
+        assert!(!is_reserved_word(Language::Python, "__private"));
+        assert!(!is_reserved_word(Language::Rust, "__init__"));
     }
 }

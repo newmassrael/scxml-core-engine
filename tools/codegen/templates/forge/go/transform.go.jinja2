@@ -53,6 +53,13 @@ func {{ func.name }}({{ func.params }}) {{ func.ret_type }} {
 }
 {% endfor %}
 {% if holder %}
+{# A package-level function is called from `update` through a name no parameter
+   can be: the function is named from an output (`ComputeDelta`), and an author's
+   input of that name is a parameter of the method. #}
+{% for o in holder.outputs %}
+
+var sce{{ o.fn }} = {{ o.fn }}
+{% endfor %}
 
 // {{ holder.symbols.outputs }} is every output of one activation.
 type {{ holder.symbols.outputs }} struct {
@@ -109,7 +116,7 @@ func {{ holder.symbols.restored }}({{ holder.restore_params }}) *{{ holder.symbo
 // {{ holder.symbols.update }} is one activation.
 func ({{ this }} *{{ holder.symbols.holder }}) {{ holder.symbols.update }}({{ holder.input_params }}) {{ holder.symbols.outputs }} {
 {% for o in holder.outputs %}
-	{{ o.name }} := {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
+	{{ o.name }} := sce{{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
 {% endfor %}
 {% for c in holder.cells %}
 	{{ this }}.{{ c.name }} = {{ c.source }}

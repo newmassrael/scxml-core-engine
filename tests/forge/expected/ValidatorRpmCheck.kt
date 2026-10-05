@@ -9,19 +9,19 @@ package com.sce.generated.validator_rpm_check
 data class ValidationResult(val valid: Boolean, val reason: String)
 
 class ValidatorRpmCheck {
-    private var prevRpm: UShort = 0u.toUShort()
+    private var scePrevRpm: UShort = 0u.toUShort()
 
     fun validate(rpm: UShort, engineState: String): ValidationResult {
         if (rpm.toInt() > 8000)
             return ValidationResult(false, "rpm_out_of_range")
         run {
-            val delta = if (rpm.toInt() > prevRpm.toInt()) rpm.toInt() - prevRpm.toInt() else prevRpm.toInt() - rpm.toInt()
+            val delta = if (rpm.toInt() > scePrevRpm.toInt()) rpm.toInt() - scePrevRpm.toInt() else scePrevRpm.toInt() - rpm.toInt()
             if (delta > 500)
                 return ValidationResult(false, "rpm_rate_of_change_exceeded")
         }
         if (!(rpm == 0.toUShort() || engineState != "STOP"))
             return ValidationResult(false, "plausibility_failed")
-        prevRpm = rpm
+        scePrevRpm = rpm
         return ValidationResult(true, "")
     }
 }
