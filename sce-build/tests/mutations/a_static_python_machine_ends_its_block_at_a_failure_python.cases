@@ -245,8 +245,8 @@ PY
 
 mutation_case "a send param that failed is carried as a zero" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{% endfor %}\n{% elif action.native_content_value %}",
-     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{{ indent }}    _data[{{ param.name | py_string_literal }}] = 0\n{% endfor %}\n{% elif action.native_content_value %}")
+     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{% else %}\n{# A string literal is folded at build time",
+     "{{ indent }}    _param_failures.append({{ param.name | py_string_literal }})\n{{ indent }}    _data[{{ param.name | py_string_literal }}] = 0\n{% else %}\n{# A string literal is folded at build time")
 PY
 
 # ── A called algorithm is a module the machine imports ─────────────
