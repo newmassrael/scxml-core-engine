@@ -2612,6 +2612,23 @@ from the committed Python output and fails when a template change makes one
 stale, and runs every Python builtin and every name that output uses as a
 field of each shape that binds a local.
 
+Go was measured, not assumed. It writes a codec field and its decode local
+Pascal and keeps its own locals lower case, so the Python defect was not
+expected there; but a Go struct holds a field and a method in one table, and
+every codec struct carries `Encode` and `EncodeToBytes`. The names are derived
+as the Python oracle derives them — every identifier that at least three
+committed Go outputs use, each as written and in the snake_case an author
+would write for it, joined with Go's universe scope and its keywords — and
+`a_go_codec_keeps_an_authors_names_apart_from_its_own` gives each to a field of
+the same eleven shapes, builds every generated package, runs the ones that
+build (a frame decoded and encoded back, the field read back through
+reflection) and finds none that breaks: 431 names, 35 refused in the document,
+4411 generated modules. What stops `Encode` and `EncodeToBytes` is the
+method list above, which is compared as snake_case, so `encode` and `Encode`
+are one name to it; with `encode` taken off the list, 22 renamings fail with
+`field and method with the same name Encode`, which is the oracle shown able to
+fail.
+
 The other forge kinds whose Python is a function — algorithm, condition,
 filter, interpolation, lookup, observer, transform, validator — meet the
 same question with the author's names as the function's own locals, and
