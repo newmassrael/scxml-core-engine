@@ -2237,16 +2237,22 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 /// another session is neither, and the session it waits for is not part of the
 /// state.
 ///
-/// The delay and the target are read as written because this data model
-/// refuses the attributes that would leave either to run time (`delayexpr`,
-/// `targetexpr`: `UNTYPED_ACTION_ATTRIBUTES` in `static_datamodel`), so a
-/// send's target is never a value this document computes.
-/// `a_delayed_sends_target_and_delay_are_literals_under_sce_static` holds that:
+/// A `delayexpr` counts as a delay: the time it computes is known only when the
+/// send runs and may be one that waits, so a machine that has one cannot be
+/// told apart from a machine that delays, and the saved state would drop the
+/// send it holds.
+///
+/// The target is read as written because this data model refuses the attribute
+/// that would leave it to run time (`targetexpr`: `UNTYPED_ACTION_ATTRIBUTES`
+/// in `static_datamodel`), so a send's target is never a value this document
+/// computes. `a_delayed_sends_target_is_a_literal_under_sce_static` holds that:
 /// a data model that typed `targetexpr` would have to decide here which
 /// sessions it could name.
 fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
     model.sends().into_iter().any(|(_, send)| {
-        !send.delay.is_empty() && send.target.starts_with("#_") && send.target != "#_internal"
+        (!send.delay.is_empty() || !send.delayexpr.is_empty())
+            && send.target.starts_with("#_")
+            && send.target != "#_internal"
     })
 }
 
@@ -5758,22 +5764,37 @@ mod tests {
     }
 
     #[test]
-    fn a_delayed_sends_target_and_delay_are_literals_under_sce_static() {
-        // `delays_a_send_to_another_session` reads both as written. A target
-        // that is only known at run time may be any session, so the day this
-        // data model types `targetexpr` (or a `delayexpr` that makes a send
-        // delayed) this fails, and the predicate has to say what it does.
-        for send in [
-            r#"<send event="later" targetexpr="where" delay="5s"/>"#,
-            r#"<send event="later" delayexpr="how_long"/>"#,
-        ] {
-            let refusal = SCXMLParser::new()
-                .parse_string(&counter_sending(send), "m")
-                .expect_err(send);
-            assert!(
-                format!("{refusal:?}").contains("this attribute has no typed form"),
-                "{send}: {refusal:?}"
-            );
+    fn a_delayed_sends_target_is_a_literal_under_sce_static() {
+        // `delays_a_send_to_another_session` reads the target as written. A
+        // target that is only known at run time may be any session, so the day
+        // this data model types `targetexpr` this fails, and the predicate has
+        // to say what it does.
+        let send = r#"<send event="later" targetexpr="where" delay="5s"/>"#;
+        let refusal = SCXMLParser::new()
+            .parse_string(&counter_sending(send), "m")
+            .expect_err(send);
+        assert!(
+            format!("{refusal:?}").contains("this attribute has no typed form"),
+            "{send}: {refusal:?}"
+        );
+    }
+
+    #[test]
+    fn a_computed_delay_to_another_session_has_no_saved_shape() {
+        // The time is known only when the send runs, so it may be one that
+        // waits: the machine is told apart from one that delays by nothing.
+        for target in ["#_parent", "#_child", "#_scxml_session"] {
+            let send = format!(r#"<send event="later" target="{target}" delayexpr="'5s'"/>"#);
+            assert_eq!(shape(&counter_sending(&send)), None, "{send}");
+        }
+    }
+
+    #[test]
+    fn a_computed_delay_to_this_session_keeps_its_saved_shape() {
+        // A saved state holds a send to this session as the moment it comes due.
+        for target in ["", r##" target="#_internal""##] {
+            let send = format!(r##"<send event="later"{target} delayexpr="'5s'"/>"##);
+            assert!(shape(&counter_sending(&send)).is_some(), "{send}");
         }
     }
 

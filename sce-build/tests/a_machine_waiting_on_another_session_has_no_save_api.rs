@@ -166,6 +166,8 @@ fn a_delayed_send_to_this_session_is_generated_with_the_save_api() {
         r#"<onentry><send event="go" delay="5s"/></onentry>"#,
         r#"<onentry><send id="timer" event="go" delay="5s"/></onentry>"#,
         r##"<onentry><send event="go" target="#_internal" delay="5s"/></onentry>"##,
+        r#"<onentry><send event="go" delayexpr="'5s'"/></onentry>"#,
+        r##"<onentry><send event="go" target="#_internal" delayexpr="'5s'"/></onentry>"##,
         r#"<onexit><cancel sendid="timer"/></onexit>"#,
         r#"<onentry><send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
                            target="http://localhost:1/notify" event="go" delay="5s"/></onentry>"#,
@@ -181,15 +183,19 @@ fn a_delayed_send_to_this_session_is_generated_with_the_save_api() {
 
 #[test]
 fn a_delayed_send_to_another_session_is_generated_without_it() {
+    // A `delayexpr` is a delay: the time it computes is known only when the send
+    // runs, and may be one that waits.
     for target in ["#_parent", "#_scxml_child_session"] {
-        let extra =
-            format!(r#"<onentry><send event="go" target="{target}" delay="5s"/></onentry>"#);
-        for (language, has) in save_api_per_backend(&machine(&extra)) {
-            assert!(
-                !has,
-                "{language}: a send waiting on a session the saved state does not carry is not \
-                 in it, so the machine must not offer to save one ({target})"
-            );
+        for delay in [r#"delay="5s""#, r#"delayexpr="'5s'""#] {
+            let extra =
+                format!(r#"<onentry><send event="go" target="{target}" {delay}/></onentry>"#);
+            for (language, has) in save_api_per_backend(&machine(&extra)) {
+                assert!(
+                    !has,
+                    "{language}: a send waiting on a session the saved state does not carry is \
+                     not in it, so the machine must not offer to save one ({target}, {delay})"
+                );
+            }
         }
     }
 }

@@ -1,0 +1,23 @@
+# Mutation cases for "a machine waiting on another session has no save API"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_machine_waiting_on_another_session_has_no_save_api.cases`.
+#
+# A `<send>` to another session whose delay is a `delayexpr` waits as one with a
+# `delay` does: the time is known only when the send runs, and may be one that
+# waits. The case reads only the written `delay`, so such a machine is generated
+# with a save API that drops the send its saved state cannot hold.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_machine_waiting_on_another_session_has_no_save_api
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_machine_waiting_on_another_session_has_no_save_api.rs
+
+mutation_case "a delayexpr is not a delay to another session" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        (!send.delay.is_empty() || !send.delayexpr.is_empty())\n",
+     "        !send.delay.is_empty()\n")
+PY

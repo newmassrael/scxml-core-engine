@@ -3969,9 +3969,11 @@ location other than `#_internal` — the parent, an invocation, a child session 
 which is delivered through a session the state does not hold. Such a machine is
 generated WITHOUT `save` /
 `restore`, so a host finds out when it compiles rather than when a restore
-drops part of the state. The delay and the target are read as written, since
-`sce-static` refuses `delayexpr` and `targetexpr`; a send to another session
-that is not delayed leaves nothing waiting, and does not take the API away.
+drops part of the state. A `delayexpr` counts as a delay, since the time it
+computes is known only when the send runs and may be one that waits; the target
+is read as written, since `sce-static` refuses `targetexpr`. A send to another
+session that is not delayed leaves nothing waiting, and does not take the API
+away.
 `sce-build/tests/a_machine_waiting_on_another_session_has_no_save_api.rs`
 pins this end to end, because the generator decides it from a model the
 analyzer has read, and a unit test of the lowering alone cannot see a send the
