@@ -235,6 +235,14 @@ const en = {
   markedLines: "Lit: the lines of the page that name the states requirement {id} is carried by ({states}).",
   markNoLines: "No line of the page names {states}: the page does not show where this requirement is carried.",
   markNoStates: "Requirement {id} is carried by places that name no state, so no line of the page can be tied to it.",
+  changeReading: "Comparing with the model before...",
+  changeNone: "The pseudocode is the same as in the model before.",
+  changeNoPageBefore: "No comparison: SCE did not write a page for the model before.",
+  changeNoPageAfter: "No comparison: SCE did not write a page for this model.",
+  changeFailed: "The model before could not be compared: {detail}",
+  changeTitle: "What changed from the model before ({added} added, {removed} removed)",
+  changeNote:
+    "Lines of the pseudocode that differ, with the lines around them. A condition, a signal, a value or a time that moved is in the lines that hold it; read them against the text.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -467,6 +475,14 @@ const ko: Record<Key, string> = {
   markedLines: "강조: 요구사항 {id}이(가) 담긴 상태({states})를 이름으로 부르는 페이지의 줄입니다.",
   markNoLines: "페이지에 {states}을(를) 부르는 줄이 없습니다. 이 페이지로는 이 요구사항이 어디에 담겼는지 보이지 않습니다.",
   markNoStates: "요구사항 {id}은(는) 상태 이름이 없는 위치에 담겨 있어, 페이지의 어느 줄과도 이을 수 없습니다.",
+  changeReading: "이전 모델과 비교하는 중...",
+  changeNone: "의사코드가 이전 모델과 같습니다.",
+  changeNoPageBefore: "비교할 수 없습니다: SCE가 이전 모델의 페이지를 쓰지 않았습니다.",
+  changeNoPageAfter: "비교할 수 없습니다: SCE가 이 모델의 페이지를 쓰지 않았습니다.",
+  changeFailed: "이전 모델과 비교하지 못했습니다: {detail}",
+  changeTitle: "이전 모델에서 바뀐 것 ({added}줄 추가, {removed}줄 삭제)",
+  changeNote:
+    "의사코드에서 달라진 줄과 그 앞뒤 줄입니다. 바뀐 조건, 신호, 값, 시간은 그것을 담은 줄에 있습니다. 원문과 견주어 읽으세요.",
 };
 
 export type Locale = "en" | "ko";

@@ -71,6 +71,12 @@ class FakeCore implements Transport {
   private listSaves = 0;
   private acceptSaves = 0;
   private readonly requestsOf = new Map<string, FakeRequest[]>();
+  /** Every model a work had, newest last, and each by its revision: what `model_history` and a review of an earlier one read. */
+  private readonly modelHistoryOf = new Map<string, string[]>();
+  private readonly modelsByRevision = new Map<
+    string,
+    { text: string; writtenFor: string | null; others: ReadonlyArray<{ name: string; text: string }> }
+  >();
   /** Where each requirement of a work is carried, and the sentence the list quotes for it, when a test says. */
   private readonly carriedOf = new Map<string, Record<string, string[]>>();
   private readonly quotesOf = new Map<string, Record<string, string>>();
@@ -273,6 +279,9 @@ class FakeCore implements Transport {
     others: ReadonlyArray<{ name: string; text: string }> = [],
   ): void {
     this.models.set(id, { text, writtenFor, others });
+    const revision = this.revision(`model:${text}`);
+    this.modelsByRevision.set(revision, { text, writtenFor, others });
+    this.modelHistoryOf.set(id, [...(this.modelHistoryOf.get(id) ?? []), revision]);
   }
 
   /** The SVG this core draws for a model, so a test can look for it on the screen. */
@@ -560,8 +569,23 @@ class FakeCore implements Transport {
         this.supersedeOpen(id);
         return { outcome: "saved", revision, parent: held?.revision ?? null };
       }
+      case "model_history": {
+        const revisions = this.modelHistoryOf.get(String(args["id"])) ?? [];
+        return {
+          entries: revisions.map((revision, i) => ({
+            revision,
+            parent: i === 0 ? null : (revisions[i - 1] ?? null),
+            saved_at: "2026-10-05T09:00:00Z",
+          })),
+        };
+      }
       case "review": {
-        const model = typeof args["id"] === "string" ? this.models.get(args["id"]) : undefined;
+        const model =
+          typeof args["revision"] === "string"
+            ? this.modelsByRevision.get(args["revision"])
+            : typeof args["id"] === "string"
+              ? this.models.get(args["id"])
+              : undefined;
         if (model === undefined) throw new CommandFailure("not-found", "no model");
         const head = work?.revisions.at(-1)?.revision ?? null;
         const revision = this.revision(`model:${model.text}`);
@@ -599,7 +623,11 @@ class FakeCore implements Transport {
             records: [],
           },
           // Indented, with a run of spaces and a final newline: the screen keeps them.
-          page: refused ? null : `machine door (lexicon: ${String(args["lexicon"] ?? "-")})\n  state closed:\n    on open   -> opened\n`,
+          page: refused
+            ? null
+            : `machine door (lexicon: ${String(args["lexicon"] ?? "-")})\n  state closed:\n    on open   -> ${
+                model.text.includes("LOCKED") ? "locked\n    on lock   -> locked" : "opened"
+              }\n`,
           page_refusal: refused ? { code: "cli/pseudo-unsupported", message: "the page does not abbreviate this" } : null,
         };
       }
@@ -2921,5 +2949,100 @@ describe("the sentence a question or a requirement is about", () => {
 
     expect(root.querySelectorAll(".pseudo .lit")).toHaveLength(0);
     expect(root.querySelector("[data-marked]")?.textContent).toContain("No line of the page names nowhere");
+  });
+});
+
+// ---- what changed from the model before -----------------------------------
+
+describe("what a new model changed from the one before", () => {
+  let ticker: ManualTicker;
+
+  beforeEach(async () => {
+    ticker = new ManualTicker();
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+  });
+
+  const change = (): HTMLElement | null => root.querySelector<HTMLElement>("[data-change]");
+  const diffLines = (): string[] =>
+    [...root.querySelectorAll(".diff span")].map((s) => (s.textContent ?? "").replace(/\n$/, ""));
+
+  it("says nothing of the first model: there is nothing before it", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+
+    await click("Alpha");
+
+    expect(change()).toBeNull();
+  });
+
+  it("shows the lines of the pseudocode that were added and removed, with the lines around them", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setModel("alpha", "<scxml>LOCKED</scxml>", headOf("alpha"));
+
+    await click("Alpha");
+
+    expect(change()?.dataset["change"]).toBe("changed");
+    expect(change()?.querySelector("summary")?.textContent).toBe(
+      "What changed from the model before (2 added, 1 removed)",
+    );
+    // Each line is the page's own, after a two-column mark: space, `+` or `-`.
+    expect(diffLines()).toEqual([
+      "  machine door (lexicon: en)",
+      "    state closed:",
+      "-     on open   -> opened",
+      "+     on open   -> locked",
+      "+     on lock   -> locked",
+    ]);
+    expect(root.querySelectorAll(".diff .added")).toHaveLength(2);
+    expect(root.querySelectorAll(".diff .removed")).toHaveLength(1);
+  });
+
+  it("says the pseudocode is the same when only the model's text differs", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setModel("alpha", "<scxml><!-- another comment --></scxml>", headOf("alpha"));
+
+    await click("Alpha");
+
+    expect(change()?.dataset["change"]).toBe("unchanged");
+    expect(change()?.textContent).toBe("The pseudocode is the same as in the model before.");
+  });
+
+  it("says when SCE wrote no page for the model before, and does not compare", async () => {
+    core.setModel("alpha", "<scxml>NOPAGE</scxml>", headOf("alpha"));
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+
+    await click("Alpha");
+
+    expect(change()?.dataset["change"]).toBe("unavailable");
+    expect(change()?.textContent).toContain("did not write a page for the model before");
+  });
+
+  it("appears when a new model is saved from another entrance, without a press", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    expect(change()).toBeNull();
+
+    core.setModel("alpha", "<scxml>LOCKED</scxml>", headOf("alpha"));
+    await ticker.fire();
+    await ticker.fire();
+
+    expect(change()?.dataset["change"]).toBe("changed");
+  });
+
+  it("is not asked for again while the model stays the same", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setModel("alpha", "<scxml>LOCKED</scxml>", headOf("alpha"));
+    await click("Alpha");
+    const asked = core.callsOf("model_history").length;
+
+    await ticker.fire();
+    await ticker.fire();
+
+    expect(core.callsOf("model_history")).toHaveLength(asked);
   });
 });

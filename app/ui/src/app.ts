@@ -19,6 +19,7 @@ import {
 } from "./acceptance_model";
 import { apiOver, type Api } from "./api";
 import { answerState, type AnswerState } from "./answer_states";
+import { comparePages, previousOf, type ChangePanel } from "./change_model";
 import {
   answersConflicted,
   answersFailed,
@@ -185,6 +186,9 @@ export class App {
   private review: ReviewPanel | null = null;
   /** The newest request for the review; an older one that answers later is dropped. */
   private reviewTicket = 0;
+  /** How the model shown differs from the one it replaced, and the newest request for it. */
+  private change: ChangePanel | null = null;
+  private changeTicket = 0;
   /** The owner's answers to the model's open questions, and what is typed into them. */
   private answers: AnswersModel | null = null;
   /** Why the answers could not be read, when they could not. */
@@ -332,6 +336,8 @@ export class App {
       this.model = { phase: "reading" };
       this.reviewTicket += 1;
       this.review = null;
+      this.changeTicket += 1;
+      this.change = null;
       this.answersTicket += 1;
       this.answers = null;
       this.answersUnreadable = null;
@@ -913,6 +919,8 @@ export class App {
       const review = await this.api.review(id, revision, this.locale);
       if (!current()) return;
       this.review = { phase: "read", review };
+      // What this model changed from the one before it is read beside the review.
+      void this.loadChange(id, revision, review.page);
     } catch (error) {
       if (!current()) return;
       // A token wanted is the sign-in form's to answer; anything else is the
@@ -922,6 +930,79 @@ export class App {
       this.review = { phase: "failed", message: failure === null ? this.explain(error) : failure.message };
     }
     this.render();
+  }
+
+  /**
+   * How the model shown differs from the one it replaced, as lines of their pseudocode pages.
+   * The earlier model is the one before this in the core's model history; SCE writes its page
+   * as it wrote this one's. Only the newest request, for the work that asked, is applied.
+   */
+  private async loadChange(id: string, revision: string, page: string | null): Promise<void> {
+    const session = this.session;
+    const ticket = ++this.changeTicket;
+    const current = (): boolean => session === this.session && ticket === this.changeTicket;
+    this.change = { phase: "reading" };
+    try {
+      const previous = previousOf(await this.api.modelHistory(id), revision);
+      if (!current()) return;
+      if (previous === null) {
+        this.change = { phase: "none" };
+      } else {
+        const before = await this.api.review(id, previous, this.locale);
+        if (!current()) return;
+        this.change = comparePages(before.page, page);
+      }
+    } catch (error) {
+      if (!current()) return;
+      if (this.askForToken(error)) return;
+      this.change = { phase: "unavailable", reason: this.explain(error) };
+    }
+    this.render();
+  }
+
+  /** What changed from the model before, in the pseudocode; nothing for a first model. */
+  private changeSection(): HTMLElement | null {
+    const change = this.change;
+    if (change === null || change.phase === "none") return null;
+    switch (change.phase) {
+      case "reading":
+        return h("p", { class: "muted change", "data-change": "reading" }, this.t("changeReading"));
+      case "unchanged":
+        return h("p", { class: "muted change", "data-change": "unchanged" }, this.t("changeNone"));
+      case "unavailable":
+        return h(
+          "p",
+          { class: "muted change", "data-change": "unavailable" },
+          change.reason === "before" || change.reason === "after"
+            ? this.t(change.reason === "before" ? "changeNoPageBefore" : "changeNoPageAfter")
+            : this.t("changeFailed", { detail: change.reason }),
+        );
+      case "changed":
+        return h(
+          "details",
+          { class: "change", "data-change": "changed", open: true },
+          h(
+            "summary",
+            {},
+            this.t("changeTitle", { added: String(change.added), removed: String(change.removed) }),
+          ),
+          h("p", { class: "muted" }, this.t("changeNote")),
+          h(
+            "pre",
+            { class: "pseudo diff" },
+            ...change.hunks.flatMap((hunk, index) => [
+              index === 0 ? null : h("span", { class: "gap" }, "...\n"),
+              ...hunk.map((line) =>
+                h(
+                  "span",
+                  { class: line.kind },
+                  `${line.kind === "added" ? "+ " : line.kind === "removed" ? "- " : "  "}${line.text}\n`,
+                ),
+              ),
+            ]),
+          ),
+        );
+    }
   }
 
   /**
@@ -1952,6 +2033,7 @@ export class App {
             h("summary", {}, this.t("reviewPageTitle")),
             this.pseudoPage(page),
           ),
+      this.changeSection(),
       pageRefusal === null
         ? null
         : h(

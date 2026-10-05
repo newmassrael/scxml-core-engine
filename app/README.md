@@ -265,6 +265,15 @@ shown as running.
   carries no address of what a line is for, so a state's name is what ties a line to a place, and
   the screen says that is what it did (and says so when no line names them).
 
+- **What a new model changed from the one before** (`change_model.ts`, `line_diff.ts`) is the
+  difference of the two models' pseudocode pages, line by line, with a few lines around each
+  change. The earlier model is the one before this in the core's model history (a work whose
+  models were made by requests lists them as bundles, after the ones it had before; a model
+  published again unchanged replaced nothing, so the one before it is the one compared). It says
+  nothing of what a change MEANS: a condition, a signal, a value or a time that moved is in the
+  lines that hold it, and the owner reads them against the text. A first model has nothing to be
+  compared with; a page SCE did not write is said not to be there.
+
 #### The executor the application hosts
 
 `runner.rs` is the host of an executor that is a process of the application: it finds the

@@ -417,6 +417,23 @@ textarea:focus-visible {
   box-shadow: -3px 0 0 var(--warn-line);
 }
 
+/* What changed from the model before: the lines that were added and removed, with the lines around them. */
+.change {
+  margin: 8px 0;
+}
+
+.diff .added {
+  background: rgba(46, 160, 67, 0.18);
+}
+
+.diff .removed {
+  background: rgba(218, 54, 51, 0.18);
+}
+
+.diff .gap {
+  color: var(--muted, #6b7380);
+}
+
 .answer-input {
   display: block;
   width: 100%;
