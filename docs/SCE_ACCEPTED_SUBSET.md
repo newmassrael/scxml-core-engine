@@ -3454,6 +3454,26 @@ session to raise in, so one that could fail is refused where it is written.
 backend — `sce-build/tests/fixtures/static_datamodel/static_overflow.scxml`
 holds each backend to it.
 
+**A 32-bit real.** `sce:type="float32"` holds a variable in the single-precision
+type the backend has — `float` in C and C++, `Float` in Kotlin, `f32` in Rust,
+`float32` in Go — and every operation on one is rounded to binary32 where it is
+made, not later and not wider: `16777216 + 1` is `16777216` on every backend,
+where a double makes `16777217`. An operation is made at the precision of the
+place its value lands. In a `float32` slot it is a single's; in a `float64` slot
+it is a double's, a narrower operand widened first, which is exact; and where no
+real is expected — an operand of a comparison, a condition — it is made at the
+width of the wider operand, a literal taking its partner's. A literal beside a
+single is the single nearest to what is written (`0.2` is `0.2f`), and a variable's
+initial value is rounded to one. A `float32` that leaves the machine — in a
+`<param>`, in the saved state, read by a host — leaves as the `float64` it widens
+to, exactly: the single nearest `0.1` is `0.10000000149011612`, not `0.1`.
+Python and the Interpreter hold every real in a double, so the generator writes
+the rounding itself (`sce_algorithm.to_f32` and `Math.fround`) around each operand
+and result made as a single and around a value that lands in a `float32` slot;
+C and C++ compute a `float` operation as a `float` where `FLT_EVAL_METHOD` is 0
+(x86-64 with SSE, AArch64). `static_real32` holds the seven engines to the same
+numbers, derived from IEEE 754 and observed from none of them.
+
 Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
 not a field type: with `sce:direction` and `sce:initial` it is the
 statechart's typed input and output declaration that the authoring tool
@@ -3813,7 +3833,7 @@ is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
 `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`, `static_list`, `static_foreach`,
-`static_real`, `static_record_real` and `static_block_ends_list` against the generated machines (an
+`static_real`, `static_real32`, `static_record_real` and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
@@ -3881,7 +3901,7 @@ machines import, read from their `<sce:import kind="algorithm">`, and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
-`static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
+`static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
 read back from `DonedataAtFinal`), `static_donedata_content` (its text, the same way) and `static_send_params` against them (an event's `data` goes in as the
@@ -3957,7 +3977,7 @@ before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
-`static_list`, `static_foreach`, `static_real`, `static_block_ends_list`,
+`static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the
 done event's pairs are read back from the engine's `done_data`) and `static_donedata_content` (its text,
@@ -3971,7 +3991,8 @@ and `test_a_static_host_action.py` drives `static_host_call` and
 
 C11 lowers the model through the same walk (`CTarget`), and refuses what it does
 not by name (`generate/unsupported-feature`, "has no C11 lowering yet"):
-variables of the integer types, `bool`, an enum, a string and a 64-bit real, the join
+variables of the integer types, `bool`, an enum, a string and a real of either width
+(a `float`, which the wire writes as the `double` it widens to), the join
 of strings and integers the data model sizes (`wait + 'ms'`), a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools, strings and enums, a call of an imported
@@ -3988,16 +4009,17 @@ the host serves (`--host-invoker`) with its `<param>`s, and a hybrid `<invoke>`
 whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
-driven — evaluating the arguments it keeps no variable for. A 32-bit real and a list of
-them, bytes and a record with a string field or a 32-bit real field, a `<send>` to
+driven — evaluating the arguments it keeps no variable for. A list of 32-bit reals,
+bytes and a record with a string field or a 32-bit real field, a `<send>` to
 another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>` and a
 transition on an event whose payload carries a bytes field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
-not carry yet, and a 32-bit real has no wire spelling every engine shares (the
-contract fixes the 64-bit form only) — a `<param>` whose value is one is refused
-with it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
+not carry yet, and the list and the record field of 32-bit reals have no element
+or field type written. A `<param>` whose value is a 32-bit real is not refused:
+the contract fixes the 64-bit form only, so it is written as the `double` it
+widens to, exactly, as Rust and Kotlin write it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
 an event carries as its data, by the header-only wire writer of the forge runtime
 (`sce/forge/wire.h`), in the one order every engine writes the members in —
 ascending by the name's UTF-8 bytes, whatever order the document declared its
@@ -4103,7 +4125,8 @@ from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
 `static_counter`, `static_counter_bound`, `static_overflow`,
 `static_block_ends`, `static_list`, `static_foreach`, `static_real` (a real is a
-`double` field, compared as the 64 bits it is), `static_block_ends_list`,
+`double` field, compared as the 64 bits it is), `static_real32` (a `float` field,
+widened to the `double` it is and compared the same way), `static_block_ends_list`,
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
 `static_record_real` (a record's real field is read by a reader of its own and

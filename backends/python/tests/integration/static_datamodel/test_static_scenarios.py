@@ -223,6 +223,12 @@ def test_a_real_is_a_native_binary64_field() -> None:
     replay("static_real")
 
 
+# A 32-bit real is a native binary32 field: every operation on it is rounded to
+# binary32 where it is made, though Python holds it in a double.
+def test_a_real_is_a_native_binary32_field() -> None:
+    replay("static_real32")
+
+
 # An append that fails ends its block, the list as it was.
 def test_an_append_that_fails_ends_its_block() -> None:
     replay("static_block_ends_list")

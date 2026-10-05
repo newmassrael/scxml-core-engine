@@ -398,6 +398,9 @@ fn lower_at(
         check_integer_indexing(&mut ast);
         check_integer_narrowing(&mut ast, slot_type(slot));
     }
+    if ctx.rounds_to_single {
+        round_to_single(&mut ast, target, expected);
+    }
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
     // (the `codec_field_id` SSOT). Inside an algorithm body every member
@@ -4529,6 +4532,132 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     }
 }
 
+/// An operation on 32-bit reals, rounded to binary32 where it is made, for the
+/// targets that hold a real in a double (Python's `float`, ECMAScript's
+/// `Number`): the languages that have a single of their own — Rust, Go, Kotlin,
+/// C and C++ — compute it as one, and a document must mean one thing on every
+/// engine.
+///
+/// An arithmetic operation is made at the precision of the place its value
+/// lands: the single a `float32` slot holds, the double of a `float64` one — an
+/// operand narrower than that is widened first, which is exact — and, where no
+/// real is expected (a comparison's operand, a condition), at the width of the
+/// wider operand, a literal taking its partner's. This is how every emitter
+/// pushes a real context down through arithmetic, so the languages with a
+/// single compute exactly this, and the two that hold every real in a double
+/// have to round to a single where the precision is one.
+///
+/// `a + b` made as a single is the single nearest to the exact sum. Computed
+/// in a double it is the same number, because a double holds the exact sum of
+/// two singles' worth of bits with room to spare, so rounding the double result
+/// to a single once gives the single nearest to the exact sum — but only if each
+/// operand was a single first. A literal is the double nearest to what is
+/// written until it is made one, a 64-bit real is wider, and an integer may be
+/// more than a single holds, so each of them is rounded to a single where it
+/// meets an operation made as one, and the result of the operation is rounded
+/// again. A comparison over singles compares the singles, so its operands are
+/// rounded and its result is not.
+///
+/// The same is done where a value flows into a slot that is a 32-bit real
+/// (`expected`): a literal, a 64-bit real or an integer is rounded to the single
+/// it becomes there.
+fn round_to_single(expr: &mut TypedExpr, target: ExprTarget, expected: InferredType) {
+    let callee = match target {
+        ExprTarget::Python => "sce_algorithm.to_f32",
+        ExprTarget::Js => "Math.fround",
+        _ => return,
+    };
+    round_singles_in(expr, expected, callee);
+    if matches!(expected, InferredType::Float { bits: 32 })
+        && !matches!(expr.ty, InferredType::Float { bits: 32 })
+        && matches!(
+            expr.ty,
+            InferredType::Float { .. }
+                | InferredType::UntypedFloat
+                | InferredType::UntypedInt
+                | InferredType::Int { .. }
+        )
+    {
+        wrap_in_call(expr, callee, InferredType::Float { bits: 32 });
+    }
+}
+
+/// `expected` is the type the context pushes into `expr`: a real where the
+/// value lands in one, and anything else where it does not.
+fn round_singles_in(expr: &mut TypedExpr, expected: InferredType, callee: &str) {
+    let single = InferredType::Float { bits: 32 };
+    let real = |ty: InferredType| {
+        if matches!(ty, InferredType::Float { .. }) {
+            ty
+        } else {
+            InferredType::Unknown
+        }
+    };
+    match &mut expr.kind {
+        ExprKind::Binary { op, left, right } => {
+            let arithmetic = op.is_arith() && !is_string_concatenation(*op, left.ty, right.ty);
+            let operands = binary_operand_type(*op, left.ty, right.ty);
+            if arithmetic {
+                // At the precision of the place the value lands, or at the
+                // operands' own where it lands in no real.
+                let at = if matches!(expected, InferredType::Float { .. }) {
+                    expected
+                } else {
+                    operands
+                };
+                round_singles_in(left, real(at), callee);
+                round_singles_in(right, real(at), callee);
+                if at == single {
+                    for side in [&mut **left, &mut **right] {
+                        if side.ty != single {
+                            wrap_in_call(side, callee, single);
+                        }
+                    }
+                    wrap_in_call(expr, callee, single);
+                }
+            } else if op.is_comparison() {
+                round_singles_in(left, real(operands), callee);
+                round_singles_in(right, real(operands), callee);
+                if operands == single {
+                    for side in [&mut **left, &mut **right] {
+                        if side.ty != single {
+                            wrap_in_call(side, callee, single);
+                        }
+                    }
+                }
+            } else {
+                round_singles_in(left, InferredType::Unknown, callee);
+                round_singles_in(right, InferredType::Unknown, callee);
+            }
+        }
+        // A negation is exact in any width: the precision passes through it.
+        ExprKind::Unary {
+            op: UnaryOp::Neg | UnaryOp::Pos,
+            operand,
+        } => round_singles_in(operand, real(expected), callee),
+        _ => {
+            for child in expr_children_mut(expr) {
+                round_singles_in(child, InferredType::Unknown, callee);
+            }
+        }
+    }
+}
+
+/// `node` as the argument of a call of `callee`, typed `ty`.
+fn wrap_in_call(node: &mut TypedExpr, callee: &str, ty: InferredType) {
+    let inner = std::mem::replace(node, TypedExpr::new(ExprKind::Raw(String::new())));
+    *node = TypedExpr {
+        kind: ExprKind::Call {
+            callee: Box::new(TypedExpr::new(ExprKind::Raw(callee.to_string()))),
+            args: vec![inner],
+            params: Vec::new(),
+            fails: false,
+        },
+        ty,
+        span: None,
+    };
+}
+
 /// The operands of the string concatenation `expr` stands for, left to right:
 /// the chain `a + b + c` is read along its left spine, so a sum of numbers that
 /// begins it (`1 + 2 + 'x'`, which is `'3x'`) is the first operand.
@@ -5034,14 +5163,31 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
     }
     // Promote untyped decimal integer literals in float context to prevent
     // C++ integer division: `9 / 5` → `9.0 / 5.0`.
-    if let (UntypedInt, Float { .. }) = (from, to) {
+    if let (UntypedInt, Float { bits }) = (from, to) {
         if let ExprKind::NumberLit(text) = &node.kind {
             if is_decimal_integer_literal(text) {
-                return format!("{raw}.0");
+                return format!("{raw}.0{}", single_suffix(bits));
             }
         }
     }
+    // A real literal that lands in a 32-bit real is the single nearest to it:
+    // `0.2f`, and not the double `0.2`, which would make the sum around it a
+    // double's and round it to a single only once it is stored.
+    if let (UntypedFloat, Float { bits: 32 }) = (from, to) {
+        if matches!(node.kind, ExprKind::NumberLit(_)) {
+            return format!("{raw}f");
+        }
+    }
     raw
+}
+
+/// The suffix of a C-family real literal of `bits` bits: `f` for a single.
+fn single_suffix(bits: u8) -> &'static str {
+    if bits == 32 {
+        "f"
+    } else {
+        ""
+    }
 }
 
 fn cpp_binop(op: BinOp) -> &'static str {
@@ -5706,15 +5852,19 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
         return raw;
     }
     match (from, to) {
-        // Literal promotion for untyped integers into float context.
+        // Literal promotion for untyped integers into float context. A Kotlin
+        // real literal is a `Double` unless it ends in `f`, so one that lands in
+        // a 32-bit real is written as the single it is: `1.0f` is a `Float`,
+        // `1.0` does not assign to one.
         (UntypedInt, Float { .. }) | (UntypedInt, UntypedFloat) => {
+            let single = matches!(to, Float { bits: 32 });
             if let ExprKind::NumberLit(text) = &node.kind {
                 if is_decimal_integer_literal(text) {
-                    return format!("{raw}.0");
+                    return format!("{raw}.0{}", if single { "f" } else { "" });
                 }
             }
             // Computed subtree or hex/bin/oct literal — explicit cast.
-            format!("({raw}).toDouble()")
+            format!("({raw}).{}()", if single { "toFloat" } else { "toDouble" })
         }
         // Concrete int → float: explicit `.toDouble()` / `.toFloat()`.
         (Int { .. }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
@@ -5781,8 +5931,15 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
         // Float widening.
         (Float { bits: 32 }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
         (Float { bits: 64 }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
-        // Untyped float → concrete float: leave text alone (compiler accepts).
-        (UntypedFloat, Float { .. }) => raw,
+        // Untyped float → a 64-bit real: the text is a `Double` already.
+        (UntypedFloat, Float { bits: 64 }) => raw,
+        // Untyped float → a 32-bit real: the literal is the single nearest to
+        // it, written with the suffix that makes it one; a computed subtree is
+        // narrowed.
+        (UntypedFloat, Float { .. }) => match &node.kind {
+            ExprKind::NumberLit(_) => format!("{raw}f"),
+            _ => wrap_dotcall(raw, node, "toFloat"),
+        },
         // Unknown on either side → no coercion.
         (Unknown, _) | (_, Unknown) => raw,
         // Anything else — no coercion (would be a semantic error in a textbook
@@ -8110,11 +8267,18 @@ fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr)
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
-    if let (UntypedInt, Float { .. }) = (from, to) {
+    if let (UntypedInt, Float { bits }) = (from, to) {
         if let ExprKind::NumberLit(text) = &node.kind {
             if is_decimal_integer_literal(text) {
-                return format!("{raw}.0");
+                return format!("{raw}.0{}", single_suffix(bits));
             }
+        }
+    }
+    // A real literal that lands in a 32-bit real is the single nearest to it,
+    // as it is in C++ (`cpp_coerce`).
+    if let (UntypedFloat, Float { bits: 32 }) = (from, to) {
+        if matches!(node.kind, ExprKind::NumberLit(_)) {
+            return format!("{raw}f");
         }
     }
     raw
@@ -8469,6 +8633,150 @@ mod tests {
             text.starts_with("SCE_FORGE_CONCAT((char[10]){0}, 10, "),
             "8 + 1 + 1 bytes: {text}"
         );
+    }
+
+    /// A context of a `sce-static` statechart over the 32-bit real `tenth`, the
+    /// 64-bit real `wide` and the `uint32` `n`.
+    fn single_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("tenth", InferredType::Float { bits: 32 });
+        ctx.insert_var("wide", InferredType::Float { bits: 64 });
+        ctx.insert_var(
+            "n",
+            InferredType::Int {
+                signed: false,
+                bits: 32,
+            },
+        );
+        ctx.rounds_to_single = true;
+        ctx
+    }
+
+    fn single_slot(expr: &str, target: ExprTarget, ctx: &TypeCtx<'_>) -> String {
+        transpile_typed(
+            expr,
+            target,
+            ctx,
+            &empty_renames(),
+            InferredType::Float { bits: 32 },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_sum_of_singles_is_rounded_to_a_single_where_python_and_ecmascript_make_it() {
+        let ctx = single_ctx();
+        // The literal is the single nearest to it before it is added, and the
+        // sum is rounded again.
+        assert_eq!(
+            tp_with("tenth + 0.2", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(tenth + sce_algorithm.to_f32(0.2))"
+        );
+        assert_eq!(
+            tp_with("tenth + 0.2", ExprTarget::Js, &ctx),
+            "Math.fround(tenth + Math.fround(0.2))"
+        );
+        // A comparison compares singles: its operands are rounded, and its
+        // result is a truth value.
+        assert_eq!(
+            tp_with("tenth > 0.1", ExprTarget::Python, &ctx),
+            "tenth > sce_algorithm.to_f32(0.1)"
+        );
+    }
+
+    #[test]
+    fn a_value_that_lands_in_a_single_is_rounded_to_one_for_python_and_ecmascript() {
+        let ctx = single_ctx();
+        assert_eq!(
+            single_slot("wide", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(wide)"
+        );
+        assert_eq!(single_slot("0.1", ExprTarget::Js, &ctx), "Math.fround(0.1)");
+        assert_eq!(
+            single_slot("n", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(n)"
+        );
+        // A single is already one.
+        assert_eq!(single_slot("tenth", ExprTarget::Python, &ctx), "tenth");
+    }
+
+    #[test]
+    fn an_operation_is_made_at_the_precision_of_the_place_its_value_lands() {
+        let ctx = single_ctx();
+        // In a 32-bit real's slot a sum is a single's: its operands are rounded
+        // to singles and its result is rounded again.
+        assert_eq!(
+            single_slot("wide + 0.5", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(sce_algorithm.to_f32(wide) + sce_algorithm.to_f32(0.5))"
+        );
+        // In a 64-bit real's slot it is a double's, though one operand is a
+        // single: the single is widened, which is exact, and nothing is
+        // rounded.
+        let into_a_double = |target| {
+            transpile_typed(
+                "tenth + 0.2",
+                target,
+                &ctx,
+                &empty_renames(),
+                InferredType::Float { bits: 64 },
+            )
+            .unwrap()
+        };
+        assert_eq!(into_a_double(ExprTarget::Python), "tenth + 0.2");
+        assert_eq!(into_a_double(ExprTarget::Js), "tenth + 0.2");
+    }
+
+    #[test]
+    fn a_negation_passes_the_precision_of_its_place_to_what_it_negates() {
+        let ctx = single_ctx();
+        // Negating is exact in any width, so the sum under it is the one made
+        // as a single: rounded in its operands and in its result, as it is
+        // without the minus.
+        assert_eq!(
+            single_slot("-(wide + 0.5)", ExprTarget::Python, &ctx),
+            "sce_algorithm.to_f32(-sce_algorithm.to_f32(sce_algorithm.to_f32(wide) + sce_algorithm.to_f32(0.5)))"
+        );
+    }
+
+    #[test]
+    fn what_is_not_an_operation_on_singles_is_left_as_it_is_for_python() {
+        let ctx = single_ctx();
+        assert_eq!(
+            tp_with("wide + 0.5", ExprTarget::Python, &ctx),
+            "wide + 0.5"
+        );
+        // Where nothing declares the widths, a single is the language's own.
+        let mut unrounded = single_ctx();
+        unrounded.rounds_to_single = false;
+        assert_eq!(
+            tp_with("tenth + 0.2", ExprTarget::Python, &unrounded),
+            "tenth + 0.2"
+        );
+    }
+
+    #[test]
+    fn a_literal_beside_a_single_is_written_as_a_single_for_kotlin_cpp_and_c() {
+        let ctx = single_ctx();
+        for target in [ExprTarget::Kotlin, ExprTarget::Cpp, ExprTarget::C] {
+            assert_eq!(
+                tp_with("tenth + 0.2", target, &ctx),
+                "tenth + 0.2f",
+                "{target:?}: a real literal beside a single is one"
+            );
+            assert_eq!(
+                tp_with("tenth + 1", target, &ctx),
+                "tenth + 1.0f",
+                "{target:?}: so is an integer literal"
+            );
+        }
+        // Beside a 64-bit real it stays a double.
+        for target in [ExprTarget::Kotlin, ExprTarget::Cpp, ExprTarget::C] {
+            assert_eq!(
+                tp_with("wide + 0.2", target, &ctx),
+                "wide + 0.2",
+                "{target:?}"
+            );
+        }
     }
 
     #[test]

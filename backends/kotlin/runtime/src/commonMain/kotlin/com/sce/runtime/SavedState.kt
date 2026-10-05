@@ -550,7 +550,12 @@ object SavedValues {
 
     // JSON has no spelling for a value that is not finite, so it is written
     // as the text every backend reads it back from.
-    fun of(value: Float): Any = if (value.isFinite()) Json.Number(value.toString()) else nonFinite(value.toDouble())
+    //
+    // A 32-bit real is written as the 64-bit real it widens to, which is exact:
+    // the number a reader that holds JSON numbers as doubles finds is the number
+    // the machine holds, `0.30000001192092896` and not the shorter `0.3` a
+    // single prints for it, which is another number to that reader.
+    fun of(value: Float): Any = of(value.toDouble())
     fun of(value: Double): Any = if (value.isFinite()) Json.Number(value.toString()) else nonFinite(value)
 
     private fun nonFinite(value: Double): String = when {

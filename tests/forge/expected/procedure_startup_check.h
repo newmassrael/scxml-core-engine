@@ -129,9 +129,9 @@ public:
     processTransition(State state, Event event) const {
         switch (state) {
             case State::CheckVoltage:
-                // Eventless transition (guard: voltage_ >= 11.5 && voltage_ <= 14.5)
+                // Eventless transition (guard: voltage_ >= 11.5f && voltage_ <= 14.5f)
                 if (event == Event::NONE) {
-                    if (voltage_ >= 11.5 && voltage_ <= 14.5) {
+                    if (voltage_ >= 11.5f && voltage_ <= 14.5f) {
                         return std::make_tuple(State::CheckTemp, std::size_t{ 0 }, false);
                     }
                 }
@@ -141,9 +141,9 @@ public:
                 }
                 return std::nullopt;
             case State::CheckTemp:
-                // Eventless transition (guard: temperature_ < 80.0)
+                // Eventless transition (guard: temperature_ < 80.0f)
                 if (event == Event::NONE) {
-                    if (temperature_ < 80.0) {
+                    if (temperature_ < 80.0f) {
                         return std::make_tuple(State::Success, std::size_t{ 0 }, false);
                     }
                 }

@@ -37,6 +37,7 @@ import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_payload_enum.StaticPayloadEnumStateMachine
 import com.sce.integration.static_payload_relay.StaticPayloadRelayStateMachine
 import com.sce.integration.static_real.StaticRealStateMachine
+import com.sce.integration.static_real32.StaticReal32StateMachine
 import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
@@ -83,11 +84,23 @@ class StaticScenarioTest {
     /**
      * Whether a saved value is the scenario's. The saved state writes a 64-bit
      * integer as its decimal text, so an expected number matches that text of
-     * the same integer; everything else must be equal as written.
+     * the same integer. A real is the double its text reads as, however the text
+     * spells it (`Double.toString` writes 2^24 as `1.6777216E7`, the scenario as
+     * `16777216.0`): parsing is exact, so equal doubles are the same number.
+     * Everything else must be equal as written.
      */
     private fun holds(got: JsonElement?, want: JsonElement): Boolean {
         if (got is JsonPrimitive && want is JsonPrimitive && got.isString && !want.isString) {
             return want.content.toLongOrNull() != null && got.content == want.content
+        }
+        if (got is JsonPrimitive && want is JsonPrimitive && !got.isString && !want.isString &&
+            (got.content.toLongOrNull() == null || want.content.toLongOrNull() == null)
+        ) {
+            val gotReal = got.content.toDoubleOrNull()
+            val wantReal = want.content.toDoubleOrNull()
+            if (gotReal != null && wantReal != null) {
+                return gotReal == wantReal
+            }
         }
         return got == want
     }
@@ -547,6 +560,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_real"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticReal32IsANativeBinary32Field() {
+        val sm = StaticReal32StateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_real32"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

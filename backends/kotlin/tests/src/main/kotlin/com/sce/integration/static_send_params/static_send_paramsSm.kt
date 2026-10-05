@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 50a81795587554344192a69a0f2264073791a21546f32a4b85e4b021d2b4e0ca
+// source-hash: 4e6429b83bcaf7486fcebf0bd3d8457e9484662e476d9f68336b36b99ab225f5
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml

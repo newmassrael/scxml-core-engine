@@ -65,6 +65,9 @@ use sce_rust_tests::integration::static_datamodel::static_payload_relay_sm::{
 use sce_rust_tests::integration::static_datamodel::static_payload_sm::{
     StaticPayloadPersist, StaticPayloadPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_real32_sm::{
+    StaticReal32Persist, StaticReal32Policy,
+};
 use sce_rust_tests::integration::static_datamodel::static_real_sm::{
     StaticRealPersist, StaticRealPolicy,
 };
@@ -476,6 +479,17 @@ fn static_real_is_a_native_binary64_field() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_real.json"
+        ),
+    );
+}
+
+#[test]
+fn static_real32_is_a_native_binary32_field() {
+    replay(
+        Engine::new(StaticReal32Policy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_real32.json"
         ),
     );
 }

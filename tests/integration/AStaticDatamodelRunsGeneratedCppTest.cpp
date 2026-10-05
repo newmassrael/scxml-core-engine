@@ -48,6 +48,7 @@
 #include "static_payload_enum_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
+#include "static_real32_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
@@ -381,6 +382,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARealIsANativeBinary64Field) {
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_real", driver);
+}
+
+// A 32-bit real is a native float field: every operation on it is rounded to
+// binary32 where it is made. A host reads it as the double it widens to, which is
+// exact, and that is the number the scenario states.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARealIsANativeBinary32Field) {
+    using Machine = G::static_real32::static_real32;
+    Driver<Machine> driver({
+        {"level", [](const Machine &m) { return json(static_cast<double>(m.level())); }},
+        {"drift", [](const Machine &m) { return json(static_cast<double>(m.drift())); }},
+        {"wide", [](const Machine &m) { return json(m.wide()); }},
+    });
+    replay("static_real32", driver);
 }
 
 TEST(AStaticDatamodelRunsGeneratedCppTest, AnAppendThatFailsEndsItsBlock) {

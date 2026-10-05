@@ -67,7 +67,7 @@ class ProcedureStartupCheck : ProcedureStateMachine<State, Event>() {
         when (state) {
             State.CheckVoltage -> {
                 if (event == Event.NONE) {
-                    if (voltage >= 11.5 && voltage <= 14.5) return Triple(State.CheckTemp, 0, false)
+                    if (voltage >= 11.5f && voltage <= 14.5f) return Triple(State.CheckTemp, 0, false)
                 }
                 if (event == Event.NONE) {
                     return Triple(State.FailVoltage, 1, false)
@@ -75,7 +75,7 @@ class ProcedureStartupCheck : ProcedureStateMachine<State, Event>() {
             }
             State.CheckTemp -> {
                 if (event == Event.NONE) {
-                    if (temperature < 80.0) return Triple(State.Success, 0, false)
+                    if (temperature < 80.0f) return Triple(State.Success, 0, false)
                 }
                 if (event == Event.NONE) {
                     return Triple(State.FailOvertemp, 1, false)

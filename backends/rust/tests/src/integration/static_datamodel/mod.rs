@@ -35,6 +35,7 @@ pub mod static_overflow_sm;
 pub mod static_payload_enum_sm;
 pub mod static_payload_relay_sm;
 pub mod static_payload_sm;
+pub mod static_real32_sm;
 pub mod static_real_sm;
 pub mod static_record_enum_sm;
 pub mod static_record_fields_sm;

@@ -41,10 +41,10 @@ static inline procedure_startup_check_result_t procedure_startup_check_execute(f
     for (int _iter = 0; _iter < 1000; ++_iter) {
         switch (current) {
             case PROCEDURE_STARTUP_CHECK_STATE_CHECK_VOLTAGE:
-                if (voltage >= 11.5 && voltage <= 14.5) { current = PROCEDURE_STARTUP_CHECK_STATE_CHECK_TEMP; break; }
+                if (voltage >= 11.5f && voltage <= 14.5f) { current = PROCEDURE_STARTUP_CHECK_STATE_CHECK_TEMP; break; }
                 current = PROCEDURE_STARTUP_CHECK_STATE_FAIL_VOLTAGE; break;
             case PROCEDURE_STARTUP_CHECK_STATE_CHECK_TEMP:
-                if (temperature < 80.0) { current = PROCEDURE_STARTUP_CHECK_STATE_SUCCESS; break; }
+                if (temperature < 80.0f) { current = PROCEDURE_STARTUP_CHECK_STATE_SUCCESS; break; }
                 current = PROCEDURE_STARTUP_CHECK_STATE_FAIL_OVERTEMP; break;
             case PROCEDURE_STARTUP_CHECK_STATE_SUCCESS:
                 return (procedure_startup_check_result_t){true, "success"};

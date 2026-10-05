@@ -18,6 +18,8 @@ the caller by itself, so the generated body needs nothing after a statement.
 from __future__ import annotations
 
 import enum
+import math
+import struct
 
 
 class AlgorithmError(enum.Enum):
@@ -112,6 +114,19 @@ def at(xs, i: int):
     if i < 0 or i >= len(xs):
         raise AlgorithmFailure(AlgorithmError.OUT_OF_RANGE)
     return xs[i]
+
+
+def to_f32(value: float) -> float:
+    """``value`` rounded to the nearest binary32, as the double that holds it
+    exactly — what a 32-bit real is on the backends that have one. Python's
+    ``float`` is a binary64, so an operation on 32-bit reals is rounded to a
+    single where it is made (the generator writes the call), and a value past
+    the single's range is the infinity it is there, where ``struct`` refuses it.
+    A NaN stays one, an infinity stays infinite."""
+    try:
+        return struct.unpack("<f", struct.pack("<f", value))[0]
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf
 
 
 def bounded(value: str, capacity: int) -> str:

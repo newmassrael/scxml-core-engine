@@ -102,6 +102,7 @@
 #include "static_payload_enum_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
+#include "static_real32_sm.h"
 #include "static_real_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
@@ -803,6 +804,35 @@ static const variable_t real_variables[] = {
 STATIC_SCENARIO_FULL(static_real, real_states, real_variables, NULL, no_lists, no_records, NULL, static_real_read_real,
                      static_real_read_real_list, NULL)
 
+// static_real32: a 32-bit real is a `float` field of the policy. Its reader
+// widens it to the double it is exactly, which the scenario compares as the 64
+// bits it is; the readers of a `float` and of a `double` are the same.
+static bool static_real32_read_real(void *sm, const char *name, double *out) {
+    const static_real32_t *machine = (const static_real32_t *)sm;
+    if (strcmp(name, "level") == 0) {
+        *out = (double)static_real32_get_level(machine);
+        return true;
+    }
+    if (strcmp(name, "drift") == 0) {
+        *out = (double)static_real32_get_drift(machine);
+        return true;
+    }
+    if (strcmp(name, "wide") == 0) {
+        *out = static_real32_get_wide(machine);
+        return true;
+    }
+    return false;
+}
+
+static const name_value_t real32_states[] = {
+    {"idle", STATIC_REAL32_STATE_IDLE},
+};
+// The machine publishes no integer variable: the one row has a name no scenario
+// states, so a lookup finds nothing rather than dereferencing a null name.
+static const variable_t real32_variables[] = {{"", NULL}};
+STATIC_SCENARIO_FULL(static_real32, real32_states, real32_variables, NULL, no_lists, no_records, NULL,
+                     static_real32_read_real, NULL, NULL)
+
 // static_block_ends_list: a full list ends the block it is appended to.
 VARIABLE_READER(static_block_ends_list, afterAppend)
 VARIABLE_READER(static_block_ends_list, errors)
@@ -1270,6 +1300,7 @@ int main(void) {
     bad |= static_list_scenario("static_list", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_real_scenario("static_real", 13);
+    bad |= static_real32_scenario("static_real32", 8);
     bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);

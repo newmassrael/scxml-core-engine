@@ -1,0 +1,27 @@
+{
+  "machine": "static_real32",
+  "about": "A 32-bit real is a native single-precision field: every operation on it is rounded to binary32 where it is made. 2^24 + 1 is 2^24 again (a double would make 16777217), halved to 2^23 it takes the 1; 0.1 + 0.2 is the binary32 0.30000001192092896 and not the double 0.30000000447034836; a float32 stored in a float64 is the number exactly, 0.10000000149011612, and not 0.1. Expected values are the binary32 values written as the doubles they widen to, derived from IEEE 754 binary32 and not observed from a backend.",
+  "steps": [
+    { "note": "the variables start at their declared values: 2^24, the binary32 nearest 0.1, and zeros",
+      "expect": { "state": "idle", "variables": { "level": 16777216.0, "drift": 0.0, "wide": 0.0 } } },
+
+    { "note": "2^24 + 1 is not a binary32: it rounds to 2^24",
+      "event": "bump", "expect": { "variables": { "level": 16777216.0 } } },
+    { "note": "and again",
+      "event": "bump", "expect": { "variables": { "level": 16777216.0 } } },
+
+    { "note": "2^24 / 2 = 2^23, exact",
+      "event": "halve", "expect": { "variables": { "level": 8388608.0 } } },
+    { "note": "2^23 + 1 is a binary32: odd integers fit below 2^24",
+      "event": "bump", "expect": { "variables": { "level": 8388609.0 } } },
+
+    { "note": "the sum of the binary32 nearest 0.1 and the one nearest 0.2, rounded to binary32",
+      "event": "drift", "expect": { "variables": { "drift": 0.30000001192092896 } } },
+
+    { "note": "a float32 stored in a float64 widens exactly: the binary32 nearest 0.1, not 0.1",
+      "event": "widen", "expect": { "variables": { "wide": 0.10000000149011612 } } },
+
+    { "note": "a sum with a binary32 in it stored in a float64 is made at the precision of the place it lands, a double's: the single widened exactly plus the double 0.2, not the binary32 sum of drift",
+      "event": "mix", "expect": { "variables": { "wide": 0.30000000149011613 } } }
+  ]
+}

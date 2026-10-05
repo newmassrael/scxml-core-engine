@@ -4300,7 +4300,7 @@ impl StaticTarget for CTarget {
             !matches!(
                 value_type.scalar(),
                 Some(ty) if held_scalar(ty)
-                    || matches!(ty, SceType::Enum(_) | SceType::Float64)
+                    || matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
                     || (matches!(ty, SceType::String) && v.capacity.is_some())
             )
         }) {
@@ -4939,19 +4939,22 @@ impl StaticTarget for CTarget {
             InferredType::Int { signed: false, .. } => {
                 format!("sce_forge_wire_uint((uint64_t)({value}))")
             }
-            InferredType::Float { bits: 64 } => format!("sce_forge_wire_real((double)({value}))"),
+            // A 32-bit real crosses as the 64-bit real it widens to, which is
+            // exact: the one spelling every engine can make of it
+            // (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+            InferredType::Float { .. } => format!("sce_forge_wire_real((double)({value}))"),
             other => unreachable!("a C11 wire value of {other:?} is refused by `wire_admits`"),
         }
     }
-    // The contract fixes only the 64-bit spelling of a real, so a 32-bit one has
-    // no wire form every engine shares.
+    // A real of either width: the 32-bit one is written as the double it widens
+    // to, so the contract that pins the 64-bit spelling pins it.
     fn wire_admits(&self, ty: InferredType) -> bool {
         matches!(
             ty,
             InferredType::Bool
                 | InferredType::Str
                 | InferredType::Int { .. }
-                | InferredType::Float { bits: 64 }
+                | InferredType::Float { .. }
         )
     }
     // The enum's own function answers the name its document declares
@@ -6467,6 +6470,7 @@ mod tests {
         match lang {
             Language::Rust => lower_rust(&mut model, "M"),
             Language::Kotlin => lower_kotlin(&mut model, "M"),
+            Language::C11 => lower_c11(&mut model, ""),
             other => panic!("{other:?} does not lower sce-static"),
         }
         .expect("lowers");
@@ -6526,6 +6530,124 @@ mod tests {
             assert!(value(narrow).ends_with(".toLong()"), "{narrow}: {params:?}");
         }
         assert!(value("single").ends_with(".toDouble()"), "{params:?}");
+    }
+
+    #[test]
+    fn a_c_param_is_the_typed_wire_value_and_a_single_crosses_as_the_double_it_widens_to() {
+        let params = lowered_params(Language::C11);
+        let value = |name: &str| params[name].0.as_str();
+        assert!(
+            value("real").starts_with("sce_forge_wire_real((double)("),
+            "{params:?}"
+        );
+        // A 32-bit real is written as the 64-bit real it is exactly, so the one
+        // spelling the contract pins is the one it takes.
+        assert!(
+            value("single").starts_with("sce_forge_wire_real((double)("),
+            "{params:?}"
+        );
+        for narrow in ["small", "sum", "loc"] {
+            assert!(
+                value(narrow).starts_with("sce_forge_wire_uint((uint64_t)("),
+                "{narrow}: {params:?}"
+            );
+        }
+        assert!(
+            value("signed").starts_with("sce_forge_wire_int((int64_t)("),
+            "{params:?}"
+        );
+    }
+
+    // ── a 32-bit real a variable holds ──────────────────────────────────────
+    //
+    // A single is rounded to binary32 where an operation on it is made. The
+    // backends that have one compute it as one and need the literal written as
+    // one; Python holds every real in a double, so the lowering writes the
+    // rounding itself.
+
+    const WITH_SINGLE: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="tenth" sce:type="float32" expr="0.1"/>
+    <data id="drift" sce:type="float32" expr="0"/>
+    <data id="wide" sce:type="float64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" target="done">
+      <assign location="drift" expr="tenth + 0.2"/>
+      <assign location="wide" expr="tenth + 0.2"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    /// The initial values of `WITH_SINGLE`'s fields and the two statements its
+    /// `go` transition lowers to, for `lang`.
+    fn lowered_single(lang: Language) -> (Vec<String>, Vec<String>) {
+        let mut model = SCXMLParser::new()
+            .parse_string(WITH_SINGLE, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowering = match lang {
+            Language::Kotlin => lower_kotlin(&mut model, "M"),
+            Language::Python => lower_python(&mut model, "M"),
+            Language::C11 => lower_c11(&mut model, ""),
+            other => panic!("{other:?} is not lowered by this test"),
+        }
+        .expect("lowers");
+        let statements = model.states["s"].transitions[0]
+            .actions
+            .iter()
+            .map(|a| a.native_code.clone())
+            .collect();
+        (
+            lowering.fields.iter().map(|f| f.init.clone()).collect(),
+            statements,
+        )
+    }
+
+    #[test]
+    fn a_c_machine_holds_a_single_and_writes_its_literals_as_singles() {
+        let (inits, statements) = lowered_single(Language::C11);
+        assert_eq!(inits, ["0.1f", "0.0f", "0.0"], "{inits:?}");
+        // In a `float` slot the sum is a `float`'s, in a `double` slot a
+        // `double`'s: the literal is the partner's width.
+        assert!(statements[0].contains("v_tenth + 0.2f"), "{statements:?}");
+        assert!(
+            statements[1].contains("v_tenth + 0.2;") && !statements[1].contains("0.2f"),
+            "{statements:?}"
+        );
+    }
+
+    #[test]
+    fn a_kotlin_machine_writes_its_literals_beside_a_single_as_singles() {
+        let (inits, statements) = lowered_single(Language::Kotlin);
+        assert_eq!(inits, ["0.1f", "0.0f", "0.0"], "{inits:?}");
+        assert!(statements[0].contains("tenth + 0.2f"), "{statements:?}");
+        assert!(
+            statements[1].contains("tenth.toDouble() + 0.2") && !statements[1].contains("0.2f"),
+            "{statements:?}"
+        );
+    }
+
+    #[test]
+    fn a_python_machine_rounds_what_it_computes_as_a_single_to_one() {
+        let (inits, statements) = lowered_single(Language::Python);
+        assert_eq!(
+            inits,
+            ["sce_algorithm.to_f32(0.1)", "sce_algorithm.to_f32(0)", "0"],
+            "{inits:?}"
+        );
+        assert!(
+            statements[0]
+                .contains("sce_algorithm.to_f32(self.v_tenth + sce_algorithm.to_f32(0.2))"),
+            "{statements:?}"
+        );
+        // A double's sum is not rounded: nothing in it is made as a single.
+        assert!(
+            statements[1].contains("self.v_tenth + 0.2") && !statements[1].contains("to_f32"),
+            "{statements:?}"
+        );
     }
 
     #[test]

@@ -661,6 +661,10 @@ fn static_statechart<'a>(
     // event name, an id, a request's source — so a buffer sized for that one
     // evaluation is all it needs.
     ctx.joins_into_buffers = true;
+    // A document declares its reals' widths and every engine must give it one
+    // answer, so a target that holds a real in a double rounds each operation
+    // on 32-bit reals to binary32 where it is made.
+    ctx.rounds_to_single = true;
     for var in variables {
         let Some(value_type) = var.value_type.as_ref() else {
             ctx.insert_var(var.id.as_str(), InferredType::Unknown);

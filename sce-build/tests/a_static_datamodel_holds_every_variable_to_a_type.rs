@@ -322,8 +322,9 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // `<donedata>` (and its inline `<content>`) and of a `<send>` to the machine's
     // own processor or to one the host is declared to serve (and the literal
     // `<content>` of one), an `<invoke type="scxml">` handing numbers,
-    // bools and strings, and an `<invoke>` the host is declared to serve. What is
-    // past that — a 32-bit real, a list of them, a record with a string field, a bytes
+    // bools and strings, and an `<invoke>` the host is declared to serve. A 32-bit
+    // real is a `float` the wire writes as the double it widens to. What is
+    // past that — a list of 32-bit reals, a record with a string field, a bytes
     // variable, a `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
     // repeats, a payload field that
@@ -333,11 +334,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
     let variable = |data: &str| doc("sce-static", data);
     let cases = [
-        (
-            "a 32-bit real variable",
-            variable(r#"<data id="ratio" sce:type="float32" expr="0.5"/>"#),
-            r#"<data id="ratio" sce:type="float32">"#,
-        ),
         (
             "a bytes variable",
             variable(r#"<data id="frame" sce:type="bytes" expr="''"/>"#),

@@ -1067,6 +1067,13 @@ pub struct TypeCtx<'a> {
     /// a string can be returned or kept, since a buffer sized for one
     /// evaluation does not outlive the block that made it.
     pub joins_into_buffers: bool,
+    /// Whether an operation on 32-bit reals is rounded to binary32 where it is
+    /// made, by the target that holds a real in a double — Python and the
+    /// Interpreter's ECMAScript, whose `float` and `Number` are binary64. True
+    /// where a document declares its reals' widths and every engine must give
+    /// it one answer (a `sce-static` statechart); false elsewhere, where a
+    /// 32-bit real is the language's own and no pass rewrites it.
+    pub rounds_to_single: bool,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -1099,6 +1106,7 @@ impl<'a> TypeCtx<'a> {
             previous_cells: HashMap::new(),
             string_capacities: HashMap::new(),
             joins_into_buffers: false,
+            rounds_to_single: false,
         }
     }
 

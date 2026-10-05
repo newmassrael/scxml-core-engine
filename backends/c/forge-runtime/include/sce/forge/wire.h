@@ -74,8 +74,9 @@ static inline sce_forge_wire_value_t sce_forge_wire_uint(uint64_t v) {
 }
 
 /* A 64-bit real. Only the 64-bit form is pinned by the contract below, so a
- * 32-bit real is not handed to this: its widening is not a spelling every engine
- * shares. */
+ * 32-bit real is handed to this as the double it widens to, which is exact: the
+ * generator writes the cast, and the single nearest 0.1 crosses as
+ * 0.10000000149011612, the number it is. */
 static inline sce_forge_wire_value_t sce_forge_wire_real(double v) {
     sce_forge_wire_value_t value;
     memset(&value, 0, sizeof(value));

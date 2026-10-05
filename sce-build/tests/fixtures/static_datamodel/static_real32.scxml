@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a 32-bit real is
+  a native single-precision field, and every operation on it is rounded to
+  binary32 where it is made, not later and not wider. Three results tell a
+  machine that holds a `float32` as one from a machine that holds it in a
+  double:
+
+    level   starts at 2^24, above which a binary32 has no place for an odd
+            integer: `level + 1` is 16777216 again, where a double makes
+            16777217. Halved to 2^23, it takes the 1 and makes 8388609.
+    drift   `tenth + 0.2`: both operands are the nearest binary32 to what is
+            written, and their sum is rounded to the nearest binary32 again,
+            0.30000001192092896 (0x3E99999A). A double holds
+            0.30000000447034836.
+    wide    a `float32` stored in a `float64` is the same number exactly,
+            0.10000000149011612 — the nearest binary32 to 0.1, and not 0.1.
+
+  The expectations are the binary32 values written as the doubles they widen
+  to, which is how every engine's harness reads a single-precision variable.
+
+  Replayed by every backend that lowers the model
+  (sce-build/tests/fixtures/static_datamodel/scenarios/static_real32.json).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_real32">
+  <datamodel>
+    <data id="level" sce:type="float32" expr="16777216.0" sce:direction="out"/>
+    <data id="tenth" sce:type="float32" expr="0.1"/>
+    <data id="drift" sce:type="float32" expr="0" sce:direction="out"/>
+    <data id="wide" sce:type="float64" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <!-- A sum that a binary32 cannot hold exactly at 2^24. -->
+    <transition event="bump" type="internal">
+      <assign location="level" expr="level + 1"/>
+    </transition>
+    <!-- A quotient that is exact. -->
+    <transition event="halve" type="internal">
+      <assign location="level" expr="level / 2"/>
+    </transition>
+    <!-- A sum of two binary32 values, rounded to binary32. -->
+    <transition event="drift" type="internal">
+      <assign location="drift" expr="tenth + 0.2"/>
+    </transition>
+    <!-- A `float32` stored in a `float64`: widened exactly. -->
+    <transition event="widen" type="internal">
+      <assign location="wide" expr="tenth"/>
+    </transition>
+    <!-- A sum with a single in it, stored in a `float64`: an operation is made
+         at the precision of the place its value lands, so this one is a
+         double's — the single is widened, exactly, and 0.2 is the double —
+         and its result is not the single of `drift`. -->
+    <transition event="mix" type="internal">
+      <assign location="wide" expr="tenth + 0.2"/>
+    </transition>
+  </state>
+</scxml>

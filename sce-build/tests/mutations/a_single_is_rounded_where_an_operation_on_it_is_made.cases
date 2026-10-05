@@ -1,0 +1,110 @@
+# Mutation cases for the 32-bit real of a `datamodel="sce-static"` machine
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real"): an operation on a
+# `float32` is rounded to binary32 where it is made, at the precision of the
+# place its value lands, on every backend.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_single_is_rounded_where_an_operation_on_it_is_made.cases`.
+#
+# Rust, Go, Kotlin, C and C++ have a single of their own, so what they need
+# from the generator is the literal written as one. Python and ECMAScript hold
+# every real in a double, so the generator writes the rounding itself
+# (`sce_algorithm.to_f32`, `Math.fround`) around each operand and result made
+# as a single. The unit tests in `expr.rs` and `static_lowering.rs` read that
+# text: the sum of a single and a literal, the sum in a `float64` slot (which is
+# a double's and is not rounded), a comparison, a negation, and the literal's
+# suffix. The mutants below each take one decision away and leave a generator
+# that still compiles:
+#
+#   the result of an operation made as a single is not rounded;
+#   its operands are not rounded;
+#   the precision of the place the value lands is ignored, so a sum stored in a
+#   `float64` is rounded as a single;
+#   a comparison's operands are not rounded;
+#   a negation does not pass the precision on to what it negates;
+#   a literal beside a single is not written as one;
+#   the pass is not run;
+#   the data model of a statechart does not ask for it;
+#   C does not hold a `float` variable, has no wire value for one, or refuses
+#   one on the wire.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/expr.rs sce-build/src/forge/type_ctx.rs sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/src/forge/expr.rs sce-build/src/forge/static_lowering.rs
+
+# ── What is rounded ─────────────────────────────────────────────────
+
+mutation_case "the result of an operation made as a single is not rounded" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                    wrap_in_call(expr, callee, single);\n                }\n            } else if op.is_comparison() {",
+     "                }\n            } else if op.is_comparison() {")
+PY
+
+mutation_case "the operands of an operation made as a single are not rounded" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                if at == single {\n                    for side in [&mut **left, &mut **right] {\n                        if side.ty != single {\n                            wrap_in_call(side, callee, single);\n                        }\n                    }\n                    wrap_in_call(expr, callee, single);",
+     "                if at == single {\n                    wrap_in_call(expr, callee, single);")
+PY
+
+mutation_case "the operands of a comparison are not rounded" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                if operands == single {\n",
+     "                if false && operands == single {\n")
+PY
+
+# ── The place decides the precision ─────────────────────────────────
+
+mutation_case "the precision of the place the value lands is ignored" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                let at = if matches!(expected, InferredType::Float { .. }) {\n                    expected\n                } else {\n                    operands\n                };",
+     "                let at = operands;\n                let _ = expected;")
+PY
+
+mutation_case "a negation does not pass the precision on" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        } => round_singles_in(operand, real(expected), callee),",
+     "        } => round_singles_in(operand, InferredType::Unknown, callee),")
+PY
+
+# ── Where it is asked for ───────────────────────────────────────────
+
+mutation_case "a literal beside a single is not written as one" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if bits == 32 {\n        \"f\"\n    } else {\n        \"\"\n    }",
+     "    let _ = bits;\n    \"\"")
+PY
+
+mutation_case "the rounding pass is not run" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if ctx.rounds_to_single {",
+     "    if false && ctx.rounds_to_single {")
+PY
+
+mutation_case "a statechart's data model does not ask for the rounding" <<'PY'
+edit("sce-build/src/forge/type_ctx.rs",
+     "    ctx.rounds_to_single = true;",
+     "    ctx.rounds_to_single = false;")
+PY
+
+# ── C holds a float ─────────────────────────────────────────────────
+
+mutation_case "C does not hold a float variable" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)",
+     "matches!(ty, SceType::Enum(_) | SceType::Float64)")
+PY
+
+mutation_case "C has no wire value for a single" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            InferredType::Float { .. } => format!(\"sce_forge_wire_real((double)({value}))\"),",
+     "            InferredType::Float { bits: 64 } => format!(\"sce_forge_wire_real((double)({value}))\"),")
+PY
+
+mutation_case "C refuses a float on the wire" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                | InferredType::Int { .. }\n                | InferredType::Float { .. }\n        )",
+     "                | InferredType::Int { .. }\n                | InferredType::Float { bits: 64 }\n        )")
+PY

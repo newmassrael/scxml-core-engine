@@ -796,8 +796,14 @@ saved_wide_int!(u64, i64);
 
 // JSON has no spelling for a value that is not finite, so it is written as
 // the text every backend reads it back from.
+//
+// A 32-bit real is written as the 64-bit real it widens to, which is exact: the
+// number a reader that holds JSON numbers as doubles finds is the number the
+// machine holds, `0.30000001192092896` and not the shorter `0.3` a single would
+// print for it, which is another number to that reader. Every engine writes it
+// so, because the widening is the one spelling they can all make.
 macro_rules! saved_real {
-    ($($t:ty),*) => {$(
+    ($($t:ty => $wide:ty),*) => {$(
         impl SavedValue for $t {
             fn to_saved(&self) -> Value {
                 if self.is_nan() {
@@ -805,7 +811,7 @@ macro_rules! saved_real {
                 } else if self.is_infinite() {
                     Value::Text(if *self > 0.0 { "Infinity" } else { "-Infinity" }.to_string())
                 } else {
-                    Value::Number(format!("{:?}", self))
+                    Value::Number(format!("{:?}", <$wide>::from(*self)))
                 }
             }
             fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
@@ -824,7 +830,7 @@ macro_rules! saved_real {
         }
     )*};
 }
-saved_real!(f32, f64);
+saved_real!(f32 => f64, f64 => f64);
 
 impl SavedValue for bool {
     fn to_saved(&self) -> Value {
@@ -1751,6 +1757,21 @@ mod tests {
             assert!(back == x || (back.is_nan() && x.is_nan()), "{back}");
         }
         assert_eq!(1.5f32.to_saved(), Value::Number("1.5".to_string()));
+    }
+
+    #[test]
+    fn a_32_bit_real_is_written_as_the_64_bit_real_it_widens_to() {
+        // The binary32 nearest 0.3 is not 0.3: a reader that holds a JSON number
+        // as a double must find the value the machine holds.
+        let single = 0.3f32;
+        assert_eq!(
+            single.to_saved(),
+            Value::Number("0.30000001192092896".to_string())
+        );
+        assert_eq!(
+            f32::from_saved(&single.to_saved(), "x").expect("reads back"),
+            single
+        );
     }
 
     #[test]

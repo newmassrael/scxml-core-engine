@@ -1,0 +1,25 @@
+# Mutation cases for "a 32-bit real is saved as the 64-bit real it widens to"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_single_is_the_double_it_widens_to.cases`.
+#
+# A machine's saved state is JSON, and a reader that holds a JSON number as a
+# double finds the number the machine holds only if the single is written as
+# the double it widens to: the binary32 nearest 0.3 is `0.30000001192092896`,
+# and the `0.3` a single prints for itself is another number to that reader.
+# `a_32_bit_real_is_written_as_the_64_bit_real_it_widens_to` writes `0.3f32`
+# and reads it back; the case below writes a single as itself.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --lib
+mutation_targets backends/rust/runtime/src/saved_state.rs
+mutation_oracles backends/rust/runtime/src/saved_state.rs
+
+mutation_case "a single is written as its own shortest text" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "saved_real!(f32 => f64, f64 => f64);",
+     "saved_real!(f32 => f32, f64 => f64);")
+PY

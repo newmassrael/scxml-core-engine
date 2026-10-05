@@ -50,6 +50,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_relay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
@@ -440,6 +441,19 @@ func TestAForeachWalksAListVariable(t *testing.T) {
 		"visited":   func() any { return policy.Visited() },
 		"finished":  func() any { return policy.Finished() },
 		"errors":    func() any { return policy.Errors() },
+	}))
+}
+
+// A 32-bit real is a native float32 field: every operation on it is rounded to
+// binary32 where it is made. A host reads it as the float64 it widens to, which
+// is exact, and that is the number the scenario states.
+func TestARealIsANativeBinary32Field(t *testing.T) {
+	policy := static_real32.NewStaticReal32Policy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_real32", drive[static_real32.StaticReal32State, static_real32.StaticReal32Event](&policy, map[string]func() any{
+		"level": func() any { return float64(policy.Level()) },
+		"drift": func() any { return float64(policy.Drift()) },
+		"wide":  func() any { return policy.Wide() },
 	}))
 }
 
