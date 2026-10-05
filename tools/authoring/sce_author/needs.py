@@ -10,7 +10,6 @@ written in four places is four lists, and the one that is out of date reads like
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 
 
@@ -31,9 +30,11 @@ NEEDS = (
 
 
 def _can_import(module: str) -> bool:
-    """Whether `module` imports here, which is what the server will ask of it."""
+    """Whether `module` imports here, which is what the server will ask of it. The builtin and not
+    `importlib`: a module the server process loads must not import what loads code
+    (`tests/test_core_is_domain_free.py`), and asking whether one library is installed is not that."""
     try:
-        importlib.import_module(module)
+        __import__(module)
     except ImportError:
         return False
     return True
