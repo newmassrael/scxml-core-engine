@@ -938,11 +938,30 @@ def load_examples(paths: list[pathlib.Path], problems: Problems = FIRST_PROBLEM)
                 step_name = f"{name} (before {index})"
                 exact, window = _elapsed(step.get("elapsed_ms"), f"{path}: {step_name}",
                                          problems)
-                before.append(Case(step_name, step_given, {}, exact,
-                                   tuple(step.get("drove") or ()), variant,
-                                   elapsed_window=window,
-                                   delivered=_delivered(step, f"{path}: {step_name}",
-                                                        problems)))
+                delivered = _delivered(step, f"{path}: {step_name}", problems)
+                repeat = step.get("repeat")
+                if repeat is None:
+                    before.append(Case(step_name, step_given, {}, exact,
+                                       tuple(step.get("drove") or ()), variant,
+                                       elapsed_window=window, delivered=delivered))
+                    continue
+                # A cyclic drive is as many rounds as the cycle ran, each observed one
+                # period after its drive. A step's own `elapsed_ms` would contradict
+                # that, so the two are refused together rather than one read silently.
+                if step.get("elapsed_ms") is not None:
+                    problems.refuse(PackError(
+                        f"{path}: {step_name}: `repeat` and `elapsed_ms` both say when the "
+                        f"step was observed -- a cyclic step is observed one period after "
+                        f"each drive, so say only `repeat`"))
+                    continue
+                period = float(repeat["every_ms"])
+                times = max(1, int(float(repeat["for_ms"]) // period))
+                for turn in range(1, times + 1):
+                    before.append(Case(f"{step_name}, repeat {turn} of {times}",
+                                       dict(step_given), {}, period,
+                                       tuple(step.get("drove") or ()), variant,
+                                       elapsed_window=(period, period),
+                                       delivered=delivered))
             exact, window = _elapsed(case.get("elapsed_ms"), f"{path}: {name}", problems)
             cases.append(Case(name, given, expect, exact,
                               tuple(case.get("drove") or ()),

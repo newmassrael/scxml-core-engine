@@ -88,6 +88,16 @@
                 "elapsed_ms": {
                   "$ref": "#/$defs/elapsed",
                   "description": "How long the situation had held when this step was taken, as on a case: a number, or a `{min, max}` window."
+                },
+                "repeat": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["every_ms", "for_ms"],
+                  "properties": {
+                    "every_ms": {"type": "number", "exclusiveMinimum": 0},
+                    "for_ms": {"type": "number", "exclusiveMinimum": 0}
+                  },
+                  "description": "The platform drove this step again every `every_ms` for `for_ms` -- a cyclic signal. The step is driven `for_ms / every_ms` times (rounded down, at least once), each observed exactly `every_ms` after its drive, so a document that averages, counts or integrates over its rounds is shown as many rounds as the record's cycle ran, and one that waits on a delay is shown the whole stretch of time. ⚠ Why not one step: a reading restated at the same value is still a statement that the thing happened again, and a cycle is exactly that said at a fixed rate. Folded into one step it is a single event, and a component that needs twenty samples is shown one."
                 }
               }
             },

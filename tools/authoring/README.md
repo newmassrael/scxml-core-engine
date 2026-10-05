@@ -1835,6 +1835,16 @@ its table maps to the same ON, the platform delivered it and the component
 ran, and the core — reading ON then ON — said no round happened (measured
 2026-09-27). An address in `delivered` the step did not drive is refused.
 
+A `before` step may carry `repeat: {every_ms, for_ms}` when the platform drove
+it as a cycle — the same signals again every `every_ms` for `for_ms`. The step
+is then driven `for_ms / every_ms` times (rounded down, at least once), each
+round observed exactly `every_ms` after its drive, so a document that averages,
+counts or integrates over its rounds is shown as many rounds as the cycle ran.
+⚠ It is not one step with a long `elapsed_ms`: a reading restated at the same
+value is still a statement that the thing happened again, and a cycle is that
+said at a fixed rate. A step that carries both `repeat` and `elapsed_ms` is
+refused, because each says when the step was observed.
+
 ⚠ `variant` and `elapsed_ms` sit on the case rather than in `given` for the
 same reason: neither is a signal. Nothing drives them, they have no address and
 no value space. A record tagged with a build and never setting a configuration
