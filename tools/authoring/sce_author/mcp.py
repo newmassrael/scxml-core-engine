@@ -3780,6 +3780,7 @@ def readiness() -> list[str]:
     nothing. It is asked here, and not copied into whatever starts the server, so that what this
     server needs is said by the server.
     """
+    from . import needs
     from .verify import _default_codegen
 
     problems = []
@@ -3790,10 +3791,7 @@ def readiness() -> list[str]:
     if not work.is_file():
         problems.append(f"sce-work is not at {work}, so the works tools cannot reach the works "
                         f"folder: set SCE_WORK to it")
-    try:
-        __import__("yaml")
-    except ImportError:
-        problems.append("PyYAML is not installed for this Python: pip install pyyaml")
+    problems.extend(needs.sentence(need) for need in needs.missing())
     return problems
 
 

@@ -120,8 +120,8 @@ pub enum NotHosted {
     NoClaude(String),
     /// No launcher for the authoring server was found; says where it looked.
     NoAuthorServer(String),
-    /// The launcher is there and the server would not start (no Python, no PyYAML, no generator);
-    /// says what the server itself said when it was asked.
+    /// The launcher is there and the server would not start (no Python, a Python module it needs,
+    /// no generator); says what the server itself said when it was asked.
     AuthorServerNotReady(String),
 }
 
@@ -361,8 +361,9 @@ fn author_server(settings: &HostSettings, works: &Path) -> Result<AuthorServer, 
 
 /// Ask the authoring server whether it can do its work (`--check`), with the environment the
 /// client will give it. From outside, a server that cannot start is an AI that does not answer;
-/// asked first, what is missing (Python, PyYAML, the generator) is said in the server's own words
-/// where the owner reads it. The server is the authority on what it needs, so nothing is copied here.
+/// asked first, what is missing (Python, a module it needs, the generator) is said in the server's
+/// own words where the owner reads it. The server is the authority on what it needs, so nothing is
+/// copied here.
 fn ready(server: &AuthorServer) -> Result<(), NotHosted> {
     let mut command = std::process::Command::new(&server.command);
     command.arg("--check").envs(server.env.iter().cloned());

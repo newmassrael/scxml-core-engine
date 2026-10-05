@@ -21,8 +21,10 @@
 #   --bundles LIST  what Tauri builds, comma separated (default: deb)
 #
 # What the installer does not carry is Python: the launcher of the authoring server needs Python
-# 3.10 or later with PyYAML. The deb says so (`python3`, `python3-yaml`); an installer for a
-# platform with no package manager to ask has to carry or install one, which this script does not.
+# 3.10 or later with the modules `sce_author/needs.py` lists (PyYAML, jsonschema). The deb says so
+# (`python3`, `python3-yaml`, `python3-jsonschema`) and `verify_installed_app.sh` holds the deb it
+# built to that list; an installer for a platform with no package manager to ask has to carry or
+# install one, which this script does not.
 
 set -euo pipefail
 

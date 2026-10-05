@@ -19,7 +19,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from sce_author import mcp
+from sce_author import mcp, needs
 
 
 def check(env: dict[str, str]) -> tuple[int, str, str]:
@@ -74,21 +74,37 @@ class TheServerSaysWhetherItCanStart(unittest.TestCase):
         self.assertEqual(1, status)
         self.assertEqual(2, len([line for line in err.splitlines() if line.strip()]))
 
-    def test_a_missing_yaml_module_is_said_with_what_to_install(self):
+    def check_without(self, *modules: str) -> tuple[int, str]:
+        """`--check` on a machine that has the generator and `sce-work` and not these modules."""
         env = {"SCE_CODEGEN": self.program("sce-codegen"), "SCE_WORK": self.program("sce-work")}
-        real_import = __import__
-
-        def refusing(name, *args, **kwargs):
-            if name == "yaml":
-                raise ImportError("No module named 'yaml'")
-            return real_import(name, *args, **kwargs)
-
-        with unittest.mock.patch("builtins.__import__", refusing):
+        with unittest.mock.patch.object(needs, "_can_import", lambda name: name not in modules):
             status, _, err = check(env)
+        return status, err
+
+    def test_a_missing_yaml_module_is_said_with_what_to_install(self):
+        status, err = self.check_without("yaml")
 
         self.assertEqual(1, status)
         self.assertIn("PyYAML", err)
         self.assertIn("pip install pyyaml", err)
+
+    def test_a_missing_jsonschema_is_said_with_what_to_install_and_what_stops_without_it(self):
+        # Without it the owner's answers cannot be read: the application starts, and the first
+        # work with an answer in it is refused, which from outside is an AI that fails at random.
+        status, err = self.check_without("jsonschema")
+
+        self.assertEqual(1, status)
+        self.assertIn("jsonschema", err)
+        self.assertIn("pip install jsonschema", err)
+        self.assertIn("answers", err)
+        self.assertNotIn("PyYAML", err)
+
+    def test_every_module_the_server_needs_is_asked_after_not_only_the_first(self):
+        status, err = self.check_without(*(need.module for need in needs.NEEDS))
+
+        self.assertEqual(1, status)
+        for need in needs.NEEDS:
+            self.assertIn(f"pip install {need.pip}", err)
 
     def test_the_check_is_not_a_way_to_start_a_server(self):
         with self.assertRaises(SystemExit) as refused, contextlib.redirect_stderr(io.StringIO()):

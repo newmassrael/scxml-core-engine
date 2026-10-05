@@ -54,7 +54,8 @@ It writes `dist/sce-author/` and a `.tar.gz` of it, containing the code
 generator, the templates it renders, this MCP server, the license files, and
 the launcher `bin/sce-author-mcp`. On the owner's machine, unpack it and
 register `bin/sce-author-mcp` (by absolute path) as a local stdio MCP server
-in the AI client. It needs Python 3 with PyYAML and nothing else. The exact
+in the AI client. It needs Python 3 with PyYAML and jsonschema and nothing else
+(`sce_author/needs.py` lists them, and `--check` asks about each). The exact
 registration UI or configuration key depends on the client. Once connected,
 the tool list should include `scxml_kinds`, `validate_scxml` and
 `render_scxml_pseudocode`. `tests/test_the_bundle_runs_where_the_tree_is_not.py`
@@ -90,9 +91,12 @@ and takes the same `--http` flags.
 
 `--check` (on either launcher) starts nothing and asks whether the server could do its work:
 it exits 0 and says `ready`, or exits 1 and says, one line each, what is missing (the
-generator and how to point at it, `sce-work`, PyYAML). An application that starts an AI client
-with this server asks first, so that a server that cannot start is told to the owner in these
-words and not as an AI that never answers. It goes with no other option.
+generator and how to point at it, `sce-work`, each Python module of `sce_author/needs.py` that
+is not installed). An application that starts an AI client with this server asks first, so that
+a server that cannot start is told to the owner in these words and not as an AI that never
+answers. It goes with no other option. That file is the one list of what the server needs of its
+Python: the workbench's `.deb` declares a package for each (`app/src-tauri/tauri.conf.json`), and
+`scripts/verify_installed_app.sh` holds the `.deb` that was built to it.
 
 The launcher and MCP server run locally, but the AI client may send the prose,
 SCXML, tool results, and pseudocode to its model service. Local MCP does not

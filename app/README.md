@@ -43,7 +43,7 @@ What does not exist yet, so that nothing below is read as done:
 - Installers for Windows and macOS. `scripts/package_app.sh` builds the Linux one (a `.deb`)
   and it is the only one tried: it carries the generator, `sce-work` and the authoring server
   (see "What an installer carries" below). The authoring server's launcher is a shell script
-  that needs Python 3 with PyYAML; the `.deb` declares both as dependencies, and a platform
+  that needs Python 3 with PyYAML and jsonschema; the `.deb` declares all three as dependencies, and a platform
   with no package manager to ask has to carry or install a Python itself, which nothing here
   does yet.
 - The screens for the examples' results. They are designs, not code. The model
@@ -364,12 +364,13 @@ did. Nobody has to have Claude Code to use the workbench.
 | The product, for the authoring server | `SCE_CODEGEN` | the installer's, else the product's own discovery |
 
 **It asks the server before it takes a request.** Finding a launcher says nothing about whether
-the server will start: with no Python, no PyYAML or no generator it dies at once, and from
-outside that is an AI that never answers. `host::start` runs the launcher with `--check`, in
-the environment the client will give it, and a server that is not ready is a host that hosts
-nothing, with the server's own words as the reason (`the product's generator is not at ...: set
-SCE_CODEGEN to it`, `PyYAML is not installed for this Python: pip install pyyaml`). What the
-server needs is said by the server, and nothing here copies it.
+the server will start: with no Python, a Python module it needs missing or no generator it dies
+at once, and from outside that is an AI that never answers. `host::start` runs the launcher with
+`--check`, in the environment the client will give it, and a server that is not ready is a host
+that hosts nothing, with the server's own words as the reason (`the product's generator is not
+at ...: set SCE_CODEGEN to it`, `PyYAML is not installed for this Python: pip install pyyaml`).
+What the server needs is said by the server (`tools/authoring/sce_author/needs.py` is the one
+list of its Python modules), and nothing here copies it.
 
 **What an installer carries.** An installer cannot rely on anything being installed beside the
 application, so `scripts/package_app.sh` puts the authoring bundle
@@ -383,7 +384,9 @@ the `.deb` is unpacked into a scratch directory and started under a virtual disp
 `SCE_*` variable set and the system's search path alone, and the application has to report an
 executor (`.sce-hosts/desktop.json`); with the bundled generator removed it has to report that it
 hosts none and name the generator, which is the control that shows the first answer came from the
-installer and not from the machine. An installer whose application looks for its bundle under
+installer and not from the machine. It also holds the `.deb`'s `Depends` to that list of Python
+modules, since a machine that has a module the `.deb` never asks for would start it and pass it
+(`python3-jsonschema` was missing until this check existed). An installer whose application looks for its bundle under
 another name fails it (tried by renaming the folder in the shell and rebuilding). CI runs it as
 the `installer` gate (`.github/workflows/installer.yml`); that lane has not run in CI yet.
 

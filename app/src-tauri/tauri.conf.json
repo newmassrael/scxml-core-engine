@@ -38,7 +38,7 @@
     },
     "linux": {
       "deb": {
-        "depends": ["python3", "python3-yaml"]
+        "depends": ["python3", "python3-yaml", "python3-jsonschema"]
       }
     }
   }

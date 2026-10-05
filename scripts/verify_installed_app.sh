@@ -12,6 +12,8 @@
 # where the owner looks, in the record a shell keeps of its executor (`.sce-hosts/desktop.json` in
 # the works folder).
 #
+#   0. What it asks the package manager for: the deb declares a package for every Python module
+#      the server says it needs (`sce_author/needs.py`), because it does not carry Python.
 #   1. Whole, as the installer made it: the record says an executor is hosted.
 #   2. With the bundled generator removed: the record says none is, and names the generator. This is
 #      the control for the first. If the application still hosted an executor, something other than
@@ -66,6 +68,27 @@ bundle="$(find "$root/usr/lib" -maxdepth 2 -type d -name sce-author -print -quit
 for program in sce-author-mcp sce-work sce-codegen; do
     [[ -x "$bundle/bin/$program" ]] || fail "the bundle carries no bin/$program"
 done
+
+# What the installer asks the package manager for, since it does not carry Python. The server says
+# which modules it needs (`sce_author/needs.py`, read from the bundle's own copy), and the deb that
+# was built has to declare a package for each. Starting the application below cannot judge this:
+# the machine it runs on may have a module the deb never asks for, and an installer that leaves out
+# `python3-jsonschema` would start, and pass, here.
+declares() {
+    grep -Eq "(^|, )$2([ ,(]|$)" <<<"$1"
+}
+declared="$(dpkg-deb -f "$installer" Depends)"
+needed="$(PYTHONPATH="$bundle/python" python3 -c \
+    'from sce_author import needs; print(*(need.debian for need in needs.NEEDS))')"
+[[ -n "$needed" ]] || fail "the bundle's server says it needs no Python module, which it does"
+if declares "python3" "python3-yaml"; then
+    fail "the dependency check says a list that holds only python3 declares python3-yaml"
+fi
+for package in python3 $needed; do
+    declares "$declared" "$package" \
+        || fail "the installer declares '$declared' and the server needs $package"
+done
+printf 'verify_installed_app: the installer declares what the server needs (%s)\n' "$needed"
 
 client="$scratch/client/claude"
 printf '#!/bin/sh\necho "0.0.0 (Claude Code)"\n' > "$client"
