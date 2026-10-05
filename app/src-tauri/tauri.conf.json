@@ -32,6 +32,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "resources/sce-author": "sce-author"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["python3", "python3-yaml"]
+      }
+    }
   }
 }

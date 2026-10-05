@@ -40,10 +40,12 @@ for you.
 
 What does not exist yet, so that nothing below is read as done:
 
-- Installers that carry everything (the generator, `sce-work` and the authoring server) so that
-  nothing has to be installed beside the application. The application finds them beside
-  itself, or through the environment (`SCE_CODEGEN`, `SCE_WORK`, `SCE_AUTHOR_MCP`, `SCE_CLAUDE`),
-  and says what it could not find.
+- Installers for Windows and macOS. `scripts/package_app.sh` builds the Linux one (a `.deb`)
+  and it is the only one tried: it carries the generator, `sce-work` and the authoring server
+  (see "What an installer carries" below). The authoring server's launcher is a shell script
+  that needs Python 3 with PyYAML; the `.deb` declares both as dependencies, and a platform
+  with no package manager to ask has to carry or install a Python itself, which nothing here
+  does yet.
 - The screens for the examples' results. They are designs, not code. The model
   screen shows what SCE drew, what SCE says of the model, where it stands to the
   text, a field for your answer under each question the model leaves open, and
@@ -349,17 +351,36 @@ client through the real server and product once, end to end.
 **Who hosts it.** Both shells call `host::start`, so that what they host cannot differ for a
 reason that lives in a shell: the desktop application (as `desktop`) and the browser shell used
 while developing the screen (as `web-shell`). It finds what it needs the way the product's
-generator is found (the environment, then beside the program, then the search path) and a shell
-that cannot find it does not fail: it says what it looked for and hosts nothing, and the
-application shows that no AI is connected and works as it always did. Nobody has to have Claude
-Code to use the workbench.
+generator is found (the environment, then what an installer carried, then beside the program,
+then the search path) and a shell that cannot find it does not fail: it says what it looked for
+and hosts nothing, and the application shows that no AI is connected and works as it always
+did. Nobody has to have Claude Code to use the workbench.
 
 | What | Environment | Otherwise |
 |---|---|---|
 | Claude Code | `SCE_CLAUDE` | `claude` on the search path |
-| The authoring server's launcher | `SCE_AUTHOR_MCP` (a checkout has `scripts/sce_author_mcp.sh`) | `sce-author-mcp` beside the program or on the search path |
-| `sce-work`, for the authoring server | `SCE_WORK` | beside the program or on the search path |
-| The product, for the authoring server | `SCE_CODEGEN` | the product's own discovery |
+| The authoring server's launcher | `SCE_AUTHOR_MCP` (a checkout has `scripts/sce_author_mcp.sh`) | the installer's `sce-author-mcp`, else beside the program or on the search path |
+| `sce-work`, for the authoring server | `SCE_WORK` | the installer's, else beside the program or on the search path |
+| The product, for the authoring server | `SCE_CODEGEN` | the installer's, else the product's own discovery |
+
+**It asks the server before it takes a request.** Finding a launcher says nothing about whether
+the server will start: with no Python, no PyYAML or no generator it dies at once, and from
+outside that is an AI that never answers. `host::start` runs the launcher with `--check`, in
+the environment the client will give it, and a server that is not ready is a host that hosts
+nothing, with the server's own words as the reason (`the product's generator is not at ...: set
+SCE_CODEGEN to it`, `PyYAML is not installed for this Python: pip install pyyaml`). What the
+server needs is said by the server, and nothing here copies it.
+
+**What an installer carries.** An installer cannot rely on anything being installed beside the
+application, so `scripts/package_app.sh` puts the authoring bundle
+(`scripts/package_sce_author.sh`: `bin/sce-codegen`, `bin/sce-work`, `bin/sce-author-mcp`, the
+templates and the Python package) in the application's resources (`sce-author/`, which
+`tauri.conf.json` names) and has Tauri build the installer around it. The desktop application
+looks there (`installed::in_bundle`) and uses what it finds where the environment names
+nothing: a developer's variable still wins, and a development build, which carries nothing,
+finds them as before. Tried on Linux: the `.deb` unpacked into a scratch root and started under
+a virtual display with no `SCE_*` variable set reports an executor, and with the bundled
+generator removed reports that it hosts none and why.
 
 **A shell says what it is doing where the owner looks.** `host::start` never fails: that nothing
 could be hosted is a state, and the shell reports it the way an adapter does (`.sce-hosts/<name>.json`,
@@ -603,7 +624,10 @@ else: it has no file-system, shell or network permission.
 | Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
 | The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of the same package |
 | Claude Code as the generator, against a stand-in client (Unix) | `--test claude_code` of the same package |
-| A shell that hosts the executor: the settings, what it says when it cannot, taking a request, stopping | `--test host` of the same package |
+| A shell that hosts the executor: the settings, what it says when it cannot (including a server that would not start), taking a request, stopping | `--test host` of the same package |
+| The programs an installer carries, found in its bundle and named when missing | `--test installed` of the same package |
+| The authoring server saying whether it could start (`--check`) | `python3 -m unittest tests.test_the_server_says_whether_it_can_do_its_work_before_it_is_asked_to` (in `tools/authoring`, with `PYTHONPATH=.`) |
+| The installer, on this machine (Linux `.deb`) | `scripts/package_app.sh --debug`, then unpack it with `dpkg-deb -x` and start `usr/bin/sce-workbench` under `xvfb-run` with no `SCE_*` variable: `.sce-hosts/desktop.json` in the works folder says whether it hosts an executor |
 | The real client, server and product end to end (a model runs: minutes and money) | `cargo test -p sce-app-core --features cli --test claude_code_live -- --ignored --nocapture` |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |

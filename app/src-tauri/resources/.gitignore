@@ -1,0 +1,5 @@
+# The bundle an installer carries (scripts/package_app.sh fills it): the generator, sce-work and the
+# authoring server. Never committed; the empty folder is, so that a development build, which carries
+# none, still has the resource folder tauri.conf.json names.
+/sce-author/*
+!/sce-author/.gitkeep

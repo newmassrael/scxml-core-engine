@@ -25,13 +25,20 @@ use std::time::Instant;
 
 use close_gate::{CloseGate, Decision};
 use sce_app_core::host::{self, ExecutorHost, HostSettings};
-use sce_app_core::{call, default_renderer, default_root, CommandError, Product, WorkStore};
+use sce_app_core::installed::{self, Installed};
+use sce_app_core::{
+    call, default_root, renderer_with_bundle, CommandError, Product, WorkStore,
+};
 use serde_json::Value;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 /// What the shell asks the screen to run when a window that holds unsaved changes is
 /// asked to close. A fixed script with nothing of the person's in it.
 const ASK_THE_SCREEN: &str = "window.sceCloseRequested && window.sceCloseRequested()";
+
+/// The folder of the application's resources an installer puts the bundle in (`tauri.conf.json`
+/// names it, and `scripts/package_app.sh` fills it).
+const BUNDLE_FOLDER: &str = "sce-author";
 
 /// The works folder this window works on, and the product that draws a model
 /// and reads one for it.
@@ -48,10 +55,11 @@ struct Executor(Mutex<Option<ExecutorHost>>);
 /// Host the application's own executor, or say why it does not. Not having Claude Code is not
 /// an error: the application shows that no AI is connected, and why, and works as it always did.
 /// What it could not do is said to the works folder, where the screen reads it, and also here.
-fn host_the_executor(root: std::path::PathBuf) -> Executor {
+fn host_the_executor(root: std::path::PathBuf, bundle: &Installed) -> Executor {
     let store = Arc::new(WorkStore::at(root));
-    let product: Arc<dyn Product> = Arc::from(default_renderer());
-    let running = host::start(store, product, HostSettings::from_environment("desktop"));
+    let product: Arc<dyn Product> = Arc::from(renderer_with_bundle(bundle.codegen.as_deref()));
+    let settings = HostSettings::from_environment("desktop").with_bundle(bundle);
+    let running = host::start(store, product, settings);
     if let Some(why) = running.not_hosted() {
         eprintln!("sce-workbench: {why}");
     }
@@ -118,10 +126,18 @@ pub fn run() {
                     .expect("the platform has no per-user data directory")
                     .join("works")
             });
-            app.manage(host_the_executor(root.clone()));
+            // What an installer carried: the generator, `sce-work` and the authoring server, in a
+            // folder of the application's own resources. A development build carries none, and
+            // finds them as it always did (the environment, beside the program, the search path).
+            let bundle = app
+                .path()
+                .resource_dir()
+                .map(|dir| installed::in_bundle(&dir.join(BUNDLE_FOLDER)))
+                .unwrap_or_default();
+            app.manage(host_the_executor(root.clone(), &bundle));
             app.manage(Works {
                 store: WorkStore::at(root),
-                figures: default_renderer(),
+                figures: renderer_with_bundle(bundle.codegen.as_deref()),
             });
             Ok(())
         })
