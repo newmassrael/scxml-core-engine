@@ -2193,6 +2193,24 @@ fn a_send_idlocation_names_a_string_variable_the_id_fits() {
 }
 
 #[test]
+fn an_invoke_idlocation_is_refused_for_want_of_a_reader_and_says_so() {
+    // The id it would store is the one the build already wrote, and a machine of
+    // this model reads no `_event.invokeid`, so nothing could compare it.
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s"><invoke type="scxml" idlocation="count"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><final id="c"/></scxml></content></invoke></state>"#,
+        ),
+    );
+    assert!(!ok, "an invoke's idlocation has no reader here:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+    assert!(
+        out.contains("_event.invokeid") && out.contains("write `id`"),
+        "it says what is missing and what to write instead:\n{out}"
+    );
+}
+
+#[test]
 fn a_send_idlocation_that_cannot_hold_the_id_or_names_no_variable_is_refused_on_its_line() {
     for (what, data, send) in [
         (

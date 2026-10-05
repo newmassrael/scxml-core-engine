@@ -475,3 +475,12 @@ edit("sce-build/src/forge/static_lowering.rs",
      "        format!(\n            \"{{ const char *{local} = {}; {store} }}\",\n            self.fresh_send_id()\n        )\n",
      "        let _ = (local, self.fresh_send_id());\n        store\n")
 PY
+
+# An `<invoke idlocation>` stores an id the build already wrote and this model has
+# no `_event.invokeid` to compare it with, so it is refused and says why. The case
+# lets one through, and the rule's own test sees a document accepted.
+mutation_case "an invoke idlocation is admitted" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !base.idlocation.is_empty() {\n            return Err(self.rule_at(\n                format!(\"idlocation=\\\"{}\\\"\", base.idlocation),",
+     "        if false && !base.idlocation.is_empty() {\n            return Err(self.rule_at(\n                format!(\"idlocation=\\\"{}\\\"\", base.idlocation),")
+PY

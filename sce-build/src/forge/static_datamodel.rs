@@ -1682,11 +1682,24 @@ impl<'a> Judge<'a> {
             Invoke::Unsupported(info) => info.contentexpr.as_str(),
             _ => "",
         };
-        for (attr, value) in [
-            ("idlocation", base.idlocation.as_str()),
-            ("srcexpr", srcexpr),
-            ("contentexpr", contentexpr),
-        ] {
+        // An `idlocation` stores the id the build already wrote for the invoke —
+        // its `id`, or `<state>.platform_N` — and this model reads no
+        // `_event.invokeid`, only `_event.data`, so nothing could compare what it
+        // stored. A document that must name its invocation writes `id`, which
+        // `done.invoke.<id>` and `error.invoke.<id>` already match.
+        if !base.idlocation.is_empty() {
+            return Err(self.rule_at(
+                format!("idlocation=\"{}\"", base.idlocation),
+                "an <invoke idlocation> stores the id the build already wrote for the \
+                 invocation, and this model reads no `_event.invokeid` to compare it with: \
+                 write `id` where the document must name its invocation",
+                line,
+                col,
+                state,
+                &base.idlocation,
+            ));
+        }
+        for (attr, value) in [("srcexpr", srcexpr), ("contentexpr", contentexpr)] {
             if !value.is_empty() {
                 return Err(self.untyped_at(
                     format!("{attr}=\"{value}\""),
