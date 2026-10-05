@@ -21,7 +21,7 @@ refuses are the ones where one of those two things is missing:
 | `bytes` (variable, record field, payload field) | a bound, and a spelling on the wire |
 | `<send targetexpr>` / `<send typeexpr>` | the set of values the expression can take |
 | a `<send>` to another processor | the same set, plus a lowering of the processor's own type |
-| a mesh `<invoke>` | a statement of which targets the mesh exists for |
+| a mesh `<invoke>` | a lowering in each backend's mesh runtime (C++ has one) |
 | an `<invoke type="scxml">` of a child that declares `<sce:action>`s | a way for the parent to give the child its host |
 
 Two of these were measured on 2026-10-06 to be worse than "not yet written":
@@ -43,12 +43,13 @@ against a fixture rather than by judgement.
 
 **Nothing a `sce-static` machine does is decided by text evaluated at run time. A value
 is bounded where it is declared, a choice is made among a set the document declares, and
-a capability a target does not have is refused by name — by contract where the contract
-says the target will never have it, as "no lowering yet" only where it will.**
+a capability a target does not have yet is refused by name, as "no lowering yet", with a
+method that lifts the refusal.**
 
 One document has one answer on every engine that runs it. A construct that only some
-engines can hold is therefore refused on all of them until all can, or refused by
-contract on the ones that never will.
+engines can hold is therefore refused on all of them until all can. The mesh is the one
+exception, because it is a service a backend gains with its own runtime: a backend that
+has it lowers it, and the rest refuse by name until theirs lands (decision 5).
 
 ## Decisions
 
@@ -143,14 +144,23 @@ sends (each value as the text a form carries), and the processor is the runtime'
 generated code. A type the host serves is lowered already (`--host-processor`); a type
 neither the runtime nor the host serves stays refused by name at the `<send>`.
 
-### 5. A mesh `<invoke>` is lowered for C++ and refused by contract for the others
+### 5. A mesh `<invoke>` is lowered by each backend as its mesh runtime lands
 
-`SCE_MESH.md` ("Language coverage") states that the mesh runtime targets C++ only, and
-that a mesh construct addressed to another backend is refused at build time rather than
-dropped. The static lowering follows it: `<invoke type="sce:mesh-rpc">` is lowered by the
-C++ target (and so by the Interpreter, which is C++), and refused by Rust, Kotlin, Go,
-Python and C11 as a contract — the message says the mesh is C++ only, not that a
-lowering is missing — until `SCE_MESH.md` says otherwise.
+`SCE_MESH.md` ("Current realization state") says the mesh runtime exists for C++ only
+today, and that a mesh construct addressed to another backend is refused at build time
+rather than dropped. That is where the work stands, not a limit of the design: the mesh
+is meant for every backend. The static lowering follows the rule it follows for every
+other construct here. `<invoke type="sce:mesh-rpc">` is lowered by the C++ target (and so
+by the Interpreter, which is C++), and refused by name by Rust, Kotlin, Go, Python and
+C11 as "no lowering yet". Each of them lifts the refusal
+(`StaticTarget::lowers_mesh_invoke`) in the commit that lands its mesh runtime and its
+lowering.
+
+Rejected:
+
+- *Refusing the five by contract, with a message that says the mesh is C++ only.* It
+  would write a limit the design does not have, and a reader of the refusal would take
+  it as permanent.
 
 ### 6. The parent gives a child its host through a factory on the parent's own host
 
@@ -188,15 +198,15 @@ Rejected:
 Each refusal is a method on the target (`StaticTarget::lowers_…`) that defaults to
 refusing; an engine flips it in the same commit that lands its lowering and a fixture
 that every engine that has flipped it runs. A refusal is removed from the shared check
-only when the last engine has flipped it, and replaced by decision 5's contract refusal
-where it applies.
+only when the last engine has flipped it.
 
 1. A record's `string` field (decision 1), then `bytes` (decision 2), which reuses the
    bound machinery. Fixtures `static_record_string`, `static_bytes`.
 2. The child's host (decision 6). Fixture: a child declaring an act, invoked, restored,
    and invoked again.
 3. `targetexpr` / `typeexpr` (decision 3), then BasicHTTP `<param>`s (decision 4).
-4. The mesh `<invoke>` (decision 5): the C++ lowering and the contract refusal wording.
+4. The mesh `<invoke>` (decision 5): the C++ lowering first, then each other backend
+   with its mesh runtime.
 
 ## Consequences
 
