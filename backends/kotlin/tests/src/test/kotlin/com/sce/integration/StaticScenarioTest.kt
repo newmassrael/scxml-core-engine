@@ -50,6 +50,7 @@ import com.sce.integration.static_send_event.StaticSendEventStateMachine
 import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
+import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
@@ -789,6 +790,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_string_capacity"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A record's string field is held to the UTF-8 bytes its schema declares: an
+    // assignment past the bound — from a literal, a string variable or a payload —
+    // writes nothing, raises error.execution and ends its block, and a list of
+    // such records holds copies with their text.
+    @Test
+    fun staticRecordStringHoldsAStringFieldWithinTheBoundItsSchemaDeclares() {
+        val sm = StaticRecordStringStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_string"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

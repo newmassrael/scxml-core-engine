@@ -833,12 +833,17 @@ impl StaticTarget for KotlinTarget {
                 let name = self.record_field(&field.id);
                 let id = &field.id;
                 let saved = format!("SavedValues.field(value, what, \"{id}\")");
-                match &field.sce_type {
-                    SceType::Enum(reference) => format!(
+                match (&field.sce_type, field.max_size) {
+                    (SceType::Enum(reference), _) => format!(
                         "{name} = {}.fromSaved({saved}, \"$what.{id}\")",
                         enum_types[&reference.alias]
                     ),
-                    other => format!(
+                    // A string is read back only if it fits the bound the
+                    // schema declares, as a string variable's is.
+                    (SceType::String, Some(bound)) => {
+                        format!("{name} = SavedValues.string({saved}, \"$what.{id}\", {bound})")
+                    }
+                    (other, _) => format!(
                         "{name} = SavedValues.{}({saved}, \"$what.{id}\")",
                         other.as_attr()
                     ),
@@ -1076,6 +1081,12 @@ impl StaticTarget for KotlinTarget {
     // (`DocumentStem.of`) and starts the candidate it names, handing it the
     // values it keeps (`seed_static_child`).
     fn lowers_hybrid_invoke(&self) -> bool {
+        true
+    }
+    // A string field of a record is a `String` of an immutable data class that
+    // the machine bounds by the `sce:max-size` its schema writes, as it bounds a
+    // string variable.
+    fn lowers_record_string_fields(&self) -> bool {
         true
     }
     fn payload_accessor(&self, event: &str) -> String {

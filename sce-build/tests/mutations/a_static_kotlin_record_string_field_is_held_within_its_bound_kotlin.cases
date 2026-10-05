@@ -1,0 +1,45 @@
+# Mutation cases for "a record's string field is held within the `sce:max-size` its
+# schema declares" under the Kotlin backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string field"; docs/adr/0005,
+# decision 1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_record_string_field_is_held_within_its_bound_kotlin.cases`.
+#
+# `static_record_string` writes the field from a literal, from a string variable and
+# from a typed payload, and expects a value past eight UTF-8 bytes to leave the record
+# as it was and `errors` to count it; `aRecordStringFieldLongerThanItsBoundIsRefusedInBytes...`
+# restores a saved state that claims one and expects the refusal to name the field.
+# The mutants take one decision away each:
+#
+#   a saved record string is read back unbounded;
+#   a record's string field is not among the strings an `<assign>` is held to;
+#   a saved string past the bound is read back (the bound is not enforced).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest' --tests 'com.sce.integration.StaticDatamodelTest'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_record_string/static_record_stringSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json
+
+mutation_case "a saved record string is read back unbounded" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    (SceType::String, Some(bound)) => {\n                        format!(\"{name} = SavedValues.string(",
+     "                    (SceType::String, Some(bound)) if false => {\n                        format!(\"{name} = SavedValues.string(")
+PY
+
+mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(variables.iter().flat_map(|v| {",
+     "        .chain(variables.iter().take(0).flat_map(|v| {")
+PY
+
+mutation_case "a saved string past the bound is read back" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+     "        if (bytes > capacity) {\n            throw StateRefusal(\"'$what' holds $bytes UTF-8 bytes",
+     "        if (bytes > capacity && false) {\n            throw StateRefusal(\"'$what' holds $bytes UTF-8 bytes")
+PY

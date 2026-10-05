@@ -425,7 +425,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 /// write its imports.
 const RECORD_STRING_FIELD: &[(&str, &str, bool)] = &[
     ("rust", "Rust", true),
-    ("kotlin", "Kotlin", false),
+    ("kotlin", "Kotlin", true),
     ("go", "Go", false),
     ("cpp", "C++", false),
     ("python", "Python", false),

@@ -35,6 +35,7 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
+import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
 import com.sce.integration.static_timers.StaticTimersStateMachine
@@ -773,6 +774,38 @@ class StaticDatamodelTest {
                     val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
                     assertTrue(refusal.message!!.contains("bounded by"), refusal.message)
                     assertEquals("ab", sm.title)
+                }
+            } finally {
+                sm.cleanup()
+            }
+        }
+    }
+
+    @Test
+    fun aRecordStringFieldLongerThanItsBoundIsRefusedInBytesAndTheMachineIsLeftAsItWas() {
+        // A machine never holds more than the sce:max-size="8" UTF-8 bytes its schema
+        // declares in `last.label`, so a saved state that claims it did is not one
+        // this machine wrote. The bound counts bytes: seven bytes in three characters
+        // fit it, and nine bytes in four do not.
+        val source = StaticRecordStringStateMachine()
+        source.initialize()
+        val json = try {
+            source.save().toJson()
+        } finally {
+            source.cleanup()
+        }
+        for ((claimed, fits) in listOf("abcdefgh" to true, "é€é" to true, "abcdefghi" to false, "é€éé" to false)) {
+            val text = json.replace("\"label\":\"a\"", "\"label\":\"$claimed\"")
+            val sm = StaticRecordStringStateMachine()
+            try {
+                if (fits) {
+                    sm.restore(SavedState.fromJson(text))
+                    assertEquals(claimed, sm.last.label)
+                } else {
+                    val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+                    assertTrue(refusal.message!!.contains("last.label"), refusal.message)
+                    assertTrue(refusal.message!!.contains("bounded by"), refusal.message)
+                    assertEquals("a", sm.last.label)
                 }
             } finally {
                 sm.cleanup()
