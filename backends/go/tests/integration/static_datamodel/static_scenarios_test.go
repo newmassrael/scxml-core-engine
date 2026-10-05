@@ -56,6 +56,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_event"
@@ -100,6 +101,19 @@ type readingRecord interface {
 // readingJSON is a reading as a scenario states it: its fields by the schema's ids.
 func readingJSON(reading readingRecord) any {
 	return map[string]any{"sensor": reading.Sensor(), "value": reading.Value()}
+}
+
+// reading32Record is a `record:Reading32` as a host reads it: a small integer and
+// a 32-bit real.
+type reading32Record interface {
+	Sensor() uint8
+	Value() float32
+}
+
+// reading32JSON is a reading32 as a scenario states it: the single is read as the
+// float64 it widens to, which is exact, since JSON would print the float32 itself.
+func reading32JSON(reading reading32Record) any {
+	return map[string]any{"sensor": reading.Sensor(), "value": float64(reading.Value())}
 }
 
 // scenarioDir is where the scenarios live, from this package's directory.
@@ -527,6 +541,19 @@ func TestARecordHoldsARealFieldToTheBit(t *testing.T) {
 	replay(t, "static_record_real", drive[static_record_real.StaticRecordRealState, static_record_real.StaticRecordRealEvent](&policy, map[string]func() any{
 		"last": func() any { return readingJSON(policy.Last()) },
 		"sum":  func() any { return policy.Sum() },
+	}))
+}
+
+// A record with a 32-bit real field is built whole, written a field at a time,
+// and replaced from a typed payload: the double the payload carried lands as the
+// single nearest it.
+func TestARecordHoldsASingleFieldAsTheSingleNearestThePayload(t *testing.T) {
+	policy := static_record_real32.NewStaticRecordReal32Policy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_real32", drive[static_record_real32.StaticRecordReal32State, static_record_real32.StaticRecordReal32Event](&policy, map[string]func() any{
+		"last":   func() any { return reading32JSON(policy.Last()) },
+		"sum":    func() any { return float64(policy.Sum()) },
+		"errors": func() any { return policy.Errors() },
 	}))
 }
 

@@ -1,0 +1,35 @@
+# Mutation cases for "a payload field a schema declares float32 is the binary32
+# nearest the number it is given" under the Interpreter
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_interpreter_float32_payload_field_is_the_single_nearest_the_number_ctest.cases`.
+#
+# A lowered document reads a payload field through `SceStatic.field(data, name,
+# type)`, and a Number is a binary64: a field declared `float32` that returned
+# the number it was given held `0.1` where every other engine holds
+# `0.10000000149011612`. `static_record_real32` is replayed by
+# `static_datamodel_lowered`; the mutants below each take one decision away:
+#
+#   the number is returned as it was given;
+#   a number past the range of a single is read.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one
+# is reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_record_real32.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
+
+mutation_case "a float32 field is returned as the number it was given" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "        return Math.fround(value);",
+     "        return value;")
+PY
+
+mutation_case "a number past the range of a single is read" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "        if (Math.abs(value) > FLOAT32_MAX) {",
+     "        if (false && Math.abs(value) > FLOAT32_MAX) {")
+PY

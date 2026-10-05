@@ -124,6 +124,11 @@ func PayloadUnsigned[T uint8 | uint16 | uint32 | uint64](obj PayloadFields, name
 }
 
 // PayloadFloat reads a fractional field at its declared width.
+//
+// A JSON number is a double wherever it is read, so a float32 field holds the
+// binary32 nearest that double — every engine rounds once, from the same double
+// — and a number past the largest float32 does not fit the field, as a whole
+// number past its width does not.
 func PayloadFloat[T float32 | float64](obj PayloadFields, name string) (T, error) {
 	n, err := number(obj, name)
 	if err != nil {
@@ -132,6 +137,9 @@ func PayloadFloat[T float32 | float64](obj PayloadFields, name string) (T, error
 	v, err := n.Float64()
 	if err != nil {
 		return 0, fmt.Errorf("%q is not a number (%s)", name, n.String())
+	}
+	if _, single := any(T(0)).(float32); single && math.Abs(v) > math.MaxFloat32 {
+		return 0, fmt.Errorf("%q does not fit the width its schema declares (%s)", name, n.String())
 	}
 	return T(v), nil
 }

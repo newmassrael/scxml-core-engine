@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a record with a
+  32-bit real field, built whole from its <sce:set>s, read and written a field at
+  a time, and replaced field by field from a typed event payload.
+
+  `bump` doubles the shown value and adds 1.5, each step a single's, and adds
+  the result to `sum`, a single too. `reading32.taken` takes the value from the
+  event's payload: a JSON number is a double, and the field it lands in is a
+  single, so the record holds the binary32 nearest it — 0.1 becomes
+  0.10000000149011612, which is the number every engine's record then holds and
+  not the 0.1 the payload wrote.
+
+  Replayed by every backend that lowers the model
+  (sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_record_real32">
+  <sce:import kind="event-schema" src="schema_reading32.scxml" as="Reading32"/>
+  <datamodel>
+    <data id="last" sce:type="record:Reading32" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="value" expr="0.5"/>
+    </data>
+    <data id="sum" sce:type="float32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="bump" type="internal">
+      <assign location="last.value" expr="last.value * 2 + 1.5"/>
+      <assign location="sum" expr="sum + last.value"/>
+    </transition>
+    <transition event="reading32.taken" type="internal">
+      <assign location="last.value" expr="_event.data.value"/>
+      <assign location="last.sensor" expr="_event.data.sensor"/>
+    </transition>
+    <!-- A payload number past the range of a single does not fit the field the
+         schema declares, as an integer past its width does not: the delivery is
+         refused, the record is not touched, and error.execution says so. The
+         field that does not fit is read first: a generated machine lifts the
+         whole payload before the transition runs, where the Interpreter reads a
+         field when an expression does, so a write before that read would have
+         happened there (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Interpreter"). -->
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

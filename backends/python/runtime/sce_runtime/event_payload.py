@@ -31,9 +31,34 @@ optimisation observable, which is the one thing it may not be.
 from __future__ import annotations
 
 import json
+import math
+import struct
 from typing import Any, Sequence
 
 from .payload_reading import PayloadReading, payload_reading_of_text
+
+# The largest finite binary32: a payload number past it does not fit a field a
+# schema declares `float32`.
+FLOAT32_MAX = 3.4028234663852886e38
+
+
+class Single(float):
+    """Names a payload field a schema declares `float32` in a field spec.
+
+    Python's `float` is a binary64, so a spec that said `float` for it would hold
+    the double the payload carried — `0.1` — where every engine with a single of
+    its own holds the binary32 nearest it, `0.10000000149011612`. Naming the
+    width lets the lift round, and refuse a value past it as it refuses an
+    integer past its width."""
+
+
+def as_single(value: float) -> float:
+    """`value` rounded to the nearest binary32, as the double that holds it
+    exactly; a value past the single's range is the infinity it is there."""
+    try:
+        return struct.unpack("<f", struct.pack("<f", value))[0]
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf
 
 
 class TypedPayloadError(Exception):
@@ -96,6 +121,14 @@ def _as(name: str, declared: type, value: Any) -> Any:
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
         return value
+    if declared is Single:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypedPayloadError(f"{name!r} is not a number ({value!r})")
+        number = float(value)
+        if abs(number) > FLOAT32_MAX:
+            raise TypedPayloadError(
+                f"{name!r} does not fit the width its schema declares ({value!r})")
+        return as_single(number)
     if declared is float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypedPayloadError(f"{name!r} is not a number ({value!r})")
@@ -143,7 +176,9 @@ def lift(data: Any, fields: Sequence[tuple]) -> list:
     A field is `(name, declared)`, or `(name, int, low, high)` for an integer of
     the width its schema declares: a value past that width is a payload that does
     not fit the schema, refused as every other engine refuses it — Python's `int`
-    has no width of its own to refuse it by.
+    has no width of its own to refuse it by. A `float32` is `(name, Single)`: the
+    value is the binary32 nearest the number the payload carried, and a number
+    past the single's range is refused the same way.
 
     Raises `TypedPayloadError` naming the first thing that is wrong, which the
     caller reports as `error.execution` — the answer W3C SCXML 3.13 gives for

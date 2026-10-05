@@ -155,11 +155,25 @@ impl PayloadFields {
         })
     }
 
-    /// A 32-bit fractional field.
+    /// A 32-bit fractional field: the binary32 nearest the number the payload
+    /// carries.
+    ///
+    /// A JSON number is a double wherever it is read, so the single is the one
+    /// nearest that double — every engine rounds once, from the same double —
+    /// and a number past the largest single does not fit the field, as a whole
+    /// number past its width does not. Parsing the text to an `f32` directly
+    /// would round from the text instead, and give infinity for `1e39`.
     pub fn float32(&self, name: &str) -> Result<f32, PayloadRefusal> {
         let text = self.number(name)?;
-        text.parse()
-            .map_err(|_| PayloadRefusal::new(format!("'{name}' is not a number ({text})")))
+        let wide: f64 = text
+            .parse()
+            .map_err(|_| PayloadRefusal::new(format!("'{name}' is not a number ({text})")))?;
+        if wide.abs() > f64::from(f32::MAX) {
+            return Err(PayloadRefusal::new(format!(
+                "'{name}' does not fit the width its schema declares ({text})"
+            )));
+        }
+        Ok(wide as f32)
     }
 
     /// A 64-bit fractional field.

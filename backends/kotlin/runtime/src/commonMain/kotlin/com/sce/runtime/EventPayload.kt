@@ -104,9 +104,21 @@ object EventPayload {
                 ?: throw Refusal("'$name' is not a whole number at or above zero ($text)")
         }
 
+        /**
+         * A 32-bit fractional field: the binary32 nearest the number the payload
+         * carries. A JSON number is a double wherever it is read, so the single is
+         * the one nearest that double, rounded once, and a number past the largest
+         * single does not fit the field, as a whole number past its width does not.
+         * Parsing the text to a `Float` directly would round from the text instead,
+         * and give infinity for `1e39`.
+         */
         fun float32(name: String): Float {
             val text = number(name)
-            return text.toFloatOrNull() ?: throw Refusal("'$name' is not a number ($text)")
+            val wide = text.toDoubleOrNull() ?: throw Refusal("'$name' is not a number ($text)")
+            if (kotlin.math.abs(wide) > Float.MAX_VALUE.toDouble()) {
+                throw Refusal("'$name' does not fit the width its schema declares ($text)")
+            }
+            return wide.toFloat()
         }
 
         fun float64(name: String): Double {

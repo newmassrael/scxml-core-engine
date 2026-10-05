@@ -3472,9 +3472,14 @@ the rounding itself (`sce_algorithm.to_f32` and `Math.fround`) around each opera
 and result made as a single and around a value that lands in a `float32` slot;
 C and C++ compute a `float` operation as a `float` where `FLT_EVAL_METHOD` is 0
 (x86-64 with SSE, AArch64). The element of a `list<float32>` is a single like the
-variable: a `float64` appended to one lands as the binary32 nearest it. `static_real32`
-holds the seven engines to the same numbers, derived from IEEE 754 and observed
-from none of them.
+variable: a `float64` appended to one lands as the binary32 nearest it. A payload
+field a schema declares `float32` — read into a variable, a list or a record's
+field — is the binary32 nearest the number the payload carries: a JSON number is a
+double wherever it is read, so every engine rounds once, from that double, and a
+number past the largest single (`3.4028234663852886e38`) does not fit the field, as
+an integer past its width does not, and is refused as it is. `static_real32` and
+`static_record_real32` hold the seven engines to the same numbers, derived from
+IEEE 754 and observed from none of them.
 
 Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
 not a field type: with `sce:direction` and `sce:initial` it is the
@@ -3835,7 +3840,7 @@ is raised in the call's place (the block does not end, as in Kotlin and Rust).
 `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
 scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
 `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`, `static_list`, `static_foreach`,
-`static_real`, `static_real32`, `static_record_real` and `static_block_ends_list` against the generated machines (an
+`static_real`, `static_real32`, `static_record_real`, `static_record_real32` and `static_block_ends_list` against the generated machines (an
 event's `data` goes in as the JSON text every other producer fills, and the
 machine lifts the typed fields out of it), and drives `static_host_call`
 and `static_host_call_arguments` with a recording host.
@@ -3905,7 +3910,7 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record_real`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
+`static_record_real`, `static_record_real32`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
 read back from `DonedataAtFinal`), `static_donedata_content` (its text, the same way) and `static_send_params` against them (an event's `data` goes in as the
 JSON text every other producer fills; a
 variable the machine keeps to itself is read by reflection, which only reads),
@@ -3981,7 +3986,7 @@ replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
-`static_record_real`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the
+`static_record_real`, `static_record_real32`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the
 done event's pairs are read back from the engine's `done_data`) and `static_donedata_content` (its text,
 the same way) against
 them (an event's `data` goes in as the JSON text every other producer fills; a
@@ -3999,7 +4004,7 @@ of strings and integers the data model sizes (`wait + 'ms'`), a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
 event's typed payload of numbers, bools, strings and enums, a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
-record whose fields are numbers, bools, 64-bit reals and enums, a list of integers, bools, reals
+record whose fields are numbers, bools, reals of either width and enums, a list of integers, bools, reals
 of either width or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor or to one the host serves (`--host-processor`) with its `<param>`s or its
@@ -4012,13 +4017,13 @@ whose candidates are `sce-static` documents (§2.13): the machine reads the stem
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
 driven — evaluating the arguments it keeps no variable for. Bytes and a record with
-a string field or a 32-bit real field, a `<send>` to
+a string field, a `<send>` to
 another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
 type the host was not declared to serve, a `<param>` name that repeats in a
 `<send>`, an `<invoke>` or a `<donedata>` and a
 transition on an event whose payload carries a bytes field are refused
 until their spellings are written: bytes need a capacity the C11 contract does
-not carry yet, and a record's 32-bit real field has no C11 lowering yet.
+not carry yet.
 A `<param>` whose value is a 32-bit real is not refused:
 the contract fixes the 64-bit form only, so it is written as the `double` it
 widens to, exactly, as Rust and Kotlin write it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
@@ -4132,7 +4137,8 @@ widened to the `double` it is and compared the same way), `static_block_ends_lis
 `static_record_fields`, `static_record` (a guard that calls an algorithm over
 two of its fields), `static_record_list`, `static_record_enum`,
 `static_record_real` (a record's real field is read by a reader of its own and
-compared as the 64 bits it is, after a payload carried it),
+compared as the 64 bits it is, after a payload carried it), `static_record_real32`
+(the same with a `float` field, a payload number past the largest `float` refused),
 `static_string_capacity`, `static_donedata` (the done data read through
 `_done_data` and held to the pairs it states and no others), `static_donedata_content`
 (the same buffer, held to the string an inline `<content>` spells), `static_send_params`
@@ -4509,17 +4515,20 @@ machine reads through the event's schema. So a read of a schema field is a call
 of the library's `field`, at the type the schema declares, and it refuses what
 the generated machines' lift of a payload refuses — no data, a bare value, a
 missing field, a value of another type, a value beyond the field's width — by
-throwing, so the expression that read it fails as an overflow does. Three
+throwing, so the expression that read it fails as an overflow does. Four
 differences stand, all for a malformed delivery only: a generated machine
 lifts the payload once when the event is dequeued and raises `error.execution`
 once, where the Interpreter raises one for each expression that reads a field;
 a generated machine refuses a delivery that lacks a field of the schema that no
 expression reads, where the Interpreter, which reads a field only when an
-expression does, runs the transition; and JSON reaches the Interpreter already
-parsed, so `5.0` and `5` are one value there, where the generated lift refuses
-the first as not a whole number. A scenario that a malformed delivery is part
-of reads every field it lacks, so that the engines answer it alike
-(`static_send_params`).
+expression does, runs the transition; a transition that writes one field
+before it reads another that does not fit has written the first in the
+Interpreter, where a generated machine refused the delivery before any write;
+and JSON reaches the Interpreter already parsed, so `5.0` and `5` are one value
+there, where the generated lift refuses the first as not a whole number. A
+scenario that a malformed delivery is part of reads every field it lacks, and
+reads the one that does not fit before it writes any, so that the engines
+answer it alike (`static_send_params`, `static_record_real32`).
 
 A list is an array and a record a plain object, and neither is changed in
 place: `<sce:append>` becomes the `<assign>` of the list written again with the

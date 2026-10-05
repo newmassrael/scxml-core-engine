@@ -1,0 +1,27 @@
+{
+  "machine": "static_record_real32",
+  "about": "A record with a 32-bit real field: built whole from its <sce:set>s, doubled and added to a running single a field at a time, and replaced from a typed event payload. A JSON number is a double and the field is a single, so the record holds the binary32 nearest the number the payload carried: 0.1 is held as 0.10000000149011612. Whole-valued reals are written with a fraction (9.0) so that a reader which tells an integer from a real reads the expectation as the real it is. Expected values are the binary32 values written as the doubles they widen to, derived with an IEEE 754 reference (0.10000000149011612 * 2 + 1.5 is 1.7000000476837158 as a binary32, and 9.0 + that is 10.699999809265137), not observed from a backend. A payload number past the largest binary32 does not fit the field the schema declares: the delivery is refused and error.execution is raised, which `errors` counts; a number that rounds to the largest binary32 fits.",
+  "steps": [
+    { "note": "built whole from its <sce:set>s",
+      "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "value": 0.5 }, "sum": 0.0 } } },
+
+    { "note": "0.5 * 2 + 1.5, added to the sum",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 1, "value": 2.5 }, "sum": 2.5 } } },
+    { "note": "2.5 * 2 + 1.5",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 1, "value": 6.5 }, "sum": 9.0 } } },
+
+    { "note": "the payload replaces the record field by field: the double 0.1 lands as the binary32 nearest it",
+      "event": "reading32.taken", "data": { "sensor": 7, "value": 0.1 },
+      "expect": { "variables": { "last": { "sensor": 7, "value": 0.10000000149011612 }, "sum": 9.0 } } },
+
+    { "note": "0.10000000149011612 * 2 + 1.5 is 1.7000000476837158 as a binary32, and 9.0 + that is 10.699999809265137",
+      "event": "bump", "expect": { "variables": { "last": { "sensor": 7, "value": 1.7000000476837158 }, "sum": 10.699999809265137 } } },
+
+    { "note": "1e39 is past the largest binary32 (3.4028234663852886e38): the payload does not fit the field, the record is not touched and error.execution is raised",
+      "event": "reading32.taken", "data": { "sensor": 9, "value": 1e39 },
+      "expect": { "variables": { "last": { "sensor": 7, "value": 1.7000000476837158 }, "errors": 1 } } },
+    { "note": "a number that rounds to the largest binary32 fits, and lands as it (3.4028234e38 is within half a spacing of it, so no reader that is a unit off in its last digit can push it past the range)",
+      "event": "reading32.taken", "data": { "sensor": 9, "value": 3.4028234e38 },
+      "expect": { "variables": { "last": { "sensor": 9, "value": 3.4028234663852886e38 }, "errors": 1 } } }
+  ]
+}

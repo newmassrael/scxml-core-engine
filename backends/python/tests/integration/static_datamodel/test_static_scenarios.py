@@ -246,6 +246,12 @@ def test_a_record_holds_a_real_field_to_the_bit() -> None:
     replay("static_record_real")
 
 
+# A record with a 32-bit real field: the double a payload carries lands as the
+# single nearest it, and every operation on the field is a single's.
+def test_a_record_holds_a_single_field_as_the_single_nearest_the_payload() -> None:
+    replay("static_record_real32")
+
+
 # A list of records is filled by name from a record variable or a loop's item,
 # walked by a `<foreach>`, and a record is taken whole.
 def test_a_list_holds_records_and_a_foreach_walks_them() -> None:

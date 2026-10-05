@@ -1,0 +1,73 @@
+# Mutation cases for "a payload field a schema declares float32 is the binary32
+# nearest the number it is given" under generated Python
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_python_payload_field_declared_float32_is_the_single_nearest_the_number_python.cases`.
+#
+# Python's `float` is a binary64, so a lift that read the field as `float` held
+# the double the payload carried — `0.1` — where every other engine holds
+# `0.10000000149011612`. `static_record_real32` replays that against the
+# generated machine, and `test_single_payload_field.py` pins the lift, the typed
+# inject seam and the data the seam writes beside the carrier. The mutants below
+# each take one decision away and leave a runtime and a generator that still run:
+#
+#   a number is not rounded to a single;
+#   a number past the range of a single is read;
+#   the spec names the field a `float`, not a `Single`;
+#   the typed seam hands the carrier the number as it was given;
+#   the seam writes the number as it was given into the data;
+#   the module does not import what the spec names.
+#
+# Python compiles nothing and its generated machines are gitignored, so the
+# generator reaches the tests only through the regeneration declared below: the
+# targets are `mutation_runtime_targets`, for the reason the other Python
+# casefiles give.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/event_payload.py sce-build/src/forge/generator.rs
+mutation_oracles backends/python/tests/integration/static_datamodel/test_single_payload_field.py backends/python/tests/integration/static_datamodel/test_static_scenarios.py
+
+# ── The lift ────────────────────────────────────────────────────────
+
+mutation_case "a number is not rounded to a single" <<'PY'
+edit("backends/python/runtime/sce_runtime/event_payload.py",
+     "        return as_single(number)\n    if declared is float:",
+     "        return number\n    if declared is float:")
+PY
+
+mutation_case "a number past the range of a single is read" <<'PY'
+edit("backends/python/runtime/sce_runtime/event_payload.py",
+     "        if abs(number) > FLOAT32_MAX:",
+     "        if False and abs(number) > FLOAT32_MAX:")
+PY
+
+# ── What the generator writes ───────────────────────────────────────
+
+mutation_case "the spec names the field a float, not a Single" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "            let declared = if single { \"_Single\" } else { ty.as_str() };",
+     "            let declared = ty.as_str();")
+PY
+
+mutation_case "the typed seam hands the carrier the number as it was given" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                call_args.push_str(&format!(\"_as_single({})\", f.id));",
+     "                call_args.push_str(&f.id);")
+PY
+
+mutation_case "the seam writes the number as it was given into the data" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                data_items.push_str(&format!(\"\\\"{}\\\": _as_single({})\", f.id, f.id));",
+     "                data_items.push_str(&format!(\"\\\"{}\\\": {}\", f.id, f.id));")
+PY
+
+mutation_case "the module does not import what the spec names" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "    let single_import = if uses_single {",
+     "    let single_import = if false && uses_single {")
+PY

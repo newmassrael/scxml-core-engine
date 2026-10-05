@@ -107,6 +107,7 @@
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
+#include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
@@ -918,6 +919,41 @@ static const record_variable_t record_real_records[] = {RECORD_ROW(static_record
 STATIC_SCENARIO_FULL(static_record_real, record_real_states, record_real_variables, NULL, no_lists, record_real_records,
                      NULL, static_record_real_read_real, NULL, static_record_real_read_record_real)
 
+// static_record_real32: the same record with a 32-bit real field. The field is a
+// `float`, widened to the double it is exactly for the scenario to compare.
+#define READING32_FIELDS(N, E) N(sensor)
+VARIABLE_READER(static_record_real32, errors)
+RECORD_READER(static_record_real32, last, static_record_real32_record_reading32_t, READING32_FIELDS)
+
+static bool static_record_real32_read_real(void *sm, const char *name, double *out) {
+    if (strcmp(name, "sum") != 0) {
+        return false;
+    }
+    *out = (double)static_record_real32_get_sum((const static_record_real32_t *)sm);
+    return true;
+}
+
+static bool static_record_real32_read_record_real(void *sm, const char *name, size_t index, const char *field,
+                                                  double *out) {
+    if (index != SCE_SCENARIO_WHOLE || strcmp(name, "last") != 0 || strcmp(field, "value") != 0) {
+        return false;
+    }
+    *out = (double)static_record_real32_get_last((const static_record_real32_t *)sm).value;
+    return true;
+}
+
+static const name_value_t record_real32_states[] = {
+    {"idle", STATIC_RECORD_REAL32_STATE_IDLE},
+};
+static const variable_t record_real32_variables[] = {
+    {"errors", static_record_real32_read_errors},
+};
+static const record_variable_t record_real32_records[] = {RECORD_ROW(static_record_real32, last),
+                                                          {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_FULL(static_record_real32, record_real32_states, record_real32_variables, NULL, no_lists,
+                     record_real32_records, NULL, static_record_real32_read_real, NULL,
+                     static_record_real32_read_record_real)
+
 // static_record: the same record, with a guard that calls an imported algorithm
 // over two of its fields.
 VARIABLE_READER(static_record, refusals)
@@ -1319,6 +1355,7 @@ int main(void) {
     bad |= static_real_scenario("static_real", 13);
     bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
+    bad |= static_record_real32_scenario("static_record_real32", 7);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);

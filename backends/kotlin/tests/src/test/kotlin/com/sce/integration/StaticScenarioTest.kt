@@ -43,6 +43,7 @@ import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
+import com.sce.integration.static_record_real32.StaticRecordReal32StateMachine
 import com.sce.integration.static_send_content.StaticSendContentStateMachine
 import com.sce.integration.static_send_delay.StaticSendDelayStateMachine
 import com.sce.integration.static_send_event.StaticSendEventStateMachine
@@ -58,6 +59,7 @@ import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import java.io.File
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,10 +88,18 @@ class StaticScenarioTest {
      * integer as its decimal text, so an expected number matches that text of
      * the same integer. A real is the double its text reads as, however the text
      * spells it (`Double.toString` writes 2^24 as `1.6777216E7`, the scenario as
-     * `16777216.0`): parsing is exact, so equal doubles are the same number.
-     * Everything else must be equal as written.
+     * `16777216.0`): parsing is exact, so equal doubles are the same number. A
+     * record or a list is held to that field by field and element by element, so
+     * a real inside one is judged the same way. Everything else must be equal as
+     * written.
      */
     private fun holds(got: JsonElement?, want: JsonElement): Boolean {
+        if (got is JsonObject && want is JsonObject) {
+            return got.keys == want.keys && want.all { (key, value) -> holds(got[key], value) }
+        }
+        if (got is JsonArray && want is JsonArray) {
+            return got.size == want.size && want.indices.all { holds(got[it], want[it]) }
+        }
         if (got is JsonPrimitive && want is JsonPrimitive && got.isString && !want.isString) {
             return want.content.toLongOrNull() != null && got.content == want.content
         }
@@ -453,6 +463,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRecordReal32HoldsASingleFieldAsTheSingleNearestThePayload() {
+        val sm = StaticRecordReal32StateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_real32"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -61,6 +61,7 @@
   var SAFE = BigInt(Number.MAX_SAFE_INTEGER);
   var ZERO = BigInt(0);
   var ONE = BigInt(1);
+  var FLOAT32_MAX = 3.4028234663852886e38;
   var RANGES = {};
 
   function fail(reason, name) {
@@ -207,6 +208,15 @@
     if (type === 'float32' || type === 'float64') {
       if (typeof value !== 'number') {
         fail(name + ' is not a number');
+      }
+      if (type === 'float32') {
+        /* A Number is a binary64: the field a schema declares float32 holds the
+           binary32 nearest it, and a number past the range of a single does not
+           fit it, as an integer past its width does not. */
+        if (Math.abs(value) > FLOAT32_MAX) {
+          fail(name + ' does not fit float32');
+        }
+        return Math.fround(value);
       }
       return value;
     }

@@ -181,11 +181,20 @@ public:
         if (*p != '-' && (*p < '0' || *p > '9')) {
             return std::string("'") + name + "' is not a number";
         }
+        double wide = 0.0;
         try {
-            out = static_cast<T>(std::stod(std::string(p, valueEnd(p) - p)));
+            wide = std::stod(std::string(p, valueEnd(p) - p));
         } catch (const std::exception &) {
             return std::string("'") + name + "' is not a number this width can hold";
         }
+        // A JSON number is a double wherever it is read, so a float field holds the
+        // single nearest that double, and a number past the largest single does not
+        // fit the field, as a whole number past its width does not. Narrowing it
+        // anyway would be undefined where the double is out of range.
+        if (std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {
+            return width(name);
+        }
+        out = static_cast<T>(wide);
         return {};
     }
 

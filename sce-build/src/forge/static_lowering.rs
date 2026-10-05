@@ -4262,10 +4262,10 @@ impl StaticTarget for CTarget {
         // document requires of every one ([`Self::string_storage`]). A bytes
         // value needs a capacity the C11 contract does not carry yet. A 64-bit
         // real is a `double`, written to the wire as ECMAScript spells it, alone,
-        // in a list and as a record's field. A 32-bit one is a `float`, alone and
-        // in a list, written to the wire as the `double` it widens to; as a
-        // record's field it is refused until the payload lifts one. A record is
-        // a struct the machine's own header declares, of fields held as those are.
+        // in a list and as a record's field. A 32-bit one is a `float`, alone, in
+        // a list and as a record's field, written to the wire as the `double` it
+        // widens to. A record is a struct the machine's own header declares, of
+        // fields held as those are.
         let held_scalar = |ty: &SceType| {
             matches!(
                 ty,
@@ -4318,8 +4318,9 @@ impl StaticTarget for CTarget {
             return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
         }
         // A record is a struct of the fields its schema declares: the numbers
-        // and bools a list holds, and an enum the machine imports under the
-        // alias the schema writes. A field is named as the author wrote it; a
+        // and bools a list holds, reals of either width, and an enum the
+        // machine imports under the alias the schema writes. A field is named as
+        // the author wrote it; a
         // name C reserves is refused where the schema is read, for every
         // backend at once.
         for var in &scope.variables {
@@ -4334,7 +4335,10 @@ impl StaticTarget for CTarget {
             };
             if let Some(field) = schema.fields.iter().find(|f| {
                 !held_scalar(&f.sce_type)
-                    && !matches!(f.sce_type, SceType::Enum(_) | SceType::Float64)
+                    && !matches!(
+                        f.sce_type,
+                        SceType::Enum(_) | SceType::Float32 | SceType::Float64
+                    )
             }) {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",

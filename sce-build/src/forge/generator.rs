@@ -4333,6 +4333,9 @@ pub fn build_python_event_payload(
         populate.push_str(&format!("        self._pending_{snake}_payload = None\n"));
     }
     populate.push_str("        _tp = metadata.typed_payload\n");
+    // Whether a field a schema declares `float32` is read, so the module names
+    // what rounds it to a single.
+    let mut uses_single = false;
 
     let mut first = true;
     for event in &guarded_events {
@@ -4361,7 +4364,17 @@ pub fn build_python_event_payload(
                 call_args.push_str(", ");
                 data_items.push_str(", ");
             }
-            call_args.push_str(&f.id);
+            // Python's `float` is a binary64: a field a schema declares `float32`
+            // holds the binary32 nearest the number it is given, whether the
+            // lift reads it out of the data or the inject seam is handed it, as
+            // every engine with a single of its own holds it.
+            let single = matches!(f.sce_type, SceType::Float32);
+            uses_single |= single;
+            if single {
+                call_args.push_str(&format!("_as_single({})", f.id));
+            } else {
+                call_args.push_str(&f.id);
+            }
             // An integer is read at the width its schema declares, as every
             // other engine reads it: Python's `int` has no width to refuse a
             // value past it by.
@@ -4369,7 +4382,8 @@ pub fn build_python_event_payload(
                 .sce_type
                 .int_value_range()
                 .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
-            lift_fields.push_str(&format!("(\"{}\", {ty}{width}), ", f.id));
+            let declared = if single { "_Single" } else { ty.as_str() };
+            lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
             // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
             // `bytes` field rides the wire as its byte-exact Latin-1 text (the
             // lift reads it back the same way). Printable ASCII — what a bytes
@@ -4379,6 +4393,8 @@ pub fn build_python_event_payload(
             } else if matches!(f.sce_type, SceType::Enum(_)) {
                 // An enum rides as the name its document declares for the value.
                 data_items.push_str(&format!("\"{}\": {}.sce_name", f.id, f.id));
+            } else if single {
+                data_items.push_str(&format!("\"{}\": _as_single({})", f.id, f.id));
             } else {
                 data_items.push_str(&format!("\"{}\": {}", f.id, f.id));
             }
@@ -4438,6 +4454,12 @@ data={{{data_items}}},\n        ),\n    )\n\n\n"
         ));
     }
 
+    let single_import = if uses_single {
+        "from sce_runtime.event_payload import Single as _Single\n\
+from sce_runtime.event_payload import as_single as _as_single\n"
+    } else {
+        ""
+    };
     let defs = format!(
         "# NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
 # `_event.data` payload dataclasses for the EventSchema-imported events whose\n\
@@ -4451,7 +4473,8 @@ data={{{data_items}}},\n        ),\n    )\n\n\n"
 # autoforward, BasicHTTP, mesh -- so the fields are lifted out of it when no\n\
 # typed carrier arrives (`sce_runtime.event_payload`).\n\
 from sce_runtime.event_payload import TypedPayloadError as _TypedPayloadError\n\
-from sce_runtime.event_payload import lift as _lift_typed_payload\n\n\n\
+from sce_runtime.event_payload import lift as _lift_typed_payload\n\
+{single_import}\n\n\
 {data_classes}"
     );
 

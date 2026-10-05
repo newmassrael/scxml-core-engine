@@ -1,0 +1,28 @@
+# Mutation cases for "a payload number past the range of a single does not fit
+# a field a schema declares float32" under the C++ payload lift
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_float32_payload_field_past_the_range_of_a_single_is_refused_ctest.cases`.
+#
+# The lift narrowed the double to a `float` whatever it held, which is undefined
+# for a double past the range of a `float` and infinity in practice: the machine
+# held infinity where C, Python and the Interpreter refuse the delivery.
+# `static_record_real32` sends 1e39 and expects the record untouched and
+# `errors` at 1. The case below takes the refusal away and leaves a lift that
+# still reads the single:
+#
+#   a number past the range of a single is read.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce/include/common/EventPayloadLift.h
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
+
+mutation_case "a number past the range of a single is read" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "        if (std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {",
+     "        if (false && std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {")
+PY

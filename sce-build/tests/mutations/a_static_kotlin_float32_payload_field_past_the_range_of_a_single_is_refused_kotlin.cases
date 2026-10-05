@@ -1,0 +1,27 @@
+# Mutation cases for "a payload number past the range of a single does not fit
+# a field a schema declares float32" under the Kotlin runtime
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_float32_payload_field_past_the_range_of_a_single_is_refused_kotlin.cases`.
+#
+# The runtime read the field by parsing its text to a `Float`, which is infinity
+# for `1e39`: the machine held infinity where C, Python and the Interpreter
+# refuse the delivery. `static_record_real32` sends 1e39 and expects the record
+# untouched and `errors` at 1. The case below takes the refusal away and leaves
+# a runtime that still reads the single:
+#
+#   a number past the range of a single is read, as infinity.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
+
+mutation_case "a number past the range of a single is read" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",
+     "            if (kotlin.math.abs(wide) > Float.MAX_VALUE.toDouble()) {",
+     "            if (false && kotlin.math.abs(wide) > Float.MAX_VALUE.toDouble()) {")
+PY

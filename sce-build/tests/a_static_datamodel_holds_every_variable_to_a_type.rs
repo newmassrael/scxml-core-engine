@@ -670,6 +670,35 @@ fn every_backend_lowers_the_model_with_no_script_engine() {
     }
 }
 
+#[test]
+fn a_32_bit_real_is_held_by_every_backend_alone_in_a_list_and_as_a_record_field() {
+    // `static_real32` holds one alone and in a list, `static_record_real32` as a
+    // field of a record its payload carries. Every backend lowers both: a
+    // backend that refused one would leave the single the one real width some
+    // engine cannot hold.
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let read = |name: &str| std::fs::read_to_string(fixtures.join(name)).expect("a fixture");
+    let alone = read("static_real32.scxml");
+    let record = read("static_record_real32.scxml");
+    let schema = read("schema_reading32.scxml");
+    for lang in ["kotlin", "rust", "cpp", "go", "python", "c11"] {
+        let (ok, out) = run(&["check", "-l", lang], &alone);
+        assert!(
+            ok,
+            "--lang {lang} lowers a float32 variable and a list of them:\n{out}"
+        );
+        let (ok, out) = run_beside(
+            &["check", "-l", lang],
+            &record,
+            &[("schema_reading32.scxml", &schema)],
+        );
+        assert!(
+            ok,
+            "--lang {lang} lowers a record with a float32 field:\n{out}"
+        );
+    }
+}
+
 // ── Every expression judged against the typed scope ─────────────────────
 
 /// A `sce-static` machine with two variables — `count: uint32` on line 5,

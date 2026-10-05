@@ -1,0 +1,28 @@
+# Mutation cases for "a payload number past the range of a single does not fit
+# a field a schema declares float32" under the Rust runtime
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 32-bit real").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_float32_payload_field_past_the_range_of_a_single_is_refused_rust.cases`.
+#
+# The runtime read the field by parsing its text to an `f32`, which is infinity
+# for `1e39`: the machine held infinity where C, Python and the Interpreter
+# refuse the delivery. `static_record_real32` sends 1e39 and expects the record
+# untouched and `errors` at 1, and `a_float32_payload_field_is_the_single_nearest_the_number.rs`
+# pins the reader itself. The case below takes the refusal away and leaves a
+# runtime that still reads the single:
+#
+#   a number past the range of a single is read, as infinity.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets backends/rust/runtime/src/event_payload.rs
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
+
+mutation_case "a number past the range of a single is read" <<'PY'
+edit("backends/rust/runtime/src/event_payload.rs",
+     "        if wide.abs() > f64::from(f32::MAX) {",
+     "        if false && wide.abs() > f64::from(f32::MAX) {")
+PY

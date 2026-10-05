@@ -53,6 +53,7 @@
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
+#include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_send_content_sm.h"
@@ -433,6 +434,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsARealFieldToTheBit) {
         {"sum", [](const Machine &m) { return json(m.sum()); }},
     });
     replay("static_record_real", driver);
+}
+
+// A record with a 32-bit real field: the double a payload carries lands as the
+// single nearest it. A host reads a float as the double it widens to, which the
+// JSON value does by itself.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsASingleFieldAsTheSingleNearestThePayload) {
+    using Machine = G::static_record_real32::static_record_real32;
+    Driver<Machine> driver({
+        {"last", [](const Machine &m) { return readingJson(m.last()); }},
+        {"sum", [](const Machine &m) { return json(static_cast<double>(m.sum())); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_record_real32", driver);
 }
 
 // A top-level final's `<donedata>` params are computed from the machine's own
