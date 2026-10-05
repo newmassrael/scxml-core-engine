@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "bee8807eac",
+  "embed_version": "d32a609e984",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 291,
+  "symbol_count": 305,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -97,6 +97,12 @@
       "name": "SCE::LogAction"
     },
     {
+      "header": "actions/NativeAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::NativeAction"
+    },
+    {
       "header": "actions/RaiseAction.h",
       "kind": "class",
       "members": [],
@@ -157,6 +163,12 @@
       "name": "SCE::DatamodelValidationHelper"
     },
     {
+      "header": "common/DocumentStem.h",
+      "kind": "function",
+      "name": "SCE::documentStem",
+      "signature": "std::string SCE::documentStem(std::string_view)"
+    },
+    {
       "header": "common/DoneDataHelper.h",
       "kind": "class",
       "members": [],
@@ -167,6 +179,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::EventDataHelper"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Common::EventPayloadFields"
     },
     {
       "header": "common/EventTypeHelper.h",
@@ -285,6 +303,54 @@
       "signature": "bool SCE::InPredicateHelper::isStateActive<T>(const std::vector<StateType> &, StateGetter, const std::string &)"
     },
     {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::appendEscaped",
+      "signature": "void SCE::JsonText::appendEscaped(std::string &, std::string_view)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::detail::numberTextWith<T>",
+      "signature": "std::string SCE::JsonText::detail::numberTextWith<T>(double, Scientific)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::detail::scientific",
+      "signature": "std::size_t SCE::JsonText::detail::scientific(char *, std::size_t, double)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::detail::scientificByPrintf",
+      "signature": "std::size_t SCE::JsonText::detail::scientificByPrintf(char *, std::size_t, double)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::detail::scientificByToChars",
+      "signature": "std::size_t SCE::JsonText::detail::scientificByToChars(char *, std::size_t, double)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::escaped",
+      "signature": "std::string SCE::JsonText::escaped(std::string_view)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::numberText",
+      "signature": "std::string SCE::JsonText::numberText(double)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::quoted",
+      "signature": "std::string SCE::JsonText::quoted(std::string_view)"
+    },
+    {
       "header": "common/Logger.h",
       "kind": "class",
       "members": [],
@@ -301,6 +367,28 @@
       "kind": "class",
       "members": [],
       "name": "SCE::NamelistHelper"
+    },
+    {
+      "header": "common/NoParent.h",
+      "kind": "enum",
+      "name": "SCE::Common::RootStartRefusal",
+      "values": [
+        "NeedsParent"
+      ]
+    },
+    {
+      "header": "common/NoParent.h",
+      "kind": "function",
+      "name": "SCE::Common::reason",
+      "signature": "const char * SCE::Common::reason(RootStartRefusal)"
+    },
+    {
+      "header": "common/NoParent.h",
+      "kind": "struct",
+      "members": [
+        "method void (const ForwardedEvent &) raiseExternal"
+      ],
+      "name": "SCE::Common::NoParent"
     },
     {
       "header": "common/SceClock.h",
@@ -349,6 +437,42 @@
       "kind": "class",
       "members": [],
       "name": "SCE::SendSchedulingHelper"
+    },
+    {
+      "header": "common/SendSchedulingHelper.h",
+      "kind": "struct",
+      "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::string address",
+        "field std::string eventName",
+        "field std::string meshInvokeId",
+        "method ScheduledRoute &(ScheduledRoute &&) noexcept operator=",
+        "method ScheduledRoute &(const ScheduledRoute &) noexcept(false) operator=",
+        "method void () noexcept ~ScheduledRoute",
+        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
+        "method void (ScheduledRoute &&) noexcept ScheduledRoute",
+        "method void (const ScheduledRoute &) noexcept(false) ScheduledRoute"
+      ],
+      "name": "SCE::ScheduledRoute"
+    },
+    {
+      "header": "common/SendSchedulingHelper.h",
+      "kind": "struct",
+      "members": [
+        "enum Kind",
+        "field Kind kind",
+        "field std::string address",
+        "field std::string eventName",
+        "field std::string meshInvokeId",
+        "method ScheduledRoute &(ScheduledRoute &&) operator=",
+        "method ScheduledRoute &(const ScheduledRoute &) operator=",
+        "method void () ~ScheduledRoute",
+        "method void (Kind, std::string, std::string, std::string) ScheduledRoute",
+        "method void (ScheduledRoute &&) ScheduledRoute",
+        "method void (const ScheduledRoute &) ScheduledRoute"
+      ],
+      "name": "SCE::ScheduledRoute"
     },
     {
       "header": "common/SourceLocation.h",
@@ -461,6 +585,23 @@
     },
     {
       "header": "core/ConfigurationHelper.h",
+      "kind": "enum",
+      "name": "SCE::Core::SpecificationBreach",
+      "values": [
+        "None",
+        "Ancestor",
+        "NotParallel",
+        "OutsideContainer"
+      ]
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::checkStateSpecification<T>",
+      "signature": "SpecificationVerdict<State> SCE::Core::checkStateSpecification<T>(const std::vector<State> &, const std::optional<State> &, ParentOf, IsParallel)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
       "kind": "function",
       "name": "SCE::Core::configurationRejectionText",
       "signature": "const char * SCE::Core::configurationRejectionText(ConfigurationRejection) noexcept"
@@ -476,6 +617,17 @@
       "kind": "function",
       "name": "SCE::Core::validateConfiguration<T>",
       "signature": "ConfigurationRejection SCE::Core::validateConfiguration<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "struct",
+      "members": [
+        "field SpecificationBreach breach",
+        "field State first",
+        "field State second",
+        "field std::optional<State> meet"
+      ],
+      "name": "SCE::Core::SpecificationVerdict<T>"
     },
     {
       "header": "core/ConflictResolutionHelper.h",
@@ -498,6 +650,65 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::EntryExitHelper<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::EntryTarget<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field State source",
+        "field bool hasActions",
+        "field bool isInternal",
+        "field int transitionIndex",
+        "field std::vector<EntryTarget<State, History>> targets",
+        "method EntryTransition<State, History> () const toEntryTransition",
+        "method bool () const noexcept isTargetless"
+      ],
+      "name": "SCE::Core::EnabledTransition<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field bool isInternal",
+        "field std::optional<State> source",
+        "field std::vector<EntryTarget<State, History>> targets"
+      ],
+      "name": "SCE::Core::EntryTransition<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field std::vector<State> statesForDefaultEntry",
+        "field std::vector<State> statesToEnter",
+        "field std::vector<std::pair<State, History>> defaultHistoryContent",
+        "method bool (const State &) const contains",
+        "method bool (const State &) const isDefaultEntry",
+        "method std::optional<History> (const State &) const defaultHistoryContentOf"
+      ],
+      "name": "SCE::Core::EntrySet<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl addAncestorStatesToEnter",
+        "template FunctionTemplateDecl addDescendantStatesToEnter",
+        "template FunctionTemplateDecl addOnce",
+        "template FunctionTemplateDecl addRegionDefaults",
+        "template FunctionTemplateDecl computeEntrySet",
+        "template FunctionTemplateDecl getEffectiveTargetStates",
+        "template FunctionTemplateDecl getProperAncestors",
+        "template FunctionTemplateDecl getTransitionDomain",
+        "template FunctionTemplateDecl setDefaultHistoryContent"
+      ],
+      "name": "SCE::Core::EntrySetAlgorithms"
     },
     {
       "header": "core/EventMatchingHelper.h",
@@ -534,6 +745,12 @@
       "name": "SCE::Core::EventMetadata"
     },
     {
+      "header": "core/EventNameResolver.h",
+      "kind": "function",
+      "name": "SCE::Core::resolveArrivingEventName<T>",
+      "signature": "auto SCE::Core::resolveArrivingEventName<T>(std::string_view, Lookup &&)"
+    },
+    {
       "header": "core/EventProcessingAlgorithms.h",
       "kind": "class",
       "members": [],
@@ -554,10 +771,26 @@
       "name": "SCE::Core::EventQueueManager<T>"
     },
     {
+      "header": "core/ExternalEventBudget.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::ExternalEventBudget<T>"
+    },
+    {
       "header": "core/ForeachHelper.h",
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ForeachHelper"
+    },
+    {
+      "header": "core/ForeachHelper.h",
+      "kind": "enum",
+      "name": "SCE::Core::ForeachOutcome",
+      "values": [
+        "Completed",
+        "CollectionRejected",
+        "BodyFailed"
+      ]
     },
     {
       "header": "core/HierarchicalStateHelper.h",
@@ -569,10 +802,7 @@
       "header": "core/HierarchicalStateHelper.h",
       "kind": "struct",
       "members": [
-        "template FunctionTemplateDecl buildEntryChainFromAncestor",
-        "template FunctionTemplateDecl buildExitChain",
         "template FunctionTemplateDecl findLCA",
-        "template FunctionTemplateDecl findLCCA",
         "template FunctionTemplateDecl isDescendantOf"
       ],
       "name": "SCE::Core::HierarchicalAlgorithms"
@@ -604,12 +834,6 @@
     {
       "header": "core/HistoryHelper.h",
       "kind": "function",
-      "name": "SCE::Core::HistoryHelper::getAncestorsToEnter<T>",
-      "signature": "std::vector<StateType> SCE::Core::HistoryHelper::getAncestorsToEnter<T>(StateType, std::optional<StateType>, GetParentFunc)"
-    },
-    {
-      "header": "core/HistoryHelper.h",
-      "kind": "function",
       "name": "SCE::Core::HistoryHelper::isDescendant<T>",
       "signature": "bool SCE::Core::HistoryHelper::isDescendant<T>(StateType, StateType, GetParentFunc)"
     },
@@ -621,11 +845,46 @@
     },
     {
       "header": "core/HostProcessor.h",
+      "kind": "function",
+      "name": "SCE::isHostInvokeCompletion",
+      "signature": "bool SCE::isHostInvokeCompletion(std::string_view, std::string_view, const std::string_view *, std::size_t)"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "function",
+      "name": "SCE::parseHostInvokeDeadlineMs",
+      "signature": "std::optional<uint64_t> SCE::parseHostInvokeDeadlineMs(std::string_view)"
+    },
+    {
+      "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
+        "field std::string eventData",
         "field std::string eventName",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string sendId",
+        "field std::string target",
+        "method HostSendRequest &(HostSendRequest &&) operator=",
+        "method HostSendRequest &(const HostSendRequest &) operator=",
+        "method void () noexcept HostSendRequest",
+        "method void () noexcept ~HostSendRequest",
+        "method void (HostSendRequest &&) HostSendRequest",
+        "method void (const HostSendRequest &) HostSendRequest"
+      ],
+      "name": "SCE::HostSendRequest"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::map<std::string, std::vector<std::string>> params",
+        "field std::string content",
+        "field std::string eventData",
+        "field std::string eventName",
+        "field std::string invokeId",
         "field std::string processorType",
         "field std::string sendId",
         "field std::string target",
@@ -643,9 +902,11 @@
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
+        "field std::string eventData",
         "field std::string invokeId",
         "field std::string processorType",
         "field std::string src",
+        "field uint64_t token",
         "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
         "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
         "method void () noexcept HostInvokeRequest",
@@ -682,6 +943,7 @@
       "kind": "struct",
       "members": [
         "field std::optional<std::string> doneData",
+        "field std::optional<std::string> refusal",
         "method HostInvokeResponse &(HostInvokeResponse &&) noexcept operator=",
         "method HostInvokeResponse &(const HostInvokeResponse &) noexcept(false) operator=",
         "method void () noexcept HostInvokeResponse",
@@ -695,7 +957,8 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
-        "field std::optional<std::string> doneData"
+        "field std::optional<std::string> doneData",
+        "field std::optional<std::string> refusal"
       ],
       "name": "SCE::HostInvokeResponse"
     },
@@ -733,6 +996,7 @@
       "members": [
         "field std::string invokeId",
         "field std::string processorType",
+        "field uint64_t token",
         "method HostInvokeCancel &(HostInvokeCancel &&) noexcept operator=",
         "method HostInvokeCancel &(const HostInvokeCancel &) noexcept(false) operator=",
         "method void () noexcept HostInvokeCancel",
@@ -741,6 +1005,36 @@
         "method void (const HostInvokeCancel &) noexcept(false) HostInvokeCancel"
       ],
       "name": "SCE::HostInvokeCancel"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
+        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
+        "method void () noexcept ~HostInvokeDeadline",
+        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
+        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
+      ],
+      "name": "SCE::HostInvokeDeadline"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
+        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
+        "method void () ~HostInvokeDeadline",
+        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
+        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
+      ],
+      "name": "SCE::HostInvokeDeadline"
     },
     {
       "header": "core/HostProcessor.h",
@@ -767,22 +1061,41 @@
       "signature": "void SCE::detail::log_noop<T>(Args &&...) noexcept"
     },
     {
+      "header": "core/MicrostepAlgorithms.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl computeStatesToExit",
+        "template FunctionTemplateDecl effectiveTargets",
+        "template FunctionTemplateDecl enterStates",
+        "template FunctionTemplateDecl executeTransitionContent",
+        "template FunctionTemplateDecl exitStates",
+        "template FunctionTemplateDecl isCompound",
+        "template FunctionTemplateDecl microstep",
+        "template FunctionTemplateDecl parentOf",
+        "template FunctionTemplateDecl removeConflictingTransitions",
+        "template FunctionTemplateDecl selectTransitions"
+      ],
+      "name": "SCE::Core::MicrostepAlgorithms"
+    },
+    {
       "header": "core/ParallelCompletionHelper.h",
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ParallelCompletionHelper"
     },
     {
+      "header": "core/ParallelCompletionHelper.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl isInFinalState"
+      ],
+      "name": "SCE::Core::CompletionAlgorithms"
+    },
+    {
       "header": "core/ParallelConfigurationHelper.h",
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ParallelConfigurationHelper"
-    },
-    {
-      "header": "core/ParallelExitEntryHelper.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::ParallelExitEntryHelper"
     },
     {
       "header": "core/ParallelStateHelper.h",
@@ -801,6 +1114,7 @@
       "kind": "struct",
       "members": [
         "template FunctionTemplateDecl computeExitSet",
+        "template FunctionTemplateDecl computeStatesToExit",
         "template FunctionTemplateDecl getTransitionDomain"
       ],
       "name": "SCE::Core::ExitSetAlgorithms"
@@ -822,12 +1136,6 @@
       "kind": "function",
       "name": "SCE::payloadReadingOfText",
       "signature": "PayloadReading SCE::payloadReadingOfText(const std::string &)"
-    },
-    {
-      "header": "core/StateEntryHelper.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::StateEntryHelper"
     },
     {
       "header": "core/StatePolicyConcepts.h",
@@ -863,13 +1171,19 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
-      "name": "SCE::Core::HasExternalEventFlagTrait<T>"
+      "name": "SCE::Core::HasFinalizeTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
-      "name": "SCE::Core::HasFinalizeTrait<T>"
+      "name": "SCE::Core::HasHostInvokeIdsTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasInvocationDeliveryTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
@@ -881,7 +1195,25 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasNextChildDeadlineTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasParentDeliveryTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::NeedsEventSchedulerTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::NeedsParentTrait<T>"
     },
     {
       "header": "core/TransitionHelper.h",
@@ -900,6 +1232,87 @@
       "kind": "function",
       "name": "SCE::Core::TransitionHelper::matchesEventDescriptor",
       "signature": "bool SCE::Core::TransitionHelper::matchesEventDescriptor(const std::string &, const std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "enum",
+      "name": "SCE::RequestFieldKind",
+      "values": [
+        "Uint8",
+        "Uint16",
+        "Uint32",
+        "Uint64",
+        "Int8",
+        "Int16",
+        "Int32",
+        "Int64",
+        "Float32",
+        "Float64",
+        "Bool",
+        "String",
+        "Bytes"
+      ]
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::fits",
+      "signature": "bool SCE::TypedHostInvokeRequestDetail::fits(const Whole &, RequestFieldKind)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::isWholeKind",
+      "signature": "bool SCE::TypedHostInvokeRequestDetail::isWholeKind(RequestFieldKind)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::quoted",
+      "signature": "std::string SCE::TypedHostInvokeRequestDetail::quoted(const std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::TypedHostInvokeRequestDetail::wholeOf",
+      "signature": "std::optional<Whole> SCE::TypedHostInvokeRequestDetail::wholeOf(const ::ScriptValue &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::requestField<T>",
+      "signature": "T SCE::requestField<T>(const HostInvokeRequest &, const char *)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::requestFieldWire",
+      "signature": "std::optional<std::string> SCE::requestFieldWire(const ::ScriptValue &, const std::string &, RequestFieldType, const std::function<std::string (double)> &, std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "struct",
+      "members": [
+        "field RequestFieldKind kind",
+        "field std::size_t cap"
+      ],
+      "name": "SCE::RequestFieldType"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "struct",
+      "members": [
+        "field bool beyond",
+        "field bool negative",
+        "field uint64_t magnitude",
+        "method Whole &(Whole &&) noexcept operator=",
+        "method Whole &(const Whole &) noexcept operator=",
+        "method void () noexcept Whole",
+        "method void () noexcept ~Whole",
+        "method void (Whole &&) noexcept Whole",
+        "method void (const Whole &) noexcept Whole"
+      ],
+      "name": "SCE::TypedHostInvokeRequestDetail::Whole"
     },
     {
       "header": "events/CppHttplibClient.h",
@@ -951,6 +1364,7 @@
         "method EventDescriptor &(const EventDescriptor &) operator=",
         "method bool () const isDelayed",
         "method bool () const isInternal",
+        "method std::string () const payload",
         "method std::vector<std::string> () const validate",
         "method void () ~EventDescriptor",
         "method void (EventDescriptor &&) EventDescriptor",
@@ -1419,16 +1833,12 @@
     },
     {
       "header": "runtime/IEventRaiser.h",
-      "kind": "struct",
-      "members": [
-        "field std::function<bool ()> mayTake",
-        "field std::function<void ()> spend",
-        "method MicrostepBudget &(MicrostepBudget &&) operator=",
-        "method MicrostepBudget &(const MicrostepBudget &) operator=",
-        "method void (MicrostepBudget &&) MicrostepBudget",
-        "method void (const MicrostepBudget &) MicrostepBudget"
-      ],
-      "name": "SCE::MicrostepBudget"
+      "kind": "enum",
+      "name": "SCE::EventQueue",
+      "values": [
+        "Internal",
+        "External"
+      ]
     },
     {
       "header": "runtime/IExecutionContext.h",
@@ -1437,22 +1847,16 @@
       "name": "SCE::IExecutionContext"
     },
     {
-      "header": "runtime/ImmediateModeGuard.h",
+      "header": "runtime/INativeActionHost.h",
       "kind": "class",
       "members": [],
-      "name": "SCE::ImmediateModeGuard"
+      "name": "SCE::INativeActionHost"
     },
     {
-      "header": "runtime/InterpreterEventQueue.h",
+      "header": "runtime/InterpreterDocument.h",
       "kind": "class",
       "members": [],
-      "name": "SCE::Core::InterpreterEventQueue"
-    },
-    {
-      "header": "runtime/InterpreterEventQueue.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::InterpreterInternalEventQueue"
+      "name": "SCE::InterpreterDocument"
     },
     {
       "header": "runtime/InvokeExecutor.h",
@@ -1558,9 +1962,11 @@
       "header": "runtime/StateSnapshot.h",
       "kind": "struct",
       "members": [
+        "field bool running",
         "field int stepNumber",
         "field int64_t schedulerLogicalTimeMs",
         "field std::map<std::string, std::string> dataModel",
+        "field std::optional<std::string> terminalState",
         "field std::string incomingTransitionEvent",
         "field std::string incomingTransitionSource",
         "field std::string incomingTransitionTarget",
@@ -1631,10 +2037,25 @@
       "name": "SCE::EventSnapshot"
     },
     {
-      "header": "runtime/TransitionDomainCalculator.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::TransitionDomainCalculator"
+      "header": "runtime/TransitionDescriptorString.h",
+      "kind": "struct",
+      "members": [
+        "field bool hasActions",
+        "field bool isExternal",
+        "field bool isInternal",
+        "field bool isTargetless",
+        "field int transitionIndex",
+        "field std::string event",
+        "field std::string source",
+        "field std::string target",
+        "field std::vector<std::string> exitSet",
+        "method TransitionDescriptorString &(TransitionDescriptorString &&) operator=",
+        "method TransitionDescriptorString &(const TransitionDescriptorString &) operator=",
+        "method void () ~TransitionDescriptorString",
+        "method void (TransitionDescriptorString &&) TransitionDescriptorString",
+        "method void (const TransitionDescriptorString &) TransitionDescriptorString"
+      ],
+      "name": "SCE::TransitionDescriptorString"
     },
     {
       "header": "runtime/TypeRegistry.h",
@@ -1932,6 +2353,18 @@
       "signature": "std::optional<T> SCE::ScriptResultUtils::resultToValue<T>(const ScriptResult &)"
     },
     {
+      "header": "scripting/ScriptResultUtils.h",
+      "kind": "function",
+      "name": "SCE::ScriptResultUtils::scalarText",
+      "signature": "std::optional<std::string> SCE::ScriptResultUtils::scalarText(const ScriptValue &)"
+    },
+    {
+      "header": "scripting/ScriptResultUtils.h",
+      "kind": "function",
+      "name": "SCE::ScriptResultUtils::valueText",
+      "signature": "std::string SCE::ScriptResultUtils::valueText(const ScriptValue &)"
+    },
+    {
       "header": "scripting/ScriptSource.h",
       "kind": "class",
       "members": [],
@@ -1975,430 +2408,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::XMLElement"
-    },
-    {
-      "header": "states/ConcurrentEventBroadcaster.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::ConcurrentEventBroadcaster"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "enum",
-      "name": "SCE::EventBroadcastPriority",
-      "values": [
-        "LOW",
-        "NORMAL",
-        "HIGH",
-        "CRITICAL"
-      ]
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "enum",
-      "name": "SCE::EventBroadcastScope",
-      "values": [
-        "ALL_ACTIVE_REGIONS",
-        "SELECTED_REGIONS",
-        "CONDITIONAL_REGIONS"
-      ]
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field EventBroadcastPriority defaultPriority",
-        "field EventBroadcastScope defaultScope",
-        "field bool parallelProcessing",
-        "field bool recordProcessingTime",
-        "field bool stopOnFirstFailure",
-        "field bool validateRegionState",
-        "field std::chrono::milliseconds timeoutPerRegion",
-        "field std::chrono::milliseconds totalTimeout",
-        "method EventBroadcastConfig &(EventBroadcastConfig &&) operator=",
-        "method EventBroadcastConfig &(const EventBroadcastConfig &) operator=",
-        "method void () noexcept ~EventBroadcastConfig",
-        "method void (EventBroadcastConfig &&) EventBroadcastConfig",
-        "method void (const EventBroadcastConfig &) EventBroadcastConfig"
-      ],
-      "name": "SCE::EventBroadcastConfig"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field EventBroadcastPriority defaultPriority",
-        "field EventBroadcastScope defaultScope",
-        "field bool parallelProcessing",
-        "field bool recordProcessingTime",
-        "field bool stopOnFirstFailure",
-        "field bool validateRegionState",
-        "field std::chrono::milliseconds timeoutPerRegion",
-        "field std::chrono::milliseconds totalTimeout",
-        "method EventBroadcastConfig &(EventBroadcastConfig &&) operator=",
-        "method EventBroadcastConfig &(const EventBroadcastConfig &) operator=",
-        "method void () ~EventBroadcastConfig",
-        "method void (EventBroadcastConfig &&) EventBroadcastConfig",
-        "method void (const EventBroadcastConfig &) EventBroadcastConfig"
-      ],
-      "name": "SCE::EventBroadcastConfig"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field EventBroadcastPriority priority",
-        "field EventBroadcastScope scope",
-        "field EventDescriptor event",
-        "field std::chrono::system_clock::time_point timestamp",
-        "field std::function<bool (const std::shared_ptr<IConcurrentRegion> &)> regionFilter",
-        "field std::string correlationId",
-        "field std::string sourceRegion",
-        "field std::vector<std::string> targetRegions",
-        "method EventBroadcastRequest &(EventBroadcastRequest &&) operator=",
-        "method EventBroadcastRequest &(const EventBroadcastRequest &) operator=",
-        "method void () ~EventBroadcastRequest",
-        "method void (EventBroadcastRequest &&) EventBroadcastRequest",
-        "method void (const EventBroadcastRequest &) EventBroadcastRequest"
-      ],
-      "name": "SCE::EventBroadcastRequest"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool isSuccess",
-        "field std::chrono::milliseconds processingTime",
-        "field std::string errorMessage",
-        "field std::vector<std::string> failedRegions",
-        "field std::vector<std::string> skippedRegions",
-        "field std::vector<std::string> successfulRegions",
-        "method EventBroadcastResult &(EventBroadcastResult &&) operator=",
-        "method EventBroadcastResult &(const EventBroadcastResult &) operator=",
-        "method EventBroadcastResult (const std::string &, const std::vector<std::string> &, const std::vector<std::string> &) failure",
-        "method EventBroadcastResult (const std::vector<std::string> &, const std::vector<std::string> &, const std::string &) partial",
-        "method EventBroadcastResult (const std::vector<std::string> &, std::chrono::milliseconds) success",
-        "method void () ~EventBroadcastResult",
-        "method void (EventBroadcastResult &&) EventBroadcastResult",
-        "method void (const EventBroadcastResult &) EventBroadcastResult"
-      ],
-      "name": "SCE::EventBroadcastResult"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field size_t failedEvents",
-        "field size_t partialEvents",
-        "field size_t successfulEvents",
-        "field size_t totalEvents",
-        "field std::chrono::milliseconds averageProcessingTime",
-        "field std::chrono::milliseconds maxProcessingTime",
-        "field std::chrono::milliseconds minProcessingTime",
-        "field std::chrono::milliseconds totalProcessingTime",
-        "field std::vector<size_t> eventsByPriority",
-        "method EventBroadcastStatistics &(EventBroadcastStatistics &&) operator=",
-        "method EventBroadcastStatistics &(const EventBroadcastStatistics &) operator=",
-        "method double () const getAverageRegionsPerEvent",
-        "method double () const getSuccessRate",
-        "method void () noexcept ~EventBroadcastStatistics",
-        "method void () reset",
-        "method void (EventBroadcastStatistics &&) EventBroadcastStatistics",
-        "method void (const EventBroadcastResult &, EventBroadcastPriority) recordEvent",
-        "method void (const EventBroadcastStatistics &) EventBroadcastStatistics"
-      ],
-      "name": "SCE::EventBroadcastStatistics"
-    },
-    {
-      "header": "states/ConcurrentEventTypes.h",
-      "kind": "struct",
-      "members": [
-        "field size_t failedEvents",
-        "field size_t partialEvents",
-        "field size_t successfulEvents",
-        "field size_t totalEvents",
-        "field std::chrono::milliseconds averageProcessingTime",
-        "field std::chrono::milliseconds maxProcessingTime",
-        "field std::chrono::milliseconds minProcessingTime",
-        "field std::chrono::milliseconds totalProcessingTime",
-        "field std::vector<size_t> eventsByPriority",
-        "method EventBroadcastStatistics &(EventBroadcastStatistics &&) operator=",
-        "method EventBroadcastStatistics &(const EventBroadcastStatistics &) operator=",
-        "method double () const getAverageRegionsPerEvent",
-        "method double () const getSuccessRate",
-        "method void () reset",
-        "method void () ~EventBroadcastStatistics",
-        "method void (EventBroadcastStatistics &&) EventBroadcastStatistics",
-        "method void (const EventBroadcastResult &, EventBroadcastPriority) recordEvent",
-        "method void (const EventBroadcastStatistics &) EventBroadcastStatistics"
-      ],
-      "name": "SCE::EventBroadcastStatistics"
-    },
-    {
-      "header": "states/ConcurrentRegion.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::ConcurrentRegion"
-    },
-    {
-      "header": "states/ConcurrentStateNode.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::ConcurrentStateNode"
-    },
-    {
-      "header": "states/ConcurrentStateNode.h",
-      "kind": "typedef",
-      "name": "SCE::ParallelStateCompletionCallback",
-      "type": "std::function<void (const std::string &)>"
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "enum",
-      "name": "SCE::ConcurrentRegionStatus",
-      "values": [
-        "INACTIVE",
-        "ACTIVE",
-        "FINAL",
-        "ERROR"
-      ]
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "struct",
-      "members": [
-        "field ConcurrentRegionStatus status",
-        "field bool isInFinalState",
-        "field std::string currentState",
-        "field std::string id",
-        "field std::vector<std::string> activeStates",
-        "method ConcurrentRegionInfo &(ConcurrentRegionInfo &&) operator=",
-        "method ConcurrentRegionInfo &(const ConcurrentRegionInfo &) operator=",
-        "method void () ~ConcurrentRegionInfo",
-        "method void (ConcurrentRegionInfo &&) ConcurrentRegionInfo",
-        "method void (const ConcurrentRegionInfo &) ConcurrentRegionInfo"
-      ],
-      "name": "SCE::ConcurrentRegionInfo"
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool _reserved_for_future_scxml_extensions",
-        "method ConcurrentStateConfig &(ConcurrentStateConfig &&) operator=",
-        "method ConcurrentStateConfig &(const ConcurrentStateConfig &) operator=",
-        "method void () noexcept ~ConcurrentStateConfig",
-        "method void (ConcurrentStateConfig &&) ConcurrentStateConfig",
-        "method void (const ConcurrentStateConfig &) ConcurrentStateConfig"
-      ],
-      "name": "SCE::ConcurrentStateConfig"
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool _reserved_for_future_scxml_extensions"
-      ],
-      "name": "SCE::ConcurrentStateConfig"
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool hasActions",
-        "field bool isExternal",
-        "field bool isInternal",
-        "field bool isTargetless",
-        "field int transitionIndex",
-        "field std::string event",
-        "field std::string source",
-        "field std::string target",
-        "field std::vector<std::string> exitSet",
-        "method TransitionDescriptorString &(TransitionDescriptorString &&) operator=",
-        "method TransitionDescriptorString &(const TransitionDescriptorString &) operator=",
-        "method void () TransitionDescriptorString",
-        "method void () noexcept ~TransitionDescriptorString",
-        "method void (TransitionDescriptorString &&) TransitionDescriptorString",
-        "method void (const TransitionDescriptorString &) TransitionDescriptorString",
-        "method void (std::string, std::string, std::string, int, bool, bool, bool) TransitionDescriptorString"
-      ],
-      "name": "SCE::TransitionDescriptorString"
-    },
-    {
-      "header": "states/ConcurrentStateTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool isSuccess",
-        "field std::string errorMessage",
-        "field std::string externalTransitionEvent",
-        "field std::string externalTransitionSource",
-        "field std::string externalTransitionTarget",
-        "field std::string regionId",
-        "field std::vector<TransitionDescriptorString> enabledTransitions",
-        "method ConcurrentOperationResult &(ConcurrentOperationResult &&) operator=",
-        "method ConcurrentOperationResult &(const ConcurrentOperationResult &) operator=",
-        "method ConcurrentOperationResult (const std::string &) success",
-        "method ConcurrentOperationResult (const std::string &, const std::string &) failure",
-        "method ConcurrentOperationResult (const std::string &, const std::string &, const std::string &, const std::string &) externalTransition",
-        "method void () noexcept ConcurrentOperationResult",
-        "method void () noexcept ~ConcurrentOperationResult",
-        "method void (ConcurrentOperationResult &&) noexcept ConcurrentOperationResult",
-        "method void (const ConcurrentOperationResult &) ConcurrentOperationResult"
-      ],
-      "name": "SCE::ConcurrentOperationResult"
-    },
-    {
-      "header": "states/ExternalTransitionHandler.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::ExternalTransitionHandler"
-    },
-    {
-      "header": "states/IConcurrentEventBroadcaster.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::IConcurrentEventBroadcaster"
-    },
-    {
-      "header": "states/IConcurrentRegion.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::IConcurrentRegion"
-    },
-    {
-      "header": "states/IStateExitHandler.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::IStateExitHandler"
-    },
-    {
-      "header": "states/ParallelRegionOrchestrator.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::ParallelRegionOrchestrator"
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "enum",
-      "name": "SCE::CompletionEventType",
-      "values": [
-        "PARALLEL_STATE_COMPLETED",
-        "REGION_COMPLETED",
-        "COMPLETION_ERROR"
-      ]
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "enum",
-      "name": "SCE::ParallelCompletionCriteria",
-      "values": [
-        "ALL_REGIONS_FINAL",
-        "ANY_REGION_FINAL",
-        "MAJORITY_REGIONS_FINAL"
-      ]
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "struct",
-      "members": [
-        "field CompletionEventType type",
-        "field std::chrono::steady_clock::time_point timestamp",
-        "field std::string errorMessage",
-        "field std::string parallelStateId",
-        "field std::vector<std::string> completedRegions",
-        "method CompletionEvent &(CompletionEvent &&) operator=",
-        "method CompletionEvent &(const CompletionEvent &) operator=",
-        "method EventDescriptor () const toDoneStateEvent",
-        "method void () ~CompletionEvent",
-        "method void (CompletionEvent &&) CompletionEvent",
-        "method void (const CompletionEvent &) CompletionEvent"
-      ],
-      "name": "SCE::CompletionEvent"
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "struct",
-      "members": [
-        "field ParallelCompletionCriteria completionCriteria",
-        "field bool isComplete",
-        "field size_t completedRegions",
-        "field size_t totalRegions",
-        "field std::chrono::steady_clock::time_point completionTime",
-        "field std::string doneEventName",
-        "field std::string parallelStateId",
-        "field std::unordered_map<std::string, std::string> doneData",
-        "field std::vector<RegionCompletionInfo> regionCompletions",
-        "method ParallelStateCompletionInfo &(ParallelStateCompletionInfo &&) operator=",
-        "method ParallelStateCompletionInfo &(const ParallelStateCompletionInfo &) operator=",
-        "method void () ~ParallelStateCompletionInfo",
-        "method void (ParallelStateCompletionInfo &&) ParallelStateCompletionInfo",
-        "method void (const ParallelStateCompletionInfo &) ParallelStateCompletionInfo"
-      ],
-      "name": "SCE::ParallelStateCompletionInfo"
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "struct",
-      "members": [
-        "field ParallelCompletionCriteria criteria",
-        "field bool collectDetailedStatistics",
-        "field bool generateDoneEvents",
-        "field bool validateStateConsistency",
-        "field double weightedThreshold",
-        "field std::chrono::milliseconds monitoringInterval",
-        "field std::unordered_map<std::string, double> regionWeights",
-        "method ParallelMonitoringConfig &(ParallelMonitoringConfig &&) operator=",
-        "method ParallelMonitoringConfig &(const ParallelMonitoringConfig &) operator=",
-        "method void () ~ParallelMonitoringConfig",
-        "method void (ParallelMonitoringConfig &&) ParallelMonitoringConfig",
-        "method void (const ParallelMonitoringConfig &) ParallelMonitoringConfig"
-      ],
-      "name": "SCE::ParallelMonitoringConfig"
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool isCurrentlyComplete",
-        "field size_t doneEventsGenerated",
-        "field size_t stateConsistencyViolations",
-        "field size_t totalCompletionEvents",
-        "field size_t totalRegionsRegistered",
-        "field size_t totalStatusQueries",
-        "field std::chrono::microseconds averageCompletionCheckTime",
-        "field std::chrono::steady_clock::time_point monitoringStartTime",
-        "method MonitoringStatistics &(MonitoringStatistics &&) operator=",
-        "method MonitoringStatistics &(const MonitoringStatistics &) operator=",
-        "method void () ~MonitoringStatistics",
-        "method void (MonitoringStatistics &&) MonitoringStatistics",
-        "method void (const MonitoringStatistics &) MonitoringStatistics"
-      ],
-      "name": "SCE::MonitoringStatistics"
-    },
-    {
-      "header": "states/SCXMLParallelTypes.h",
-      "kind": "struct",
-      "members": [
-        "field bool isInFinalState",
-        "field std::chrono::steady_clock::time_point completionTime",
-        "field std::chrono::steady_clock::time_point lastUpdateTime",
-        "field std::string currentStateId",
-        "field std::string regionId",
-        "field std::vector<std::string> activeStateIds",
-        "field std::vector<std::string> finalStateIds",
-        "method RegionCompletionInfo &(RegionCompletionInfo &&) operator=",
-        "method RegionCompletionInfo &(const RegionCompletionInfo &) operator=",
-        "method void () ~RegionCompletionInfo",
-        "method void (RegionCompletionInfo &&) RegionCompletionInfo",
-        "method void (const RegionCompletionInfo &) RegionCompletionInfo"
-      ],
-      "name": "SCE::RegionCompletionInfo"
-    },
-    {
-      "header": "states/StateExitExecutor.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::StateExitExecutor"
     },
     {
       "header": "static/StaticExecutionEngine.h",
