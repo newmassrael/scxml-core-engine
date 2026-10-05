@@ -16,11 +16,21 @@ import type { ClaimedHead, RequestHead, Revision, WorkHeads } from "./contract";
 export type Part = "source" | "model" | "answers" | "requirements" | "acceptance";
 
 /**
- * What the screen shows of one part of the work. `undefined` means there is nothing to
- * compare now: the part is being read or saved, holds what the person typed, or could not
- * be read, and a part that is not compared is not read again over their head.
+ * A part the screen tried to read and could not. It is not "nothing on screen" (that is
+ * `null`, which says the work has none) and it is not "left out" (`undefined`): there is
+ * something to read, the screen does not have it, and so it differs from whatever the core
+ * says, until a read has worked.
  */
-export type OnScreen<T> = T | null | undefined;
+export const UNREAD: unique symbol = Symbol("unread");
+export type Unread = typeof UNREAD;
+
+/**
+ * What the screen shows of one part of the work. `undefined` means there is nothing to
+ * compare now: the part is being read or saved, or holds what the person typed, and a part
+ * that is not compared is not read again over their head. A part that could not be read is
+ * `UNREAD`, which is compared: leaving it out would leave it unread for good.
+ */
+export type OnScreen<T> = T | null | undefined | Unread;
 
 /** A model or a requirement list on screen, and the head of the source it was read beside. */
 export interface ClaimedOnScreen {
@@ -45,7 +55,9 @@ function sameHead(a: ClaimedHead | null, b: ClaimedHead | null): boolean {
 
 /** Whether a part on screen as `shown` differs from the `head` the core says. */
 function revisionMoved(shown: OnScreen<Revision>, head: Revision | null): boolean {
-  return shown !== undefined && shown !== head;
+  if (shown === undefined) return false;
+  if (shown === UNREAD) return true;
+  return shown !== head;
 }
 
 /**
@@ -54,6 +66,7 @@ function revisionMoved(shown: OnScreen<Revision>, head: Revision | null): boolea
  */
 function claimedMoved(shown: OnScreen<ClaimedOnScreen>, head: ClaimedHead | null, sourceHead: Revision | null): boolean {
   if (shown === undefined) return false;
+  if (shown === UNREAD) return true;
   if (shown === null) return head !== null;
   return !sameHead(shown.head, head) || shown.sourceHead !== sourceHead;
 }
@@ -75,15 +88,3 @@ export function sameRequest(a: RequestHead | null, b: RequestHead | null): boole
   return a.id === b.id && a.state === b.state && a.attempt === b.attempt;
 }
 
-/** Whether two answers of the core are the same one. */
-export function sameHeads(a: WorkHeads | null, b: WorkHeads): boolean {
-  return (
-    a !== null &&
-    a.source === b.source &&
-    a.answers === b.answers &&
-    a.acceptance === b.acceptance &&
-    sameHead(a.model, b.model) &&
-    sameHead(a.requirements, b.requirements) &&
-    sameRequest(a.request, b.request)
-  );
-}

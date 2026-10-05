@@ -74,6 +74,8 @@ const en = {
   modelBehindUnknown:
     "This model was written for an earlier text ({written}), and the text has since moved on.",
   modelUnstated: "Nothing records which text this model was written for.",
+  modelOtherText:
+    "This model was read beside another text ({basis}) than the one on screen ({shown}). The screen reads the text again; until it has, do not read this model against the text shown.",
   modelRevision: "Model revision",
   modelGenerator: "Drawn by {generator}",
   modelScxml: "The model's SCXML",
@@ -319,6 +321,8 @@ const ko: Record<Key, string> = {
   modelBehindUnknown:
     "이 모델은 이전 원문({written})을 보고 쓴 것이며, 그 뒤로 원문이 바뀌었습니다.",
   modelUnstated: "이 모델이 어느 원문을 보고 쓰였는지 기록이 없습니다.",
+  modelOtherText:
+    "이 모델은 화면의 원문({shown})이 아니라 다른 원문({basis})과 함께 읽은 것입니다. 화면이 원문을 다시 읽는 중이며, 다 읽기 전에는 이 모델을 화면의 원문과 대조해 읽지 마세요.",
   modelRevision: "모델 리비전",
   modelGenerator: "그린 곳: {generator}",
   modelScxml: "모델의 SCXML 전문",

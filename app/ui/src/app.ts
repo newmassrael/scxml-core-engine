@@ -79,7 +79,7 @@ import {
   whyNoAi,
   type Status,
 } from "./generation_model";
-import { movedParts, sameHeads, sameRequest, type WorkOnScreen } from "./heads_model";
+import { movedParts, sameRequest, UNREAD, type WorkOnScreen } from "./heads_model";
 import { initialLocale, languageName, LOCALES, translate, type Key, type Locale } from "./i18n";
 import { CommandFailure, TRANSPORT, UNAUTHORIZED, type Transport } from "./ipc";
 import {
@@ -97,6 +97,16 @@ import { nextDelay, WATCH_MS, type Ticker } from "./watch";
 
 const LOCALE_KEY = "sce.locale";
 const ZOOM_KEY = "sce.zoom";
+
+/**
+ * What came of reading a part of the work again because the core said it moved: it was read
+ * and is shown; it was left alone (the person holds something in it, or the answer is no longer
+ * wanted); or the read failed and the part still differs from what the core says.
+ */
+type Refreshed = "read" | "held" | "failed";
+
+/** A part of the work could not be read again. Said to `watch`, which asks again after waiting longer. */
+class ReadAgainFailed extends Error {}
 
 /** SCE's words for a requirement, each with the sentence that says what it means. A word SCE adds later is shown as spelled. */
 const OUTCOME_SENTENCES: Record<string, Key> = {
@@ -211,12 +221,6 @@ export class App {
   private draftTitle = "";
   /** Stops the questions about whether the selected work moved, and the one waiting to be asked. */
   private stopWatching: (() => void) | null = null;
-  /**
-   * What the core said when the screen last read the work again because it had moved. A
-   * question that gets the same answer is not acted on twice: a read that is slow, or one
-   * that failed, is not started over every few seconds.
-   */
-  private reactedTo: WorkHeads | null = null;
   /** Where the work's latest request stands, as the core last said, and what was read of it. */
   private requestHead: RequestHead | null = null;
   private requestDetail: GenerationRequest | null = null;
@@ -346,7 +350,6 @@ export class App {
       this.answersUnreadable = null;
       this.acceptanceTicket += 1;
       this.acceptance = null;
-      this.reactedTo = null;
       this.requestHead = null;
       this.requestDetail = null;
       this.requestBusy = null;
@@ -642,25 +645,37 @@ export class App {
     await this.noteRequest(work.id, session, heads);
     if (session !== this.session) return;
     const moved = movedParts(this.onScreen(), heads);
-    if (moved.length === 0 || sameHeads(this.reactedTo, heads)) return;
-    this.reactedTo = heads;
-    if (moved.includes("source")) await this.refreshSource(work.id, session);
-    const answersRead = moved.includes("answers") && (await this.refreshAnswers(work.id, session));
+    if (moved.length === 0) return;
+    // Nothing is marked as seen. What a read has put on screen no longer differs from what the
+    // core says, and that is all that stops the next question from reading it again; a read that
+    // failed, or that was held back for what the person typed, leaves the part as it was, so it
+    // still differs and is asked for again. One read at a time is `watch`'s: it asks again only
+    // when this has finished.
+    let failed = false;
+    if (moved.includes("source") && (await this.refreshSource(work.id, session)) === "failed") failed = true;
+    const answers = moved.includes("answers") ? await this.refreshAnswers(work.id, session) : "held";
+    if (answers === "failed") failed = true;
     if (session !== this.session) return;
     // A model that moved, or whose text moved under it (`movedParts` says so), is read
     // again, and the acceptance with it. Otherwise a list, an acceptance or answers that
     // moved are the acceptance's to read again.
     if (moved.includes("model")) {
-      await this.loadModel(work.id, false);
-    } else if (moved.includes("requirements") || moved.includes("acceptance") || answersRead) {
-      await this.loadAcceptance(work.id);
+      const [model, acceptance] = await Promise.all([
+        this.loadModel(work.id, false, false),
+        this.loadAcceptance(work.id),
+      ]);
+      if (!model || !acceptance) failed = true;
+    } else if (moved.includes("requirements") || moved.includes("acceptance") || answers === "read") {
+      if (!(await this.loadAcceptance(work.id))) failed = true;
     }
+    if (failed) throw new ReadAgainFailed();
   }
 
   /**
    * What is on screen of each part of the work, for comparing with the core's heads. A
-   * part is left out (`undefined`) while it is being read or saved, holds what the person
-   * typed, or could not be read: it is not read again over their head.
+   * part is left out (`undefined`) while it is being read or saved, or holds what the person
+   * typed: it is not read again over their head. A part whose read failed is `UNREAD`, which
+   * is compared: left out, it would never be read again.
    */
   private onScreen(): WorkOnScreen {
     const editor = this.editor;
@@ -671,86 +686,107 @@ export class App {
     return {
       source: editor === null || editor.phase !== "idle" || isDirty(editor) ? undefined : editor.base,
       model:
-        model === null || model.phase === "reading" || model.phase === "failed"
+        model === null || model.phase === "reading"
           ? undefined
-          : model.phase === "none"
-            ? null
-            : {
-                head: { revision: model.read.model.revision, written_for: model.read.model.written_for },
-                sourceHead: model.read.sourceHead,
-              },
-      answers: answers === null || answers.phase !== "idle" || isAnswersDirty(answers) ? undefined : answers.base,
+          : model.phase === "failed"
+            ? UNREAD
+            : model.phase === "none"
+              ? null
+              : {
+                  head: { revision: model.read.model.revision, written_for: model.read.model.written_for },
+                  sourceHead: model.read.sourceHead,
+                },
+      answers:
+        answers === null
+          ? this.answersUnreadable === null
+            ? undefined
+            : UNREAD
+          : answers.phase !== "idle" || isAnswersDirty(answers)
+            ? undefined
+            : answers.base,
       requirements:
         panel === null
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : list === null
-              ? undefined
-              : list.list.requirements === null
-                ? null
-                : {
-                    head: {
-                      revision: list.list.requirements.revision,
-                      written_for: list.list.requirements.written_for,
+            : panel.phase === "failed"
+              ? UNREAD
+              : list === null
+                ? undefined
+                : list.list.requirements === null
+                  ? null
+                  : {
+                      head: {
+                        revision: list.list.requirements.revision,
+                        written_for: list.list.requirements.written_for,
+                      },
+                      sourceHead: list.list.source_head,
                     },
-                    sourceHead: list.list.source_head,
-                  },
       acceptance:
         panel === null
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : list === null
-              ? undefined
-              : (list.acceptance.acceptance?.revision ?? null),
+            : panel.phase === "failed"
+              ? UNREAD
+              : list === null
+                ? undefined
+                : (list.acceptance.acceptance?.revision ?? null),
     };
   }
 
   /**
    * Another entrance saved the text. When the editor holds nothing of the person's it is
    * shown as it now is; typed text is not replaced, and the conflict a save would meet is
-   * the person's to resolve. Answers whether the text was read again.
+   * the person's to resolve. Says what came of it: `held` is not a failure, the text will be
+   * read when the person holds nothing in the editor, because until then it still differs.
    */
-  private async refreshSource(id: string, session: number): Promise<boolean> {
+  private async refreshSource(id: string, session: number): Promise<Refreshed> {
     const asked = this.editor;
-    if (asked === null || asked.phase !== "idle" || isDirty(asked)) return false;
+    if (asked === null || asked.phase !== "idle" || isDirty(asked)) return "held";
     try {
       const [source, entries] = await Promise.all([this.api.readSource(id), this.api.history(id)]);
-      if (session !== this.session) return false;
+      if (session !== this.session) return "held";
       const editor = this.editor;
       // Loading replaces what is in the editor, so it is done only to the text it was
       // asked about: anything typed or saved while the answer was on its way is the person's.
       if (editor === null || editor.phase !== "idle" || editor.text !== asked.text || editor.base !== asked.base) {
-        return false;
+        return "held";
       }
       this.editor = open(id, source);
       this.entries = entries;
       this.render();
-      return true;
+      return "read";
     } catch (error) {
-      if (session === this.session) this.askForToken(error);
-      return false;
+      // A token wanted is the sign-in form's to answer, and the questions stop until it is.
+      if (session !== this.session || this.askForToken(error)) return "held";
+      return "failed";
     }
   }
 
   /** The owner's answers were saved from another entrance and none are typed here: they are shown. */
-  private async refreshAnswers(id: string, session: number): Promise<boolean> {
+  private async refreshAnswers(id: string, session: number): Promise<Refreshed> {
     const asked = this.answers;
-    if (asked === null || asked.phase !== "idle" || isAnswersDirty(asked)) return false;
+    if (asked === null) {
+      // Never read: either that read is on its way, or it failed and is read as when the work opened.
+      if (this.answersUnreadable === null) return "held";
+      await this.loadAnswers(id);
+      return session !== this.session ? "held" : this.answers !== null ? "read" : "failed";
+    }
+    if (asked.phase !== "idle" || isAnswersDirty(asked)) return "held";
     try {
       const read = await this.api.readAnswers(id);
-      if (session !== this.session) return false;
+      if (session !== this.session) return "held";
       const answers = this.answers;
       if (answers === null || answers.phase !== "idle" || isAnswersDirty(answers) || answers.base !== asked.base) {
-        return false;
+        return "held";
       }
       this.answers = openAnswers(read);
       this.render();
-      return true;
+      return "read";
     } catch (error) {
-      if (session === this.session) this.askForToken(error);
-      return false;
+      if (session !== this.session || this.askForToken(error)) return "held";
+      return "failed";
     }
   }
 
@@ -865,14 +901,14 @@ export class App {
    * stands but not the model: its sheets are kept, and SCE is not run again for
    * an answer it has already given.
    */
-  private async loadModel(id: string, redraw: boolean, alsoAcceptance = true): Promise<void> {
+  private async loadModel(id: string, redraw: boolean, alsoAcceptance = true): Promise<boolean> {
     const session = this.session;
     const ticket = ++this.modelTicket;
     const current = (): boolean => session === this.session && ticket === this.modelTicket;
     const prior = this.model;
     try {
       const read = await this.api.readModel(id);
-      if (!current()) return;
+      if (!current()) return true;
       if (read.model === null || read.standing === null) {
         this.model = { phase: "none" };
         this.reviewTicket += 1;
@@ -880,7 +916,15 @@ export class App {
         this.acceptanceTicket += 1;
         this.acceptance = null;
         this.render();
-        return;
+        return true;
+      }
+      // The text and the model are read apart, and the work may have been saved between the two
+      // reads: the model is then of a text the editor does not hold. When the person holds
+      // nothing in the editor it is read again before the two are shown together; when it cannot
+      // be, `standingBanner` says the model was read beside another text, and never "current".
+      if (read.source_head !== null && this.editor !== null && this.editor.base !== read.source_head) {
+        await this.refreshSource(id, session);
+        if (!current()) return true;
       }
       const known: ModelRead = { model: read.model, standing: read.standing, sourceHead: read.source_head };
       // What was accepted is of the model as it is now, and the text may have moved
@@ -889,7 +933,7 @@ export class App {
       if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
         this.model = { phase: "drawn", read: known, figures: prior.figures };
         this.render();
-        return;
+        return true;
       }
       this.model = { phase: "drawing", read: known };
       // SCE's check and page are asked for beside the drawing and answer in their
@@ -900,21 +944,24 @@ export class App {
         // SCE draws in the language the screen is in: its page vocabularies are
         // named as the screen's languages are (`en`, `ko`).
         const figures = await this.api.figures(id, known.model.revision, this.locale);
-        if (!current()) return;
+        if (!current()) return true;
         this.model = { phase: "drawn", read: known, figures };
       } catch (error) {
-        if (!current()) return;
+        if (!current()) return true;
         const failure = drawFailureOf(error);
         if (failure === null) throw error;
         this.model = { phase: "not-drawn", read: known, failure };
       }
     } catch (error) {
-      if (!current()) return;
+      if (!current()) return true;
       // A token wanted is the sign-in form's to answer; anything else is the
       // panel's own message, so it does not look like the work has no model.
       if (!this.askForToken(error)) this.model = { phase: "failed", message: this.explain(error) };
+      this.render();
+      return false;
     }
     this.render();
+    return true;
   }
 
   /**
@@ -1023,7 +1070,7 @@ export class App {
    * owner made, and a work with no list says so instead of showing an empty table.
    * Only the newest request, for the editor that asked, is applied.
    */
-  private async loadAcceptance(id: string): Promise<void> {
+  private async loadAcceptance(id: string): Promise<boolean> {
     const session = this.session;
     const ticket = ++this.acceptanceTicket;
     const current = (): boolean => session === this.session && ticket === this.acceptanceTicket;
@@ -1032,14 +1079,14 @@ export class App {
     if (this.acceptance === null) this.acceptance = { phase: "reading" };
     try {
       const list = await this.api.readRequirements(id);
-      if (!current()) return;
+      if (!current()) return true;
       if (list.requirements === null) {
         this.acceptance = { phase: "no-list" };
         this.render();
-        return;
+        return true;
       }
       const [acceptance, measured] = await Promise.all([this.api.readAcceptance(id), this.measure(id)]);
-      if (!current()) return;
+      if (!current()) return true;
       this.acceptance = {
         phase: "read",
         state: {
@@ -1052,12 +1099,15 @@ export class App {
         },
       };
     } catch (error) {
-      if (!current()) return;
+      if (!current()) return true;
       // A token wanted is the sign-in form's to answer; anything else is the panel's own message.
-      if (this.askForToken(error)) return;
+      if (this.askForToken(error)) return false;
       this.acceptance = { phase: "failed", message: this.explain(error) };
+      this.render();
+      return false;
     }
     this.render();
+    return true;
   }
 
   /**
@@ -2674,6 +2724,18 @@ export class App {
   /** Whether the model was written for the text on screen, in the words the core's `standing` carries. */
   private standingBanner(read: ModelRead): HTMLElement {
     const short = (revision: string | null): string => (revision === null ? "?" : revision.slice(0, 12));
+    // The core's `standing` is of the text it held when the model was read. "Current" is said of
+    // the text on screen only when that is the same text: a model read beside another text is not
+    // called current whatever the core said then. Any other standing says the model is for a text
+    // other than the head, which holds of the text on screen as well.
+    const shown = this.editor?.base ?? null;
+    if (read.standing === "current" && shown !== null && read.sourceHead !== null && shown !== read.sourceHead) {
+      return h(
+        "p",
+        { class: "banner banner-warn", role: "status" },
+        this.t("modelOtherText", { shown: short(shown), basis: short(read.sourceHead) }),
+      );
+    }
     if (read.standing === "current") {
       return h("p", { class: "banner banner-ok", role: "status" }, this.t("modelCurrent"));
     }

@@ -2023,15 +2023,20 @@ describe("accepting the design", () => {
     expect(acceptButton().disabled).toBe(false);
 
     // Another entrance saves a new text, and the authoring client writes the design and
-    // the list for it. This screen reads the model again and not the text.
+    // the list for it. This screen reads the model again, and the text cannot be read just
+    // now: what it shows is not the text the design is about.
     await core.call("save_source", { id: "alpha", text: "alpha three", base: headOf("alpha") });
     core.setModel("alpha", "<scxml/>", headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));
+    core.failNext("read_source", new CommandFailure("transport", "temporary disconnect"));
     await click("Read again");
 
     expect(editor().value).toBe("alpha two");
     expect(acceptButton().disabled).toBe(true);
     expect(acceptNote()).toContain("not the one the design was measured against");
+    // The model is not called current beside a text it was not read for.
+    expect(modelText()).not.toContain("written for the text as it is now");
+    expect(modelText()).toContain("another text");
     acceptButton().click();
     await settle();
     expect(core.callsOf("accept")).toHaveLength(0);
@@ -2041,6 +2046,19 @@ describe("accepting the design", () => {
     expect(editor().value).toBe("alpha three");
     expect(acceptButton().disabled).toBe(false);
     expect(acceptNote()).toBe("");
+  });
+
+  it("reads the text again with the model when the editor holds nothing of the person's", async () => {
+    await click("Alpha");
+
+    await core.call("save_source", { id: "alpha", text: "alpha three", base: headOf("alpha") });
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Read again");
+
+    expect(editor().value).toBe("alpha three");
+    expect(modelText()).toContain("written for the text as it is now");
+    expect(acceptButton().disabled).toBe(false);
   });
 
   it("does not ask the owner to read the text again when the screen already shows it", async () => {
@@ -2426,6 +2444,100 @@ describe("a work that moves under the screen", () => {
     expect(held.token).toBe("0123456789abcdef");
     expect(root.querySelector("form.token-form")).toBeNull();
     expect(ticker.pending).toEqual([2000]);
+  });
+
+  it("review regression: recovers source refresh after one temporary failure", async () => {
+    await click("Alpha");
+    core.saveElsewhere("alpha", "alpha three");
+    core.failNext("read_source", new CommandFailure("transport", "temporary disconnect"));
+    await ticker.fire();
+    expect(editor().value).toBe("alpha two");
+
+    await ticker.fire();
+    expect(editor().value).toBe("alpha three");
+  });
+
+  it("review regression: recovers model refresh after one temporary failure", async () => {
+    await click("Alpha");
+    core.setModel("alpha", "<scxml>new result</scxml>", headOf("alpha"));
+    core.failNext("read_model", new CommandFailure("transport", "temporary disconnect"));
+    await ticker.fire();
+    expect(modelText()).toContain("temporary disconnect");
+
+    await ticker.fire();
+    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml>new result</scxml>");
+  });
+
+  it("review regression: resumes source refresh after typed changes are undone", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    await type("draft being typed here");
+    core.saveElsewhere("alpha", "alpha three");
+    await ticker.fire();
+    expect(editor().value).toBe("draft being typed here");
+
+    await type("alpha two");
+    await ticker.fire();
+    expect(editor().value).toBe("alpha three");
+  });
+
+  it("review regression: recovers requirements refresh after one temporary failure", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    core.setRequirements("alpha", headOf("alpha"));
+    core.failNext("read_requirements", new CommandFailure("transport", "temporary disconnect"));
+    await ticker.fire();
+    expect(acceptanceText()).toContain("temporary disconnect");
+
+    await ticker.fire();
+    expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+  });
+
+  it("recovers answers that could not be read when the work opened, at the next question", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setAnswers("alpha", { "open-guard": "Any car" });
+    core.failNext("read_answers", new CommandFailure("io", "temporary disconnect"));
+    await click("Alpha");
+    expect(reviewText()).toContain("Your answers could not be read");
+    expect(fields()).toHaveLength(0);
+
+    await ticker.fire();
+
+    expect(reviewText()).not.toContain("Your answers could not be read");
+    expect(fieldOf("open-guard").value).toBe("Any car");
+  });
+
+  it("recovers answers saved from another entrance and read badly once, at the next question", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    await click("Alpha");
+    core.setAnswers("alpha", { "open-guard": "Any car" });
+    core.failNext("read_answers", new CommandFailure("io", "temporary disconnect"));
+    await ticker.fire();
+    expect(fieldOf("open-guard").value).toBe("");
+
+    await ticker.fire();
+
+    expect(fieldOf("open-guard").value).toBe("Any car");
+  });
+
+  it("review regression: keeps the source and model coherent when they move while a work opens", async () => {
+    const oldModel = "<scxml><!-- model of alpha two --></scxml>";
+    const newModel = "<scxml><!-- model of alpha three --></scxml>";
+    core.setModel("alpha", oldModel, headOf("alpha"));
+    const slow = core.hold("read_model");
+    await click("Alpha");
+    expect(editor().value).toBe("alpha two");
+
+    core.saveElsewhere("alpha", "alpha three");
+    core.setModel("alpha", newModel, headOf("alpha"));
+    slow.release();
+    await settle();
+    await settle();
+
+    expect([["alpha two", oldModel], ["alpha three", newModel]]).toContainEqual([
+      editor().value,
+      root.querySelector(".scxml")?.textContent,
+    ]);
   });
 
   it("says so when the work was taken away from another window, and stops asking", async () => {

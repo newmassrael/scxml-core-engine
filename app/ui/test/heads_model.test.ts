@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkHeads } from "../src/contract";
-import { movedParts, sameHeads, type WorkOnScreen } from "../src/heads_model";
+import { movedParts, sameRequest, UNREAD, type WorkOnScreen } from "../src/heads_model";
 import { nextDelay, WATCH_MAX_MS, WATCH_MS } from "../src/watch";
 
 const hex = (n: number): string => n.toString(16).padStart(64, "0");
@@ -81,9 +81,24 @@ describe("a work that moved under the screen", () => {
     expect(movedParts(shown, gone)).toEqual(["requirements", "acceptance"]);
   });
 
+  it("is every part the screen could not read, whatever the core says", () => {
+    // A read that failed leaves nothing on screen to compare, and "nothing to compare" would
+    // mean the part is never read again. It is not the same as a work that has none (`null`).
+    const unread: WorkOnScreen = {
+      source: shown.source,
+      model: UNREAD,
+      answers: UNREAD,
+      requirements: UNREAD,
+      acceptance: UNREAD,
+    };
+    expect(movedParts(unread, heads)).toEqual(["answers", "model", "requirements", "acceptance"]);
+    const empty: WorkHeads = { ...heads, model: null, answers: null, requirements: null, acceptance: null };
+    expect(movedParts(unread, empty)).toEqual(["answers", "model", "requirements", "acceptance"]);
+  });
+
   it("is nothing for a part the screen cannot compare now", () => {
-    // Being read, being saved, holding what the person typed, or unreadable: the screen
-    // does not read such a part again over their head, whatever the core says.
+    // Being read, being saved, or holding what the person typed: the screen does not read
+    // such a part again over their head, whatever the core says.
     const uncompared: WorkOnScreen = {
       source: undefined,
       model: undefined,
@@ -119,28 +134,19 @@ describe("a work that moved under the screen", () => {
   });
 });
 
-describe("two answers of the core", () => {
-  it("are the same when every head is", () => {
-    expect(sameHeads({ ...heads }, heads)).toBe(true);
-    expect(sameHeads(null, heads)).toBe(false);
+describe("two answers of the core about the latest request", () => {
+  const running = { id: "req-0123456789ab", state: "running", attempt: 1 } as const;
+
+  it("are the same when it is at the same place, or when there is none in both", () => {
+    expect(sameRequest(null, null)).toBe(true);
+    expect(sameRequest({ ...running }, running)).toBe(true);
+    expect(sameRequest(null, running)).toBe(false);
   });
 
-  it("differ in any one head, including what a model was written for", () => {
-    expect(sameHeads({ ...heads, source: T1 }, heads)).toBe(false);
-    expect(sameHeads({ ...heads, answers: null }, heads)).toBe(false);
-    expect(sameHeads({ ...heads, acceptance: M1 }, heads)).toBe(false);
-    expect(sameHeads({ ...heads, model: { revision: M1, written_for: T1 } }, heads)).toBe(false);
-    expect(sameHeads({ ...heads, requirements: null }, heads)).toBe(false);
-  });
-
-  it("differ when the latest request is another, or is in another state or attempt", () => {
-    const running = { id: "req-0123456789ab", state: "running", attempt: 1 } as const;
-    const withRequest: WorkHeads = { ...heads, request: running };
-    expect(sameHeads({ ...withRequest }, withRequest)).toBe(true);
-    expect(sameHeads(heads, withRequest)).toBe(false);
-    expect(sameHeads({ ...withRequest, request: { ...running, state: "interrupted" } }, withRequest)).toBe(false);
-    expect(sameHeads({ ...withRequest, request: { ...running, attempt: 2 } }, withRequest)).toBe(false);
-    expect(sameHeads({ ...withRequest, request: { ...running, id: "req-ba9876543210" } }, withRequest)).toBe(false);
+  it("differ when it is another request, or is in another state or attempt", () => {
+    expect(sameRequest({ ...running, state: "interrupted" }, running)).toBe(false);
+    expect(sameRequest({ ...running, attempt: 2 }, running)).toBe(false);
+    expect(sameRequest({ ...running, id: "req-ba9876543210" }, running)).toBe(false);
   });
 });
 

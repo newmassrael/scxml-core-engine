@@ -152,11 +152,22 @@ client saved, a text or answers saved from another window, an acceptance made el
 A model that is the same revision is not drawn again.
 
 What the person typed is never replaced. A text or answers they are typing are left as
-they are, and the conflict a save would meet stays theirs to resolve. One question is
-asked at a time, and the next is scheduled when the last and what it led to are done. A
-question that fails is asked again after twice the wait, up to thirty seconds, and a
-refusal for want of a token stops the questions until the person signs in. A work taken
-away from another window is said so, and the questions stop.
+they are, and the conflict a save would meet stays theirs to resolve; when they hold
+nothing again (the typing was undone), what was held back is read at the next question.
+One question is asked at a time, and the next is scheduled when the last and what it led
+to are done. Nothing is marked as seen: a part that was read stops differing from what the
+core says, and that is all that stops it being read again. A read that failed (the text, a
+model, a list, the answers) leaves the part differing, so the next question asks for it
+again, and the failure reaches the wait: a question that fails is asked again after twice
+the wait, up to thirty seconds. A part that could not be read is compared as unread, not
+left out, because a part that is left out is never read again. A refusal for want of a token
+stops the questions until the person signs in. A work taken away from another window is said
+so, and the questions stop.
+
+The text and the model are read apart, so the work can be saved between the two reads. A
+model read beside a text other than the one in the editor is read again with the text when
+the editor holds nothing of the person's, and it is never called current beside a text it
+was not read for: the screen says the model was read beside another one until the two agree.
 
 The desktop shell and the browser shell take this same path (`call`), so neither needs a
 window permission, a stream or a file watcher the other does not. A change that was missed
