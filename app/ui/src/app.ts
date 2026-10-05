@@ -2371,6 +2371,20 @@ export class App {
               { class: "muted answered-at" },
               this.t("answerAt", { time: formatTime(entry.answered_at, this.locale) }),
             ),
+        entry === undefined
+          ? null
+          : h(
+              "button",
+              {
+                type: "button",
+                class: "quiet add-to-text",
+                "data-add-answer": id,
+                hidden: wordsOf(model, id) !== entry.answer,
+                title: this.t("answerAddToTextHint"),
+                onclick: () => this.addAnswerToText(id),
+              },
+              this.t("answerAddToText"),
+            ),
         h("p", { class: "muted answer-state", "data-answer-state": id }, this.answerStateWords(id)),
       );
     };
@@ -2547,6 +2561,33 @@ export class App {
   private refreshAnswerStates(): void {
     for (const line of this.root.querySelectorAll<HTMLElement>("[data-answer-state]")) {
       line.textContent = this.answerStateWords(line.dataset["answerState"] ?? "");
+    }
+    // Only what the core holds can be added to the text: words typed and not saved are not yet an answer.
+    const model = this.answers;
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-add-answer]")) {
+      const id = button.dataset["addAnswer"] ?? "";
+      button.hidden = model === null || model.saved[id] === undefined || wordsOf(model, id) !== model.saved[id].answer;
+    }
+  }
+
+  /**
+   * The owner chose to put an answer into the text: its words are added to the end of what is
+   * in the editor, and nothing is saved. They put it where it belongs and save, or do not; a
+   * specification is theirs, and an answer that is not in it stays a decision kept beside it.
+   */
+  private addAnswerToText(id: string): void {
+    const editor = this.editor;
+    const entry = this.answers?.saved[id];
+    if (editor === null || entry === undefined || this.viewing !== null) return;
+    const sentence = entry.answer.trim();
+    if (sentence === "") return;
+    const joined = editor.text === "" || editor.text.endsWith("\n") ? editor.text : `${editor.text}\n`;
+    this.editor = edit(editor, `${joined}${sentence}\n`);
+    this.render();
+    const textarea = this.root.querySelector<HTMLTextAreaElement>("#source");
+    if (textarea !== null) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
   }
 

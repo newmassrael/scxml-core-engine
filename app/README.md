@@ -273,6 +273,10 @@ shown as running.
   nothing of what a change MEANS: a condition, a signal, a value or a time that moved is in the
   lines that hold it, and the owner reads them against the text. A first model has nothing to be
   compared with; a page SCE did not write is said not to be there.
+- **An answer can be put into the text, by the owner and nobody else.** `Add to the text` (offered
+  for an answer the core holds) adds its words to the end of the editor and saves nothing: they
+  put it where it belongs and save, or do not. A specification is theirs, and an answer that is
+  not in it stays a decision kept beside it.
 
 #### The executor the application hosts
 

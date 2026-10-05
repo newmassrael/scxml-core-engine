@@ -3046,3 +3046,49 @@ describe("what a new model changed from the one before", () => {
     expect(core.callsOf("model_history")).toHaveLength(asked);
   });
 });
+
+// ---- putting an answer into the text ---------------------------------------
+
+describe("an answer the owner chooses to put into the text", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    core = new FakeCore();
+    core.addWork("alpha", "Alpha", ["alpha one", "The door opens for a card."]);
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setAnswers("alpha", { "open-guard": "Any card on the list opens it." });
+    app = new App(root, { transport: core, storage: null, browserLanguage: "en" });
+    await app.start();
+    await settle();
+  });
+
+  const addButton = (id: string): HTMLButtonElement | null =>
+    fieldOf(id).closest(".question")?.querySelector<HTMLButtonElement>("button.add-to-text") ?? null;
+
+  it("is offered for an answer that is saved, and not for a question nobody answered", async () => {
+    await click("Alpha");
+
+    expect(addButton("open-guard")).not.toBeNull();
+    expect(addButton("close-delay")).toBeNull();
+  });
+
+  it("is added to the end of the text and not saved, so the owner puts it where it belongs", async () => {
+    await click("Alpha");
+
+    addButton("open-guard")?.click();
+    await settle();
+
+    expect(editor().value).toBe("The door opens for a card.\nAny card on the list opens it.\n");
+    expect(app.hasUnsavedChanges()).toBe(true);
+    expect(core.callsOf("save_source")).toHaveLength(0);
+    expect(core.headText("alpha")).toBe("The door opens for a card.");
+  });
+
+  it("is not offered for an answer that is typed and not yet saved: only what is held can be added", async () => {
+    await click("Alpha");
+
+    await answer("open-guard", "Only cards of today.");
+
+    expect(addButton("open-guard")?.hidden).toBe(true);
+  });
+});
