@@ -364,10 +364,34 @@ fn a_model_the_core_keeps_refusing_fails_the_request_after_the_repairs_with_what
         panic!("expected a failure, got {outcome:?}");
     };
     assert_eq!(generator.asked().len(), 2, "one try and one repair");
-    assert!(reason.contains("2 time(s)"), "{reason}");
+    assert!(reason.contains("2 try(ies)"), "{reason}");
     assert!(reason.contains("validation/invalid-reference"), "{reason}");
     assert_eq!(f.state_of(&request), State::Failed);
     assert!(f.store.read_model(&f.id, None).unwrap().is_none());
+}
+
+#[test]
+fn something_that_is_not_a_draft_is_told_what_was_wrong_and_written_again() {
+    let f = fixture("runner-unusable");
+    let request = f.ask("press-1");
+    let generator = Scripted::new(|n, _, _| match n {
+        0 => Err(GenerateError::Unusable(
+            "the manifest is not JSON: expected value at line 1".to_string(),
+        )),
+        _ => Ok(draft("two")),
+    });
+    let runner = f.runner(&generator, f.config());
+
+    let outcome = runner.run_once().unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    let jobs = generator.asked();
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(
+        jobs[1].refusal.as_deref(),
+        Some("the manifest is not JSON: expected value at line 1")
+    );
+    assert_eq!(f.state_of(&request), State::Completed);
 }
 
 #[test]

@@ -240,6 +240,30 @@ authoring client in a person's own terminal is, with the same words to the same 
   the generator's failure. A runner told to stop leaves its request to run out the lease, which
   is how the owner reads that the executor went away.
 
+**Claude Code as the generator** (`claude_code.rs`). One run of the headless client per draft,
+in a folder of its own that is removed when the run is over, and given:
+
+- **no built-in tool at all** (`--tools ""`): no shell, no files, no web. What it can do is what
+  the SCE authoring server offers, and of that only reading the work it was started for
+  (`works_read`, which also gives the owner's answers and the decision record they make) and
+  checking what it writes (`validate_scxml`, `decisions`, `scxml_requirement_set` and the
+  like). It has no tool that saves, takes a request or accepts: the application saves what it
+  answers. A specification is text the owner may have pasted from anywhere, and a client that
+  has read it should not be one that can be talked into writing to the owner's other work;
+- **nothing from the machine's settings**: no hook, no `CLAUDE.md`, no other server;
+- **an answer in one form** (`--json-schema`): the documents of the model and the requirement
+  list exactly as it checked them. What it says of itself goes in on standard input, so it is
+  not in a process listing, and a run is bounded by its turns, its time and optionally its cost.
+
+A run that is cancelled is killed; one that stops with a status, says something that is not
+JSON, or reports an error fails the request with what it said. A draft that is not a draft (a
+manifest that is not JSON, documents that name each other wrongly) is told back with the
+reason, as a refusal of the core is. The host says where the authoring server is installed
+(`AuthorServer`: a checkout runs it out of the tree, a bundle ships a launcher), because that
+is the one thing this side cannot know. `tests/claude_code.rs` holds this side against a
+stand-in `claude`; `tests/claude_code_live.rs` (ignored, minutes and money) runs the real
+client through the real server and product once, end to end.
+
 An AI adapter says it is there by reporting (`report_adapter`: its name, its kind and what it
 can do) and is there for ninety seconds after its last report. `read_adapter_status` lists the
 adapters that ever reported with whether each is there now, so the screen can say that no AI is
@@ -466,6 +490,8 @@ else: it has no file-system, shell or network permission.
 | Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) |
 | Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
 | The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of the same package |
+| Claude Code as the generator, against a stand-in client (Unix) | `--test claude_code` of the same package |
+| The real client, server and product end to end (a model runs: minutes and money) | `cargo test -p sce-app-core --features cli --test claude_code_live -- --ignored --nocapture` |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |

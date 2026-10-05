@@ -40,6 +40,13 @@ name = "cli"
 path = "tests/cli.rs"
 required-features = ["cli"]
 
+# Runs the real Claude Code through the real `sce-work`: it is ignored unless asked for, and
+# needs the binary to hand it, which only the `cli` feature builds.
+[[test]]
+name = "claude_code_live"
+path = "tests/claude_code_live.rs"
+required-features = ["cli"]
+
 [features]
 default = []
 # The `sce-work` command: the same operations as JSON in and out, so a process

@@ -112,6 +112,10 @@ pub enum GenerateError {
     Cancelled,
     /// It could not, and says why in a sentence the owner reads.
     Failed(String),
+    /// It wrote something that is not a draft (a list that is not JSON, a set whose documents
+    /// name each other wrongly). Not the end: it is told what was wrong, as it is told what the
+    /// core refused, and writes again.
+    Unusable(String),
 }
 
 /// Whatever writes a model from a specification.
@@ -379,6 +383,11 @@ where
                     return self.fail(work, request, attempt, reason)
                 }
                 Err(GenerateError::Cancelled) => return Ok(self.ended(work, request, lost)),
+                Err(GenerateError::Unusable(wrong)) => {
+                    last_refusal = wrong.clone();
+                    job.refusal = Some(wrong);
+                    continue;
+                }
             };
             if cancel.is_cancelled() {
                 return Ok(self.ended(work, request, lost));
@@ -440,7 +449,7 @@ where
             request,
             attempt,
             format!(
-                "SCE refused the model {} time(s), and the last it said was: {last_refusal}",
+                "no draft SCE accepted in {} try(ies); the last thing said of it was: {last_refusal}",
                 self.config.repairs + 1
             ),
         )

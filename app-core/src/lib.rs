@@ -32,6 +32,7 @@ pub mod acceptance;
 pub mod acceptance_run;
 pub mod answers;
 pub mod bundle;
+pub mod claude_code;
 pub mod clock;
 pub mod commands;
 pub mod error;
