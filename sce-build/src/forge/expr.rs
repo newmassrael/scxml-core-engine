@@ -7683,7 +7683,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BytesLit { bytes } => format!("\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "NULL".to_string(),
-        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        // The one spelling every C local takes, declaration and read alike
+        // (`c11_local_spelling`).
+        ExprKind::Ident(s) => crate::forge::generator::c11_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // A C string is a `const char *`: there is nowhere for the joined

@@ -47,32 +47,34 @@ typedef struct {
 {% endfor %}
 } {{ snake }}_t;
 
-static inline {{ snake }}_queue_t {{ snake }}_update({{ snake }}_t *self, {{ params }}) {
-    {{ snake }}_queue_t events;
-    events.size = 0;
+{# The receiver and the queue are under the `sce_` prefix, the generator's own,
+   so an input an author calls `self` or `events` cannot be redeclared by them. #}
+static inline {{ snake }}_queue_t {{ snake }}_update({{ snake }}_t *sce_self, {{ params }}) {
+    {{ snake }}_queue_t sce_events;
+    sce_events.size = 0;
 {% for mon in monitors %}
-    if (!self->{{ mon.active_var }} && ({{ mon.enter_expr }})) {
-        self->{{ mon.active_var }} = true;
-        if (events.size < {{ upper }}_QUEUE_CAPACITY) {
-            events.buffer[events.size++] = {{ upper }}_TAG_{{ mon.event_enter }};
+    if (!sce_self->{{ mon.active_var }} && ({{ mon.enter_expr }})) {
+        sce_self->{{ mon.active_var }} = true;
+        if (sce_events.size < {{ upper }}_QUEUE_CAPACITY) {
+            sce_events.buffer[sce_events.size++] = {{ upper }}_TAG_{{ mon.event_enter }};
         }
     }
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
-    else if (self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
-        self->{{ mon.active_var }} = false;
-        if (events.size < {{ upper }}_QUEUE_CAPACITY) {
-            events.buffer[events.size++] = {{ upper }}_TAG_{{ mon.event_leave }};
+    else if (sce_self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
+        sce_self->{{ mon.active_var }} = false;
+        if (sce_events.size < {{ upper }}_QUEUE_CAPACITY) {
+            sce_events.buffer[sce_events.size++] = {{ upper }}_TAG_{{ mon.event_leave }};
         }
     }
 {% else %}
-    else if (self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
-        self->{{ mon.active_var }} = false;
+    else if (sce_self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
+        sce_self->{{ mon.active_var }} = false;
     }
 {% endif %}
 {% endif %}
 {% endfor %}
-    return events;
+    return sce_events;
 }
 
 #endif  /* {{ guard }} */

@@ -20,20 +20,20 @@ typedef struct {
     bool initialized;
 } filter_low_pass_t;
 
-static inline double filter_low_pass_update(filter_low_pass_t *self, double raw_signal) {
-    if (!self->initialized) {
-        self->state = (double)raw_signal;
-        self->initialized = true;
+static inline double filter_low_pass_update(filter_low_pass_t *sce_self, double raw_signal) {
+    if (!sce_self->initialized) {
+        sce_self->state = (double)raw_signal;
+        sce_self->initialized = true;
     } else {
-        self->state = (double)0.1 * (double)raw_signal
-                    + ((double)1 - (double)0.1) * self->state;
+        sce_self->state = (double)0.1 * (double)raw_signal
+                    + ((double)1 - (double)0.1) * sce_self->state;
     }
-    return self->state;
+    return sce_self->state;
 }
 
-static inline void filter_low_pass_reset(filter_low_pass_t *self) {
-    self->state = (double)0;
-    self->initialized = false;
+static inline void filter_low_pass_reset(filter_low_pass_t *sce_self) {
+    sce_self->state = (double)0;
+    sce_self->initialized = false;
 }
 
 #endif  /* SCE_FORGE_FILTER_LOW_PASS_H */

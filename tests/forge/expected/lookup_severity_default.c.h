@@ -15,9 +15,9 @@ static const int32_t lookup_severity_default_severity_keys[5] = { 100, 200, 300,
 static const int32_t lookup_severity_default_severity_values[5] = { 1, 2, 3, 2, 4 };
 
 static inline int32_t lookup_severity_default_severity(int32_t code) {
-    for (size_t _i = 0; _i < 5; ++_i) {
-        if (lookup_severity_default_severity_keys[_i] == code) {
-            return lookup_severity_default_severity_values[_i];
+    for (size_t sce_i = 0; sce_i < 5; ++sce_i) {
+        if (lookup_severity_default_severity_keys[sce_i] == code) {
+            return lookup_severity_default_severity_values[sce_i];
         }
     }
     return 0;

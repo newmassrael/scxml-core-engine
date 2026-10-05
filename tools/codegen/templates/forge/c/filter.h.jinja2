@@ -30,20 +30,23 @@ typedef struct {
     bool initialized;
 } {{ snake }}_t;
 
-static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
-    if (!self->initialized) {
-        self->state = ({{ output_type }}){{ input_id_snake }};
-        self->initialized = true;
+{# The receiver and every local of a filter are under the `sce_` prefix, the
+   generator's own, so an input an author calls `self`, `sum` or `count` cannot
+   be redeclared by one. #}
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *sce_self, {{ input_type }} {{ input_id_snake }}) {
+    if (!sce_self->initialized) {
+        sce_self->state = ({{ output_type }}){{ input_id_snake }};
+        sce_self->initialized = true;
     } else {
-        self->state = ({{ output_type }}){{ alpha }} * ({{ output_type }}){{ input_id_snake }}
-                    + (({{ output_type }})1 - ({{ output_type }}){{ alpha }}) * self->state;
+        sce_self->state = ({{ output_type }}){{ alpha }} * ({{ output_type }}){{ input_id_snake }}
+                    + (({{ output_type }})1 - ({{ output_type }}){{ alpha }}) * sce_self->state;
     }
-    return self->state;
+    return sce_self->state;
 }
 
-static inline void {{ snake }}_reset({{ snake }}_t *self) {
-    self->state = ({{ output_type }})0;
-    self->initialized = false;
+static inline void {{ snake }}_reset({{ snake }}_t *sce_self) {
+    sce_self->state = ({{ output_type }})0;
+    sce_self->initialized = false;
 }
 {% elif filter_type == "moving_average" %}
 /* Sliding-window arithmetic mean. Until the buffer is full, returns the mean
@@ -55,26 +58,26 @@ typedef struct {
     bool filled;
 } {{ snake }}_t;
 
-static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
-    self->buffer[self->index] = ({{ output_type }}){{ input_id_snake }};
-    self->index = (self->index + 1) % {{ window }};
-    if (!self->filled && self->index == 0) {
-        self->filled = true;
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *sce_self, {{ input_type }} {{ input_id_snake }}) {
+    sce_self->buffer[sce_self->index] = ({{ output_type }}){{ input_id_snake }};
+    sce_self->index = (sce_self->index + 1) % {{ window }};
+    if (!sce_self->filled && sce_self->index == 0) {
+        sce_self->filled = true;
     }
-    size_t count = self->filled ? (size_t){{ window }} : self->index;
-    {{ output_type }} sum = ({{ output_type }})0;
-    for (size_t i = 0; i < count; ++i) {
-        sum += self->buffer[i];
+    size_t sce_count = sce_self->filled ? (size_t){{ window }} : sce_self->index;
+    {{ output_type }} sce_sum = ({{ output_type }})0;
+    for (size_t sce_i = 0; sce_i < sce_count; ++sce_i) {
+        sce_sum += sce_self->buffer[sce_i];
     }
-    return sum / ({{ output_type }})count;
+    return sce_sum / ({{ output_type }})sce_count;
 }
 
-static inline void {{ snake }}_reset({{ snake }}_t *self) {
-    for (size_t i = 0; i < {{ window }}; ++i) {
-        self->buffer[i] = ({{ output_type }})0;
+static inline void {{ snake }}_reset({{ snake }}_t *sce_self) {
+    for (size_t sce_i = 0; sce_i < {{ window }}; ++sce_i) {
+        sce_self->buffer[sce_i] = ({{ output_type }})0;
     }
-    self->index = 0;
-    self->filled = false;
+    sce_self->index = 0;
+    sce_self->filled = false;
 }
 {% elif filter_type == "debounce" %}
 /* Output latches to a new value only after WINDOW consecutive identical
@@ -86,36 +89,36 @@ typedef struct {
     {{ output_type }} output;
 } {{ snake }}_t;
 
-static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
-    self->buffer[self->index] = ({{ output_type }}){{ input_id_snake }};
-    self->index = (self->index + 1) % {{ window }};
-    if (!self->filled && self->index == 0) {
-        self->filled = true;
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *sce_self, {{ input_type }} {{ input_id_snake }}) {
+    sce_self->buffer[sce_self->index] = ({{ output_type }}){{ input_id_snake }};
+    sce_self->index = (sce_self->index + 1) % {{ window }};
+    if (!sce_self->filled && sce_self->index == 0) {
+        sce_self->filled = true;
     }
-    if (self->filled) {
-        bool stable = true;
-        for (size_t i = 1; i < {{ window }}; ++i) {
-            if (self->buffer[i] != self->buffer[0]) {
-                stable = false;
+    if (sce_self->filled) {
+        bool sce_stable = true;
+        for (size_t sce_i = 1; sce_i < {{ window }}; ++sce_i) {
+            if (sce_self->buffer[sce_i] != sce_self->buffer[0]) {
+                sce_stable = false;
                 break;
             }
         }
-        if (stable) {
-            self->output = self->buffer[0];
+        if (sce_stable) {
+            sce_self->output = sce_self->buffer[0];
         }
     } else {
-        self->output = ({{ output_type }}){{ input_id_snake }};
+        sce_self->output = ({{ output_type }}){{ input_id_snake }};
     }
-    return self->output;
+    return sce_self->output;
 }
 
-static inline void {{ snake }}_reset({{ snake }}_t *self) {
-    for (size_t i = 0; i < {{ window }}; ++i) {
-        self->buffer[i] = ({{ output_type }})0;
+static inline void {{ snake }}_reset({{ snake }}_t *sce_self) {
+    for (size_t sce_i = 0; sce_i < {{ window }}; ++sce_i) {
+        sce_self->buffer[sce_i] = ({{ output_type }})0;
     }
-    self->index = 0;
-    self->filled = false;
-    self->output = ({{ output_type }})0;
+    sce_self->index = 0;
+    sce_self->filled = false;
+    sce_self->output = ({{ output_type }})0;
 }
 {% endif %}
 

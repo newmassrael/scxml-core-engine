@@ -2734,6 +2734,34 @@ one (`from .simple_codec import SimpleCodec`) is used by its type and keeps its
 spelling. It ran 74 of 85 documents and 28 673 renamings and found nothing else
 that a name decides, besides the two states above.
 
+C is the backend where a name is likeliest to decide, because a function, a
+variable and a typedef name share one namespace per scope and the headers the
+generated C includes bring in names of all three. `a_c_kind_keeps_an_authors_names_apart_from_its_own`
+compiles every renaming of the eight kinds as a translation unit
+(`-std=c11 -Wall -Wextra -Werror -fsyntax-only`, the contract the generated
+headers are held to), with the sibling headers a document includes beside it,
+and its first run found 325 of 21 929 accepted renamings that did not build.
+Four causes. A parameter or variable called like a library type or function
+(`uint32_t`, `size_t`, `strcmp`, `floor`) was a declaration in the scope of the
+body that used it. The generator's own locals were plain names an author could
+equally choose (`x`, `tx`, `v0`, `c0`, `sum`, `count`, `out`, `delta_`, `self`,
+`events`), redeclared in the same scope as an author's parameter. A name under a
+prefix the generator already used (`sce_failure_`, `sce_cond1_`, `_st`, `_i`)
+was one an author could equally choose. And a local called like the function of
+an imported document hid it. The generator's locals are now under `sce_`, and an
+author's name is spelled by one function (`c11_local_spelling`) for the
+declaration, every read and every call, as the same shift the other backends
+use: a name that begins `sce_` or `_`, or is one of `C11_RESERVED_NAMES`, gets
+one more trailing `_`, so no two names meet. `C11_RESERVED_NAMES` is derived,
+and a second test fails with the name when the committed C starts to use a
+library name it does not carry: it preprocesses the library headers the committed
+C includes and takes every macro, typedef and function they declare. The final
+run built 22 060 accepted renamings and none failed. What is left out is stated:
+C cannot bring a function in under another name, so an author's name that is the
+function of a document it imports (`condition_threshold_check`) hides it, and 23
+renamings of that kind are counted and not asked. Go and Python bring such a
+function in under an alias and call through it, which is why they do not have it.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called

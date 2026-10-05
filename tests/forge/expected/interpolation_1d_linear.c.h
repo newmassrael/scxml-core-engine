@@ -21,21 +21,21 @@ static const double interpolation_1d_linear_values[6] = { 120.0, 145.0, 200.0, 2
 
 static inline double interpolation_1d_linear_lookup(uint16_t rpm) {
     /* 1D linear: clamp out-of-range, otherwise locate cell and lerp. */
-    double x = (double)rpm;
-    if (x <= interpolation_1d_linear_axis_rpm[0]) {
+    double sce_x = (double)rpm;
+    if (sce_x <= interpolation_1d_linear_axis_rpm[0]) {
         return interpolation_1d_linear_values[0];
     }
-    if (x >= interpolation_1d_linear_axis_rpm[6 - 1]) {
+    if (sce_x >= interpolation_1d_linear_axis_rpm[6 - 1]) {
         return interpolation_1d_linear_values[6 - 1];
     }
-    for (size_t i = 0; i + 1 < 6; ++i) {
-        if (x <= interpolation_1d_linear_axis_rpm[i + 1]) {
-            double x0 = interpolation_1d_linear_axis_rpm[i];
-            double x1 = interpolation_1d_linear_axis_rpm[i + 1];
-            double y0 = interpolation_1d_linear_values[i];
-            double y1 = interpolation_1d_linear_values[i + 1];
-            double t = (x - x0) / (x1 - x0);
-            return y0 + t * (y1 - y0);
+    for (size_t sce_i = 0; sce_i + 1 < 6; ++sce_i) {
+        if (sce_x <= interpolation_1d_linear_axis_rpm[sce_i + 1]) {
+            double sce_x0 = interpolation_1d_linear_axis_rpm[sce_i];
+            double sce_x1 = interpolation_1d_linear_axis_rpm[sce_i + 1];
+            double sce_y0 = interpolation_1d_linear_values[sce_i];
+            double sce_y1 = interpolation_1d_linear_values[sce_i + 1];
+            double sce_t = (sce_x - sce_x0) / (sce_x1 - sce_x0);
+            return sce_y0 + sce_t * (sce_y1 - sce_y0);
         }
     }
     return interpolation_1d_linear_values[6 - 1];

@@ -20,26 +20,26 @@ typedef struct {
     bool filled;
 } filter_moving_average_t;
 
-static inline double filter_moving_average_update(filter_moving_average_t *self, double raw_temp) {
-    self->buffer[self->index] = (double)raw_temp;
-    self->index = (self->index + 1) % 5;
-    if (!self->filled && self->index == 0) {
-        self->filled = true;
+static inline double filter_moving_average_update(filter_moving_average_t *sce_self, double raw_temp) {
+    sce_self->buffer[sce_self->index] = (double)raw_temp;
+    sce_self->index = (sce_self->index + 1) % 5;
+    if (!sce_self->filled && sce_self->index == 0) {
+        sce_self->filled = true;
     }
-    size_t count = self->filled ? (size_t)5 : self->index;
-    double sum = (double)0;
-    for (size_t i = 0; i < count; ++i) {
-        sum += self->buffer[i];
+    size_t sce_count = sce_self->filled ? (size_t)5 : sce_self->index;
+    double sce_sum = (double)0;
+    for (size_t sce_i = 0; sce_i < sce_count; ++sce_i) {
+        sce_sum += sce_self->buffer[sce_i];
     }
-    return sum / (double)count;
+    return sce_sum / (double)sce_count;
 }
 
-static inline void filter_moving_average_reset(filter_moving_average_t *self) {
-    for (size_t i = 0; i < 5; ++i) {
-        self->buffer[i] = (double)0;
+static inline void filter_moving_average_reset(filter_moving_average_t *sce_self) {
+    for (size_t sce_i = 0; sce_i < 5; ++sce_i) {
+        sce_self->buffer[sce_i] = (double)0;
     }
-    self->index = 0;
-    self->filled = false;
+    sce_self->index = 0;
+    sce_self->filled = false;
 }
 
 #endif  /* SCE_FORGE_FILTER_MOVING_AVERAGE_H */

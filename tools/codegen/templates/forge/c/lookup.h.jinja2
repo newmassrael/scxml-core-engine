@@ -49,10 +49,12 @@ static const {{ input_type }} {{ c_keys_array_name }}[{{ n }}] = { {{ keys_liter
 static const {{ value_type }} {{ c_values_array_name }}[{{ n }}] = { {{ values_literal | join(", ") }} };
 
 {% if on_miss_error %}
-static inline bool {{ func_name }}({{ input_type }} {{ input_id }}, {{ value_type }} *out) {
-    for (size_t _i = 0; _i < {{ n }}; ++_i) {
-        if ({{ c_keys_array_name }}[_i] == {{ input_id }}) {
-            *out = {{ c_values_array_name }}[_i];
+{# The output parameter and the loop index are under the `sce_` prefix, the
+   generator's own: an input an author calls `out` cannot be redeclared by it. #}
+static inline bool {{ func_name }}({{ input_type }} {{ input_id }}, {{ value_type }} *sce_out) {
+    for (size_t sce_i = 0; sce_i < {{ n }}; ++sce_i) {
+        if ({{ c_keys_array_name }}[sce_i] == {{ input_id }}) {
+            *sce_out = {{ c_values_array_name }}[sce_i];
             return true;
         }
     }
@@ -60,9 +62,9 @@ static inline bool {{ func_name }}({{ input_type }} {{ input_id }}, {{ value_typ
 }
 {% else %}
 static inline {{ value_type }} {{ func_name }}({{ input_type }} {{ input_id }}) {
-    for (size_t _i = 0; _i < {{ n }}; ++_i) {
-        if ({{ c_keys_array_name }}[_i] == {{ input_id }}) {
-            return {{ c_values_array_name }}[_i];
+    for (size_t sce_i = 0; sce_i < {{ n }}; ++sce_i) {
+        if ({{ c_keys_array_name }}[sce_i] == {{ input_id }}) {
+            return {{ c_values_array_name }}[sce_i];
         }
     }
     return {{ default_literal }};

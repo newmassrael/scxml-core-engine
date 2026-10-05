@@ -27,49 +27,49 @@ static const double interpolation_2d_bilinear_values[4][3] = {
 
 static inline double interpolation_2d_bilinear_lookup(uint16_t rpm, uint8_t load) {
     /* 2D bilinear: clamp on both axes, then bilinear over the 2x2 cell. */
-    double x = (double)rpm;
-    double y = (double)load;
-    size_t r0 = 0, r1 = 0;
-    double tx = 0;
-    if (x <= interpolation_2d_bilinear_axis_rpm[0]) {
-        r0 = 0; r1 = 0; tx = 0;
-    } else if (x >= interpolation_2d_bilinear_axis_rpm[4 - 1]) {
-        r0 = 4 - 1; r1 = 4 - 1; tx = 0;
+    double sce_x = (double)rpm;
+    double sce_y = (double)load;
+    size_t sce_r0 = 0, sce_r1 = 0;
+    double sce_tx = 0;
+    if (sce_x <= interpolation_2d_bilinear_axis_rpm[0]) {
+        sce_r0 = 0; sce_r1 = 0; sce_tx = 0;
+    } else if (sce_x >= interpolation_2d_bilinear_axis_rpm[4 - 1]) {
+        sce_r0 = 4 - 1; sce_r1 = 4 - 1; sce_tx = 0;
     } else {
-        for (size_t i = 0; i + 1 < 4; ++i) {
-            if (x <= interpolation_2d_bilinear_axis_rpm[i + 1]) {
-                r0 = i; r1 = i + 1;
-                tx = (x - interpolation_2d_bilinear_axis_rpm[i])
-                   / (interpolation_2d_bilinear_axis_rpm[i + 1]
-                      - interpolation_2d_bilinear_axis_rpm[i]);
+        for (size_t sce_i = 0; sce_i + 1 < 4; ++sce_i) {
+            if (sce_x <= interpolation_2d_bilinear_axis_rpm[sce_i + 1]) {
+                sce_r0 = sce_i; sce_r1 = sce_i + 1;
+                sce_tx = (sce_x - interpolation_2d_bilinear_axis_rpm[sce_i])
+                   / (interpolation_2d_bilinear_axis_rpm[sce_i + 1]
+                      - interpolation_2d_bilinear_axis_rpm[sce_i]);
                 break;
             }
         }
     }
-    size_t c0 = 0, c1 = 0;
-    double ty = 0;
-    if (y <= interpolation_2d_bilinear_axis_load[0]) {
-        c0 = 0; c1 = 0; ty = 0;
-    } else if (y >= interpolation_2d_bilinear_axis_load[3 - 1]) {
-        c0 = 3 - 1; c1 = 3 - 1; ty = 0;
+    size_t sce_c0 = 0, sce_c1 = 0;
+    double sce_ty = 0;
+    if (sce_y <= interpolation_2d_bilinear_axis_load[0]) {
+        sce_c0 = 0; sce_c1 = 0; sce_ty = 0;
+    } else if (sce_y >= interpolation_2d_bilinear_axis_load[3 - 1]) {
+        sce_c0 = 3 - 1; sce_c1 = 3 - 1; sce_ty = 0;
     } else {
-        for (size_t j = 0; j + 1 < 3; ++j) {
-            if (y <= interpolation_2d_bilinear_axis_load[j + 1]) {
-                c0 = j; c1 = j + 1;
-                ty = (y - interpolation_2d_bilinear_axis_load[j])
-                   / (interpolation_2d_bilinear_axis_load[j + 1]
-                      - interpolation_2d_bilinear_axis_load[j]);
+        for (size_t sce_j = 0; sce_j + 1 < 3; ++sce_j) {
+            if (sce_y <= interpolation_2d_bilinear_axis_load[sce_j + 1]) {
+                sce_c0 = sce_j; sce_c1 = sce_j + 1;
+                sce_ty = (sce_y - interpolation_2d_bilinear_axis_load[sce_j])
+                   / (interpolation_2d_bilinear_axis_load[sce_j + 1]
+                      - interpolation_2d_bilinear_axis_load[sce_j]);
                 break;
             }
         }
     }
-    double v00 = interpolation_2d_bilinear_values[r0][c0];
-    double v01 = interpolation_2d_bilinear_values[r0][c1];
-    double v10 = interpolation_2d_bilinear_values[r1][c0];
-    double v11 = interpolation_2d_bilinear_values[r1][c1];
-    double v0 = v00 + tx * (v10 - v00);
-    double v1 = v01 + tx * (v11 - v01);
-    return v0 + ty * (v1 - v0);
+    double sce_v00 = interpolation_2d_bilinear_values[sce_r0][sce_c0];
+    double sce_v01 = interpolation_2d_bilinear_values[sce_r0][sce_c1];
+    double sce_v10 = interpolation_2d_bilinear_values[sce_r1][sce_c0];
+    double sce_v11 = interpolation_2d_bilinear_values[sce_r1][sce_c1];
+    double sce_v0 = sce_v00 + sce_tx * (sce_v10 - sce_v00);
+    double sce_v1 = sce_v01 + sce_tx * (sce_v11 - sce_v01);
+    return sce_v0 + sce_ty * (sce_v1 - sce_v0);
 }
 
 #endif  /* SCE_FORGE_INTERPOLATION_2D_BILINEAR_H */

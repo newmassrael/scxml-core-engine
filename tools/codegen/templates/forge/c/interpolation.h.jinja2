@@ -42,66 +42,68 @@ static const {{ output_type }} {{ snake }}_values[{{ rows }}] = { {% for v in va
 static inline {{ output_type }} {{ member_symbol }}({{ params }}) {
 {% if is_bilinear %}
     /* 2D bilinear: clamp on both axes, then bilinear over the 2x2 cell. */
-    {{ output_type }} x = ({{ output_type }}){{ axes[0].input_id_snake }};
-    {{ output_type }} y = ({{ output_type }}){{ axes[1].input_id_snake }};
-    size_t r0 = 0, r1 = 0;
-    {{ output_type }} tx = 0;
-    if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
-        r0 = 0; r1 = 0; tx = 0;
-    } else if (x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
-        r0 = {{ rows }} - 1; r1 = {{ rows }} - 1; tx = 0;
+    {# Every local below is under the `sce_` prefix, the generator's own: an
+       input an author calls `x`, `tx` or `v0` cannot be redeclared by it. #}
+    {{ output_type }} sce_x = ({{ output_type }}){{ axes[0].input_id_snake }};
+    {{ output_type }} sce_y = ({{ output_type }}){{ axes[1].input_id_snake }};
+    size_t sce_r0 = 0, sce_r1 = 0;
+    {{ output_type }} sce_tx = 0;
+    if (sce_x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
+        sce_r0 = 0; sce_r1 = 0; sce_tx = 0;
+    } else if (sce_x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
+        sce_r0 = {{ rows }} - 1; sce_r1 = {{ rows }} - 1; sce_tx = 0;
     } else {
-        for (size_t i = 0; i + 1 < {{ rows }}; ++i) {
-            if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[i + 1]) {
-                r0 = i; r1 = i + 1;
-                tx = (x - {{ snake }}_{{ axes[0].var_name | lower }}[i])
-                   / ({{ snake }}_{{ axes[0].var_name | lower }}[i + 1]
-                      - {{ snake }}_{{ axes[0].var_name | lower }}[i]);
+        for (size_t sce_i = 0; sce_i + 1 < {{ rows }}; ++sce_i) {
+            if (sce_x <= {{ snake }}_{{ axes[0].var_name | lower }}[sce_i + 1]) {
+                sce_r0 = sce_i; sce_r1 = sce_i + 1;
+                sce_tx = (sce_x - {{ snake }}_{{ axes[0].var_name | lower }}[sce_i])
+                   / ({{ snake }}_{{ axes[0].var_name | lower }}[sce_i + 1]
+                      - {{ snake }}_{{ axes[0].var_name | lower }}[sce_i]);
                 break;
             }
         }
     }
-    size_t c0 = 0, c1 = 0;
-    {{ output_type }} ty = 0;
-    if (y <= {{ snake }}_{{ axes[1].var_name | lower }}[0]) {
-        c0 = 0; c1 = 0; ty = 0;
-    } else if (y >= {{ snake }}_{{ axes[1].var_name | lower }}[{{ cols }} - 1]) {
-        c0 = {{ cols }} - 1; c1 = {{ cols }} - 1; ty = 0;
+    size_t sce_c0 = 0, sce_c1 = 0;
+    {{ output_type }} sce_ty = 0;
+    if (sce_y <= {{ snake }}_{{ axes[1].var_name | lower }}[0]) {
+        sce_c0 = 0; sce_c1 = 0; sce_ty = 0;
+    } else if (sce_y >= {{ snake }}_{{ axes[1].var_name | lower }}[{{ cols }} - 1]) {
+        sce_c0 = {{ cols }} - 1; sce_c1 = {{ cols }} - 1; sce_ty = 0;
     } else {
-        for (size_t j = 0; j + 1 < {{ cols }}; ++j) {
-            if (y <= {{ snake }}_{{ axes[1].var_name | lower }}[j + 1]) {
-                c0 = j; c1 = j + 1;
-                ty = (y - {{ snake }}_{{ axes[1].var_name | lower }}[j])
-                   / ({{ snake }}_{{ axes[1].var_name | lower }}[j + 1]
-                      - {{ snake }}_{{ axes[1].var_name | lower }}[j]);
+        for (size_t sce_j = 0; sce_j + 1 < {{ cols }}; ++sce_j) {
+            if (sce_y <= {{ snake }}_{{ axes[1].var_name | lower }}[sce_j + 1]) {
+                sce_c0 = sce_j; sce_c1 = sce_j + 1;
+                sce_ty = (sce_y - {{ snake }}_{{ axes[1].var_name | lower }}[sce_j])
+                   / ({{ snake }}_{{ axes[1].var_name | lower }}[sce_j + 1]
+                      - {{ snake }}_{{ axes[1].var_name | lower }}[sce_j]);
                 break;
             }
         }
     }
-    {{ output_type }} v00 = {{ snake }}_values[r0][c0];
-    {{ output_type }} v01 = {{ snake }}_values[r0][c1];
-    {{ output_type }} v10 = {{ snake }}_values[r1][c0];
-    {{ output_type }} v11 = {{ snake }}_values[r1][c1];
-    {{ output_type }} v0 = v00 + tx * (v10 - v00);
-    {{ output_type }} v1 = v01 + tx * (v11 - v01);
-    return v0 + ty * (v1 - v0);
+    {{ output_type }} sce_v00 = {{ snake }}_values[sce_r0][sce_c0];
+    {{ output_type }} sce_v01 = {{ snake }}_values[sce_r0][sce_c1];
+    {{ output_type }} sce_v10 = {{ snake }}_values[sce_r1][sce_c0];
+    {{ output_type }} sce_v11 = {{ snake }}_values[sce_r1][sce_c1];
+    {{ output_type }} sce_v0 = sce_v00 + sce_tx * (sce_v10 - sce_v00);
+    {{ output_type }} sce_v1 = sce_v01 + sce_tx * (sce_v11 - sce_v01);
+    return sce_v0 + sce_ty * (sce_v1 - sce_v0);
 {% else %}
     /* 1D linear: clamp out-of-range, otherwise locate cell and lerp. */
-    {{ output_type }} x = ({{ output_type }}){{ axes[0].input_id_snake }};
-    if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
+    {{ output_type }} sce_x = ({{ output_type }}){{ axes[0].input_id_snake }};
+    if (sce_x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
         return {{ snake }}_values[0];
     }
-    if (x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
+    if (sce_x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
         return {{ snake }}_values[{{ rows }} - 1];
     }
-    for (size_t i = 0; i + 1 < {{ rows }}; ++i) {
-        if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[i + 1]) {
-            {{ output_type }} x0 = {{ snake }}_{{ axes[0].var_name | lower }}[i];
-            {{ output_type }} x1 = {{ snake }}_{{ axes[0].var_name | lower }}[i + 1];
-            {{ output_type }} y0 = {{ snake }}_values[i];
-            {{ output_type }} y1 = {{ snake }}_values[i + 1];
-            {{ output_type }} t = (x - x0) / (x1 - x0);
-            return y0 + t * (y1 - y0);
+    for (size_t sce_i = 0; sce_i + 1 < {{ rows }}; ++sce_i) {
+        if (sce_x <= {{ snake }}_{{ axes[0].var_name | lower }}[sce_i + 1]) {
+            {{ output_type }} sce_x0 = {{ snake }}_{{ axes[0].var_name | lower }}[sce_i];
+            {{ output_type }} sce_x1 = {{ snake }}_{{ axes[0].var_name | lower }}[sce_i + 1];
+            {{ output_type }} sce_y0 = {{ snake }}_values[sce_i];
+            {{ output_type }} sce_y1 = {{ snake }}_values[sce_i + 1];
+            {{ output_type }} sce_t = (sce_x - sce_x0) / (sce_x1 - sce_x0);
+            return sce_y0 + sce_t * (sce_y1 - sce_y0);
         }
     }
     return {{ snake }}_values[{{ rows }} - 1];

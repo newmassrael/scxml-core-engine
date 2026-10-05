@@ -22808,9 +22808,7 @@ impl LangCtx {
         match self.lang {
             crate::generator::Language::Cpp => format!("{ty} {id}"),
             crate::generator::Language::Go => format!("{} {ty}", go_local_spelling(id)),
-            crate::generator::Language::C11 => {
-                format!("{ty} {}", filters::to_snake_case(id.to_string()))
-            }
+            crate::generator::Language::C11 => format!("{ty} {}", c11_local_spelling(id)),
             crate::generator::Language::Kotlin => format!("{id}: {ty}"),
             crate::generator::Language::Rust => {
                 format!("{}: {ty}", filters::to_snake_case(id.to_string()))
@@ -23236,7 +23234,7 @@ fn render_filter(
         );
         ctx.insert(
             "input_id_snake".into(),
-            filters::to_snake_case(m.input.id.clone()).into(),
+            c11_local_spelling(&m.input.id).into(),
         );
     }
 
@@ -23276,7 +23274,7 @@ fn render_interpolation(
                 // camelCase, Rust/Python/Go use their own conventions emitted
                 // through `param_str`. The template references this only when
                 // lang=C11 — other backends ignore the field.
-                "input_id_snake": filters::to_snake_case(a.input_id.clone()),
+                "input_id_snake": c11_local_spelling(&a.input_id),
                 // The name the signature declared the input with (`param_str`
                 // spells it through `place_param`), which is what the body must
                 // read. The Python template read `input_id` as written, so a
@@ -26108,7 +26106,8 @@ pub(crate) fn forge_transform_holder_symbols(
 pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> String {
     use crate::generator::Language;
     match language {
-        Language::Rust | Language::C11 => filters::to_snake_case(id.to_string()),
+        Language::Rust => filters::to_snake_case(id.to_string()),
+        Language::C11 => c11_local_spelling(id),
         Language::Python => python_local_spelling(id),
         Language::Go => go_local_spelling(id),
         Language::Cpp | Language::Kotlin => id.to_string(),
@@ -26195,6 +26194,49 @@ pub(crate) fn python_local_spelling(id: &str) -> String {
         return format!("{snake}_");
     }
     shift_escape(snake, PYTHON_GENERATED_NAMES)
+}
+
+/// The names the headers a generated C file includes declare, and the runtime's,
+/// that the body of a forge kind uses or an author could give a local of that
+/// kind: the fixed-width and size types, the library functions, and the macros
+/// spelled lowercase. C keeps a function, a variable and a typedef name in one
+/// namespace per scope, so a parameter called `size_t` beside a use of `size_t`
+/// is a compile error (`expected ';' after expression`), and one called `strcmp`
+/// beside a call of it is a call on a number.
+///
+/// Lowercase, because a C local is spelled by [`filters::to_snake_case`] and so
+/// can only meet a lowercase name; `NULL` and `INT32_MAX` cannot be one.
+///
+/// Derived, not guessed:
+/// `a_c_kind_keeps_an_authors_names_apart_from_its_own` runs every name the
+/// committed C uses as an author's name, and the pin test beside it reads the
+/// headers' own declarations, so a template that starts to use one more library
+/// name extends this list or fails there.
+pub const C11_RESERVED_NAMES: &[&str] = &[
+    "abs", "bool", "ceil", "false", "floor", "int16_t", "int32_t", "int64_t", "int8_t", "memcmp",
+    "memcpy", "memmove", "memset", "round", "size_t", "sqrt", "strcmp", "strlen", "true",
+    "uint16_t", "uint32_t", "uint64_t", "uint8_t",
+];
+
+/// How a generated C function of a forge kind spells a name the author gave a
+/// parameter, a variable or a datum: snake_case, and with one more trailing `_`
+/// when it is one the generated code reaches for itself — a name in
+/// [`C11_RESERVED_NAMES`], one that begins `sce_` (the generator's own prefix:
+/// `sce_failure_`, `sce_self`, `sce_x`), or one that begins `_` (`_st`, which is
+/// the state a validator is handed).
+///
+/// One function for the declaration, every read and every call, and a SHIFT
+/// like the other backends': a name whose stem (the name without its trailing
+/// underscores) is reserved gets one more underscore, so an author's own
+/// `size_t_` is `size_t__` and no two names meet.
+pub fn c11_local_spelling(id: &str) -> String {
+    let snake = filters::to_snake_case(id.to_string());
+    let stem = snake.trim_end_matches('_');
+    if snake.starts_with('_') || stem.starts_with("sce_") || C11_RESERVED_NAMES.contains(&stem) {
+        format!("{snake}_")
+    } else {
+        snake
+    }
 }
 
 /// The prefix the Python generator keeps for what it writes itself and cannot
@@ -29393,6 +29435,26 @@ mod tests {
             python_local_spelling(&python_module_alias("condition_threshold")),
             python_module_alias("condition_threshold")
         );
+    }
+
+    /// What the C generator keeps — the library's names, its own `sce_` prefix
+    /// and the underscore-led state it hands a validator — is shifted off an
+    /// author's local, injectively, and nothing else is.
+    #[test]
+    fn c11_names_the_generator_keeps_are_shifted_off_an_authors() {
+        assert_eq!(c11_local_spelling("size_t"), "size_t_");
+        assert_eq!(c11_local_spelling("size_t_"), "size_t__");
+        assert_eq!(c11_local_spelling("sceFoo"), "sce_foo_");
+        assert_eq!(c11_local_spelling("sce_failure_"), "sce_failure__");
+        assert_eq!(c11_local_spelling("_st"), "_st_");
+        assert_eq!(c11_local_spelling("rpm"), "rpm");
+        assert_eq!(c11_local_spelling("engineRpm"), "engine_rpm");
+        assert_eq!(c11_local_spelling("scene"), "scene");
+        // Injective: no two names the document keeps apart meet.
+        let names = ["size_t", "size_t_", "size_t__", "_st", "_st_", "x", "x_"];
+        let spelled: std::collections::BTreeSet<String> =
+            names.iter().map(|n| c11_local_spelling(n)).collect();
+        assert_eq!(spelled.len(), names.len(), "{spelled:?}");
     }
 
     #[test]

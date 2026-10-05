@@ -36,31 +36,31 @@ typedef struct {
     bool critical_active;
 } observer_coolant_t;
 
-static inline observer_coolant_queue_t observer_coolant_update(observer_coolant_t *self, double coolant_temp) {
-    observer_coolant_queue_t events;
-    events.size = 0;
-    if (!self->warning_active && (coolant_temp > 110.0)) {
-        self->warning_active = true;
-        if (events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
-            events.buffer[events.size++] = OBSERVER_COOLANT_TAG_EMIT_WARNING;
+static inline observer_coolant_queue_t observer_coolant_update(observer_coolant_t *sce_self, double coolant_temp) {
+    observer_coolant_queue_t sce_events;
+    sce_events.size = 0;
+    if (!sce_self->warning_active && (coolant_temp > 110.0)) {
+        sce_self->warning_active = true;
+        if (sce_events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
+            sce_events.buffer[sce_events.size++] = OBSERVER_COOLANT_TAG_EMIT_WARNING;
         }
     }
-    else if (self->warning_active && (coolant_temp < 100.0)) {
-        self->warning_active = false;
-        if (events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
-            events.buffer[events.size++] = OBSERVER_COOLANT_TAG_CLEAR_WARNING;
+    else if (sce_self->warning_active && (coolant_temp < 100.0)) {
+        sce_self->warning_active = false;
+        if (sce_events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
+            sce_events.buffer[sce_events.size++] = OBSERVER_COOLANT_TAG_CLEAR_WARNING;
         }
     }
-    if (!self->critical_active && (coolant_temp > 120.0)) {
-        self->critical_active = true;
-        if (events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
-            events.buffer[events.size++] = OBSERVER_COOLANT_TAG_EMERGENCY_SHUTDOWN;
+    if (!sce_self->critical_active && (coolant_temp > 120.0)) {
+        sce_self->critical_active = true;
+        if (sce_events.size < OBSERVER_COOLANT_QUEUE_CAPACITY) {
+            sce_events.buffer[sce_events.size++] = OBSERVER_COOLANT_TAG_EMERGENCY_SHUTDOWN;
         }
     }
-    else if (self->critical_active && (coolant_temp < 105.0)) {
-        self->critical_active = false;
+    else if (sce_self->critical_active && (coolant_temp < 105.0)) {
+        sce_self->critical_active = false;
     }
-    return events;
+    return sce_events;
 }
 
 #endif  /* SCE_FORGE_OBSERVER_COOLANT_H */

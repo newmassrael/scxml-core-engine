@@ -27,15 +27,15 @@ static inline validator_signed_roc_result_t validator_signed_roc_validate(valida
     if (altitude > 50000.0)
         return (validator_signed_roc_result_t){false, "altitude_out_of_range"};
     {
-        int64_t delta_ = (int64_t)speed - (int64_t)_st->prev_speed_;
-        if (delta_ < 0) delta_ = -delta_;
-        if (delta_ > 50)
+        int64_t sce_delta = (int64_t)speed - (int64_t)_st->prev_speed_;
+        if (sce_delta < 0) sce_delta = -sce_delta;
+        if (sce_delta > 50)
             return (validator_signed_roc_result_t){false, "speed_rate_of_change_exceeded"};
     }
     {
-        double delta_ = (altitude - _st->prev_altitude_);
-        if (delta_ < 0) delta_ = -delta_;
-        if (delta_ > 100.0)
+        double sce_delta = (altitude - _st->prev_altitude_);
+        if (sce_delta < 0) sce_delta = -sce_delta;
+        if (sce_delta > 100.0)
             return (validator_signed_roc_result_t){false, "altitude_rate_of_change_exceeded"};
     }
     _st->prev_speed_ = speed;

@@ -24,8 +24,8 @@ static inline validator_rpm_check_result_t validator_rpm_check_validate(validato
     if (rpm > 8000)
         return (validator_rpm_check_result_t){false, "rpm_out_of_range"};
     {
-        uint16_t delta_ = (rpm > _st->prev_rpm_) ? (rpm - _st->prev_rpm_) : (_st->prev_rpm_ - rpm);
-        if (delta_ > 500)
+        uint16_t sce_delta = (rpm > _st->prev_rpm_) ? (rpm - _st->prev_rpm_) : (_st->prev_rpm_ - rpm);
+        if (sce_delta > 500)
             return (validator_rpm_check_result_t){false, "rpm_rate_of_change_exceeded"};
     }
     if (!(rpm == 0 || strcmp(engine_state, "STOP") != 0))
