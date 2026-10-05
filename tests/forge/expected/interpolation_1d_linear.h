@@ -15,12 +15,12 @@
 namespace SCE::Generated::Interpolation1dLinear {
 
 struct Interpolation1dLinear {
-    static constexpr double AXIS_RPM[] = { 800.0, 1200.0, 2000.0, 3000.0, 4000.0, 6000.0 };
-    static constexpr double VALUES[] = { 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 };
+    static constexpr double sce_axis_rpm[] = { 800.0, 1200.0, 2000.0, 3000.0, 4000.0, 6000.0 };
+    static constexpr double sce_values[] = { 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 };
 
     static double lookup(uint16_t rpm) {
         return SCE::Forge::linear(
-            AXIS_RPM, VALUES,
+            sce_axis_rpm, sce_values,
             static_cast<double>(rpm));
     }
 };

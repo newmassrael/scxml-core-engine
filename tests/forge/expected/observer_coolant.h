@@ -28,20 +28,20 @@ struct ForgeDomain {
 class ObserverCoolant {
 public:
     SCE::Forge::EventQueue<ForgeDomain> update(double coolantTemp) {
-        SCE::Forge::EventQueue<ForgeDomain> events;
+        SCE::Forge::EventQueue<ForgeDomain> sce_events;
         if (warning_.enterIf(coolantTemp > 110.0)) {
-            events.push(ForgeDomain::EMIT_WARNING);
+            sce_events.push(ForgeDomain::EMIT_WARNING);
         }
         else if (warning_.leaveIf(coolantTemp < 100.0)) {
-            events.push(ForgeDomain::CLEAR_WARNING);
+            sce_events.push(ForgeDomain::CLEAR_WARNING);
         }
         if (critical_.enterIf(coolantTemp > 120.0)) {
-            events.push(ForgeDomain::EMERGENCY_SHUTDOWN);
+            sce_events.push(ForgeDomain::EMERGENCY_SHUTDOWN);
         }
         else {
             critical_.leaveIf(coolantTemp < 105.0);
         }
-        return events;
+        return sce_events;
     }
 
 private:

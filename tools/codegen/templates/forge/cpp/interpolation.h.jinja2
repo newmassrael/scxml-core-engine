@@ -27,27 +27,31 @@ struct {{ struct_name }} {
 {% for axis in axes %}
     static constexpr {{ output_type }} {{ axis.var_name }}[] = { {% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %} };
 {% endfor %}
+{# The tables are members of the class the function is a member of, so they
+   carry the `sce_` prefix, the generator's own: an input an author calls
+   `VALUES` or `AXIS_RPM` cannot hide them (`cpp_local_spelling`). The body reads
+   each input under the name the signature declared it with. #}
 {% if is_bilinear %}
-    static constexpr {{ output_type }} VALUES[{{ rows }}][{{ cols }}] = {
+    static constexpr {{ output_type }} sce_values[{{ rows }}][{{ cols }}] = {
 {% for r in range(rows) %}
         { {% for c in range(cols) %}{{ values[r * cols + c] }}{% if not loop.last %}, {% endif %}{% endfor %} }{% if not loop.last %},{% endif %}
 
 {% endfor %}
     };
 {% else %}
-    static constexpr {{ output_type }} VALUES[] = { {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} };
+    static constexpr {{ output_type }} sce_values[] = { {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} };
 {% endif %}
 
     static {{ output_type }} {{ member_symbol }}({{ params }}) {
 {% if is_bilinear %}
         return SCE::Forge::bilinear(
-            {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
-            static_cast<{{ output_type }}>({{ axes[0].input_id }}),
-            static_cast<{{ output_type }}>({{ axes[1].input_id }}));
+            {{ axes[0].var_name }}, {{ axes[1].var_name }}, sce_values,
+            static_cast<{{ output_type }}>({{ axes[0].input_local }}),
+            static_cast<{{ output_type }}>({{ axes[1].input_local }}));
 {% else %}
         return SCE::Forge::linear(
-            {{ axes[0].var_name }}, VALUES,
-            static_cast<{{ output_type }}>({{ axes[0].input_id }}));
+            {{ axes[0].var_name }}, sce_values,
+            static_cast<{{ output_type }}>({{ axes[0].input_local }}));
 {% endif %}
     }
 };

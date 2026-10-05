@@ -15,9 +15,9 @@
 namespace SCE::Generated::Interpolation2dBilinear {
 
 struct Interpolation2dBilinear {
-    static constexpr double AXIS_RPM[] = { 800.0, 1200.0, 2000.0, 3000.0 };
-    static constexpr double AXIS_LOAD[] = { 10.0, 50.0, 100.0 };
-    static constexpr double VALUES[4][3] = {
+    static constexpr double sce_axis_rpm[] = { 800.0, 1200.0, 2000.0, 3000.0 };
+    static constexpr double sce_axis_load[] = { 10.0, 50.0, 100.0 };
+    static constexpr double sce_values[4][3] = {
         { 2.1, 4.5, 7.0 },
         { 2.5, 5.0, 8.0 },
         { 3.0, 6.0, 9.5 },
@@ -26,7 +26,7 @@ struct Interpolation2dBilinear {
 
     static double lookup(uint16_t rpm, uint8_t load) {
         return SCE::Forge::bilinear(
-            AXIS_RPM, AXIS_LOAD, VALUES,
+            sce_axis_rpm, sce_axis_load, sce_values,
             static_cast<double>(rpm),
             static_cast<double>(load));
     }

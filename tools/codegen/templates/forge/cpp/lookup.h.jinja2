@@ -41,16 +41,19 @@ inline {{ enum_name }} {{ func_name }}({{ input_type }} {{ input_id }}) {
 }
 {% else %}
 
-constexpr {{ input_type }} KEYS[{{ n }}] = { {{ keys_literal | join(", ") }} };
-constexpr {{ value_type }} VALUES[{{ n }}] = { {{ values_literal | join(", ") }} };
+{# The tables are namespace-scope, so they carry the `sce` prefix, the
+   generator's own: an input an author calls `KEYS` or `VALUES` cannot hide them
+   (`cpp_local_spelling`). #}
+constexpr {{ input_type }} sce_keys[{{ n }}] = { {{ keys_literal | join(", ") }} };
+constexpr {{ value_type }} sce_values[{{ n }}] = { {{ values_literal | join(", ") }} };
 
 {% if on_miss_error %}
 inline std::optional<{{ value_type }}> {{ func_name }}({{ input_type }} {{ input_id }}) {
-    return SCE::Forge::lookup(KEYS, VALUES, {{ input_id }});
+    return SCE::Forge::lookup(sce_keys, sce_values, {{ input_id }});
 }
 {% else %}
 inline {{ value_type }} {{ func_name }}({{ input_type }} {{ input_id }}) {
-    return SCE::Forge::lookup(KEYS, VALUES, {{ input_id }}).value_or({{ default_literal }});
+    return SCE::Forge::lookup(sce_keys, sce_values, {{ input_id }}).value_or({{ default_literal }});
 }
 {% endif %}
 {% endif %}

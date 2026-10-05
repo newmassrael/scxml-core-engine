@@ -58,24 +58,26 @@ struct {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
+{# The temporary is under the `sce_` prefix, the generator's own: an input an
+   author calls `delta` cannot be redeclared by it. #}
 {% if rule.is_float %}
         {
-            {{ rule.type }} delta = ({{ rule.id }} - {{ rule.prev_name }}_);
-            if (delta < 0) delta = -delta;
-            if (delta > {{ rule.max_delta }})
+            {{ rule.type }} sce_delta = ({{ rule.id }} - {{ rule.prev_name }}_);
+            if (sce_delta < 0) sce_delta = -sce_delta;
+            if (sce_delta > {{ rule.max_delta }})
                 return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% elif rule.is_unsigned %}
         {
-            {{ rule.type }} delta = ({{ rule.id }} > {{ rule.prev_name }}_) ? ({{ rule.id }} - {{ rule.prev_name }}_) : ({{ rule.prev_name }}_ - {{ rule.id }});
-            if (delta > {{ rule.max_delta }})
+            {{ rule.type }} sce_delta = ({{ rule.id }} > {{ rule.prev_name }}_) ? ({{ rule.id }} - {{ rule.prev_name }}_) : ({{ rule.prev_name }}_ - {{ rule.id }});
+            if (sce_delta > {{ rule.max_delta }})
                 return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% else %}
         {
-            auto delta = static_cast<int64_t>({{ rule.id }}) - static_cast<int64_t>({{ rule.prev_name }}_);
-            if (delta < 0) delta = -delta;
-            if (delta > {{ rule.max_delta }})
+            auto sce_delta = static_cast<int64_t>({{ rule.id }}) - static_cast<int64_t>({{ rule.prev_name }}_);
+            if (sce_delta < 0) sce_delta = -sce_delta;
+            if (sce_delta > {{ rule.max_delta }})
                 return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% endif %}

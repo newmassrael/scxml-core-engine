@@ -28,14 +28,14 @@ struct ForgeDomain {
 class CrossfileObserverCondition {
 public:
     SCE::Forge::EventQueue<ForgeDomain> update(double coolantTemp, double oilTemp) {
-        SCE::Forge::EventQueue<ForgeDomain> events;
+        SCE::Forge::EventQueue<ForgeDomain> sce_events;
         if (alarm_.enterIf(SCE::Generated::ConditionThreshold::conditionThreshold(coolantTemp, oilTemp, 110.0))) {
-            events.push(ForgeDomain::RAISE_ALARM);
+            sce_events.push(ForgeDomain::RAISE_ALARM);
         }
         else if (alarm_.leaveIf(SCE::Generated::ConditionThreshold::conditionThreshold(coolantTemp, oilTemp, 120.0) == false)) {
-            events.push(ForgeDomain::CLEAR_ALARM);
+            sce_events.push(ForgeDomain::CLEAR_ALARM);
         }
-        return events;
+        return sce_events;
     }
 
 private:

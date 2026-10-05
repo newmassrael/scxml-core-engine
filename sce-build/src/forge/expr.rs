@@ -4661,7 +4661,9 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         }
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nullptr".to_string(),
-        ExprKind::Ident(s) => s.clone(),
+        // The one spelling every C++ local takes, declaration and read alike
+        // (`cpp_local_spelling`).
+        ExprKind::Ident(s) => crate::forge::generator::cpp_local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `"E" + n` is pointer arithmetic in C++, so each side is made a

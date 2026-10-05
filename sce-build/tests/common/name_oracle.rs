@@ -146,10 +146,12 @@ pub fn identifiers(source: &str, lang: Lang) -> BTreeSet<String> {
 
 /// Every identifier the committed output of a kind uses, by kind: the kind a
 /// generated file says it came from in its header. `extensions` are the files
-/// of the backend (`["go"]`, `["h"]`).
+/// of the backend (`["go"]`, `["h"]`), and `excluded` the suffixes of another
+/// backend that end the same way (the C backend's `.c.h` is also a `.h`).
 pub fn names_by_kind(
     expected_dir: &Path,
     extensions: &[&str],
+    excluded: &[&str],
     lang: Lang,
 ) -> BTreeMap<String, BTreeSet<String>> {
     let kind_re = Regex::new(r#"sce:kind="([a-z_-]+)""#).expect("regex");
@@ -157,9 +159,10 @@ pub fn names_by_kind(
         .expect("read the committed outputs")
         .map(|e| e.expect("directory entry").path())
         .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| extensions.iter().any(|e| n.ends_with(&format!(".{e}"))))
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                extensions.iter().any(|e| n.ends_with(&format!(".{e}")))
+                    && !excluded.iter().any(|x| n.ends_with(x))
+            })
         })
         .collect();
     entries.sort();

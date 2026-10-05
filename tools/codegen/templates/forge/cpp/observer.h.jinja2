@@ -51,15 +51,15 @@ struct ForgeDomain {
 class {{ struct_name }} {
 public:
     SCE::Forge::EventQueue<ForgeDomain> update({{ params }}) {
-        SCE::Forge::EventQueue<ForgeDomain> events;
+        SCE::Forge::EventQueue<ForgeDomain> sce_events;
 {% for mon in monitors %}
         if ({{ mon.id }}_.enterIf({{ mon.enter_expr }})) {
-            events.push(ForgeDomain::{{ mon.event_enter }});
+            sce_events.push(ForgeDomain::{{ mon.event_enter }});
         }
 {% if mon.has_leave %}
 {% if mon.has_on_leave %}
         else if ({{ mon.id }}_.leaveIf({{ mon.leave_expr }})) {
-            events.push(ForgeDomain::{{ mon.event_leave }});
+            sce_events.push(ForgeDomain::{{ mon.event_leave }});
         }
 {% else %}
         else {
@@ -68,7 +68,7 @@ public:
 {% endif %}
 {% endif %}
 {% endfor %}
-        return events;
+        return sce_events;
     }
 
 private:

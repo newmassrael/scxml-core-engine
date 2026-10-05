@@ -25,8 +25,8 @@ struct ValidatorRpmCheck {
         if (rpm > 8000)
             return {false, "rpm_out_of_range"};
         {
-            uint16_t delta = (rpm > prevRpm_) ? (rpm - prevRpm_) : (prevRpm_ - rpm);
-            if (delta > 500)
+            uint16_t sce_delta = (rpm > prevRpm_) ? (rpm - prevRpm_) : (prevRpm_ - rpm);
+            if (sce_delta > 500)
                 return {false, "rpm_rate_of_change_exceeded"};
         }
         if (!(rpm == 0 || engineState != "STOP"))

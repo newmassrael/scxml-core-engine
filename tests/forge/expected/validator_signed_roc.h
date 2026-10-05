@@ -28,15 +28,15 @@ struct ValidatorSignedRoc {
         if (altitude > 50000.0)
             return {false, "altitude_out_of_range"};
         {
-            auto delta = static_cast<int64_t>(speed) - static_cast<int64_t>(prevSpeed_);
-            if (delta < 0) delta = -delta;
-            if (delta > 50)
+            auto sce_delta = static_cast<int64_t>(speed) - static_cast<int64_t>(prevSpeed_);
+            if (sce_delta < 0) sce_delta = -sce_delta;
+            if (sce_delta > 50)
                 return {false, "speed_rate_of_change_exceeded"};
         }
         {
-            double delta = (altitude - prevAltitude_);
-            if (delta < 0) delta = -delta;
-            if (delta > 100.0)
+            double sce_delta = (altitude - prevAltitude_);
+            if (sce_delta < 0) sce_delta = -sce_delta;
+            if (sce_delta > 100.0)
                 return {false, "altitude_rate_of_change_exceeded"};
         }
         prevSpeed_ = speed;

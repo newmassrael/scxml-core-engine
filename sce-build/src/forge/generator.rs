@@ -22806,7 +22806,7 @@ impl LangCtx {
     /// is how the Go builtin escape went missing from one of them.
     fn place_param(&self, id: &str, ty: &str) -> String {
         match self.lang {
-            crate::generator::Language::Cpp => format!("{ty} {id}"),
+            crate::generator::Language::Cpp => format!("{ty} {}", cpp_local_spelling(id)),
             crate::generator::Language::Go => format!("{} {ty}", go_local_spelling(id)),
             crate::generator::Language::C11 => format!("{ty} {}", c11_local_spelling(id)),
             crate::generator::Language::Kotlin => format!("{id}: {ty}"),
@@ -23205,6 +23205,7 @@ fn render_filter(
     let input_id_emit = match lang {
         crate::generator::Language::Rust => filters::to_snake_case(m.input.id.clone()),
         crate::generator::Language::Go => go_local_spelling(&m.input.id),
+        crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
         _ => m.input.id.clone(),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
@@ -23265,6 +23266,11 @@ fn render_interpolation(
                     "{GO_GENERATED_PREFIX}Axis{}",
                     filters::to_pascal_case(a.input_id.clone())
                 ),
+                // A member of the class the function is a member of: under the
+                // generator's own prefix, like the Go tables.
+                crate::generator::Language::Cpp => {
+                    format!("sce_axis_{}", filters::to_snake_case(a.input_id.clone()))
+                }
                 _ => format!("AXIS_{}", a.input_id.to_uppercase()),
             };
             serde_json::json!({
@@ -26110,7 +26116,8 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
         Language::C11 => c11_local_spelling(id),
         Language::Python => python_local_spelling(id),
         Language::Go => go_local_spelling(id),
-        Language::Cpp | Language::Kotlin => id.to_string(),
+        Language::Cpp => cpp_local_spelling(id),
+        Language::Kotlin => id.to_string(),
     }
 }
 
@@ -26236,6 +26243,56 @@ pub fn c11_local_spelling(id: &str) -> String {
         format!("{snake}_")
     } else {
         snake
+    }
+}
+
+/// The names a generated C++ header of a forge kind declares or includes that an
+/// author's local could hide: the fixed-width and size types the body names, and
+/// the types the generated code gives its own (`ForgeDomain`, the observer's
+/// event domain).
+///
+/// Derived, not guessed:
+/// `a_cpp_kind_keeps_an_authors_names_apart_from_its_own` runs every identifier
+/// the committed C++ writes as an author's name and compiles the result, so a
+/// template that starts to write one more library name bare extends this list or
+/// fails there.
+pub const CPP_RESERVED_NAMES: &[&str] = &[
+    "ForgeDomain",
+    "ForgeDomainTag",
+    "int16_t",
+    "int32_t",
+    "int64_t",
+    "int8_t",
+    "size_t",
+    "uint16_t",
+    "uint32_t",
+    "uint64_t",
+    "uint8_t",
+];
+
+/// How a generated C++ function of a forge kind spells a name the author gave a
+/// parameter, a variable or a datum: as written, and with one more trailing `_`
+/// when it is one the generated code reaches for itself — a name in
+/// [`CPP_RESERVED_NAMES`], one under the generator's own prefix (`sce_failure_`,
+/// `sce_keys`; `SCE_FORGE_…_H`, an include guard, which a macro of that name
+/// would expand), or one that already ends in `_`, the spelling of a member of a
+/// generated class (`alarm_`, `smoother_`, `impl_`).
+///
+/// One function for the declaration, every read and every call, and a SHIFT like
+/// the other backends': a name whose stem (the name without its trailing
+/// underscores) is reserved gets one more underscore, and every name that ends
+/// in `_` gets one more, so an author's own `size_t_` is `size_t__` and no two
+/// names meet.
+pub fn cpp_local_spelling(id: &str) -> String {
+    let stem = id.trim_end_matches('_');
+    if id.ends_with('_')
+        || stem.starts_with("sce_")
+        || stem.starts_with("SCE_")
+        || CPP_RESERVED_NAMES.contains(&stem)
+    {
+        format!("{id}_")
+    } else {
+        id.to_string()
     }
 }
 
@@ -29454,6 +29511,32 @@ mod tests {
         let names = ["size_t", "size_t_", "size_t__", "_st", "_st_", "x", "x_"];
         let spelled: std::collections::BTreeSet<String> =
             names.iter().map(|n| c11_local_spelling(n)).collect();
+        assert_eq!(spelled.len(), names.len(), "{spelled:?}");
+    }
+
+    /// What the C++ generator keeps — the fixed-width types, its own `ForgeDomain`,
+    /// the `sce_` / `SCE_` prefixes and the trailing underscore of a generated
+    /// class member — is shifted off an author's local, injectively, and nothing
+    /// else is.
+    #[test]
+    fn cpp_names_the_generator_keeps_are_shifted_off_an_authors() {
+        assert_eq!(cpp_local_spelling("size_t"), "size_t_");
+        assert_eq!(cpp_local_spelling("size_t_"), "size_t__");
+        assert_eq!(cpp_local_spelling("uint8_t"), "uint8_t_");
+        assert_eq!(cpp_local_spelling("ForgeDomain"), "ForgeDomain_");
+        assert_eq!(cpp_local_spelling("sce_failure"), "sce_failure_");
+        assert_eq!(cpp_local_spelling("SCE_FORGE_X_H"), "SCE_FORGE_X_H_");
+        assert_eq!(cpp_local_spelling("alarm_"), "alarm__");
+        assert_eq!(cpp_local_spelling("rpm"), "rpm");
+        assert_eq!(cpp_local_spelling("engineRpm"), "engineRpm");
+        assert_eq!(cpp_local_spelling("scene"), "scene");
+        assert_eq!(cpp_local_spelling("delta"), "delta");
+        // Injective: no two names the document keeps apart meet.
+        let names = [
+            "size_t", "size_t_", "size_t__", "alarm_", "alarm__", "x", "x_", "sce_a", "sce_a_",
+        ];
+        let spelled: std::collections::BTreeSet<String> =
+            names.iter().map(|n| cpp_local_spelling(n)).collect();
         assert_eq!(spelled.len(), names.len(), "{spelled:?}");
     }
 

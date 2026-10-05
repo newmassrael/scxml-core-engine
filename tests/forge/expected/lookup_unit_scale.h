@@ -14,11 +14,11 @@
 
 namespace SCE::Generated::LookupUnitScale {
 
-constexpr int32_t KEYS[6] = { 1, 2, 3, 4, 5, 6 };
-constexpr double VALUES[6] = { 0.001, 0.01, 0.1, 1.0, 10.0, 100.0 };
+constexpr int32_t sce_keys[6] = { 1, 2, 3, 4, 5, 6 };
+constexpr double sce_values[6] = { 0.001, 0.01, 0.1, 1.0, 10.0, 100.0 };
 
 inline std::optional<double> lookupScale(int32_t unit) {
-    return SCE::Forge::lookup(KEYS, VALUES, unit);
+    return SCE::Forge::lookup(sce_keys, sce_values, unit);
 }
 
 }  // namespace SCE::Generated::LookupUnitScale

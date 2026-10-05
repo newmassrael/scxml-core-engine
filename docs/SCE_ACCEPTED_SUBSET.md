@@ -2762,6 +2762,37 @@ function of a document it imports (`condition_threshold_check`) hides it, and 23
 renamings of that kind are counted and not asked. Go and Python bring such a
 function in under an alias and call through it, which is why they do not have it.
 
+C++ keeps most names apart by scope, since an imported function is called through
+its namespace (`SCE::Generated::X::f`) and a class member is looked up in its
+class, so no name is left out as in C. `a_cpp_kind_keeps_an_authors_names_apart_from_its_own`
+compiles every renaming of the eight kinds as a translation unit
+(`-std=c++20 -Wall -Wextra -Werror -fsyntax-only`; C++20 because a `bytes`
+parameter is a `std::span`), and what it found is four causes, all of the same
+kind: a name the generator writes itself that an author could equally choose.
+A parameter or datum called like a library type the body names after it
+(`int32_t`, `size_t`) or like the generated `ForgeDomain` was a declaration in
+the scope of that use. The generator's own locals were plain names (`events` in
+an observer, `delta` in a validator's rate-of-change check, the `KEYS` and
+`VALUES` of a lookup, the axis tables and `VALUES` member of an interpolation)
+and are now under `sce_`. A name ending in `_` is the spelling of a member of a
+generated class (`alarm_`, `smoother_`, `impl_`), so an input called that read
+the member's `double` or `bool` instead of itself. And a name that begins `SCE_`
+was a macro of an include guard (`SCE_FORGE_…_H`). An author's name is spelled
+by one function (`cpp_local_spelling`) for the declaration, every read and every
+call, as the same shift the other backends use: a name whose stem is one of
+`CPP_RESERVED_NAMES`, or begins `sce_` or `SCE_`, or ends in `_`, gets one more
+trailing `_`, so no two names meet. The final run built 18 917 accepted renamings
+and none failed; 2 993 more were refused by the generator, 10 are left out
+because two of the author's own names in the document fold to one, and 10
+documents are not renamed because the generator refuses them unrenamed. Taking
+`int32_t` out of the reserved list, and the trailing `_` out of the shift,
+each turned the run red (39 renamings that did not build). C has a second test
+that reads the library headers' own declarations; C++ has none, because a C++
+header declares mostly members and namespace members that no local meets, and a
+derivation that cannot tell those apart would need a list of exceptions. The
+oracle's candidates are every identifier the committed C++ writes, so a template
+that starts to write one more library name bare is asked about it.
+
 A procedure and a timer are classes, and an author's names meet different
 names there. A procedure stores each input, internal and helper as
 `self._<name>` on a subclass of `ProcedureStateMachine`, so an input called
