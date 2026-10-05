@@ -6,13 +6,83 @@
       "parent": null,
       "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
     },
+    "cancel_request": {
+      "request": {
+        "attempt": 0,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": "2026-10-03T09:00:00Z",
+        "id": "<cancelled-request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-4",
+        "lease": null,
+        "note": "cancelled by the owner",
+        "origin": "gui",
+        "seq": 3,
+        "state": "cancelled",
+        "stored_state": "cancelled",
+        "work": "<work-id>"
+      }
+    },
+    "claim_request": {
+      "request": {
+        "attempt": 1,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": {
+          "attempt": 1,
+          "expires_at": "2026-10-03T09:01:00Z",
+          "granted_at": "2026-10-03T09:00:00Z",
+          "holder": "adapter-a"
+        },
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "running",
+        "stored_state": "running",
+        "work": "<work-id>"
+      }
+    },
+    "complete_request": {
+      "request": {
+        "attempt": 1,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": "2026-10-03T09:00:00Z",
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": {
+          "attempt": 1,
+          "expires_at": "2026-10-03T09:02:00Z",
+          "granted_at": "2026-10-03T09:00:00Z",
+          "holder": "adapter-a"
+        },
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "completed",
+        "stored_state": "completed",
+        "work": "<work-id>"
+      }
+    },
     "create_work": {
       "created_at": "2026-10-03T09:00:00Z",
       "id": "<work-id>",
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 9,
+      "command_set_version": 10,
       "commands": [
         "describe",
         "list_works",
@@ -35,9 +105,44 @@
         "accept",
         "read_acceptance",
         "read_work_snapshot",
-        "read_work_heads"
+        "read_work_heads",
+        "request_generation",
+        "read_request",
+        "list_requests",
+        "claim_request",
+        "heartbeat_request",
+        "complete_request",
+        "fail_request",
+        "cancel_request",
+        "report_adapter",
+        "read_adapter_status"
       ],
       "root": "<root>"
+    },
+    "fail_request": {
+      "request": {
+        "attempt": 1,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": "2026-10-03T09:00:00Z",
+        "id": "<failed-request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-3",
+        "lease": {
+          "attempt": 1,
+          "expires_at": "2026-10-03T09:01:00Z",
+          "granted_at": "2026-10-03T09:00:00Z",
+          "holder": "adapter-a"
+        },
+        "note": "SCE refused the model",
+        "origin": "gui",
+        "seq": 2,
+        "state": "failed",
+        "stored_state": "failed",
+        "work": "<work-id>"
+      }
     },
     "figures": {
       "generator": "fake-sce 0",
@@ -58,6 +163,31 @@
       "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
       "standing": "behind"
     },
+    "heartbeat_request": {
+      "request": {
+        "attempt": 1,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": {
+          "attempt": 1,
+          "expires_at": "2026-10-03T09:02:00Z",
+          "granted_at": "2026-10-03T09:00:00Z",
+          "holder": "adapter-a"
+        },
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "running",
+        "stored_state": "running",
+        "work": "<work-id>"
+      }
+    },
     "history": {
       "entries": [
         {
@@ -69,6 +199,74 @@
           "parent": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
           "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
           "saved_at": "2026-10-03T09:00:00Z"
+        }
+      ]
+    },
+    "list_requests": {
+      "requests": [
+        {
+          "attempt": 0,
+          "created_at": "2026-10-03T09:00:00Z",
+          "ended_at": "2026-10-03T09:00:00Z",
+          "id": "<cancelled-request-id>",
+          "inputs": {
+            "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+            "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+          },
+          "key": "press-4",
+          "lease": null,
+          "note": "cancelled by the owner",
+          "origin": "gui",
+          "seq": 3,
+          "state": "cancelled",
+          "stored_state": "cancelled",
+          "work": "<work-id>"
+        },
+        {
+          "attempt": 1,
+          "created_at": "2026-10-03T09:00:00Z",
+          "ended_at": "2026-10-03T09:00:00Z",
+          "id": "<failed-request-id>",
+          "inputs": {
+            "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+            "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+          },
+          "key": "press-3",
+          "lease": {
+            "attempt": 1,
+            "expires_at": "2026-10-03T09:01:00Z",
+            "granted_at": "2026-10-03T09:00:00Z",
+            "holder": "adapter-a"
+          },
+          "note": "SCE refused the model",
+          "origin": "gui",
+          "seq": 2,
+          "state": "failed",
+          "stored_state": "failed",
+          "work": "<work-id>"
+        },
+        {
+          "attempt": 1,
+          "created_at": "2026-10-03T09:00:00Z",
+          "ended_at": "2026-10-03T09:00:00Z",
+          "id": "<request-id>",
+          "inputs": {
+            "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+            "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+          },
+          "key": "press-1",
+          "lease": {
+            "attempt": 1,
+            "expires_at": "2026-10-03T09:02:00Z",
+            "granted_at": "2026-10-03T09:00:00Z",
+            "holder": "adapter-a"
+          },
+          "note": null,
+          "origin": "gui",
+          "seq": 1,
+          "state": "completed",
+          "stored_state": "completed",
+          "work": "<work-id>"
         }
       ]
     },
@@ -161,6 +359,26 @@
       "lapse": null,
       "standing": "none"
     },
+    "read_adapter_status": {
+      "adapters": [
+        {
+          "capabilities": [
+            "generate",
+            "cancel"
+          ],
+          "kind": "claude-code",
+          "live": true,
+          "name": "desktop",
+          "seen_at": "2026-10-03T09:00:00Z",
+          "version": "2.1"
+        }
+      ],
+      "unreadable": []
+    },
+    "read_adapter_status_none": {
+      "adapters": [],
+      "unreadable": []
+    },
     "read_answers": {
       "answers": {
         "entries": {
@@ -232,6 +450,26 @@
       "source_head": null,
       "standing": "unstated"
     },
+    "read_request": {
+      "request": {
+        "attempt": 0,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": null,
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "queued",
+        "stored_state": "queued",
+        "work": "<work-id>"
+      }
+    },
     "read_requirements": {
       "requirements": {
         "manifest": "{\"doc_id\":\"door\",\"rev\":\"1\",\"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n",
@@ -302,6 +540,21 @@
       "request": null,
       "requirements": null,
       "source": null
+    },
+    "read_work_heads_requested": {
+      "acceptance": null,
+      "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+      "model": {
+        "revision": "3ebe687c4f56f98c5bffb3e83087bbcd59aa6860e3e09aa6f8db87fff8285957",
+        "written_for": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+      },
+      "request": {
+        "attempt": 1,
+        "id": "<request-id>",
+        "state": "running"
+      },
+      "requirements": null,
+      "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
     },
     "read_work_no_text": {
       "head": null,
@@ -411,6 +664,61 @@
         "created_at": "2026-10-03T09:00:00Z",
         "id": "<removed-work-id>",
         "title": "Window blind"
+      }
+    },
+    "report_adapter": {
+      "adapter": {
+        "capabilities": [
+          "generate",
+          "cancel"
+        ],
+        "kind": "claude-code",
+        "live": true,
+        "name": "desktop",
+        "seen_at": "2026-10-03T09:00:00Z",
+        "version": "2.1"
+      }
+    },
+    "request_generation": {
+      "created": true,
+      "request": {
+        "attempt": 0,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": null,
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "queued",
+        "stored_state": "queued",
+        "work": "<work-id>"
+      }
+    },
+    "request_generation_again": {
+      "created": false,
+      "request": {
+        "attempt": 0,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<request-id>",
+        "inputs": {
+          "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+          "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+        },
+        "key": "press-1",
+        "lease": null,
+        "note": null,
+        "origin": "gui",
+        "seq": 1,
+        "state": "queued",
+        "stored_state": "queued",
+        "work": "<work-id>"
       }
     },
     "requirements_report": {
@@ -612,8 +920,28 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 9,
+  "command_set_version": 10,
   "refusals": {
+    "active-request": {
+      "detail": {
+        "request": "<request-id>",
+        "state": "queued"
+      },
+      "kind": "active-request",
+      "message": "the work already has an open request (<request-id>, queued); ask to replace it, or cancel it"
+    },
+    "bad-adapter": {
+      "kind": "bad-adapter",
+      "message": "an adapter is named by 1 to 64 letters, digits and `._:-`, starting with a letter or a digit"
+    },
+    "bad-lease": {
+      "detail": {
+        "max": 900,
+        "min": 10
+      },
+      "kind": "bad-lease",
+      "message": "a lease of 5 seconds cannot be kept or is not worth holding: ask for 10 to 900"
+    },
     "bad-request": {
       "kind": "bad-request",
       "message": "unknown field `extra`, there are no fields"
@@ -645,6 +973,13 @@
     "invalid-title": {
       "kind": "invalid-title",
       "message": "the title cannot be used: it is empty"
+    },
+    "key-reused": {
+      "detail": {
+        "request": "<request-id>"
+      },
+      "kind": "key-reused",
+      "message": "the key was used for another request (<request-id>), about other revisions"
     },
     "model-conflict": {
       "detail": {
@@ -687,9 +1022,35 @@
       "kind": "not-found",
       "message": "work `absent` does not exist"
     },
+    "not-holder": {
+      "detail": {
+        "attempt": 1,
+        "holder": "adapter-a",
+        "request": "<request-id>"
+      },
+      "kind": "not-holder",
+      "message": "the request <request-id> is held by `adapter-a` as attempt 1, and that is not who spoke"
+    },
     "removed-work": {
       "kind": "not-found",
       "message": "work `<removed-work-id>` (it was removed) does not exist"
+    },
+    "request-ended": {
+      "detail": {
+        "request": "<request-id>",
+        "state": "completed"
+      },
+      "kind": "request-ended",
+      "message": "the request <request-id> ended as completed, so it takes nothing more"
+    },
+    "request-held": {
+      "detail": {
+        "holder": "adapter-a",
+        "request": "<request-id>",
+        "until": "2026-10-03T09:01:00Z"
+      },
+      "kind": "request-held",
+      "message": "the request <request-id> is held by `adapter-a` until 2026-10-03T09:01:00Z; the one that holds it renews"
     },
     "sce-refused": {
       "detail": {
@@ -711,7 +1072,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, claim_request, heartbeat_request, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status"
     }
   }
 }

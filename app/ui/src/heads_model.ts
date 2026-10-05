@@ -10,7 +10,7 @@
 // own save moves a head and the screen shows the saved text a moment later, and a
 // comparison with the previous answer would call that a change from elsewhere.
 
-import type { ClaimedHead, Revision, WorkHeads } from "./contract";
+import type { ClaimedHead, RequestHead, Revision, WorkHeads } from "./contract";
 
 /** The parts of a work that are read apart from each other, and so are read again apart. */
 export type Part = "source" | "model" | "answers" | "requirements" | "acceptance";
@@ -69,6 +69,11 @@ export function movedParts(shown: WorkOnScreen, heads: WorkHeads): Part[] {
   return moved;
 }
 
+function sameRequest(a: RequestHead | null, b: RequestHead | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.id === b.id && a.state === b.state && a.attempt === b.attempt;
+}
+
 /** Whether two answers of the core are the same one. */
 export function sameHeads(a: WorkHeads | null, b: WorkHeads): boolean {
   return (
@@ -77,6 +82,7 @@ export function sameHeads(a: WorkHeads | null, b: WorkHeads): boolean {
     a.answers === b.answers &&
     a.acceptance === b.acceptance &&
     sameHead(a.model, b.model) &&
-    sameHead(a.requirements, b.requirements)
+    sameHead(a.requirements, b.requirements) &&
+    sameRequest(a.request, b.request)
   );
 }

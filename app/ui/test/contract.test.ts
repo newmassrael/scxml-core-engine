@@ -16,7 +16,14 @@ import {
   asCommandError,
   conflictRevisions,
   ContractError,
+  isOpenRequest,
+  parseAdapterListing,
+  parseAdapterReport,
   parseDescribed,
+  parseGenerationRequest,
+  parseRegisteredRequest,
+  parseRequestList,
+  parseRequestReply,
   parseFigures,
   parseHistory,
   parseListing,
@@ -69,6 +76,16 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_acceptance: parseReadAcceptance,
   read_work_snapshot: parseWorkSnapshot,
   read_work_heads: parseWorkHeads,
+  request_generation: parseRegisteredRequest,
+  read_request: parseRequestReply,
+  list_requests: parseRequestList,
+  claim_request: parseRequestReply,
+  heartbeat_request: parseRequestReply,
+  complete_request: parseRequestReply,
+  fail_request: parseRequestReply,
+  cancel_request: parseRequestReply,
+  report_adapter: parseAdapterReport,
+  read_adapter_status: parseAdapterListing,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -250,6 +267,7 @@ describe("the replies the core gives", () => {
       answers: null,
       requirements: null,
       acceptance: null,
+      request: null,
     });
     const door = parseWorkHeads(replies.answers["read_work_heads"]);
     const snapshot = parseWorkSnapshot(replies.answers["read_work_snapshot"]);
@@ -264,6 +282,59 @@ describe("the replies the core gives", () => {
       written_for: held.requirements?.written_for,
     });
     expect(garage.acceptance).toBe(held.acceptance?.revision);
+  });
+
+  it("give a request in the words a screen branches on, and say what the clock reads against what was written", () => {
+    const made = parseRegisteredRequest(replies.answers["request_generation"]);
+    expect(made.created).toBe(true);
+    expect(made.request).toMatchObject({ state: "queued", stored_state: "queued", attempt: 0, origin: "gui", seq: 1 });
+    expect(made.request.inputs.answers).toMatch(/^[0-9a-f]{64}$/);
+    expect(made.request.lease).toBeNull();
+    // The same press sent again is the request it already made.
+    const again = parseRegisteredRequest(replies.answers["request_generation_again"]);
+    expect(again).toMatchObject({ created: false });
+    expect(again.request.id).toBe(made.request.id);
+
+    const taken = parseRequestReply(replies.answers["claim_request"]);
+    expect(taken).toMatchObject({ state: "running", attempt: 1 });
+    expect(taken.lease).toMatchObject({ holder: "adapter-a", attempt: 1 });
+    expect(parseRequestReply(replies.answers["heartbeat_request"]).lease?.expires_at).toBe("2026-10-03T09:02:00Z");
+    expect(parseRequestReply(replies.answers["complete_request"])).toMatchObject({ state: "completed" });
+    expect(parseRequestReply(replies.answers["fail_request"])).toMatchObject({
+      state: "failed",
+      note: "SCE refused the model",
+    });
+    expect(parseRequestReply(replies.answers["cancel_request"]).state).toBe("cancelled");
+    // Newest first, and one request of a work is open at most.
+    const listed = parseRequestList(replies.answers["list_requests"]);
+    expect(listed.map((r) => r.seq)).toEqual([...listed.map((r) => r.seq)].sort((a, b) => b - a));
+    expect(listed.filter((r) => isOpenRequest(r.state))).toHaveLength(0);
+  });
+
+  it("say where the latest request of a work stands in its heads", () => {
+    expect(parseWorkHeads(replies.answers["read_work_heads"]).request).toBeNull();
+    const heads = parseWorkHeads(replies.answers["read_work_heads_requested"]);
+    expect(heads.request).toMatchObject({ state: "running", attempt: 1 });
+    expect(heads.request?.id).toBe("<request-id>");
+  });
+
+  it("say which AI adapters are there and what each can do", () => {
+    expect(parseAdapterListing(replies.answers["read_adapter_status_none"])).toEqual({ adapters: [], unreadable: [] });
+    const reported = parseAdapterReport(replies.answers["report_adapter"]);
+    expect(reported).toMatchObject({ name: "desktop", kind: "claude-code", live: true, version: "2.1" });
+    expect(reported.capabilities).toEqual(["generate", "cancel"]);
+    expect(parseAdapterListing(replies.answers["read_adapter_status"]).adapters).toEqual([reported]);
+  });
+
+  it("refuse a request that cannot be made or kept, and say who holds it or what is open", () => {
+    expect(asCommandError(replies.refusals["active-request"])?.detail).toMatchObject({ state: "queued" });
+    const held = asCommandError(replies.refusals["request-held"]);
+    expect(held?.detail).toMatchObject({ holder: "adapter-a", until: "2026-10-03T09:01:00Z" });
+    expect(asCommandError(replies.refusals["not-holder"])?.detail).toMatchObject({ holder: "adapter-a", attempt: 1 });
+    expect(asCommandError(replies.refusals["request-ended"])?.detail).toMatchObject({ state: "completed" });
+    expect(asCommandError(replies.refusals["key-reused"])?.kind).toBe("key-reused");
+    expect(asCommandError(replies.refusals["bad-lease"])?.detail).toEqual({ min: 10, max: 900 });
+    expect(asCommandError(replies.refusals["bad-adapter"])?.kind).toBe("bad-adapter");
   });
 
   it("refuse an acceptance of what moved, or of a design for an earlier text, and say which", () => {
@@ -301,6 +372,13 @@ describe("the replies the core gives", () => {
       "moved",
       "not-current",
       "invalid-requirements",
+      "active-request",
+      "key-reused",
+      "request-held",
+      "request-ended",
+      "not-holder",
+      "bad-lease",
+      "bad-adapter",
     ]) {
       const refusal = asCommandError(replies.refusals[kind]);
       expect(refusal, kind).not.toBeNull();
@@ -348,6 +426,12 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseWorkAndHead({ work: listing.works[0] })).toThrow(/read_work\.head/);
     expect(() => parseReadSource({})).toThrow(/read_source\.source/);
     expect(() => parseRemoved({})).toThrow(/remove_work\.removed/);
+    // A request in a state the core does not have is refused by name, and so is one without a count.
+    const request = (replies.answers["claim_request"] as { request: Record<string, unknown> }).request;
+    expect(() => parseGenerationRequest({ ...request, state: "paused" })).toThrow(/request\.state/);
+    expect(() => parseGenerationRequest({ ...request, attempt: -1 })).toThrow(/request\.attempt: expected a count/);
+    expect(() => parseGenerationRequest({ ...request, lease: { holder: "a" } })).toThrow(/request\.lease/);
+    expect(() => parseRegisteredRequest({ request })).toThrow(/request_generation\.created/);
     // A snapshot that leaves a chain out says which, and a standing must agree with
     // whether the part it is about is there.
     const snapshot = replies.answers["read_work_snapshot"] as Record<string, unknown>;

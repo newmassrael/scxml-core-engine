@@ -5,10 +5,14 @@
 // so a view receives a `Listing`, not `unknown`.
 
 import {
+  parseAdapterListing,
   parseDescribed,
   parseFigures,
   parseHistory,
   parseListing,
+  parseRegisteredRequest,
+  parseRequestList,
+  parseRequestReply,
   parseReadAcceptance,
   parseReadAnswers,
   parseReadModel,
@@ -22,12 +26,15 @@ import {
   parseWorkAndHead,
   parseWorkHeads,
   parseWorkSnapshot,
+  type AdapterListing,
   type Answers,
   type Basis,
   type Described,
   type Figures,
+  type GenerationRequest,
   type HistoryEntry,
   type Listing,
+  type RegisteredRequest,
   type ReadAcceptance,
   type ReadModel,
   type ReadRequirements,
@@ -110,6 +117,27 @@ export interface Api {
    */
   readWorkHeads(id: string): Promise<WorkHeads>;
   /**
+   * Ask for a model of the work's text. `expect` is what the screen read (the text, and
+   * the owner's answers when they had given some); the request is refused as `moved` when
+   * the work is no longer at them. `key` makes the same press, sent again, the request it
+   * already made. An open request is a refusal (`active-request`) unless `supersede` says
+   * the new one replaces it.
+   */
+  requestGeneration(
+    id: string,
+    key: string,
+    expect: { readonly source: Revision; readonly answers: Revision | null },
+    supersede?: boolean,
+  ): Promise<RegisteredRequest>;
+  /** One request of the work, as the clock reads it now. */
+  readRequest(id: string, request: string): Promise<GenerationRequest>;
+  /** The work's requests, the newest first. */
+  listRequests(id: string): Promise<GenerationRequest[]>;
+  /** Call the request off. Whoever holds it is told at its next word. */
+  cancelRequest(id: string, request: string): Promise<GenerationRequest>;
+  /** Which AI adapters are there, and what each can do. */
+  readAdapterStatus(): Promise<AdapterListing>;
+  /**
    * Take a work out of the list. Its files stay in the works folder, so this can be
    * undone by hand; every later read or save of it is refused as `not-found`.
    */
@@ -183,6 +211,22 @@ export function apiOver(transport: Transport): Api {
     },
     async readWorkHeads(id) {
       return parseWorkHeads(await transport.call("read_work_heads", { id }));
+    },
+    async requestGeneration(id, key, expect, supersede = false) {
+      const args = { id, key, origin: "gui", expect, supersede };
+      return parseRegisteredRequest(await transport.call("request_generation", args));
+    },
+    async readRequest(id, request) {
+      return parseRequestReply(await transport.call("read_request", { id, request }));
+    },
+    async listRequests(id) {
+      return parseRequestList(await transport.call("list_requests", { id }));
+    },
+    async cancelRequest(id, request) {
+      return parseRequestReply(await transport.call("cancel_request", { id, request }));
+    },
+    async readAdapterStatus() {
+      return parseAdapterListing(await transport.call("read_adapter_status"));
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));

@@ -195,7 +195,7 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 9, commands: [], root: "/fake/works" };
+        return { command_set_version: 10, commands: [], root: "/fake/works" };
       case "read_work_heads": {
         if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
         const id = String(args["id"]);
@@ -207,6 +207,7 @@ class FakeCore implements Transport {
           answers: this.answersOf.get(id)?.revision ?? null,
           requirements: list === undefined ? null : { revision: list.revision, written_for: list.writtenFor },
           acceptance: this.acceptances.get(id)?.revision ?? null,
+          request: null,
         };
       }
       case "read_requirements": {

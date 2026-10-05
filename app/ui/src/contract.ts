@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 9;
+export const SUPPORTED_COMMAND_SET_VERSION = 10;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -288,6 +288,89 @@ export interface WorkHeads {
   readonly answers: Revision | null;
   readonly requirements: ClaimedHead | null;
   readonly acceptance: Revision | null;
+  /** Where the work's latest request stands as the clock says it now; `null` for a work never asked for a model. */
+  readonly request: RequestHead | null;
+}
+
+/**
+ * Where a generation request is, in the core's words. `interrupted` is what a running
+ * request is read as once its lease ran out, though nothing was written: the core says
+ * it by the clock, so it can change between two questions with nobody having acted.
+ */
+export type RequestState =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "superseded";
+
+/** The states in which a request can still produce a result. At most one request of a work is in one. */
+export function isOpenRequest(state: RequestState): boolean {
+  return state === "queued" || state === "running" || state === "interrupted";
+}
+
+/** The latest request of a work, as the heads say it. */
+export interface RequestHead {
+  readonly id: string;
+  readonly state: RequestState;
+  readonly attempt: number;
+}
+
+/** An executor's claim on a request: who, which attempt, and when it was given and runs out (RFC 3339). */
+export interface RequestLease {
+  readonly holder: string;
+  readonly attempt: number;
+  readonly granted_at: string;
+  readonly expires_at: string;
+}
+
+/** One ask of an AI to write a model from the work's text. */
+export interface GenerationRequest {
+  readonly id: string;
+  readonly work: string;
+  /** The order the work's requests were made in, from 1. */
+  readonly seq: number;
+  readonly key: string;
+  /** Where it was asked from: `gui`, or the name of a client. */
+  readonly origin: string;
+  /** Where the request stands as the clock reads it now. */
+  readonly state: RequestState;
+  /** What was last written; differs from `state` for a lease that ran out and nobody wrote down. */
+  readonly stored_state: RequestState;
+  /** How many times an executor has taken it. */
+  readonly attempt: number;
+  /** The revisions it was asked about; an executor working from others is working from something else. */
+  readonly inputs: { readonly source: Revision; readonly answers: Revision | null };
+  readonly created_at: string;
+  readonly lease: RequestLease | null;
+  readonly ended_at: string | null;
+  /** Why it ended or was let go of, in words. */
+  readonly note: string | null;
+}
+
+/** `request_generation`: the request, and whether this call made it or repeated a call that did. */
+export interface RegisteredRequest {
+  readonly request: GenerationRequest;
+  readonly created: boolean;
+}
+
+/** An AI adapter, and whether it is there now. */
+export interface AdapterStatus {
+  readonly name: string;
+  readonly kind: string;
+  /** What it can do (`generate`, `cancel`, ...): the screen offers only what is here. */
+  readonly capabilities: readonly string[];
+  readonly version: string | null;
+  readonly seen_at: string;
+  readonly live: boolean;
+}
+
+/** `read_adapter_status`: every adapter that reported, and every record that could not be read. */
+export interface AdapterListing {
+  readonly adapters: readonly AdapterStatus[];
+  readonly unreadable: readonly Unreadable[];
 }
 
 /** A command that did not do what was asked, as the core words it. */
@@ -707,18 +790,141 @@ function parseClaimedHead(value: unknown, where: string): ClaimedHead {
   };
 }
 
+const REQUEST_STATES: readonly RequestState[] = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "superseded",
+];
+
+function requestState(value: unknown, where: string): RequestState {
+  if (typeof value === "string" && (REQUEST_STATES as readonly string[]).includes(value)) {
+    return value as RequestState;
+  }
+  throw new ContractError(where, `one of ${REQUEST_STATES.map((s) => `"${s}"`).join(", ")}`);
+}
+
+function count(value: Obj, key: string, where: string): number {
+  const field = value[key];
+  if (typeof field !== "number" || !Number.isInteger(field) || field < 0) {
+    throw new ContractError(`${where}.${key}`, "a count");
+  }
+  return field;
+}
+
+function parseRequestHead(value: unknown, where: string): RequestHead {
+  const r = record(value, where);
+  return {
+    id: text(r, "id", where),
+    state: requestState(r["state"], `${where}.state`),
+    attempt: count(r, "attempt", where),
+  };
+}
+
 /** `read_work_heads`. */
 export function parseWorkHeads(value: unknown): WorkHeads {
   const where = "read_work_heads";
   const r = record(value, where);
   const model = r["model"];
   const requirements = r["requirements"];
+  const request = r["request"];
   return {
     source: nullableRevision(r["source"], `${where}.source`),
     model: model === null ? null : parseClaimedHead(model, `${where}.model`),
     answers: nullableRevision(r["answers"], `${where}.answers`),
     requirements: requirements === null ? null : parseClaimedHead(requirements, `${where}.requirements`),
     acceptance: nullableRevision(r["acceptance"], `${where}.acceptance`),
+    request: request === null ? null : parseRequestHead(request, `${where}.request`),
+  };
+}
+
+function parseLease(value: unknown, where: string): RequestLease {
+  const r = record(value, where);
+  return {
+    holder: text(r, "holder", where),
+    attempt: count(r, "attempt", where),
+    granted_at: text(r, "granted_at", where),
+    expires_at: text(r, "expires_at", where),
+  };
+}
+
+/** A request as every command about one answers it. */
+export function parseGenerationRequest(value: unknown, where = "request"): GenerationRequest {
+  const r = record(value, where);
+  const inputs = record(r["inputs"], `${where}.inputs`);
+  const lease = r["lease"];
+  return {
+    id: text(r, "id", where),
+    work: text(r, "work", where),
+    seq: count(r, "seq", where),
+    key: text(r, "key", where),
+    origin: text(r, "origin", where),
+    state: requestState(r["state"], `${where}.state`),
+    stored_state: requestState(r["stored_state"], `${where}.stored_state`),
+    attempt: count(r, "attempt", where),
+    inputs: {
+      source: revision(inputs["source"], `${where}.inputs.source`),
+      answers: nullableRevision(inputs["answers"], `${where}.inputs.answers`),
+    },
+    created_at: text(r, "created_at", where),
+    lease: lease === null ? null : parseLease(lease, `${where}.lease`),
+    ended_at: nullableText(r, "ended_at", where),
+    note: nullableText(r, "note", where),
+  };
+}
+
+/** `read_request`, `claim_request`, `heartbeat_request`, `complete_request`, `fail_request`, `cancel_request`: the request. */
+export function parseRequestReply(value: unknown): GenerationRequest {
+  return parseGenerationRequest(record(value, "request reply")["request"], "request reply.request");
+}
+
+/** `request_generation`. */
+export function parseRegisteredRequest(value: unknown): RegisteredRequest {
+  const where = "request_generation";
+  const r = record(value, where);
+  if (typeof r["created"] !== "boolean") throw new ContractError(`${where}.created`, "true or false");
+  return { request: parseGenerationRequest(r["request"], `${where}.request`), created: r["created"] };
+}
+
+/** `list_requests`: the work's requests, the newest first. */
+export function parseRequestList(value: unknown): GenerationRequest[] {
+  const where = "list_requests";
+  const r = record(value, where);
+  return list(r, "requests", where).map((item, i) => parseGenerationRequest(item, `${where}.requests[${i}]`));
+}
+
+function parseAdapter(value: unknown, where: string): AdapterStatus {
+  const r = record(value, where);
+  if (typeof r["live"] !== "boolean") throw new ContractError(`${where}.live`, "true or false");
+  return {
+    name: text(r, "name", where),
+    kind: text(r, "kind", where),
+    capabilities: stringList(r, "capabilities", where),
+    version: nullableText(r, "version", where),
+    seen_at: text(r, "seen_at", where),
+    live: r["live"],
+  };
+}
+
+/** `report_adapter`. */
+export function parseAdapterReport(value: unknown): AdapterStatus {
+  return parseAdapter(record(value, "report_adapter")["adapter"], "report_adapter.adapter");
+}
+
+/** `read_adapter_status`. */
+export function parseAdapterListing(value: unknown): AdapterListing {
+  const where = "read_adapter_status";
+  const r = record(value, where);
+  return {
+    adapters: list(r, "adapters", where).map((a, i) => parseAdapter(a, `${where}.adapters[${i}]`)),
+    unreadable: list(r, "unreadable", where).map((u, i) => {
+      const at = `${where}.unreadable[${i}]`;
+      const entry = record(u, at);
+      return { id: text(entry, "id", at), reason: text(entry, "reason", at) };
+    }),
   };
 }
 

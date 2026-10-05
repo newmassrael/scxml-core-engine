@@ -124,9 +124,12 @@ fn valid_request_id(id: &str) -> bool {
     })
 }
 
-/// Whether `name` can name an executor or an origin: letters, digits and `._:-`, up to 64.
-fn valid_name(name: &str) -> bool {
+/// Whether `name` can name an executor, an origin or an adapter: letters, digits and
+/// `._:-`, up to 64, starting with a letter or a digit. It names a file in one case, so
+/// nothing in it climbs out of a folder and nothing begins with a dot.
+pub(super) fn valid_name(name: &str) -> bool {
     (1..=NAME_MAX).contains(&name.len())
+        && name.as_bytes()[0].is_ascii_alphanumeric()
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))

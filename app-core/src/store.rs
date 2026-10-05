@@ -80,8 +80,12 @@ use crate::error::StoreError;
 use crate::lock;
 use crate::revision::Revision;
 
+mod adapter_store;
 mod request_store;
 
+pub use adapter_store::{
+    Adapter, AdapterListing, AdapterReport, AdapterStatus, ADAPTER_LIVE_SECONDS,
+};
 pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.

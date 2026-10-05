@@ -21,14 +21,18 @@ use std::collections::BTreeMap;
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
 use crate::acceptance_run::CheckOutcome;
 use crate::answers::{Answers, AnswersError};
-use crate::clock::Clock;
+use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
+use crate::requests::{Inputs, Lease};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, ReviewRequest};
 use crate::revision::Revision;
-use crate::store::{AnswersText, ModelText, RequirementsText, WorkId, WorkStore};
+use crate::store::{
+    AdapterReport, AdapterStatus, AnswersText, ModelText, Registration, RequestView,
+    RequirementsText, WorkId, WorkStore,
+};
 
 /// Every command, in the order a person would meet them.
 pub const COMMANDS: &[&str] = &[
@@ -54,6 +58,16 @@ pub const COMMANDS: &[&str] = &[
     "read_acceptance",
     "read_work_snapshot",
     "read_work_heads",
+    "request_generation",
+    "read_request",
+    "list_requests",
+    "claim_request",
+    "heartbeat_request",
+    "complete_request",
+    "fail_request",
+    "cancel_request",
+    "report_adapter",
+    "read_adapter_status",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -93,7 +107,15 @@ pub const COMMANDS: &[&str] = &[
 /// (a save from another window, an authoring client's next model) and read it only
 /// when it did. A screen written for 9 asks for it, and a core of 8 would refuse with
 /// `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 9;
+///
+/// 10: a work can be asked for a model (`request_generation`), an executor takes the
+/// request, keeps it and finishes it (`claim_request`, `heartbeat_request`,
+/// `complete_request`, `fail_request`), the owner calls it off (`cancel_request`), and
+/// requests are read (`read_request`, `list_requests`). An AI adapter says it is there
+/// (`report_adapter`) and a screen asks which are (`read_adapter_status`). The heads of a
+/// work also say where its latest request stands. A screen written for 10 offers what a
+/// request makes possible, and would be refused by a core of 9 with `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 10;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -113,6 +135,7 @@ impl From<StoreError> for CommandError {
     fn from(error: StoreError) -> Self {
         let detail = match &error {
             StoreError::Conflict { base, current } => json!({ "base": base, "current": current }),
+            StoreError::Refused { detail, .. } => detail.clone(),
             _ => Value::Null,
         };
         CommandError {
@@ -316,6 +339,139 @@ struct Expect {
 struct Accept {
     id: String,
     expect: Expect,
+}
+
+/// The revisions a request is asked about: the text, and the owner's answers when they
+/// had given some.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpectInputs {
+    source: Revision,
+    /// Absent or `null` when the owner had answered nothing.
+    #[serde(default)]
+    answers: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestGeneration {
+    id: String,
+    /// What makes the same call sent again the request it already made.
+    key: String,
+    /// Where it is asked from: `gui`, or the name of a client.
+    origin: String,
+    expect: ExpectInputs,
+    /// Replace the open request of the work, if there is one.
+    #[serde(default)]
+    supersede: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneRequest {
+    id: String,
+    request: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClaimRequest {
+    id: String,
+    request: String,
+    holder: String,
+    #[serde(default)]
+    ttl_seconds: Option<u64>,
+    /// Take a request an executor let go of, as its next attempt.
+    #[serde(default)]
+    resume: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeartbeatRequest {
+    id: String,
+    request: String,
+    holder: String,
+    attempt: u32,
+    #[serde(default)]
+    ttl_seconds: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishRequest {
+    id: String,
+    request: String,
+    holder: String,
+    attempt: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FailRequest {
+    id: String,
+    request: String,
+    holder: String,
+    attempt: u32,
+    reason: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportAdapter {
+    name: String,
+    kind: String,
+    capabilities: Vec<String>,
+    #[serde(default)]
+    version: Option<String>,
+}
+
+/// An executor's claim as the screens read it: who, which attempt, and when it ran or runs out.
+fn lease_json(lease: &Lease) -> Value {
+    json!({
+        "holder": lease.holder,
+        "attempt": lease.attempt,
+        "granted_at": utc_timestamp(lease.granted_at),
+        "expires_at": utc_timestamp(lease.expires_at),
+    })
+}
+
+/// A request as the screens read it. `state` is where it stands as the clock reads it now;
+/// `stored_state` is what was last written. They differ for a lease that ran out: nobody
+/// wrote that down, and the request is interrupted all the same.
+fn request_json(work: &WorkId, view: &RequestView) -> Value {
+    let request = &view.request;
+    json!({
+        "id": request.id,
+        "work": work.as_str(),
+        "seq": request.seq,
+        "key": request.key,
+        "origin": request.origin,
+        "state": view.state,
+        "stored_state": request.state,
+        "attempt": request.attempt,
+        "inputs": {
+            "source": request.inputs.source,
+            "answers": request.inputs.answers,
+        },
+        "created_at": request.created_at,
+        "lease": request.lease.as_ref().map(lease_json),
+        "ended_at": request.ended_at,
+        "note": request.note,
+    })
+}
+
+/// An adapter as the screens read it, and whether it is there now.
+fn adapter_json(status: &AdapterStatus) -> Value {
+    let adapter = &status.adapter;
+    json!({
+        "name": adapter.name,
+        "kind": adapter.kind,
+        "capabilities": adapter.capabilities,
+        "version": adapter.version,
+        "seen_at": adapter.seen_at,
+        "live": status.live,
+    })
 }
 
 #[derive(Deserialize)]
@@ -834,6 +990,120 @@ pub fn call<C: Clock>(
         "read_work_heads" => {
             let OneWork { id } = arguments(args)?;
             answer(&store.read_work_heads(&work_id(&id)?)?)
+        }
+        "request_generation" => {
+            let RequestGeneration {
+                id,
+                key,
+                origin,
+                expect,
+                supersede,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let made = store.register_request(
+                &id,
+                Registration {
+                    key: &key,
+                    origin: &origin,
+                    expect: Inputs {
+                        source: expect.source,
+                        answers: expect.answers,
+                    },
+                    supersede,
+                },
+            )?;
+            let view = RequestView {
+                request: made.request,
+                state: made.state,
+            };
+            Ok(json!({ "request": request_json(&id, &view), "created": made.created }))
+        }
+        "read_request" => {
+            let OneRequest { id, request } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.read_request(&id, &request)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "list_requests" => {
+            let OneWork { id } = arguments(args)?;
+            let id = work_id(&id)?;
+            let views = store.list_requests(&id)?;
+            let requests: Vec<Value> = views.iter().map(|v| request_json(&id, v)).collect();
+            Ok(json!({ "requests": requests }))
+        }
+        "claim_request" => {
+            let ClaimRequest {
+                id,
+                request,
+                holder,
+                ttl_seconds,
+                resume,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.claim_request(&id, &request, &holder, ttl_seconds, resume)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "heartbeat_request" => {
+            let HeartbeatRequest {
+                id,
+                request,
+                holder,
+                attempt,
+                ttl_seconds,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.heartbeat_request(&id, &request, &holder, attempt, ttl_seconds)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "complete_request" => {
+            let FinishRequest {
+                id,
+                request,
+                holder,
+                attempt,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.complete_request(&id, &request, &holder, attempt)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "fail_request" => {
+            let FailRequest {
+                id,
+                request,
+                holder,
+                attempt,
+                reason,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.fail_request(&id, &request, &holder, attempt, &reason)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "cancel_request" => {
+            let OneRequest { id, request } = arguments(args)?;
+            let id = work_id(&id)?;
+            let view = store.cancel_request(&id, &request)?;
+            Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "report_adapter" => {
+            let ReportAdapter {
+                name,
+                kind,
+                capabilities,
+                version,
+            } = arguments(args)?;
+            let status = store.report_adapter(AdapterReport {
+                name: &name,
+                kind: &kind,
+                capabilities,
+                version: version.as_deref(),
+            })?;
+            Ok(json!({ "adapter": adapter_json(&status) }))
+        }
+        "read_adapter_status" => {
+            arguments::<Empty>(args)?;
+            let listing = store.adapter_status()?;
+            let adapters: Vec<Value> = listing.adapters.iter().map(adapter_json).collect();
+            Ok(json!({ "adapters": adapters, "unreadable": listing.unreadable }))
         }
         "remove_work" => {
             let OneWork { id } = arguments(args)?;

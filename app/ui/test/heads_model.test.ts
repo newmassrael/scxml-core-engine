@@ -29,6 +29,7 @@ const heads: WorkHeads = {
   answers: A1,
   requirements: { revision: R1, written_for: T2 },
   acceptance: C1,
+  request: null,
 };
 
 /** The screen showing exactly that. */
@@ -52,6 +53,7 @@ describe("a work that moved under the screen", () => {
       answers: null,
       requirements: { revision: R2, written_for: T2 },
       acceptance: hex(9),
+      request: null,
     };
     expect(movedParts(shown, moved)).toEqual(["source", "answers", "model", "requirements", "acceptance"]);
   });
@@ -87,13 +89,27 @@ describe("a work that moved under the screen", () => {
       requirements: undefined,
       acceptance: undefined,
     };
-    const moved: WorkHeads = { source: T1, model: null, answers: null, requirements: null, acceptance: null };
+    const moved: WorkHeads = {
+      source: T1,
+      model: null,
+      answers: null,
+      requirements: null,
+      acceptance: null,
+      request: null,
+    };
     expect(movedParts(uncompared, moved)).toEqual([]);
     expect(movedParts({ ...shown, source: undefined }, { ...heads, source: T1 })).toEqual(["model", "requirements"]);
   });
 
   it("is nothing for a work with nothing in it, shown as nothing", () => {
-    const empty: WorkHeads = { source: null, model: null, answers: null, requirements: null, acceptance: null };
+    const empty: WorkHeads = {
+      source: null,
+      model: null,
+      answers: null,
+      requirements: null,
+      acceptance: null,
+      request: null,
+    };
     const blank: WorkOnScreen = { source: null, model: null, answers: null, requirements: null, acceptance: null };
     expect(movedParts(blank, empty)).toEqual([]);
   });
@@ -111,6 +127,16 @@ describe("two answers of the core", () => {
     expect(sameHeads({ ...heads, acceptance: M1 }, heads)).toBe(false);
     expect(sameHeads({ ...heads, model: { revision: M1, written_for: T1 } }, heads)).toBe(false);
     expect(sameHeads({ ...heads, requirements: null }, heads)).toBe(false);
+  });
+
+  it("differ when the latest request is another, or is in another state or attempt", () => {
+    const running = { id: "req-0123456789ab", state: "running", attempt: 1 } as const;
+    const withRequest: WorkHeads = { ...heads, request: running };
+    expect(sameHeads({ ...withRequest }, withRequest)).toBe(true);
+    expect(sameHeads(heads, withRequest)).toBe(false);
+    expect(sameHeads({ ...withRequest, request: { ...running, state: "interrupted" } }, withRequest)).toBe(false);
+    expect(sameHeads({ ...withRequest, request: { ...running, attempt: 2 } }, withRequest)).toBe(false);
+    expect(sameHeads({ ...withRequest, request: { ...running, id: "req-ba9876543210" } }, withRequest)).toBe(false);
   });
 });
 

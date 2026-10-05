@@ -490,6 +490,170 @@ fn replies() -> Value {
         ),
     );
 
+    // Requests, on the first work: its text and the owner's answers are what a request is
+    // asked about. The clock does not move here, so no lease runs out.
+    let about = json!({"source": source_head, "answers": answers_revision});
+    let asked = json!({"id": id, "key": "press-1", "origin": "gui", "expect": about});
+    let made = answer(&store, "request_generation", asked.clone());
+    let request_id = made["request"]["id"].as_str().unwrap().to_string();
+    answers.insert("request_generation".into(), made);
+    answers.insert(
+        "request_generation_again".into(),
+        answer(&store, "request_generation", asked),
+    );
+    answers.insert(
+        "read_request".into(),
+        answer(
+            &store,
+            "read_request",
+            json!({"id": id, "request": request_id}),
+        ),
+    );
+    refusals.insert(
+        "active-request".into(),
+        refusal(
+            &store,
+            "request_generation",
+            json!({"id": id, "key": "press-2", "origin": "gui", "expect": about}),
+        ),
+    );
+    refusals.insert(
+        "key-reused".into(),
+        refusal(
+            &store,
+            "request_generation",
+            json!({"id": id, "key": "press-1", "origin": "gui",
+                   "expect": {"source": source_head}}),
+        ),
+    );
+    answers.insert(
+        "claim_request".into(),
+        answer(
+            &store,
+            "claim_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-a"}),
+        ),
+    );
+    refusals.insert(
+        "request-held".into(),
+        refusal(
+            &store,
+            "claim_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-b", "resume": true}),
+        ),
+    );
+    refusals.insert(
+        "not-holder".into(),
+        refusal(
+            &store,
+            "heartbeat_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-b", "attempt": 1}),
+        ),
+    );
+    refusals.insert(
+        "bad-lease".into(),
+        refusal(
+            &store,
+            "claim_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-a", "ttl_seconds": 5}),
+        ),
+    );
+    answers.insert(
+        "heartbeat_request".into(),
+        answer(
+            &store,
+            "heartbeat_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1,
+                   "ttl_seconds": 120}),
+        ),
+    );
+    answers.insert(
+        "read_work_heads_requested".into(),
+        answer(&store, "read_work_heads", json!({"id": id})),
+    );
+    answers.insert(
+        "complete_request".into(),
+        answer(
+            &store,
+            "complete_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1}),
+        ),
+    );
+    refusals.insert(
+        "request-ended".into(),
+        refusal(
+            &store,
+            "heartbeat_request",
+            json!({"id": id, "request": request_id, "holder": "adapter-a", "attempt": 1}),
+        ),
+    );
+    // A request that could not be done, and one that was called off.
+    let failing = answer(
+        &store,
+        "request_generation",
+        json!({"id": id, "key": "press-3", "origin": "gui", "expect": about}),
+    );
+    let failed_id = failing["request"]["id"].as_str().unwrap().to_string();
+    answer(
+        &store,
+        "claim_request",
+        json!({"id": id, "request": failed_id, "holder": "adapter-a"}),
+    );
+    answers.insert(
+        "fail_request".into(),
+        answer(
+            &store,
+            "fail_request",
+            json!({"id": id, "request": failed_id, "holder": "adapter-a", "attempt": 1,
+                   "reason": "SCE refused the model"}),
+        ),
+    );
+    let calling_off = answer(
+        &store,
+        "request_generation",
+        json!({"id": id, "key": "press-4", "origin": "gui", "expect": about}),
+    );
+    let cancelled_id = calling_off["request"]["id"].as_str().unwrap().to_string();
+    answers.insert(
+        "cancel_request".into(),
+        answer(
+            &store,
+            "cancel_request",
+            json!({"id": id, "request": cancelled_id}),
+        ),
+    );
+    answers.insert(
+        "list_requests".into(),
+        answer(&store, "list_requests", json!({"id": id})),
+    );
+
+    // Adapters: none, then one that reported.
+    answers.insert(
+        "read_adapter_status_none".into(),
+        answer(&store, "read_adapter_status", json!({})),
+    );
+    answers.insert(
+        "report_adapter".into(),
+        answer(
+            &store,
+            "report_adapter",
+            json!({"name": "desktop", "kind": "claude-code",
+                   "capabilities": ["generate", "cancel"], "version": "2.1"}),
+        ),
+    );
+    answers.insert(
+        "read_adapter_status".into(),
+        answer(&store, "read_adapter_status", json!({})),
+    );
+    refusals.insert(
+        "bad-adapter".into(),
+        refusal(
+            &store,
+            "report_adapter",
+            json!({"name": "../x", "kind": "claude-code", "capabilities": []}),
+        ),
+    );
+
     // A command without a written-down reply is a command the screen's test
     // cannot hold to account.
     for command in COMMANDS {
@@ -511,6 +675,9 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &id, "<work-id>");
     name_the_unstable(&mut document, &other_id, "<removed-work-id>");
     name_the_unstable(&mut document, &accepted_id, "<accepted-work-id>");
+    name_the_unstable(&mut document, &request_id, "<request-id>");
+    name_the_unstable(&mut document, &failed_id, "<failed-request-id>");
+    name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");
     let _ = std::fs::remove_dir_all(&root);
     document
 }

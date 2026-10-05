@@ -148,6 +148,44 @@ The desktop shell and the browser shell take this same path (`call`), so neither
 window permission, a stream or a file watcher the other does not. A change that was missed
 is found by the next question instead of being lost with a notice.
 
+### Asking for a model
+
+A work can be asked for a model (`request_generation`): one **request**, kept in the work's
+folder as `requests/<id>.json`, with every change of state a line of `requests.log`. The
+request is registered against the revisions of the text and the owner's answers the caller
+read (`expect`), and refused as `moved` when the work is no longer at them, as `accept` is.
+A work has one open request at most: a second is refused as `active-request` unless it says
+it replaces the first (`supersede`). The same call sent again (`key`) is the request it
+already made, and a key used for other revisions is refused (`key-reused`).
+
+An executor (an AI adapter, or the authoring server of a person's own terminal) takes the
+request (`claim_request`), keeps it (`heartbeat_request`) and finishes it (`complete_request`,
+`fail_request`); the owner can call it off (`cancel_request`). The states are `queued`,
+`running`, `completed`, `failed`, `cancelled`, `interrupted` and `superseded`.
+
+- **The claim is a lease and it runs out.** A running request whose lease ran out is read as
+  `interrupted`, by the clock, with nothing written: `state` says what the clock reads and
+  `stored_state` what was last written. A lease that ran out is a suspicion, not a
+  revocation: an executor that slept past it and wakes with the run done still finishes it,
+  because nobody else took the request.
+- **What revokes a claim is something done.** The owner calls the request off, the text or
+  the answers it was asked about are saved (the request is `superseded`, in the same step as
+  the save), or somebody claims it again. A request that was let go of is taken again only by a
+  caller that says it `resume`s, as the next **attempt**; every word an executor says names
+  its attempt, and an attempt that is not the current one is refused (`not-holder`).
+- **What the executor itself saves does not end its request.** A model and a requirement list
+  move nothing a request was asked about.
+- **Nothing is taken again unasked.** A run costs something, and the next one is the owner's
+  to ask for.
+
+The heads of a work (`read_work_heads`) say where its latest request stands, by the clock.
+
+An AI adapter says it is there by reporting (`report_adapter`: its name, its kind and what it
+can do) and is there for ninety seconds after its last report. `read_adapter_status` lists the
+adapters that ever reported with whether each is there now, so the screen can say that no AI is
+connected, and offer only what the connected one can do. These records are soft state beside the
+works (`.sce-adapters/`), not a fact about any work.
+
 ### Removing a work
 
 `remove_work` (the screen's "Remove this work", after it asks) takes a work out
@@ -365,6 +403,8 @@ else: it has no file-system, shell or network permission.
 | The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
 | Removing a work, and a save racing it | `--test removal` of the same package |
 | A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of the same package |
+| Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) |
+| Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
 | What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |
