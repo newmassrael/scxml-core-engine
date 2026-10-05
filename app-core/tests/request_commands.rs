@@ -11,9 +11,11 @@
 
 mod common;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 
-use sce_app_core::{call, CommandError, ManualClock, WorkStore};
+use sce_app_core::{call, CommandError, ManualClock, Requirements, Revision, WorkId, WorkStore};
 use serde_json::{json, Value};
 
 use common::FakeRenderer;
@@ -643,4 +645,87 @@ fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
     ] {
         assert!(commands.contains(&name), "{name}");
     }
+}
+
+/// What a design is accepted against is one generation: while generations are published, the
+/// model and the list a report is made of are the two halves of one bundle, never a model of
+/// one beside a list of another.
+#[test]
+fn a_design_is_read_against_one_generation_while_generations_are_published() {
+    const ROUNDS: usize = 40;
+    let f = fixture("request-commands-race");
+    let id = WorkId::parse(&f.work).unwrap();
+    let done = AtomicBool::new(false);
+    let revision = |value: &Value| -> Revision { serde_json::from_value(value.clone()).unwrap() };
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let mut base = f.source.clone();
+            for round in 0..ROUNDS {
+                base = f.run(
+                    "save_source",
+                    json!({"id": f.work, "text": format!("The lock opens {round} times."),
+                           "base": base}),
+                )["revision"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                let made = f.run(
+                    "request_generation",
+                    json!({"id": f.work, "key": format!("press-{round}"), "origin": "gui",
+                           "expect": {"source": base}}),
+                );
+                let request = made["request"]["id"].as_str().unwrap().to_string();
+                f.claim(&request, "adapter-a");
+                f.run(
+                    "save_request_candidate",
+                    json!({"id": f.work, "request": request, "holder": "adapter-a",
+                           "attempt": 1,
+                           "text": format!("<scxml><!-- gen-{round} --></scxml>"),
+                           "manifest": format!(
+                               "{{\"doc_id\":\"door\",\"rev\":\"{round}\",\
+                                \"requirements\":[{{\"id\":\"R1\"}}]}}\n")}),
+                );
+                f.run(
+                    "complete_request",
+                    json!({"id": f.work, "request": request, "holder": "adapter-a",
+                           "attempt": 1}),
+                );
+            }
+            done.store(true, Ordering::SeqCst);
+        });
+
+        let mut looked = 0;
+        while !done.load(Ordering::SeqCst) {
+            let Ok(report) = call(
+                &f.store,
+                &FakeRenderer,
+                "requirements_report",
+                json!({"id": f.work}),
+            ) else {
+                // Before the first publication the work has no model to be reported on.
+                continue;
+            };
+            let model = f
+                .store
+                .read_model(&id, Some(&revision(&report["basis"]["model"])))
+                .unwrap()
+                .expect("the model the basis names");
+            let list = f
+                .store
+                .read_requirements(&id, Some(&revision(&report["basis"]["requirements"])))
+                .unwrap()
+                .expect("the list the basis names");
+            let manifest: Value =
+                serde_json::from_str(&Requirements::parse(&list.text).unwrap().manifest).unwrap();
+            let generation = manifest["rev"].as_str().unwrap();
+            assert!(
+                model.text.contains(&format!("gen-{generation} ")),
+                "a model of {} beside a list of generation {generation}",
+                model.text
+            );
+            looked += 1;
+        }
+        assert!(looked > 0, "the reader saw nothing of the work");
+    });
 }

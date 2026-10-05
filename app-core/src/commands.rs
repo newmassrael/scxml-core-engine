@@ -596,16 +596,16 @@ struct WorkNow {
 /// Read the work as it is now. A chain with nothing in it is `not-found`, naming
 /// which: the requirement list and the model are not things the application makes up.
 fn work_now<C: Clock>(store: &WorkStore<C>, id: &WorkId) -> Result<WorkNow, CommandError> {
-    let source = store
-        .read_source(id, None)?
-        .ok_or_else(|| none_saved("a text", id))?;
-    let model = store
-        .read_model(id, None)?
-        .ok_or_else(|| none_saved("a model", id))?;
-    let requirements = store
-        .read_requirements(id, None)?
+    // One state of the work, not four reads a save or a publication can land between: the
+    // model and the list of a bundle are one generation, and a design is accepted against
+    // them together.
+    let state = store.read_work_snapshot(id)?;
+    let source = state.source.ok_or_else(|| none_saved("a text", id))?;
+    let model = state.model.ok_or_else(|| none_saved("a model", id))?;
+    let requirements = state
+        .requirements
         .ok_or_else(|| none_saved("a requirement list", id))?;
-    let answers = store.read_answers(id, None)?;
+    let answers = state.answers;
     let basis = Basis {
         source: source.revision.clone(),
         model: model.revision.clone(),
