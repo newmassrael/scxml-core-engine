@@ -26,9 +26,7 @@ use std::time::Instant;
 use close_gate::{CloseGate, Decision};
 use sce_app_core::host::{self, ExecutorHost, HostSettings};
 use sce_app_core::installed::{self, Installed};
-use sce_app_core::{
-    call, default_root, renderer_with_bundle, CommandError, Product, WorkStore,
-};
+use sce_app_core::{call, default_root, renderer_with_bundle, CommandError, Product, WorkStore};
 use serde_json::Value;
 use tauri::{Manager, RunEvent, WindowEvent};
 
