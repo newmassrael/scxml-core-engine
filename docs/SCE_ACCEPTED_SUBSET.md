@@ -4192,8 +4192,9 @@ the host serves: its `<param>`s are read when the send is made, the wait carries
 that request (`job` 7, not the 8 the field holds when the wait ends), and the
 `event_data` is the one text every engine writes, byte for byte.
 `statechart_static_host_params`, which has both a send and an invoke, is the
-document the other five channels drive; it declares a real, which C11 does not hold
-yet, so the two halves are driven from the two documents above. A
+document every channel drives, C11 included (`test_static_host_params.c`, the row
+that holds a `float64` on the wire there: the text `1.5` in the request's `params`
+and the JSON number `1.5` in its event data). A
 `--c-symbol-prefix` build carries the prefix to every symbol a lowered
 expression or a host action names — the machine's `_in_state` and
 `_raise_platform_error` and their enumerators — while the payload channel's own
