@@ -438,6 +438,93 @@ fn a_cancelled_request_tells_the_executor_at_its_next_word() {
 }
 
 #[test]
+fn the_open_requests_of_every_work_are_listed_oldest_first_for_an_executor_to_find() {
+    let f = fixture("requests-open");
+    let first = f.register("press-1");
+    f.clock.advance(5);
+    // A second work, asked later, and a third whose request is over.
+    let second_id = f.store.create_work("Garage").unwrap().id;
+    let second_text = f.store.save_source(&second_id, "The garage opens.", None);
+    assert!(second_text.is_ok());
+    let second = f
+        .store
+        .register_request(
+            &second_id,
+            Registration {
+                key: "press-2",
+                origin: "gui",
+                expect: Inputs {
+                    source: f.store.head(&second_id).unwrap().unwrap(),
+                    answers: None,
+                },
+                supersede: false,
+            },
+        )
+        .unwrap()
+        .request
+        .id;
+    f.clock.advance(5);
+    let third_id = f.store.create_work("Gate").unwrap().id;
+    f.store
+        .save_source(&third_id, "The gate opens.", None)
+        .unwrap();
+    let over = f
+        .store
+        .register_request(
+            &third_id,
+            Registration {
+                key: "press-3",
+                origin: "gui",
+                expect: Inputs {
+                    source: f.store.head(&third_id).unwrap().unwrap(),
+                    answers: None,
+                },
+                supersede: false,
+            },
+        )
+        .unwrap()
+        .request
+        .id;
+    f.store.cancel_request(&third_id, &over).unwrap();
+
+    let open = f.store.open_requests().unwrap();
+
+    let listed: Vec<(String, String, State)> = open
+        .iter()
+        .map(|(work, view)| {
+            (
+                work.as_str().to_string(),
+                view.request.id.clone(),
+                view.state,
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            (f.id.as_str().to_string(), first.clone(), State::Queued),
+            (second_id.as_str().to_string(), second, State::Queued),
+        ],
+        "oldest first, and a request that ended is not work"
+    );
+
+    // One that was taken is still open, and read by the clock: a lease that ran out is
+    // interrupted, which is still a request an executor may look at.
+    f.store
+        .claim_request(&f.id, &first, "adapter-a", Some(30), false)
+        .unwrap();
+    f.clock.advance(3_600);
+    let states: Vec<State> = f
+        .store
+        .open_requests()
+        .unwrap()
+        .iter()
+        .map(|(_, view)| view.state)
+        .collect();
+    assert_eq!(states, vec![State::Interrupted, State::Queued]);
+}
+
+#[test]
 fn a_failure_is_kept_with_its_reason() {
     let f = fixture("requests-fail");
     let id = f.register("press-1");

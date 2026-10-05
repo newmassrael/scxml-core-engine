@@ -216,6 +216,30 @@ one it was, and `read_request_candidate` reads what was written. It becomes the 
   says which (`previous`), so the model's history continues where the chain stopped, and
   `bundle_history` lists the bundles. `read_bundle` reads one, or the current.
 
+#### The executor the application hosts
+
+`runner.rs` is the host of an executor that is a process of the application: it finds the
+requests nobody has taken (`list_open_requests`, every work's open requests oldest first),
+takes the oldest one that is `queued`, and has a `Generator` (whatever writes a model from a
+specification: an AI client, a script in a test) write for it. It is the same executor an
+authoring client in a person's own terminal is, with the same words to the same folder.
+
+- **It takes what was asked and nothing else.** A request a lease let go of is the owner's to
+  ask again for; the runner never takes an `interrupted` one.
+- **It keeps what it takes.** A generator can work for longer than a lease and never says it
+  is still there, so the runner renews the claim, and reports the adapter, from a thread of
+  its own. A renewal refused because the request ended (the owner called it off, or the text it
+  was asked about was saved) stops the generator at its next look (`Cancel`), and nothing is
+  renewed for the request again.
+- **What it writes is a candidate, and the core decides.** The draft is saved for the request
+  and completed through the step `complete_request` takes, so the core checks the model
+  itself. A model the core refuses comes back with the product's own records (`records` in the
+  refusal's `detail`), the generator is given them and writes again (twice by default), and a
+  request that never gets a model the core accepts fails with what the core last said.
+- **A request that ended under it is not failed.** What the owner or the text did to it is not
+  the generator's failure. A runner told to stop leaves its request to run out the lease, which
+  is how the owner reads that the executor went away.
+
 An AI adapter says it is there by reporting (`report_adapter`: its name, its kind and what it
 can do) and is there for ninety seconds after its last report. `read_adapter_status` lists the
 adapters that ever reported with whether each is there now, so the screen can say that no AI is
@@ -441,6 +465,7 @@ else: it has no file-system, shell or network permission.
 | A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of the same package |
 | Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) |
 | Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
+| The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of the same package |
 | Which AI adapters are there | `--test adapters` of the same package |
 | A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
 | The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |

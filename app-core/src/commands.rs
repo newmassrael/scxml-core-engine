@@ -31,7 +31,7 @@ use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ModelText, Registration,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ModelText, Published, Registration,
     RequestView, RequirementsText, WorkId, WorkStore,
 };
 
@@ -62,6 +62,7 @@ pub const COMMANDS: &[&str] = &[
     "request_generation",
     "read_request",
     "list_requests",
+    "list_open_requests",
     "claim_request",
     "heartbeat_request",
     "save_request_candidate",
@@ -125,7 +126,8 @@ pub const COMMANDS: &[&str] = &[
 /// (`save_request_candidate`, read back by `read_request_candidate`) that is not yet the
 /// work's model, and `complete_request` publishes it: the core runs its own check of the
 /// model, and the model and the requirement list become the work's together as one bundle
-/// (`read_bundle`, `bundle_history`). A request says its `candidate` and, once done, its
+/// (`read_bundle`, `bundle_history`). An executor finds the requests it may take across the
+/// works (`list_open_requests`). A request says its `candidate` and, once done, its
 /// `outcome`; the heads and the snapshot of a work say their `bundle`. A work that keeps
 /// bundles refuses `save_model` and `save_requirements` with `bundled-work`. A screen
 /// written for 11 reads a work's model by the bundle and would be refused by a core of 10.
@@ -710,6 +712,59 @@ fn review_model(
     })
 }
 
+/// The executor of `request` says it is done: the core checks the model it wrote itself, and
+/// when the check accepts, the model and the requirement list become the work's together.
+///
+/// What an executor reports of a check only it can run is `reported`, kept as it says. The
+/// model is checked by the product the core asks and not by what the executor says of its own
+/// model, so a bundle always carries a verdict the core reached. A request already completed is
+/// said again without asking the product a second time.
+///
+/// Shared by the `complete_request` command and by the runner that hosts an executor, so that
+/// the two cannot come to different words about what a completion is.
+#[allow(clippy::too_many_arguments)]
+pub fn complete_generation<C: Clock>(
+    store: &WorkStore<C>,
+    renderer: &dyn Product,
+    id: &WorkId,
+    request: &str,
+    holder: &str,
+    attempt: u32,
+    reported: Vec<BundleCheck>,
+    lexicon: Option<&str>,
+) -> Result<Published, CommandError> {
+    let mut checks = Vec::new();
+    // What the product said when it refused, to go with the store's refusal: the store knows
+    // that a check refused and not what the product wrote.
+    let mut records = Value::Null;
+    if store.read_request(id, request)?.state.is_open() {
+        if let Some((revision, text)) = store.read_candidate(id, request)?.model {
+            let files = ModelFiles::parse(&text)?;
+            let review = review_model(renderer, id, &files, lexicon)?;
+            if review.check.verdict == Verdict::Refused {
+                records = json!(review.check.records);
+            }
+            checks.push(core_check_of(&review, revision));
+        }
+    }
+    checks.extend(reported);
+    match store.publish_candidate(id, request, holder, attempt, checks) {
+        Err(StoreError::Refused {
+            kind: "check-refused",
+            message,
+            mut detail,
+        }) if !records.is_null() => {
+            detail["records"] = records;
+            Err(CommandError::from(StoreError::Refused {
+                kind: "check-refused",
+                message,
+                detail,
+            }))
+        }
+        done => Ok(done?),
+    }
+}
+
 /// A check the executor reports, as a bundle keeps it: as reported, and said to be so.
 fn client_check_of(check: ClientCheck) -> Result<BundleCheck, CommandError> {
     if check.verdict != "accepted" && check.verdict != "refused" {
@@ -1154,6 +1209,15 @@ pub fn call<C: Clock>(
             let requests: Vec<Value> = views.iter().map(|v| request_json(&id, v)).collect();
             Ok(json!({ "requests": requests }))
         }
+        "list_open_requests" => {
+            arguments::<Empty>(args)?;
+            let requests: Vec<Value> = store
+                .open_requests()?
+                .iter()
+                .map(|(work, view)| request_json(work, view))
+                .collect();
+            Ok(json!({ "requests": requests }))
+        }
         "claim_request" => {
             let ClaimRequest {
                 id,
@@ -1194,19 +1258,16 @@ pub fn call<C: Clock>(
                 .into_iter()
                 .map(client_check_of)
                 .collect::<Result<Vec<_>, _>>()?;
-            // The core checks the model itself: a verdict an executor reports of its own
-            // model is not the check a bundle needs. A request already completed is said
-            // again without asking the product a second time.
-            let mut done = Vec::new();
-            if store.read_request(&id, &request)?.state.is_open() {
-                if let Some((revision, text)) = store.read_candidate(&id, &request)?.model {
-                    let files = ModelFiles::parse(&text)?;
-                    let review = review_model(renderer, &id, &files, lexicon.as_deref())?;
-                    done.push(core_check_of(&review, revision));
-                }
-            }
-            done.extend(reported);
-            let published = store.publish_candidate(&id, &request, &holder, attempt, done)?;
+            let published = complete_generation(
+                store,
+                renderer,
+                &id,
+                &request,
+                &holder,
+                attempt,
+                reported,
+                lexicon.as_deref(),
+            )?;
             Ok(json!({
                 "request": request_json(&id, &published.request),
                 "bundle": published.bundle,

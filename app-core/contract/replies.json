@@ -130,6 +130,7 @@
         "request_generation",
         "read_request",
         "list_requests",
+        "list_open_requests",
         "claim_request",
         "heartbeat_request",
         "save_request_candidate",
@@ -231,6 +232,30 @@
           "parent": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc",
           "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
           "saved_at": "2026-10-03T09:00:00Z"
+        }
+      ]
+    },
+    "list_open_requests": {
+      "requests": [
+        {
+          "attempt": 0,
+          "candidate": null,
+          "created_at": "2026-10-03T09:00:00Z",
+          "ended_at": null,
+          "id": "<request-id>",
+          "inputs": {
+            "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
+            "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
+          },
+          "key": "press-1",
+          "lease": null,
+          "note": null,
+          "origin": "gui",
+          "outcome": null,
+          "seq": 1,
+          "state": "queued",
+          "stored_state": "queued",
+          "work": "<work-id>"
         }
       ]
     },
@@ -1116,6 +1141,15 @@
         "checks": [
           "model"
         ],
+        "records": [
+          {
+            "code": "validation/invalid-reference",
+            "fix": null,
+            "line": 3,
+            "message": "Transition in state 'closed' references non-existent target state 'nowhere'",
+            "stage": "validation"
+          }
+        ],
         "request": "<failed-request-id>"
       },
       "kind": "check-refused",
@@ -1258,7 +1292,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_bundle, bundle_history"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_bundle, bundle_history"
     }
   }
 }

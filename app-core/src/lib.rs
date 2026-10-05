@@ -17,6 +17,9 @@
 //! - [`figures`] and [`review`] are what SCE says of a model, asked of the
 //!   product's own generator: the figures it draws, its check and its pseudocode
 //!   page. The workbench works none of it out.
+//! - [`requests`], [`bundle`] and [`runner`] are the asking for a model and what comes of
+//!   it: a request an executor holds for a lease, the candidate it writes and the bundle
+//!   that publishes it, and the host that takes requests for a generator.
 //! - [`requirements`], [`acceptance`] and [`acceptance_run`] are the requirement list
 //!   a text is read into and what the owner accepted of a design against it: the
 //!   product measures, records and re-checks, and the workbench keeps the files and
@@ -39,6 +42,7 @@ pub mod requests;
 pub mod requirements;
 pub mod review;
 pub mod revision;
+pub mod runner;
 pub mod store;
 
 pub use acceptance::{Acceptance, Basis, Snapshot};

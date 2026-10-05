@@ -279,6 +279,16 @@ fn a_model_the_core_refuses_is_not_published_and_the_request_stays_where_it_was(
 
     assert_eq!(refused.kind, "check-refused");
     assert_eq!(refused.detail["checks"], json!(["model"]));
+    // The product's own words come with the refusal, so that an executor can repair the
+    // draft from what SCE said and not from the fact that it said no.
+    assert_eq!(
+        refused.detail["records"][0]["code"],
+        json!("validation/invalid-reference")
+    );
+    assert!(refused.detail["records"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("nowhere"));
     let read = f.run("read_request", json!({"id": f.work, "request": id}));
     assert_eq!(read["request"]["state"], json!("running"));
     assert_eq!(
@@ -631,6 +641,7 @@ fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
         "request_generation",
         "read_request",
         "list_requests",
+        "list_open_requests",
         "claim_request",
         "heartbeat_request",
         "save_request_candidate",

@@ -82,6 +82,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   request_generation: parseRegisteredRequest,
   read_request: parseRequestReply,
   list_requests: parseRequestList,
+  list_open_requests: parseRequestList,
   claim_request: parseRequestReply,
   heartbeat_request: parseRequestReply,
   save_request_candidate: parseRequestReply,
@@ -313,6 +314,9 @@ describe("the replies the core gives", () => {
       note: "SCE refused the model",
     });
     expect(parseRequestReply(replies.answers["cancel_request"]).state).toBe("cancelled");
+    // What an executor looks at to find work: the requests that can still produce a result.
+    const open = parseRequestList(replies.answers["list_open_requests"]);
+    expect(open.map((r) => [r.id, r.state])).toEqual([["<request-id>", "queued"]]);
     // Newest first, and one request of a work is open at most.
     const listed = parseRequestList(replies.answers["list_requests"]);
     expect(listed.map((r) => r.seq)).toEqual([...listed.map((r) => r.seq)].sort((a, b) => b - a));

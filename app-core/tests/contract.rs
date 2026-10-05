@@ -509,6 +509,11 @@ fn replies() -> Value {
             json!({"id": id, "request": request_id}),
         ),
     );
+    // What an executor looks at to find something to do: every work's open requests.
+    answers.insert(
+        "list_open_requests".into(),
+        answer(&store, "list_open_requests", json!({})),
+    );
     refusals.insert(
         "active-request".into(),
         refusal(

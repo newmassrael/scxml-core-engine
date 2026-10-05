@@ -534,6 +534,33 @@ impl<C: Clock> WorkStore<C> {
         Ok(views)
     }
 
+    /// Every request of every work that can still produce a result, oldest first, as the
+    /// clock reads it: what an executor looks at to find something to do. A work that cannot
+    /// be read (removed while this listed, or damaged) holds back its own requests and no
+    /// other work's.
+    pub fn open_requests(&self) -> Result<Vec<(WorkId, RequestView)>, StoreError> {
+        let mut open = Vec::new();
+        for work in self.list_works()?.works {
+            let Ok(views) = self.list_requests(&work.id) else {
+                continue;
+            };
+            open.extend(
+                views
+                    .into_iter()
+                    .filter(|view| view.state.is_open())
+                    .map(|view| (work.id.clone(), view)),
+            );
+        }
+        open.sort_by(|(a_work, a), (b_work, b)| {
+            (&a.request.created_at, a_work.as_str(), a.request.seq).cmp(&(
+                &b.request.created_at,
+                b_work.as_str(),
+                b.request.seq,
+            ))
+        });
+        Ok(open)
+    }
+
     /// Every change of state of the work's requests, oldest first.
     pub fn request_history(&self, id: &WorkId) -> Result<Vec<Transition>, StoreError> {
         let dir = self.existing(id)?;
