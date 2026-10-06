@@ -1,0 +1,47 @@
+# Mutation cases for "a conditional that lands in a float64 slot is made as a double".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_real_conditional_in_a_double_slot_is_a_double.cases`.
+#
+# An operation is made at the precision of the place its value lands
+# (docs/SCE_ACCEPTED_SUBSET.md, "A 32-bit real"). `n * 0.1` over an integer joins to a
+# single of its own, and an arithmetic node took the slot's precision from the context each
+# emitter pushes into it; a conditional took its own, the join of its branches, so
+# `c ? n * 0.1 : 0.0` into a `float64` slot was made as a single. The test generates the
+# machine in all six AOT languages and refuses a single's spelling on any line that writes the
+# values. The mutants below each put one half of the fix back:
+#
+#   the conditional keeps the type of its branches, so every emitter reads a single;
+#   the branches of a conditional are rounded to a single where Python and the interpreter make
+#   it, whatever the slot;
+#   the alternate branch alone is left at its own type.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_real_conditional_in_a_double_slot_is_a_double
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/tests/a_real_conditional_in_a_double_slot_is_a_double.rs
+
+mutation_case "the conditional keeps the type of its branches" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            expr.ty = expected;
+            land_reals_in_slot(consequent, expected);''',
+     r'''            land_reals_in_slot(consequent, expected);''')
+PY
+
+mutation_case "the branches are rounded to a single whatever the slot" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            round_singles_in(consequent, real(expected), callee);
+            round_singles_in(alternate, real(expected), callee);''',
+     r'''            round_singles_in(consequent, InferredType::Unknown, callee);
+            round_singles_in(alternate, InferredType::Unknown, callee);''')
+PY
+
+mutation_case "the alternate branch is left at its own type" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            land_reals_in_slot(consequent, expected);
+            land_reals_in_slot(alternate, expected);
+        }''',
+     r'''            land_reals_in_slot(consequent, expected);
+        }''')
+PY

@@ -393,6 +393,7 @@ fn lower_at(
     // `Raw` arm of `infer_types` already documents).
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_value(&ast, slot, expr)?;
+    land_reals_in_slot(&mut ast, expected);
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
         check_integer_indexing(&mut ast);
@@ -4582,6 +4583,48 @@ fn round_to_single(expr: &mut TypedExpr, target: ExprTarget, expected: InferredT
     }
 }
 
+/// A conditional that lands in a real slot is made at the slot's precision.
+///
+/// ⚠ The accepted subset says an operation is made at the precision of the place its value
+/// lands (docs/SCE_ACCEPTED_SUBSET.md, "A 32-bit real"): a double in a `float64` slot, a
+/// single in a `float32` one. An arithmetic node already took the slot's type from the context
+/// each emitter pushes into it. A conditional took its own, the join of its branches, so
+/// `c ? n * 0.1 : 0.0` over a `uint32` `n` was a `float`, and its value reached a `float64` slot
+/// as `-12.300000190734863` where the double is `-12.3` (measured 2026-10-06: four cases of one
+/// component, on every language that holds a single of its own). Its branches take the slot's
+/// type here, the way an operand of arithmetic does, so every emitter reads the same tree.
+fn land_reals_in_slot(expr: &mut TypedExpr, expected: InferredType) {
+    if !matches!(expected, InferredType::Float { .. }) {
+        return;
+    }
+    let real =
+        |ty: InferredType| matches!(ty, InferredType::Float { .. } | InferredType::UntypedFloat);
+    match &mut expr.kind {
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } if real(expr.ty) => {
+            expr.ty = expected;
+            land_reals_in_slot(consequent, expected);
+            land_reals_in_slot(alternate, expected);
+        }
+        // A negation is exact in any width, and an operand of arithmetic is made where the
+        // operation is.
+        ExprKind::Unary {
+            op: UnaryOp::Neg | UnaryOp::Pos,
+            operand,
+        } => land_reals_in_slot(operand, expected),
+        ExprKind::Binary { op, left, right }
+            if op.is_arith() && !is_string_concatenation(*op, left.ty, right.ty) =>
+        {
+            land_reals_in_slot(left, expected);
+            land_reals_in_slot(right, expected);
+        }
+        _ => {}
+    }
+}
+
 /// `expected` is the type the context pushes into `expr`: a real where the
 /// value lands in one, and anything else where it does not.
 fn round_singles_in(expr: &mut TypedExpr, expected: InferredType, callee: &str) {
@@ -4635,6 +4678,17 @@ fn round_singles_in(expr: &mut TypedExpr, expected: InferredType, callee: &str) 
             op: UnaryOp::Neg | UnaryOp::Pos,
             operand,
         } => round_singles_in(operand, real(expected), callee),
+        // The branches of a conditional are made where the conditional lands; its condition
+        // lands in no real.
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            round_singles_in(condition, InferredType::Unknown, callee);
+            round_singles_in(consequent, real(expected), callee);
+            round_singles_in(alternate, real(expected), callee);
+        }
         _ => {
             for child in expr_children_mut(expr) {
                 round_singles_in(child, InferredType::Unknown, callee);
@@ -8661,6 +8715,62 @@ mod tests {
             InferredType::Float { bits: 32 },
         )
         .unwrap()
+    }
+
+    fn double_slot(expr: &str, target: ExprTarget, ctx: &TypeCtx<'_>) -> String {
+        transpile_typed(
+            expr,
+            target,
+            ctx,
+            &empty_renames(),
+            InferredType::Float { bits: 64 },
+        )
+        .unwrap()
+    }
+
+    /// The text of a single in any of the languages that have one of their own.
+    fn spells_a_single(text: &str) -> bool {
+        ["0.1f", "f32", "float32", "to_f32", "toFloat", "(float)"]
+            .iter()
+            .any(|marker| text.contains(marker))
+    }
+
+    #[test]
+    fn a_conditional_that_lands_in_a_double_is_made_as_a_double_on_every_language() {
+        // `n` is a `uint32`, so `n * 0.1` joins to a single of its own; the slot is a double,
+        // and an operation is made at the precision of the place its value lands.
+        let ctx = single_ctx();
+        for target in [
+            ExprTarget::Cpp,
+            ExprTarget::C,
+            ExprTarget::Kotlin,
+            ExprTarget::Rust,
+            ExprTarget::Go,
+            ExprTarget::Python,
+        ] {
+            for expr in [
+                "n > 3 ? n * 0.1 : 0.0",
+                "n > 3 ? 0.0 - n * 0.1 : 0.0",
+                "n > 3 ? (n > 5 ? n * 0.1 : 1.5) : 0.0",
+                "wide + (n > 3 ? n * 0.1 : 0.0)",
+            ] {
+                let text = double_slot(expr, target, &ctx);
+                assert!(
+                    !spells_a_single(&text),
+                    "{target:?}: `{expr}` into a double was made as a single: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_conditional_that_lands_in_a_single_is_still_made_as_a_single() {
+        // The other half: the precision is the slot's, so a single's slot keeps its single.
+        let ctx = single_ctx();
+        let text = single_slot("n > 3 ? n * 0.1 : 0.0", ExprTarget::Python, &ctx);
+        assert!(text.contains("to_f32"), "{text}");
+        let text = single_slot("n > 3 ? n * 0.1 : 0.0", ExprTarget::Cpp, &ctx);
+        assert!(text.contains("0.1f"), "{text}");
     }
 
     #[test]

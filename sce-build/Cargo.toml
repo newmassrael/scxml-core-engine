@@ -884,6 +884,11 @@ path = "tests/a_payload_event_keeps_its_capitals_in_cpp.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_real_conditional_in_a_double_slot_is_a_double"
+path = "tests/a_real_conditional_in_a_double_slot_is_a_double.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "an_enum_variable_holds_a_variant_of_its_enum"
 path = "tests/an_enum_variable_holds_a_variant_of_its_enum.rs"
 required-features = ["cli"]
