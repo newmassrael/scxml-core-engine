@@ -30,11 +30,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sce_app_core::claude_code::AuthorServer;
+use sce_app_core::host::{start_with, HostSettings};
 use sce_app_core::http_client::Endpoint;
 use sce_app_core::local::{list_models, Local, LocalConfig, Step};
-use sce_app_core::requests::Inputs;
+use sce_app_core::requests::{Inputs, State};
 use sce_app_core::runner::{Generator, Outcome, Runner, RunnerConfig};
-use sce_app_core::{Registration, SceCodegen, SystemClock, WorkStore};
+use sce_app_core::{
+    call_in, ConnectionStore, Context, Entrance, Policy, Product, Registration, SceCodegen,
+    SystemClock, WorkStore,
+};
+use serde_json::{json, Value};
 
 const SPECIFICATION: &str = "\
 A door controller for a storage room.
@@ -205,5 +210,138 @@ fn a_model_on_a_real_server_writes_a_model_the_core_accepts_and_publishes() {
         .expect("a requirement list");
     println!("--- requirements ---\n{}\n--- end ---", list.text);
     assert!(model.text.contains("<scxml") || model.text.contains("documents"));
+    assert_eq!(published.bundle.checks[0].verdict, "accepted");
+}
+
+/// What the screen does, by the commands it sends, and then what the application's own host does
+/// with the request: the server is asked what it is (`read_server_status`), kept as the default
+/// connection, a model is asked for with that connection, and a host that has no AI client at all
+/// writes it with the model on the real server. Everything between the screen and the model is the
+/// real thing (the commands, the settings folder, the host, the directory, the adapter, the
+/// authoring server, the product); what is not here is the window.
+#[test]
+#[ignore = "runs a model on a real server: minutes of its time"]
+fn a_server_registered_through_the_commands_is_written_for_by_a_host_with_no_client() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let codegen = std::env::var_os("SCE_CODEGEN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo.join("target/debug/sce-codegen"));
+    assert!(codegen.is_file(), "{} is not built", codegen.display());
+    let address = required("SCE_LOCAL_URL");
+    let model = required("SCE_LOCAL_MODEL");
+
+    let folder = common::scratch("local-live-host");
+    let store = Arc::new(WorkStore::with_clock(folder.join("works"), SystemClock));
+    let settings_store = ConnectionStore::at(folder.join("settings"));
+    let product: Arc<dyn Product> = Arc::new(SceCodegen::at(&codegen));
+    let policy = Policy::shipped();
+    let ask = |name: &str, args: Value| {
+        let context = Context::new(&*store, &*product, &policy, Entrance::Desktop)
+            .with_connections(Some(&settings_store));
+        call_in(&context, name, args)
+    };
+
+    // The person types the address and presses check.
+    let probed = ask("read_server_status", json!({ "server_url": address })).expect("an answer");
+    println!("read_server_status: {probed}");
+    assert_eq!(probed["server"]["state"], "listed", "{probed}");
+    assert!(
+        probed["server"]["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m == &json!(model)),
+        "the server does not list {model}: {probed}"
+    );
+
+    // And saves it, as the default.
+    let saved = ask(
+        "save_connection",
+        json!({ "connection": {
+            "id": "server", "adapter": "local", "display_name": "live test server",
+            "model": model, "auth": "none", "server_url": address,
+        } }),
+    )
+    .expect("saved");
+    let revision = saved["revision"].clone();
+    ask(
+        "set_default_connection",
+        json!({ "id": "server", "expect": null }),
+    )
+    .expect("made the default");
+
+    // Asks for a model with it.
+    let work = store.create_work("Storage room door").unwrap().id;
+    let head = match store.save_source(&work, SPECIFICATION, None).unwrap() {
+        sce_app_core::Saved::Saved { revision, .. }
+        | sce_app_core::Saved::Unchanged { revision } => revision,
+    };
+    ask(
+        "request_generation",
+        json!({
+            "id": work.as_str(), "key": "press-1", "origin": "gui",
+            "expect": { "source": head, "answers": null }, "supersede": false,
+            "connection": { "id": "server", "revision": revision },
+        }),
+    )
+    .expect("a request");
+    let request = store.list_requests(&work).unwrap()[0].request.id.clone();
+
+    // A host that has no Claude Code and no Codex, only the server that was just registered.
+    let mut shell = HostSettings::from_lookup("desktop", |_| None);
+    shell.claude = Some(PathBuf::from("/nowhere/claude"));
+    shell.codex = Some(PathBuf::from("/nowhere/codex"));
+    shell.author = Some(repo.join("scripts/sce_author_mcp.sh"));
+    shell.work = Some(PathBuf::from(env!("CARGO_BIN_EXE_sce-work")));
+    shell.codegen = Some(codegen.clone());
+    let host = start_with(
+        Arc::clone(&store),
+        Arc::clone(&product),
+        shell,
+        Some((settings_store.clone(), Policy::shipped())),
+    );
+    println!("host: not hosted = {:?}", host.not_hosted());
+    assert_eq!(host.not_hosted(), None, "the host did not start");
+
+    let began = Instant::now();
+    let limit = began + Duration::from_secs(25 * 60);
+    let mut last = None;
+    let state = loop {
+        let seen = store.read_request(&work, &request).unwrap();
+        if last != Some(seen.request.state) {
+            println!(
+                "[{:>4}s] request is {:?}",
+                began.elapsed().as_secs(),
+                seen.request.state
+            );
+            last = Some(seen.request.state);
+        }
+        if matches!(
+            seen.request.state,
+            State::Completed | State::Failed | State::Cancelled
+        ) {
+            break seen;
+        }
+        assert!(
+            Instant::now() < limit,
+            "the request did not finish in time: {:?}",
+            seen.request
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    };
+    drop(host);
+    println!(
+        "outcome after {:?}: {:?}",
+        began.elapsed(),
+        state.request.outcome
+    );
+    assert_eq!(state.request.state, State::Completed, "{:?}", state.request);
+
+    let published = store.read_bundle(&work, None).unwrap().expect("a bundle");
+    let model_text = store.read_model(&work, None).unwrap().expect("a model");
+    println!("--- model ---\n{}\n--- end ---", model_text.text);
     assert_eq!(published.bundle.checks[0].verdict, "accepted");
 }
