@@ -129,11 +129,13 @@ def to_f32(value: float) -> float:
         return math.inf if value > 0 else -math.inf
 
 
-def bounded(value: str, capacity: int) -> str:
-    """``value`` when it holds no more than ``capacity`` UTF-8 bytes — the bound
-    a string variable of a ``sce-static`` machine declares — and a capacity
+def bounded(value, capacity: int):
+    """``value`` when it holds no more than ``capacity`` bytes — the bound a
+    string variable of a ``sce-static`` machine declares, counted in UTF-8 bytes,
+    and the bound a byte string declares, counted in bytes — and a capacity
     failure otherwise. A Python string is counted in characters, which no other
     backend counts, so it is encoded to be counted in bytes as they count it."""
-    if len(value.encode("utf-8")) > capacity:
+    size = len(value.encode("utf-8")) if isinstance(value, str) else len(value)
+    if size > capacity:
         raise AlgorithmFailure(AlgorithmError.CAPACITY_EXCEEDED)
     return value

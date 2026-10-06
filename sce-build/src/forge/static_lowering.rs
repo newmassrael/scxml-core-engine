@@ -3982,16 +3982,7 @@ impl StaticTarget for PythonTarget {
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Python, document_name, None))
     }
-    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // Every type a datamodel holds is spelled but bytes: a list admits only
-        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
-        if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type
-                .as_ref()
-                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
-        }) {
-            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
-        }
+    fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         // A record's field is named as the author wrote it, so one Python
         // reserves cannot be a field.
         if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
@@ -4161,6 +4152,15 @@ impl StaticTarget for PythonTarget {
     // where it stands.
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("sce_algorithm.bounded({value}, {capacity})")
+    }
+    // The one helper counts a `str` in UTF-8 bytes and a `bytes` as it is.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        self.bounded_string(value, capacity)
+    }
+    // A Python `bytes` cannot be written into, so a host is handed the value
+    // itself and the bound the machine keeps cannot be changed from outside.
+    fn lowers_bytes(&self) -> bool {
+        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")

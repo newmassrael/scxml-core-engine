@@ -70,6 +70,10 @@ def _as_json(value):
     element -- what a host reads back, in the shape JSON states."""
     if hasattr(value, "sce_name"):
         return value.sce_name
+    # A byte string as its byte-exact Latin-1 text, each byte the character of
+    # that code point (docs/adr/0005, decision 2).
+    if isinstance(value, bytes):
+        return value.decode("latin-1")
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {f.name: _as_json(getattr(value, f.name)) for f in dataclasses.fields(value)}
     if isinstance(value, (list, tuple)):
@@ -351,6 +355,13 @@ def test_a_send_hands_its_event_the_pairs_of_its_params() -> None:
 # error.execution and ends its block.
 def test_a_string_is_held_to_its_bytes() -> None:
     replay("static_string_capacity")
+
+
+# A bytes variable is held to the bytes it declares, as a string is to its UTF-8
+# bytes: an assignment past the bound writes nothing, raises error.execution and
+# ends its block. A scenario states a byte string as its byte-exact Latin-1 text.
+def test_a_byte_string_is_held_to_its_bound() -> None:
+    replay("static_bytes")
 
 
 # A top-level final hands its done event the pairs of its `<donedata>`, each read
