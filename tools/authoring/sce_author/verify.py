@@ -1502,6 +1502,22 @@ class Latches:
             return list(rungs)
         return [rung for rung in rungs if received_by(self.model, rung)]
 
+    @staticmethod
+    def _moved(case) -> set:
+        """The addresses this round actually MOVED: those it drove, and where the record
+        says which of them the platform delivered, only those.
+
+        ⚠ An input written at the value it already held is not delivered, so the component
+        is not called for it and nothing moves (`unchanged_drives`, the statechart path,
+        already reads it so). A latch read every driven address as moved and so set `ign1On`
+        again from a counter the record merely RESTATED: two documents of one component,
+        both faithful to "IGN1 on", failed the same case (2026-10-06). The comment this
+        replaces argued for restated counters before a record could say `delivered`.
+        """
+        drove = set(case.drove or ())
+        delivered = getattr(case, "delivered", None)
+        return drove if delivered is None else drove & set(delivered)
+
     def _ladder_changes(self, rungs, case) -> list:
         """Which rungs of a shared ladder moved this round.
 
@@ -1515,7 +1531,7 @@ class Latches:
             moved = []
             for rung in rungs:
                 if case.drove:
-                    if rung in case.drove:
+                    if rung in self._moved(case):
                         moved.append(rung)
                     continue
                 now = case.given.get(rung)
@@ -1544,7 +1560,7 @@ class Latches:
                 # reads that as nothing happening. On one corpus a ladder
                 # stood at identical readings for dozens of consecutive cases
                 # while the record went on asserting them.
-                if address in case.drove:
+                if address in self._moved(case):
                     changed.add(param)
                 continue
             now = case.given.get(address)

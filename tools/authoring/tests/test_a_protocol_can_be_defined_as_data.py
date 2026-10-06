@@ -304,6 +304,27 @@ class AProtocolCanBeDefinedAsData(unittest.TestCase):
             [False, False, False],
             [input_value("gate", rule, Case(counts), quiet) for _ in range(3)])
 
+    def test_a_restatement_the_platform_did_not_deliver_moves_nothing(self):
+        """⚠ The other half of the test above, once the record can say `delivered`.
+
+        An address written at the value it already held is not delivered: the component
+        is not called and nothing moves. The latch read every driven address as moved, so a
+        counter the record merely RESTATED set the gate again -- two documents of one
+        component, both faithful to "IGN1 on", failed the same case on it. Where the record
+        says which of what it drove was delivered, only that moves.
+        """
+        counts = {"plant/count/on": 7, "plant/count/off": 3}
+        rule = {"protocol": "ladder", "parameters": PARAMETERS}
+
+        def held(delivered):
+            latches = Latches(Conventions({"ladder": LADDER}))
+            case = RealCase("", counts, {}, None, ("plant/count/on",), delivered=delivered)
+            return input_value("gate", rule, case, latches)
+
+        self.assertTrue(held(("plant/count/on",)), "a delivered counter moves the gate")
+        self.assertFalse(held(()), "a restated counter the platform did not deliver moved it")
+        self.assertTrue(held(None), "a record that does not say which were delivered is believed")
+
     def test_the_later_of_the_two_may_be_the_winner(self):
         """⚠⚠ `both: clear` was measured on one component and was wrong.
 
