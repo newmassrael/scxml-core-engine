@@ -559,7 +559,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         lang: "rust",
         name: "Rust",
         variable: true,
-        record: false,
+        record: true,
         payload: false,
     },
     BytesHeld {

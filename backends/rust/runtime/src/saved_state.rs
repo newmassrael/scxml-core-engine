@@ -899,6 +899,23 @@ pub fn record_bounded_string(
     )
 }
 
+/// The byte-string field `name` of a saved record `value`, read back only if it is
+/// Latin-1 text of no more than the `capacity` bytes its schema bounds it by
+/// ([`bounded_bytes`]) — a record never holds more, and a restored one must not be
+/// the first to.
+pub fn record_bounded_bytes(
+    value: &Value,
+    record: &str,
+    name: &str,
+    capacity: usize,
+) -> Result<Vec<u8>, StateRefusal> {
+    bounded_bytes(
+        member_of(value, record, name)?,
+        &format!("{record}.{name}"),
+        capacity,
+    )
+}
+
 /// The field `name` of the saved record `value`, which a record that lacks it is
 /// refused for naming.
 fn member_of<'v>(value: &'v Value, record: &str, name: &str) -> Result<&'v Value, StateRefusal> {

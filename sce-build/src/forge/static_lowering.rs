@@ -179,9 +179,9 @@ pub struct StaticRecordField {
     pub name: String,
     /// The field's `sce:type` spelling (see [`StaticField::saved_type`]).
     pub saved_type: String,
-    /// The most UTF-8 bytes a `string` field holds, which a saved state being
-    /// restored is held to as the machine is (the `sce:max-size` its schema
-    /// declares); `None` for a field that is not a string.
+    /// The most UTF-8 bytes a `string` field holds, or the most bytes a `bytes`
+    /// field does, which a saved state being restored is held to as the machine is
+    /// (the `sce:max-size` its schema declares); `None` for a field that is neither.
     pub bound: Option<u32>,
 }
 
@@ -1319,7 +1319,8 @@ impl StaticTarget for RustTarget {
     }
     // Plain data by the record rule, so `Copy` — the derive set a plain
     // event-schema payload takes from the one policy that decides it — unless
-    // a field is a string, which owns its text and is `Clone` only.
+    // a field is a string or a byte string, which owns its buffer and is `Clone`
+    // only.
     fn record_def(
         &self,
         ty: &str,
@@ -1327,7 +1328,7 @@ impl StaticTarget for RustTarget {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        let derives = if owns_a_string(schema) {
+        let derives = if owns_a_buffer(schema) {
             crate::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
         } else {
             crate::rust_derive_policy::RustDeriveCategory::EventSchemaPlainPayload
@@ -1348,14 +1349,14 @@ impl StaticTarget for RustTarget {
             derives.derives_attr()
         )
     }
-    // A record that owns a string is `Clone` only, so a host is lent it and the
+    // A record that owns a buffer is `Clone` only, so a host is lent it and the
     // snapshot clones it, as it does a string.
     fn record_view(&self, ty: &str, schema: &EventSchemaModel) -> Option<String> {
-        owns_a_string(schema).then(|| ty.to_string())
+        owns_a_buffer(schema).then(|| ty.to_string())
     }
     // ... and a copy of one is a clone.
     fn record_copy(&self, value: &str, schema: &EventSchemaModel) -> String {
-        if owns_a_string(schema) {
+        if owns_a_buffer(schema) {
             format!("{value}.clone()")
         } else {
             value.to_string()
@@ -1479,6 +1480,11 @@ impl StaticTarget for RustTarget {
     }
     // A `Vec<u8>`, bounded where it is written and saved as its Latin-1 text.
     fn lowers_bytes(&self) -> bool {
+        true
+    }
+    // A record's `Vec<u8>` field is the same, in a record that is `Clone` and not
+    // `Copy` ([`owns_a_buffer`]).
+    fn lowers_record_bytes(&self) -> bool {
         true
     }
     fn assign(&self, target: &str, value: &str) -> String {
@@ -2486,7 +2492,7 @@ impl<'t> TypeDeclarations<'t> {
                             SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                             other => other.as_attr(),
                         },
-                        bound: matches!(f.sce_type, SceType::String)
+                        bound: matches!(f.sce_type, SceType::String | SceType::Bytes)
                             .then_some(f.max_size)
                             .flatten(),
                     })
@@ -3520,13 +3526,13 @@ fn holds_bytes(schema: &EventSchemaModel) -> bool {
         .any(|f| matches!(f.sce_type, SceType::Bytes))
 }
 
-/// Whether a record of `schema` owns text — has a `string` field — which a target
-/// that holds plain data by value must hold otherwise.
-fn owns_a_string(schema: &EventSchemaModel) -> bool {
+/// Whether a record of `schema` owns a buffer — has a `string` or a `bytes` field —
+/// which a target that holds plain data by value must hold otherwise.
+fn owns_a_buffer(schema: &EventSchemaModel) -> bool {
     schema
         .fields
         .iter()
-        .any(|f| matches!(f.sce_type, SceType::String))
+        .any(|f| matches!(f.sce_type, SceType::String | SceType::Bytes))
 }
 
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of

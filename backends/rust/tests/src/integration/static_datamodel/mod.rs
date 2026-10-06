@@ -38,6 +38,7 @@ pub mod static_payload_relay_sm;
 pub mod static_payload_sm;
 pub mod static_real32_sm;
 pub mod static_real_sm;
+pub mod static_record_bytes_sm;
 pub mod static_record_enum_sm;
 pub mod static_record_fields_sm;
 pub mod static_record_list_sm;

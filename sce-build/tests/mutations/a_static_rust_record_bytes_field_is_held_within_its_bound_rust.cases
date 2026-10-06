@@ -1,0 +1,53 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the Rust runtime
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_record_bytes_field_is_held_within_its_bound_rust.cases`.
+#
+# `static_record_bytes` writes the field from a literal and from a bytes variable and
+# expects a value past eight bytes to leave the record as it was and `errors` to count
+# it; `a_record_bytes_field_longer_than_its_bound_or_holding_no_byte_is_refused` restores
+# a saved state that claims one, or a character that is no byte, and expects the refusal
+# to name the field and a value that fits to be written back as it was read. The
+# mutants take one decision away each:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a saved record's bytes are read back unbounded;
+#   a saved record's bytes are written as an array of numbers and not as their text;
+#   a saved record's bytes past the bound are read back (the bound is not enforced).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/runtime/src/saved_state.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_record_bytes_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY
+
+mutation_case "a saved record's bytes are read back unbounded" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% if field.bound is not none and field.saved_type == \"bytes\" %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(",
+     "{% if false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(")
+PY
+
+mutation_case "a saved record's bytes are written as an array of numbers" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% if field.saved_type == \"bytes\" %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.",
+     "{% if false %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.")
+PY
+
+mutation_case "a saved record's bytes past the bound are read back" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "    bounded_bytes(\n        member_of(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n        capacity,\n    )",
+     "    bounded_bytes(\n        member_of(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n        usize::MAX,\n    )")
+PY

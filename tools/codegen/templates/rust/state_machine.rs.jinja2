@@ -279,7 +279,11 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Object(vec![
 {% for field in record.fields %}
+{% if field.saved_type == "bytes" %}
+            ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.{{ field.name }})),
+{% else %}
             ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.{{ field.name }})),
+{% endif %}
 {% endfor %}
         ])
     }
@@ -290,7 +294,9 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
 {% for field in record.fields %}
-{% if field.bound is not none %}
+{% if field.bound is not none and field.saved_type == "bytes" %}
+            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "{{ field.id }}", {{ field.bound }})?,
+{% elif field.bound is not none %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "{{ field.id }}", {{ field.bound }})?,
 {% else %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_field(value, what, "{{ field.id }}")?,

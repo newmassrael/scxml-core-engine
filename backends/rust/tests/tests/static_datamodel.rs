@@ -39,6 +39,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPolicy, StaticListState,
 };
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::StaticOverflowPolicy;
+use sce_rust_tests::integration::static_datamodel::static_record_bytes_sm::{
+    StaticRecordBytesPersist, StaticRecordBytesPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordDayPickedPayload, StaticRecordDayRecord, StaticRecordInject, StaticRecordObserve,
     StaticRecordPersist, StaticRecordPolicy,
@@ -805,6 +808,44 @@ fn a_byte_string_is_saved_as_latin1_text_and_refused_past_its_bound_or_a_byte() 
         } else {
             let refusal = refused(restored);
             assert!(refusal.reason().contains("tail"), "{refusal}");
+        }
+    }
+}
+
+#[test]
+fn a_record_bytes_field_longer_than_its_bound_or_holding_no_byte_is_refused() {
+    // A machine never holds more than the sce:max-size="8" bytes its schema declares
+    // in `last.frame`, so a saved state that claims it did is not one this machine
+    // wrote, and a character past U+00FF is no byte at all. A byte string is its
+    // Latin-1 text: eight characters are eight bytes whatever their code points.
+    let mut engine = Engine::new(StaticRecordBytesPolicy::new());
+    engine.initialize();
+    let json = engine.save().expect("saves").to_json();
+    for (claimed, fits) in [
+        ("abcdefgh", true),
+        ("éÿ\u{80}\u{ff}", true),
+        ("abcdefghi", false),
+        ("é€", false),
+    ] {
+        let json = json.replace(r#""frame":"ab""#, &format!(r#""frame":"{claimed}""#));
+        let restored = Engine::<StaticRecordBytesPolicy>::restore(
+            StaticRecordBytesPolicy::new(),
+            &SavedState::from_json(&json).expect("reads"),
+        );
+        if fits {
+            let restored = restored.unwrap_or_else(|e| panic!("{claimed:?} fits eight bytes: {e}"));
+            // Written back as the same text: no byte became another on the way.
+            assert!(
+                restored
+                    .save()
+                    .expect("saves")
+                    .to_json()
+                    .contains(&format!(r#""frame":"{claimed}""#)),
+                "{claimed:?} is read back as it was written"
+            );
+        } else {
+            let refusal = refused(restored);
+            assert!(refusal.reason().contains("last.frame"), "{refusal}");
         }
     }
 }

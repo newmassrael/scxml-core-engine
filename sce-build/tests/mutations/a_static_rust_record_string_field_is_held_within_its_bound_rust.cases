@@ -31,8 +31,8 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tes
 
 mutation_case "a saved record string is read back unbounded" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     "{% if field.bound is not none %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(",
-     "{% if false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(")
+     "{% elif field.bound is not none %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(",
+     "{% elif false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(")
 PY
 
 mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'

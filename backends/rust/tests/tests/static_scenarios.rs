@@ -74,6 +74,9 @@ use sce_rust_tests::integration::static_datamodel::static_real32_sm::{
 use sce_rust_tests::integration::static_datamodel::static_real_sm::{
     StaticRealPersist, StaticRealPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_bytes_sm::{
+    StaticRecordBytesPersist, StaticRecordBytesPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_enum_sm::{
     StaticRecordEnumPersist, StaticRecordEnumPolicy,
 };
@@ -442,6 +445,21 @@ fn static_record_real32_holds_a_single_field_as_the_single_nearest_the_payload()
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json"
+        ),
+    );
+}
+
+// A record's bytes field is held to the bytes its schema declares, and saved as its
+// byte-exact Latin-1 text: an assignment past the bound — from a literal or a bytes
+// variable — writes nothing, raises `error.execution` and ends its block, and a
+// list of such records holds copies with their bytes.
+#[test]
+fn static_record_bytes_holds_a_bytes_field_within_the_bound_its_schema_declares() {
+    replay(
+        Engine::new(StaticRecordBytesPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json"
         ),
     );
 }
