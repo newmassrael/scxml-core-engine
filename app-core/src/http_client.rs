@@ -15,15 +15,26 @@
 //! - **Nothing of the person's is sent that they did not give.** The only header that is not about
 //!   the request itself is the credential, and only when there is one.
 //!
-//! What it does not do: TLS, redirects, compression, keeping a connection. A connection is one
-//! request (`Connection: close`). `https://` is refused by name (see [`EndpointError::Https`]), and
-//! not read as `http://`: a person who typed it is told where to go instead (a tunnel to the server),
-//! and a TLS stack is a dependency of the whole application that its owner chooses, so it is not
-//! pulled in here for one adapter.
+//! - **A server is who its address says it is.** Over `https://` the server's certificate is checked
+//!   against the roots of the web (`webpki-roots`) and against the name in the address, and a server
+//!   that fails either is not talked to ([`HttpError::Certificate`]), whatever the person would
+//!   like: what is sent to it is a specification, and a person who typed an address is trusting
+//!   that name and no other. A server whose certificate a private authority made is not one of
+//!   these yet; it is reached over a tunnel or a proxy of the person's own that listens on this
+//!   computer over `http://`.
+//!
+//! What it does not do: redirects, compression, keeping a connection. A connection is one request
+//! (`Connection: close`). `http://` stays what it was: plain, which is for this computer and for a
+//! network the person trusts, and a screen that registers an address says which it is
+//! ([`Endpoint::is_loopback`], [`Endpoint::is_tls`]).
 
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
+
+use rustls::pki_types::ServerName;
+use rustls::{CertificateError, ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use crate::runner::Cancel;
 
@@ -39,9 +50,10 @@ const HEAD_MAX: usize = 64 * 1024;
 /// The most of one line of a chunked body's framing.
 const LINE_MAX: usize = 8 * 1024;
 
-/// Where a server is, as a person typed it: `http://host[:port][/path]`.
+/// Where a server is, as a person typed it: `http(s)://host[:port][/path]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
+    tls: bool,
     host: String,
     port: u16,
     /// The path the address carries, without a trailing slash (`/v1`), or nothing.
@@ -51,19 +63,13 @@ pub struct Endpoint {
 /// Why an address is not one a request can be made to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EndpointError {
-    /// `https://`: this build has no TLS.
-    Https,
-    /// Not `http://host[:port][/path]`; says what is wrong.
+    /// Not `http(s)://host[:port][/path]`; says what is wrong.
     Malformed(String),
 }
 
 impl std::fmt::Display for EndpointError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EndpointError::Https => f.write_str(
-                "this build reaches a server over http only, with no TLS: reach an https server \
-                 through a tunnel or a proxy of your own that listens on this computer over http",
-            ),
             EndpointError::Malformed(why) => write!(f, "{why}"),
         }
     }
@@ -74,13 +80,16 @@ impl std::error::Error for EndpointError {}
 impl Endpoint {
     /// The server an address names.
     pub fn parse(address: &str) -> Result<Endpoint, EndpointError> {
-        if address.starts_with("https://") {
-            return Err(EndpointError::Https);
-        }
         let bad = |why: &str| EndpointError::Malformed(why.to_string());
-        let rest = address
-            .strip_prefix("http://")
-            .ok_or_else(|| bad("the address is not http://host[:port][/path]"))?;
+        let (tls, rest) = match address.strip_prefix("https://") {
+            Some(rest) => (true, rest),
+            None => (
+                false,
+                address
+                    .strip_prefix("http://")
+                    .ok_or_else(|| bad("the address is not http(s)://host[:port][/path]"))?,
+            ),
+        };
         let (authority, path) = match rest.find('/') {
             Some(at) => (&rest[..at], &rest[at..]),
             None => (rest, ""),
@@ -107,6 +116,7 @@ impl Endpoint {
             return Err(bad("the address names no host"));
         }
         let port = match port {
+            None if tls => 443,
             None => 80,
             Some(port) => port
                 .parse::<u16>()
@@ -115,10 +125,17 @@ impl Endpoint {
                 .ok_or_else(|| bad("the port is a number from 1 to 65535"))?,
         };
         Ok(Endpoint {
+            tls,
             host: host.to_string(),
             port,
             base: path.trim_end_matches('/').to_string(),
         })
+    }
+
+    /// Whether the server is reached over TLS (`https://`), and so is known by its certificate and
+    /// is not read by the network on the way.
+    pub fn is_tls(&self) -> bool {
+        self.tls
     }
 
     /// The `Host` header: the host, bracketed when it is an IPv6 address, and the port.
@@ -170,6 +187,9 @@ pub enum HttpError {
     TimedOut,
     /// The server could not be reached; says why.
     Connect(String),
+    /// The server is there and is not who its address says (or whom this build trusts): its
+    /// certificate was refused. Says why. Nothing was sent to it.
+    Certificate(String),
     /// The connection broke or the server said something that is not HTTP; says what.
     Broken(String),
     /// The answer is longer than the most that is read.
@@ -182,6 +202,9 @@ impl std::fmt::Display for HttpError {
             HttpError::Cancelled => f.write_str("it was stopped"),
             HttpError::TimedOut => f.write_str("the server did not answer in time"),
             HttpError::Connect(why) => write!(f, "the server could not be reached: {why}"),
+            HttpError::Certificate(why) => {
+                write!(f, "the server's certificate was refused: {why}")
+            }
             HttpError::Broken(why) => write!(f, "the connection to the server broke: {why}"),
             HttpError::TooLarge => f.write_str("the server's answer is larger than is read"),
         }
@@ -213,7 +236,8 @@ impl Control<'_> {
 }
 
 /// Make `request` to `endpoint` and read the answer: at most `max_body` bytes of it, and not past
-/// `deadline`, and not after `cancel` is set.
+/// `deadline`, and not after `cancel` is set. A server over `https://` is one whose certificate
+/// the roots of the web vouch for.
 pub fn send(
     endpoint: &Endpoint,
     request: Request<'_>,
@@ -221,8 +245,21 @@ pub fn send(
     cancel: &Cancel,
     max_body: usize,
 ) -> Result<Response, HttpError> {
+    send_trusting(&web_trust(), endpoint, request, deadline, cancel, max_body)
+}
+
+/// The same, with the certificates `trust` vouches for in place of the web's: what a test that
+/// runs a server of its own, with a certificate of its own, needs.
+pub(crate) fn send_trusting(
+    trust: &Arc<ClientConfig>,
+    endpoint: &Endpoint,
+    request: Request<'_>,
+    deadline: Instant,
+    cancel: &Cancel,
+    max_body: usize,
+) -> Result<Response, HttpError> {
     let control = Control { deadline, cancel };
-    let mut stream = connect(endpoint, &control)?;
+    let mut stream = connect(endpoint, trust, &control)?;
     stream
         .write_all(&head_of(endpoint, &request))
         .and_then(|()| match request.json {
@@ -259,7 +296,146 @@ fn head_of(endpoint: &Endpoint, request: &Request<'_>) -> Vec<u8> {
     head.into_bytes()
 }
 
-fn connect(endpoint: &Endpoint, control: &Control<'_>) -> Result<TcpStream, HttpError> {
+/// The roots of the web as what a client trusts, made once.
+fn web_trust() -> Arc<ClientConfig> {
+    static TRUST: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+    Arc::clone(TRUST.get_or_init(|| {
+        trusting(RootCertStore::from_iter(
+            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+        ))
+    }))
+}
+
+/// A client that trusts the servers `roots` vouch for. The provider is named and not installed for
+/// the process: a library does not decide that for the program it is in.
+pub(crate) fn trusting(roots: RootCertStore) -> Arc<ClientConfig> {
+    Arc::new(
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .expect("the provider has the protocol versions this build enables")
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
+}
+
+/// What a request is written to and read from: the socket, or the socket under TLS.
+enum Transport {
+    Plain(TcpStream),
+    Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
+}
+
+impl Read for Transport {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Transport::Plain(stream) => stream.read(buffer),
+            // A server that closes without saying so (TLS's own `close_notify`) ends what it sends
+            // as a plain one does. A body that its length or its chunks frame is still found cut
+            // short by that framing; only a body that has none runs to the end of the connection.
+            Transport::Tls(stream) => match stream.read(buffer) {
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(0),
+                other => other,
+            },
+        }
+    }
+}
+
+impl Write for Transport {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        match self {
+            Transport::Plain(stream) => stream.write(bytes),
+            Transport::Tls(stream) => stream.write(bytes),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Transport::Plain(stream) => stream.flush(),
+            Transport::Tls(stream) => stream.flush(),
+        }
+    }
+}
+
+fn connect(
+    endpoint: &Endpoint,
+    trust: &Arc<ClientConfig>,
+    control: &Control<'_>,
+) -> Result<Transport, HttpError> {
+    let tcp = reach(endpoint, control)?;
+    if endpoint.tls {
+        handshake(endpoint, trust, tcp, control)
+    } else {
+        Ok(Transport::Plain(tcp))
+    }
+}
+
+/// The TLS handshake, in the slices a read is made in: a server that accepts the connection and
+/// says nothing is waited for until the request is told to stop or its time is up, as an answer
+/// is, and not for as long as the system's own timeouts allow.
+fn handshake(
+    endpoint: &Endpoint,
+    trust: &Arc<ClientConfig>,
+    mut tcp: TcpStream,
+    control: &Control<'_>,
+) -> Result<Transport, HttpError> {
+    let name = ServerName::try_from(endpoint.host.clone()).map_err(|_| {
+        HttpError::Connect(format!(
+            "`{}` is not a name a certificate can be made out to",
+            endpoint.host
+        ))
+    })?;
+    let mut connection = ClientConnection::new(Arc::clone(trust), name)
+        .map_err(|e| HttpError::Connect(e.to_string()))?;
+    while connection.is_handshaking() {
+        control.check()?;
+        match connection.complete_io(&mut tcp) {
+            Ok(_) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                ) => {}
+            Err(e) => return Err(handshake_failure(e)),
+        }
+    }
+    Ok(Transport::Tls(Box::new(StreamOwned::new(connection, tcp))))
+}
+
+/// What a handshake that did not finish says, in the words of the person's side of it.
+fn handshake_failure(error: io::Error) -> HttpError {
+    let tls = error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>());
+    match tls {
+        Some(rustls::Error::InvalidCertificate(why)) => HttpError::Certificate(match why {
+            CertificateError::UnknownIssuer | CertificateError::BadSignature => {
+                "it is signed by an authority this application does not trust (a server whose \
+                 certificate a private authority made is reached through a tunnel or a proxy of \
+                 your own over http)"
+                    .to_string()
+            }
+            CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
+                "it is not made out to the name in the address".to_string()
+            }
+            CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
+                "it has expired".to_string()
+            }
+            CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
+                "it is not valid yet (check this computer's clock)".to_string()
+            }
+            other => format!("{other:?}"),
+        }),
+        Some(other) => HttpError::Broken(format!("the TLS handshake failed: {other}")),
+        None if error.kind() == io::ErrorKind::UnexpectedEof => HttpError::Broken(
+            "the server closed the connection during the TLS handshake: is the address https?"
+                .to_string(),
+        ),
+        None => HttpError::Broken(format!("the TLS handshake failed: {error}")),
+    }
+}
+
+fn reach(endpoint: &Endpoint, control: &Control<'_>) -> Result<TcpStream, HttpError> {
     let addresses = (endpoint.host.as_str(), endpoint.port)
         .to_socket_addrs()
         .map_err(|e| HttpError::Connect(format!("the address does not resolve ({e})")))?;
@@ -292,7 +468,7 @@ fn connect(endpoint: &Endpoint, control: &Control<'_>) -> Result<TcpStream, Http
 
 /// A connection read in slices, with what has been read and what of it has been used.
 struct Reader<'a> {
-    stream: TcpStream,
+    stream: Transport,
     control: Control<'a>,
     buffer: Vec<u8>,
     used: usize,
@@ -301,7 +477,7 @@ struct Reader<'a> {
 type Headers = Vec<(String, String)>;
 
 impl<'a> Reader<'a> {
-    fn new(stream: TcpStream, control: Control<'a>) -> Self {
+    fn new(stream: Transport, control: Control<'a>) -> Self {
         Reader {
             stream,
             control,
@@ -513,6 +689,7 @@ mod tests {
             assert_eq!(
                 endpoint(address),
                 Endpoint {
+                    tls: false,
                     host: host.to_string(),
                     port,
                     base: base.to_string(),
@@ -544,13 +721,25 @@ mod tests {
     }
 
     #[test]
-    fn https_is_refused_by_name_and_not_read_as_http() {
-        let refused = Endpoint::parse("https://example.test/v1").unwrap_err();
-
-        assert_eq!(refused, EndpointError::Https);
-        let said = refused.to_string();
-        assert!(said.contains("tunnel"), "{said}");
-        assert!(said.contains("http only"), "{said}");
+    fn https_is_an_address_that_is_reached_over_tls_and_has_a_port_of_its_own() {
+        for (address, host, port, base) in [
+            ("https://example.test/v1", "example.test", 443, "/v1"),
+            ("https://example.test:8443/v1/", "example.test", 8443, "/v1"),
+            ("https://[::1]/", "::1", 443, ""),
+        ] {
+            assert_eq!(
+                endpoint(address),
+                Endpoint {
+                    tls: true,
+                    host: host.to_string(),
+                    port,
+                    base: base.to_string(),
+                },
+                "{address}"
+            );
+        }
+        assert!(endpoint("https://example.test").is_tls());
+        assert!(!endpoint("http://example.test").is_tls());
     }
 
     #[test]
@@ -572,6 +761,32 @@ mod tests {
         }
     }
 
+    /// One request (as bytes) read from `stream`: its head, and the body the head says follows.
+    /// What was read when the stream ends or fails is what there is.
+    fn read_request(stream: &mut impl Read) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let count = stream.read(&mut chunk).unwrap_or(0);
+            request.extend_from_slice(&chunk[..count]);
+            if let Some(at) = find(&request, b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..at]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= at + 4 + length {
+                    break;
+                }
+            }
+            if count == 0 {
+                break;
+            }
+        }
+        request
+    }
+
     /// A server that reads one request (as bytes) and answers with `answer`, sent as it says.
     fn serve(
         answer: impl FnOnce(&mut TcpStream) + Send + 'static,
@@ -584,28 +799,7 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            let mut request = Vec::new();
-            let mut chunk = [0u8; 4096];
-            // The head, and the body it says follows.
-            loop {
-                let count = stream.read(&mut chunk).unwrap_or(0);
-                request.extend_from_slice(&chunk[..count]);
-                if let Some(at) = find(&request, b"\r\n\r\n") {
-                    let head = String::from_utf8_lossy(&request[..at]).to_ascii_lowercase();
-                    let length = head
-                        .lines()
-                        .find_map(|line| line.strip_prefix("content-length:"))
-                        .and_then(|value| value.trim().parse::<usize>().ok())
-                        .unwrap_or(0);
-                    if request.len() >= at + 4 + length {
-                        break;
-                    }
-                }
-                if count == 0 {
-                    break;
-                }
-            }
-            let _ = seen.send(request);
+            let _ = seen.send(read_request(&mut stream));
             answer(&mut stream);
         });
         (address, requests)
@@ -884,5 +1078,390 @@ mod tests {
         let got = get(&address, "/models").unwrap_err();
 
         assert!(matches!(got, HttpError::Broken(_)), "{got:?}");
+    }
+
+    // ---- over TLS ------------------------------------------------------------------------
+
+    use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair, KeyUsagePurpose, SanType};
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::{ServerConfig, ServerConnection};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// An authority and the certificate it made out to some names, made now.
+    struct Pki {
+        root: CertificateDer<'static>,
+        leaf: CertificateDer<'static>,
+        key: Vec<u8>,
+    }
+
+    /// The certificate of a server named `names`, valid from `from` to `until` (years), made by an
+    /// authority of a name of its own: two authorities with one name are told apart by their
+    /// signatures only, which is another way to fail.
+    fn pki_valid(names: Vec<SanType>, from: i32, until: i32) -> Pki {
+        static MADE: AtomicUsize = AtomicUsize::new(0);
+        let name = format!("test authority {}", MADE.fetch_add(1, Ordering::Relaxed));
+        pki_by(names, from, until, &name)
+    }
+
+    /// The same, made by the authority that is named `authority`: another that bears the same name
+    /// is a look-alike.
+    fn pki_by(names: Vec<SanType>, from: i32, until: i32, authority: &str) -> Pki {
+        let mut authority_params = CertificateParams::new(Vec::new()).unwrap();
+        authority_params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, authority.to_string());
+        let mut authority = authority_params;
+        authority.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        authority.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        let authority_key = KeyPair::generate().unwrap();
+        let authority = authority.self_signed(&authority_key).unwrap();
+        let mut leaf = CertificateParams::new(Vec::new()).unwrap();
+        leaf.subject_alt_names = names;
+        leaf.not_before = rcgen::date_time_ymd(from, 1, 1);
+        leaf.not_after = rcgen::date_time_ymd(until, 1, 1);
+        let leaf_key = KeyPair::generate().unwrap();
+        let leaf = leaf
+            .signed_by(&leaf_key, &authority, &authority_key)
+            .unwrap();
+        Pki {
+            root: authority.der().clone(),
+            leaf: leaf.der().clone(),
+            key: leaf_key.serialize_der(),
+        }
+    }
+
+    fn pki(names: Vec<SanType>) -> Pki {
+        pki_valid(names, 2000, 2999)
+    }
+
+    fn localhost() -> Vec<SanType> {
+        vec![SanType::DnsName("localhost".try_into().unwrap())]
+    }
+
+    /// A client that trusts the servers `root` vouches for, and nobody else.
+    fn trusting_only(root: &CertificateDer<'static>) -> Arc<ClientConfig> {
+        let mut roots = RootCertStore::empty();
+        roots.add(root.clone()).unwrap();
+        trusting(roots)
+    }
+
+    type TlsStream = StreamOwned<ServerConnection, TcpStream>;
+
+    /// A server that speaks TLS with `pki`'s certificate, reads one request, and answers with
+    /// `answer`. The address is `https://localhost:port/v1` unless `by_ip` says otherwise.
+    fn serve_tls(
+        pki: &Pki,
+        by_ip: bool,
+        answer: impl FnOnce(&mut TlsStream) + Send + 'static,
+    ) -> (String, mpsc::Receiver<Vec<u8>>) {
+        let config = Arc::new(
+            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(
+                    vec![pki.leaf.clone()],
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pki.key.clone())),
+                )
+                .unwrap(),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let host = if by_ip { "127.0.0.1" } else { "localhost" };
+        let address = format!("https://{host}:{port}/v1");
+        let (seen, requests) = mpsc::channel();
+        thread::spawn(move || {
+            let (tcp, _) = listener.accept().unwrap();
+            tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), tcp);
+            let _ = seen.send(read_request(&mut stream));
+            answer(&mut stream);
+        });
+        (address, requests)
+    }
+
+    fn get_trusting(
+        trust: &Arc<ClientConfig>,
+        address: &str,
+        deadline: Instant,
+        cancel: &Cancel,
+    ) -> Result<Response, HttpError> {
+        send_trusting(
+            trust,
+            &endpoint(address),
+            Request {
+                method: "GET",
+                path: "/models",
+                bearer: None,
+                json: None,
+            },
+            deadline,
+            cancel,
+            1024 * 1024,
+        )
+    }
+
+    const OK_WITH_LENGTH: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
+
+    /// What a server says when the request reaches it. A client that refused the certificate has
+    /// sent an alert and no request, and a server that answers it cannot: that is not a failure of
+    /// the server, so it is not unwrapped.
+    fn says_ok(stream: &mut TlsStream) {
+        let _ = stream.write_all(OK_WITH_LENGTH);
+    }
+
+    #[test]
+    fn an_answer_over_tls_is_read_as_it_is_over_http_and_the_request_is_the_same() {
+        let pki = pki(localhost());
+        let (address, requests) = serve_tls(&pki, false, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&pki.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap();
+
+        assert_eq!(got.status, 200);
+        assert_eq!(got.body, b"{\"ok\":true}");
+        // What the server read, once it was decrypted: a request, with the name that is in the
+        // certificate as its host.
+        let sent = String::from_utf8(requests.recv().unwrap()).unwrap();
+        assert!(sent.starts_with("GET /v1/models HTTP/1.1\r\n"), "{sent}");
+        assert!(sent.contains("\r\nHost: localhost:"), "{sent}");
+    }
+
+    #[test]
+    fn a_server_known_by_its_address_is_known_by_the_address_in_its_certificate() {
+        let pki = pki(vec![SanType::IpAddress("127.0.0.1".parse().unwrap())]);
+        let (address, _) = serve_tls(&pki, true, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&pki.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        );
+
+        assert_eq!(got.unwrap().status, 200);
+    }
+
+    #[test]
+    fn a_server_whose_certificate_an_authority_not_trusted_made_is_refused_and_is_sent_nothing() {
+        let pki = pki(localhost());
+        let stranger = self::pki(localhost());
+        let (address, requests) = serve_tls(&pki, false, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&stranger.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap_err();
+
+        let HttpError::Certificate(why) = &got else {
+            panic!("expected a certificate refused, got {got:?}");
+        };
+        assert!(
+            why.contains("authority this application does not trust"),
+            "{why}"
+        );
+        // The server read no request, because none was sent: it was the handshake that failed.
+        assert!(requests.recv().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_authority_that_bears_the_name_of_a_trusted_one_is_refused_in_the_same_words() {
+        // Told apart from the one that is trusted by its signature only: the chain names an issuer
+        // the client has, and the issuer did not sign it.
+        let trusted = pki_by(localhost(), 2000, 2999, "the same name");
+        let look_alike = pki_by(localhost(), 2000, 2999, "the same name");
+        let (address, _) = serve_tls(&look_alike, false, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&trusted.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap_err();
+
+        let HttpError::Certificate(why) = &got else {
+            panic!("expected a certificate refused, got {got:?}");
+        };
+        assert!(
+            why.contains("authority this application does not trust"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn a_certificate_made_out_to_another_name_is_refused() {
+        // The server is known by its address, and the certificate is for `localhost`.
+        let pki = pki(localhost());
+        let (address, _) = serve_tls(&pki, true, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&pki.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap_err();
+
+        let HttpError::Certificate(why) = &got else {
+            panic!("expected a certificate refused, got {got:?}");
+        };
+        assert!(why.contains("not made out to the name"), "{why}");
+    }
+
+    #[test]
+    fn a_certificate_that_has_run_out_is_refused() {
+        let pki = pki_valid(localhost(), 2001, 2002);
+        let (address, _) = serve_tls(&pki, false, says_ok);
+
+        let got = get_trusting(
+            &trusting_only(&pki.root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap_err();
+
+        let HttpError::Certificate(why) = &got else {
+            panic!("expected a certificate refused, got {got:?}");
+        };
+        assert!(why.contains("expired"), "{why}");
+    }
+
+    #[test]
+    fn the_roots_of_the_web_do_not_vouch_for_a_certificate_of_a_test() {
+        // What `send` trusts: not an authority made a moment ago.
+        let pki = pki(localhost());
+        let (address, _) = serve_tls(&pki, false, says_ok);
+
+        let got = send(
+            &endpoint(&address),
+            Request {
+                method: "GET",
+                path: "/models",
+                bearer: None,
+                json: None,
+            },
+            within(10),
+            &Cancel::new(),
+            1024,
+        )
+        .unwrap_err();
+
+        assert!(matches!(got, HttpError::Certificate(_)), "{got:?}");
+    }
+
+    #[test]
+    fn a_server_that_does_not_speak_tls_is_said_not_to() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!(
+            "https://localhost:{}/v1",
+            listener.local_addr().unwrap().port()
+        );
+        thread::spawn(move || {
+            let (mut tcp, _) = listener.accept().unwrap();
+            let _ = tcp.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+        });
+
+        let got = get_trusting(
+            &trusting_only(&pki(localhost()).root),
+            &address,
+            within(10),
+            &Cancel::new(),
+        )
+        .unwrap_err();
+
+        let HttpError::Broken(why) = &got else {
+            panic!("expected a broken connection, got {got:?}");
+        };
+        assert!(why.contains("TLS handshake"), "{why}");
+    }
+
+    #[test]
+    fn a_server_that_takes_the_connection_and_says_nothing_is_waited_for_in_the_handshake_only_as_long_as_told(
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!(
+            "https://localhost:{}/v1",
+            listener.local_addr().unwrap().port()
+        );
+        let (held_tx, held_rx) = mpsc::channel();
+        thread::spawn(move || {
+            // Holds every connection it is given, open, until the test is over.
+            let mut held = Vec::new();
+            while let Ok((tcp, _)) = listener.accept() {
+                held.push(tcp);
+                let _ = held_tx.send(());
+            }
+        });
+        let trust = trusting_only(&pki(localhost()).root);
+
+        let cancel = Cancel::new();
+        let stopper = {
+            let cancel = cancel.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(300));
+                cancel.cancel();
+            })
+        };
+        let started = Instant::now();
+        let stopped = get_trusting(&trust, &address, within(30), &cancel);
+        stopper.join().unwrap();
+        let stopped_in = started.elapsed();
+        let started = Instant::now();
+        let late = get_trusting(
+            &trust,
+            &address,
+            Instant::now() + Duration::from_millis(400),
+            &Cancel::new(),
+        );
+
+        assert_eq!(stopped, Err(HttpError::Cancelled));
+        assert!(stopped_in < Duration::from_secs(5), "{stopped_in:?}");
+        assert_eq!(late, Err(HttpError::TimedOut));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(held_rx.try_recv().is_ok(), "the server was never reached");
+    }
+
+    #[test]
+    fn a_server_that_closes_without_saying_so_ends_an_answer_that_has_no_length_and_not_one_that_has(
+    ) {
+        let pki = pki(localhost());
+        let trust = trusting_only(&pki.root);
+        let (address, _) = serve_tls(&pki, false, |s| {
+            s.write_all(b"HTTP/1.1 200 OK\r\n\r\nhello there").unwrap();
+            s.conn.send_close_notify();
+            let _ = s.flush();
+        });
+        let said_so = get_trusting(&trust, &address, within(10), &Cancel::new());
+        let (address, _) = serve_tls(&pki, false, |s| {
+            // No close_notify: the stream is dropped, and the connection closes under TLS.
+            s.write_all(b"HTTP/1.1 200 OK\r\n\r\nhello there").unwrap();
+            let _ = s.flush();
+        });
+        let without = get_trusting(&trust, &address, within(10), &Cancel::new());
+        let (address, _) = serve_tls(&pki, false, |s| {
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\nonly five")
+                .unwrap();
+            let _ = s.flush();
+        });
+        let cut = get_trusting(&trust, &address, within(10), &Cancel::new());
+
+        assert_eq!(said_so.unwrap().body, b"hello there");
+        assert_eq!(without.unwrap().body, b"hello there");
+        // A length that was not met is a cut answer, whether or not the server said it closed.
+        assert!(matches!(cut, Err(HttpError::Broken(_))), "{cut:?}");
     }
 }
