@@ -337,3 +337,117 @@ fn a_server_with_no_instructions_has_none() {
     assert_eq!(client.instructions(), None);
     let _: Value = json!(null);
 }
+
+/// A server that answers the handshake and the list of its tools, and then reads nothing more:
+/// what a call that sends more than a pipe holds waits behind.
+fn deaf_server(folder: &Path) -> AuthorServer {
+    let program = folder.join("deaf.sh");
+    write_program(
+        &program,
+        "#!/bin/sh\n\
+         IFS= read -r line\n\
+         printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"deaf\",\"version\":\"1\"}}}\\n'\n\
+         IFS= read -r line\n\
+         IFS= read -r line\n\
+         printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"works_read\"}]}}\\n'\n\
+         exec sleep 60\n",
+    );
+    AuthorServer {
+        command: program,
+        args: vec![],
+        env: vec![],
+    }
+}
+
+/// A client that has the tools of a server that then stops reading.
+fn deaf_client(label: &str) -> McpClient {
+    let folder = scratch(label);
+    let mut client = McpClient::start(&deaf_server(&folder), &folder, within(20), &Cancel::new())
+        .expect("the server starts");
+    client.tools(within(10), &Cancel::new()).unwrap();
+    client
+}
+
+/// How long a call that is told to stop, or whose time is up, may go on.
+const PROMPTLY: Duration = Duration::from_secs(3);
+
+#[test]
+fn a_server_that_closes_its_input_and_lives_on_is_said_to_be_gone_and_not_waited_for() {
+    let folder = scratch("mcp-closed-input");
+    let program = folder.join("closed.sh");
+    write_program(
+        &program,
+        "#!/bin/sh\n\
+         IFS= read -r line\n\
+         printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"closed\",\"version\":\"1\"}}}\\n'\n\
+         IFS= read -r line\n\
+         IFS= read -r line\n\
+         exec 0<&-\n\
+         printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"works_read\"}]}}\\n'\n\
+         exec sleep 60\n",
+    );
+    let mut client = McpClient::start(
+        &AuthorServer {
+            command: program,
+            args: vec![],
+            env: vec![],
+        },
+        &folder,
+        within(20),
+        &Cancel::new(),
+    )
+    .expect("the server starts");
+    client.tools(within(10), &Cancel::new()).unwrap();
+
+    let started = Instant::now();
+    let called = client.call(
+        "works_read",
+        &json!({"work": "w"}),
+        within(30),
+        &Cancel::new(),
+    );
+
+    // Not waited for until its time was up: the write that could not be made says so.
+    assert!(matches!(called, Err(McpError::Gone(_))), "{called:?}");
+    assert!(started.elapsed() < PROMPTLY, "{:?}", started.elapsed());
+}
+
+#[test]
+fn a_call_that_is_being_sent_is_stopped_at_its_time_and_when_told_to_stop() {
+    // Longer than a pipe holds, so that sending it waits on a server that reads none of it.
+    let arguments = json!({ "work": "x".repeat(16 * 1024 * 1024) });
+    let mut late = deaf_client("mcp-deaf-late");
+    let mut told = deaf_client("mcp-deaf-told");
+
+    let started = Instant::now();
+    let timed_out = late.call(
+        "works_read",
+        &arguments,
+        Instant::now() + Duration::from_millis(400),
+        &Cancel::new(),
+    );
+    let timed_out_after = started.elapsed();
+    let cancel = Cancel::new();
+    let stopper = {
+        let cancel = cancel.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            cancel.cancel();
+        })
+    };
+    let started = Instant::now();
+    let cancelled = told.call("works_read", &arguments, within(60), &cancel);
+    let cancelled_after = started.elapsed();
+    stopper.join().unwrap();
+
+    assert!(
+        matches!(timed_out, Err(McpError::TimedOut)),
+        "{timed_out:?}"
+    );
+    assert!(timed_out_after < PROMPTLY, "{timed_out_after:?}");
+    assert!(
+        matches!(cancelled, Err(McpError::Cancelled)),
+        "{cancelled:?}"
+    );
+    assert!(cancelled_after < PROMPTLY, "{cancelled_after:?}");
+}

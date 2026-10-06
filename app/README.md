@@ -475,6 +475,15 @@ draft the core does not accept is told back to the model, which writes again. Me
 2026-10-06, against Ollama with `qwen3-coder:30b`: fourteen questions and about five minutes to a
 model the core accepted; one model, one run, and not a claim about the others.
 
+**A request ends when it is told to or when its time is up, while it is being sent as well as while
+it is answered.** A server may read none of what is sent to it (a model that is busy, a connection
+that stalled), and what is sent can be longer than any buffer between the application and the
+server: the model server over HTTP is written to in slices of a tenth of a second, as an answer is
+waited for, and the authoring server is written to on a thread of its own, so that a caller is not
+held by a write that the other end does not take. Measured before it was so: a request given half a
+second ended after the system's own timeouts for a write (about fifteen seconds, as a failure to
+send), and a call to an authoring server that read nothing waited until that process ended.
+
 **The clients are looked for again while the application runs.** A person installs a client with
 the window open, and one that was there goes away. The executor asks for each client again (at most
 once in ten seconds) whenever a request needs it, so Claude Code installed after Codex, or Codex

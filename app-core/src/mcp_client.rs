@@ -12,7 +12,10 @@
 //! What it holds to:
 //!
 //! - **A call ends when it is told to or when its time is up.** The server is a process that can
-//!   hang, so what it says is read on a thread of its own and waited for in slices.
+//!   hang, so what it says is read on a thread of its own and waited for in slices, and what is
+//!   sent to it is written on another: a server that reads none of it (and a call can be longer
+//!   than a pipe holds) holds a write for as long as it lives, and a caller that waited on that
+//!   could not be told to stop.
 //! - **The server is the application's and nothing else's.** It is started with the arguments and
 //!   the environment the host gave it, in a folder of its own, and it is killed when this is
 //!   dropped, so a run that ends does not leave one behind.
@@ -94,7 +97,12 @@ impl std::error::Error for McpError {}
 /// A started server, asked for its tools and called.
 pub struct McpClient {
     child: Child,
-    stdin: ChildStdin,
+    /// What is to be written to the server's standard input. It is written on a thread of its own:
+    /// a server that does not read what it is sent holds a write for as long as it lives, and a
+    /// caller that waited on it could not be told to stop.
+    writes: mpsc::Sender<Vec<u8>>,
+    /// Why that thread stopped, when it did: the server closed its input or went away.
+    write_failed: Arc<Mutex<Option<String>>>,
     lines: Receiver<Result<String, String>>,
     stderr: Arc<Mutex<VecDeque<u8>>>,
     next: u64,
@@ -127,9 +135,14 @@ impl McpClient {
         let kept = Arc::new(Mutex::new(VecDeque::new()));
         let keep = Arc::clone(&kept);
         thread::spawn(move || keep_tail(stderr, &keep));
+        let (writes, to_write) = mpsc::channel();
+        let write_failed = Arc::new(Mutex::new(None));
+        let failed = Arc::clone(&write_failed);
+        thread::spawn(move || write_lines(stdin, &to_write, &failed));
         let mut client = McpClient {
             child,
-            stdin,
+            writes,
+            write_failed,
             lines,
             stderr: kept,
             next: 1,
@@ -213,13 +226,27 @@ impl McpClient {
         })
     }
 
+    /// Hand the server a message. It is written by the thread that owns the server's input, so this
+    /// returns at once; that the server did not take it is found by the wait for its answer.
     fn write(&mut self, message: &Value) -> Result<(), McpError> {
         let mut line = message.to_string();
         line.push('\n');
-        self.stdin
-            .write_all(line.as_bytes())
-            .and_then(|()| self.stdin.flush())
-            .map_err(|e| McpError::Gone(format!("{e}{}", self.said())))
+        self.writes.send(line.into_bytes()).map_err(|_| {
+            McpError::Gone(format!(
+                "{}{}",
+                self.write_failure()
+                    .unwrap_or_else(|| "its input is closed".to_string()),
+                self.said()
+            ))
+        })
+    }
+
+    /// Why the server's input could not be written, when it could not.
+    fn write_failure(&self) -> Option<String> {
+        self.write_failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// What the server last said on its standard error, for a sentence about why it is gone.
@@ -256,7 +283,14 @@ impl McpClient {
             let line = match self.lines.recv_timeout(SLICE) {
                 Ok(Ok(line)) => line,
                 Ok(Err(why)) => return Err(McpError::Gone(format!("{why}{}", self.said()))),
-                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Timeout) => {
+                    // A server that closed its input and went on living is told by the write that
+                    // failed, and not waited for until its time is up.
+                    if let Some(why) = self.write_failure() {
+                        return Err(McpError::Gone(format!("{why}{}", self.said())));
+                    }
+                    continue;
+                }
                 Err(RecvTimeoutError::Disconnected) => {
                     return Err(McpError::Gone(format!(
                         "it closed its output{}",
@@ -285,6 +319,21 @@ impl Drop for McpClient {
         // The server is not asked to finish: what it was doing is of no use to anybody now.
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// Write each message to the server, in order, until the messages end (the client was dropped) or
+/// the server will not take one, and say why when it will not.
+fn write_lines(
+    mut stdin: ChildStdin,
+    messages: &Receiver<Vec<u8>>,
+    failed: &Mutex<Option<String>>,
+) {
+    for message in messages {
+        if let Err(e) = stdin.write_all(&message).and_then(|()| stdin.flush()) {
+            *failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
+            return;
+        }
     }
 }
 

@@ -260,18 +260,70 @@ pub(crate) fn send_trusting(
 ) -> Result<Response, HttpError> {
     let control = Control { deadline, cancel };
     let mut stream = connect(endpoint, trust, &control)?;
-    stream
-        .write_all(&head_of(endpoint, &request))
-        .and_then(|()| match request.json {
-            Some(body) => stream.write_all(body),
-            None => Ok(()),
-        })
-        .and_then(|()| stream.flush())
-        .map_err(|e| HttpError::Broken(format!("the request could not be sent: {e}")))?;
+    write_within(&mut stream, &head_of(endpoint, &request), &control)?;
+    if let Some(body) = request.json {
+        write_within(&mut stream, body, &control)?;
+    }
+    flush_within(&mut stream, &control)?;
     let mut reader = Reader::new(stream, control);
     let (status, headers) = reader.head()?;
     let body = reader.body(status, &headers, max_body)?;
     Ok(Response { status, body })
+}
+
+/// Whether an error of a read or a write is the socket having nothing to give or to take for now,
+/// which is a reason to look at the word to stop and try again, and not a connection that broke.
+fn is_a_wait(kind: io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+    )
+}
+
+/// All of `bytes` written, in the slices a read is waited in. A server may read none of what is
+/// sent (a model that is busy, a connection that stalled), and a body can be longer than any buffer
+/// between here and it: the system's own timeout for one write is seconds, a request that is told
+/// to stop or whose time is up must not go on for that, and is not left to it.
+fn write_within(
+    stream: &mut Transport,
+    mut bytes: &[u8],
+    control: &Control<'_>,
+) -> Result<(), HttpError> {
+    while !bytes.is_empty() {
+        control.check()?;
+        match stream.write(bytes) {
+            Ok(0) => {
+                return Err(HttpError::Broken(
+                    "the server stopped taking what was sent".to_string(),
+                ))
+            }
+            Ok(written) => bytes = &bytes[written..],
+            Err(e) if is_a_wait(e.kind()) => {}
+            Err(e) => {
+                return Err(HttpError::Broken(format!(
+                    "the request could not be sent: {e}"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What is held back flushed, as [`write_within`] writes: a connection under TLS holds what was
+/// written until it is flushed.
+fn flush_within(stream: &mut Transport, control: &Control<'_>) -> Result<(), HttpError> {
+    loop {
+        control.check()?;
+        match stream.flush() {
+            Ok(()) => return Ok(()),
+            Err(e) if is_a_wait(e.kind()) => {}
+            Err(e) => {
+                return Err(HttpError::Broken(format!(
+                    "the request could not be sent: {e}"
+                )))
+            }
+        }
+    }
 }
 
 fn head_of(endpoint: &Endpoint, request: &Request<'_>) -> Vec<u8> {
@@ -389,13 +441,7 @@ fn handshake(
         control.check()?;
         match connection.complete_io(&mut tcp) {
             Ok(_) => {}
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) => {}
+            Err(e) if is_a_wait(e.kind()) => {}
             Err(e) => return Err(handshake_failure(e)),
         }
     }
@@ -452,7 +498,9 @@ fn reach(endpoint: &Endpoint, control: &Control<'_>) -> Result<TcpStream, HttpEr
             Ok(stream) => {
                 stream
                     .set_read_timeout(Some(SLICE))
-                    .and_then(|()| stream.set_write_timeout(Some(CONNECT_WITHIN)))
+                    // A write is waited for in the same slices, so that a word to stop is noticed
+                    // while a request is being sent as it is while an answer is waited for.
+                    .and_then(|()| stream.set_write_timeout(Some(SLICE)))
                     .and_then(|()| stream.set_nodelay(true))
                     .map_err(|e| HttpError::Connect(e.to_string()))?;
                 return Ok(stream);
@@ -496,13 +544,7 @@ impl<'a> Reader<'a> {
                     self.buffer.extend_from_slice(&chunk[..count]);
                     return Ok(count);
                 }
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        io::ErrorKind::WouldBlock
-                            | io::ErrorKind::TimedOut
-                            | io::ErrorKind::Interrupted
-                    ) => {}
+                Err(e) if is_a_wait(e.kind()) => {}
                 Err(e) => return Err(HttpError::Broken(e.to_string())),
             }
         }
@@ -1147,14 +1189,9 @@ mod tests {
 
     type TlsStream = StreamOwned<ServerConnection, TcpStream>;
 
-    /// A server that speaks TLS with `pki`'s certificate, reads one request, and answers with
-    /// `answer`. The address is `https://localhost:port/v1` unless `by_ip` says otherwise.
-    fn serve_tls(
-        pki: &Pki,
-        by_ip: bool,
-        answer: impl FnOnce(&mut TlsStream) + Send + 'static,
-    ) -> (String, mpsc::Receiver<Vec<u8>>) {
-        let config = Arc::new(
+    /// What a server that speaks TLS with `pki`'s certificate is configured with.
+    fn tls_server_config(pki: &Pki) -> Arc<ServerConfig> {
+        Arc::new(
             ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
                 .with_safe_default_protocol_versions()
                 .unwrap()
@@ -1164,7 +1201,17 @@ mod tests {
                     PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pki.key.clone())),
                 )
                 .unwrap(),
-        );
+        )
+    }
+
+    /// A server that speaks TLS with `pki`'s certificate, reads one request, and answers with
+    /// `answer`. The address is `https://localhost:port/v1` unless `by_ip` says otherwise.
+    fn serve_tls(
+        pki: &Pki,
+        by_ip: bool,
+        answer: impl FnOnce(&mut TlsStream) + Send + 'static,
+    ) -> (String, mpsc::Receiver<Vec<u8>>) {
+        let config = tls_server_config(pki);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let host = if by_ip { "127.0.0.1" } else { "localhost" };
@@ -1463,5 +1510,136 @@ mod tests {
         assert_eq!(without.unwrap().body, b"hello there");
         // A length that was not met is a cut answer, whether or not the server said it closed.
         assert!(matches!(cut, Err(HttpError::Broken(_))), "{cut:?}");
+    }
+
+    // ---- while the request is being sent ----------------------------------------------------
+
+    /// A server that takes the connection and reads none of what is sent to it, for as long as a
+    /// test lasts: what a client that is sending a body longer than any buffer waits behind.
+    fn deaf() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}/v1", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let held = listener.accept();
+            thread::sleep(Duration::from_secs(60));
+            drop(held);
+        });
+        address
+    }
+
+    /// The same over TLS: the handshake is finished, and then nothing is read.
+    fn deaf_tls(pki: &Pki) -> String {
+        let config = tls_server_config(pki);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!(
+            "https://localhost:{}/v1",
+            listener.local_addr().unwrap().port()
+        );
+        thread::spawn(move || {
+            let (mut tcp, _) = listener.accept().unwrap();
+            let mut connection = ServerConnection::new(config).unwrap();
+            while connection.is_handshaking() {
+                if connection.complete_io(&mut tcp).is_err() {
+                    return;
+                }
+            }
+            thread::sleep(Duration::from_secs(60));
+        });
+        address
+    }
+
+    /// A body no socket buffer holds, so that sending it waits on the server.
+    const LONG: usize = 64 * 1024 * 1024;
+
+    fn post_long(
+        trust: &Arc<ClientConfig>,
+        address: &str,
+        deadline: Instant,
+        cancel: &Cancel,
+    ) -> Result<Response, HttpError> {
+        let body = vec![b'x'; LONG];
+        send_trusting(
+            trust,
+            &endpoint(address),
+            Request {
+                method: "POST",
+                path: "/chat/completions",
+                bearer: None,
+                json: Some(&body),
+            },
+            deadline,
+            cancel,
+            1024,
+        )
+    }
+
+    /// How long a request that is told to stop, or whose time is up, may go on: a few slices of
+    /// waiting, and not the seconds the system's own timeouts for a write allow.
+    const PROMPTLY: Duration = Duration::from_secs(3);
+
+    /// Run `request` with a word to stop sent after `after`, and say what it answered and how long
+    /// it took.
+    fn stopped_after(
+        after: Duration,
+        request: impl FnOnce(&Cancel) -> Result<Response, HttpError>,
+    ) -> (Result<Response, HttpError>, Duration) {
+        let cancel = Cancel::new();
+        let stopper = {
+            let cancel = cancel.clone();
+            thread::spawn(move || {
+                thread::sleep(after);
+                cancel.cancel();
+            })
+        };
+        let started = Instant::now();
+        let answered = request(&cancel);
+        let took = started.elapsed();
+        stopper.join().unwrap();
+        (answered, took)
+    }
+
+    #[test]
+    fn a_request_that_is_being_sent_is_stopped_at_its_time_and_when_told_to_stop() {
+        let trust = web_trust();
+        let started = Instant::now();
+        let late = post_long(
+            &trust,
+            &deaf(),
+            Instant::now() + Duration::from_millis(400),
+            &Cancel::new(),
+        );
+        let late_took = started.elapsed();
+
+        let (told, told_took) = stopped_after(Duration::from_millis(300), |cancel| {
+            post_long(&trust, &deaf(), within(60), cancel)
+        });
+
+        assert_eq!(late, Err(HttpError::TimedOut));
+        assert!(late_took < PROMPTLY, "{late_took:?}");
+        assert_eq!(told, Err(HttpError::Cancelled));
+        assert!(told_took < PROMPTLY, "{told_took:?}");
+    }
+
+    #[test]
+    fn a_request_that_is_being_sent_over_tls_is_stopped_the_same_way() {
+        let pki = pki(localhost());
+        let trust = trusting_only(&pki.root);
+        let started = Instant::now();
+        let late = post_long(
+            &trust,
+            &deaf_tls(&pki),
+            Instant::now() + Duration::from_millis(400),
+            &Cancel::new(),
+        );
+        let late_took = started.elapsed();
+
+        let (told, told_took) = stopped_after(Duration::from_millis(300), |cancel| {
+            post_long(&trust, &deaf_tls(&pki), within(60), cancel)
+        });
+
+        assert_eq!(late, Err(HttpError::TimedOut));
+        assert!(late_took < PROMPTLY, "{late_took:?}");
+        assert_eq!(told, Err(HttpError::Cancelled));
+        assert!(told_took < PROMPTLY, "{told_took:?}");
     }
 }
