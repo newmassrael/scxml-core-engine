@@ -42,6 +42,7 @@ pub mod auth_policy;
 pub mod bundle;
 pub mod claude_code;
 pub mod claude_status;
+mod client_run;
 pub mod clock;
 pub mod commands;
 pub mod connection;

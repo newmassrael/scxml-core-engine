@@ -16,7 +16,6 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
@@ -52,8 +51,7 @@ impl Fake {
              {behaviour}\n",
             record = record.display()
         );
-        fs::write(&binary, script).unwrap();
-        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+        common::write_program(&binary, &script);
         Fake { binary, record }
     }
 

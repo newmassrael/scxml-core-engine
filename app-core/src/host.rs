@@ -30,7 +30,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::auth_policy::Policy;
-use crate::claude_code::{capture, AuthorServer, ClaudeCode, ClaudeCodeConfig};
+use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
+use crate::client_run::capture;
 use crate::clock::Clock;
 use crate::directory::{ClaudeLaunch, Connections};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
