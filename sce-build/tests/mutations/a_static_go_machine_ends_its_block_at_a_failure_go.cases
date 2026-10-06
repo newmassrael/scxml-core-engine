@@ -32,6 +32,7 @@ mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_bytes/static_bytes_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_cancel_expr/static_cancel_expr_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_donedata/static_donedata_sm.go

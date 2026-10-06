@@ -256,11 +256,10 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
     // payload, a call of an imported algorithm, a final's `<donedata>` and an
     // `<invoke type="scxml">`. What is past that is refused by name where the
     // document is read, not left as an undefined name in the generated code.
+    // A byte string is refused by name for each language that does not hold it
+    // yet by `a_language_holds_a_byte_string_or_refuses_it_by_name`, which a
+    // language leaves by changing its row, so it is not asked here.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
-    let bytes_variable = doc(
-        "sce-static",
-        r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#,
-    );
     let host_invoke = machine(
         r#"<state id="s">
     <invoke type="x-sce-host" id="h"><param name="k" expr="count"/></invoke>
@@ -282,14 +281,7 @@ fn cpp_names_each_construct_it_does_not_lower_yet() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect();
-    let cases = [
-        (
-            "a bytes variable",
-            bytes_variable,
-            r#"<data id=\"frame\" sce:type=\"bytes\">"#,
-        ),
-        ("a host-run <invoke>", host_invoke, "a host-run <invoke>"),
-    ];
+    let cases = [("a host-run <invoke>", host_invoke, "a host-run <invoke>")];
     // C++, Go and Python start a scxml child and refuse the rest by name.
     for (lang, name) in [("cpp", "C++"), ("go", "Go"), ("python", "Python")] {
         for (what, document, names) in &cases {
@@ -329,21 +321,16 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     // bools and strings, and an `<invoke>` the host is declared to serve. A 32-bit
     // real, alone or in a list, is a `float` the wire writes as the double it
     // widens to. What is
-    // past that — a record with a string field or a 32-bit real field, a bytes
-    // variable, a `<send>` to a processor no host is
+    // past that — a record with a string field or a 32-bit real field, a
+    // `<send>` to a processor no host is
     // declared to serve, an `<invoke>` of a type none is, a `<param>` name that
-    // repeats, a payload field that
-    // is bytes — is refused by
+    // repeats — is refused by
     // name where the document is read, not left as an undefined name in the
-    // generated code.
+    // generated code. A byte string, in a variable, a record or a payload, is
+    // refused for every language until each holds it, which
+    // `a_language_holds_a_byte_string_or_refuses_it_by_name` judges from one table.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
-    let variable = |data: &str| doc("sce-static", data);
     let cases = [
-        (
-            "a bytes variable",
-            variable(r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#),
-            r#"<data id="frame" sce:type="bytes">"#,
-        ),
         (
             "a host-run <invoke>",
             machine(
@@ -361,35 +348,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
             ),
             "a <send> of type `x-sce-host`",
         ),
-        (
-            "a typed payload with a bytes field",
-            r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_blob.scxml" as="Blob"/>
-  <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
-  <state id="s"><transition event="blob.sent" cond="_event.data.size &gt; 1" target="done"/></state>
-  <final id="done"/>
-</scxml>
-"##
-            .to_string(),
-            "an event whose payload carries `frame` of type bytes",
-        ),
     ];
-    // A schema with a bytes field, which no fixture of the tree declares.
-    let blob = (
-        "schema_blob.scxml".to_string(),
-        r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="schema_blob" sce:event-name="blob.sent">
-  <datamodel>
-    <data id="frame" sce:type="bytes" sce:direction="in"/>
-    <data id="size" sce:type="uint8" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"##
-        .to_string(),
-    );
     let siblings: Vec<(String, String)> = std::fs::read_dir(&fixtures)
         .expect("the fixture directory")
         .map(|entry| entry.expect("an entry").path())
@@ -400,7 +359,6 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
                 std::fs::read_to_string(&path).expect("a fixture"),
             )
         })
-        .chain(std::iter::once(blob))
         .collect();
     let siblings: Vec<(&str, &str)> = siblings
         .iter()
@@ -582,19 +540,63 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
     }
 }
 
-/// The languages that lower a `sce-static` document, each with whether it holds a
-/// byte string yet (docs/adr/0005, decision 2): a `bytes` variable bounded by its
-/// `sce:capacity` (the third column) and a record's `bytes` field bounded by the
-/// `sce:max-size` its schema declares (the fourth). A language that does not is
-/// refused by name, and changes a column when it lowers the value and replays
-/// `static_bytes`.
-const BYTES_HELD: &[(&str, &str, bool, bool)] = &[
-    ("rust", "Rust", true, false),
-    ("kotlin", "Kotlin", true, false),
-    ("go", "Go", false, false),
-    ("cpp", "C++", false, false),
-    ("python", "Python", false, false),
-    ("c11", "C11", false, false),
+/// What a language that lowers a `sce-static` document holds of a byte string yet
+/// (docs/adr/0005, decision 2). A language that does not hold a place is refused
+/// by name there, and changes the field when it lowers it and replays `static_bytes`.
+struct BytesHeld {
+    lang: &'static str,
+    name: &'static str,
+    /// A `bytes` variable bounded by its `sce:capacity`.
+    variable: bool,
+    /// A record's `bytes` field bounded by the `sce:max-size` its schema declares.
+    record: bool,
+    /// A transition on an event whose typed payload carries a `bytes` field.
+    payload: bool,
+}
+
+const BYTES_HELD: &[BytesHeld] = &[
+    BytesHeld {
+        lang: "rust",
+        name: "Rust",
+        variable: true,
+        record: false,
+        payload: false,
+    },
+    BytesHeld {
+        lang: "kotlin",
+        name: "Kotlin",
+        variable: true,
+        record: false,
+        payload: false,
+    },
+    BytesHeld {
+        lang: "go",
+        name: "Go",
+        variable: true,
+        record: false,
+        payload: false,
+    },
+    BytesHeld {
+        lang: "cpp",
+        name: "C++",
+        variable: false,
+        record: false,
+        payload: false,
+    },
+    BytesHeld {
+        lang: "python",
+        name: "Python",
+        variable: false,
+        record: false,
+        payload: false,
+    },
+    BytesHeld {
+        lang: "c11",
+        name: "C11",
+        variable: false,
+        record: false,
+        payload: false,
+    },
 ];
 
 /// The schema of a record with a byte-string field, bounded by `max_size`
@@ -638,16 +640,25 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
     // in `lower`, and a language that has not lowered the value is refused by name.
     let schema = frame_schema(r#"sce:max-size="8""#);
     let siblings = [("schema_frame.scxml", schema.as_str())];
-    let documents = [
+    let payload = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_frame.scxml" as="Frame"/>
+  <datamodel><data id="count" sce:type="uint32" expr="0"/></datamodel>
+  <state id="idle"><transition event="frame.taken" cond="_event.data.sensor &gt; 1" target="done"/></state>
+  <final id="done"/>
+</scxml>
+"##;
+    let documents: [(&str, fn(&BytesHeld) -> bool, String, &str); 3] = [
         (
             "a bytes variable",
-            false,
+            |held| held.variable,
             holding_frame(r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#),
             r#"<data id=\"frame\" sce:type=\"bytes\">"#,
         ),
         (
             "a record with a bytes field",
-            true,
+            |held| held.record,
             holding_frame(
                 r#"<data id="last" sce:type="record:Frame" sce:direction="out">
       <sce:set name="sensor" expr="1"/>
@@ -656,20 +667,27 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
             ),
             "record:Frame with the field `frame` of type bytes",
         ),
+        (
+            "a transition on an event whose payload carries bytes",
+            |held| held.payload,
+            payload.to_string(),
+            "a transition on `frame.taken`, an event whose payload carries `frame` of type bytes",
+        ),
     ];
-    for (held, in_a_record, document, names) in &documents {
-        for (lang, name, variable, record) in BYTES_HELD {
+    for (what, holds, document, names) in &documents {
+        for held in BYTES_HELD {
+            let (lang, name) = (held.lang, held.name);
             let (ok, out) = check_in(lang, document, &siblings);
-            if if *in_a_record { *record } else { *variable } {
-                assert!(ok, "{lang}, {held}: it lowers the value:\n{out}");
+            if holds(held) {
+                assert!(ok, "{lang}, {what}: it lowers the value:\n{out}");
                 continue;
             }
-            assert!(!ok, "{lang}, {held}: no lowering for it yet:\n{out}");
+            assert!(!ok, "{lang}, {what}: no lowering for it yet:\n{out}");
             assert!(
                 out.contains("generate/unsupported-feature")
                     && out.contains(&format!("no {name} lowering yet"))
                     && out.contains(names),
-                "{lang}, {held}: expected the refusal naming {name} and the value:\n{out}"
+                "{lang}, {what}: expected the refusal naming {name} and the value:\n{out}"
             );
         }
     }
@@ -700,7 +718,7 @@ fn a_byte_string_with_no_bound_is_refused_by_every_language() {
         ),
     ];
     for (held, document, expected) in &documents {
-        for (lang, ..) in BYTES_HELD {
+        for BytesHeld { lang, .. } in BYTES_HELD {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(!ok, "{lang}, {held}: the value has no bound:\n{out}");
             assert!(
@@ -730,7 +748,7 @@ fn a_byte_string_starts_at_printable_ascii_that_fits_its_bound() {
         let document = holding_frame(&format!(
             r#"<data id="frame" sce:type="bytes" sce:capacity="4" expr="{literal}"/>"#
         ));
-        for (lang, ..) in BYTES_HELD {
+        for BytesHeld { lang, .. } in BYTES_HELD {
             let (ok, out) = check_in(lang, &document, &siblings);
             assert!(
                 !ok,
@@ -767,8 +785,8 @@ fn a_string_stands_for_bytes_only_as_a_printable_ascii_literal() {
 "##
         )
     };
-    for (lang, _, holds_a_variable, _) in BYTES_HELD {
-        if !holds_a_variable {
+    for BytesHeld { lang, variable, .. } in BYTES_HELD {
+        if !variable {
             continue;
         }
         for (value, stands) in [

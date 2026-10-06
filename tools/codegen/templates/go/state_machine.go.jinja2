@@ -415,7 +415,7 @@ func (p *{{ machine_name }}Policy) {{ var.reader.go }}() ({{ GO_READ_TYPE[var.ty
 // {{ field.reader }} reports what the published `{{ field.id }}` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
-{% if field.saved_kind == 'list' %}
+{% if field.saved_kind == 'list' or field.saved_type == 'bytes' %}
 	// A copy, so a host cannot write through the slice into what the machine holds.
 	return append({{ field.ty }}{}, p.{{ field.name }}...)
 {% else %}

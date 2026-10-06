@@ -33,6 +33,7 @@ import (
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_cancel_expr"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
@@ -832,6 +833,35 @@ func TestAStringIsHeldToItsBytes(t *testing.T) {
 		"copied":   func() any { return policy.Copied() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
+}
+
+// A bytes variable is held to the bytes it declares, as a string is to its UTF-8
+// bytes: an assignment past the bound writes nothing, raises error.execution and
+// ends its block. A scenario states a byte string as its byte-exact Latin-1 text,
+// which is what the host's reader answers once it is spelled so.
+func TestAByteStringIsHeldToItsBound(t *testing.T) {
+	policy := static_bytes.NewStaticBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_bytes", drive[static_bytes.StaticBytesState, static_bytes.StaticBytesEvent](&policy, map[string]func() any{
+		"frame":   func() any { return sce.BytesAsPayloadText(policy.Frame()) },
+		"tail":    func() any { return sce.BytesAsPayloadText(policy.Tail()) },
+		"size":    func() any { return policy.Size() },
+		"matches": func() any { return policy.Matches() },
+		"misses":  func() any { return policy.Misses() },
+		"errors":  func() any { return policy.Errors() },
+	}))
+}
+
+// A host that is handed a byte string is handed a copy of it: the slice is the
+// machine's own, and a write into it would change the variable behind its bound.
+func TestAHostThatWritesIntoAByteStringItWasHandedChangesNothingOfTheMachine(t *testing.T) {
+	policy := static_bytes.NewStaticBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	handed := policy.Frame()
+	handed[0] = 'z'
+	if got := sce.BytesAsPayloadText(policy.Frame()); got != "ab" {
+		t.Fatalf("the machine holds %q after a host wrote into its copy, want %q", got, "ab")
+	}
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

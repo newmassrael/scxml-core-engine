@@ -3668,13 +3668,15 @@ variable, a concatenation — is refused where it would be held as bytes, since 
 backend takes a text for a byte string. A saved state writes it as its byte-exact
 Latin-1 text, each byte the character of that code point, and reads it back only as
 Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
-not cut. **Rust** holds a `bytes` variable as a `Vec<u8>` and **Kotlin** as a
-`ByteArray` (`scenarios/static_bytes.json`); the other four backends refuse it by name
-until each holds it, and a record's or a payload's `bytes` field is refused on all six.
-A Kotlin machine never writes into its array and hands a host a copy of a published
-one, so the bound the machine keeps cannot be changed from outside; a snapshot's byte
-string is such a copy, and two snapshots are equal by the arrays' identity, as any
-`ByteArray` in a data class is.
+not cut. **Rust** holds a `bytes` variable as a `Vec<u8>`, **Kotlin** as a `ByteArray`
+and **Go** as a `[]byte` (`scenarios/static_bytes.json`); the other three backends
+refuse it by name until each holds it, and a record's `bytes` field, and a transition on
+an event whose payload carries one, are refused on all six (`StaticTarget::lowers_record_bytes`,
+`StaticTarget::lowers_payload_bytes`). A Kotlin or Go machine never writes into its array
+and hands a host a copy of a published one, so the bound the machine keeps cannot be
+changed from outside; a Kotlin snapshot's byte string is such a copy, and two snapshots
+are equal by the arrays' identity, as any `ByteArray` in a data class is. A Go machine
+is not saved, so its host reads the value through its accessor.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

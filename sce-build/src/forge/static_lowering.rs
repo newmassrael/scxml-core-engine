@@ -361,6 +361,13 @@ pub trait StaticTarget {
     fn lowers_record_bytes(&self) -> bool {
         false
     }
+    /// Whether a transition on an event whose typed payload carries a `bytes`
+    /// field is lowered: the field is read into the variable or the record field
+    /// that holds it, under the same bound (docs/adr/0005, decision 2). A target
+    /// that does not is refused at the transition, by name.
+    fn lowers_payload_bytes(&self) -> bool {
+        false
+    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -3335,16 +3342,18 @@ fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
 }
 
 /// The first `bytes` variable of `scope` that `target` does not hold
-/// ([`StaticTarget::lowers_bytes`]), or the first record variable (or list of
+/// ([`StaticTarget::lowers_bytes`]), the first record variable (or list of
 /// records) whose schema has a `bytes` field it does not hold
-/// ([`StaticTarget::lowers_record_bytes`]), described for a refusal. Asked once
+/// ([`StaticTarget::lowers_record_bytes`]), or the first transition on an event
+/// whose payload carries one it does not hold
+/// ([`StaticTarget::lowers_payload_bytes`]), described for a refusal. Asked once
 /// for every target, as a bound is the document's and not a language's.
 fn bytes_held(
     model: &SCXMLModel,
     scope: &StaticScope,
     target: &dyn StaticTarget,
 ) -> Option<String> {
-    scope.variables.iter().find_map(|var| {
+    let in_a_variable = scope.variables.iter().find_map(|var| {
         let ty = var.value_type.as_ref()?;
         if matches!(ty.scalar(), Some(SceType::Bytes)) {
             return (!target.lowers_bytes())
@@ -3366,7 +3375,30 @@ fn bytes_held(
             "record:{alias} with the field `{}` of type bytes",
             field.id
         ))
-    })
+    });
+    if in_a_variable.is_some() || target.lowers_payload_bytes() {
+        return in_a_variable;
+    }
+    // A typed payload is read field by field through the channel the machine's
+    // own file declares for it, and bytes are a buffer with a length.
+    model
+        .states
+        .values()
+        .flat_map(|state| &state.transitions)
+        .find_map(|t| {
+            let field = model
+                .imported_event_schemas
+                .get(&t.event)?
+                .fields
+                .iter()
+                .find(|f| matches!(f.sce_type, SceType::Bytes))?;
+            Some(format!(
+                "a transition on `{}`, an event whose payload carries `{}` of type {}",
+                t.event,
+                field.id,
+                field.sce_type.as_attr()
+            ))
+        })
 }
 
 /// Whether a record of `schema` owns text — has a `string` field — which a target
@@ -3450,16 +3482,7 @@ impl StaticTarget for GoTarget<'_> {
             self.import_root,
         ))
     }
-    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // Every type a datamodel holds is spelled but bytes: a list admits only
-        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
-        if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type
-                .as_ref()
-                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
-        }) {
-            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
-        }
+    fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         // A record's field is named as the author wrote it, so one Go reserves
         // cannot be a field.
         if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
@@ -3650,6 +3673,14 @@ impl StaticTarget for GoTarget<'_> {
     }
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("scealgorithm.Bounded(&sceFailure, {value}, {capacity})")
+    }
+    // The one generic helper counts the length of a `string` and of a `[]byte`.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        self.bounded_string(value, capacity)
+    }
+    // A `[]byte` the machine never writes into, handed to a host as a copy.
+    fn lowers_bytes(&self) -> bool {
+        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -4630,25 +4661,8 @@ impl StaticTarget for CTarget {
             // fields it holds as values, and a string is a borrowed pointer into
             // a buffer the machine owns, which an assignment then holds to its
             // own variable's bound. An enum is the machine's own type, lifted
-            // from the variant's declared name. Bytes are a buffer with a
-            // length, which is not held to a scenario.
-            for t in &state.transitions {
-                let Some(schema) = model.imported_event_schemas.get(&t.event) else {
-                    continue;
-                };
-                if let Some(field) = schema
-                    .fields
-                    .iter()
-                    .find(|f| matches!(f.sce_type, SceType::Bytes))
-                {
-                    return Some(format!(
-                        "a transition on `{}`, an event whose payload carries `{}` of type {}",
-                        t.event,
-                        field.id,
-                        field.sce_type.as_attr()
-                    ));
-                }
-            }
+            // from the variant's declared name. A byte field is refused for
+            // every target alike ([`bytes_held`]) until each holds it.
             if let Some(other) = Self::unlowered_invoke(&state.invokes, self.lowers_hybrid_invoke())
             {
                 return Some(other);

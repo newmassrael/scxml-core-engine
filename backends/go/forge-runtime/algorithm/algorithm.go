@@ -104,15 +104,18 @@ func Choose[T any](cond bool, ifTrue, ifFalse T) T {
 // spelling it.
 func ElementOf[T any](_ []T, value T) T { return value }
 
-// Bounded is `value` when it holds no more than capacity UTF-8 bytes — the bound
-// a string variable of a sce-static machine declares — and "" with a capacity
-// failure recorded in f otherwise. Counted in bytes, as every backend counts
-// them, so a machine holds the same value wherever it runs: a Go string is bytes
-// already, and what is counted here is what the other backends convert to count.
-func Bounded(f *Failure, value string, capacity uint32) string {
+// Bounded is `value` when it holds no more than capacity bytes — the bound a
+// string variable of a sce-static machine declares, counted in UTF-8 bytes, and
+// the bound a byte string declares, counted in bytes — and the empty value with
+// a capacity failure recorded in f otherwise. Counted in bytes, as every backend
+// counts them, so a machine holds the same value wherever it runs: a Go string
+// is bytes already, and what is counted here is what the other backends convert
+// to count.
+func Bounded[S ~string | ~[]byte](f *Failure, value S, capacity uint32) S {
 	if uint64(len(value)) > uint64(capacity) {
 		f.Fail(CapacityExceeded)
-		return ""
+		var none S
+		return none
 	}
 	return value
 }

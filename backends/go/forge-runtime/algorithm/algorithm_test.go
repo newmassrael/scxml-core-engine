@@ -4,6 +4,7 @@
 package algorithm
 
 import (
+	"bytes"
 	"math"
 	"testing"
 )
@@ -127,6 +128,40 @@ func TestAStringIsHeldToItsBytes(t *testing.T) {
 		}
 		if c.fail && f.Err().Error() != "capacity-exceeded" {
 			t.Errorf("Bounded(%q, %d) failed with %v, want capacity-exceeded", c.value, c.capacity, f.Err())
+		}
+	}
+}
+
+// A byte string is held to its bytes by the same helper: the bytes of two
+// characters are not the characters, and a value past the bound is the empty one
+// with the failure recorded, as a string's is.
+func TestAByteStringIsHeldToItsBytes(t *testing.T) {
+	cases := []struct {
+		value    []byte
+		capacity uint32
+		fail     bool
+	}{
+		{[]byte("abcd"), 4, false},
+		{[]byte("abcde"), 4, true},
+		{[]byte{0xe9, 0xff, 0x80, 0x00}, 4, false},
+		{[]byte("é"), 1, true},
+		{nil, 1, false},
+	}
+	for _, c := range cases {
+		var f Failure
+		got := Bounded(&f, c.value, c.capacity)
+		if f.Failed() != c.fail {
+			t.Errorf("Bounded(%v, %d) failed %v, want %v", c.value, c.capacity, f.Failed(), c.fail)
+		}
+		want := c.value
+		if c.fail {
+			want = nil
+		}
+		if !bytes.Equal(got, want) || (c.fail && got != nil) {
+			t.Errorf("Bounded(%v, %d) = %v, want %v", c.value, c.capacity, got, want)
+		}
+		if c.fail && f.Err().Error() != "capacity-exceeded" {
+			t.Errorf("Bounded(%v, %d) failed with %v, want capacity-exceeded", c.value, c.capacity, f.Err())
 		}
 	}
 }
