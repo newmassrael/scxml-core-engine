@@ -939,6 +939,40 @@ pub fn bounded_string(value: &Value, what: &str, capacity: usize) -> Result<Stri
     Ok(text)
 }
 
+/// A byte string as a saved state writes it: its byte-exact Latin-1 text, each
+/// byte the character of that code point (docs/adr/0005, decision 2) — the
+/// spelling a `bytes` value takes on the wire, so one value is one text on every
+/// backend, and a JSON reader that has no byte string reads it as a string.
+pub fn bytes_to_saved(bytes: &[u8]) -> Value {
+    Value::Text(bytes.iter().map(|&byte| char::from(byte)).collect())
+}
+
+/// A saved byte string `value`, read back only if it is Latin-1 text of no more
+/// than the `capacity` bytes the machine bounds it by ([`bytes_to_saved`]) — a
+/// machine never holds more, and a restored one must not be the first to. A
+/// character past U+00FF is no byte, and is refused rather than truncated.
+pub fn bounded_bytes(value: &Value, what: &str, capacity: usize) -> Result<Vec<u8>, StateRefusal> {
+    let text = String::from_saved(value, what)?;
+    let bytes = text
+        .chars()
+        .map(|c| {
+            u8::try_from(u32::from(c)).map_err(|_| {
+                StateRefusal::new(format!(
+                    "'{what}' holds U+{:04X}, which is past U+00FF and so no byte",
+                    u32::from(c)
+                ))
+            })
+        })
+        .collect::<Result<Vec<u8>, StateRefusal>>()?;
+    if bytes.len() > capacity {
+        return Err(StateRefusal::new(format!(
+            "'{what}' holds {} bytes, past the {capacity} it is bounded by",
+            bytes.len()
+        )));
+    }
+    Ok(bytes)
+}
+
 /// The wall clock now, in milliseconds since the Unix epoch: what a host that
 /// has no clock of its own to give [`save`] and [`enter`] gives them.
 pub fn wall_clock_ms() -> u64 {

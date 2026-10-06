@@ -384,7 +384,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             Self::SHAPE,
             vec![
 {% for field in static_fields %}
+{% if field.saved_type == "bytes" %}
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.{{ field.name }})),
+{% else %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
+{% endif %}
 {% endfor %}
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
@@ -414,6 +418,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% for field in static_fields %}
 {% if field.bound is not none and field.saved_type == "string" %}
         policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded_string(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
+{% elif field.bound is not none and field.saved_type == "bytes" %}
+        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
 {% elif field.bound is not none %}
         policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
 {% else %}

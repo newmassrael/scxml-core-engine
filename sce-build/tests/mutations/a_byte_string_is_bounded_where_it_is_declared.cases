@@ -19,7 +19,9 @@
 #   a bytes variable that declares no capacity is let through;
 #   a record's bytes field that has no max-size is let through;
 #   a literal past printable ASCII is let through;
-#   a backend is not asked whether it holds a byte string.
+#   a backend is not asked whether it holds a byte string;
+#   a record's bytes field is let through where only a variable is held;
+#   a bytes variable is refused where it is held.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -50,4 +52,16 @@ mutation_case "a backend is not asked whether it holds a byte string" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "        .or_else(|| bytes_held(model, &scope, target))",
      "        .or_else(|| None::<String>)")
+PY
+
+mutation_case "a record's bytes field is let through where only a variable is held" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        if target.lowers_record_bytes() {\n            return None;\n        }",
+     "        if true {\n            return None;\n        }")
+PY
+
+mutation_case "a bytes variable is refused where it is held" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            return (!target.lowers_bytes())\n                .then(|| format!(\"<data id=\\\"{}\\\" sce:type=\\\"bytes\\\">\", var.id));",
+     "            return Some(format!(\"<data id=\\\"{}\\\" sce:type=\\\"bytes\\\">\", var.id));")
 PY

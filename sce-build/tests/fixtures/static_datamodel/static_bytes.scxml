@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+  docs/adr/0005, decision 2): a `bytes` variable holds at most the `sce:capacity` it
+  declares, counted in bytes, and holds it on every backend. An assignment past it
+  is skipped and raises error.execution, and ends the block it stands in
+  (§scxml-4.9), as an assignment to a string variable past its bound does — so a
+  machine holds the same value wherever it runs.
+
+  `frame` holds eight bytes at most and `tail` four. A literal is printable ASCII,
+  the one literal whose bytes every engine spells alike:
+
+      fill      'abcdefgh'   eight bytes: fits
+      toowide   'abcdefghi'  nine bytes: does not fit
+      copy      tail = frame the bytes of one variable into another: fits only while
+                frame holds four or fewer
+
+  `check` counts a match when `frame` is the bytes `ab`, and a miss when it is not;
+  `measure` reads the length of `frame`. A saved state writes `frame` as its
+  byte-exact Latin-1 text, which is what the scenario reads it back as.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_bytes">
+  <datamodel>
+    <data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'" sce:direction="out"/>
+    <data id="tail" sce:type="bytes" sce:capacity="4" expr="'xy'" sce:direction="out"/>
+    <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="matches" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fill" type="internal">
+      <assign location="frame" expr="'abcdefgh'"/>
+    </transition>
+    <transition event="toowide" type="internal">
+      <assign location="frame" expr="'abcdefghi'"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <assign location="frame" expr="'ab'"/>
+    </transition>
+    <transition event="copy" type="internal">
+      <assign location="tail" expr="frame"/>
+    </transition>
+    <transition event="check" cond="frame === 'ab'" type="internal">
+      <assign location="matches" expr="matches + 1"/>
+    </transition>
+    <transition event="check" cond="frame !== 'ab'" type="internal">
+      <assign location="misses" expr="misses + 1"/>
+    </transition>
+    <transition event="measure" type="internal">
+      <assign location="size" expr="len(frame)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

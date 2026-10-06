@@ -23,6 +23,9 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
     StaticBlockEndsPersist, StaticBlockEndsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_bytes_sm::{
+    StaticBytesPersist, StaticBytesPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_cancel_expr_sm::{
     StaticCancelExprPersist, StaticCancelExprPolicy,
 };
@@ -648,6 +651,21 @@ fn static_string_capacity_holds_a_string_to_its_bytes() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_string_capacity.json"
+        ),
+    );
+}
+
+// A bytes variable is held to the bytes it declares, as a string is to its UTF-8
+// bytes: an assignment past the bound writes nothing, raises `error.execution`
+// and ends its block. It is saved as its byte-exact Latin-1 text, which is what
+// the scenario reads it back as.
+#[test]
+fn static_bytes_holds_a_byte_string_to_its_bound() {
+    replay(
+        Engine::new(StaticBytesPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json"
         ),
     );
 }

@@ -346,13 +346,19 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
-    /// Whether a `bytes` variable, or a record's `bytes` field, is held: a byte
-    /// string bounded by the `sce:capacity` or the `sce:max-size` its declaration
-    /// writes (docs/adr/0005, decision 2). A target that does not is refused where
-    /// the value is declared, by name, rather than left to write a value that does
-    /// not build — Rust's record is a `Copy` struct, which a `Vec<u8>` field cannot
-    /// be a member of.
+    /// Whether a `bytes` variable is held: a byte string bounded by the
+    /// `sce:capacity` its declaration writes (docs/adr/0005, decision 2). A target
+    /// that does not is refused where the value is declared, by name, rather than
+    /// left to write a value that does not build.
     fn lowers_bytes(&self) -> bool {
+        false
+    }
+    /// Whether a record's `bytes` field is held, bounded by the `sce:max-size` its
+    /// schema writes — a step of its own after the variable, since a record is
+    /// copied, saved, taken whole from a payload and handed to a host, each of
+    /// which a byte string changes: Rust's record is a `Copy` struct, which a
+    /// `Vec<u8>` field cannot be a member of.
+    fn lowers_record_bytes(&self) -> bool {
         false
     }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
@@ -568,6 +574,16 @@ pub trait StaticTarget {
     /// string variable keeps on every backend, so that a machine holds the same
     /// value wherever it runs.
     fn bounded_string(&self, value: &str, capacity: u32) -> String;
+    /// [`Self::bounded_string`] for `value`, an owned byte string, held to
+    /// `capacity` bytes: the bound a `bytes` variable keeps on every backend
+    /// (docs/adr/0005, decision 2). Asked only of a target that lowers a byte
+    /// string ([`Self::lowers_bytes`]), which is refused before any is written.
+    fn bounded_bytes(&self, _value: &str, _capacity: u32) -> String {
+        unreachable!(
+            "{} holds no byte string: `lowers_bytes` is false, so the document was refused",
+            self.name()
+        )
+    }
     /// How a string variable bounded by `capacity` UTF-8 bytes is held, starting
     /// at the literal `init` — for a target whose own string type holds no such
     /// bound, as a C buffer does not. `None` for a target whose strings own
@@ -1357,6 +1373,15 @@ impl StaticTarget for RustTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("sce_forge_runtime::algorithm::bounded({value}, {capacity})?")
     }
+    // The one helper counts the bytes of whatever it is handed, a `String`'s
+    // UTF-8 and a `Vec<u8>`'s alike.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        self.bounded_string(value, capacity)
+    }
+    // A `Vec<u8>`, bounded where it is written and saved as its Latin-1 text.
+    fn lowers_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
@@ -1712,6 +1737,18 @@ pub fn lower(
             })
         }))
         .collect();
+    let bytes_vars: BytesVars = variables
+        .iter()
+        .filter(|v| {
+            matches!(
+                v.value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::scalar),
+                Some(SceType::Bytes)
+            )
+        })
+        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+        .collect();
     let rewrites = Rewrites {
         records: record_vars,
         schemas: records.clone(),
@@ -1721,6 +1758,7 @@ pub fn lower(
         loop_records: Default::default(),
         lists: list_vars,
         strings: string_vars,
+        bytes: bytes_vars,
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
@@ -2649,6 +2687,10 @@ type ListVars = std::collections::BTreeMap<String, (crate::forge::model::ListEle
 /// in UTF-8 bytes.
 type StringVars = std::collections::BTreeMap<String, u32>;
 
+/// A `sce-static` document's byte-string variables, each with its declared
+/// capacity in bytes.
+type BytesVars = std::collections::BTreeMap<String, u32>;
+
 /// What rewriting an action needs beyond its expressions: the record and
 /// list variables a write to one is rewritten against, the machine name the
 /// generated event type is spelled from, whether the document declares
@@ -2675,6 +2717,8 @@ struct Rewrites<'m> {
     loop_records: std::cell::RefCell<Vec<(String, String)>>,
     lists: ListVars,
     strings: StringVars,
+    /// The byte-string variables, each held to its bound as a string is.
+    bytes: BytesVars,
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
@@ -3282,22 +3326,24 @@ fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
         })
 }
 
-/// The first `bytes` variable of `scope`, or the first record variable (or list of
-/// records) whose schema has a `bytes` field, described for a refusal, when
-/// `target` does not hold one ([`StaticTarget::lowers_bytes`]). Asked once for
-/// every target, as a bound is the document's and not a language's.
+/// The first `bytes` variable of `scope` that `target` does not hold
+/// ([`StaticTarget::lowers_bytes`]), or the first record variable (or list of
+/// records) whose schema has a `bytes` field it does not hold
+/// ([`StaticTarget::lowers_record_bytes`]), described for a refusal. Asked once
+/// for every target, as a bound is the document's and not a language's.
 fn bytes_held(
     model: &SCXMLModel,
     scope: &StaticScope,
     target: &dyn StaticTarget,
 ) -> Option<String> {
-    if target.lowers_bytes() {
-        return None;
-    }
     scope.variables.iter().find_map(|var| {
         let ty = var.value_type.as_ref()?;
         if matches!(ty.scalar(), Some(SceType::Bytes)) {
-            return Some(format!("<data id=\"{}\" sce:type=\"bytes\">", var.id));
+            return (!target.lowers_bytes())
+                .then(|| format!("<data id=\"{}\" sce:type=\"bytes\">", var.id));
+        }
+        if target.lowers_record_bytes() {
+            return None;
         }
         let alias = ty
             .record_alias()
@@ -5555,6 +5601,12 @@ fn lower_action(
             if let Some(capacity) = rewrites.strings.get(location) {
                 value = Receiving {
                     text: target.bounded_string(&value.text, *capacity),
+                    can_fail: true,
+                };
+            } else if let Some(capacity) = rewrites.bytes.get(location) {
+                // ... and so does a byte string, in bytes.
+                value = Receiving {
+                    text: target.bounded_bytes(&value.text, *capacity),
                     can_fail: true,
                 };
             }

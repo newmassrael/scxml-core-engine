@@ -1,0 +1,69 @@
+# Mutation cases for "a bytes variable is held within the `sce:capacity` it declares,
+# and is saved as its Latin-1 text" under the Rust runtime
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_byte_string_is_held_within_its_bound_rust.cases`.
+#
+# `static_bytes` assigns a bytes variable from a literal and from another one, and
+# expects a value past the bound to leave the variable as it was and `errors` to count
+# it; the scenario reads each value back from the saved state, where it is its byte-exact
+# Latin-1 text. `a_byte_string_is_saved_as_latin1_text_and_refused_past_its_bound_or_a_byte`
+# restores a saved state that claims more bytes than the bound, or a character that is no
+# byte, and expects the refusal to name the variable. The mutants take one decision away
+# each:
+#
+#   an assignment to a byte string is not held to its bound;
+#   a literal that lands in a bytes slot stays a string, which no `Vec<u8>` takes;
+#   a byte string is saved as an array of numbers and not as its Latin-1 text;
+#   a saved byte string is read back by the generic list reader, which reads no text;
+#   a saved byte string past the bound is read back (the bound is not enforced);
+#   a character past U+00FF is cut to a byte and not refused.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/expr.rs
+mutation_targets backends/rust/runtime/src/saved_state.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_bytes_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
+
+mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+PY
+
+mutation_case "a literal that lands in a bytes slot stays a string" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;",
+     "    if false && position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;")
+PY
+
+mutation_case "a byte string is saved as an array of numbers" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% if field.saved_type == \"bytes\" %}\n                (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(",
+     "{% if false %}\n                (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(")
+PY
+
+mutation_case "a saved byte string is read back by the list reader" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "{% elif field.bound is not none and field.saved_type == \"bytes\" %}",
+     "{% elif false %}")
+PY
+
+mutation_case "a saved byte string past the bound is read back" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "    if bytes.len() > capacity {\n        return Err(StateRefusal::new(format!(\n            \"'{what}' holds {} bytes, past the {capacity} it is bounded by\",",
+     "    if false && bytes.len() > capacity {\n        return Err(StateRefusal::new(format!(\n            \"'{what}' holds {} bytes, past the {capacity} it is bounded by\",")
+PY
+
+mutation_case "a character past U+00FF is cut to a byte" <<'PY'
+edit("backends/rust/runtime/src/saved_state.rs",
+     "            u8::try_from(u32::from(c)).map_err(|_| {",
+     "            Ok::<u8, StateRefusal>(u32::from(c) as u8).map_err(|_: StateRefusal| {")
+PY

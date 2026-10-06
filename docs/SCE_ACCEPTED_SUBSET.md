@@ -3656,8 +3656,21 @@ Python, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`, which does n
 compile (E0204). Until a backend lowers it, a byte string is refused where it is
 declared, by name, as `generate/unsupported-feature` (`<data id="frame"
 sce:type="bytes">`, `record:Frame with the field `frame` of type bytes`), and the
-backend lifts the refusal (`StaticTarget::lowers_bytes`) in the commit that lowers it
+backend lifts the refusal (`StaticTarget::lowers_bytes` for a variable,
+`StaticTarget::lowers_record_bytes` for a record's field) in the commit that lowers it
 and replays `static_bytes`.
+
+A byte string is assigned from a printable-ASCII literal or from another byte string,
+held to its bound where it is written (past it the assignment fails as any other does:
+nothing is written, `error.execution` is raised, the block ends), compared with `===`
+and `!==`, and measured by `len`. A string that is not such a literal — another
+variable, a concatenation — is refused where it would be held as bytes, since no
+backend takes a text for a byte string. A saved state writes it as its byte-exact
+Latin-1 text, each byte the character of that code point, and reads it back only as
+Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
+not cut. **Rust** holds a `bytes` variable as a `Vec<u8>` (`scenarios/static_bytes.json`);
+the other five backends refuse it by name until each holds it, and a record's or a
+payload's `bytes` field is refused on all six.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

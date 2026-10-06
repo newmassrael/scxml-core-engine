@@ -131,11 +131,12 @@ pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, Algo
     T::try_from(v).map_err(|_| AlgorithmError::Overflow)
 }
 
-/// `value`, handed back, when it holds no more than `capacity` UTF-8 bytes —
-/// the bound a string variable of a `sce-static` machine declares — and a
+/// `value`, handed back, when it holds no more than `capacity` bytes — the
+/// bound a string variable of a `sce-static` machine declares, counted in UTF-8
+/// bytes, and the bound a byte string declares, counted in bytes — and a
 /// capacity failure otherwise. Counted in bytes, not characters, as every
 /// backend counts them, so a machine holds the same value wherever it runs.
-pub fn bounded<S: AsRef<str>>(value: S, capacity: u32) -> Result<S, AlgorithmError> {
+pub fn bounded<S: AsRef<[u8]>>(value: S, capacity: u32) -> Result<S, AlgorithmError> {
     if value.as_ref().len() > capacity as usize {
         return Err(AlgorithmError::CapacityExceeded);
     }

@@ -17,6 +17,9 @@
 
 use sce_rust_runtime::saved_state::{wall_clock_ms, SavedState, StateRefusal};
 use sce_rust_runtime::{Engine, SceClock};
+use sce_rust_tests::integration::static_datamodel::static_bytes_sm::{
+    StaticBytesPersist, StaticBytesPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterData, StaticCounterObserve, StaticCounterPersist, StaticCounterPolicy,
     StaticCounterState,
@@ -763,6 +766,45 @@ fn a_string_longer_than_its_bound_is_refused_in_bytes() {
         } else {
             let refusal = refused(restored);
             assert!(refusal.reason().contains("bounded by"), "{refusal}");
+        }
+    }
+}
+
+#[test]
+fn a_byte_string_is_saved_as_latin1_text_and_refused_past_its_bound_or_a_byte() {
+    // A machine never holds more than sce:capacity="4" bytes in `tail`, so a
+    // saved state that claims it did is not one this machine wrote. A byte string
+    // is its Latin-1 text (docs/adr/0005, decision 2): each character is one byte,
+    // so four of them fit whatever their code points are, five do not, and a
+    // character past U+00FF is no byte at all.
+    let mut engine = Engine::new(StaticBytesPolicy::new());
+    engine.initialize();
+    let json = engine.save().expect("saves").to_json();
+    for (claimed, fits) in [
+        ("abcd", true),
+        ("éÿ\u{80}\u{ff}", true),
+        ("abcde", false),
+        ("é€", false),
+    ] {
+        let json = json.replace(r#""tail":"xy""#, &format!(r#""tail":"{claimed}""#));
+        let restored = Engine::<StaticBytesPolicy>::restore(
+            StaticBytesPolicy::new(),
+            &SavedState::from_json(&json).expect("reads"),
+        );
+        if fits {
+            let restored = restored.unwrap_or_else(|e| panic!("{claimed:?} fits four bytes: {e}"));
+            // Written back as the same text: no byte became another on the way.
+            assert!(
+                restored
+                    .save()
+                    .expect("saves")
+                    .to_json()
+                    .contains(&format!(r#""tail":"{claimed}""#)),
+                "{claimed:?} is read back as it was written"
+            );
+        } else {
+            let refusal = refused(restored);
+            assert!(refusal.reason().contains("tail"), "{refusal}");
         }
     }
 }

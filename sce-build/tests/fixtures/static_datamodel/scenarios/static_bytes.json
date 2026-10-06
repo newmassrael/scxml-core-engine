@@ -1,0 +1,35 @@
+{
+  "machine": "static_bytes",
+  "about": "A bytes variable bounded by the sce:capacity it declares, eight bytes: assigned from a literal and from another bytes variable, compared with === and !==, and measured by len. A saved state writes a bytes value as its byte-exact Latin-1 text, so the printable ASCII of these steps reads as itself. A value past the bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends. Expected values are derived from the byte counts, not observed from a backend.",
+  "steps": [
+    { "note": "built from its literals",
+      "expect": { "state": "idle", "variables": { "frame": "ab", "tail": "xy", "size": 0, "matches": 0, "misses": 0, "errors": 0 } } },
+
+    { "note": "the bytes of the variable are the literal's: a match",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 0 } } },
+
+    { "note": "the length of two bytes",
+      "event": "measure", "expect": { "variables": { "size": 2 } } },
+
+    { "note": "eight bytes fit a bound of eight",
+      "event": "fill", "expect": { "variables": { "frame": "abcdefgh", "errors": 0 } } },
+
+    { "note": "eight bytes are not `ab`: a miss, and !== is true",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 1 } } },
+
+    { "note": "the length of eight bytes",
+      "event": "measure", "expect": { "variables": { "size": 8 } } },
+
+    { "note": "eight bytes do not fit a bound of four: the variable is left as it was and error.execution is raised",
+      "event": "copy", "expect": { "variables": { "tail": "xy", "errors": 1 } } },
+
+    { "note": "nine bytes do not fit a bound of eight: nothing is written",
+      "event": "toowide", "expect": { "variables": { "frame": "abcdefgh", "errors": 2 } } },
+
+    { "note": "back to two bytes",
+      "event": "reset", "expect": { "variables": { "frame": "ab", "errors": 2 } } },
+
+    { "note": "two bytes fit a bound of four",
+      "event": "copy", "expect": { "variables": { "tail": "ab", "errors": 2 } } }
+  ]
+}

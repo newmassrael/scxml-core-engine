@@ -394,6 +394,9 @@ fn lower_at(
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_value(&ast, slot, expr)?;
     land_reals_in_slot(&mut ast, expected);
+    if position == Position::Owned && expected == InferredType::Bytes {
+        land_strings_in_bytes_slot(&mut ast, expr)?;
+    }
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
         check_integer_indexing(&mut ast);
@@ -426,6 +429,9 @@ fn lower_at(
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Str => {
             emit_rust_owned_str(&ast)?
+        }
+        ExprTarget::Rust if position == Position::Owned && expected == InferredType::Bytes => {
+            emit_rust_owned_bytes(&ast)?
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?,
         ExprTarget::Go => emit_go(&ast, expected)?,
@@ -3430,14 +3436,57 @@ fn reinterpret_string_as_bytes(lit_node: &mut TypedExpr, other: &TypedExpr) {
     if !matches!(other.ty, InferredType::Bytes) {
         return;
     }
+    string_literal_as_bytes(lit_node);
+}
+
+/// Rewrite `lit_node`, a `StringLit` of printable ASCII, in place into the
+/// `BytesLit` of the same bytes, and say whether it was one. Nothing else is
+/// touched: a literal [`decode_bytes_literal`] declines stays a string.
+fn string_literal_as_bytes(lit_node: &mut TypedExpr) -> bool {
     let ExprKind::StringLit { value, .. } = &lit_node.kind else {
-        return;
+        return false;
     };
     let Some(bytes) = decode_bytes_literal(value) else {
-        return;
+        return false;
     };
     lit_node.kind = ExprKind::BytesLit { bytes };
     lit_node.ty = InferredType::Bytes;
+    true
+}
+
+/// A value that lands in a place that owns a byte string is bytes, and a string
+/// stands for them only as the literal of printable ASCII the one reading every
+/// backend shares ([`decode_bytes_literal`]) gives bytes to: `slot_admits` lets a
+/// string through where bytes are declared, which a payload field relies on, and
+/// a `String` from a variable or a concatenation would reach a `Vec<u8>` as a
+/// type no backend takes. The arms of a conditional land one by one, as they do
+/// for a real ([`land_reals_in_slot`]).
+fn land_strings_in_bytes_slot(expr: &mut TypedExpr, source: &str) -> Result<(), Refusal> {
+    if let ExprKind::Conditional {
+        consequent,
+        alternate,
+        ..
+    } = &mut expr.kind
+    {
+        land_strings_in_bytes_slot(consequent, source)?;
+        land_strings_in_bytes_slot(alternate, source)?;
+        expr.ty = InferredType::Bytes;
+        return Ok(());
+    }
+    if expr.ty != InferredType::Str || string_literal_as_bytes(expr) {
+        return Ok(());
+    }
+    Err(ExprError::UnsupportedConstruct {
+        construct: "a string where a byte string is held (only a literal of printable ASCII \
+                    with no backslash stands for bytes)"
+            .to_string(),
+        observed: expr
+            .span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string),
+    }
+    .at(expr.span.clone()))
 }
 
 /// Render a decoded byte sequence as the content of a double-quoted
@@ -6223,6 +6272,30 @@ fn emit_rust_owned_str(expr: &TypedExpr) -> Result<String, Refusal> {
         _ => {
             let borrowed = emit_rust(expr, InferredType::Str)?;
             Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
+        }
+    }
+}
+
+/// A `bytes` value made owned for a place that holds a `Vec<u8>`
+/// ([`Position::Owned`]), as [`emit_rust_owned_str`] does a string: a constant
+/// is a `&[u8; N]` and a variable read is the machine's own field, so each leaf
+/// is copied, and the arms of a conditional one by one, since both arms of a
+/// Rust `if` must be one type.
+fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<String, Refusal> {
+    match &expr.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => Ok(format!(
+            "if {} {{ {} }} else {{ {} }}",
+            emit_rust(condition, InferredType::Bool)?,
+            emit_rust_owned_bytes(consequent)?,
+            emit_rust_owned_bytes(alternate)?,
+        )),
+        _ => {
+            let borrowed = emit_rust(expr, InferredType::Bytes)?;
+            Ok(format!("{}.to_vec()", wrap_postfix(expr, borrowed)))
         }
     }
 }
