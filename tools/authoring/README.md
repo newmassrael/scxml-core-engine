@@ -2176,10 +2176,11 @@ reference document — which passed every shipped case — reset them on any
 change of a fault input.
 
 ⚠⚠ **A statechart is handed the event, and a value only through `carries`.**
-The driver reads `event`, `address`, `becomes` and `carries` off an input rule,
-so any other key on a statechart's input rule — `equals`, `protocol`,
-`when_absent` — computes a value no part of the machine receives, and `check`
-and `verify` both refuse it in the same words. A `sce:direction="in"`
+The driver reads `event`, `address`, `becomes`, `carries`, `absent` and
+`when_absent` off an input rule (the last two are for a silent address, below),
+so any other key on a statechart's input rule — `equals`, `protocol` — computes
+a value no part of the machine receives, and `check` and `verify` both refuse it
+in the same words. A `sce:direction="in"`
 declaration in a statechart is refused for the same reason: nothing outside the
 machine writes its datamodel, and the generated code offers the host a reader
 for each variable and a writer for none. Measured 2026-09-22: these were
@@ -2207,6 +2208,28 @@ the platform hands the component every round reaches the machine when it
 changes, not every round. Without `carries` a component that compares a level
 and keeps nothing is written as a transform; with it, a statechart can count
 time AND read a number.
+
+A signal that times out is not a value its address takes: the platform flags it
+and the callback runs with nothing to read. A statechart is told of the silence
+in one of two ways, and `check` and `verify` read both:
+
+    inputs:
+      linkLost: {address: plant/in/link, event: link.lost, absent: true}
+      level:    {address: plant/in/level, event: level.set,
+                 carries: value, when_absent: 255}
+
+`absent: true` sends the rule's event, bare, when the case leaves the address not
+reporting (no value, or a token the conventions list as absence), and not
+otherwise. While the binding reads the silence of an address this way, the other
+rules on that address that read a value are not told of it: a silent address is
+not any value. `when_absent` is for a rule that `carries`: it is the value the
+event's data takes when the address is not reporting, read as a transform's
+input would be. Without `carries` the event has no data to hold it, and
+`absent: true` beside `becomes`, `carries` or `when_absent` has no value to
+compare or hand over; `check` refuses both. Measured 2026-10-06: no binding
+could satisfy `check` and `verify` for a case that drives a timeout at a
+statechart, because `check` refused the key `verify` demanded, and 32 cases of
+one component and the timeout case of two more were left unjudged.
 
 An address named with nothing that compares it — `level`, `caption` — hands
 the document that address's OWN value, read as the type the document declares

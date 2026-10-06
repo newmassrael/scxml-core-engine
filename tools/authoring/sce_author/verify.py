@@ -2345,7 +2345,10 @@ class StatechartRun:
     """
 
     def __init__(self, module, build: Build, model=None, payloads=None,
-                 absence_tokens=()):
+                 absence_tokens=(), absent_addresses=frozenset()):
+        # The addresses some rule reads the SILENCE of (`absent: true`): while one is not
+        # reporting, only those rules fire for it.
+        self.absent_addresses = frozenset(absent_addresses)
         # The interface model, so `becomes` is compared as the position means
         # it rather than as the record happens to spell it.
         self.model = model
@@ -2406,10 +2409,32 @@ class StatechartRun:
                 f"afterwards would be of a machine nobody drove")
         return found
 
+    def _absent_in(self, address, case) -> bool:
+        """Whether the case leaves the address not reporting: no value, or a token the
+        conventions list as absence (a signal timeout)."""
+        if address not in case.given:
+            return True
+        value = case.given.get(address)
+        tokens = {str(t).strip().lower() for t in self.absence_tokens}
+        return value is None or str(value).strip().lower() in tokens
+
     def drive(self, rule: dict, case) -> bool:
         """Send this input's event if the case drove it. True when sent."""
         address = rule.get("address")
         if address is None or address not in (case.drove or ()):
+            return False
+        absent = self._absent_in(address, case)
+        if rule.get("absent"):
+            # The platform tells the component a signal fell silent; the event is the news,
+            # and there is no value to hand over.
+            if not absent:
+                return False
+            self.engine.send_event(self.event(rule["event"]))
+            self.check()
+            return True
+        if absent and address in self.absent_addresses:
+            # A silent address is not a value: where the binding reads its silence, the rules
+            # that read a value are not told of it.
             return False
         becomes = rule.get("becomes")
         # ⚠ Through the value space, as `equals` already is on the computation
@@ -2748,7 +2773,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
 
     try:
         run = StatechartRun(module, build, pack.model, payloads=declared.payloads,
-                            absence_tokens=pack.conventions.absence_tokens)
+                            absence_tokens=pack.conventions.absence_tokens,
+                            absent_addresses={r.get("address") for r in driving.values()
+                                              if r.get("absent")})
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 

@@ -375,12 +375,16 @@ class AStatechartIsHandedOnlyEvents(Both):
         keys = set(schema["$defs"]["input"]["properties"])
         # `carries` names a FIELD, so it is tried against a document whose
         # event-schema has one; the refusal of a field it lacks is below.
+        # `absent` is `true` or not there, and `when_absent` is the value of the field a rule
+        # `carries`: each read key is tried in the one shape in which it is read.
         document = Document(path=pathlib.Path("signal.scxml"), inputs=(),
                             outputs=(), kind=next(iter(STATECHART_KINDS)),
                             payloads={"train.approaching": {"level": "int32"}})
         for key in sorted(keys):
             rule = {"address": "plant/in/approach", "event": "train.approaching",
-                    key: "level" if key == "carries" else 1}
+                    key: ("level" if key == "carries" else True if key == "absent" else 1)}
+            if key == "when_absent":
+                rule["carries"] = "level"
             refused = driving_refusals(document, {"approaching": rule})
             with self.subTest(key=key):
                 if key in _STATECHART_DRIVER_READS | _ANNOTATIONS:

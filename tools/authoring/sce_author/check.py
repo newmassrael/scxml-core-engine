@@ -84,7 +84,8 @@ STATECHART_KINDS = frozenset({"statechart"})
 # to the machine. ⚠ Listed as what IS read rather than as what is not, so a
 # key the vocabulary grows later is refused on a statechart until the driver
 # learns it, instead of being dropped the way every value key was.
-_STATECHART_DRIVER_READS = frozenset({"event", "address", "becomes", "carries"})
+_STATECHART_DRIVER_READS = frozenset({"event", "address", "becomes", "carries",
+                                      "absent", "when_absent"})
 _ANNOTATIONS = frozenset({"unresolved", "assumed", "note"})
 
 # `previous(<field>)` in a transform output's expression, as the product reads
@@ -708,6 +709,21 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
             why = payload_refusal(document, rule)
             if why:
                 out.append((f"input {name}", why))
+        if "when_absent" in rule and "carries" not in rule:
+            # What an address reads as when it is not reporting reaches a statechart only as an
+            # event's data, and without `carries` the event has none.
+            out.append((f"input {name}",
+                        "`when_absent` is the value the event's data takes when the address is not "
+                        "reporting, and without `carries` this rule's event has no data to hold it: "
+                        "add `carries: <field>`, or use `absent: true` to be told of the silence"))
+        if rule.get("absent") is not None:
+            if rule["absent"] is not True:
+                out.append((f"input {name}", "`absent` on a statechart's rule is `true` or not there"))
+            elif {"becomes", "carries", "when_absent"} & set(rule):
+                out.append((f"input {name}",
+                            "`absent: true` fires the event when the address is not reporting, and "
+                            "then there is no value to compare (`becomes`) or to hand over "
+                            "(`carries`, `when_absent`): a rule that reads a value is another rule"))
         extra = sorted(k for k in rule
                        if k not in _STATECHART_DRIVER_READS | _ANNOTATIONS)
         if extra:
