@@ -110,6 +110,7 @@
 #include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
+#include "static_record_string_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
@@ -954,6 +955,42 @@ STATIC_SCENARIO_FULL(static_record_real32, record_real32_states, record_real32_v
                      record_real32_records, NULL, static_record_real32_read_real, NULL,
                      static_record_real32_read_record_real)
 
+// static_record_string: a record's string field is a buffer of the UTF-8 bytes its
+// schema declares, written from a literal, a string variable and a payload — a
+// field at a time and the payload whole — held in a record and in a list of
+// them. The buffer's text is what a scenario compares, copied where it outlives
+// the record the reader holds by value.
+#define LABELLED_FIELDS(N, E) N(sensor) E(label, static_record_string_label_text)
+VARIABLE_READER(static_record_string, errors)
+
+static const char *static_record_string_label_text(sce_static_string_8_t label) {
+    static char text[sizeof(label.data)];
+    memcpy(text, label.data, sizeof(text));
+    return text;
+}
+
+RECORD_READER(static_record_string, last, static_record_string_record_labelled_t, LABELLED_FIELDS)
+RECORD_LIST_READER(static_record_string, labels, static_record_string_record_labelled_view_t,
+                   static_record_string_record_labelled_t, LABELLED_FIELDS)
+
+static const char *static_record_string_text(void *sm, const char *name) {
+    if (strcmp(name, "note") == 0) {
+        return static_record_string_get_note((const static_record_string_t *)sm);
+    }
+    return NULL;
+}
+
+static const name_value_t record_string_states[] = {
+    {"idle", STATIC_RECORD_STRING_STATE_IDLE},
+};
+static const variable_t record_string_variables[] = {
+    {"errors", static_record_string_read_errors},
+};
+static const record_variable_t record_string_records[] = {
+    RECORD_ROW(static_record_string, last), RECORD_LIST_ROW(static_record_string, labels), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_string, record_string_states, record_string_variables, static_record_string_text,
+                no_lists, record_string_records)
+
 // static_record: the same record, with a guard that calls an imported algorithm
 // over two of its fields.
 VARIABLE_READER(static_record, refusals)
@@ -1356,6 +1393,7 @@ int main(void) {
     bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_record_real32_scenario("static_record_real32", 7);
+    bad |= static_record_string_scenario("static_record_string", 22);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);

@@ -34,8 +34,8 @@ PY
 
 mutation_case "the shared check is not asked" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)",
-     "    if let Some(construct) = None::<String>")
+     "        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))",
+     "        None::<String>.or_else(|| target.unsupported(model, &scope))")
 PY
 
 mutation_case "a child that declares no act is refused too" <<'PY'

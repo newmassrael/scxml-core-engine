@@ -471,6 +471,34 @@ fn static_record_paths<'v>(
     paths
 }
 
+/// The bound, in UTF-8 bytes, of each string field of a `record:<alias>`
+/// variable, under the dotted path an expression reads it by, `<id>.<field>`:
+/// the `sce:max-size` its schema declares. What a value that joins such a field
+/// is sized from, as it is from a string variable's `sce:capacity`
+/// ([`TypeCtx::string_capacities`]).
+fn static_record_string_bounds<'v>(
+    variables: impl IntoIterator<Item = &'v crate::model::Variable>,
+    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+) -> Vec<(String, usize)> {
+    let mut bounds = Vec::new();
+    for var in variables {
+        let Some(schema) = var
+            .value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::record_alias)
+            .and_then(|alias| records.get(alias))
+        else {
+            continue;
+        };
+        for field in &schema.fields {
+            if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
+                bounds.push((format!("{}.{}", var.id, field.id), bound as usize));
+            }
+        }
+    }
+    bounds
+}
+
 /// What a `<foreach>` over a list variable binds in its body (§scxml-4.6):
 /// `item`, each element — typed as the list's element, or, for a list of
 /// records, a closed record whose fields are the schema's — and `index`, its
@@ -484,6 +512,8 @@ pub struct LoopVariables {
     index: Option<String>,
     /// The typed `<item>.<field>` paths of a record item.
     paths: Vec<(String, InferredType)>,
+    /// The bound of each string field of a record item, under the same paths.
+    string_bounds: Vec<(String, usize)>,
 }
 
 impl LoopVariables {
@@ -512,11 +542,26 @@ impl LoopVariables {
                     .collect(),
             ),
         };
+        let string_bounds = match elem {
+            ListElemType::Scalar(_) => Vec::new(),
+            ListElemType::Record { alias } => schemas
+                .get(alias)
+                .into_iter()
+                .flat_map(|schema| &schema.fields)
+                .filter_map(|field| match (&field.sce_type, field.max_size) {
+                    (SceType::String, Some(bound)) => {
+                        Some((format!("{item}.{}", field.id), bound as usize))
+                    }
+                    _ => None,
+                })
+                .collect(),
+        };
         Self {
             item: item.to_string(),
             item_ty,
             index: index.map(str::to_string),
             paths,
+            string_bounds,
         }
     }
 
@@ -530,6 +575,9 @@ impl LoopVariables {
         for (path, ty) in &self.paths {
             inner.insert_var(path.as_str(), *ty);
         }
+        for (path, bound) in &self.string_bounds {
+            inner.insert_string_capacity(path.as_str(), *bound);
+        }
         if let Some(index) = &self.index {
             inner.insert_var(
                 index.as_str(),
@@ -537,6 +585,15 @@ impl LoopVariables {
             );
         }
         inner
+    }
+
+    /// The fields of a record item that are strings, each bounded by the
+    /// `sce:max-size` its schema declares: what a target that reads such a field
+    /// through the buffer that holds it names (`<item>.<field>`).
+    pub fn string_fields(&self) -> impl Iterator<Item = &str> {
+        self.string_bounds
+            .iter()
+            .filter_map(|(path, _)| path.split_once('.').map(|(_, field)| field))
     }
 }
 
@@ -553,6 +610,8 @@ pub struct StaticScope {
     pub variables: Vec<crate::model::Variable>,
     /// Each record variable's `<id>.<field>` ([`static_record_paths`]).
     record_paths: Vec<(String, InferredType)>,
+    /// The bound of each string field of those ([`static_record_string_bounds`]).
+    record_string_bounds: Vec<(String, usize)>,
     /// Every imported algorithm, callable as `Alias(args)`.
     pub callees: Vec<StaticCallee>,
 }
@@ -570,11 +629,22 @@ impl StaticScope {
             .cloned()
             .collect();
         let record_paths = static_record_paths(variables.iter(), &model.imported_records);
+        let record_string_bounds =
+            static_record_string_bounds(variables.iter(), &model.imported_records);
         Some(Self {
             variables,
             record_paths,
+            record_string_bounds,
             callees: model.imported_algorithms.clone(),
         })
+    }
+
+    /// The `(variable, field)` of each string field of a record variable: the
+    /// places a target that holds a string in a buffer of its own reads through it.
+    pub fn record_string_fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.record_string_bounds
+            .iter()
+            .filter_map(|(path, _)| path.split_once('.'))
     }
 
     /// The dotted paths an expression may read: every record variable's
@@ -616,6 +686,9 @@ impl StaticScope {
         enums: &'a [StaticEnum],
     ) -> TypeCtx<'a> {
         let mut ctx = static_statechart(self.variables.iter(), paths, enums);
+        for (path, bound) in &self.record_string_bounds {
+            ctx.insert_string_capacity(path.as_str(), *bound);
+        }
         for callee in &self.callees {
             if let Some(sig) = imported_callee_sig(
                 &callee.params,

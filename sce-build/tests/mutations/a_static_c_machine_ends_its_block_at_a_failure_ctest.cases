@@ -37,8 +37,8 @@ mutation_oracles backends/c/tests/integration/test_static_scalars.c backends/c/t
 
 mutation_case "a statement that failed writes the zero its operation yielded" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "if (sce_failure_.failed) {{ {failed} return; }} {} }}\",",
-     "if (sce_failure_.failed) {{ {failed} }} {} }}\",")
+     "{} sce_value = {value}; \\\n             if (sce_failure_.failed) {{ {failed} return; }} {} }}\",",
+     "{} sce_value = {value}; \\\n             if (sce_failure_.failed) {{ {failed} }} {} }}\",")
 PY
 
 # ── A condition that cannot be computed is false ───────────────────

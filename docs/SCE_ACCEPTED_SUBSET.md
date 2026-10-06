@@ -3619,14 +3619,10 @@ nothing is written, `error.execution` is raised and the block ends (§scxml-4.9)
 the record and the list are left as they were; a saved state that
 claims a longer one is refused when read, naming the field. The bound counts UTF-8
 bytes, not characters. `scenarios/static_record_string.json` holds this on every
-backend that has lowered the field.
+backend: Rust, Kotlin, Go, Python, C++ and C11.
 
-A backend that has not lowered the field refuses it where the record is declared, by
-name, as `generate/unsupported-feature` (`record:Label with the field `label` of
-type string has no Kotlin lowering yet`), and lifts the refusal
-(`StaticTarget::lowers_record_string_fields`) in the commit that lowers it and
-replays the scenario. Rust, Kotlin, Go, Python and C++ hold it today. In Rust the record is a
-struct that owns a `String` and so is `Clone` and not `Copy`, a host reads a
+Each holds the field as the value its language holds a string in. In Rust the record
+is a struct that owns a `String` and so is `Clone` and not `Copy`, a host reads a
 published one through a borrow, and a copy of one — an append, an assignment from
 another record — is a clone. In Kotlin the record is the immutable data class it
 already is, so a copy is the same value, and a saved string is read back through the
@@ -3635,9 +3631,15 @@ the same value too; a Go machine is not saved, so there is no restore to refuse.
 Python the record is a frozen dataclass changed a field at a time by replacement, so
 a copy is the same value, and a Python machine is not saved either. In C++ the record
 is an aggregate with a `std::string` member, copied by value, and a C++ machine is not
-saved. Measured 2026-10-06, before any backend held the field, `check` had answered
-ok for Rust, Kotlin, Go, C++ and Python while Rust wrote `#[derive(Clone, Copy)]`
-over a `String`, which does not compile (E0204); only C11 refused.
+saved. In C11 the field is a buffer of the bound, `sce_static_string_<N>_t`, the type
+a string variable of that bound is held in, so the record is a struct that is still
+copied by assignment: an expression reads the field as the buffer's text
+(`last.label.data`), a write copies the text and its terminator into it, a record
+made whole from a payload fills the buffer from the text the bound already admitted,
+and a C machine is not saved. Measured 2026-10-06, before any backend held the field,
+`check` had answered ok for Rust, Kotlin, Go, C++ and Python while Rust wrote
+`#[derive(Clone, Copy)]` over a `String`, which does not compile (E0204); only C11
+refused.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

@@ -346,14 +346,6 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
-    /// Whether a record variable (or a list of records) may hold a `string`
-    /// field, bounded by the `sce:max-size` its schema declares. A target that
-    /// does not is refused where the record is declared, by name, rather than
-    /// left to write a record that does not build — Rust's is a `Copy` struct, which
-    /// a `String` field cannot be a member of.
-    fn lowers_record_string_fields(&self) -> bool {
-        false
-    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -481,6 +473,42 @@ pub trait StaticTarget {
     /// that is plain data, and a clone of it for one that owns text.
     fn record_copy(&self, value: &str, _schema: &EventSchemaModel) -> String {
         value.to_string()
+    }
+    /// [`Self::receiving_write`] of a value that is a record of the type `held`,
+    /// for a target that names the type of the local the value is computed into.
+    /// The other targets' locals are typed by what they infer, as they were.
+    fn receiving_write_of(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        _held: &str,
+        failed: &str,
+    ) -> String {
+        self.receiving_write(write, value, InferredType::Unknown, failed)
+    }
+    /// How an expression reads the string field `field` of the record `record`
+    /// (already spelled as the machine's field or the loop's item), for a target
+    /// that holds such a string in a buffer of its own and reads its text through
+    /// it. `None` for a target whose string field is the string itself.
+    fn record_string_read(&self, _record: &str, _field: &str) -> Option<String> {
+        None
+    }
+    /// The statement that writes `value` — already held to its bound — into the
+    /// string field `field` of the record `target`.
+    fn assign_string_field(&self, target: &str, field: &str, value: &str) -> String {
+        self.assign_field(target, field, value)
+    }
+    /// A record's string field starting at the string literal `literal`, as the
+    /// record is built whole: the literal itself, unless the target holds the
+    /// field in a buffer of `bound` bytes.
+    fn record_string_literal(&self, _bound: u32, literal: &str) -> String {
+        literal.to_string()
+    }
+    /// A record's string field made of `text`, a string computed when the machine
+    /// runs and already held to `bound` — a payload's field taken whole into a
+    /// record: the text itself, unless the target holds the field in a buffer.
+    fn record_string_runtime(&self, _bound: u32, text: &str) -> String {
+        text.to_string()
     }
     /// An empty list.
     fn list_empty(&self) -> String;
@@ -1083,12 +1111,6 @@ impl StaticTarget for KotlinTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
-    // A string field of a record is a `String` of an immutable data class that
-    // the machine bounds by the `sce:max-size` its schema writes, as it bounds a
-    // string variable.
-    fn lowers_record_string_fields(&self) -> bool {
-        true
-    }
     fn payload_accessor(&self, event: &str) -> String {
         format!("{}!!", kotlin_payload_field(event))
     }
@@ -1267,11 +1289,6 @@ impl StaticTarget for RustTarget {
     // (`document_stem`) and starts the candidate it names, handing it the
     // values it keeps (`seed_static_child`).
     fn lowers_hybrid_invoke(&self) -> bool {
-        true
-    }
-    // A string field of a record is a `String` the machine bounds by the
-    // `sce:max-size` its schema writes, as it bounds a string variable.
-    fn lowers_record_string_fields(&self) -> bool {
         true
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
@@ -1534,6 +1551,14 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
                 target.variable_ref(v, target.field_ref(&target.field_name(&v.id))),
             )
         })
+        // A string field of a record variable, for a target that reads it through
+        // the buffer that holds it: `last.label` is the buffer's text.
+        .chain(scope.record_string_fields().filter_map(|(var, field)| {
+            let record = target.field_ref(&target.field_name(var));
+            target
+                .record_string_read(&record, field)
+                .map(|read| (format!("{var}.{field}"), read))
+        }))
         // A callee the target cannot reach is left out: `lower` has already
         // refused a document that calls one.
         .chain(scope.callees.iter().filter_map(|c| {
@@ -1608,9 +1633,8 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)
-        .or_else(|| record_with_a_string_field(model, &scope, target))
-        .or_else(|| target.unsupported(model, &scope))
+    if let Some(construct) =
+        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))
     {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
@@ -1757,6 +1781,15 @@ pub fn lower(
                         InferredType::from_sce_type(&field.sce_type),
                     )
                     .map_err(|r| refused("the field value", &init.expr, r))?;
+                    // A string field starts at its literal, which the judge held
+                    // to the bound; a target that holds it in a buffer is given
+                    // the buffer as that literal fills it.
+                    let value = match (&field.sce_type, field.max_size) {
+                        (SceType::String, Some(bound)) => {
+                            target.record_string_literal(bound, &value)
+                        }
+                        _ => value,
+                    };
                     values.push((target.record_field(&field.id), value));
                 }
                 let init = target.record_value(&ty, &values);
@@ -2257,6 +2290,15 @@ impl<'t> TypeDeclarations<'t> {
         }
         let ty = self.target.record_type(self.machine, alias);
         if self.declared.insert(ty.clone()) {
+            // A string field a target holds in a buffer is of the type that buffer
+            // is declared as, which comes before the record that holds it.
+            for field in &schema.fields {
+                if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
+                    if let Some(storage) = self.target.string_storage(bound, "\"\"") {
+                        self.string_storage(&storage);
+                    }
+                }
+            }
             self.type_defs
                 .push(self.target.record_def(&ty, alias, schema, &enum_types));
             self.records.push(StaticRecord {
@@ -3119,12 +3161,6 @@ impl StaticTarget for CppTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
-    // A string field of a record is a `std::string` of an aggregate that is
-    // copied by value, which the machine bounds by the `sce:max-size` its schema
-    // writes, as it bounds a string variable.
-    fn lowers_record_string_fields(&self) -> bool {
-        true
-    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3243,39 +3279,6 @@ fn owns_a_string(schema: &EventSchemaModel) -> bool {
         .fields
         .iter()
         .any(|f| matches!(f.sce_type, SceType::String))
-}
-
-/// The first record variable of `scope` — or list of records — whose schema has a
-/// `string` field, described for a refusal, when `target` does not hold one
-/// ([`StaticTarget::lowers_record_string_fields`]). Asked once for every target:
-/// a string is bounded where it is declared, and a schema's field is bounded by
-/// the `sce:max-size` the schema writes, so a target that holds the field holds
-/// that bound too, as it holds a variable's `sce:capacity`.
-fn record_with_a_string_field(
-    model: &SCXMLModel,
-    scope: &StaticScope,
-    target: &dyn StaticTarget,
-) -> Option<String> {
-    if target.lowers_record_string_fields() {
-        return None;
-    }
-    scope.variables.iter().find_map(|var| {
-        let alias = var.value_type.as_ref().and_then(|t| {
-            t.record_alias()
-                .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
-        })?;
-        let field = model
-            .imported_records
-            .get(alias)?
-            .fields
-            .iter()
-            .find(|f| matches!(f.sce_type, SceType::String))?;
-        Some(format!(
-            "record:{alias} with the field `{}` of type {}",
-            field.id,
-            field.sce_type.as_attr()
-        ))
-    })
 }
 
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of
@@ -3726,12 +3729,6 @@ impl StaticTarget for GoTarget<'_> {
     // (`sce.DocumentStem`) and starts the candidate it names, handing it the
     // values it keeps (`seed_static_child`).
     fn lowers_hybrid_invoke(&self) -> bool {
-        true
-    }
-    // A string field of a record is a `string` of a struct that is copied by
-    // value, which the machine bounds by the `sce:max-size` its schema writes, as
-    // it bounds a string variable.
-    fn lowers_record_string_fields(&self) -> bool {
         true
     }
     // The field the payload channel fills when the engine dequeues an event of
@@ -4186,12 +4183,6 @@ impl StaticTarget for PythonTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
-    // A string field of a record is a `str` of a frozen dataclass, which the
-    // machine bounds by the `sce:max-size` its schema writes, as it bounds a
-    // string variable.
-    fn lowers_record_string_fields(&self) -> bool {
-        true
-    }
     // The attribute the payload channel fills when the engine dequeues an
     // event of this name (`build_python_event_payload`).
     fn payload_accessor(&self, event: &str) -> String {
@@ -4234,6 +4225,19 @@ pub fn lower_python(
     machine: &str,
 ) -> Result<StaticLowering, GenerateError> {
     lower(model, machine, &PythonTarget)
+}
+
+/// The C type of a buffer that holds a `string` of at most `capacity` UTF-8 bytes:
+/// named by the bound so that two variables, or a variable and a record's field,
+/// of one bound share it ([`CTarget::string_storage`]).
+fn c_string_storage_type(capacity: u32) -> String {
+    format!("sce_static_string_{capacity}_t")
+}
+
+/// The function that fills the buffer of [`c_string_storage_type`] from a text
+/// that fits it.
+fn c_string_storage_of(capacity: u32) -> String {
+    format!("sce_static_string_{capacity}_of")
 }
 
 /// C11: a variable is a member of the machine's policy struct (`sm->policy`),
@@ -4472,7 +4476,8 @@ impl StaticTarget for CTarget {
             return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
         }
         // A record is a struct of the fields its schema declares: the numbers
-        // and bools a list holds, reals of either width, and an enum the
+        // and bools a list holds, reals of either width, a string of the bound
+        // the schema declares (a buffer, as a variable's is), and an enum the
         // machine imports under the alias the schema writes. A field is named as
         // the author wrote it; a
         // name C reserves is refused where the schema is read, for every
@@ -4493,6 +4498,9 @@ impl StaticTarget for CTarget {
                         f.sce_type,
                         SceType::Enum(_) | SceType::Float32 | SceType::Float64
                     )
+                    // A string with no bound was refused where the record was
+                    // declared, so the one that reaches here has its buffer.
+                    && !(matches!(f.sce_type, SceType::String) && f.max_size.is_some())
             }) {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",
@@ -4679,9 +4687,11 @@ impl StaticTarget for CTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match &field.sce_type {
-                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-                    other => crate::forge::generator::c_type(other).to_string(),
+                let field_ty = match (&field.sce_type, field.max_size) {
+                    (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
+                    // A string is the buffer of the bound its schema declares.
+                    (SceType::String, Some(bound)) => c_string_storage_type(bound),
+                    (other, _) => crate::forge::generator::c_type(other).to_string(),
                 };
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
@@ -4807,12 +4817,20 @@ impl StaticTarget for CTarget {
     // two machines in one program do. The text is the buffer's `data`, which is
     // what an expression reads and a reader answers ([`Self::variable_ref`]).
     fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
-        let ty = format!("sce_static_string_{capacity}_t");
+        let ty = c_string_storage_type(capacity);
         let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+        // `_of` is the buffer holding a text already held to the bound — a
+        // payload's field taken whole into a record — written without a library
+        // call, since the header includes none.
         let def = format!(
             "#ifndef {guard}\n#define {guard}\n\
              /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
-             typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n#endif"
+             typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n\n\
+             static inline {ty} {of}(const char *text) {{\n    \
+             {ty} value = {{ {{ 0 }} }};\n    \
+             for (size_t i = 0; i < {capacity}u && text[i] != '\\0'; ++i) {{\n        \
+             value.data[i] = text[i];\n    }}\n    return value;\n}}\n#endif",
+            of = c_string_storage_of(capacity)
         );
         Some(StringStorage {
             init: format!("({ty}){{ {init} }}"),
@@ -4836,6 +4854,23 @@ impl StaticTarget for CTarget {
     // may overlap (`title = title`), and the bound was judged before this runs.
     fn assign_string(&self, target: &str, value: &str) -> String {
         format!("memmove({target}, {value}, strlen({value}) + 1u);")
+    }
+    // A record's string field is the buffer of its bound, which an expression
+    // reads as the buffer's text, as it reads a string variable's.
+    fn record_string_read(&self, record: &str, field: &str) -> Option<String> {
+        Some(format!("{record}.{field}.data"))
+    }
+    fn assign_string_field(&self, target: &str, field: &str, value: &str) -> String {
+        self.assign_string(&format!("{target}.{field}.data"), value)
+    }
+    // The buffer a literal fills, as a variable's does ([`Self::string_storage`]).
+    fn record_string_literal(&self, bound: u32, literal: &str) -> String {
+        format!("({}){{ {literal} }}", c_string_storage_type(bound))
+    }
+    // The text is the bound's own helper's answer, which fits, so the buffer is
+    // filled from it.
+    fn record_string_runtime(&self, bound: u32, text: &str) -> String {
+        format!("{}({text})", c_string_storage_of(bound))
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -4950,6 +4985,21 @@ impl StaticTarget for CTarget {
             "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {} sce_value = {value}; \
              if (sce_failure_.failed) {{ {failed} return; }} {} }}",
             Self::value_type(ty),
+            write("sce_value")
+        )
+    }
+    // A record made whole is computed into a local of its own type, which a C
+    // local must name.
+    fn receiving_write_of(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        held: &str,
+        failed: &str,
+    ) -> String {
+        format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {held} sce_value = {value}; \
+             if (sce_failure_.failed) {{ {failed} return; }} {} }}",
             write("sce_value")
         )
     }
@@ -5295,7 +5345,8 @@ fn payload_record_value(
         let text = match (&field.sce_type, field.max_size) {
             (SceType::String, Some(bound)) => {
                 bounded = true;
-                target.bounded_string(&read.text, bound)
+                let held = target.bounded_string(&read.text, bound);
+                target.record_string_runtime(bound, &held)
             }
             _ => read.text,
         };
@@ -5434,6 +5485,13 @@ fn lower_action(
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
+            // The type of the record a payload is taken whole into, when it is.
+            let whole_record = match rewrites.records.get(location) {
+                Some((alias, _)) if action.expr.trim() == "_event.data" => {
+                    Some(target.record_type(rewrites.machine, alias))
+                }
+                _ => None,
+            };
             let mut value = match rewrites.records.get(location) {
                 Some((alias, schema)) if action.expr.trim() == "_event.data" => {
                     payload_record_value(rewrites.machine, alias, schema, target, &lower)?
@@ -5479,28 +5537,47 @@ fn lower_action(
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
                     let field = target.record_field(field.trim());
-                    statement(
-                        &value,
-                        slot,
-                        &|v| target.assign_field(name, &field, v),
-                        construct,
-                    )
-                }
-                None => {
-                    let name = renames.get(location).copied().unwrap_or(location);
+                    // A string field is written as the bound it was held to
+                    // says, which a target that holds it in a buffer copies
+                    // into it.
                     let is_string = rewrites.strings.contains_key(location);
                     statement(
                         &value,
                         slot,
                         &|v| {
                             if is_string {
-                                target.assign_string(name, v)
+                                target.assign_string_field(name, &field, v)
                             } else {
-                                target.assign(name, v)
+                                target.assign_field(name, &field, v)
                             }
                         },
                         construct,
                     )
+                }
+                None => {
+                    let name = renames.get(location).copied().unwrap_or(location);
+                    let is_string = rewrites.strings.contains_key(location);
+                    let write = |v: &str| {
+                        if is_string {
+                            target.assign_string(name, v)
+                        } else {
+                            target.assign(name, v)
+                        }
+                    };
+                    match &whole_record {
+                        // A record made whole from a payload that can fail is
+                        // held while it is computed in a value of its own type.
+                        Some(held) if value.can_fail => (
+                            target.receiving_write_of(
+                                &write,
+                                &value.text,
+                                held,
+                                &failed(construct),
+                            ),
+                            true,
+                        ),
+                        _ => statement(&value, slot, &write, construct),
+                    }
                 }
             };
         }
@@ -5685,7 +5762,26 @@ fn lower_action(
                     .borrow_mut()
                     .push((item.to_string(), alias.clone()));
             }
-            let lowered = lower_actions(&mut action.actions, &inner, renames, rewrites);
+            // A string field of a record item, for a target that reads it through
+            // the buffer that holds it, is read through it in the body.
+            let item_reads: Vec<(String, String)> = loop_variables
+                .string_fields()
+                .filter_map(|field| {
+                    target
+                        .record_string_read(item, field)
+                        .map(|read| (format!("{item}.{field}"), read))
+                })
+                .collect();
+            let inner_renames: HashMap<&str, &str> = renames
+                .iter()
+                .map(|(from, to)| (*from, *to))
+                .chain(
+                    item_reads
+                        .iter()
+                        .map(|(from, to)| (from.as_str(), to.as_str())),
+                )
+                .collect();
+            let lowered = lower_actions(&mut action.actions, &inner, &inner_renames, rewrites);
             if holds_a_record.is_some() {
                 rewrites.loop_records.borrow_mut().pop();
             }

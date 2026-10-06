@@ -418,19 +418,10 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
     }
 }
 
-/// A record whose schema has a `string` field is held by the languages that have
-/// lowered it (docs/adr/0005, decision 1) and refused by name by the rest, which
-/// lift the refusal one at a time: the third column is the one value a language
-/// changes when it does. Go is checked with a module prefix, which it needs to
-/// write its imports.
-const RECORD_STRING_FIELD: &[(&str, &str, bool)] = &[
-    ("rust", "Rust", true),
-    ("kotlin", "Kotlin", true),
-    ("go", "Go", true),
-    ("cpp", "C++", true),
-    ("python", "Python", true),
-    ("c11", "C11", false),
-];
+/// The languages that lower a `sce-static` document, each of which holds a record's
+/// `string` field within the bound its schema declares (docs/adr/0005, decision 1).
+/// Go is checked with a module prefix, which it needs to write its imports.
+const RECORD_STRING_FIELD: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
 
 /// `check -l <lang>` of `document`, with what that language needs to read it.
 fn check_in(lang: &str, document: &str, siblings: &[(&str, &str)]) -> (bool, String) {
@@ -499,28 +490,18 @@ fn labelled_documents() -> [(&'static str, String); 2] {
 }
 
 #[test]
-fn a_language_holds_a_record_string_field_or_refuses_it_by_name() {
+fn every_language_holds_a_record_string_field() {
     // Measured 2026-10-06, before any language held the field: `check` answered
     // ok for Rust, Kotlin, Go, C++ and Python, and Rust wrote
     // `#[derive(Clone, Copy)]` over a `String` field, which does not compile
-    // (E0204); only C11 refused. A refusal is asked once, in `lower`, and a
-    // language that has not lowered the field is refused by name.
+    // (E0204); only C11 refused. The six now lower it, each as the value its
+    // language holds a string in: `static_record_string` is replayed on all.
     let schema = label_schema(r#"sce:max-size="8""#);
     let siblings = [("schema_label.scxml", schema.as_str())];
     for (held, document) in &labelled_documents() {
-        for (lang, name, holds) in RECORD_STRING_FIELD {
+        for lang in RECORD_STRING_FIELD {
             let (ok, out) = check_in(lang, document, &siblings);
-            if *holds {
-                assert!(ok, "{lang}, {held}: it lowers the field:\n{out}");
-                continue;
-            }
-            assert!(!ok, "{lang}, {held}: no lowering for it yet:\n{out}");
-            assert!(
-                out.contains("generate/unsupported-feature")
-                    && out.contains(&format!("no {name} lowering yet"))
-                    && out.contains("record:Label with the field `label` of type string"),
-                "{lang}, {held}: expected the refusal naming {name} and the field:\n{out}"
-            );
+            assert!(ok, "{lang}, {held}: it lowers the field:\n{out}");
         }
     }
 }
@@ -533,7 +514,7 @@ fn a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language(
     let schema = label_schema("");
     let siblings = [("schema_label.scxml", schema.as_str())];
     for (held, document) in &labelled_documents() {
-        for (lang, _, _) in RECORD_STRING_FIELD {
+        for lang in RECORD_STRING_FIELD {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(!ok, "{lang}, {held}: the field has no bound:\n{out}");
             assert!(
@@ -572,7 +553,7 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
       <sce:set name="label" expr="{label}"/>
     </data>"#
         ));
-        for (lang, _, _) in RECORD_STRING_FIELD {
+        for lang in RECORD_STRING_FIELD {
             let (ok, out) = check_in(lang, &document, &siblings);
             assert!(
                 !ok,
@@ -591,14 +572,9 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
       <sce:set name="label" expr="'é€€'"/>
     </data>"#,
     );
-    for (lang, _, holds) in RECORD_STRING_FIELD {
+    for lang in RECORD_STRING_FIELD {
         let (ok, out) = check_in(lang, &fits, &siblings);
-        // A language that holds the field accepts it; one that does not refuses
-        // the field, never for its length.
-        assert!(
-            ok == *holds && (ok || !out.contains("past the sce:max-size")),
-            "{lang}: eight bytes fit a bound of eight:\n{out}"
-        );
+        assert!(ok, "{lang}: eight bytes fit a bound of eight:\n{out}");
     }
 }
 
