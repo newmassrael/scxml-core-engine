@@ -32,6 +32,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -43,7 +44,7 @@ use crate::clock::Clock;
 use crate::codex::{Codex, CodexConfig, CodexLaunch, HOME_DIR as CODEX_HOME_DIR};
 use crate::codex_support::Support;
 use crate::connection::AuthSource;
-use crate::directory::{ClaudeLaunch, Connections};
+use crate::directory::{ClaudeLaunch, Connections, Launches};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
 use crate::review::Product;
@@ -315,10 +316,13 @@ where
     // One word stops everything the host runs, the runner included.
     let shutdown = Cancel::new();
     let mut threads = Vec::new();
-    // Codex counts where requests are run for a connection, which is where it has a credential.
-    let for_connections = connections.is_some();
+    // Codex counts where requests are run for a connection, which is where it has a credential,
+    // and the application's own home for it is kept with the person's settings.
+    let codex_home = connections
+        .as_ref()
+        .map(|(settings_store, _)| settings_store.root().join(CODEX_HOME_DIR));
     // The first look is made now, so that what it found is in the works folder when this returns.
-    let first = find_clients(&store, &settings, for_connections);
+    let first = find_clients(&store, &settings, codex_home.as_deref());
     let shared = Arc::new(Shared::new(Standing::of(&first)));
     say(&store, &name, &shared.standing(), &[]);
     let supervising = thread::Builder::new()
@@ -332,6 +336,7 @@ where
                     product,
                     settings,
                     connections,
+                    codex_home,
                     shutdown,
                     shared,
                     first,
@@ -371,18 +376,23 @@ where
 /// put it right while the window is open and the executor has to notice without the window being
 /// opened again. The owner's word that there is to be no executor is the one thing that does not
 /// come right: that is not looked for again.
+///
+/// Once there is a client the executor runs, and goes on looking for the clients as it does
+/// ([`Finder`]): the one that was not there is run for when it arrives, and the one that goes away
+/// is said to be gone, without the application being closed and opened again.
+#[allow(clippy::too_many_arguments)]
 fn supervise<C>(
     store: Arc<WorkStore<C>>,
     product: Arc<dyn Product>,
     settings: HostSettings,
     connections: Option<(ConnectionStore, Policy)>,
+    codex_home: Option<PathBuf>,
     shutdown: Cancel,
     shared: Arc<Shared>,
     found: Result<Clients, NotHosted>,
 ) where
     C: Clock + Send + Sync + 'static,
 {
-    let for_connections = connections.is_some();
     let mut found = found;
     loop {
         let clients = match found {
@@ -401,7 +411,7 @@ fn supervise<C>(
                 if !wait_or_stop(&shutdown, wait) {
                     return;
                 }
-                found = find_clients(&store, &settings, for_connections);
+                found = find_clients(&store, &settings, codex_home.as_deref());
                 continue;
             }
         };
@@ -409,13 +419,23 @@ fn supervise<C>(
             version: clients.version(),
             not_hosted: None,
         });
+        let finder = Arc::new(Finder::new(
+            settings.clone(),
+            clients,
+            codex_home.clone(),
+            Arc::clone(&shared),
+        ));
         let directory = connections.map(|(settings_store, policy)| {
-            Arc::new(clients.directory(settings_store, policy, &settings)) as Arc<dyn Directory>
+            Arc::new(Connections::live(
+                settings_store,
+                policy,
+                Arc::clone(&finder) as Arc<dyn Launches>,
+            )) as Arc<dyn Directory>
         });
         let mut runner = Runner::new(
             Arc::clone(&store),
             product,
-            Arc::new(clients.reporting()),
+            Arc::new(Reporting(finder)),
             RunnerConfig::named(&settings.name),
         )
         .with_shutdown(shutdown);
@@ -444,16 +464,11 @@ fn wait_or_stop(stop: &Cancel, span: Duration) -> bool {
     false
 }
 
-/// The clients a shell found for its executor: at least one, which is what the type says.
-enum Clients {
-    /// Claude Code, and Codex besides when it is here.
-    Claude {
-        claude: ClaudeCode,
-        codex: Option<Codex>,
-        author: AuthorServer,
-    },
-    /// Codex and no Claude Code.
-    CodexOnly { codex: Codex, author: AuthorServer },
+/// The clients a shell found for its executor, when it started: at least one.
+struct Clients {
+    author: AuthorServer,
+    claude: Option<ClaudeCode>,
+    codex: Option<Codex>,
 }
 
 impl Clients {
@@ -463,132 +478,218 @@ impl Clients {
         claude: Option<ClaudeCode>,
         codex: Option<Codex>,
     ) -> Option<Clients> {
-        match (claude, codex) {
-            (Some(claude), codex) => Some(Clients::Claude {
-                claude,
-                codex,
-                author,
-            }),
-            (None, Some(codex)) => Some(Clients::CodexOnly { codex, author }),
-            (None, None) => None,
-        }
-    }
-
-    /// How the clients reach the authoring server.
-    fn author(&self) -> &AuthorServer {
-        match self {
-            Clients::Claude { author, .. } | Clients::CodexOnly { author, .. } => author,
-        }
+        (claude.is_some() || codex.is_some()).then_some(Clients {
+            author,
+            claude,
+            codex,
+        })
     }
 
     /// The version of the client the executor reports itself as.
     fn version(&self) -> Option<String> {
-        match self {
-            Clients::Claude { claude, .. } => claude.version(),
-            Clients::CodexOnly { codex, .. } => codex.version(),
+        reporting_version(self.claude.as_ref(), self.codex.as_ref())
+    }
+}
+
+/// The version of the client an executor reports itself as: Claude Code's when it is here, and
+/// Codex's when Codex is the only one.
+fn reporting_version(claude: Option<&ClaudeCode>, codex: Option<&Codex>) -> Option<String> {
+    claude
+        .map(Generator::version)
+        .or_else(|| codex.map(Generator::version))
+        .flatten()
+}
+
+/// What a running executor has of the clients on the computer, looked for again as the computer
+/// changes. A person installs a client while the window is open, and one that was there goes
+/// away: what was found when the host started is not what is there now, so every client is asked
+/// for again, at most once in `settings.retry`. The directory runs requests with what it finds
+/// here, and the executor says what it is by it.
+struct Finder {
+    settings: HostSettings,
+    author: AuthorServer,
+    /// The application's own home for Codex, where Codex counts (a shell with the person's
+    /// settings); none where it does not.
+    codex_home: Option<PathBuf>,
+    shared: Arc<Shared>,
+    seen: Mutex<Seen>,
+    /// Whether a thread is looking now. Another that wants the answer is given the last one and
+    /// does not wait behind a program that is slow to say what it is.
+    looking: AtomicBool,
+}
+
+/// The word that a look is going on, put down when the look ends however it ends.
+struct Looking<'a>(&'a AtomicBool);
+
+impl Drop for Looking<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// What a look found, and when.
+#[derive(Clone)]
+struct Seen {
+    at: Instant,
+    claude: Option<ClaudeCode>,
+    codex: Option<Codex>,
+}
+
+impl Finder {
+    fn new(
+        settings: HostSettings,
+        first: Clients,
+        codex_home: Option<PathBuf>,
+        shared: Arc<Shared>,
+    ) -> Finder {
+        Finder {
+            settings,
+            author: first.author,
+            codex_home,
+            shared,
+            seen: Mutex::new(Seen {
+                at: Instant::now(),
+                claude: first.claude,
+                codex: first.codex,
+            }),
+            looking: AtomicBool::new(false),
         }
     }
 
-    /// What finds the generator for a request made for a connection: it can run each client that
-    /// is here, and says why for each that is not.
-    fn directory(
-        &self,
-        settings_store: ConnectionStore,
-        policy: Policy,
-        settings: &HostSettings,
-    ) -> Connections {
-        let (claude, codex, author) = match self {
-            Clients::Claude {
-                claude,
-                codex,
-                author,
-            } => (Some(claude), codex.as_ref(), author),
-            Clients::CodexOnly { codex, author } => (None, Some(codex), author),
+    /// The clients that are there now: what was found a moment ago, or found again when that is
+    /// older than `settings.retry`.
+    fn look(&self) -> Seen {
+        let last = self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if last.at.elapsed() < self.settings.retry || self.looking.swap(true, Ordering::AcqRel) {
+            return last;
+        }
+        // Whatever happens below, the next look is not shut out by this one.
+        let _looking = Looking(&self.looking);
+        let claude = find_claude(&self.settings, &self.author).ok();
+        let codex = self
+            .codex_home
+            .as_deref()
+            .and_then(|home| find_codex(&self.settings, &self.author, home).ok());
+        let seen = Seen {
+            at: Instant::now(),
+            claude,
+            codex,
         };
-        let claude = claude.map(|client| ClaudeLaunch {
-            binary: client.binary().to_path_buf(),
-            author: client.author().clone(),
-            max_budget_usd: settings.config.max_budget_usd,
-        });
-        let codex = codex.map(|client| CodexLaunch {
-            binary: client.binary().to_path_buf(),
-            author: author.clone(),
-            app_home: settings_store.root().join(CODEX_HOME_DIR),
-            support: Support::shipped(),
-            environment: std::env::vars().collect(),
-        });
-        let directory = Connections::new(settings_store, policy, claude);
-        match codex {
-            Some(launch) => directory.with_codex(launch),
-            None => directory,
+        *self.seen.lock().unwrap_or_else(|e| e.into_inner()) = seen.clone();
+        // What the executor says it is follows what it finds: Claude Code installed after Codex
+        // is the client it reports from then on. Nothing found says nothing new: it goes on
+        // saying what it last was, and the requests are the ones that say the client is gone.
+        if let Some(version) = reporting_version(seen.claude.as_ref(), seen.codex.as_ref()) {
+            let mut standing = self.shared.standing();
+            if standing.version.as_deref() != Some(version.as_str()) {
+                standing.version = Some(version);
+                self.shared.set(standing);
+            }
         }
+        seen
     }
 
-    /// The generator the executor reports itself as: Claude Code when it is here, else Codex. A
-    /// request made for a connection is not written by it but by the one the directory finds.
-    fn reporting(self) -> Reporting {
-        match self {
-            Clients::Claude { claude, .. } => Reporting::Claude(claude),
-            Clients::CodexOnly { codex, .. } => Reporting::Codex(codex),
+    /// The client the executor reports itself as, when one is there.
+    fn reporting(&self) -> Option<Reporter> {
+        let seen = self.look();
+        match (seen.claude, seen.codex) {
+            (Some(claude), _) => Some(Reporter::Claude(claude)),
+            (None, Some(codex)) => Some(Reporter::Codex(codex)),
+            (None, None) => None,
         }
     }
 }
 
-/// The client an executor reports itself as, and writes with when it has no connection to go by.
-enum Reporting {
+impl Launches for Finder {
+    fn claude(&self) -> Option<ClaudeLaunch> {
+        self.look().claude.map(|client| ClaudeLaunch {
+            binary: client.binary().to_path_buf(),
+            author: client.author().clone(),
+            max_budget_usd: self.settings.config.max_budget_usd,
+        })
+    }
+
+    fn codex(&self) -> Option<CodexLaunch> {
+        let home = self.codex_home.clone()?;
+        self.look().codex.map(|client| CodexLaunch {
+            binary: client.binary().to_path_buf(),
+            author: self.author.clone(),
+            app_home: home,
+            support: Support::shipped(),
+            environment: std::env::vars().collect(),
+        })
+    }
+}
+
+/// The client that is there, as a generator.
+enum Reporter {
     Claude(ClaudeCode),
     Codex(Codex),
 }
 
-impl Reporting {
+impl Reporter {
     fn client(&self) -> &dyn Generator {
         match self {
-            Reporting::Claude(client) => client,
-            Reporting::Codex(client) => client,
+            Reporter::Claude(client) => client,
+            Reporter::Codex(client) => client,
         }
     }
 }
 
+/// The generator an executor reports itself as, and writes with when it has no connection to go by:
+/// the client that is there when it is asked, Claude Code when both are. A request made for a
+/// connection is not written by it but by the one the directory finds.
+struct Reporting(Arc<Finder>);
+
 impl Generator for Reporting {
     fn kind(&self) -> &str {
-        self.client().kind()
+        match self.0.reporting() {
+            Some(Reporter::Codex(_)) => "codex",
+            // Claude Code, which is also what an executor that has lost every client goes on being
+            // called: the screen reads the host's own report of why nothing runs.
+            Some(Reporter::Claude(_)) | None => "claude-code",
+        }
     }
 
     fn version(&self) -> Option<String> {
-        self.client().version()
+        self.0.reporting().and_then(|r| r.client().version())
     }
 
     fn instructions(&self) -> Option<String> {
-        self.client().instructions()
+        self.0.reporting().and_then(|r| r.client().instructions())
     }
 
     fn capabilities(&self) -> Vec<String> {
-        self.client().capabilities()
+        self.0
+            .reporting()
+            .map(|r| r.client().capabilities())
+            .unwrap_or_default()
     }
 
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
-        self.client().generate(job, cancel)
+        match self.0.reporting() {
+            Some(reporter) => reporter.client().generate(job, cancel),
+            None => Err(GenerateError::Failed(
+                "no client is there to write with: it was not found on this computer".to_string(),
+            )),
+        }
     }
 }
 
-/// What a shell needs to host an executor, found; or why it is not. `with_codex` is whether Codex
+/// What a shell needs to host an executor, found; or why it is not. `codex_home` is where Codex
 /// counts: it does for a shell that has the person's settings, where a connection gives it the
-/// credential to run on.
+/// credential to run on, and this is the application's own home for it.
 fn find_clients<C: Clock>(
     store: &WorkStore<C>,
     settings: &HostSettings,
-    with_codex: bool,
+    codex_home: Option<&Path>,
 ) -> Result<Clients, NotHosted> {
     if !settings.enabled {
         return Err(NotHosted::Off);
     }
     let author = author_server(settings, store.root())?;
     let claude = find_claude(settings, &author);
-    let codex = if with_codex {
-        Some(find_codex(settings, &author, store.root()))
-    } else {
-        None
-    };
+    let codex = codex_home.map(|home| find_codex(settings, &author, home));
     // What to say when neither is here: where it looked for each client that counts.
     let tried = match (&claude, &codex) {
         (Err(claude), None) => claude.clone(),
@@ -599,7 +700,7 @@ fn find_clients<C: Clock>(
         .ok_or(NotHosted::NoClient(tried))?;
     // Last: a missing client is the plainer thing to say, and the server is asked only when there
     // is a client to give it to.
-    ready(clients.author())?;
+    ready(&clients.author)?;
     Ok(clients)
 }
 
@@ -624,7 +725,7 @@ fn find_claude(settings: &HostSettings, author: &AuthorServer) -> Result<ClaudeC
 fn find_codex(
     settings: &HostSettings,
     author: &AuthorServer,
-    works: &Path,
+    home: &Path,
 ) -> Result<Codex, String> {
     let binary = match &settings.codex {
         Some(path) => path.clone(),
@@ -637,7 +738,7 @@ fn find_codex(
         author.clone(),
         CodexConfig::default(),
         AuthSource::OfficialLogin,
-        works.join(CODEX_HOME_DIR),
+        home.to_path_buf(),
         Support::shipped(),
     );
     if client.version().is_none() {

@@ -57,12 +57,38 @@ pub struct ClaudeLaunch {
     pub max_budget_usd: Option<f64>,
 }
 
+/// The programs a directory can run, asked each time one is needed. A person installs a client
+/// while the window is open, and one that was there goes away; a directory that held what was found
+/// when it was made would not run for the one and would start the other from a path that is gone.
+pub trait Launches: Send + Sync {
+    /// The Claude Code that is there now, when one is.
+    fn claude(&self) -> Option<ClaudeLaunch>;
+    /// The Codex that is there now, when one is.
+    fn codex(&self) -> Option<CodexLaunch>;
+}
+
+/// Launches that were found once and do not change: what a command line tool or a test has.
+#[derive(Debug, Clone, Default)]
+pub struct FixedLaunches {
+    pub claude: Option<ClaudeLaunch>,
+    pub codex: Option<CodexLaunch>,
+}
+
+impl Launches for FixedLaunches {
+    fn claude(&self) -> Option<ClaudeLaunch> {
+        self.claude.clone()
+    }
+
+    fn codex(&self) -> Option<CodexLaunch> {
+        self.codex.clone()
+    }
+}
+
 /// Where a runner finds the generator for the connection of a request.
 pub struct Connections {
     settings: ConnectionStore,
     policy: Policy,
-    claude: Option<ClaudeLaunch>,
-    codex: Option<CodexLaunch>,
+    launches: Arc<dyn Launches>,
     /// What was last said, of which program, and when.
     observed: Mutex<Option<(PathBuf, Instant, Observation)>>,
     /// What was last found of a Codex and of a way of signing in to it, and when.
@@ -78,20 +104,36 @@ type CodexSeen = ((PathBuf, AuthSource), Instant, Result<Codex, String>);
 type Observation = Result<Option<Observed>, String>;
 
 impl Connections {
+    /// A directory that runs the Claude Code `claude` describes, which does not change.
     pub fn new(settings: ConnectionStore, policy: Policy, claude: Option<ClaudeLaunch>) -> Self {
+        Self::live(
+            settings,
+            policy,
+            Arc::new(FixedLaunches {
+                claude,
+                codex: None,
+            }),
+        )
+    }
+
+    /// A directory that asks `launches` for the programs it runs each time it needs one.
+    pub fn live(settings: ConnectionStore, policy: Policy, launches: Arc<dyn Launches>) -> Self {
         Connections {
             settings,
             policy,
-            claude,
-            codex: None,
+            launches,
             observed: Mutex::new(None),
             codex_seen: Mutex::new(None),
         }
     }
 
-    /// The same, able to run the Codex `launch` describes.
+    /// The same, able to run the Codex `launch` describes. The launches become fixed: what the
+    /// directory could find of Claude Code when this is called is what it keeps.
     pub fn with_codex(mut self, launch: CodexLaunch) -> Self {
-        self.codex = Some(launch);
+        self.launches = Arc::new(FixedLaunches {
+            claude: self.launches.claude(),
+            codex: Some(launch),
+        });
         self
     }
 
@@ -132,11 +174,8 @@ impl Connections {
             return Err(no_adapter(pin.adapter));
         }
         let stored = self.stored_for(pin)?;
-        let Some(launch) = &self.claude else {
-            return Err(Unrunnable::new(
-                "Claude Code was not found on this computer: install it, or set SCE_CLAUDE to its \
-                 path",
-            ));
+        let Some(launch) = self.launches.claude() else {
+            return Err(claude_not_found());
         };
         // The program the connection names, when it names one, is what runs: the person chose it
         // among the ones the application found. It is asked again, because a file can be gone or
@@ -153,6 +192,9 @@ impl Connections {
                 }
                 chosen
             }
+            // The program the host found may have gone since it looked: that is said as it is, and
+            // not as a client that could not be asked something.
+            None if !launch.binary.is_file() => return Err(claude_not_found()),
             None => launch.binary.clone(),
         };
         // What the client printed is for the settings screen, which shows it to the person who
@@ -197,17 +239,16 @@ impl Connections {
             return Err(no_adapter(pin.adapter));
         }
         let stored = self.stored_for(pin)?;
-        let Some(launch) = &self.codex else {
-            return Err(Unrunnable::new(
-                "Codex was not found on this computer: install it, or set SCE_CODEX to its path",
-            ));
+        let Some(launch) = self.launches.codex() else {
+            return Err(codex_not_found());
         };
         let binary = match stored.connection.executable.as_deref() {
             Some(chosen) => PathBuf::from(chosen),
+            None if !launch.binary.is_file() => return Err(codex_not_found()),
             None => launch.binary.clone(),
         };
         let ready = self
-            .codex_ready(launch, binary, stored.connection.auth)
+            .codex_ready(&launch, binary, stored.connection.auth)
             .map_err(Unrunnable::new)?;
         let defaults = CodexConfig::default();
         Ok(ready.with_config(CodexConfig {
@@ -308,6 +349,18 @@ impl Directory for Connections {
             other => Err(no_adapter(other)),
         }
     }
+}
+
+fn claude_not_found() -> Unrunnable {
+    Unrunnable::new(
+        "Claude Code was not found on this computer: install it, or set SCE_CLAUDE to its path",
+    )
+}
+
+fn codex_not_found() -> Unrunnable {
+    Unrunnable::new(
+        "Codex was not found on this computer: install it, or set SCE_CODEX to its path",
+    )
 }
 
 fn no_adapter(adapter: AdapterKind) -> Unrunnable {

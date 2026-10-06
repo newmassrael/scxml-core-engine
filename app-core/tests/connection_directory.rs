@@ -307,6 +307,19 @@ fn a_way_of_signing_in_the_build_uses_is_run_and_one_it_does_not_is_said_so() {
 }
 
 #[test]
+fn a_program_that_is_gone_is_said_to_be_gone_and_not_to_be_a_client_that_could_not_be_asked() {
+    let rig = Rig::new("dir-gone", SUBSCRIPTION);
+    let pin = rig.pin(&claude());
+    // The host found it, and the person has removed it since.
+    std::fs::remove_file(&rig.fake.binary).unwrap();
+
+    let said = refused(rig.directory(Policy::shipped()).claude_for(&pin));
+
+    assert!(said.contains("Claude Code was not found"), "{said}");
+    assert!(!said.contains("could not be asked"), "{said}");
+}
+
+#[test]
 fn nobody_signed_in_says_how_to_sign_in() {
     let rig = Rig::new("dir-signed-out", SIGNED_OUT);
     let pin = rig.pin(&claude());
