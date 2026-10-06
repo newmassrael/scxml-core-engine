@@ -20,6 +20,9 @@
 //! - [`requests`], [`bundle`] and [`runner`] are the asking for a model and what comes of
 //!   it: a request an executor holds for a lease, the candidate it writes and the bundle
 //!   that publishes it, and the host that takes requests for a generator.
+//! - [`connection`] and its store are the ways a person reaches a model (which client, which
+//!   model, where its credentials come from), kept in their own settings folder and not
+//!   with the works, which are shared and moved.
 //! - [`requirements`], [`acceptance`] and [`acceptance_run`] are the requirement list
 //!   a text is read into and what the owner accepted of a design against it: the
 //!   product measures, records and re-checks, and the workbench keeps the files and
@@ -35,6 +38,7 @@ pub mod bundle;
 pub mod claude_code;
 pub mod clock;
 pub mod commands;
+pub mod connection;
 pub mod error;
 pub mod figures;
 pub mod host;
@@ -53,6 +57,7 @@ pub use acceptance_run::{Acceptor, CheckOutcome, RequirementOutcome, Requirement
 pub use answers::{Answers, AnswersError};
 pub use clock::{Clock, FixedClock, ManualClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
+pub use connection::{AdapterKind, AuthSource, Connection, ConnectionId, Limits};
 pub use error::StoreError;
 pub use figures::{
     default_renderer, renderer_with_bundle, FigureRenderer, FigureRequest, FigureSet, NoRenderer,
@@ -66,9 +71,10 @@ pub use review::{
 pub use revision::Revision;
 pub use store::{
     default_root, AcceptanceText, Adapter, AdapterListing, AdapterReport, AdapterStatus,
-    AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, HistoryEntry, Host,
-    HostListing, HostReport, HostStatus, Listing, ModelText, Published, Registered, Registration,
-    RequestHead, RequestView, RequirementsText, Saved, SourceText, Transition, Unreadable, Work,
-    WorkHeads, WorkId, WorkSnapshot, WorkStore, ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES,
-    MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
+    AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, ConnectionListing,
+    ConnectionStore, HistoryEntry, Host, HostListing, HostReport, HostStatus, Listing, ModelText,
+    Published, Registered, Registration, RequestHead, RequestView, RequirementsText, Saved,
+    SourceText, StoredConnection, Transition, Unreadable, Work, WorkHeads, WorkId, WorkSnapshot,
+    WorkStore, ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES,
+    MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
 };
