@@ -31,6 +31,59 @@ namespace SCE::JsonText {
 
 namespace detail {
 
+/// The scientific text in `buffer[0, length)` (`d[.ddd]e[+-]XX`) moved one unit in its
+/// last place, up when `up` and down otherwise, and written back over `buffer` in the
+/// same form: its length, or 0 when it does not fit. Going up from `9.99e+04` gives
+/// `1.00e+05`; going down from `1.00e+05` gives `9.99e+04`, because below a power of ten
+/// the places are ten times finer.
+inline std::size_t stepScientific(char *buffer, std::size_t size, std::size_t length, bool up) {
+    const std::string_view text(buffer, length);
+    const std::size_t marker = text.find('e');
+    // The decimal point is the locale's, and the text it is read back from is `printf`'s.
+    const char point = marker > 1 ? text[1] : '.';
+    std::string digits;
+    for (const char c : text.substr(0, marker)) {
+        if (c >= '0' && c <= '9') {
+            digits += c;
+        }
+    }
+    int exponent = std::atoi(std::string(text.substr(marker + 1)).c_str());
+    if (up) {
+        std::size_t place = digits.size();
+        while (place > 0 && digits[place - 1] == '9') {
+            digits[--place] = '0';
+        }
+        if (place == 0) {
+            digits[0] = '1';
+            ++exponent;
+        } else {
+            ++digits[place - 1];
+        }
+    } else if (digits.find_first_not_of('0', 1) == std::string::npos && digits[0] == '1') {
+        digits.assign(digits.size(), '9');
+        --exponent;
+    } else {
+        std::size_t place = digits.size();
+        while (digits[place - 1] == '0') {
+            digits[--place] = '9';
+        }
+        --digits[place - 1];
+    }
+    std::string out(1, digits[0]);
+    if (digits.size() > 1) {
+        out += point;
+        out.append(digits, 1, std::string::npos);
+    }
+    char tail[16];
+    std::snprintf(tail, sizeof tail, "e%+03d", exponent);
+    out += tail;
+    if (out.size() >= size) {
+        return 0;
+    }
+    std::snprintf(buffer, size, "%s", out.c_str());
+    return out.size();
+}
+
 /// The shortest scientific digits of a positive finite double, written into
 /// `buffer` as `d[.ddd]e[+-]XX` (the exponent signed, two digits at least), and
 /// their length: the form `std::to_chars(..., std::chars_format::scientific)`
@@ -40,16 +93,30 @@ namespace detail {
 /// floating-point `to_chars` before GCC 11, so a platform whose compiler is older
 /// (the product's own build was GCC 9.5: `'std::chars_format' has not been
 /// declared`, measured 2026-10-06) could not compile this header at all, and the
-/// compiler is the platform's to choose and not ours. The smallest precision whose
-/// output reads back as the same double is the shortest digits, and `printf`
-/// rounds to nearest, so it is also the nearest of the shortest ones -- the pair
-/// `to_chars` returns. `tests/common/JsonTextTest.cpp` holds the two to each other
-/// over the whole table, so the fallback is measured on a compiler that has both.
+/// compiler is the platform's to choose and not ours. The smallest precision at which
+/// some digit string reads back as the same double is the shortest digits, and of the
+/// strings at that precision the one nearest the value is the one `to_chars` returns.
+/// `printf` rounds to nearest, but the nearest string need not be the one that reads
+/// back: just below a power of two the doubles are twice as close on the lower side, so
+/// the interval that reads back as the value is lopsided and the nearest string can lie
+/// outside it while the next one on the other side lies inside (2^-44 is
+/// 5.6843418860808014869e-14; `...801e-14` reads back as its lower neighbour and
+/// `...802e-14` as itself). The string on the other side of the value is therefore tried
+/// before the precision is widened. `tests/common/JsonTextTest.cpp` holds the fallback to
+/// the table, and to `to_chars` on a compiler that has both.
 inline std::size_t scientificByPrintf(char *buffer, std::size_t size, double value) {
     for (int precision = 0; precision <= 17; ++precision) {
         const int written = std::snprintf(buffer, size, "%.*e", precision, value);
-        if (written > 0 && std::strtod(buffer, nullptr) == value) {
+        if (written <= 0) {
+            continue;
+        }
+        const double nearest = std::strtod(buffer, nullptr);
+        if (nearest == value) {
             return static_cast<std::size_t>(written);
+        }
+        const std::size_t across = stepScientific(buffer, size, static_cast<std::size_t>(written), nearest < value);
+        if (across != 0 && std::strtod(buffer, nullptr) == value) {
+            return across;
         }
     }
     return 0;  // not reached: 17 significant digits read back every double
