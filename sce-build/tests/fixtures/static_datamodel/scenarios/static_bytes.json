@@ -30,6 +30,12 @@
       "event": "reset", "expect": { "variables": { "frame": "ab", "errors": 2 } } },
 
     { "note": "two bytes fit a bound of four",
-      "event": "copy", "expect": { "variables": { "tail": "ab", "errors": 2 } } }
+      "event": "copy", "expect": { "variables": { "tail": "ab", "errors": 2 } } },
+
+    { "note": "two bytes of the same length as `ab`, and not its bytes",
+      "event": "other", "expect": { "variables": { "frame": "ba", "errors": 2 } } },
+
+    { "note": "the same length is not the same bytes: a miss, and === is false",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 2 } } }
   ]
 }

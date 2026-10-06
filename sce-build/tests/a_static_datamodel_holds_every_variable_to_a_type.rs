@@ -593,7 +593,7 @@ const BYTES_HELD: &[BytesHeld] = &[
     BytesHeld {
         lang: "c11",
         name: "C11",
-        variable: false,
+        variable: true,
         record: false,
         payload: false,
     },

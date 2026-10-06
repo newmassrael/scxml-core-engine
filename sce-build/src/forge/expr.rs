@@ -401,6 +401,9 @@ fn lower_at(
         check_integer_arithmetic(&mut ast, expected);
         check_integer_indexing(&mut ast);
         check_integer_narrowing(&mut ast, slot_type(slot));
+        if matches!(target, ExprTarget::C) {
+            views_for_bytes_equality(&mut ast);
+        }
     }
     if ctx.rounds_to_single {
         round_to_single(&mut ast, target, expected);
@@ -436,6 +439,9 @@ fn lower_at(
         ExprTarget::Rust => emit_rust(&ast, expected)?,
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
+        ExprTarget::C if position == Position::Owned && expected == InferredType::Bytes => {
+            emit_c_owned_bytes(&ast)?
+        }
         ExprTarget::C => emit_c(&ast, expected)?,
         ExprTarget::Js => {
             let text = emit_js(&ast, expected)?;
@@ -4937,6 +4943,54 @@ fn lower_bytes_eq(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     infer_types(ast, ctx);
 }
 
+/// Where a failure can be received — an algorithm's body, a `sce-static`
+/// machine's statements — a byte string is held as the `{data, len}` struct C
+/// gives a view or a buffer, and not as the array and `_len` sibling of an event
+/// payload's field. So each side of a bytes equality that is not a constant is
+/// given to the C emitter as the pointer and the length it is made of: a
+/// [`ExprKind::BytesView`] of `<held>.data` and `<held>.len`, whichever the
+/// expression `<held>` is. A guard over a payload receives no failure, keeps its
+/// operand as it was, and is read as the sibling it names.
+fn views_for_bytes_equality(expr: &mut TypedExpr) {
+    for child in expr_children_mut(expr) {
+        views_for_bytes_equality(child);
+    }
+    let ExprKind::Binary {
+        op: BinOp::StrictEq | BinOp::StrictNeq,
+        left,
+        right,
+    } = &mut expr.kind
+    else {
+        return;
+    };
+    if !(matches!(left.ty, InferredType::Bytes) || matches!(right.ty, InferredType::Bytes)) {
+        return;
+    }
+    for side in [left, right] {
+        if matches!(
+            side.kind,
+            ExprKind::BytesLit { .. } | ExprKind::BytesView { .. }
+        ) {
+            continue;
+        }
+        let held = (**side).clone();
+        let part = |property: &str| {
+            Box::new(TypedExpr::new(ExprKind::Member {
+                object: Box::new(held.clone()),
+                property: property.to_string(),
+            }))
+        };
+        **side = TypedExpr {
+            kind: ExprKind::BytesView {
+                source: part("data"),
+                len: Some(part("len")),
+            },
+            ty: InferredType::Bytes,
+            span: held.span.clone(),
+        };
+    }
+}
+
 /// Every sub-expression of `expr`, in source order.
 pub(crate) fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
     match &expr.kind {
@@ -6272,6 +6326,38 @@ fn emit_rust_owned_str(expr: &TypedExpr) -> Result<String, Refusal> {
         _ => {
             let borrowed = emit_rust(expr, InferredType::Str)?;
             Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
+        }
+    }
+}
+
+/// A `bytes` value as the `sce_forge_bytes_view_t` a place that owns a byte string
+/// is written from ([`Position::Owned`]): a constant is the view of its literal, a
+/// read of a byte string the machine holds the view of its `{data, len}`, and the
+/// arms of a conditional one by one, since both arms of a C `?:` must be one type.
+/// Whoever writes the value copies from the view, so a variable assigned from
+/// another is two buffers and not one.
+fn emit_c_owned_bytes(expr: &TypedExpr) -> Result<String, ExprError> {
+    match &expr.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => Ok(format!(
+            "({} ? {} : {})",
+            emit_c(condition, InferredType::Bool)?,
+            emit_c_owned_bytes(consequent)?,
+            emit_c_owned_bytes(alternate)?,
+        )),
+        ExprKind::BytesLit { bytes } => Ok(format!(
+            "(sce_forge_bytes_view_t){{ (const uint8_t *)\"{}\", {} }}",
+            bytes_as_quoted_ascii(bytes),
+            bytes.len()
+        )),
+        _ => {
+            let held = wrap_postfix(expr, emit_c(expr, InferredType::Unknown)?);
+            Ok(format!(
+                "(sce_forge_bytes_view_t){{ ({held}).data, ({held}).len }}"
+            ))
         }
     }
 }
@@ -8161,7 +8247,21 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                         if let ExprKind::BytesLit { bytes } = &operand.kind {
                             let v = format!("\"{}\"", bytes_as_quoted_ascii(bytes));
                             Ok((v, bytes.len().to_string(), Some(bytes.len())))
+                        } else if let ExprKind::BytesView {
+                            source,
+                            len: Some(len),
+                        } = &operand.kind
+                        {
+                            // A byte string held as `{data, len}`, whose pointer
+                            // and length are two expressions of their own
+                            // ([`views_for_bytes_equality`]).
+                            Ok((
+                                emit_c(source, InferredType::Unknown)?,
+                                emit_c(len, InferredType::Unknown)?,
+                                None,
+                            ))
                         } else {
+                            // A payload's field: the array and its `_len` sibling.
                             let v = emit_c(operand, InferredType::Unknown)?;
                             let len = format!("{v}_len");
                             Ok((v, len, None))
@@ -8176,7 +8276,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 return Ok(if matches!(op, BinOp::StrictEq) {
                     format!("{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0")
                 } else {
-                    format!("{ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0")
+                    // Parenthesised, since a `||` read in a larger condition
+                    // would otherwise bind to whatever stands beside it.
+                    format!("({ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0)")
                 });
             }
             // String comparison lowering. C lacks operator
@@ -9262,6 +9364,29 @@ mod tests {
         assert_eq!(tp_with("eq(n, m)", ExprTarget::Rust, &ctx), "eq(n, m)");
     }
 
+    // Where a failure can be received a byte string is the `{data, len}` struct C
+    // gives a view or a buffer, so its two sides of an equality are the pointer and
+    // the length of each, whichever expression holds it; a literal fixes the count.
+    #[test]
+    fn bytes_equality_where_failures_are_received_reads_the_data_and_len_of_a_struct() {
+        let mut ctx = bytes_ctx();
+        ctx.receives_failures = true;
+        ctx.insert_var("other", InferredType::Bytes);
+        let eq = |expr: &str| tp_with(expr, ExprTarget::C, &ctx);
+        assert_eq!(
+            eq("raw === 'ack'"),
+            "raw.len == 3 && memcmp(raw.data, \"ack\", 3) == 0"
+        );
+        assert_eq!(
+            eq("raw !== 'ack'"),
+            "(raw.len != 3 || memcmp(raw.data, \"ack\", 3) != 0)"
+        );
+        assert_eq!(
+            eq("raw === other"),
+            "raw.len == other.len && memcmp(raw.data, other.data, raw.len) == 0"
+        );
+    }
+
     #[test]
     fn bytes_neq_lowers_per_backend() {
         let ctx = bytes_ctx();
@@ -9287,7 +9412,7 @@ mod tests {
         );
         assert_eq!(
             tp_with("raw !== 'ack'", ExprTarget::C, &ctx),
-            "raw_len != 3 || memcmp(raw, \"ack\", 3) != 0"
+            "(raw_len != 3 || memcmp(raw, \"ack\", 3) != 0)"
         );
     }
 

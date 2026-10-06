@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: af6eb1cd310564a79f397036ef4dce92d3d2c3e97c92d00497068c34348ff27d
+// source-hash: 85844d8c658d9da3a800ada75457cf71d520941390a53fd4b039646bdb5bf6c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_string_capacity.scxml

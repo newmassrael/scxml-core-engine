@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: af6eb1cd310564a79f397036ef4dce92d3d2c3e97c92d00497068c34348ff27d
+// source-hash: 85844d8c658d9da3a800ada75457cf71d520941390a53fd4b039646bdb5bf6c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_bytes.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_bytes.scxml:22 :: _machine
+// SCE-MAP: static_bytes.scxml:25 :: _machine
 
 package com.sce.integration.static_bytes
 
@@ -27,6 +27,7 @@ sealed interface StaticBytesEvent : Event {
     }
     data object Fill : StaticBytesEvent
     data object Measure : StaticBytesEvent
+    data object Other : StaticBytesEvent
     data object Reset : StaticBytesEvent
     data object Toowide : StaticBytesEvent
 }
@@ -299,6 +300,15 @@ class StaticBytesStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 8, as the microstep reads it.
+        val transitionIdleAt8 = EnabledTransition<StaticBytesState, HistoryId>(
+            StaticBytesState.Idle,
+            emptyList(),
+            8,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -324,6 +334,7 @@ class StaticBytesStateMachine(
         "error.execution" -> StaticBytesEvent.Error.Execution
         "fill" -> StaticBytesEvent.Fill
         "measure" -> StaticBytesEvent.Measure
+        "other" -> StaticBytesEvent.Other
         "reset" -> StaticBytesEvent.Reset
         "toowide" -> StaticBytesEvent.Toowide
         else -> null
@@ -336,6 +347,7 @@ class StaticBytesStateMachine(
         is StaticBytesEvent.Error.Execution -> "error.execution"
         is StaticBytesEvent.Fill -> "fill"
         is StaticBytesEvent.Measure -> "measure"
+        is StaticBytesEvent.Other -> "other"
         is StaticBytesEvent.Reset -> "reset"
         is StaticBytesEvent.Toowide -> "toowide"
     }
@@ -357,91 +369,99 @@ class StaticBytesStateMachine(
             event is StaticBytesEvent.Fill -> transitionIdleAt0
             event is StaticBytesEvent.Toowide -> transitionIdleAt1
             event is StaticBytesEvent.Reset -> transitionIdleAt2
-            event is StaticBytesEvent.Copy -> transitionIdleAt3
-            event is StaticBytesEvent.Check && frame.contentEquals("ab".toByteArray()) -> transitionIdleAt4
-            event is StaticBytesEvent.Check && !frame.contentEquals("ab".toByteArray()) -> transitionIdleAt5
-            event is StaticBytesEvent.Measure -> transitionIdleAt6
-            event is StaticBytesEvent.Error.Execution -> transitionIdleAt7
+            event is StaticBytesEvent.Other -> transitionIdleAt3
+            event is StaticBytesEvent.Copy -> transitionIdleAt4
+            event is StaticBytesEvent.Check && frame.contentEquals("ab".toByteArray()) -> transitionIdleAt5
+            event is StaticBytesEvent.Check && !frame.contentEquals("ab".toByteArray()) -> transitionIdleAt6
+            event is StaticBytesEvent.Measure -> transitionIdleAt7
+            event is StaticBytesEvent.Error.Execution -> transitionIdleAt8
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun onEntry(state: StaticBytesState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticBytesState.Idle -> {
-                // SCE-MAP: static_bytes.scxml:32 :: idle :: _state_body
+                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun onExit(state: StaticBytesState) {
         when (state) {
             is StaticBytesState.Idle -> {
-                // SCE-MAP: static_bytes.scxml:32 :: idle :: _state_body
+                // SCE-MAP: static_bytes.scxml:35 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     override fun executeTransitionContent(source: StaticBytesState, transitionIndex: Int) {
         when (source) {
         is StaticBytesState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_bytes.scxml:33 :: idle :: _transition_0
+                // SCE-MAP: static_bytes.scxml:36 :: idle :: _transition_0
 
             if (try { frame = com.sce.forge.runtime.SceChecked.bounded("abcdefgh".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
-                // SCE-MAP: static_bytes.scxml:36 :: idle :: _transition_1
+                // SCE-MAP: static_bytes.scxml:39 :: idle :: _transition_1
 
             if (try { frame = com.sce.forge.runtime.SceChecked.bounded("abcdefghi".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
-                // SCE-MAP: static_bytes.scxml:39 :: idle :: _transition_2
+                // SCE-MAP: static_bytes.scxml:42 :: idle :: _transition_2
 
             if (try { frame = com.sce.forge.runtime.SceChecked.bounded("ab".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
-                // SCE-MAP: static_bytes.scxml:42 :: idle :: _transition_3
+                // SCE-MAP: static_bytes.scxml:45 :: idle :: _transition_3
+
+            if (try { frame = com.sce.forge.runtime.SceChecked.bounded("ba".toByteArray(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='frame'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            4 -> {
+                // SCE-MAP: static_bytes.scxml:48 :: idle :: _transition_4
 
             if (try { tail = com.sce.forge.runtime.SceChecked.bounded(frame, 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='tail'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            4 -> {
-                // SCE-MAP: static_bytes.scxml:45 :: idle :: _transition_4
+            5 -> {
+                // SCE-MAP: static_bytes.scxml:51 :: idle :: _transition_5
 
             if (try { matches = com.sce.forge.runtime.SceChecked.add(matches, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='matches'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            5 -> {
-                // SCE-MAP: static_bytes.scxml:48 :: idle :: _transition_5
+            6 -> {
+                // SCE-MAP: static_bytes.scxml:54 :: idle :: _transition_6
 
             if (try { misses = com.sce.forge.runtime.SceChecked.add(misses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            6 -> {
-                // SCE-MAP: static_bytes.scxml:51 :: idle :: _transition_6
+            7 -> {
+                // SCE-MAP: static_bytes.scxml:57 :: idle :: _transition_7
 
             size = (frame).size.toUInt()
             }
-            7 -> {
-                // SCE-MAP: static_bytes.scxml:54 :: idle :: _transition_7
+            8 -> {
+                // SCE-MAP: static_bytes.scxml:60 :: idle :: _transition_8
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

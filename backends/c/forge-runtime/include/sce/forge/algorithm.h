@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "sce/forge/bytes.h" /* sce_forge_bytes_view_t, which a byte string's bound is held on */
+
 /* Why a `may-fail` algorithm has no value to return. */
 typedef enum {
     /* An integer result outside its declared width. */
@@ -85,6 +87,23 @@ static inline const char *sce_forge_bounded_string(sce_forge_algorithm_failure_t
     if (strlen(value) > (size_t)capacity) {
         sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);
         return "";
+    }
+    return value;
+}
+
+/*
+ * `value`, handed back, when it holds no more than `capacity` bytes — the bound a
+ * byte string of a `sce-static` machine declares — and an empty view with a
+ * capacity failure recorded in `f` otherwise, which the statement around it never
+ * uses. The view carries its length, so the count is `len`, which is what every
+ * backend counts.
+ */
+static inline sce_forge_bytes_view_t sce_forge_bounded_bytes(sce_forge_algorithm_failure_t *f,
+                                                             sce_forge_bytes_view_t value, uint32_t capacity) {
+    if (value.len > (size_t)capacity) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);
+        sce_forge_bytes_view_t none = {NULL, 0};
+        return none;
     }
     return value;
 }

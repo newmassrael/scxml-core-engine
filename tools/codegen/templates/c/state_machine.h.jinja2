@@ -39,6 +39,12 @@
    which is no such view. #}
 #include "sce/forge/list_view.h"
 {% endif %}
+{% if static_fields | selectattr('saved_type', 'equalto', 'bytes') | list %}
+{# SCE Accepted Subset §2.15: a byte string is a buffer and the length it holds,
+   which a host is lent as the library's `sce_forge_bytes_view_t` and which the
+   buffer's `_of` is filled from. #}
+#include "sce/forge/bytes.h"
+{% endif %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
    bottom of this header. This header opens `extern "C"`, so a C++
    application linking the generated machine compiles it as C++ —

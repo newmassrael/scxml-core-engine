@@ -72,6 +72,9 @@
 //     "42"), with no script engine to read it as a number.
 //   * `static_string_capacity`: a string is a buffer of the UTF-8 bytes its variable
 //     declares, and an assignment past it is refused by bytes, not characters.
+//   * `static_bytes`: a byte string is a buffer of the bytes its variable declares and
+//     the length it holds, assigned from a literal or another byte string, compared,
+//     measured, and refused past its bound; a host is lent a view of it.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -88,6 +91,7 @@
 
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
+#include "static_bytes_sm.h"
 #include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
@@ -620,6 +624,55 @@ static const variable_t string_capacity_variables[] = {
 };
 STATIC_SCENARIO(static_string_capacity, string_capacity_states, string_capacity_variables, static_string_capacity_text,
                 no_lists, no_records)
+
+// static_bytes: a byte string is a buffer of the bytes its variable declares and the
+// length it holds, assigned from a literal or from another byte string, and refused
+// past its bound. A host is lent the view of it (`sce_forge_bytes_view_t`), which a
+// scenario states as the byte-exact Latin-1 text of the bytes: each byte is the
+// character of that code point, written as the UTF-8 a JSON string is held in.
+VARIABLE_READER(static_bytes, size)
+VARIABLE_READER(static_bytes, matches)
+VARIABLE_READER(static_bytes, misses)
+VARIABLE_READER(static_bytes, errors)
+
+// The text of `view`, in a buffer that holds a view of up to eight bytes.
+static const char *static_bytes_latin1_text(sce_forge_bytes_view_t view) {
+    static char text[2 * 8 + 1];
+    size_t used = 0;
+    for (size_t i = 0; i < view.len && used + 2u < sizeof(text); ++i) {
+        const uint8_t byte = view.data[i];
+        if (byte < 0x80u) {
+            text[used++] = (char)byte;
+        } else {
+            text[used++] = (char)(0xC0u | (byte >> 6));
+            text[used++] = (char)(0x80u | (byte & 0x3Fu));
+        }
+    }
+    text[used] = '\0';
+    return text;
+}
+
+static const char *static_bytes_text(void *sm, const char *name) {
+    const static_bytes_t *machine = (const static_bytes_t *)sm;
+    if (strcmp(name, "frame") == 0) {
+        return static_bytes_latin1_text(static_bytes_get_frame(machine));
+    }
+    if (strcmp(name, "tail") == 0) {
+        return static_bytes_latin1_text(static_bytes_get_tail(machine));
+    }
+    return NULL;
+}
+
+static const name_value_t bytes_states[] = {
+    {"idle", STATIC_BYTES_STATE_IDLE},
+};
+static const variable_t bytes_variables[] = {
+    {"size", static_bytes_read_size},
+    {"matches", static_bytes_read_matches},
+    {"misses", static_bytes_read_misses},
+    {"errors", static_bytes_read_errors},
+};
+STATIC_SCENARIO(static_bytes, bytes_states, bytes_variables, static_bytes_text, no_lists, no_records)
 
 // static_donedata: a top-level final hands its done event the pairs of its
 // `<donedata>`, each read from the machine's own fields when the final is entered
@@ -1406,6 +1459,7 @@ int main(void) {
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
+    bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_donedata_content_scenario("static_donedata_content_value", 4);

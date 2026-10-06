@@ -598,6 +598,13 @@ pub trait StaticTarget {
     fn string_storage(&self, _capacity: u32, _init: &str) -> Option<StringStorage> {
         None
     }
+    /// [`Self::string_storage`] for a byte string bounded by `capacity` bytes,
+    /// starting at `init`, the view of the literal it starts at: a buffer and the
+    /// length it holds, which a host is lent as a view. `None` for a target whose
+    /// own byte string owns its storage, which is every other.
+    fn bytes_storage(&self, _capacity: u32, _init: &str) -> Option<StringStorage> {
+        None
+    }
     /// What an expression reads variable `var` as, given `field_ref`, the
     /// reference to the field that holds it. The reference itself for a value the
     /// field is; a string a target holds in a buffer is read through the buffer.
@@ -607,6 +614,11 @@ pub trait StaticTarget {
     /// `target = value` for a string variable, `target` being what
     /// [`Self::variable_ref`] gave. The assignment of any other value by default.
     fn assign_string(&self, target: &str, value: &str) -> String {
+        self.assign(target, value)
+    }
+    /// `target = value` for a byte string, `value` being the bytes it was held to
+    /// the bound as. The assignment of any other value by default.
+    fn assign_bytes(&self, target: &str, value: &str) -> String {
         self.assign(target, value)
     }
     /// `target = value`.
@@ -1975,10 +1987,14 @@ pub fn lower(
             // however many variables share the bound, and read through the buffer.
             let storage = match (ty, var.capacity) {
                 (SceType::String, Some(capacity)) => target.string_storage(capacity, &init),
+                (SceType::Bytes, Some(capacity)) => target.bytes_storage(capacity, &init),
                 _ => None,
             };
+            // A byte string is read by a host as the view of its buffer and length,
+            // which the machine builds from the two, and not as a text it holds.
             let read = storage
                 .as_ref()
+                .filter(|_| !matches!(ty, SceType::Bytes))
                 .map(|_| target.variable_ref(var, target.field_ref(&name)));
             if let Some(storage) = &storage {
                 declarations.string_storage(storage);
@@ -4521,6 +4537,8 @@ impl CTarget {
     fn value_type(ty: InferredType) -> String {
         match ty {
             InferredType::Unknown => "int".to_string(),
+            // A byte string is computed as the view it is written from.
+            InferredType::Bytes => "sce_forge_bytes_view_t".to_string(),
             _ => match ty.to_sce_type() {
                 Some(held) => crate::forge::generator::c_type(&held).to_string(),
                 None => unreachable!("C11 lowers only values that have a declared type: {ty:?}"),
@@ -4546,8 +4564,9 @@ impl StaticTarget for CTarget {
         // hold without a length. A list of integers or bools too: it is a
         // buffer of its bound, which every list declares ([`Self::bounded_list`]).
         // A string is a buffer of the bound its variable declares, which the
-        // document requires of every one ([`Self::string_storage`]). A bytes
-        // value needs a capacity the C11 contract does not carry yet. A 64-bit
+        // document requires of every one ([`Self::string_storage`]). A byte string
+        // is the same, a buffer and its length of the bound
+        // ([`Self::bytes_storage`]). A 64-bit
         // real is a `double`, written to the wire as ECMAScript spells it, alone,
         // in a list and as a record's field. A 32-bit one is a `float`, alone, in
         // a list and as a record's field, written to the wire as the `double` it
@@ -4589,7 +4608,7 @@ impl StaticTarget for CTarget {
                 value_type.scalar(),
                 Some(ty) if held_scalar(ty)
                     || matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
-                    || (matches!(ty, SceType::String) && v.capacity.is_some())
+                    || (matches!(ty, SceType::String | SceType::Bytes) && v.capacity.is_some())
             )
         }) {
             let ty = match &var.value_type {
@@ -4923,6 +4942,47 @@ impl StaticTarget for CTarget {
     // statement around it receives as it does a checked operation.
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("sce_forge_bounded_string(&sce_failure_, {value}, {capacity}u)")
+    }
+    // A byte string is a view, so the bound is its length: the runtime's helper
+    // answers the view, or an empty one with the failure recorded.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        format!("sce_forge_bounded_bytes(&sce_failure_, {value}, {capacity}u)")
+    }
+    fn lowers_bytes(&self) -> bool {
+        true
+    }
+    // A buffer of the bound and the length it holds, named by the bound so that
+    // two variables of one bound share a type, and declared under a guard so that
+    // two machines in one program do. It has the shape of a list's view
+    // (`{data, len}`), so an expression reads its length and an element as it
+    // does a list's, and a host is lent the view of it
+    // (`sce_forge_bytes_view_t`) built by the reader. `_of` fills it from the view
+    // of a value already held to the bound, which a literal's is.
+    fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        let ty = format!("sce_static_bytes_{capacity}_t");
+        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+        let of = format!("sce_static_bytes_{capacity}_of");
+        let def = format!(
+            "#ifndef {guard}\n#define {guard}\n\
+             /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
+             typedef struct {{\n    uint8_t data[{capacity}];\n    size_t len;\n}} {ty};\n\n\
+             static inline {ty} {of}(sce_forge_bytes_view_t bytes) {{\n    \
+             {ty} value = {{ {{ 0 }}, 0 }};\n    \
+             for (size_t i = 0; i < bytes.len && i < {capacity}u; ++i) {{\n        \
+             value.data[i] = bytes.data[i];\n    }}\n    \
+             value.len = bytes.len < {capacity}u ? bytes.len : {capacity}u;\n    return value;\n}}\n#endif"
+        );
+        Some(StringStorage {
+            init: format!("{of}({init})"),
+            ty,
+            def,
+            view: "sce_forge_bytes_view_t".to_string(),
+        })
+    }
+    // The bytes and their length move together into the buffer, which the value
+    // may overlap (`frame = frame`), and the bound was judged before this runs.
+    fn assign_bytes(&self, target: &str, value: &str) -> String {
+        format!("memmove(({target}).data, ({value}).data, ({value}).len); ({target}).len = ({value}).len;")
     }
     // A buffer of the bound and its terminator, named by the bound so that two
     // variables of one bound share a type, and declared under a guard so that
@@ -5675,9 +5735,12 @@ fn lower_action(
                 None => {
                     let name = renames.get(location).copied().unwrap_or(location);
                     let is_string = rewrites.strings.contains_key(location);
+                    let is_bytes = rewrites.bytes.contains_key(location);
                     let write = |v: &str| {
                         if is_string {
                             target.assign_string(name, v)
+                        } else if is_bytes {
+                            target.assign_bytes(name, v)
                         } else {
                             target.assign(name, v)
                         }

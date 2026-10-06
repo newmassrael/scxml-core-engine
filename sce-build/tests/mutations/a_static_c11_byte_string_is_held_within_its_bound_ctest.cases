@@ -1,0 +1,49 @@
+# Mutation cases for "a bytes variable is held within the `sce:capacity` it declares"
+# under the C11 backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+# docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_byte_string_is_held_within_its_bound_ctest.cases`.
+#
+# A C11 byte string is a buffer of the bound and the length it holds, which a host is
+# lent as a view: `static_bytes` assigns it from a literal and from another byte string,
+# compares it with `===` and `!==`, measures it, and expects a value past the bound to
+# leave the variable as it was and `errors` to count it. A C machine is not saved, so
+# there is no restore to refuse here. The mutants take one decision away each:
+#
+#   an assignment to a byte string is not held to its bound;
+#   the bytes are copied into the buffer without the length they came with, so a shorter
+#     value leaves the length of the longer one it replaced;
+#   two byte strings are told equal by their content alone, with no regard to their length;
+#   two byte strings are told equal by their length alone, with no regard to their content.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
+
+mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+PY
+
+mutation_case "the bytes are copied without the length they came with" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "; ({target}).len = ({value}).len;\")",
+     ";\")")
+PY
+
+mutation_case "two byte strings are told equal by their content alone" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                    format!(\"{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0\")",
+     "                    format!(\"memcmp({lv}, {rv}, {cmp_len}) == 0\")")
+PY
+
+mutation_case "two byte strings are told equal by their length alone" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                    format!(\"{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0\")",
+     "                    format!(\"{ll} == {rl}\")")
+PY

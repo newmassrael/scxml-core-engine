@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: af6eb1cd310564a79f397036ef4dce92d3d2c3e97c92d00497068c34348ff27d
+// source-hash: 85844d8c658d9da3a800ada75457cf71d520941390a53fd4b039646bdb5bf6c1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_bytes.scxml:22 :: _machine"]
-// SCE-MAP: static_bytes.scxml:22 :: _machine
+#![doc = "SCE-MAP: static_bytes.scxml:25 :: _machine"]
+// SCE-MAP: static_bytes.scxml:25 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -100,6 +100,7 @@ pub enum StaticBytesEvent {
     ErrorExecution,
     Fill,
     Measure,
+    Other,
     Reset,
     Toowide,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
@@ -127,6 +128,7 @@ impl StaticBytesEvent {
         StaticBytesEvent::Copy,
         StaticBytesEvent::Fill,
         StaticBytesEvent::Measure,
+        StaticBytesEvent::Other,
         StaticBytesEvent::Reset,
         StaticBytesEvent::Toowide,
     ];
@@ -613,6 +615,7 @@ impl StatePolicy for StaticBytesPolicy {
             StaticBytesEvent::ErrorExecution => "error.execution",
             StaticBytesEvent::Fill => "fill",
             StaticBytesEvent::Measure => "measure",
+            StaticBytesEvent::Other => "other",
             StaticBytesEvent::Reset => "reset",
             StaticBytesEvent::Toowide => "toowide",
             StaticBytesEvent::Null => "",
@@ -626,6 +629,7 @@ impl StatePolicy for StaticBytesPolicy {
             "error.execution" => Some(StaticBytesEvent::ErrorExecution),
             "fill" => Some(StaticBytesEvent::Fill),
             "measure" => Some(StaticBytesEvent::Measure),
+            "other" => Some(StaticBytesEvent::Other),
             "reset" => Some(StaticBytesEvent::Reset),
             "toowide" => Some(StaticBytesEvent::Toowide),
             _ => None,
@@ -667,8 +671,8 @@ impl StatePolicy for StaticBytesPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_bytes.scxml:22 :: _machine"]
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    #[doc = "SCE-MAP: static_bytes.scxml:25 :: _machine"]
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -684,8 +688,8 @@ impl StatePolicy for StaticBytesPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_bytes.scxml:22 :: _machine"]
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    #[doc = "SCE-MAP: static_bytes.scxml:25 :: _machine"]
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -701,8 +705,8 @@ impl StatePolicy for StaticBytesPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_bytes.scxml:22 :: _machine"]
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    #[doc = "SCE-MAP: static_bytes.scxml:25 :: _machine"]
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -744,7 +748,7 @@ impl StatePolicy for StaticBytesPolicy {
                         });
                     }
                 }
-                if event == StaticBytesEvent::Copy {
+                if event == StaticBytesEvent::Other {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -755,8 +759,8 @@ impl StatePolicy for StaticBytesPolicy {
                         });
                     }
                 }
-                if event == StaticBytesEvent::Check {
-                    if self.frame == b"ab" {
+                if event == StaticBytesEvent::Copy {
+                    {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
@@ -767,11 +771,22 @@ impl StatePolicy for StaticBytesPolicy {
                     }
                 }
                 if event == StaticBytesEvent::Check {
-                    if self.frame != b"ab" {
+                    if self.frame == b"ab" {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticBytesEvent::Check {
+                    if self.frame != b"ab" {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -782,7 +797,7 @@ impl StatePolicy for StaticBytesPolicy {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
-                            transition_index: 6,
+                            transition_index: 7,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -793,7 +808,7 @@ impl StatePolicy for StaticBytesPolicy {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
-                            transition_index: 7,
+                            transition_index: 8,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -807,8 +822,8 @@ impl StatePolicy for StaticBytesPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_bytes.scxml:22 :: _machine"]
-    // SCE-MAP: static_bytes.scxml:22 :: _machine
+    #[doc = "SCE-MAP: static_bytes.scxml:25 :: _machine"]
+    // SCE-MAP: static_bytes.scxml:25 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -819,7 +834,7 @@ impl StatePolicy for StaticBytesPolicy {
             StaticBytesState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_bytes.scxml:33 :: idle :: _transition_0
+                        // SCE-MAP: static_bytes.scxml:36 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -840,7 +855,7 @@ impl StatePolicy for StaticBytesPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_bytes.scxml:36 :: idle :: _transition_1
+                        // SCE-MAP: static_bytes.scxml:39 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -861,7 +876,7 @@ impl StatePolicy for StaticBytesPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_bytes.scxml:39 :: idle :: _transition_2
+                        // SCE-MAP: static_bytes.scxml:42 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -882,8 +897,29 @@ impl StatePolicy for StaticBytesPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_bytes.scxml:42 :: idle :: _transition_3
+                        // SCE-MAP: static_bytes.scxml:45 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="frame">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.frame = sce_forge_runtime::algorithm::bounded(b"ba".to_vec(), 8)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBytesEvent::ErrorExecution, "<assign location='frame'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    4 => {
+                        // SCE-MAP: static_bytes.scxml:48 :: idle :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="tail">
@@ -902,9 +938,9 @@ impl StatePolicy for StaticBytesPolicy {
                             }
                         }
                     }
-                    4 => {
-                        // SCE-MAP: static_bytes.scxml:45 :: idle :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    5 => {
+                        // SCE-MAP: static_bytes.scxml:51 :: idle :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="matches">
@@ -923,9 +959,9 @@ impl StatePolicy for StaticBytesPolicy {
                             }
                         }
                     }
-                    5 => {
-                        // SCE-MAP: static_bytes.scxml:48 :: idle :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
+                    6 => {
+                        // SCE-MAP: static_bytes.scxml:54 :: idle :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="misses">
@@ -944,18 +980,18 @@ impl StatePolicy for StaticBytesPolicy {
                             }
                         }
                     }
-                    6 => {
-                        // SCE-MAP: static_bytes.scxml:51 :: idle :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
+                    7 => {
+                        // SCE-MAP: static_bytes.scxml:57 :: idle :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="size">
                             self.size = (self.frame).len() as u32;
                         }
                     }
-                    7 => {
-                        // SCE-MAP: static_bytes.scxml:54 :: idle :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
+                    8 => {
+                        // SCE-MAP: static_bytes.scxml:60 :: idle :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="errors">

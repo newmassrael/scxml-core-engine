@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: af6eb1cd310564a79f397036ef4dce92d3d2c3e97c92d00497068c34348ff27d
+// source-hash: 85844d8c658d9da3a800ada75457cf71d520941390a53fd4b039646bdb5bf6c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_bytes.scxml:22 :: _machine
+// SCE-MAP: static_bytes.scxml:25 :: _machine
 
 package static_bytes
 
@@ -141,10 +141,11 @@ const (
 	StaticBytesEventErrorExecution StaticBytesEvent = 2
 	StaticBytesEventFill StaticBytesEvent = 3
 	StaticBytesEventMeasure StaticBytesEvent = 4
-	StaticBytesEventReset StaticBytesEvent = 5
-	StaticBytesEventToowide StaticBytesEvent = 6
+	StaticBytesEventOther StaticBytesEvent = 5
+	StaticBytesEventReset StaticBytesEvent = 6
+	StaticBytesEventToowide StaticBytesEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticBytesEventNull StaticBytesEvent = 7
+	StaticBytesEventNull StaticBytesEvent = 8
 )
 
 func (e StaticBytesEvent) String() string {
@@ -159,6 +160,8 @@ func (e StaticBytesEvent) String() string {
 		return "fill"
 	case StaticBytesEventMeasure:
 		return "measure"
+	case StaticBytesEventOther:
+		return "other"
 	case StaticBytesEventReset:
 		return "reset"
 	case StaticBytesEventToowide:
@@ -401,6 +404,8 @@ func (p *StaticBytesPolicy) GetEventFromName(name string) (StaticBytesEvent, boo
 		return StaticBytesEventFill, true
 	case "measure":
 		return StaticBytesEventMeasure, true
+	case "other":
+		return StaticBytesEventOther, true
 	case "reset":
 		return StaticBytesEventReset, true
 	case "toowide":
@@ -504,7 +509,7 @@ func (p *StaticBytesPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) ExecuteEntryActions(state StaticBytesState, engine *sce.Engine[StaticBytesState, StaticBytesEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -517,7 +522,7 @@ func (p *StaticBytesPolicy) ExecuteEntryActions(state StaticBytesState, engine *
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticBytesState, StaticBytesEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -525,7 +530,7 @@ func (p *StaticBytesPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) ExecuteExitActions(state StaticBytesState, engine *sce.Engine[StaticBytesState, StaticBytesEvent], configurationBeforeExit []StaticBytesState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -542,7 +547,7 @@ func (p *StaticBytesPolicy) ExecuteExitActions(state StaticBytesState, engine *s
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) BindCurrentEvent(event StaticBytesEvent, engine *sce.Engine[StaticBytesState, StaticBytesEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -552,7 +557,7 @@ func (p *StaticBytesPolicy) BindCurrentEvent(event StaticBytesEvent, engine *sce
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event StaticBytesEvent, engine *sce.Engine[StaticBytesState, StaticBytesEvent]) (sce.EnabledTransition[StaticBytesState, sce.HistoryID], bool) {
 	switch state {
 	case StaticBytesStateIdle:
@@ -586,11 +591,21 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 				}, true
 			}
 		}
-		if event == StaticBytesEventCopy {
+		if event == StaticBytesEventOther {
 			{
 				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticBytesEventCopy {
+			{
+				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 4,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -603,7 +618,7 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 			if string(p.vFrame) == "ab" {
 				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 4,
+					TransitionIndex: 5,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -616,7 +631,7 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 			if string(p.vFrame) != "ab" {
 				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 5,
+					TransitionIndex: 6,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -626,7 +641,7 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 			{
 				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 6,
+					TransitionIndex: 7,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -636,7 +651,7 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 			{
 				return sce.EnabledTransition[StaticBytesState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 7,
+					TransitionIndex: 8,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -648,13 +663,13 @@ func (p *StaticBytesPolicy) FirstEnabledTransition(state StaticBytesState, event
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_bytes.scxml:22
+//line static_bytes.scxml:25
 func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, transitionIndex int, engine *sce.Engine[StaticBytesState, StaticBytesEvent]) {
 	switch source {
 	case StaticBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_bytes.scxml:33
+			//line static_bytes.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -665,7 +680,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 1:
-			//line static_bytes.scxml:36
+			//line static_bytes.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -676,7 +691,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 2:
-			//line static_bytes.scxml:39
+			//line static_bytes.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -687,7 +702,18 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 3:
-			//line static_bytes.scxml:42
+			//line static_bytes.scxml:45
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x62, 0x61}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesEventErrorExecution, "<assign location='frame'>: an integer operation overflowed or failed")); return true }; p.vFrame = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 4:
+			//line static_bytes.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -697,8 +723,8 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 	}
 
 			}()
-		case 4:
-			//line static_bytes.scxml:45
+		case 5:
+			//line static_bytes.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -708,8 +734,8 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 	}
 
 			}()
-		case 5:
-			//line static_bytes.scxml:48
+		case 6:
+			//line static_bytes.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -719,8 +745,8 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 	}
 
 			}()
-		case 6:
-			//line static_bytes.scxml:51
+		case 7:
+			//line static_bytes.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -728,8 +754,8 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 	p.vSize = uint32(len(p.vFrame))
 
 			}()
-		case 7:
-			//line static_bytes.scxml:54
+		case 8:
+			//line static_bytes.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
