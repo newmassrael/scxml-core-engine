@@ -1,0 +1,42 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the C11 backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_record_bytes_field_is_held_within_its_bound_ctest.cases`.
+#
+# A C11 record holds the field in a buffer of the bound and the length it holds, as a
+# bytes variable does: `static_record_bytes` writes it from a literal and from a bytes
+# variable, copies the record into a list and reads it back, and expects a value past
+# eight bytes to leave the record as it was and `errors` to count it. A C machine is not
+# saved, so there is no restore to refuse here. The mutants take one decision away each:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a record's bytes field is written without the length the value came with, so a
+#     shorter value leaves the length of the longer one it replaced;
+#   a record's bytes field starts empty and not at the literal its `<sce:set>` gives.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY
+
+mutation_case "a record's bytes field is written without the length it came with" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        self.assign_bytes(&format!(\"{target}.{field}\"), value)",
+     "        format!(\"memmove(({target}.{field}).data, ({value}).data, ({value}).len);\")")
+PY
+
+mutation_case "a record's bytes field starts empty and not at its literal" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        format!(\"{}({value})\", c_bytes_storage_of(bound))",
+     "        format!(\"({}){{ 0 }}\", c_bytes_storage_type(bound))")
+PY

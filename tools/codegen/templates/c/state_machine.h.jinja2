@@ -39,10 +39,11 @@
    which is no such view. #}
 #include "sce/forge/list_view.h"
 {% endif %}
-{% if static_fields | selectattr('saved_type', 'equalto', 'bytes') | list %}
+{% if (static_fields | selectattr('saved_type', 'equalto', 'bytes') | list) or (static_fields | selectattr('holds_bytes') | list) %}
 {# SCE Accepted Subset §2.15: a byte string is a buffer and the length it holds,
    which a host is lent as the library's `sce_forge_bytes_view_t` and which the
-   buffer's `_of` is filled from. #}
+   buffer's `_of` is filled from; a record's field of one, alone or in a list of
+   them, is the same buffer. #}
 #include "sce/forge/bytes.h"
 {% endif %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the

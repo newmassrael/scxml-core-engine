@@ -537,6 +537,18 @@ pub trait StaticTarget {
     fn record_string_runtime(&self, _bound: u32, text: &str) -> String {
         text.to_string()
     }
+    /// A record's byte-string field starting at `value`, the bytes of a literal
+    /// the judge held to `bound`, as the record is built whole: the value itself,
+    /// unless the target holds the field in a buffer of `bound` bytes.
+    fn record_bytes_literal(&self, _bound: u32, value: &str) -> String {
+        value.to_string()
+    }
+    /// The statement that writes `value` — already held to its bound — into the
+    /// byte-string field `field` of the record `target`: the field's own
+    /// assignment, unless the target holds it in a buffer it copies into.
+    fn assign_bytes_field(&self, target: &str, field: &str, value: &str) -> String {
+        self.assign_field(target, field, value)
+    }
     /// An empty list.
     fn list_empty(&self) -> String;
     /// How a list of the scalar `elem`, bounded by `capacity`, is declared: its
@@ -1957,6 +1969,7 @@ pub fn lower(
                         (SceType::String, Some(bound)) => {
                             target.record_string_literal(bound, &value)
                         }
+                        (SceType::Bytes, Some(bound)) => target.record_bytes_literal(bound, &value),
                         _ => value,
                     };
                     values.push((target.record_field(&field.id), value));
@@ -2469,13 +2482,16 @@ impl<'t> TypeDeclarations<'t> {
         }
         let ty = self.target.record_type(self.machine, alias);
         if self.declared.insert(ty.clone()) {
-            // A string field a target holds in a buffer is of the type that buffer
-            // is declared as, which comes before the record that holds it.
+            // A string or byte-string field a target holds in a buffer is of the type
+            // that buffer is declared as, which comes before the record that holds it.
             for field in &schema.fields {
-                if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
-                    if let Some(storage) = self.target.string_storage(bound, "\"\"") {
-                        self.string_storage(&storage);
-                    }
+                let storage = match (&field.sce_type, field.max_size) {
+                    (SceType::String, Some(bound)) => self.target.string_storage(bound, "\"\""),
+                    (SceType::Bytes, Some(bound)) => self.target.bytes_storage(bound, "{ 0 }"),
+                    _ => None,
+                };
+                if let Some(storage) = storage {
+                    self.string_storage(&storage);
                 }
             }
             self.type_defs
@@ -4517,6 +4533,19 @@ fn c_string_storage_of(capacity: u32) -> String {
     format!("sce_static_string_{capacity}_of")
 }
 
+/// The type a byte string of at most `capacity` bytes is held in: a buffer and
+/// the length it holds, named by the bound so that two variables, or a variable
+/// and a record's field, of one bound share it ([`CTarget::bytes_storage`]).
+fn c_bytes_storage_type(capacity: u32) -> String {
+    format!("sce_static_bytes_{capacity}_t")
+}
+
+/// The function that fills the buffer of [`c_bytes_storage_type`] from the view of
+/// bytes already held to the bound.
+fn c_bytes_storage_of(capacity: u32) -> String {
+    format!("sce_static_bytes_{capacity}_of")
+}
+
 /// C11: a variable is a member of the machine's policy struct (`sm->policy`),
 /// set by the machine's own statements. A failed checked operation is a value
 /// (zero, with a flag raised in `sce_failure_`) rather than a jump, as in C++, so
@@ -4756,8 +4785,8 @@ impl StaticTarget for CTarget {
             return Some(format!("<data id=\"{}\" sce:type=\"{ty}\">", var.id));
         }
         // A record is a struct of the fields its schema declares: the numbers
-        // and bools a list holds, reals of either width, a string of the bound
-        // the schema declares (a buffer, as a variable's is), and an enum the
+        // and bools a list holds, reals of either width, a string or a byte string
+        // of the bound the schema declares (a buffer, as a variable's is), and an enum the
         // machine imports under the alias the schema writes. A field is named as
         // the author wrote it; a
         // name C reserves is refused where the schema is read, for every
@@ -4778,9 +4807,10 @@ impl StaticTarget for CTarget {
                         f.sce_type,
                         SceType::Enum(_) | SceType::Float32 | SceType::Float64
                     )
-                    // A string with no bound was refused where the record was
-                    // declared, so the one that reaches here has its buffer.
-                    && !(matches!(f.sce_type, SceType::String) && f.max_size.is_some())
+                    // A string or a byte string with no bound was refused where the
+                    // record was declared, so the one that reaches here has its buffer.
+                    && !(matches!(f.sce_type, SceType::String | SceType::Bytes)
+                        && f.max_size.is_some())
             }) {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",
@@ -4952,8 +4982,10 @@ impl StaticTarget for CTarget {
             .map(|field| {
                 let field_ty = match (&field.sce_type, field.max_size) {
                     (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
-                    // A string is the buffer of the bound its schema declares.
+                    // A string is the buffer of the bound its schema declares, and a
+                    // byte string that buffer with the length it holds.
                     (SceType::String, Some(bound)) => c_string_storage_type(bound),
+                    (SceType::Bytes, Some(bound)) => c_bytes_storage_type(bound),
                     (other, _) => crate::forge::generator::c_type(other).to_string(),
                 };
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
@@ -5091,9 +5123,9 @@ impl StaticTarget for CTarget {
     // (`sce_forge_bytes_view_t`) built by the reader. `_of` fills it from the view
     // of a value already held to the bound, which a literal's is.
     fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
-        let ty = format!("sce_static_bytes_{capacity}_t");
+        let ty = c_bytes_storage_type(capacity);
         let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-        let of = format!("sce_static_bytes_{capacity}_of");
+        let of = c_bytes_storage_of(capacity);
         let def = format!(
             "#ifndef {guard}\n#define {guard}\n\
              /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
@@ -5115,6 +5147,17 @@ impl StaticTarget for CTarget {
     // may overlap (`frame = frame`), and the bound was judged before this runs.
     fn assign_bytes(&self, target: &str, value: &str) -> String {
         format!("memmove(({target}).data, ({value}).data, ({value}).len); ({target}).len = ({value}).len;")
+    }
+    // A record's byte-string field is the buffer of its bound and its length, which
+    // an expression reads as a variable's is, and which is written as one is.
+    fn record_bytes_literal(&self, bound: u32, value: &str) -> String {
+        format!("{}({value})", c_bytes_storage_of(bound))
+    }
+    fn assign_bytes_field(&self, target: &str, field: &str, value: &str) -> String {
+        self.assign_bytes(&format!("{target}.{field}"), value)
+    }
+    fn lowers_record_bytes(&self) -> bool {
+        true
     }
     // A buffer of the bound and its terminator, named by the bound so that two
     // variables of one bound share a type, and declared under a guard so that
@@ -5851,12 +5894,15 @@ fn lower_action(
                     // says, which a target that holds it in a buffer copies
                     // into it.
                     let is_string = rewrites.strings.contains_key(location);
+                    let is_bytes = rewrites.bytes.contains_key(location);
                     statement(
                         &value,
                         slot,
                         &|v| {
                             if is_string {
                                 target.assign_string_field(name, &field, v)
+                            } else if is_bytes {
+                                target.assign_bytes_field(name, &field, v)
                             } else {
                                 target.assign_field(name, &field, v)
                             }

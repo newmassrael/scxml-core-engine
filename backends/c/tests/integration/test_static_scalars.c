@@ -75,6 +75,9 @@
 //   * `static_bytes`: a byte string is a buffer of the bytes its variable declares and
 //     the length it holds, assigned from a literal or another byte string, compared,
 //     measured, and refused past its bound; a host is lent a view of it.
+//   * `static_record_bytes`: a record's byte-string field is the same buffer, bounded
+//     by the schema's `sce:max-size`, written a field at a time, copied into a list of
+//     records, compared and measured; a host reads the record by value.
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
@@ -108,6 +111,7 @@
 #include "static_payload_sm.h"
 #include "static_real32_sm.h"
 #include "static_real_sm.h"
+#include "static_record_bytes_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
@@ -635,11 +639,11 @@ VARIABLE_READER(static_bytes, matches)
 VARIABLE_READER(static_bytes, misses)
 VARIABLE_READER(static_bytes, errors)
 
-// The text of `view`, in a buffer that holds a view of up to eight bytes.
-static const char *static_bytes_latin1_text(sce_forge_bytes_view_t view) {
-    static char text[2 * 8 + 1];
+// The text of `view`, in the `size` bytes of `text`, which holds a view of up to
+// `(size - 1) / 2` bytes: each byte is two UTF-8 bytes at most.
+static const char *bytes_latin1_text(char *text, size_t size, sce_forge_bytes_view_t view) {
     size_t used = 0;
-    for (size_t i = 0; i < view.len && used + 2u < sizeof(text); ++i) {
+    for (size_t i = 0; i < view.len && used + 2u < size; ++i) {
         const uint8_t byte = view.data[i];
         if (byte < 0x80u) {
             text[used++] = (char)byte;
@@ -650,6 +654,12 @@ static const char *static_bytes_latin1_text(sce_forge_bytes_view_t view) {
     }
     text[used] = '\0';
     return text;
+}
+
+// The text of `view`, in a buffer that holds a view of up to eight bytes.
+static const char *static_bytes_latin1_text(sce_forge_bytes_view_t view) {
+    static char text[2 * 8 + 1];
+    return bytes_latin1_text(text, sizeof(text), view);
 }
 
 static const char *static_bytes_text(void *sm, const char *name) {
@@ -673,6 +683,48 @@ static const variable_t bytes_variables[] = {
     {"errors", static_bytes_read_errors},
 };
 STATIC_SCENARIO(static_bytes, bytes_states, bytes_variables, static_bytes_text, no_lists, no_records)
+
+// static_record_bytes: a record's byte-string field is a buffer of the bound its
+// schema declares and the length it holds, written from a literal and from a byte
+// string variable, compared, measured and copied into a list of records. A host reads
+// the record by value, and the field's bytes as the Latin-1 text a scenario states,
+// copied where it outlives the record the reader holds.
+#define FRAMED_FIELDS(N, E) N(sensor) E(frame, static_record_bytes_frame_text)
+VARIABLE_READER(static_record_bytes, size)
+VARIABLE_READER(static_record_bytes, matches)
+VARIABLE_READER(static_record_bytes, misses)
+VARIABLE_READER(static_record_bytes, errors)
+
+static const char *static_record_bytes_frame_text(sce_static_bytes_8_t frame) {
+    static char text[2 * 8 + 1];
+    return bytes_latin1_text(text, sizeof(text), (sce_forge_bytes_view_t){frame.data, frame.len});
+}
+
+RECORD_READER(static_record_bytes, last, static_record_bytes_record_framed_t, FRAMED_FIELDS)
+RECORD_LIST_READER(static_record_bytes, frames, static_record_bytes_record_framed_view_t,
+                   static_record_bytes_record_framed_t, FRAMED_FIELDS)
+
+static const char *static_record_bytes_text(void *sm, const char *name) {
+    static char text[2 * 16 + 1];
+    if (strcmp(name, "spare") == 0) {
+        return bytes_latin1_text(text, sizeof(text), static_record_bytes_get_spare((const static_record_bytes_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t record_bytes_states[] = {
+    {"idle", STATIC_RECORD_BYTES_STATE_IDLE},
+};
+static const variable_t record_bytes_variables[] = {
+    {"size", static_record_bytes_read_size},
+    {"matches", static_record_bytes_read_matches},
+    {"misses", static_record_bytes_read_misses},
+    {"errors", static_record_bytes_read_errors},
+};
+static const record_variable_t record_bytes_records[] = {
+    RECORD_ROW(static_record_bytes, last), RECORD_LIST_ROW(static_record_bytes, frames), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_bytes, record_bytes_states, record_bytes_variables, static_record_bytes_text, no_lists,
+                record_bytes_records)
 
 // static_donedata: a top-level final hands its done event the pairs of its
 // `<donedata>`, each read from the machine's own fields when the final is entered
@@ -1460,6 +1512,7 @@ int main(void) {
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
+    bad |= static_record_bytes_scenario("static_record_bytes", 22);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_donedata_content_scenario("static_donedata_content_value", 4);

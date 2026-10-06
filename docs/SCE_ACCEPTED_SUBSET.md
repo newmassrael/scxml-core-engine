@@ -3677,9 +3677,9 @@ types, as the text of its bytes, one character to a byte, held to its bound by
 
 A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
 a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
-**Rust**, **Go**, **Python** and **C++** so far (`scenarios/static_record_bytes.json`,
+**Rust**, **Go**, **Python**, **C++** and **C11** so far (`scenarios/static_record_bytes.json`,
 `StaticTarget::lowers_record_bytes`);
-the other backends refuse a record with one by name until each holds it, in a variable
+the Interpreter's lowering refuses a record with one by name until it holds it, in a variable
 and in a list of records alike. A transition on an event whose payload carries a `bytes`
 field is refused on all six and by the Interpreter's lowering
 (`StaticTarget::lowers_payload_bytes`). A Kotlin record that holds a byte string compares
@@ -3694,7 +3694,10 @@ never writes into it, so a copy of a record shares it safely. A Python record is
 dataclass of immutable `bytes`, so a host is handed the value itself and two records of
 the same bytes are equal. A C++ record holds a `std::vector<uint8_t>`, is handed to a host
 by value (a copy), and a list of records is lent as a constant reference, both asserted
-where the test is compiled.
+where the test is compiled. A C11 record holds the buffer of the bound and the length it
+holds, the same type a `bytes` variable of that bound has, declared before the record and
+shared by every field and variable of the bound; it is handed to a host by value and a list
+of them is lent as a view, and a write to the field copies both the bytes and the length.
 
 A Kotlin or Go machine never writes into its array
 and hands a host a copy of a published one, so the bound the machine keeps cannot be

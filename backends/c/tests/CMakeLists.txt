@@ -2503,6 +2503,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_string.scxml"
         STAGE_ALSO schema_labelled.scxml
     )
+    # A record's byte-string field is a buffer of the bound its schema declares and
+    # the length it holds, held in a record and in a list of records.
+    sce_generate_static_integration_c_test(static_record_bytes
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_record_bytes.scxml"
+        STAGE_ALSO schema_framed.scxml
+    )
     # A guard over two fields of the record calls an algorithm of the fixtures'
     # own, whose header is generated once beside the machines that include it.
     set(_DAYS_IN_MONTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/days_in_month.h")
@@ -2602,6 +2609,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real32_SOURCES}
         ${INTEGRATION_C_TEST_static_record_string_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_bytes_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
