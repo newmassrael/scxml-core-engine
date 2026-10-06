@@ -243,6 +243,13 @@ class FakeCore implements Transport {
     this.acceptancesByRevision.set(record.revision, record);
   }
 
+  private commandSet = 13;
+
+  /** The command set this core says it speaks: another than the screen's, to see the screen refuse it. */
+  describeAs(version: number): void {
+    this.commandSet = version;
+  }
+
   /** The same list kept again for another text: the revision is the same, and so is what SCE says of it. */
   keepRequirementsFor(id: string, writtenFor: string | null): void {
     const list = this.lists.get(id);
@@ -375,7 +382,7 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 12, commands: [], root: "/fake/works" };
+        return { command_set_version: this.commandSet, commands: [], root: "/fake/works" };
       case "read_work_heads": {
         if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
         const id = String(args["id"]);
@@ -2543,6 +2550,53 @@ describe("a work that moves under the screen", () => {
       expect(acceptNote()).toBe("");
     },
   );
+
+  it.each(["model", "list"])(
+    "withholds the accept at once when only the claim of which text the %s was written for moved, before SCE answers",
+    async (part) => {
+      core.setModel("alpha", "<scxml/>", headOf("alpha"));
+      core.setRequirements("alpha", headOf("alpha"));
+      await click("Alpha");
+      expect(acceptButton().disabled).toBe(false);
+
+      // The same bytes are kept again for the earlier text: the revisions are the ones SCE judged,
+      // and what moved is where the design stands to the text, which the new snapshot says.
+      const earlier = core.revision("alpha one");
+      if (part === "model") core.setModel("alpha", "<scxml/>", earlier);
+      else core.keepRequirementsFor("alpha", earlier);
+      const asked = core.hold("read_judgment");
+      await ticker.fire();
+
+      // SCE has not been heard from again, and does not need to be for this: the panel stays with
+      // SCE's words about the same bytes, and the claim in it is the new snapshot's.
+      expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+      expect(acceptButton().disabled).toBe(true);
+      expect(acceptNote()).toContain("written for an earlier text");
+
+      asked.release();
+      await settle();
+      expect(acceptButton().disabled).toBe(true);
+      expect(acceptNote()).toContain("written for an earlier text");
+    },
+  );
+
+  it("refuses a core of another command-set version before it reads anything of a work", async () => {
+    // A screen and a core that read each other's answers differently must not look connected: the
+    // check is the screen's one chance to say so before a check and an accept fail on a shape.
+    const stale = new FakeCore();
+    stale.addWork("alpha", "Alpha", ["alpha one"]);
+    stale.describeAs(12);
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    app = new App(root, { transport: stale, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+
+    expect(root.textContent).toContain("12");
+    expect(root.textContent).toContain("13");
+    expect(stale.callsOf("list_works")).toHaveLength(0);
+    expect(stale.callsOf("read_judgment")).toHaveLength(0);
+  });
 
   it("keeps the design and the verdict it shows together while the next read of the work is slow", async () => {
     const accepted = "<scxml><!-- accepted --></scxml>";

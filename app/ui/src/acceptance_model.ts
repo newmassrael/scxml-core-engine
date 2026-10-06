@@ -19,10 +19,12 @@ import {
   type Basis,
   type Judged,
   type Judgment,
+  type Measure,
   type ReadRequirements,
   type Refusal,
   type RequirementOutcome,
   type RequirementsReport,
+  type Standing,
   type WorkSnapshot,
 } from "./contract";
 
@@ -146,39 +148,79 @@ export function basisOf(snapshot: WorkSnapshot): Basis | null {
  * holds is not something to guess at, and the measure is still shown when only the verdict failed.
  */
 export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptancePanel {
-  const list = snapshot.requirements;
-  const source = snapshot.source;
-  const { model_standing, requirements_standing } = snapshot;
-  if (list === null || source === null) return { phase: "no-list" };
-  if (model_standing === null || requirements_standing === null) {
-    throw new ContractError("snapshot", "a standing for every part it holds");
-  }
+  if (snapshot.requirements === null || snapshot.source === null) return { phase: "no-list" };
   const held = snapshot.acceptance;
   // A verdict is asked for exactly when an acceptance was made, so an answer that disagrees is a
   // caller that did not ask what it should have, which is not shown as if nothing was accepted.
   if ((held === null) !== (judgment.acceptance === null)) {
     throw new ContractError("judgment.acceptance", "a verdict exactly when the snapshot holds an acceptance");
   }
+  const claims = claimsOf(snapshot);
   return {
     phase: "read",
     state: {
       basis: judgment.basis,
-      list: { requirements: list, source_head: source.revision, standing: requirements_standing },
+      list: claims.list,
       accepted: held,
       verdict: judgment.acceptance,
-      report: judgment.report.said
-        ? {
-            ...judgment.report.value,
-            basis: judgment.basis,
-            source_head: source.revision,
-            model_standing,
-            requirements_standing,
-          }
-        : null,
+      report: judgment.report.said ? reportOf(judgment.report.value, judgment.basis, claims) : null,
       measureFailure: judgment.report.said ? null : judgment.report.refusal,
       accepting: false,
       refusal: null,
     },
+  };
+}
+
+/**
+ * What a snapshot says of where its design and its list stand to the text, with the list itself:
+ * the claims, which are the snapshot's to say and which a save can change without changing the
+ * revisions (the same bytes kept again for another text).
+ */
+interface Claims {
+  readonly list: ReadRequirements;
+  readonly sourceHead: string;
+  readonly modelStanding: Standing;
+  readonly requirementsStanding: Standing;
+}
+
+function claimsOf(snapshot: WorkSnapshot): Claims {
+  const { source, requirements, model_standing, requirements_standing } = snapshot;
+  if (source === null || requirements === null || model_standing === null || requirements_standing === null) {
+    throw new ContractError("snapshot", "a text, a list and a standing for every part it holds");
+  }
+  return {
+    list: { requirements, source_head: source.revision, standing: requirements_standing },
+    sourceHead: source.revision,
+    modelStanding: model_standing,
+    requirementsStanding: requirements_standing,
+  };
+}
+
+/** SCE's measure with the revisions it was made of and the claims beside them, which is what the gate reads. */
+function reportOf(measure: Measure, basis: Basis, claims: Claims): RequirementsReport {
+  return {
+    ...measure,
+    basis,
+    source_head: claims.sourceHead,
+    model_standing: claims.modelStanding,
+    requirements_standing: claims.requirementsStanding,
+  };
+}
+
+/**
+ * The same panel with the claims of `snapshot`, for a panel that is of the snapshot's revisions
+ * (`panelIsOf`) while the snapshot says the design or the list stands to the text differently:
+ * the same bytes were kept again for another text. What SCE said is of the bytes and stands, so
+ * it is kept and not asked for again; where the design and the list stand is the snapshot's, and
+ * is taken at once. Left as it was, the accept would be offered or withheld by a claim the screen
+ * no longer holds until SCE answered, which can be a long time.
+ */
+export function restanded(state: AcceptanceState, snapshot: WorkSnapshot): AcceptanceState {
+  const claims = claimsOf(snapshot);
+  return {
+    ...state,
+    list: claims.list,
+    report: state.report === null ? null : reportOf(state.report, state.basis, claims),
   };
 }
 

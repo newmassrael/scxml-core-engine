@@ -104,7 +104,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 12,
+      "command_set_version": 13,
       "commands": [
         "describe",
         "list_works",
@@ -1301,7 +1301,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 12,
+  "command_set_version": 13,
   "refusals": {
     "active-request": {
       "detail": {

@@ -15,6 +15,7 @@ import {
   panelIsOf,
   panelOf,
   refusedForTheInput,
+  restanded,
   standingIsOfWhatIsShown,
   tally,
   worthAskingAgain,
@@ -999,8 +1000,12 @@ export class App {
    * A panel already on screen stays while the answer is on its way when it is of this snapshot
    * (a reread after a save does not flash a "reading" over what the person is looking at); one
    * that is of other revisions is not shown beside this model, since a verdict of one design beside
-   * another is a false statement about what the owner is looking at. A work with no requirement
-   * list has nothing to accept a design against, and says so instead of showing an empty table.
+   * another is a false statement about what the owner is looking at. A panel of the same revisions
+   * takes where the design and the list stand to the text from this snapshot at once: the same
+   * bytes can be kept again for another text, which SCE's words about the bytes do not say, and
+   * the accept would otherwise follow the claim of the snapshot before until SCE answered. A work
+   * with no requirement list has nothing to accept a design against, and says so instead of
+   * showing an empty table.
    */
   private askAbout(id: string, snapshot: WorkSnapshot): Promise<boolean> {
     const ticket = ++this.acceptanceTicket;
@@ -1010,9 +1015,10 @@ export class App {
       return Promise.resolve(true);
     }
     const panel = this.acceptance;
-    if (panel === null || panel.phase !== "read" || !panelIsOf(panel.state, snapshot)) {
-      this.acceptance = { phase: "reading" };
-    }
+    this.acceptance =
+      panel !== null && panel.phase === "read" && panelIsOf(panel.state, snapshot)
+        ? { phase: "read", state: restanded(panel.state, snapshot) }
+        : { phase: "reading" };
     return this.loadJudgment(id, snapshot, basis, ticket);
   }
 

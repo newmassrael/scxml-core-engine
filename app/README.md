@@ -641,7 +641,11 @@ What this does not claim, stated so nothing on the screen is read as more:
   acceptance), so a reread after a save does not flash. When it is not, it is replaced by
   "reading" at once: the old verdict is not left beside the new design for as long as SCE takes
   to answer, and a verdict that arrives for a read that has since been replaced is dropped.
-  SCE is asked after the work is read, so the design is shown without waiting for it.
+  SCE is asked after the work is read, so the design is shown without waiting for it. A panel of
+  the same revisions takes where the design and the list stand to the text from the new snapshot
+  at once, while SCE's words, which are of the bytes, stay: the same bytes kept again for another
+  text move that claim without moving a revision, and the accept follows the snapshot and not the
+  claim of the read before, however long SCE takes.
 - **What the screen cannot read for the person is still compared.** The text and the answers
   are the person's: they are typed over and are read apart from the design, so what the panel
   is of can differ from what is on screen. The accept button waits for them (`differs`,

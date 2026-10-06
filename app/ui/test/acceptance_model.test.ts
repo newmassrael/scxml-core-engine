@@ -17,6 +17,7 @@ import {
   panelIsOf,
   panelOf,
   refusedForTheInput,
+  restanded,
   standingIsOfWhatIsShown,
   tally,
   worthAskingAgain,
@@ -209,6 +210,43 @@ describe("the panel beside a snapshot", () => {
     expect(() =>
       panelOf(snapshot(), judgment({ acceptance: { said: true, value: { standing: "holds", lapse: null } } })),
     ).toThrow(/judgment\.acceptance/);
+  });
+});
+
+describe("a panel when the design was kept again for another text", () => {
+  const read = (over: Partial<WorkSnapshot> = {}): AcceptanceState => {
+    const made = panelOf(snapshot(over), judgment());
+    if (made.phase !== "read") throw new Error("a panel was expected");
+    return made.state;
+  };
+
+  it("takes where the design and the list stand from the snapshot, and keeps what SCE said", () => {
+    // The same bytes, the same revisions, and another claim of which text they were written for:
+    // SCE's words are of the bytes and stand; the claim is the snapshot's, and moved.
+    const state = read();
+    const kept = snapshot({
+      model_standing: "behind",
+      requirements: { ...snapshot().requirements!, written_for: hex(8) },
+      requirements_standing: "unstated",
+    });
+    expect(panelIsOf(state, kept)).toBe(true);
+
+    const next = restanded(state, kept);
+
+    expect(next.report).toMatchObject({ model_standing: "behind", requirements_standing: "unstated" });
+    expect(next.report?.outcomes).toEqual(state.report?.outcomes);
+    expect(next.list).toEqual({ requirements: kept.requirements, source_head: basis.source, standing: "unstated" });
+    expect({ ...next, report: null, list: null }).toEqual({ ...state, report: null, list: null });
+    expect(gate(next, false, shown)).toBe("behind");
+    expect(gate(state, false, shown)).toBeNull();
+  });
+
+  it("is the same panel when nothing moved, and keeps a measure SCE did not give as it was", () => {
+    const state = read();
+    expect(restanded(state, snapshot())).toEqual(state);
+    const unmeasured = { ...state, report: null, measureFailure: unanswered("sce-timeout") };
+    expect(restanded(unmeasured, snapshot({ model_standing: "behind" })).report).toBeNull();
+    expect(restanded(accepting(state), snapshot()).accepting).toBe(true);
   });
 });
 

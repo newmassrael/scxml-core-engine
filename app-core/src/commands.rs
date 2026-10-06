@@ -141,7 +141,17 @@ pub const COMMANDS: &[&str] = &[
 /// been saved since, so a screen shows no verdict beside a design it was not given of. A
 /// screen written for 12 asks it after reading the work, and would be refused by a core of
 /// 11 with `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 12;
+///
+/// 13: the measure `read_judgment` gives (`report.said`) is SCE's words alone: the revisions it
+/// was made against, the source head and where the design and the list stand to the text
+/// (`basis`, `source_head`, `model_standing`, `requirements_standing`) are no longer in it,
+/// because a claim kept again for a later text would change an answer about the same bytes.
+/// The snapshot says where they stand. A screen written for 12 reads those four out of the
+/// measure and cannot read a core of 13; a screen written for 13 does not find them in a core
+/// of 12. 12 was pushed with the measure in its older form, so the answer changed under the
+/// number and the number moves: **a change to an answer moves the version even for a command
+/// that is new in the version before it, once a build that has it has been pushed.**
+pub const COMMAND_SET_VERSION: u32 = 13;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
