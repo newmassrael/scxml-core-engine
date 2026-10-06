@@ -391,6 +391,14 @@ impl StaticTarget for JsTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("{RUNTIME_GLOBAL}.bounded({value}, {capacity})")
     }
+    // A byte string is the text of its bytes, one character to a byte, so the
+    // library counts its length; it throws past the bound as it does for a string.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        format!("{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})")
+    }
+    fn lowers_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }

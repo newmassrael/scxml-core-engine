@@ -34,6 +34,7 @@
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -334,6 +335,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // grows.
     EXPECT_GE(replayed.size(), 14u) << "replayed " << replayed.size()
                                     << " scenarios, not yet lowered: " << notYetLowered.size();
+    // A byte string is the text of its bytes in the Interpreter's data model, one
+    // character to a byte (docs/adr/0005, decision 2), so the scenario that holds one
+    // is replayed and not left to a refusal the scan above would let pass.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_bytes"), replayed.end())
+        << "static_bytes was not replayed: a byte string has no lowering for the Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

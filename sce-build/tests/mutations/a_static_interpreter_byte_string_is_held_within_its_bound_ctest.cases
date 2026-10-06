@@ -1,0 +1,37 @@
+# Mutation cases for "a bytes variable is held within the `sce:capacity` it declares"
+# under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+# docs/adr/0005, decision 2).
+#
+# A lowered document holds a byte string as the text of its bytes, one character to a
+# byte, and holds an assignment to it to its bound through `SceStatic.boundedBytes`:
+# past it the library throws, nothing is written, `error.execution` is raised and the
+# block ends (§scxml-4.9). `static_bytes` is replayed by `static_datamodel_lowered`,
+# which also asserts that it is replayed and not left to a refusal; the mutants below
+# each take one decision away:
+#
+#   a value past the bound is let through;
+#   a byte string is not bounded by the library at all.
+#
+# The library also refuses a character past U+00FF, which is no byte. No value of
+# this scenario holds one — its literals are printable ASCII — so no case judges that
+# refusal yet; the one that does comes with the bytes a payload carries in.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs sce-build/src/forge/expr.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
+
+mutation_case "a value past the bound is let through" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      if (value.length > capacity) {\n        fail('the byte string holds '",
+     "      if (false && value.length > capacity) {\n        fail('the byte string holds '")
+PY
+
+mutation_case "a byte string is not bounded by the library at all" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        format!(\"{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})\")",
+     "        value.to_string()")
+PY

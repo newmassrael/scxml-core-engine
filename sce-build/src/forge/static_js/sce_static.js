@@ -281,6 +281,20 @@
       }
       return value;
     },
+    boundedBytes: function (value, capacity) {
+      if (typeof value !== 'string') {
+        fail('expected a byte string, read ' + String(value));
+      }
+      for (var i = 0; i < value.length; i++) {
+        if (value.charCodeAt(i) > 0xFF) {
+          fail('the byte string holds a character past U+00FF, which is no byte');
+        }
+      }
+      if (value.length > capacity) {
+        fail('the byte string holds ' + String(value.length) + ' bytes, past its capacity of ' + String(capacity), 'capacity-exceeded');
+      }
+      return value;
+    },
     extend: function (list, capacity, values) {
       if (!Array.isArray(list) || !Array.isArray(values)) {
         fail('expected two lists, read ' + String(list) + ' and ' + String(values));

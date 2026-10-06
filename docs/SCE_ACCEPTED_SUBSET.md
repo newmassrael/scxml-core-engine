@@ -3671,10 +3671,12 @@ Latin-1 text of at most the bound: a character past U+00FF is no byte and is ref
 not cut. **Rust** holds a `bytes` variable as a `Vec<u8>`, **Kotlin** as a `ByteArray`,
 **Go** as a `[]byte`, **Python** as a `bytes`, **C++** as a `std::vector<uint8_t>` and
 **C11** as a buffer of the bound and the length it holds
-(`scenarios/static_bytes.json`), the Interpreter's lowering being the one that does not
-hold it yet; a record's `bytes` field, and a transition on an event whose payload carries
-one, are refused on all six (`StaticTarget::lowers_record_bytes`,
-`StaticTarget::lowers_payload_bytes`). A Kotlin or Go machine never writes into its array
+(`scenarios/static_bytes.json`), and the **Interpreter**'s data model, which holds no
+types, as the text of its bytes, one character to a byte, held to its bound by
+`SceStatic.boundedBytes`; a record's `bytes` field, and a transition on an event whose
+payload carries one, are refused on all six and by the Interpreter's lowering
+(`StaticTarget::lowers_record_bytes`, `StaticTarget::lowers_payload_bytes`). A Kotlin or
+Go machine never writes into its array
 and hands a host a copy of a published one, so the bound the machine keeps cannot be
 changed from outside; a Kotlin snapshot's byte string is such a copy, and two snapshots
 are equal by the arrays' identity, as any `ByteArray` in a data class is. A Python

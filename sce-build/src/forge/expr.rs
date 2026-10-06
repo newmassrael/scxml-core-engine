@@ -397,6 +397,9 @@ fn lower_at(
     if position == Position::Owned && expected == InferredType::Bytes {
         land_strings_in_bytes_slot(&mut ast, expr)?;
     }
+    if matches!(target, ExprTarget::Js) && !ctx.exact_integers {
+        bytes_literals_as_text(&mut ast);
+    }
     if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
         check_integer_indexing(&mut ast);
@@ -4943,6 +4946,24 @@ fn lower_bytes_eq(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     infer_types(ast, ctx);
 }
 
+/// A byte string is held by a statechart's data model, which holds no types, as
+/// the text of its bytes, each the character of that code point (docs/adr/0005,
+/// decision 2) — the spelling it takes on the wire. So each constant is the
+/// string literal that spells it, printable ASCII being its own text. An algorithm
+/// lowered for the Interpreter holds bytes as an array of numbers instead
+/// (`exact_integers` is how the two are told apart), and keeps refusing a constant.
+fn bytes_literals_as_text(expr: &mut TypedExpr) {
+    for child in expr_children_mut(expr) {
+        bytes_literals_as_text(child);
+    }
+    if let ExprKind::BytesLit { bytes } = &expr.kind {
+        expr.kind = ExprKind::StringLit {
+            value: bytes_as_quoted_ascii(bytes),
+            quote: '"',
+        };
+    }
+}
+
 /// Where a failure can be received — an algorithm's body, a `sce-static`
 /// machine's statements — a byte string is held as the `{data, len}` struct C
 /// gives a view or a buffer, and not as the array and `_len` sibling of an event
@@ -7837,6 +7858,9 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         // The author's own literal, in the quote the author chose: what the
         // lexer keeps is ECMAScript already.
         ExprKind::StringLit { value, quote } => format!("{quote}{value}{quote}"),
+        // An algorithm holds bytes as an array of numbers, which no literal spells
+        // ([`bytes_literals_as_text`] makes a statechart's data model's constants
+        // text before they reach here).
         ExprKind::BytesLit { .. } | ExprKind::BytesView { .. } => {
             return Err(ExprError::UnsupportedConstruct {
                 construct: "a `bytes` value in an ecmascript lowering".to_string(),
