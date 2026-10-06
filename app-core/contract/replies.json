@@ -103,8 +103,11 @@
       "id": "<work-id>",
       "title": "Door lock"
     },
+    "delete_connection": {
+      "deleted": "main"
+    },
     "describe": {
-      "command_set_version": 13,
+      "command_set_version": 14,
       "commands": [
         "describe",
         "list_works",
@@ -144,9 +147,72 @@
         "read_adapter_status",
         "read_host_status",
         "read_bundle",
-        "bundle_history"
+        "bundle_history",
+        "list_connections",
+        "read_connection",
+        "read_auth_policy",
+        "save_connection",
+        "delete_connection",
+        "set_default_connection"
       ],
-      "root": "<root>"
+      "entrance": "tool",
+      "root": "<root>",
+      "settings": false,
+      "writes_settings": false
+    },
+    "describe_desktop": {
+      "command_set_version": 14,
+      "commands": [
+        "describe",
+        "list_works",
+        "create_work",
+        "read_work",
+        "read_source",
+        "save_source",
+        "history",
+        "save_model",
+        "read_model",
+        "model_history",
+        "figures",
+        "remove_work",
+        "review",
+        "read_answers",
+        "save_answers",
+        "save_requirements",
+        "read_requirements",
+        "requirements_report",
+        "accept",
+        "read_acceptance",
+        "read_judgment",
+        "read_work_snapshot",
+        "read_work_heads",
+        "request_generation",
+        "read_request",
+        "list_requests",
+        "list_open_requests",
+        "claim_request",
+        "heartbeat_request",
+        "save_request_candidate",
+        "read_request_candidate",
+        "complete_request",
+        "fail_request",
+        "cancel_request",
+        "report_adapter",
+        "read_adapter_status",
+        "read_host_status",
+        "read_bundle",
+        "bundle_history",
+        "list_connections",
+        "read_connection",
+        "read_auth_policy",
+        "save_connection",
+        "delete_connection",
+        "set_default_connection"
+      ],
+      "entrance": "desktop",
+      "root": "<root>",
+      "settings": true,
+      "writes_settings": true
     },
     "fail_request": {
       "request": {
@@ -238,6 +304,37 @@
           "saved_at": "2026-10-03T09:00:00Z"
         }
       ]
+    },
+    "list_connections": {
+      "connections": [
+        {
+          "connection": {
+            "adapter": "claude-code",
+            "auth": "official-login",
+            "id": "main",
+            "model": "sonnet"
+          },
+          "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+        },
+        {
+          "connection": {
+            "adapter": "local",
+            "auth": "none",
+            "display_name": "pc2 (tunnel)",
+            "id": "pc2",
+            "model": "qwen3-coder:30b",
+            "server_url": "http://127.0.0.1:11434/v1"
+          },
+          "revision": "3f87115aaa0be9976b8250286dbe0d35525754ae0a52e03034dc064b675ca6c3"
+        }
+      ],
+      "default": "main",
+      "unreadable": []
+    },
+    "list_connections_empty": {
+      "connections": [],
+      "default": null,
+      "unreadable": []
     },
     "list_open_requests": {
       "requests": [
@@ -470,6 +567,122 @@
     "read_answers_none": {
       "answers": null
     },
+    "read_auth_policy": {
+      "routes": [
+        {
+          "decision": {
+            "decision": "use",
+            "status": "conditional"
+          },
+          "route": "claude-official-login",
+          "status": "conditional"
+        },
+        {
+          "decision": {
+            "decision": "use",
+            "status": "allowed"
+          },
+          "route": "claude-api-key",
+          "status": "allowed"
+        },
+        {
+          "decision": {
+            "decision": "use",
+            "status": "allowed"
+          },
+          "route": "claude-cloud-provider",
+          "status": "allowed"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "route": "claude-login-command-by-app",
+          "status": "unconfirmed"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "forbidden",
+            "status": "forbidden"
+          },
+          "route": "claude-login-screen-by-app",
+          "status": "forbidden"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "forbidden",
+            "status": "forbidden"
+          },
+          "route": "codex-app-server-auth",
+          "status": "forbidden"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "route": "codex-sign-in-with-chat-gpt",
+          "status": "unconfirmed"
+        },
+        {
+          "decision": {
+            "decision": "use",
+            "status": "allowed"
+          },
+          "route": "codex-cli-api-key",
+          "status": "allowed"
+        },
+        {
+          "decision": {
+            "decision": "use",
+            "status": "conditional"
+          },
+          "route": "codex-cli-chat-gpt-login",
+          "status": "conditional"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "route": "codex-app-server-api-key",
+          "status": "unconfirmed"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "route": "codex-access-token",
+          "status": "unconfirmed"
+        },
+        {
+          "decision": {
+            "decision": "use",
+            "status": "allowed"
+          },
+          "route": "local-server",
+          "status": "allowed"
+        },
+        {
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "route": "unlisted",
+          "status": "unconfirmed"
+        }
+      ],
+      "switched_off": []
+    },
     "read_bundle": {
       "bundle": {
         "bundle": {
@@ -509,6 +722,31 @@
           "v": 1
         },
         "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "read_connection": {
+      "connection": {
+        "connection": {
+          "adapter": "claude-code",
+          "auth": "official-login",
+          "id": "main",
+          "model": "sonnet"
+        },
+        "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+      }
+    },
+    "read_connection_none": {
+      "connection": null
+    },
+    "read_connection_revision": {
+      "connection": {
+        "connection": {
+          "adapter": "claude-code",
+          "auth": "official-login",
+          "id": "main",
+          "model": "opus"
+        },
+        "revision": "d7c2eaebdba65eb95838462adbf7d9a82110d576b0e1691d9b11b873f0c02f2f"
       }
     },
     "read_host_status": {
@@ -1227,6 +1465,20 @@
       "outcome": "unchanged",
       "revision": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745"
     },
+    "save_connection_first": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "d7c2eaebdba65eb95838462adbf7d9a82110d576b0e1691d9b11b873f0c02f2f"
+    },
+    "save_connection_next": {
+      "outcome": "saved",
+      "parent": "d7c2eaebdba65eb95838462adbf7d9a82110d576b0e1691d9b11b873f0c02f2f",
+      "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+    },
+    "save_connection_unchanged": {
+      "outcome": "unchanged",
+      "revision": "d7c2eaebdba65eb95838462adbf7d9a82110d576b0e1691d9b11b873f0c02f2f"
+    },
     "save_model_first": {
       "outcome": "saved",
       "parent": null,
@@ -1299,9 +1551,12 @@
     "save_source_unchanged": {
       "outcome": "unchanged",
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+    },
+    "set_default_connection": {
+      "default": "main"
     }
   },
-  "command_set_version": 13,
+  "command_set_version": 14,
   "refusals": {
     "active-request": {
       "detail": {
@@ -1314,6 +1569,10 @@
     "bad-adapter": {
       "kind": "bad-adapter",
       "message": "an adapter is named by 1 to 64 letters, digits and `._:-`, starting with a letter or a digit"
+    },
+    "bad-connection": {
+      "kind": "bad-connection",
+      "message": "an executable is chosen in a window the person sees and is checked before it is kept: a command does not take one"
     },
     "bad-lease": {
       "detail": {
@@ -1360,6 +1619,22 @@
       },
       "kind": "conflict",
       "message": "the text was saved from 06e8bce08f5a, and the work is now at 7dc2f2d866df: nothing was written. Read the current text, decide what the two become, and save again from it"
+    },
+    "connection-conflict": {
+      "detail": {
+        "base": "d7c2eaebdba65eb95838462adbf7d9a82110d576b0e1691d9b11b873f0c02f2f",
+        "current": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+      },
+      "kind": "conflict",
+      "message": "the text was saved from d7c2eaebdba6, and the work is now at 5ce2a9ebc304: nothing was written. Read the current text, decide what the two become, and save again from it"
+    },
+    "connection-moved": {
+      "detail": {
+        "current": "main",
+        "expected": null
+      },
+      "kind": "moved",
+      "message": "the default connection was changed after it was read, so nothing was changed; read it again"
     },
     "invalid-answers": {
       "kind": "invalid-answers",
@@ -1424,6 +1699,17 @@
       },
       "kind": "no-candidate",
       "message": "the request <request-id> has not written a model or a requirement list, and a bundle is both"
+    },
+    "no-settings": {
+      "kind": "no-settings",
+      "message": "`list_connections` needs a settings folder, and this entrance has none"
+    },
+    "not-allowed-here": {
+      "detail": {
+        "entrance": "browser"
+      },
+      "kind": "not-allowed-here",
+      "message": "`save_connection` changes the person's settings, and only the desktop application does that"
     },
     "not-current": {
       "detail": {
@@ -1490,7 +1776,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, save_connection, delete_connection, set_default_connection"
     }
   }
 }

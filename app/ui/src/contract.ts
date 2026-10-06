@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 13;
+export const SUPPORTED_COMMAND_SET_VERSION = 14;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -249,10 +249,73 @@ export interface ReadAcceptance {
   readonly now: Basis | null;
 }
 
+/** Which door a command came in by (`Entrance` in the core). */
+export type Entrance = "desktop" | "browser" | "tool";
+
 export interface Described {
   readonly command_set_version: number;
   readonly commands: readonly string[];
   readonly root: string;
+  /** Which entrance asked: what it may change depends on it. */
+  readonly entrance: Entrance;
+  /** Whether this entrance has a settings folder to read. */
+  readonly settings: boolean;
+  /** Whether it may change what is in it: only the desktop window does. */
+  readonly writes_settings: boolean;
+}
+
+/** Which kind of client or server a connection reaches. */
+export type AdapterKind = "claude-code" | "codex" | "local";
+
+/** Where a connection's credential comes from. The credential itself is never in a connection. */
+export type AuthSource = "official-login" | "app-store" | "env-api-key" | "server-key" | "none";
+
+/** The settings of one way to reach a model. */
+export interface Connection {
+  readonly id: string;
+  readonly adapter: AdapterKind;
+  readonly display_name: string | null;
+  readonly executable: string | null;
+  readonly model: string | null;
+  readonly auth: AuthSource;
+  readonly server_url: string | null;
+  readonly limits: { readonly turns: number | null; readonly seconds: number | null };
+}
+
+/** A connection as it is kept, with the revision it is kept under. */
+export interface StoredConnection {
+  readonly connection: Connection;
+  readonly revision: Revision;
+}
+
+/** `list_connections`. */
+export interface ConnectionListing {
+  readonly connections: readonly StoredConnection[];
+  readonly unreadable: readonly { readonly id: string; readonly reason: string }[];
+  /** The connection a new request uses when the person does not choose one. */
+  readonly default: string | null;
+}
+
+/** What the design says of a way of signing in. */
+export type RouteStatus = "allowed" | "conditional" | "forbidden" | "unconfirmed";
+
+/** Whether a way of signing in is used, and if not, why. */
+export type RouteDecision =
+  | { readonly decision: "use"; readonly status: RouteStatus }
+  | {
+      readonly decision: "refuse";
+      readonly status: RouteStatus;
+      readonly reason: "forbidden" | "unconfirmed" | "switched-off";
+    };
+
+/** `read_auth_policy`. */
+export interface AuthPolicy {
+  readonly routes: readonly {
+    readonly route: string;
+    readonly status: RouteStatus;
+    readonly decision: RouteDecision;
+  }[];
+  readonly switched_off: readonly string[];
 }
 
 export interface WorkAndHead {
@@ -1296,6 +1359,126 @@ export function parseDescribed(value: unknown): Described {
       return c;
     }),
     root: text(r, "root", "describe"),
+    entrance: oneOf(r, "entrance", "describe", ["desktop", "browser", "tool"] as const),
+    settings: flag(r, "settings", "describe"),
+    writes_settings: flag(r, "writes_settings", "describe"),
+  };
+}
+
+function flag(value: Obj, key: string, where: string): boolean {
+  const field = value[key];
+  if (typeof field !== "boolean") throw new ContractError(`${where}.${key}`, "true or false");
+  return field;
+}
+
+function oneOf<T extends string>(value: Obj, key: string, where: string, words: readonly T[]): T {
+  const field = value[key];
+  const found = words.find((word) => word === field);
+  if (found === undefined) {
+    throw new ContractError(`${where}.${key}`, words.map((w) => `"${w}"`).join(", "));
+  }
+  return found;
+}
+
+function nullableCount(value: Obj, key: string, where: string): number | null {
+  const field = value[key];
+  if (field === undefined || field === null) return null;
+  if (typeof field !== "number" || !Number.isInteger(field)) {
+    throw new ContractError(`${where}.${key}`, "a whole number");
+  }
+  return field;
+}
+
+function parseConnection(value: unknown, where: string): Connection {
+  const r = record(value, where);
+  const limits = r["limits"] === undefined ? {} : record(r["limits"], `${where}.limits`);
+  return {
+    id: text(r, "id", where),
+    adapter: oneOf(r, "adapter", where, ["claude-code", "codex", "local"] as const),
+    display_name: nullableText(r, "display_name", where),
+    executable: nullableText(r, "executable", where),
+    model: nullableText(r, "model", where),
+    auth: oneOf(r, "auth", where, ["official-login", "app-store", "env-api-key", "server-key", "none"] as const),
+    server_url: nullableText(r, "server_url", where),
+    limits: {
+      turns: nullableCount(limits, "turns", `${where}.limits`),
+      seconds: nullableCount(limits, "seconds", `${where}.limits`),
+    },
+  };
+}
+
+function parseStoredConnection(value: unknown, where: string): StoredConnection {
+  const r = record(value, where);
+  return {
+    connection: parseConnection(r["connection"], `${where}.connection`),
+    revision: revision(r["revision"], `${where}.revision`),
+  };
+}
+
+/** `list_connections`. */
+export function parseConnectionListing(value: unknown): ConnectionListing {
+  const where = "list_connections";
+  const r = record(value, where);
+  const chosen = r["default"];
+  if (chosen !== null && typeof chosen !== "string") {
+    throw new ContractError(`${where}.default`, "a connection id or null");
+  }
+  return {
+    connections: list(r, "connections", where).map((c, i) => parseStoredConnection(c, `${where}.connections[${i}]`)),
+    unreadable: list(r, "unreadable", where).map((u, i) => {
+      const at = `${where}.unreadable[${i}]`;
+      const entry = record(u, at);
+      return { id: text(entry, "id", at), reason: text(entry, "reason", at) };
+    }),
+    default: chosen,
+  };
+}
+
+/** `read_connection`: the connection, or `null` for one that is not there. */
+export function parseReadConnection(value: unknown): StoredConnection | null {
+  const stored = record(value, "read_connection")["connection"];
+  return stored === null ? null : parseStoredConnection(stored, "read_connection.connection");
+}
+
+/** `delete_connection`: the id of the connection that was taken out of the list. */
+export function parseDeletedConnection(value: unknown): string {
+  return text(record(value, "delete_connection"), "deleted", "delete_connection");
+}
+
+/** `set_default_connection`: the id that is the default now, or `null` for none. */
+export function parseDefaultConnection(value: unknown): string | null {
+  const chosen = record(value, "set_default_connection")["default"];
+  if (chosen !== null && typeof chosen !== "string") {
+    throw new ContractError("set_default_connection.default", "a connection id or null");
+  }
+  return chosen;
+}
+
+const ROUTE_STATUSES = ["allowed", "conditional", "forbidden", "unconfirmed"] as const;
+
+function parseRouteDecision(value: unknown, where: string): RouteDecision {
+  const r = record(value, where);
+  const status = oneOf(r, "status", where, ROUTE_STATUSES);
+  const decision = oneOf(r, "decision", where, ["use", "refuse"] as const);
+  if (decision === "use") return { decision, status };
+  return { decision, status, reason: oneOf(r, "reason", where, ["forbidden", "unconfirmed", "switched-off"] as const) };
+}
+
+/** `read_auth_policy`. */
+export function parseAuthPolicy(value: unknown): AuthPolicy {
+  const where = "read_auth_policy";
+  const r = record(value, where);
+  return {
+    routes: list(r, "routes", where).map((entry, i) => {
+      const at = `${where}.routes[${i}]`;
+      const route = record(entry, at);
+      return {
+        route: text(route, "route", at),
+        status: oneOf(route, "status", at, ROUTE_STATUSES),
+        decision: parseRouteDecision(route["decision"], `${at}.decision`),
+      };
+    }),
+    switched_off: stringList(r, "switched_off", where),
   };
 }
 

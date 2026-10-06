@@ -20,7 +20,11 @@ import {
   parseAdapterListing,
   parseAdapterReport,
   parseBundleRead,
+  parseAuthPolicy,
   parseCompletedRequest,
+  parseConnectionListing,
+  parseDefaultConnection,
+  parseDeletedConnection,
   parseDescribed,
   parseGenerationRequest,
   parseHostListing,
@@ -34,6 +38,7 @@ import {
   parseListing,
   parseReadAcceptance,
   parseReadAnswers,
+  parseReadConnection,
   parseReadModel,
   parseReadRequirements,
   parseReadSource,
@@ -98,6 +103,12 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_host_status: parseHostListing,
   read_bundle: parseBundleRead,
   bundle_history: parseHistory,
+  list_connections: parseConnectionListing,
+  read_connection: parseReadConnection,
+  read_auth_policy: parseAuthPolicy,
+  save_connection: parseSaved,
+  delete_connection: parseDeletedConnection,
+  set_default_connection: parseDefaultConnection,
 };
 
 /** The command an answer's name belongs to: the longest command name it starts with. */
@@ -535,6 +546,58 @@ describe("the replies the core gives", () => {
     expect(current).toMatch(/^[0-9a-f]{64}$/);
     expect(current).not.toBe(base);
   });
+
+  it("say which entrance asked, and whether it may change the settings", () => {
+    expect(parseDescribed(replies.answers["describe"])).toMatchObject({
+      entrance: "tool",
+      settings: false,
+      writes_settings: false,
+    });
+    expect(parseDescribed(replies.answers["describe_desktop"])).toMatchObject({
+      entrance: "desktop",
+      settings: true,
+      writes_settings: true,
+    });
+    for (const kind of ["not-allowed-here", "no-settings", "bad-connection", "connection-moved", "connection-conflict"]) {
+      expect(asCommandError(replies.refusals[kind])?.kind, kind).toBeDefined();
+    }
+    expect(asCommandError(replies.refusals["not-allowed-here"])?.kind).toBe("not-allowed-here");
+    expect(asCommandError(replies.refusals["no-settings"])?.kind).toBe("no-settings");
+  });
+
+  it("carry the connections a person made and the default among them", () => {
+    expect(parseConnectionListing(replies.answers["list_connections_empty"])).toEqual({
+      connections: [],
+      unreadable: [],
+      default: null,
+    });
+    const listed = parseConnectionListing(replies.answers["list_connections"]);
+    expect(listed.default).toBe("main");
+    expect(listed.connections.map((c) => c.connection.id)).toEqual(["main", "pc2"]);
+    const local = listed.connections[1]?.connection;
+    expect(local).toMatchObject({ adapter: "local", display_name: "pc2 (tunnel)", auth: "none" });
+    expect(local?.server_url).toBe("http://127.0.0.1:11434/v1");
+    expect(parseReadConnection(replies.answers["read_connection_none"])).toBeNull();
+    // An earlier revision is what a request made then was made with.
+    expect(parseReadConnection(replies.answers["read_connection_revision"])?.connection.model).toBe("opus");
+    expect(parseReadConnection(replies.answers["read_connection"])?.connection.model).toBe("sonnet");
+    expect(parseDeletedConnection(replies.answers["delete_connection"])).toBe("main");
+    expect(parseDefaultConnection(replies.answers["set_default_connection"])).toBe("main");
+  });
+
+  it("carry the decision each way of signing in gets", () => {
+    const policy = parseAuthPolicy(replies.answers["read_auth_policy"]);
+    const decisionOf = (route: string) => policy.routes.find((r) => r.route === route)?.decision;
+    expect(decisionOf("claude-official-login")).toEqual({ decision: "use", status: "conditional" });
+    expect(decisionOf("claude-api-key")).toEqual({ decision: "use", status: "allowed" });
+    expect(decisionOf("claude-login-screen-by-app")).toEqual({
+      decision: "refuse",
+      status: "forbidden",
+      reason: "forbidden",
+    });
+    expect(decisionOf("unlisted")).toMatchObject({ decision: "refuse", reason: "unconfirmed" });
+    expect(policy.switched_off).toEqual([]);
+  });
 });
 
 describe("a reply that is not the promised shape", () => {
@@ -632,6 +695,22 @@ describe("a reply that is not the promised shape", () => {
     expect(() => parseRequirementsReport({ ...report, page_refusal: { code: "c" } })).toThrow(/page_refusal\.message/);
     const list = replies.answers["read_requirements"] as Record<string, unknown>;
     expect(() => parseReadRequirements({ ...list, requirements: null })).toThrow(/null when there is no list/);
+  });
+
+  it("is refused when a connection is of an adapter or a credential source the screen does not know", () => {
+    const listed = replies.answers["list_connections"] as { connections: Record<string, unknown>[] };
+    const first = listed.connections[0] as { connection: Record<string, unknown>; revision: string };
+    const withConnection = (patch: Record<string, unknown>) => ({
+      ...listed,
+      connections: [{ ...first, connection: { ...first.connection, ...patch } }],
+    });
+    expect(() => parseConnectionListing(withConnection({ adapter: "gemini" }))).toThrow(/adapter/);
+    expect(() => parseConnectionListing(withConnection({ auth: "password" }))).toThrow(/auth/);
+    expect(() => parseConnectionListing(withConnection({ limits: { turns: 1.5 } }))).toThrow(/turns/);
+    expect(() => parseAuthPolicy({ routes: [{ route: "x", status: "maybe", decision: {} }], switched_off: [] })).toThrow(
+      /status/,
+    );
+    expect(() => parseDescribed({ command_set_version: 14, commands: [], root: "r" })).toThrow(/entrance/);
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

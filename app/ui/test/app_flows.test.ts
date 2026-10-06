@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { App } from "../src/app";
+import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import { CommandFailure, UNAUTHORIZED, type Args, type Transport } from "../src/ipc";
 import type { Ticker } from "../src/watch";
 
@@ -243,7 +244,7 @@ class FakeCore implements Transport {
     this.acceptancesByRevision.set(record.revision, record);
   }
 
-  private commandSet = 13;
+  private commandSet = 14;
 
   /** The command set this core says it speaks: another than the screen's, to see the screen refuse it. */
   describeAs(version: number): void {
@@ -382,7 +383,14 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: this.commandSet, commands: [], root: "/fake/works" };
+        return {
+          command_set_version: this.commandSet,
+          commands: [],
+          root: "/fake/works",
+          entrance: "desktop",
+          settings: true,
+          writes_settings: true,
+        };
       case "read_work_heads": {
         if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
         const id = String(args["id"]);
@@ -2585,15 +2593,16 @@ describe("a work that moves under the screen", () => {
     // check is the screen's one chance to say so before a check and an accept fail on a shape.
     const stale = new FakeCore();
     stale.addWork("alpha", "Alpha", ["alpha one"]);
-    stale.describeAs(12);
+    const older = SUPPORTED_COMMAND_SET_VERSION - 1;
+    stale.describeAs(older);
     document.body.innerHTML = '<div id="app"></div>';
     root = document.getElementById("app") as HTMLElement;
     app = new App(root, { transport: stale, storage: null, browserLanguage: "en", ticker });
     await app.start();
     await settle();
 
-    expect(root.textContent).toContain("12");
-    expect(root.textContent).toContain("13");
+    expect(root.textContent).toContain(String(older));
+    expect(root.textContent).toContain(String(SUPPORTED_COMMAND_SET_VERSION));
     expect(stale.callsOf("list_works")).toHaveLength(0);
     expect(stale.callsOf("read_judgment")).toHaveLength(0);
   });

@@ -21,7 +21,8 @@
 mod common;
 
 use sce_app_core::{
-    call, CommandError, FixedClock, NoRenderer, Product, WorkStore, COMMANDS, COMMAND_SET_VERSION,
+    call, call_in, CommandError, ConnectionStore, Context, Entrance, FixedClock, NoRenderer,
+    Policy, Product, WorkStore, COMMANDS, COMMAND_SET_VERSION,
 };
 use serde_json::{json, Map, Value};
 
@@ -794,6 +795,135 @@ fn replies() -> Value {
             &store,
             "report_adapter",
             json!({"name": "../x", "kind": "claude-code", "capabilities": []}),
+        ),
+    );
+
+    // The settings a person keeps apart from the works, asked of the entrance that may change
+    // them; the others are shown only by what they are refused.
+    let settings = ConnectionStore::at(common::scratch("contract-settings"));
+    let policy = Policy::shipped();
+    let entrance = |entrance: Entrance, with_settings: bool| Context {
+        works: &store,
+        product: &FakeRenderer,
+        connections: with_settings.then_some(&settings),
+        policy: &policy,
+        entrance,
+    };
+    let desktop = entrance(Entrance::Desktop, true);
+    let ask = |name: &str, args: Value| {
+        call_in(&desktop, name, args).unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
+    };
+    let refuse = |context: &Context<'_, FixedClock>, name: &str, args: Value| {
+        let error: CommandError =
+            call_in(context, name, args).expect_err("the command should be refused");
+        serde_json::to_value(error).unwrap()
+    };
+    let connection = |model: &str| json!({ "id": "main", "adapter": "claude-code", "model": model, "auth": "official-login" });
+    answers.insert("describe_desktop".into(), ask("describe", json!({})));
+    answers.insert(
+        "list_connections_empty".into(),
+        ask("list_connections", json!({})),
+    );
+    let first = ask(
+        "save_connection",
+        json!({ "connection": connection("opus") }),
+    );
+    let first_revision = first["revision"].clone();
+    answers.insert("save_connection_first".into(), first);
+    answers.insert(
+        "save_connection_unchanged".into(),
+        ask(
+            "save_connection",
+            json!({ "connection": connection("opus"), "base": first_revision }),
+        ),
+    );
+    let next = ask(
+        "save_connection",
+        json!({ "connection": connection("sonnet"), "base": first_revision }),
+    );
+    let next_revision = next["revision"].clone();
+    answers.insert("save_connection_next".into(), next);
+    ask(
+        "save_connection",
+        json!({ "connection": {
+            "id": "pc2", "adapter": "local", "display_name": "pc2 (tunnel)",
+            "model": "qwen3-coder:30b", "auth": "none", "server_url": "http://127.0.0.1:11434/v1"
+        } }),
+    );
+    answers.insert(
+        "set_default_connection".into(),
+        ask(
+            "set_default_connection",
+            json!({ "id": "main", "expect": null }),
+        ),
+    );
+    answers.insert(
+        "list_connections".into(),
+        ask("list_connections", json!({})),
+    );
+    answers.insert(
+        "read_connection".into(),
+        ask("read_connection", json!({ "id": "main" })),
+    );
+    answers.insert(
+        "read_connection_revision".into(),
+        ask(
+            "read_connection",
+            json!({ "id": "main", "revision": first_revision }),
+        ),
+    );
+    answers.insert(
+        "read_connection_none".into(),
+        ask("read_connection", json!({ "id": "nobody" })),
+    );
+    answers.insert(
+        "read_auth_policy".into(),
+        ask("read_auth_policy", json!({})),
+    );
+    refusals.insert(
+        "connection-conflict".into(),
+        refuse(
+            &desktop,
+            "delete_connection",
+            json!({ "id": "main", "base": first_revision }),
+        ),
+    );
+    refusals.insert(
+        "connection-moved".into(),
+        refuse(
+            &desktop,
+            "set_default_connection",
+            json!({ "id": "pc2", "expect": null }),
+        ),
+    );
+    refusals.insert(
+        "bad-connection".into(),
+        refuse(
+            &desktop,
+            "save_connection",
+            json!({ "connection": {
+                "id": "main", "adapter": "claude-code", "auth": "official-login",
+                "executable": "/tmp/anything"
+            } }),
+        ),
+    );
+    refusals.insert(
+        "not-allowed-here".into(),
+        refuse(
+            &entrance(Entrance::Browser, true),
+            "save_connection",
+            json!({ "connection": connection("opus") }),
+        ),
+    );
+    refusals.insert(
+        "no-settings".into(),
+        refusal(&store, "list_connections", json!({})),
+    );
+    answers.insert(
+        "delete_connection".into(),
+        ask(
+            "delete_connection",
+            json!({ "id": "main", "base": next_revision }),
         ),
     );
 

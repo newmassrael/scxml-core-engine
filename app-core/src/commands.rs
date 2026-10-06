@@ -21,8 +21,10 @@ use std::collections::BTreeMap;
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
 use crate::acceptance_run::{CheckOutcome, RequirementsReport};
 use crate::answers::{Answers, AnswersError};
+use crate::auth_policy::{Policy, Route};
 use crate::bundle::{BundleCheck, CheckedBy};
 use crate::clock::{utc_timestamp, Clock};
+use crate::connection::{Connection, ConnectionId};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
@@ -31,8 +33,9 @@ use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText, Published,
-    Registration, RequestView, RequirementsText, SourceText, WorkId, WorkStore,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ConnectionStore, HostStatus,
+    ModelText, Published, Registration, RequestView, RequirementsText, SourceText, WorkId,
+    WorkStore,
 };
 
 /// Every command, in the order a person would meet them.
@@ -76,6 +79,24 @@ pub const COMMANDS: &[&str] = &[
     "read_host_status",
     "read_bundle",
     "bundle_history",
+    "list_connections",
+    "read_connection",
+    "read_auth_policy",
+    "save_connection",
+    "delete_connection",
+    "set_default_connection",
+];
+
+/// The commands that read the settings a person keeps apart from the works.
+const SETTINGS_READ: &[&str] = &["list_connections", "read_connection", "read_auth_policy"];
+
+/// The commands that change them. A connection names a program the application runs, so a
+/// command that writes one is a way to make the application run something: only the entrance
+/// that is the person at the keyboard may.
+const SETTINGS_WRITE: &[&str] = &[
+    "save_connection",
+    "delete_connection",
+    "set_default_connection",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -151,7 +172,14 @@ pub const COMMANDS: &[&str] = &[
 /// of 12. 12 was pushed with the measure in its older form, so the answer changed under the
 /// number and the number moves: **a change to an answer moves the version even for a command
 /// that is new in the version before it, once a build that has it has been pushed.**
-pub const COMMAND_SET_VERSION: u32 = 13;
+///
+/// 14: the ways a person reaches a model are settings the core keeps apart from the works
+/// (`list_connections`, `read_connection`, `save_connection`, `delete_connection`,
+/// `set_default_connection`), and the table of sign-in routes the build uses can be read
+/// (`read_auth_policy`). `describe` also says which entrance asked, whether it has a settings
+/// folder and whether it may change what is in it. A screen written for 14 asks for them and
+/// would be refused by a core of 13 with `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 14;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -989,9 +1017,209 @@ fn read_model_files<C: Clock>(
     Ok((model, files))
 }
 
+/// Which door a command came in by. Who is asking decides what may be changed, so it is said
+/// where the command is run and not left to each shell to check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Entrance {
+    /// The application's window: the person at the keyboard.
+    Desktop,
+    /// The development shell a token reaches over a network.
+    Browser,
+    /// A program that runs commands (`sce-work`, which the authoring MCP uses). An AI is on the
+    /// other end of it, and an AI must not be able to change which AI it runs on.
+    Tool,
+}
+
+impl Entrance {
+    /// Whether this entrance may change the person's settings.
+    pub fn writes_settings(self) -> bool {
+        self == Entrance::Desktop
+    }
+}
+
+/// Everything a command may need, and who is asking.
+pub struct Context<'a, C: Clock> {
+    pub works: &'a WorkStore<C>,
+    /// The product: it draws a model for `figures` and reads one for `review`.
+    pub product: &'a dyn Product,
+    /// The settings folder, when the entrance has one.
+    pub connections: Option<&'a ConnectionStore>,
+    /// Which ways of signing in this build uses.
+    pub policy: &'a Policy,
+    pub entrance: Entrance,
+}
+
 /// Run the command `name` with `args` against `store`; `renderer` is the
 /// product: it draws a model for `figures` and reads one for `review`.
+///
+/// This is the entrance of a program that has a works folder and no settings: the settings
+/// commands answer `no-settings`, and `describe` says it is a tool. A shell that has a person's
+/// settings folder uses [`call_in`].
 pub fn call<C: Clock>(
+    store: &WorkStore<C>,
+    renderer: &dyn Product,
+    name: &str,
+    args: Value,
+) -> Result<Value, CommandError> {
+    let policy = Policy::shipped();
+    call_in(
+        &Context {
+            works: store,
+            product: renderer,
+            connections: None,
+            policy: &policy,
+            entrance: Entrance::Tool,
+        },
+        name,
+        args,
+    )
+}
+
+/// Run the command `name` with `args` in `context`.
+pub fn call_in<C: Clock>(
+    context: &Context<'_, C>,
+    name: &str,
+    args: Value,
+) -> Result<Value, CommandError> {
+    if name == "describe" {
+        let mut described = call_works(context.works, context.product, name, args)?;
+        if let Some(fields) = described.as_object_mut() {
+            fields.insert("entrance".to_string(), json!(context.entrance));
+            fields.insert("settings".to_string(), json!(context.connections.is_some()));
+            fields.insert(
+                "writes_settings".to_string(),
+                json!(context.connections.is_some() && context.entrance.writes_settings()),
+            );
+        }
+        return Ok(described);
+    }
+    if SETTINGS_READ.contains(&name) || SETTINGS_WRITE.contains(&name) {
+        return call_settings(context, name, args);
+    }
+    call_works(context.works, context.product, name, args)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadConnection {
+    id: String,
+    #[serde(default)]
+    revision: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveConnection {
+    connection: Connection,
+    #[serde(default)]
+    base: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeleteConnection {
+    id: String,
+    base: Revision,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetDefaultConnection {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    expect: Option<String>,
+}
+
+fn connection_id(text: &str) -> Result<ConnectionId, CommandError> {
+    ConnectionId::parse(text).map_err(CommandError::from)
+}
+
+fn call_settings<C: Clock>(
+    context: &Context<'_, C>,
+    name: &str,
+    args: Value,
+) -> Result<Value, CommandError> {
+    if SETTINGS_WRITE.contains(&name) && !context.entrance.writes_settings() {
+        return Err(CommandError {
+            kind: "not-allowed-here".to_string(),
+            message: format!(
+                "`{name}` changes the person's settings, and only the desktop application does that"
+            ),
+            detail: json!({ "entrance": context.entrance }),
+        });
+    }
+    let Some(connections) = context.connections else {
+        return Err(CommandError {
+            kind: "no-settings".to_string(),
+            message: format!("`{name}` needs a settings folder, and this entrance has none"),
+            detail: Value::Null,
+        });
+    };
+    match name {
+        "list_connections" => {
+            arguments::<Empty>(args)?;
+            let listing = connections.list()?;
+            Ok(json!({
+                "connections": listing.connections,
+                "unreadable": listing.unreadable,
+                "default": connections.default_connection()?,
+            }))
+        }
+        "read_connection" => {
+            let ReadConnection { id, revision } = arguments(args)?;
+            let id = connection_id(&id)?;
+            Ok(json!({ "connection": connections.read(&id, revision.as_ref())? }))
+        }
+        "read_auth_policy" => {
+            arguments::<Empty>(args)?;
+            let routes: Vec<Value> = Route::ALL
+                .iter()
+                .map(|route| {
+                    json!({
+                        "route": route,
+                        "status": route.status(),
+                        "decision": context.policy.decide(*route),
+                    })
+                })
+                .collect();
+            Ok(json!({ "routes": routes, "switched_off": context.policy.switched_off() }))
+        }
+        "save_connection" => {
+            let SaveConnection { connection, base } = arguments(args)?;
+            // A program is chosen in a window the person sees and is asked what it is before it
+            // is kept. A command that took a path would be a way to make the application run
+            // it, for anyone who can send the command.
+            if connection.executable.is_some() {
+                return Err(CommandError::from(StoreError::refused(
+                    "bad-connection",
+                    "an executable is chosen in a window the person sees and is checked before \
+                     it is kept: a command does not take one",
+                    Value::Null,
+                )));
+            }
+            answer(&connections.save(&connection, base.as_ref())?)
+        }
+        "delete_connection" => {
+            let DeleteConnection { id, base } = arguments(args)?;
+            let id = connection_id(&id)?;
+            connections.delete(&id, &base)?;
+            Ok(json!({ "deleted": id }))
+        }
+        "set_default_connection" => {
+            let SetDefaultConnection { id, expect } = arguments(args)?;
+            let id = id.as_deref().map(connection_id).transpose()?;
+            let expect = expect.as_deref().map(connection_id).transpose()?;
+            connections.set_default(id.as_ref(), expect.as_ref())?;
+            Ok(json!({ "default": id }))
+        }
+        other => unreachable!("`{other}` is a settings command that has no handler"),
+    }
+}
+
+/// The commands on the works folder.
+fn call_works<C: Clock>(
     store: &WorkStore<C>,
     renderer: &dyn Product,
     name: &str,

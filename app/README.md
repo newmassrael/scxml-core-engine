@@ -469,6 +469,39 @@ under the work's lock and a save re-checks for it once it holds the lock, so a
 save that was waiting when the removal came writes nothing. No MCP tool removes a
 work.
 
+### The ways a person reaches a model
+
+A connection is the settings of one way to reach a model: which client (Claude Code, Codex) or
+which server of the person's own, which model, and where the client finds its credentials. It is
+kept in the person's settings folder (`SCE_SETTINGS_DIR`, else the per-user configuration
+directory), **not** in the works folder: a works folder is shared and moved, and whose account a
+person reaches a model with is no part of a work. No secret is in a connection. The credential
+is the client's own login, a variable the person chose, or a key the operating system holds, and
+a connection says only which. A server address takes no user, query or fragment, and a file
+with a field the store does not know is not read.
+
+A revision is the digest of its bytes and an earlier one stays readable, so a request that
+pins a connection by id and revision can still say what it was made with after the connection
+changed or was deleted. A save names the revision it replaces (`conflict` otherwise), as a save
+of a work's text does.
+
+`list_connections`, `read_connection` and `read_auth_policy` read; `save_connection`,
+`delete_connection` and `set_default_connection` change. **Only the desktop entrance changes
+settings**: the browser shell is a development tool a token reaches over a network, and
+`sce-work` is what an AI reaches the works through, and an AI must not be able to change which AI
+it runs on. They answer `not-allowed-here`, and an entrance with no settings folder answers
+`no-settings`. `describe` says which entrance asked and whether it may change them. A command
+does not take the path of a program (`save_connection` refuses it as `bad-connection`): a
+connection names a program the application runs, so a command that took a path would be a way
+to make it run anything, and a program is chosen in a window the person sees.
+
+`read_auth_policy` is the table of ways of signing in that this build uses, each allowed,
+conditional, forbidden or unconfirmed, with the decision each gets. What a provider's terms
+allow is a fact about a way of reaching its model (a subscription, a key, a cloud provider's
+credential), so the table is of routes, and it is a constant of the build: a person cannot widen
+it, a release can switch a route off, and a route that is not in it is not used. The design that
+explains each row is in `claudedocs/spec-to-pseudocode-flow/gui-ai-model-login-design.md`.
+
 ### The model, and where it stands
 
 A model is saved for a text revision (`written_for`), so "is this model about the

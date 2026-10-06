@@ -60,7 +60,7 @@ pub use acceptance_run::{Acceptor, CheckOutcome, RequirementOutcome, Requirement
 pub use answers::{Answers, AnswersError};
 pub use auth_policy::{Decision, Observed, Policy, Reason, Route, Status};
 pub use clock::{Clock, FixedClock, ManualClock, SystemClock};
-pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
+pub use commands::{call, call_in, CommandError, Context, Entrance, COMMANDS, COMMAND_SET_VERSION};
 pub use connection::{AdapterKind, AuthSource, Connection, ConnectionId, Limits};
 pub use error::StoreError;
 pub use figures::{
