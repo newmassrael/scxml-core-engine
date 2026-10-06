@@ -1680,7 +1680,7 @@
     },
     "read_server_status_unreachable": {
       "server": {
-        "address": "http://127.0.0.1:8080/v1",
+        "address": "http://127.0.0.1:9091/v1",
         "reach": "this-computer",
         "reason": "the server could not be reached: Connection refused (os error 111)",
         "state": "unreachable",

@@ -1158,7 +1158,7 @@ fn replies() -> Value {
     answers.insert(
         "read_server_status_unreachable".into(),
         server(
-            "http://127.0.0.1:8080/v1",
+            "http://127.0.0.1:9091/v1",
             Reach::ThisComputer,
             false,
             ServerState::Unreachable {

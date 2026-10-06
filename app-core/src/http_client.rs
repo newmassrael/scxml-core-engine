@@ -678,9 +678,9 @@ mod tests {
             ("http://localhost", "localhost", 80, ""),
             ("http://localhost/", "localhost", 80, ""),
             (
-                "http://model-box.lan:8080/api/openai/v1",
+                "http://model-box.lan:9090/api/openai/v1",
                 "model-box.lan",
-                8080,
+                9090,
                 "/api/openai/v1",
             ),
             ("http://[::1]:1234/v1", "::1", 1234, "/v1"),
