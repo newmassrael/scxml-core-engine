@@ -16,6 +16,7 @@
 
 import {
   CLAUDE_CONNECTION_ID,
+  CODEX_CONNECTION_ID,
   claudeConnection,
   codexConnection,
   connectionForRequest,
@@ -184,7 +185,9 @@ export class AiSettings {
     this.asked = { phase: "asking" };
     this.host.redraw();
     try {
-      this.asked = { phase: "answered", status: await this.host.api.readClaudeStatus() };
+      // Asked about the connection these settings edit, which is not always the default: the
+      // program that answers is the one that connection names.
+      this.asked = { phase: "answered", status: await this.host.api.readClaudeStatus(CLAUDE_CONNECTION_ID) };
     } catch (error) {
       if (this.host.handled(error)) {
         this.asked = { phase: "idle" };
@@ -200,7 +203,10 @@ export class AiSettings {
     this.codex.setAsked({ phase: "asking" });
     this.host.redraw();
     try {
-      this.codex.setAsked({ phase: "answered", status: await this.host.api.readCodexStatus() });
+      this.codex.setAsked({
+        phase: "answered",
+        status: await this.host.api.readCodexStatus(CODEX_CONNECTION_ID),
+      });
     } catch (error) {
       if (this.host.handled(error)) {
         this.codex.setAsked({ phase: "idle" });

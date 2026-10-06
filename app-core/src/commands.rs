@@ -222,7 +222,13 @@ const SETTINGS_WRITE: &[&str] = &[
 /// key, and which models it lists. A connection to one (`adapter: "local"`) was always possible
 /// to save and now can be run, so a screen written for 16 offers to register one and would be
 /// refused by a core of 15 with `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 16;
+///
+/// 17: the status of a client (`read_claude_status`, `read_codex_status`) can be asked of a
+/// connection (`connection`): the program that answers is the one that connection names, and not
+/// the one the default connection names. A screen that edits a connection that is not the default
+/// (a program kept for a client nobody is signed in to does not make it the default) asks about the
+/// connection it edits, and a core of 16 would refuse that argument as one it does not know.
+pub const COMMAND_SET_VERSION: u32 = 17;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1325,6 +1331,15 @@ struct ReadConnection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ReadClientStatus {
+    /// The connection the screen is about, kept or not yet: the program it names is the one asked.
+    /// None asks about the default connection, as a screen written for 16 does.
+    #[serde(default)]
+    connection: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ReadServerStatus {
     server_url: String,
 }
@@ -1392,15 +1407,48 @@ fn check_executable<C: Clock>(
     ))
 }
 
-/// The program the default connection names, when it is a connection to `adapter` and names one.
-fn connection_program<C: Clock>(context: &Context<'_, C>, adapter: AdapterKind) -> Option<PathBuf> {
-    let settings = context.connections?;
-    let id = settings.default_connection().ok()??;
-    let stored = settings.read(&id, None).ok()??;
-    if stored.connection.adapter != adapter {
-        return None;
+/// The program a generation would run for a connection to `adapter`, when a connection names one:
+/// the connection the screen is about (`wanted`) when that one is kept, else the default connection
+/// when it is a connection to `adapter`.
+///
+/// The connection a screen edits is not always the default (a program kept for a client nobody is
+/// signed in to is not made the default, and the default can be a connection to another client), so
+/// the program that answers is the edited connection's and not the default's. A connection that is
+/// kept and names no program names none: the default's is not borrowed for it. One that is not kept
+/// yet is answered as nothing was named, by the default's program, so that a screen can ask before
+/// it has saved anything and gets what it did before.
+fn connection_program<C: Clock>(
+    context: &Context<'_, C>,
+    adapter: AdapterKind,
+    wanted: Option<&str>,
+) -> Result<Option<PathBuf>, CommandError> {
+    let Some(settings) = context.connections else {
+        return Ok(None);
+    };
+    if let Some(wanted) = wanted {
+        let id = connection_id(wanted)?;
+        if let Some(stored) = settings.read(&id, None).ok().flatten() {
+            if stored.connection.adapter != adapter {
+                return Err(CommandError::from(StoreError::refused(
+                    "bad-connection",
+                    format!("`{wanted}` is not a connection to `{}`", adapter.word()),
+                    Value::Null,
+                )));
+            }
+            return Ok(stored.connection.executable.map(PathBuf::from));
+        }
     }
-    stored.connection.executable.map(PathBuf::from)
+    let Some(id) = settings.default_connection().ok().flatten() else {
+        return Ok(None);
+    };
+    let Some(stored) = settings.read(&id, None).ok().flatten() else {
+        return Ok(None);
+    };
+    Ok(if stored.connection.adapter == adapter {
+        stored.connection.executable.map(PathBuf::from)
+    } else {
+        None
+    })
 }
 
 /// The commands that start a program of the person's to ask it something.
@@ -1421,10 +1469,12 @@ fn call_program<C: Clock>(
     }
     match name {
         "read_claude_status" => {
-            arguments::<Empty>(args)?;
-            // The program a generation would run: the one the default connection names, or else
-            // the one the environment named, or else the first the application finds.
-            let named = connection_program(context, AdapterKind::ClaudeCode);
+            let ReadClientStatus { connection } = arguments(args)?;
+            // The program a generation would run: the one the connection the screen is about
+            // names (the default connection when it names none), or else the one the environment
+            // named, or else the first the application finds.
+            let named =
+                connection_program(context, AdapterKind::ClaudeCode, connection.as_deref())?;
             let status = claude_status::read(
                 named.as_deref().or(context.claude),
                 context.policy,
@@ -1433,7 +1483,7 @@ fn call_program<C: Clock>(
             Ok(json!({ "claude": status }))
         }
         "read_codex_status" => {
-            arguments::<Empty>(args)?;
+            let ReadClientStatus { connection } = arguments(args)?;
             // The application's own home for Codex is in the settings folder, so without one
             // there is no stored login to ask about.
             let Some(settings) = context.connections else {
@@ -1445,7 +1495,7 @@ fn call_program<C: Clock>(
                     detail: Value::Null,
                 });
             };
-            let named = connection_program(context, AdapterKind::Codex);
+            let named = connection_program(context, AdapterKind::Codex, connection.as_deref())?;
             let environment: Vec<(String, String)> = std::env::vars().collect();
             let status = codex_status::read(
                 named.as_deref().or(context.codex),

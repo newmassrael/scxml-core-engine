@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 16,
+      "command_set_version": 17,
       "commands": [
         "describe",
         "list_works",
@@ -169,7 +169,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 16,
+      "command_set_version": 17,
       "commands": [
         "describe",
         "list_works",
@@ -2232,7 +2232,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 16,
+  "command_set_version": 17,
   "refusals": {
     "active-request": {
       "detail": {

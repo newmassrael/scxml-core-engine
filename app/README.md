@@ -638,8 +638,11 @@ button keeps the program and does not make the connection the default**: the def
 person's word for which AI a request is made for, and one that cannot run would leave every later
 request waiting (a working default is not replaced by a Codex this build did not verify because the
 person chose another program for it). Only the save that is offered when a request made for the
-connection would run makes it the default. The status is asked again after a save, of the program
-that is named now. The browser shell only
+connection would run makes it the default. The status is asked about the connection the panel edits
+(`read_claude_status` and `read_codex_status` take it as `connection`), and the program that
+answers is the one that connection names, whether or not it is the default: asked about the
+default, a program kept for a connection that is not one would be ignored and the login of another
+program shown. The status is asked again after a save, of the program that is named now. The browser shell only
 shows what the desktop saved: it may not start a program or change a setting.
 
 **The panel is for one way to reach a model at a time: Claude Code, Codex or a server of the

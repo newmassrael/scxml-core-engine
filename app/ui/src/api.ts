@@ -193,15 +193,18 @@ export interface Api {
   /**
    * Whether Claude Code is installed, who is signed in to it, and how that is billed. Starts the
    * program to ask it, so only the desktop window may; any other entrance is refused with
-   * `not-allowed-here`.
+   * `not-allowed-here`. `connection` is the connection the screen is about: the program that
+   * answers is the one it names, whether or not it is the default (the default's program answers
+   * when none is given, or when that connection is not kept yet).
    */
-  readClaudeStatus(): Promise<ClaudeStatus>;
+  readClaudeStatus(connection?: string): Promise<ClaudeStatus>;
   /**
    * Whether Codex is installed, whether this build verified that version, and who is signed in by
    * each of the three sources a connection can take its credential from. Starts the program to
    * ask it, so only the desktop window may; any other entrance is refused with `not-allowed-here`.
+   * `connection` is the connection the screen is about, as for Claude Code.
    */
-  readCodexStatus(): Promise<CodexStatus>;
+  readCodexStatus(connection?: string): Promise<CodexStatus>;
   /**
    * The programs of each client the application finds (on the search path, then in the folders
    * the official installers use), each saying it is that client. A connection names a program
@@ -343,11 +346,15 @@ export function apiOver(transport: Transport): Api {
     async setDefaultConnection(id, expect) {
       return parseDefaultConnection(await transport.call("set_default_connection", { id, expect }));
     },
-    async readClaudeStatus() {
-      return parseClaudeStatus(await transport.call("read_claude_status"));
+    async readClaudeStatus(connection) {
+      return parseClaudeStatus(
+        await transport.call("read_claude_status", connection === undefined ? {} : { connection }),
+      );
     },
-    async readCodexStatus() {
-      return parseCodexStatus(await transport.call("read_codex_status"));
+    async readCodexStatus(connection) {
+      return parseCodexStatus(
+        await transport.call("read_codex_status", connection === undefined ? {} : { connection }),
+      );
     },
     async findClients() {
       return parseFindClients(await transport.call("find_clients"));

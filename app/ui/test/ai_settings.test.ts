@@ -170,8 +170,8 @@ class FakeSettings {
         if (this.refuseFinding !== null) throw this.refuseFinding;
         return { claude: this.found, codex: this.foundCodex };
       },
-      readCodexStatus: async () => {
-        this.calls.push({ name: "read_codex_status", args: null });
+      readCodexStatus: async (connection?: string) => {
+        this.calls.push({ name: "read_codex_status", args: { connection: connection ?? null } });
         if (this.codexStatus instanceof CommandFailure) throw this.codexStatus;
         return this.codexStatus;
       },
@@ -179,8 +179,8 @@ class FakeSettings {
         this.calls.push({ name: "list_connections", args: null });
         return this.listing;
       },
-      readClaudeStatus: async () => {
-        this.calls.push({ name: "read_claude_status", args: null });
+      readClaudeStatus: async (connection?: string) => {
+        this.calls.push({ name: "read_claude_status", args: { connection: connection ?? null } });
         if (this.status instanceof CommandFailure) throw this.status;
         return this.status;
       },
@@ -1158,6 +1158,32 @@ describe("keeping the program a connection runs", () => {
     expect(r.core.asked("set_default_connection")).toEqual([]);
     expect(r.core.listing.default).toBe(CODEX_CONNECTION_ID);
     expect(r.root.textContent).toContain("not made the default");
+  });
+
+  it("is shown as what the connection that is edited answers, whether or not it is the default", async () => {
+    // The default is the connection to Codex; Claude Code is edited, and its program is kept.
+    const r = await opened({ listing: KEPT_CODEX });
+    r.core.status = { ...statusOf({ state: "signed-out" }) };
+    click(r.root, "#ai-kind-claude-code");
+    await settle();
+    choose(r.root, "#ai-program", OTHER_PROGRAM);
+
+    click(r.root, "#ai-save-program");
+    await settle();
+
+    // Every time Claude Code was asked about, it was about the connection these settings keep for
+    // it: asked about the default, the program that was just kept would not be the one that answers.
+    const asked = r.core.asked("read_claude_status");
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(asked).toEqual(asked.map(() => ({ connection: CLAUDE_CONNECTION_ID })));
+  });
+
+  it("asks Codex about the connection to Codex, whichever connection is the default", async () => {
+    const r = await opened({ listing: KEPT_CLAUDE, codex: codexStatusOf() });
+
+    await chooseCodex(r);
+
+    expect(r.core.asked("read_codex_status")).toEqual([{ connection: CODEX_CONNECTION_ID }]);
   });
 
   it("leaves the choice of the default to the save that is offered only when a request would run", async () => {

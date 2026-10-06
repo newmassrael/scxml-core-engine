@@ -378,6 +378,119 @@ fn the_status_the_screen_shows_is_of_the_program_the_connection_names() {
     assert_eq!(said["claude"]["account"]["state"], "signed-out");
 }
 
+const SIGNED_OUT: &str = r#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
+
+#[test]
+fn the_status_is_of_the_connection_the_screen_asks_about_whether_or_not_it_is_the_default() {
+    let automatic = client("fc-ask-auto", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let chosen = client("fc-ask-chosen", "2.1.280 (Claude Code)", SIGNED_OUT);
+    let codex = codex_client("fc-ask-codex", "codex-cli 0.159.0");
+    let rig = Rig::new(
+        "fc-ask",
+        &[dir_of(&automatic), dir_of(&chosen), dir_of(&codex)],
+    );
+    // The program is kept for Claude Code and the connection is not made the default: the
+    // default is the one to Codex, as it is when the program button of a Claude Code that nobody
+    // is signed in to is pressed.
+    rig.desktop("save_connection", codex_json(&codex));
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "gpt", "expect": null }),
+    );
+    rig.desktop("save_connection", claude_json(Some(&chosen)));
+
+    let asked = rig.desktop("read_claude_status", json!({ "connection": "claude" }));
+    let not_asked = rig.desktop("read_claude_status", json!({}));
+
+    // The program the connection names answers, as it does for a generation made for it.
+    assert_eq!(asked["claude"]["client"]["version"], "2.1.280");
+    assert_eq!(asked["claude"]["account"]["state"], "signed-out");
+    // Asked about no connection, it is what it was: the default is not one to Claude Code, so
+    // the application's own choice answers.
+    assert_eq!(not_asked["claude"]["client"]["version"], "2.1.291");
+}
+
+#[test]
+fn the_codex_status_is_of_the_connection_the_screen_asks_about_whether_or_not_it_is_the_default() {
+    let automatic = codex_client("fc-ask-codex-auto", "codex-cli 0.158.0");
+    let chosen = codex_client("fc-ask-codex-chosen", "codex-cli 0.159.0");
+    let claude = client("fc-ask-claude", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let rig = Rig::new(
+        "fc-ask-codex",
+        &[dir_of(&automatic), dir_of(&chosen), dir_of(&claude)],
+    );
+    rig.desktop("save_connection", claude_json(Some(&claude)));
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "claude", "expect": null }),
+    );
+    rig.desktop("save_connection", codex_json(&chosen));
+
+    let asked = rig.desktop("read_codex_status", json!({ "connection": "gpt" }));
+    let not_asked = rig.desktop("read_codex_status", json!({}));
+
+    assert_eq!(asked["codex"]["client"]["version"], "0.159.0");
+    assert_eq!(not_asked["codex"]["client"]["version"], "0.158.0");
+}
+
+#[test]
+fn a_connection_that_names_no_program_is_not_given_the_one_the_default_names() {
+    let automatic = client("fc-none-auto", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let other = client("fc-none-other", "2.1.280 (Claude Code)", SIGNED_OUT);
+    let rig = Rig::new("fc-none", &[dir_of(&automatic), dir_of(&other)]);
+    // The default is another connection to Claude Code, and it names a program; the one the screen
+    // is about names none.
+    rig.desktop(
+        "save_connection",
+        json!({ "connection": {
+            "id": "main", "adapter": "claude-code", "model": "opus", "auth": "official-login",
+            "executable": other.display().to_string(),
+        } }),
+    );
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "main", "expect": null }),
+    );
+    rig.desktop("save_connection", claude_json(None));
+
+    let asked = rig.desktop("read_claude_status", json!({ "connection": "claude" }));
+
+    // The application's own choice answers for it, and not the default's program.
+    assert_eq!(asked["claude"]["client"]["version"], "2.1.291");
+}
+
+#[test]
+fn a_connection_of_another_kind_is_refused_and_one_not_kept_yet_is_asked_as_none_was_named() {
+    let automatic = client("fc-kind-auto", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let chosen = client("fc-kind-chosen", "2.1.280 (Claude Code)", SIGNED_OUT);
+    let codex = codex_client("fc-kind-codex", "codex-cli 0.159.0");
+    let rig = Rig::new(
+        "fc-kind",
+        &[dir_of(&automatic), dir_of(&chosen), dir_of(&codex)],
+    );
+    rig.desktop("save_connection", codex_json(&codex));
+    rig.desktop("save_connection", claude_json(Some(&chosen)));
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "claude", "expect": null }),
+    );
+
+    // A connection to Codex is not one whose Claude Code is being asked about.
+    let refused = rig
+        .ask(
+            Entrance::Desktop,
+            "read_claude_status",
+            json!({ "connection": "gpt" }),
+        )
+        .unwrap_err();
+    // One that is not kept (yet) names no program, so what the default names answers, as before.
+    let not_kept = rig.desktop("read_claude_status", json!({ "connection": "nobody" }));
+
+    assert_eq!(refused.kind, "bad-connection");
+    assert!(refused.message.contains("gpt"), "{}", refused.message);
+    assert_eq!(not_kept["claude"]["client"]["version"], "2.1.280");
+}
+
 fn pin_of(rig: &Rig, executable: Option<&Path>) -> Pin {
     let saved = rig.desktop("save_connection", claude_json(executable));
     let revision = Revision::parse(saved["revision"].as_str().unwrap()).unwrap();
