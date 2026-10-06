@@ -932,10 +932,7 @@ fn enforce_static_datamodel(
             //
             // A byte string is bounded the same way, in bytes (docs/adr/0005,
             // decision 2): no default stands in for a bound the author left out.
-            let bounded = match crate::sce_attr::read(&node, "type")
-                .as_deref()
-                .map(str::trim)
-            {
+            let bounded = match crate::sce_attr::read(&node, "type").map(str::trim) {
                 Some("string") => Some(("string", "UTF-8 bytes")),
                 Some("bytes") => Some(("bytes", "bytes")),
                 _ => None,
