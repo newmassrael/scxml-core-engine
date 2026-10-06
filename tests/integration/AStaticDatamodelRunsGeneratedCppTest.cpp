@@ -28,6 +28,7 @@
 #include "common/SceClock.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
+#include "static_bytes_sm.h"
 #include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
@@ -68,6 +69,7 @@
 #include "static_wire_enum_sm.h"
 #include "sync_client_sm.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -76,6 +78,8 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #ifndef SCE_PROJECT_ROOT
@@ -90,6 +94,22 @@ namespace {
 using json = nlohmann::json;
 
 const std::string kStaticFixtures = std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/static_datamodel";
+
+/// A byte string as its byte-exact Latin-1 text, each byte the character of that
+/// code point (docs/adr/0005, decision 2), written in the UTF-8 a JSON string is
+/// held in: a byte past 0x7F is the two-byte sequence of its code point.
+json latin1Text(const std::vector<std::uint8_t> &bytes) {
+    std::string text;
+    for (const std::uint8_t byte : bytes) {
+        if (byte < 0x80) {
+            text.push_back(static_cast<char>(byte));
+        } else {
+            text.push_back(static_cast<char>(0xC0 | (byte >> 6)));
+            text.push_back(static_cast<char>(0x80 | (byte & 0x3F)));
+        }
+    }
+    return text;
+}
 
 json readScenario(const std::string &machine) {
     const auto path = std::filesystem::path(kStaticFixtures) / "scenarios" / (machine + ".json");
@@ -652,6 +672,30 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStringIsHeldToItsBytes) {
     });
     replay("static_string_capacity", driver);
 }
+
+// A bytes variable is held to the bytes it declares, as a string is to its UTF-8
+// bytes: an assignment past the bound writes nothing, raises `error.execution` and
+// ends its block. A scenario states a byte string as its byte-exact Latin-1 text.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AByteStringIsHeldToItsBound) {
+    using Machine = G::static_bytes::static_bytes;
+    Driver<Machine> driver({
+        {"frame", [](const Machine &m) { return latin1Text(m.frame()); }},
+        {"tail", [](const Machine &m) { return latin1Text(m.tail()); }},
+        {"size", [](const Machine &m) { return json(m.size()); }},
+        {"matches", [](const Machine &m) { return json(m.matches()); }},
+        {"misses", [](const Machine &m) { return json(m.misses()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_bytes", driver);
+}
+
+// A host is handed a byte string as a constant reference: the vector is the
+// machine's own, and a write into it would change the variable behind its bound.
+// Checked where it is compiled, since a reader that returned a copy or a mutable
+// reference would be another type.
+static_assert(std::is_same_v<decltype(std::declval<const G::static_bytes::static_bytes &>().frame()),
+                             const std::vector<std::uint8_t> &>,
+              "a published byte string is lent as a constant reference");
 
 // An `<invoke type="scxml">` hands its child the values its `<param>`s and
 // `namelist` name (§scxml-6.4.1), each to the child's variable of the same

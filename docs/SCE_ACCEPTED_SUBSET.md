@@ -3669,16 +3669,17 @@ backend takes a text for a byte string. A saved state writes it as its byte-exac
 Latin-1 text, each byte the character of that code point, and reads it back only as
 Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
 not cut. **Rust** holds a `bytes` variable as a `Vec<u8>`, **Kotlin** as a `ByteArray`,
-**Go** as a `[]byte` and **Python** as a `bytes` (`scenarios/static_bytes.json`); the
-other two backends refuse it by name until each holds it, and a record's `bytes` field,
-and a transition on an event whose payload carries one, are refused on all six
-(`StaticTarget::lowers_record_bytes`, `StaticTarget::lowers_payload_bytes`). A Kotlin or
-Go machine never writes into its array and hands a host a copy of a published one, so the
-bound the machine keeps cannot be changed from outside; a Kotlin snapshot's byte string
-is such a copy, and two snapshots are equal by the arrays' identity, as any `ByteArray`
-in a data class is. A Python `bytes` cannot be written into, so a host is handed the
-value itself. A Go or Python machine is not saved, so its host reads the value through
-its accessor.
+**Go** as a `[]byte`, **Python** as a `bytes` and **C++** as a `std::vector<uint8_t>`
+(`scenarios/static_bytes.json`); C11 refuses it by name until it holds it, and a
+record's `bytes` field, and a transition on an event whose payload carries one, are
+refused on all six (`StaticTarget::lowers_record_bytes`,
+`StaticTarget::lowers_payload_bytes`). A Kotlin or Go machine never writes into its array
+and hands a host a copy of a published one, so the bound the machine keeps cannot be
+changed from outside; a Kotlin snapshot's byte string is such a copy, and two snapshots
+are equal by the arrays' identity, as any `ByteArray` in a data class is. A Python
+`bytes` cannot be written into, so a host is handed the value itself, and a C++ host is
+lent a `const std::vector<uint8_t>&` (asserted where the test is compiled). A Go,
+Python or C++ machine is not saved, so its host reads the value through its accessor.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

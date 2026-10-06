@@ -2883,16 +2883,7 @@ impl StaticTarget for CppTarget {
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Cpp, document_name, None))
     }
-    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // Every type a datamodel holds is spelled but bytes: a list admits only
-        // numbers, bools and records (`AlgorithmValueType::list_elem_admitted`).
-        if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type
-                .as_ref()
-                .is_some_and(|t| !matches!(t.scalar(), Some(SceType::Bytes)))
-        }) {
-            return Some(format!("<data id=\"{}\"> of a bytes type", var.id));
-        }
+    fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         for state in model.states.values() {
             let blocks = state
                 .on_entry_blocks
@@ -2940,10 +2931,12 @@ impl StaticTarget for CppTarget {
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::cpp_type(ty).to_string()
     }
-    // A string is lent to the host, not copied out of the machine.
+    // A string or a byte string is lent to the host, not copied out of the
+    // machine, and as a constant reference no host can write into it.
     fn scalar_view(&self, ty: &SceType) -> Option<String> {
         match ty {
             SceType::String => Some("const std::string&".to_string()),
+            SceType::Bytes => Some("const std::vector<uint8_t>&".to_string()),
             _ => None,
         }
     }
@@ -3054,6 +3047,14 @@ impl StaticTarget for CppTarget {
     // counted.
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("SCE::Forge::Checked::bounded(sce_failure_, std::string({value}), {capacity}u)")
+    }
+    // A byte string is already the `std::vector<uint8_t>` a variable holds (a
+    // literal is the one the emitter writes), whose `size()` counts bytes.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+    }
+    fn lowers_bytes(&self) -> bool {
+        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")

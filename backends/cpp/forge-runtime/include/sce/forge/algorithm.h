@@ -149,11 +149,13 @@ template <typename T> T take(AlgorithmFailure &f, const AlgorithmResult<T> &resu
     return result.value();
 }
 
-/// `value` when it holds no more than `capacity` UTF-8 bytes — the bound a
-/// string variable of a `sce-static` machine declares — and an empty `S` with a
+/// `value` when it holds no more than `capacity` bytes — the bound a string
+/// variable of a `sce-static` machine declares, counted in UTF-8 bytes, and the
+/// bound a byte string declares, counted in bytes — and an empty `S` with a
 /// capacity failure recorded in `f` otherwise, which the statement around it
-/// never uses. `S` is a string whose `size()` counts bytes, as `std::string`'s
-/// does, so a machine holds the same value wherever it runs.
+/// never uses. `S` is a string or a byte string whose `size()` counts bytes, as
+/// `std::string`'s and `std::vector<std::uint8_t>`'s do, so a machine holds the
+/// same value wherever it runs.
 template <typename S> S bounded(AlgorithmFailure &f, S value, std::uint32_t capacity) {
     if (value.size() > capacity) {
         f.fail(AlgorithmError::CapacityExceeded);

@@ -579,7 +579,7 @@ const BYTES_HELD: &[BytesHeld] = &[
     BytesHeld {
         lang: "cpp",
         name: "C++",
-        variable: false,
+        variable: true,
         record: false,
         payload: false,
     },
