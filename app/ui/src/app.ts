@@ -14,8 +14,10 @@ import {
   isUnsettled,
   panelIsOf,
   panelOf,
+  refusedForTheInput,
   standingIsOfWhatIsShown,
   tally,
+  worthAskingAgain,
   type AcceptancePanel,
   type AcceptanceState,
   type Shown,
@@ -49,6 +51,7 @@ import {
   type HistoryEntry,
   type HostListing,
   type Listing,
+  type Refusal,
   type RequestHead,
   type RequirementOutcome,
   type RequirementsReport,
@@ -144,6 +147,7 @@ const WITHHELD_WORDS: Record<Exclude<Withheld, "accepting">, Key> = {
   behind: "withheldBehind",
   unread: "withheldUnread",
   differs: "withheldDiffers",
+  unjudged: "withheldUnjudged",
   already: "withheldAlready",
 };
 
@@ -683,6 +687,10 @@ export class App {
     const model = this.model;
     const panel = this.acceptance;
     const list = panel !== null && panel.phase === "read" && !panel.state.accepting ? panel.state : null;
+    // SCE did not answer, and not because of the design: the saved work is what it was, so nothing
+    // would make the screen ask again. The panel is compared as unread, which asks it again at the
+    // pace of the watch (twice as long after each failure). A design SCE refused is not asked again.
+    const unanswered = list !== null && worthAskingAgain(list);
     return {
       source: editor === null || editor.phase !== "idle" || isDirty(editor) ? undefined : editor.base,
       model:
@@ -709,7 +717,7 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed"
+            : panel.phase === "failed" || unanswered
               ? UNREAD
               : list === null
                 ? undefined
@@ -727,11 +735,11 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed"
+            : panel.phase === "failed" || unanswered
               ? UNREAD
               : list === null
                 ? undefined
-                : (list.acceptance.acceptance?.revision ?? null),
+                : (list.accepted?.revision ?? null),
       // What the panel is of, to be compared with the core's heads: the acceptance record keeps its
       // revision while the work moves, which the answers it was judged with are part of.
       judged: list === null ? undefined : list.basis,
@@ -1013,7 +1021,9 @@ export class App {
    * an acceptance the owner made: it is a state of the panel, and so is the owner's acceptance
    * whose standing SCE did not give, which is not guessed at. Anything else (the server
    * unreachable, a wrong token, an answer in a shape this screen does not know) is the panel's own
-   * message. Only the newest request, for the editor that asked, is applied.
+   * message. Only the newest request, for the editor that asked, is applied. Answers whether SCE
+   * answered, or refused the design, which asking again would only repeat: a run that timed out or
+   * failed is not an answer, and is the watch's to ask about again.
    */
   private async loadJudgment(id: string, snapshot: WorkSnapshot, basis: Basis, ticket: number): Promise<boolean> {
     const session = this.session;
@@ -1031,7 +1041,7 @@ export class App {
       return false;
     }
     this.render();
-    return this.acceptance.phase === "read";
+    return this.acceptance.phase === "read" && !worthAskingAgain(this.acceptance.state);
   }
 
   /**
@@ -2161,10 +2171,9 @@ export class App {
           : null,
       this.acceptedBanner(state),
       report === null
-        ? h(
-            "p",
-            { class: "banner banner-warn", role: "alert" },
-            this.t("measureFailed", { detail: state.measureFailure ?? "" }),
+        ? this.sceDidNotAnswer(
+            this.t("measureFailed", { detail: state.measureFailure?.message ?? "" }),
+            state.measureFailure,
           )
         : this.measureBlock(report),
       state.refusal === null
@@ -2179,26 +2188,31 @@ export class App {
    * did. Whether it holds is SCE's word about the revisions it was asked about, which are those of
    * the snapshot the model beside it was read in. It is said of the work on screen: when the text or
    * the answers on screen (which the person edits, and are read apart) are not the ones it was asked
-   * about, the acceptance is shown as not yet checked, and is neither held nor lapsed.
+   * about, the acceptance is shown as not yet checked, and is neither held nor lapsed. SCE not
+   * saying is said with its reason, and whether the screen asks again by itself.
    */
   private acceptedBanner(state: AcceptanceState): HTMLElement {
-    const read = state.acceptance;
-    const held = read.acceptance;
-    if (held === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
+    const held = state.accepted;
+    const verdict = state.verdict;
+    if (held === null || verdict === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
     const time = formatTime(held.accepted_at, this.locale);
     const checked = standingIsOfWhatIsShown(state, this.shown());
+    const holds = verdict.said && checked && verdict.value.standing === "holds";
     return h(
       "div",
       { class: "accepted" },
       h(
         "p",
-        { class: checked && read.standing === "holds" ? "banner banner-ok" : "banner banner-warn", role: "status" },
-        !checked
-          ? this.t("acceptedUnchecked", { time })
-          : read.standing === "holds"
-            ? this.t("acceptedHolds", { time })
-            : this.t("acceptedLapsed", { time, lapse: read.lapse ?? "" }),
+        { class: holds ? "banner banner-ok" : "banner banner-warn", role: "status" },
+        !verdict.said
+          ? this.t("acceptedUnsaid", { time, detail: verdict.refusal.message })
+          : !checked
+            ? this.t("acceptedUnchecked", { time })
+            : verdict.value.standing === "holds"
+              ? this.t("acceptedHolds", { time })
+              : this.t("acceptedLapsed", { time, lapse: verdict.value.lapse ?? "" }),
       ),
+      verdict.said ? null : this.sceRefusalNote(verdict.refusal),
       h("p", { class: "muted" }, this.channelSentence(held.channel)),
       held.open.length === 0
         ? null
@@ -2209,6 +2223,24 @@ export class App {
             h("ul", {}, ...held.open.map((sentence) => h("li", {}, sentence))),
           ),
     );
+  }
+
+  /**
+   * SCE did not answer: what it said, as the panel's own banner, and whether the screen asks
+   * again. A run that did not finish is asked for again by itself, and a design SCE refused is not.
+   */
+  private sceDidNotAnswer(sentence: string, refusal: Refusal | null): HTMLElement {
+    return h(
+      "div",
+      {},
+      h("p", { class: "banner banner-warn", role: "alert" }, sentence),
+      refusal === null ? null : this.sceRefusalNote(refusal),
+    );
+  }
+
+  /** Whether the screen asks SCE again by itself about a refusal, in words. */
+  private sceRefusalNote(refusal: Refusal): HTMLElement {
+    return h("p", { class: "muted" }, this.t(refusedForTheInput(refusal) ? "sceRefusedTheDesign" : "sceAsksAgain"));
   }
 
   /** Which surface the acceptance was stated on, as the record says it: not every acceptance is the owner's own press. */
@@ -2339,7 +2371,7 @@ export class App {
     const open = review !== null && review.phase === "read" ? review.review.check.open.length : null;
     // "Again" is said only where pressing is possible and means something: after a lapse.
     // An acceptance that holds is withheld, and says so, under the same words as a first one.
-    const lapsed = state.acceptance.standing === "lapsed";
+    const lapsed = state.verdict !== null && state.verdict.said && state.verdict.value.standing === "lapsed";
     return h(
       "div",
       { class: "accept-bar" },

@@ -14,10 +14,13 @@
 import {
   ContractError,
   sameBasis,
+  type AcceptanceRecord,
+  type AcceptanceVerdict,
   type Basis,
+  type Judged,
   type Judgment,
-  type ReadAcceptance,
   type ReadRequirements,
+  type Refusal,
   type RequirementOutcome,
   type RequirementsReport,
   type WorkSnapshot,
@@ -40,10 +43,16 @@ export interface AcceptanceState {
    */
   readonly basis: Basis;
   readonly list: ReadRequirements;
-  readonly acceptance: ReadAcceptance;
+  /** The acceptance the owner made, as saved; `null` when none was made. */
+  readonly accepted: AcceptanceRecord | null;
+  /**
+   * SCE's word on whether it holds, for the revisions it was asked about; `null` exactly when
+   * nothing is accepted. SCE not answering is a state of it, and keeps its reason.
+   */
+  readonly verdict: Judged<AcceptanceVerdict> | null;
   /** SCE's measure; `null` when SCE did not answer (`measureFailure` says why). */
   readonly report: RequirementsReport | null;
-  readonly measureFailure: string | null;
+  readonly measureFailure: Refusal | null;
   /** The accept is on its way. */
   readonly accepting: boolean;
   /** Why the last accept took nothing, in the core's words. */
@@ -63,6 +72,8 @@ export type Withheld =
   | "unread"
   /** What the screen shows is not what the report measured: the owner would accept what they have not read. */
   | "differs"
+  /** SCE has not said whether the owner's acceptance holds, so whether this design is accepted already is not known. */
+  | "unjudged"
   /** This very design, text, list and answers are accepted already and the acceptance holds. */
   | "already";
 
@@ -130,8 +141,9 @@ export function basisOf(snapshot: WorkSnapshot): Basis | null {
  * the design and the list stand to the text is the snapshot's own word, read in the same state as
  * the revisions: SCE's measure is of their content and does not say it, since the same bytes kept
  * again for a later text would otherwise change what was said of the state that was read. SCE
- * not measuring is a state of the panel (`measureFailure`); SCE not judging the acceptance is a
- * failure of it, since whether the owner's acceptance holds is not something to guess at.
+ * not measuring (`measureFailure`) and SCE not saying whether the acceptance holds (a `verdict`
+ * that did not say) are states of the panel, with their reasons: whether the owner's acceptance
+ * holds is not something to guess at, and the measure is still shown when only the verdict failed.
  */
 export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptancePanel {
   const list = snapshot.requirements;
@@ -147,21 +159,13 @@ export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptanceP
   if ((held === null) !== (judgment.acceptance === null)) {
     throw new ContractError("judgment.acceptance", "a verdict exactly when the snapshot holds an acceptance");
   }
-  let acceptance: ReadAcceptance;
-  if (held === null || judgment.acceptance === null) {
-    acceptance = { acceptance: null, standing: "none", lapse: null, now: null };
-  } else if (!judgment.acceptance.said) {
-    return { phase: "failed", message: judgment.acceptance.refusal.message };
-  } else {
-    const { standing, lapse } = judgment.acceptance.value;
-    acceptance = { acceptance: held, standing, lapse, now: judgment.basis };
-  }
   return {
     phase: "read",
     state: {
       basis: judgment.basis,
       list: { requirements: list, source_head: source.revision, standing: requirements_standing },
-      acceptance,
+      accepted: held,
+      verdict: judgment.acceptance,
       report: judgment.report.said
         ? {
             ...judgment.report.value,
@@ -171,11 +175,31 @@ export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptanceP
             requirements_standing,
           }
         : null,
-      measureFailure: judgment.report.said ? null : judgment.report.refusal.message,
+      measureFailure: judgment.report.said ? null : judgment.report.refusal,
       accepting: false,
       refusal: null,
     },
   };
+}
+
+/**
+ * Whether SCE refused because of what it was asked about: it ran, and it says the design (or the
+ * record) is not acceptable to it. Asking again of the same revisions says the same and costs a
+ * run. Anything else (a run that timed out, crashed, left something unreadable, or could not be
+ * started) is not a fact about the design, and passes.
+ */
+export function refusedForTheInput(refusal: Refusal): boolean {
+  return refusal.kind === "sce-refused";
+}
+
+/**
+ * Whether the panel holds an answer SCE did not give for a reason that passes, which is worth
+ * asking for again of the same revisions: the saved work has not changed, so nothing else will
+ * make the screen ask. How often is the watch's (it waits twice as long after each failure).
+ */
+export function worthAskingAgain(state: AcceptanceState): boolean {
+  const unsaid = state.verdict !== null && !state.verdict.said ? state.verdict.refusal : null;
+  return [state.measureFailure, unsaid].some((refusal) => refusal !== null && !refusedForTheInput(refusal));
 }
 
 /**
@@ -189,7 +213,7 @@ export function panelIsOf(state: AcceptanceState, snapshot: WorkSnapshot): boole
   return (
     basis !== null &&
     sameBasis(state.basis, basis) &&
-    (state.acceptance.acceptance?.revision ?? null) === (snapshot.acceptance?.revision ?? null)
+    (state.accepted?.revision ?? null) === (snapshot.acceptance?.revision ?? null)
   );
 }
 
@@ -201,7 +225,7 @@ export function panelIsOf(state: AcceptanceState, snapshot: WorkSnapshot): boole
  * acceptance there is no standing to be of another work.
  */
 export function standingIsOfWhatIsShown(state: AcceptanceState, shown: Shown): boolean {
-  if (state.acceptance.acceptance === null) return true;
+  if (state.accepted === null) return true;
   const basis = state.basis;
   const same = (on: string | null | undefined, named: string | null): boolean => on === undefined || on === named;
   return (
@@ -226,8 +250,16 @@ export function gate(state: AcceptanceState, unsaved: boolean, shown: Shown): Wi
   if (report.model_standing !== "current" || report.requirements_standing !== "current") return "behind";
   const notShown = whatIsNotShown(shown, report.basis);
   if (notShown !== null) return notShown;
-  const accepted = state.acceptance;
-  if (accepted.standing === "holds" && accepted.acceptance !== null && sameBasis(accepted.acceptance.basis, report.basis)) {
+  const { accepted, verdict } = state;
+  // Whether this very design is accepted already is SCE's to say; not having heard is not "no".
+  if (verdict !== null && !verdict.said) return "unjudged";
+  if (
+    verdict !== null &&
+    verdict.said &&
+    verdict.value.standing === "holds" &&
+    accepted !== null &&
+    sameBasis(accepted.basis, report.basis)
+  ) {
     return "already";
   }
   return null;

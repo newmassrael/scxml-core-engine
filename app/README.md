@@ -650,6 +650,19 @@ What this does not claim, stated so nothing on the screen is read as more:
   is of is also compared with the core's heads on every question, because the acceptance
   record keeps its revision while the work moves and the answers it is of may be the part the
   screen cannot read; a panel of a work the core has left is asked for again.
+- **SCE not answering is an answer, and the screen asks again only when asking again could
+  change it.** `read_judgment` can answer that SCE did not measure the design, or did not say
+  whether the acceptance holds (`refused`, with the kind and SCE's words). The panel keeps the
+  reason and shows what it did get: a measure when only the verdict failed, and the acceptance
+  as saved when only the measure failed. A run that timed out, failed, or could not be started
+  (`sce-timeout`, `sce-failed`, `sce-unavailable`) is not a fact about the design and passes:
+  the saved work is what it was, so nothing else would make the screen ask, and the panel is
+  compared as unread and asked again at the pace of the watch (twice as long after each
+  failure, up to thirty seconds), with no press of "Read again". A design SCE refused
+  (`sce-refused`) says the same of the same revisions, so the reason is shown and it is not
+  asked again until the work has moved. While SCE has not said whether the acceptance holds,
+  whether this design is accepted already is not known and the accept button waits
+  (`unjudged`).
 
 ## Seeing the screen
 

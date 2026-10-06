@@ -141,6 +141,8 @@ const en = {
   requirementsCount: "SCE measured the design against {count} requirements ({denominator}).",
   requirementsCountUnstated: "SCE measured the design against {count} requirements.",
   measureFailed: "SCE did not measure the design against the list: {detail}",
+  sceAsksAgain: "The screen asks SCE again by itself.",
+  sceRefusedTheDesign: "SCE refused the design, so it is not asked again until the work changes.",
   requirementsTable: "The requirements",
   requirementId: "Requirement",
   requirementOutcome: "SCE finds it",
@@ -177,11 +179,13 @@ const en = {
   withheldDiffers:
     "What is on screen is not the one the design was measured against. Open the work again to read what is saved.",
   withheldAlready: "This design is accepted as it is.",
+  withheldUnjudged: "SCE has not said whether the acceptance holds, so whether this design is accepted already is not known.",
   acceptRefused: "Nothing was accepted: {detail}",
   acceptedNone: "Nothing has been accepted yet.",
   acceptedHolds:
     "Accepted {time}. It holds: the text, the list, the design and your answers are as they were.",
   acceptedLapsed: "Accepted {time}, and it no longer holds. SCE says: {lapse}",
+  acceptedUnsaid: "Accepted {time}. SCE could not say whether it still holds: {detail}",
   acceptedUnchecked:
     "Accepted {time}. Whether it holds for the design shown is not known yet: the work changed while it was being read. The screen reads it again.",
   channelDirect: "Accepted here, in this application.",
@@ -390,6 +394,8 @@ const ko: Record<Key, string> = {
   requirementsCount: "SCE가 설계를 요구사항 {count}개({denominator})에 대해 쟀습니다.",
   requirementsCountUnstated: "SCE가 설계를 요구사항 {count}개에 대해 쟀습니다.",
   measureFailed: "SCE가 설계를 목록에 대해 재지 못했습니다: {detail}",
+  sceAsksAgain: "화면이 SCE에 저절로 다시 묻습니다.",
+  sceRefusedTheDesign: "SCE가 설계를 거절해서, 작업이 바뀌기 전에는 다시 묻지 않습니다.",
   requirementsTable: "요구사항",
   requirementId: "요구사항",
   requirementOutcome: "SCE의 판정",
@@ -425,10 +431,12 @@ const ko: Record<Key, string> = {
   withheldDiffers:
     "화면에 있는 것이 설계를 잰 기준과 다릅니다. 작업을 다시 열어 저장된 것을 읽으세요.",
   withheldAlready: "이 설계는 이미 지금 그대로 수락되어 있습니다.",
+  withheldUnjudged: "SCE가 수락이 유효한지 말하지 않아서, 이 설계가 이미 수락되었는지 알 수 없습니다.",
   acceptRefused: "아무것도 수락되지 않았습니다: {detail}",
   acceptedNone: "아직 수락한 것이 없습니다.",
   acceptedHolds: "{time}에 수락. 유효합니다: 원문, 목록, 설계, 내 답이 수락 때와 같습니다.",
   acceptedLapsed: "{time}에 수락했지만 더는 유효하지 않습니다. SCE의 말: {lapse}",
+  acceptedUnsaid: "{time}에 수락했습니다. SCE가 아직 유효한지 말하지 못했습니다: {detail}",
   acceptedUnchecked:
     "{time}에 수락했습니다. 지금 보이는 설계에 대해 유효한지는 아직 알 수 없습니다. 읽는 동안 작업이 바뀌었습니다. 화면이 다시 읽는 중입니다.",
   channelDirect: "이 애플리케이션에서 직접 수락했습니다.",

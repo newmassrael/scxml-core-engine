@@ -2175,7 +2175,9 @@ describe("accepting the design", () => {
     core.sceRefuses("acceptance", "sce-failed", "the product crashed");
     await click("Alpha");
 
-    expect(acceptanceText()).toContain("could not be read: the product crashed");
+    // Said in words with SCE's reason; the measure it did give is shown, and the review still shows.
+    expect(acceptanceText()).toContain("could not say whether it still holds: the product crashed");
+    expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
     expect(pseudo()).not.toBeNull();
   });
 
@@ -2409,6 +2411,87 @@ describe("a work that moves under the screen", () => {
     await settle();
     expect(verdict()).toContain("It holds");
     expect(verdict()).not.toContain("no longer holds");
+  });
+
+  // SCE not answering is an answer, and the screen asks again by itself for the reasons that pass:
+  // a generator that timed out, crashed or could not be started is not a fact about the design.
+  // One that refused the design is: asking again of the same revisions says the same, and only
+  // costs a run, so it is shown and not asked again until the work has moved.
+  describe("when SCE did not answer", () => {
+    const parts = ["report", "acceptance"] as const;
+    const passing = ["sce-timeout", "sce-failed", "sce-unavailable"] as const;
+
+    beforeEach(() => {
+      core.setModel("alpha", "<scxml/>", headOf("alpha"));
+      core.setRequirements("alpha", headOf("alpha"));
+      core.setAcceptance("alpha");
+    });
+
+    const refusalShown = (): string => acceptanceText();
+
+    for (const part of parts) {
+      for (const kind of passing) {
+        it(`asks again by itself, and recovers, from a ${kind} on the ${part}`, async () => {
+          core.sceRefuses(part, kind, "SCE failed this once");
+          await click("Alpha");
+          expect(refusalShown()).toContain("SCE failed this once");
+          expect(acceptButton()?.disabled ?? true).toBe(true);
+
+          // Nothing in the saved work changed and nothing was pressed.
+          await ticker.fire();
+
+          expect(refusalShown()).not.toContain("SCE failed this once");
+          expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+          expect(verdict()).toContain("It holds");
+        });
+      }
+    }
+
+    it("waits twice as long after each time it fails again, and the usual time once it answers", async () => {
+      core.sceRefuses("report", "sce-timeout", "still down");
+      core.sceRefuses("report", "sce-timeout", "still down");
+      await click("Alpha");
+      expect(ticker.pending).toEqual([2000]);
+
+      await ticker.fire();
+      expect(refusalShown()).toContain("still down");
+      expect(ticker.pending).toEqual([4000]);
+
+      await ticker.fire();
+      expect(refusalShown()).not.toContain("still down");
+      expect(ticker.pending).toEqual([2000]);
+    });
+
+    for (const part of parts) {
+      it(`shows why the design was refused on the ${part} and does not ask again of the same revisions`, async () => {
+        core.sceRefuses(part, "sce-refused", "SCE refused the design: xml/parse-error");
+        await click("Alpha");
+        expect(refusalShown()).toContain("SCE refused the design: xml/parse-error");
+        const asked = core.callsOf("read_judgment").length;
+
+        await ticker.fire();
+        await ticker.fire();
+
+        expect(core.callsOf("read_judgment")).toHaveLength(asked);
+        expect(refusalShown()).toContain("SCE refused the design: xml/parse-error");
+        // It was the design SCE refused: another design is asked about.
+        core.setModel("alpha", "<scxml><!-- fixed --></scxml>", headOf("alpha"));
+        await ticker.fire();
+        expect(core.callsOf("read_judgment")).toHaveLength(asked + 1);
+        expect(refusalShown()).not.toContain("xml/parse-error");
+      });
+    }
+
+    it("shows the measure while it says SCE could not say whether the acceptance holds", async () => {
+      core.sceRefuses("acceptance", "sce-timeout", "the check took too long");
+      await click("Alpha");
+
+      expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+      expect(verdict()).toContain("could not say whether it still holds");
+      expect(verdict()).toContain("the check took too long");
+      expect(verdict()).not.toContain("It holds");
+      expect(acceptButton().disabled).toBe(true);
+    });
   });
 
   it("does not put what SCE said of an earlier read over what it said of a later one", async () => {

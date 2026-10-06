@@ -16,8 +16,10 @@ import {
   OUTCOME_WORDS,
   panelIsOf,
   panelOf,
+  refusedForTheInput,
   standingIsOfWhatIsShown,
   tally,
+  worthAskingAgain,
   type AcceptanceState,
   type Shown,
 } from "../src/acceptance_model";
@@ -26,6 +28,7 @@ import type {
   Basis,
   Judgment,
   Measure,
+  Refusal,
   RequirementOutcome,
   RequirementsReport,
   WorkSnapshot,
@@ -53,13 +56,23 @@ const report = (over: Partial<RequirementsReport> = {}): RequirementsReport => (
 const state = (over: Partial<AcceptanceState> = {}): AcceptanceState => ({
   basis,
   list: { requirements: null, source_head: null, standing: null },
-  acceptance: { acceptance: null, standing: "none", lapse: null, now: null },
+  accepted: null,
+  verdict: null,
   report: report(),
   measureFailure: null,
   accepting: false,
   refusal: null,
   ...over,
 });
+
+/** SCE's word on an acceptance that was made. */
+const said = (standing: "holds" | "lapsed", lapse: string | null = null): AcceptanceState["verdict"] => ({
+  said: true,
+  value: { standing, lapse },
+});
+
+/** SCE not answering, for `kind`. */
+const unanswered = (kind: string, message = "SCE did not answer"): Refusal => ({ kind, message, code: null });
 
 // What the screen shows when it shows what `report()` measured: the text, the design, the list, and no answers.
 const shown: Shown = { source: basis.source, model: basis.model, answers: null, requirements: basis.requirements };
@@ -126,7 +139,8 @@ describe("the panel beside a snapshot", () => {
       state: {
         basis,
         list: { requirements: read.requirements, source_head: basis.source, standing: "current" },
-        acceptance: { acceptance: null, standing: "none", lapse: null, now: null },
+        accepted: null,
+        verdict: null,
         report: report(),
         measureFailure: null,
         accepting: false,
@@ -154,20 +168,18 @@ describe("the panel beside a snapshot", () => {
   it("carries the acceptance, whether SCE says it holds, and the revisions it was judged of", () => {
     const read = snapshot({ acceptance: record });
     const holds = panelOf(read, judgment({ acceptance: { said: true, value: { standing: "holds", lapse: null } } }));
-    expect(holds).toMatchObject({
-      state: { acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis } },
-    });
+    expect(holds).toMatchObject({ state: { basis, accepted: record, verdict: said("holds") } });
     const lapsed = panelOf(
       read,
       judgment({ acceptance: { said: true, value: { standing: "lapsed", lapse: "design/model.scxml moved" } } }),
     );
     expect(lapsed).toMatchObject({
-      state: { acceptance: { acceptance: record, standing: "lapsed", lapse: "design/model.scxml moved" } },
+      state: { accepted: record, verdict: said("lapsed", "design/model.scxml moved") },
     });
   });
 
-  it("says SCE did not measure, and still shows an acceptance the owner made", () => {
-    const refusal = { kind: "sce-timeout", message: "SCE took too long", code: null };
+  it("says SCE did not measure, with its reason, and still shows an acceptance the owner made", () => {
+    const refusal = unanswered("sce-timeout", "SCE took too long");
     const panel = panelOf(
       snapshot({ acceptance: record }),
       judgment({
@@ -177,14 +189,18 @@ describe("the panel beside a snapshot", () => {
     );
     expect(panel).toMatchObject({
       phase: "read",
-      state: { report: null, measureFailure: "SCE took too long", acceptance: { acceptance: record } },
+      state: { report: null, measureFailure: refusal, accepted: record, verdict: said("holds") },
     });
   });
 
-  it("is a failure when SCE did not say whether the acceptance holds, which is not guessed at", () => {
-    const refusal = { kind: "sce-unavailable", message: "no generator", code: null };
+  it("says SCE did not say whether the acceptance holds, with its reason, and still shows the measure", () => {
+    // Not guessed at, and not a failure of the panel: the measure was given and is shown.
+    const refusal = unanswered("sce-unavailable", "no generator");
     const panel = panelOf(snapshot({ acceptance: record }), judgment({ acceptance: { said: false, refusal } }));
-    expect(panel).toEqual({ phase: "failed", message: "no generator" });
+    expect(panel).toMatchObject({
+      phase: "read",
+      state: { accepted: record, verdict: { said: false, refusal }, report: report(), measureFailure: null },
+    });
   });
 
   it("refuses a verdict that was not asked for, or one that was asked for nothing", () => {
@@ -193,6 +209,43 @@ describe("the panel beside a snapshot", () => {
     expect(() =>
       panelOf(snapshot(), judgment({ acceptance: { said: true, value: { standing: "holds", lapse: null } } })),
     ).toThrow(/judgment\.acceptance/);
+  });
+});
+
+describe("SCE not answering", () => {
+  it("is refused for the input only when SCE ran and refused the design", () => {
+    expect(refusedForTheInput(unanswered("sce-refused"))).toBe(true);
+    // A run that timed out, crashed or could not be started is not a fact about the design.
+    for (const kind of ["sce-timeout", "sce-failed", "sce-unavailable", "a-kind-a-later-core-adds"]) {
+      expect(refusedForTheInput(unanswered(kind)), kind).toBe(false);
+    }
+  });
+
+  it("is worth asking again for a reason that passes, on the measure or on the verdict", () => {
+    const measure = state({ report: null, measureFailure: unanswered("sce-timeout") });
+    const verdict = state({ accepted: record, verdict: { said: false, refusal: unanswered("sce-failed") } });
+    expect(worthAskingAgain(measure)).toBe(true);
+    expect(worthAskingAgain(verdict)).toBe(true);
+  });
+
+  it("is not worth asking again for a design SCE refused, nor when it answered", () => {
+    expect(worthAskingAgain(state({ report: null, measureFailure: unanswered("sce-refused") }))).toBe(false);
+    expect(
+      worthAskingAgain(state({ accepted: record, verdict: { said: false, refusal: unanswered("sce-refused") } })),
+    ).toBe(false);
+    expect(worthAskingAgain(state())).toBe(false);
+    expect(worthAskingAgain(state({ accepted: record, verdict: said("holds") }))).toBe(false);
+  });
+
+  it("is worth asking again when either part passed and the other was refused for the input", () => {
+    // The refused design is not asked again, but the part that only failed to run still is.
+    const mixed = state({
+      report: null,
+      measureFailure: unanswered("sce-refused"),
+      accepted: record,
+      verdict: { said: false, refusal: unanswered("sce-timeout") },
+    });
+    expect(worthAskingAgain(mixed)).toBe(true);
   });
 });
 
@@ -254,7 +307,8 @@ describe("the accept button", () => {
   });
 
   it("is withheld when SCE did not measure the design: the owner has not been shown what they would accept", () => {
-    expect(gate(state({ report: null, measureFailure: "SCE took too long" }), false, shown)).toBe("not-measured");
+    const refused = state({ report: null, measureFailure: unanswered("sce-timeout", "SCE took too long") });
+    expect(gate(refused, false, shown)).toBe("not-measured");
   });
 
   it("is withheld for a design or a list written for an earlier text, or for none that says", () => {
@@ -264,26 +318,36 @@ describe("the accept button", () => {
   });
 
   it("is withheld for exactly what is accepted and still holds, and offered again for anything else", () => {
-    const holds = state({ acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis } });
+    const holds = state({ accepted: record, verdict: said("holds") });
     expect(gate(holds, false, shown)).toBe("already");
 
-    const lapsed = state({
-      acceptance: { acceptance: record, standing: "lapsed", lapse: "design/model.scxml moved", now: basis },
-    });
+    const lapsed = state({ accepted: record, verdict: said("lapsed", "design/model.scxml moved") });
     expect(gate(lapsed, false, shown)).toBeNull();
-    // Answers given since are a different basis, which holds no longer says; the screen shows them.
-    // `now` is the work as it is, which is what the report measured: both name the answers.
+    // Answers given since are a different basis than the acceptance was taken of: it is offered
+    // again, whatever the verdict was asked of, since what the report measured is not what was accepted.
     const answered = state({
-      acceptance: { acceptance: record, standing: "holds", lapse: null, now: { ...basis, answers: hex(4) } },
+      basis: { ...basis, answers: hex(4) },
+      accepted: record,
+      verdict: said("holds"),
       report: report({ basis: { ...basis, answers: hex(4) } }),
     });
     expect(gate(answered, false, { ...shown, answers: hex(4) })).toBeNull();
   });
 
+  it("is withheld while SCE has not said whether the acceptance holds, which is not 'it does not'", () => {
+    // Offered, it could accept again what is accepted already; withheld, it says why.
+    const unsaid = state({ accepted: record, verdict: { said: false, refusal: unanswered("sce-timeout") } });
+    expect(gate(unsaid, false, shown)).toBe("unjudged");
+    // Nothing accepted means nothing to be unsure of.
+    expect(gate(state(), false, shown)).toBeNull();
+    // What was not measured is the first thing said.
+    expect(gate({ ...unsaid, report: null }, false, shown)).toBe("not-measured");
+  });
+
   it("says a standing of the work on screen only when every part the screen has is the one judged", () => {
     // The panel is of the snapshot the design was read in; what can differ is the text and the
     // answers, which the person edits and which are read apart.
-    const holds = state({ acceptance: { acceptance: record, standing: "holds", lapse: null, now: basis } });
+    const holds = state({ accepted: record, verdict: said("holds") });
     expect(standingIsOfWhatIsShown(holds, shown)).toBe(true);
     for (const part of ["source", "model", "answers", "requirements"] as const) {
       expect(standingIsOfWhatIsShown(holds, { ...shown, [part]: hex(8) })).toBe(false);
