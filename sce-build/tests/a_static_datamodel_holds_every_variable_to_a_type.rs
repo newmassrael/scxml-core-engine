@@ -560,7 +560,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         name: "Rust",
         variable: true,
         record: true,
-        payload: false,
+        payload: true,
     },
     BytesHeld {
         lang: "kotlin",

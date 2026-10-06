@@ -199,6 +199,20 @@ tasks.test {
         .withPropertyName("kotlinConformanceGate")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // Same reason, same failure mode. `StaticScenarioTest` replays the scenarios every
+    // engine shares and `StaticDatamodelTest` reads the saved states they share, both
+    // from `sce-build/tests/fixtures/static_datamodel` at RUN time, and the saved-state
+    // schema from `schemas`. None is on the compile classpath, so editing a scenario
+    // left `:sce-kotlin-tests:test UP-TO-DATE`: measured 2026-10-07 by adding two steps
+    // to `static_payload_bytes.json`, which reported BUILD SUCCESSFUL in 28s without
+    // replaying either, so a step the engine did not pass would have been a green.
+    inputs.dir(File(rootDir, "sce-build/tests/fixtures/static_datamodel"))
+        .withPropertyName("sharedStaticDatamodelFixtures")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(File(rootDir, "schemas/sce-saved-state.v1.schema.json"))
+        .withPropertyName("savedStateSchema")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
     val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")

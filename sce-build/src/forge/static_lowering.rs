@@ -1511,6 +1511,12 @@ impl StaticTarget for RustTarget {
     fn lowers_record_bytes(&self) -> bool {
         true
     }
+    // A payload's byte field is the `&[u8]` the payload channel borrows, which is
+    // copied into the `Vec<u8>` of the variable or the record's field it is written
+    // to, under that place's bound.
+    fn lowers_payload_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }

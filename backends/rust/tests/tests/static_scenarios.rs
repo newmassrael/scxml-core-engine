@@ -59,6 +59,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_payload_bytes_sm::{
+    StaticPayloadBytesPersist, StaticPayloadBytesPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_payload_enum_sm::{
     StaticPayloadEnumPersist, StaticPayloadEnumPolicy,
 };
@@ -460,6 +463,20 @@ fn static_record_bytes_holds_a_bytes_field_within_the_bound_its_schema_declares(
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json"
+        ),
+    );
+}
+
+// The bytes an event's payload carries are read into a bytes variable, into a
+// record's field and into a whole record, each held to its own bound, and a payload
+// that does not read as its schema is refused whole.
+#[test]
+fn static_payload_bytes_reads_the_bytes_an_event_carries_within_their_bounds() {
+    replay(
+        Engine::new(StaticPayloadBytesPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json"
         ),
     );
 }

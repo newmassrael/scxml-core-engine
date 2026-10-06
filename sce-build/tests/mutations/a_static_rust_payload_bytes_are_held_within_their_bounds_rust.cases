@@ -1,0 +1,45 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the Rust backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_payload_bytes_are_held_within_their_bounds_rust.cases`.
+#
+# `static_payload_bytes` reads the bytes of a `framed.taken` payload into a bytes
+# variable of four, into a record's field of eight and into a whole record, and compares
+# them in a guard; it expects a value past the bound to leave what it was written to as
+# it was and `errors` to count it, and a payload that carries a character past U+00FF,
+# which is no byte, to be refused with nothing written. The mutants take one decision
+# away each:
+#
+#   an assignment to a bytes variable is not held to its bound, whatever it is read from;
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   a character past U+00FF is read as the byte its low eight bits make.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/runtime/src/event_payload.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_payload_bytes_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+PY
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "a character past U+00FF is read as the byte its low eight bits make" <<'PY'
+edit("backends/rust/runtime/src/event_payload.rs",
+     "            if (c as u32) > 0xFF {\n                return Err(PayloadRefusal::new(format!(\n                    \"'{name}' carries a character above U+00FF, which no single byte spells\"",
+     "            if (c as u32) > 0x10FFFF {\n                return Err(PayloadRefusal::new(format!(\n                    \"'{name}' carries a character above U+00FF, which no single byte spells\"")
+PY

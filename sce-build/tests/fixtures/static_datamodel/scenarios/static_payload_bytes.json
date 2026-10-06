@@ -1,6 +1,6 @@
 {
   "machine": "static_payload_bytes",
-  "about": "The bytes a typed event payload carries, read into a bytes variable of four bytes, into a record's field and into a whole record whose field is bounded at eight, and read by a guard. The wire spells a byte string as its byte-exact Latin-1 text, each byte the character of that code point, so a byte above 0x7F is written as that character. A value past its bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so what the block would have written after it is not written either. Expected values are derived from the byte counts, not observed from a backend.",
+  "about": "The bytes a typed event payload carries, read into a bytes variable of four bytes, into a record's field and into a whole record whose field is bounded at eight, and read by a guard. The wire spells a byte string as its byte-exact Latin-1 text, each byte the character of that code point, so a byte above 0x7F is written as that character. A value past its bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so what the block would have written after it is not written either. The bound is held where the bytes are written, as a string's is, and not where they are read: a payload longer than the field's sce:max-size that takes a route writing none of it is only compared. A character past U+00FF is no byte, so a payload that carries one does not read as its schema: error.execution is raised and nothing is written. Expected values are derived from the byte counts, not observed from a backend.",
   "steps": [
     { "note": "starting values",
       "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "frame": "ab" }, "held": "z", "frames": [], "size": 0, "matches": 0, "misses": 0, "errors": 0 } } },
@@ -55,6 +55,14 @@
 
     { "note": "two bytes above 0x7F are two bytes, not the four of their UTF-8 spelling",
       "event": "framed.taken", "data": { "sensor": 100, "frame": "éÿ" },
-      "expect": { "variables": { "held": "éÿ", "size": 2, "errors": 3 } } }
+      "expect": { "variables": { "held": "éÿ", "size": 2, "errors": 3 } } },
+
+    { "note": "the bound is held where the bytes are written, not where they are read: nine bytes take a route that writes none of them and are only not `ab`",
+      "event": "framed.taken", "data": { "sensor": 0, "frame": "123456789" },
+      "expect": { "variables": { "matches": 1, "misses": 3, "errors": 3 } } },
+
+    { "note": "a character past U+00FF is no byte: the payload does not read as its schema, error.execution is raised and nothing is written",
+      "event": "framed.taken", "data": { "sensor": 9, "frame": "Ā" },
+      "expect": { "variables": { "last": { "sensor": 202, "frame": "ÿ\u0080" }, "errors": 4 } } }
   ]
 }
