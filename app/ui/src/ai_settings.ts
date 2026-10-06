@@ -125,7 +125,7 @@ export class AiSettings {
    */
   private async find(): Promise<void> {
     try {
-      this.candidates = await this.host.api.findClients();
+      this.candidates = (await this.host.api.findClients()).claude;
     } catch (error) {
       if (this.host.handled(error)) return;
       this.candidates = [];

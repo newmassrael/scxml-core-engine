@@ -39,8 +39,8 @@ impl Billing {
     /// How a route is billed; none for a way that is not one of the three.
     pub fn of(route: Route) -> Option<Billing> {
         match route {
-            Route::ClaudeOfficialLogin => Some(Billing::Subscription),
-            Route::ClaudeApiKey => Some(Billing::Usage),
+            Route::ClaudeOfficialLogin | Route::CodexCliChatGptLogin => Some(Billing::Subscription),
+            Route::ClaudeApiKey | Route::CodexCliApiKey => Some(Billing::Usage),
             Route::ClaudeCloudProvider => Some(Billing::Provider),
             _ => None,
         }

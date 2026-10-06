@@ -36,6 +36,7 @@ use serde_json::Value;
 
 use crate::auth_policy::Observed;
 use crate::claude_code::AuthorServer;
+use crate::client_find::{find_programs, Candidate, Search};
 use crate::client_run::{
     blank_job, capture, draft_from, prompt, schema, span_words, supervise, tail, Ended, Scratch,
     SERVER, SYSTEM_PROMPT,
@@ -222,7 +223,7 @@ impl Codex {
             .version
             .as_deref()
             .ok_or("the program did not say it is Codex, so it is not run")?;
-        support_verdict(&self.binary, version, &self.support)?;
+        support_verdict(&self.binary, version, &self.support).map_err(|e| e.to_string())?;
         run_environment(self.auth, &self.app_home, &self.environment)
     }
 
@@ -307,12 +308,31 @@ pub fn features_on(binary: &Path) -> Result<Vec<String>, String> {
     Ok(enabled_features(&said.stdout))
 }
 
+/// Why this build may not run a Codex: either it was asked and the answer is no, or it could not
+/// be asked. A screen says the two apart (the first is a fact about the version, the second is
+/// "ask again"), and a request that waits says either as the sentence it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotRunnable {
+    /// The version is not one a person verified, or something is on that nobody looked at.
+    Unverified(String),
+    /// What is on could not be listed, so nothing is known of the version.
+    Unasked(String),
+}
+
+impl std::fmt::Display for NotRunnable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotRunnable::Unverified(why) | NotRunnable::Unasked(why) => f.write_str(why),
+        }
+    }
+}
+
 /// Whether this build may run `binary`, which says it is Codex `version`: a version a person
 /// verified against the instructions this build gives it, with nothing switched on that nobody
 /// looked at. The reason is a sentence that names no path. Needs no authoring server: a screen
 /// asks it too.
-pub fn support_verdict(binary: &Path, version: &str, support: &Support) -> Result<(), String> {
-    let enabled = features_on(binary)?;
+pub fn support_verdict(binary: &Path, version: &str, support: &Support) -> Result<(), NotRunnable> {
+    let enabled = features_on(binary).map_err(NotRunnable::Unasked)?;
     support
         .check(
             std::env::consts::OS,
@@ -320,7 +340,32 @@ pub fn support_verdict(binary: &Path, version: &str, support: &Support) -> Resul
             &instructions_of(support),
             &enabled,
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| NotRunnable::Unverified(e.to_string()))
+}
+
+/// What the client's program is called on this system. An installer that leaves a shim of another
+/// name (a command script) is named to the application with `SCE_CODEX`, and is not guessed at.
+const PROGRAM: &str = if cfg!(windows) { "codex.exe" } else { "codex" };
+
+/// The programs in `search` that say they are Codex, in the order they were found
+/// ([`find_programs`]): the search path's, then the known locations'.
+pub fn candidates(search: &Search) -> Vec<Candidate> {
+    find_programs(search, PROGRAM, |binary, timeout| {
+        version_within(binary, timeout)
+    })
+}
+
+/// The program that is Codex on this computer: the one that was named (by the environment or by a
+/// connection), whatever it is, so that a wrong one is said to be wrong and not quietly replaced;
+/// or else the first `search` finds. `None` is no program to ask.
+pub fn locate(named: Option<&Path>, search: &Search) -> Option<PathBuf> {
+    match named {
+        Some(path) => Some(path.to_path_buf()),
+        None => candidates(search)
+            .into_iter()
+            .next()
+            .map(|found| found.path),
+    }
 }
 
 /// The version of the working instructions this build gives Codex (`codex/<digest>`): named by
@@ -377,9 +422,14 @@ fn toml_string(text: &str) -> String {
 
 /// What `binary --version` says when it says it is Codex (`codex-cli 0.159.0`): the version.
 pub fn version_of(binary: &Path) -> Option<String> {
+    version_within(binary, SAY)
+}
+
+/// The same, given `timeout` to answer.
+pub(crate) fn version_within(binary: &Path, timeout: Duration) -> Option<String> {
     let mut command = Command::new(binary);
     command.arg("--version");
-    let said = capture(command, SAY).ok()?;
+    let said = capture(command, timeout).ok()?;
     if !said.status.success() {
         return None;
     }

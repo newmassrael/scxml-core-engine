@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
 import { CLAUDE_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
+import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type {
   Candidate,
   ClaudeAccount,
@@ -35,7 +36,7 @@ const PROGRAM = "/home/me/.local/bin/claude";
 const OTHER_PROGRAM = "/usr/local/bin/claude";
 
 const DESKTOP: Described = {
-  command_set_version: 14,
+  command_set_version: SUPPORTED_COMMAND_SET_VERSION,
   commands: [],
   root: "/works",
   entrance: "desktop",
@@ -100,7 +101,7 @@ class FakeSettings {
       findClients: async () => {
         this.calls.push({ name: "find_clients", args: null });
         if (this.refuseFinding !== null) throw this.refuseFinding;
-        return this.found;
+        return { claude: this.found, codex: [] };
       },
       listConnections: async () => {
         this.calls.push({ name: "list_connections", args: null });

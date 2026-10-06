@@ -52,6 +52,8 @@ struct Works {
     /// the search path, which is looked for each time it is asked about, so that installing it
     /// while the window is open is seen by the next check.
     claude: Option<std::path::PathBuf>,
+    /// The program the environment named as Codex (`SCE_CODEX`), looked for the same way.
+    codex: Option<std::path::PathBuf>,
 }
 
 /// The executor this application hosts, when it found what it needs: a runner on a thread of
@@ -103,7 +105,8 @@ fn sce_call(
         Entrance::Desktop,
     )
     .with_connections(Some(&works.settings))
-    .with_claude(works.claude.as_deref());
+    .with_claude(works.claude.as_deref())
+    .with_codex(works.codex.as_deref());
     call_in(&context, &name, args.unwrap_or(Value::Null))
 }
 
@@ -169,12 +172,16 @@ pub fn run() {
                 ConnectionStore::at(settings.clone()),
                 &bundle,
             ));
+            // The programs the environment named as the clients, which the status asked of each
+            // is about.
+            let named = HostSettings::from_environment("desktop");
             app.manage(Works {
                 store: WorkStore::at(root),
                 figures: renderer_with_bundle(bundle.codegen.as_deref()),
                 settings: ConnectionStore::at(settings),
                 policy: Policy::shipped(),
-                claude: HostSettings::from_environment("desktop").claude,
+                claude: named.claude,
+                codex: named.codex,
             });
             Ok(())
         })

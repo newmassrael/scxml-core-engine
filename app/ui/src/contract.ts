@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 14;
+export const SUPPORTED_COMMAND_SET_VERSION = 15;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -359,6 +359,51 @@ export interface ClaudeStatus {
   readonly client: ClaudeClient;
   readonly account: ClaudeAccount;
   readonly sign_in: readonly SignInCommand[];
+}
+
+/**
+ * Whether this build verified the Codex that is there. Until a version is verified a generation
+ * never runs, whoever is signed in, so this is said apart from the account. `unknown` is one
+ * that could not be asked (no program, or it would not list its features): not "unverified".
+ */
+export type CodexSupport =
+  | { readonly state: "verified" }
+  | { readonly state: "unverified"; readonly reason: string }
+  | { readonly state: "unknown"; readonly reason: string };
+
+/** The three places a connection to Codex can take its credential from. */
+export type CodexSource = "official-login" | "app-store" | "env-api-key";
+
+/** Who is signed in to Codex by one source, in the words of `ClaudeAccount`. */
+export type CodexAccount = ClaudeAccount & { readonly source: CodexSource };
+
+/** A command that signs in to Codex, with the billing it signs in for. */
+export interface CodexSignIn {
+  readonly source: CodexSource;
+  readonly billing: Billing;
+  readonly command: string;
+  /**
+   * The folder to start the client with as `CODEX_HOME`, so that the login it makes is the one a
+   * generation uses. `null` for the official client's own login. A folder, and not a shell's
+   * words: which shell it is is not known.
+   */
+  readonly home: string | null;
+}
+
+/** `read_codex_status`. */
+export interface CodexStatus {
+  readonly client: ClaudeClient;
+  readonly support: CodexSupport;
+  readonly accounts: readonly CodexAccount[];
+  readonly sign_in: readonly CodexSignIn[];
+  /** The variable a connection that takes its key from the environment reads it from. */
+  readonly key_variable: string;
+}
+
+/** `find_clients`: the programs of each client the application found. */
+export interface FoundClients {
+  readonly claude: readonly Candidate[];
+  readonly codex: readonly Candidate[];
 }
 
 export interface WorkAndHead {
@@ -1616,19 +1661,53 @@ export interface Candidate {
   readonly found: "search-path" | "known-location";
 }
 
-/** `find_clients`: the Claude Code programs the application found, in the order it found them. */
-export function parseFindClients(value: unknown): Candidate[] {
+/** `find_clients`: the programs of each client the application found, in the order it found them. */
+export function parseFindClients(value: unknown): FoundClients {
   const where = "find_clients";
-  const found = list(record(value, where), "claude", where);
-  return found.map((entry, i) => {
-    const at = `${where}.claude[${i}]`;
-    const candidate = record(entry, at);
-    return {
-      path: text(candidate, "path", at),
-      version: text(candidate, "version", at),
-      found: oneOf(candidate, "found", at, ["search-path", "known-location"] as const),
-    };
-  });
+  const reply = record(value, where);
+  const candidates = (client: "claude" | "codex"): Candidate[] =>
+    list(reply, client, where).map((entry, i) => {
+      const at = `${where}.${client}[${i}]`;
+      const candidate = record(entry, at);
+      return {
+        path: text(candidate, "path", at),
+        version: text(candidate, "version", at),
+        found: oneOf(candidate, "found", at, ["search-path", "known-location"] as const),
+      };
+    });
+  return { claude: candidates("claude"), codex: candidates("codex") };
+}
+
+const CODEX_SOURCES = ["official-login", "app-store", "env-api-key"] as const;
+
+/** `read_codex_status`. */
+export function parseCodexStatus(value: unknown): CodexStatus {
+  const where = "read_codex_status";
+  const codex = record(record(value, where)["codex"], `${where}.codex`);
+  const clientAt = `${where}.client`;
+  const supportAt = `${where}.support`;
+  const support = record(codex["support"], supportAt);
+  const state = oneOf(support, "state", supportAt, ["verified", "unverified", "unknown"] as const);
+  return {
+    client: parseClaudeClient(record(codex["client"], clientAt), clientAt),
+    support: state === "verified" ? { state } : { state, reason: text(support, "reason", supportAt) },
+    accounts: list(codex, "accounts", where).map((entry, i) => {
+      const at = `${where}.accounts[${i}]`;
+      const account = record(entry, at);
+      return { ...parseClaudeAccount(account, at), source: oneOf(account, "source", at, CODEX_SOURCES) };
+    }),
+    sign_in: list(codex, "sign_in", where).map((entry, i) => {
+      const at = `${where}.sign_in[${i}]`;
+      const command = record(entry, at);
+      return {
+        source: oneOf(command, "source", at, CODEX_SOURCES),
+        billing: oneOf(command, "billing", at, BILLINGS),
+        command: text(command, "command", at),
+        home: nullableText(command, "home", at),
+      };
+    }),
+    key_variable: text(codex, "key_variable", where),
+  };
 }
 
 function parseClaudeAccount(account: Obj, where: string): ClaudeAccount {

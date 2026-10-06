@@ -23,6 +23,7 @@ import {
   parseBundleRead,
   parseAuthPolicy,
   parseClaudeStatus,
+  parseCodexStatus,
   parseCompletedRequest,
   parseConnectionListing,
   parseDefaultConnection,
@@ -110,6 +111,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_connection: parseReadConnection,
   read_auth_policy: parseAuthPolicy,
   read_claude_status: parseClaudeStatus,
+  read_codex_status: parseCodexStatus,
   find_clients: parseFindClients,
   save_connection: parseSaved,
   delete_connection: parseDeletedConnection,
@@ -667,14 +669,65 @@ describe("the replies the core gives", () => {
   });
 
   it("carry the programs the application found for a connection to name, and where each was found", () => {
-    expect(parseFindClients(replies.answers["find_clients_none"])).toEqual([]);
+    expect(parseFindClients(replies.answers["find_clients_none"])).toEqual({ claude: [], codex: [] });
     const found = parseFindClients(replies.answers["find_clients_found"]);
-    expect(found.map((c) => [c.version, c.found])).toEqual([
+    expect(found.claude.map((c) => [c.version, c.found])).toEqual([
       ["2.1.291", "search-path"],
       ["2.1.280", "known-location"],
     ]);
-    expect(found[0]?.path.endsWith("claude")).toBe(true);
+    expect(found.claude[0]?.path.endsWith("claude")).toBe(true);
+    // The programs of the other client are listed apart: a connection names one of its own kind.
+    expect(found.codex.map((c) => [c.version, c.found])).toEqual([["0.159.0", "search-path"]]);
+    expect(found.codex[0]?.path.endsWith("codex")).toBe(true);
     expect(asCommandError(replies.refusals["not-allowed-to-find-clients"])?.kind).toBe("not-allowed-here");
+  });
+
+  it("carry what the screen says of Codex: which one, whether this build verified it, who is signed in by each source", () => {
+    const status = (name: string) => parseCodexStatus(replies.answers[name]);
+    const account = (name: string, source: string) =>
+      status(name).accounts.find((a) => a.source === source);
+    expect(status("read_codex_status_missing").client).toEqual({ state: "missing" });
+    // A version that could not be asked about is not an unverified one.
+    expect(status("read_codex_status_missing").support).toMatchObject({ state: "unknown" });
+    expect(status("read_codex_status_unknown_support").support).toMatchObject({ state: "unknown" });
+    expect(status("read_codex_status_verified").support).toEqual({ state: "verified" });
+    expect(status("read_codex_status_unverified")).toMatchObject({
+      client: { state: "installed", version: "0.159.0" },
+      support: { state: "unverified", reason: expect.stringContaining("has not been verified") },
+    });
+    // Each of the three sources is answered on its own, in the same words as Claude Code's.
+    expect(status("read_codex_status_verified").accounts.map((a) => a.source)).toEqual([
+      "official-login",
+      "app-store",
+      "env-api-key",
+    ]);
+    expect(account("read_codex_status_verified", "official-login")).toMatchObject({
+      state: "signed-in",
+      billing: "subscription",
+      usable: true,
+    });
+    expect(account("read_codex_status_verified", "app-store")).toMatchObject({ state: "signed-out" });
+    // A key from the environment is named by its variable and billed by use, and its value is nowhere.
+    expect(account("read_codex_status_key_from_environment", "env-api-key")).toMatchObject({
+      state: "signed-in",
+      billing: "usage",
+      environment: "CODEX_API_KEY",
+    });
+    expect(status("read_codex_status_key_from_environment").key_variable).toBe("CODEX_API_KEY");
+    expect(account("read_codex_status_not_used", "official-login")).toMatchObject({
+      usable: false,
+      decision: { decision: "refuse", reason: "unconfirmed" },
+    });
+    expect(account("read_codex_status_missing", "official-login")).toMatchObject({ state: "unknown" });
+  });
+
+  it("carry the commands that sign in to Codex, and the folder the application's own login is made in", () => {
+    const signIn = parseCodexStatus(replies.answers["read_codex_status_verified"]).sign_in;
+    const find = (source: string, billing: string) => signIn.find((s) => s.source === source && s.billing === billing);
+    expect(find("official-login", "subscription")).toMatchObject({ command: "codex login", home: null });
+    expect(find("official-login", "usage")).toMatchObject({ command: "codex login --with-api-key", home: null });
+    // A login made anywhere else is not the one a generation uses, so the folder is named.
+    expect(find("app-store", "subscription")?.home).toMatch(/codex-home$/);
   });
 
   it("say which program answered when Claude Code is installed", () => {
@@ -830,9 +883,31 @@ describe("a reply that is not the promised shape", () => {
     expect(() =>
       parseClaudeStatus({ claude: { ...said.claude, client: { state: "installed", version: "2.1.291" } } }),
     ).toThrow(/path/);
-    expect(() => parseFindClients({ claude: [{ path: "/x/claude", version: "1", found: "elsewhere" }] })).toThrow(
-      /found/,
-    );
+    expect(() =>
+      parseFindClients({ claude: [{ path: "/x/claude", version: "1", found: "elsewhere" }], codex: [] }),
+    ).toThrow(/found/);
+    // A core that does not list Codex's programs is not of this command set.
+    expect(() => parseFindClients({ claude: [] })).toThrow(/codex/);
+  });
+
+  it("refuses a Codex status that is not in the shape the core gives", () => {
+    const said = replies.answers["read_codex_status_verified"] as {
+      codex: { accounts: Record<string, unknown>[]; sign_in: Record<string, unknown>[] } & Record<string, unknown>;
+    };
+    const withSupport = (support: unknown) => ({ codex: { ...said.codex, support } });
+    expect(() => parseCodexStatus(withSupport({ state: "trusted" }))).toThrow(/state/);
+    expect(() => parseCodexStatus(withSupport({ state: "unverified" }))).toThrow(/reason/);
+    expect(() =>
+      parseCodexStatus({ codex: { ...said.codex, accounts: [{ ...said.codex.accounts[0], source: "browser" }] } }),
+    ).toThrow(/source/);
+    expect(() =>
+      parseCodexStatus({ codex: { ...said.codex, accounts: [{ ...said.codex.accounts[0], usable: "yes" }] } }),
+    ).toThrow(/usable/);
+    expect(() =>
+      parseCodexStatus({ codex: { ...said.codex, sign_in: [{ ...said.codex.sign_in[0], billing: "free" }] } }),
+    ).toThrow(/billing/);
+    expect(() => parseCodexStatus({ codex: { ...said.codex, key_variable: undefined } })).toThrow(/key_variable/);
+    expect(() => parseCodexStatus({})).toThrow(/read_codex_status/);
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

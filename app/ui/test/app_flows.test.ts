@@ -298,7 +298,7 @@ class FakeCore implements Transport {
     this.acceptancesByRevision.set(record.revision, record);
   }
 
-  private commandSet = 14;
+  private commandSet: number = SUPPORTED_COMMAND_SET_VERSION;
 
   /** The command set this core says it speaks: another than the screen's, to see the screen refuse it. */
   describeAs(version: number): void {
@@ -552,7 +552,10 @@ class FakeCore implements Transport {
       case "read_claude_status":
         return this.claudeStatus;
       case "find_clients":
-        return { claude: [{ path: "/home/me/.local/bin/claude", version: "2.1.291", found: "search-path" }] };
+        return {
+          claude: [{ path: "/home/me/.local/bin/claude", version: "2.1.291", found: "search-path" }],
+          codex: [],
+        };
       case "read_host_status":
         return {
           hosts: this.hostList.map((h) => ({

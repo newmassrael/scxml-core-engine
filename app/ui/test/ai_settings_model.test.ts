@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type { ClaudeAccount, ClaudeClient, ClaudeStatus, Connection, ConnectionListing, Described } from "../src/contract";
 import {
   CLAUDE_CONNECTION_ID,
@@ -22,7 +23,7 @@ const REVISION = "a".repeat(64);
 const OTHER = "b".repeat(64);
 
 const described = (over: Partial<Described> = {}): Described => ({
-  command_set_version: 14,
+  command_set_version: SUPPORTED_COMMAND_SET_VERSION,
   commands: [],
   root: "/works",
   entrance: "desktop",

@@ -105,10 +105,14 @@ fn the_desktop_is_told_which_clients_the_application_found() {
 
     assert_eq!(
         said,
-        json!({ "claude": [
-            { "path": first, "version": "2.1.291", "found": "search-path" },
-            { "path": second, "version": "2.1.280", "found": "search-path" },
-        ] })
+        json!({
+            "claude": [
+                { "path": first, "version": "2.1.291", "found": "search-path" },
+                { "path": second, "version": "2.1.280", "found": "search-path" },
+            ],
+            // Nothing of Codex is on this search path, and that is said and not left out.
+            "codex": [],
+        })
     );
 }
 
@@ -195,19 +199,140 @@ fn a_relative_name_and_a_program_for_a_kind_of_connection_with_none_are_refused(
             } }),
         )
         .unwrap_err();
-    let codex = rig
+    // A connection to a server of the person's runs no program of the application's to name.
+    let local = rig
         .ask(
             Entrance::Desktop,
             "save_connection",
             json!({ "connection": {
-                "id": "gpt", "adapter": "codex", "auth": "env-api-key",
+                "id": "pc2", "adapter": "local", "auth": "none",
+                "display_name": "pc2 (tunnel)", "server_url": "http://127.0.0.1:11434/v1",
                 "executable": program.display().to_string(),
             } }),
         )
         .unwrap_err();
 
     assert_eq!(relative.kind, "bad-connection");
-    assert_eq!(codex.kind, "bad-connection");
+    assert_eq!(local.kind, "bad-connection");
+}
+
+/// A program called `codex` in a folder of its own, saying `says` to `--version`.
+fn codex_client(label: &str, says: &str) -> PathBuf {
+    let program = scratch(label).join("codex");
+    write_program(
+        &program,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '{says}'; exit 0; fi\nexit 1\n"
+        ),
+    );
+    program
+}
+
+fn codex_json(executable: &Path) -> Value {
+    json!({ "connection": {
+        "id": "gpt", "adapter": "codex", "model": "gpt-test", "auth": "env-api-key",
+        "executable": executable.display().to_string(),
+    } })
+}
+
+#[test]
+fn a_codex_the_application_found_is_offered_beside_claude_code() {
+    let claude = client("fc-both-claude", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let codex = codex_client("fc-both-codex", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-both", &[dir_of(&claude), dir_of(&codex)]);
+
+    let said = rig.desktop("find_clients", json!({}));
+
+    assert_eq!(
+        said["claude"],
+        json!([{ "path": claude, "version": "2.1.291", "found": "search-path" }])
+    );
+    assert_eq!(
+        said["codex"],
+        json!([{ "path": codex, "version": "0.159.0", "found": "search-path" }])
+    );
+}
+
+#[test]
+fn a_program_that_answers_to_codex_and_says_anything_else_is_not_offered() {
+    let impostor = codex_client("fc-codex-impostor", "hello 1.0");
+    let rig = Rig::new("fc-codex-impostor", &[dir_of(&impostor)]);
+
+    let said = rig.desktop("find_clients", json!({}));
+
+    assert_eq!(said["codex"], json!([]));
+}
+
+#[test]
+fn a_connection_to_codex_may_name_a_codex_the_application_found() {
+    let codex = codex_client("fc-codex-name", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-codex-name", &[dir_of(&codex)]);
+
+    rig.desktop("save_connection", codex_json(&codex));
+
+    let kept = rig.desktop("read_connection", json!({ "id": "gpt" }));
+    assert_eq!(
+        kept["connection"]["connection"]["executable"],
+        json!(codex.display().to_string())
+    );
+}
+
+#[test]
+fn a_connection_names_a_program_of_its_own_kind_and_not_the_others() {
+    let claude = client("fc-kinds-claude", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let codex = codex_client("fc-kinds-codex", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-kinds", &[dir_of(&claude), dir_of(&codex)]);
+
+    // Both were found, and each is the other kind's program, not this one's.
+    let codex_names_claude = rig
+        .ask(Entrance::Desktop, "save_connection", codex_json(&claude))
+        .unwrap_err();
+    let claude_names_codex = rig
+        .ask(
+            Entrance::Desktop,
+            "save_connection",
+            claude_json(Some(&codex)),
+        )
+        .unwrap_err();
+
+    assert_eq!(codex_names_claude.kind, "bad-connection");
+    assert_eq!(claude_names_codex.kind, "bad-connection");
+}
+
+#[test]
+fn a_codex_the_application_did_not_find_is_refused_whatever_it_says_of_itself() {
+    let found = codex_client("fc-codex-found", "codex-cli 0.159.0");
+    let elsewhere = codex_client("fc-codex-elsewhere", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-codex-unfound", &[dir_of(&found)]);
+
+    let refused = rig
+        .ask(Entrance::Desktop, "save_connection", codex_json(&elsewhere))
+        .unwrap_err();
+
+    assert_eq!(refused.kind, "bad-connection");
+    let kept = rig.desktop("read_connection", json!({ "id": "gpt" }));
+    assert_eq!(kept["connection"], Value::Null);
+}
+
+#[test]
+fn the_codex_status_the_screen_shows_is_of_the_program_the_default_connection_names() {
+    let automatic = codex_client("fc-codex-auto", "codex-cli 0.158.0");
+    let chosen = codex_client("fc-codex-chosen", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-codex-status", &[dir_of(&automatic), dir_of(&chosen)]);
+    rig.desktop("save_connection", codex_json(&chosen));
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "gpt", "expect": null }),
+    );
+
+    let said = rig.desktop("read_codex_status", json!({}));
+
+    // The one the connection names answers, though the first one found is another.
+    assert_eq!(said["codex"]["client"]["version"], "0.159.0");
+    assert_eq!(
+        said["codex"]["client"]["path"],
+        json!(chosen.display().to_string())
+    );
 }
 
 #[test]

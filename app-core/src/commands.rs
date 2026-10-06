@@ -27,6 +27,9 @@ use crate::bundle::{BundleCheck, CheckedBy};
 use crate::claude_code::{candidates, Search};
 use crate::claude_status;
 use crate::clock::{utc_timestamp, Clock};
+use crate::codex;
+use crate::codex_status;
+use crate::codex_support::Support;
 use crate::connection::{AdapterKind, Connection, ConnectionId};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
@@ -86,6 +89,7 @@ pub const COMMANDS: &[&str] = &[
     "read_connection",
     "read_auth_policy",
     "read_claude_status",
+    "read_codex_status",
     "find_clients",
     "save_connection",
     "delete_connection",
@@ -98,7 +102,7 @@ const SETTINGS_READ: &[&str] = &["list_connections", "read_connection", "read_au
 /// The commands that start a program of the person's to ask it something. A command that does
 /// is a way to make the application run it, for whoever can send the command, so only the
 /// entrance that is the person at the keyboard may: the same reason the settings are theirs.
-const STARTS_PROGRAMS: &[&str] = &["read_claude_status", "find_clients"];
+const STARTS_PROGRAMS: &[&str] = &["read_claude_status", "read_codex_status", "find_clients"];
 
 /// The commands that change them. A connection names a program the application runs, so a
 /// command that writes one is a way to make the application run something: only the entrance
@@ -189,7 +193,16 @@ const SETTINGS_WRITE: &[&str] = &[
 /// (`read_auth_policy`). `describe` also says which entrance asked, whether it has a settings
 /// folder and whether it may change what is in it. A screen written for 14 asks for them and
 /// would be refused by a core of 13 with `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 14;
+///
+/// 15: Codex is a client the application can ask about, like Claude Code: `read_codex_status`
+/// says where it is, whether this build verified that version, and who is signed in by each of
+/// the three sources a connection can take its credential from, and `find_clients` lists the
+/// Codex programs it finds beside Claude Code's (`codex`), which a connection to Codex may name
+/// as its program. A screen written for 15 asks for them, and would be refused by a core of 14
+/// with `unknown-command` for the one and would not find the other in the answer; a screen
+/// written for 14 reads a core of 15's `find_clients` all the same, and ignores what it does not
+/// know.
+pub const COMMAND_SET_VERSION: u32 = 15;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1079,6 +1092,8 @@ pub struct Context<'a, C: Clock> {
     /// The program the shell was told is Claude Code (`SCE_CLAUDE`), when it was told one; none
     /// is the first one the application finds.
     pub claude: Option<&'a Path>,
+    /// The program the shell was told is Codex (`SCE_CODEX`), when it was told one.
+    pub codex: Option<&'a Path>,
     /// Where to look for the programs a connection may name; this process's own places when
     /// absent.
     pub search: Option<&'a Search>,
@@ -1099,6 +1114,7 @@ impl<'a, C: Clock> Context<'a, C> {
             policy,
             entrance,
             claude: None,
+            codex: None,
             search: None,
         }
     }
@@ -1112,6 +1128,12 @@ impl<'a, C: Clock> Context<'a, C> {
     /// With the program the shell was told is Claude Code.
     pub fn with_claude(mut self, claude: Option<&'a Path>) -> Self {
         self.claude = claude;
+        self
+    }
+
+    /// With the program the shell was told is Codex.
+    pub fn with_codex(mut self, codex: Option<&'a Path>) -> Self {
+        self.codex = codex;
         self
     }
 
@@ -1324,12 +1346,17 @@ fn check_executable<C: Clock>(
             Value::Null,
         ))
     };
-    if connection.adapter != AdapterKind::ClaudeCode {
-        return Err(refuse(
-            "the application finds no program for this kind of connection, so none can be named",
-        ));
-    }
-    let found = candidates(&context.places());
+    let places = context.places();
+    let found = match connection.adapter {
+        AdapterKind::ClaudeCode => candidates(&places),
+        AdapterKind::Codex => codex::candidates(&places),
+        AdapterKind::Local => {
+            return Err(refuse(
+                "the application finds no program for this kind of connection, so none can be \
+                 named",
+            ));
+        }
+    };
     if found.iter().any(|c| c.path == Path::new(executable)) {
         return Ok(());
     }
@@ -1339,12 +1366,12 @@ fn check_executable<C: Clock>(
     ))
 }
 
-/// The program the default connection to Claude Code names, when there is one and it names one.
-fn connection_program<C: Clock>(context: &Context<'_, C>) -> Option<PathBuf> {
+/// The program the default connection names, when it is a connection to `adapter` and names one.
+fn connection_program<C: Clock>(context: &Context<'_, C>, adapter: AdapterKind) -> Option<PathBuf> {
     let settings = context.connections?;
     let id = settings.default_connection().ok()??;
     let stored = settings.read(&id, None).ok()??;
-    if stored.connection.adapter != AdapterKind::ClaudeCode {
+    if stored.connection.adapter != adapter {
         return None;
     }
     stored.connection.executable.map(PathBuf::from)
@@ -1371,7 +1398,7 @@ fn call_program<C: Clock>(
             arguments::<Empty>(args)?;
             // The program a generation would run: the one the default connection names, or else
             // the one the environment named, or else the first the application finds.
-            let named = connection_program(context);
+            let named = connection_program(context, AdapterKind::ClaudeCode);
             let status = claude_status::read(
                 named.as_deref().or(context.claude),
                 context.policy,
@@ -1379,9 +1406,38 @@ fn call_program<C: Clock>(
             );
             Ok(json!({ "claude": status }))
         }
+        "read_codex_status" => {
+            arguments::<Empty>(args)?;
+            // The application's own home for Codex is in the settings folder, so without one
+            // there is no stored login to ask about.
+            let Some(settings) = context.connections else {
+                return Err(CommandError {
+                    kind: "no-settings".to_string(),
+                    message: format!(
+                        "`{name}` needs a settings folder, and this entrance has none"
+                    ),
+                    detail: Value::Null,
+                });
+            };
+            let named = connection_program(context, AdapterKind::Codex);
+            let environment: Vec<(String, String)> = std::env::vars().collect();
+            let status = codex_status::read(
+                named.as_deref().or(context.codex),
+                context.policy,
+                &Support::shipped(),
+                &settings.root().join(codex::HOME_DIR),
+                &environment,
+                &context.places(),
+            );
+            Ok(json!({ "codex": status }))
+        }
         "find_clients" => {
             arguments::<Empty>(args)?;
-            Ok(json!({ "claude": candidates(&context.places()) }))
+            let places = context.places();
+            Ok(json!({
+                "claude": candidates(&places),
+                "codex": codex::candidates(&places),
+            }))
         }
         other => Err(CommandError {
             kind: "unknown-command".to_string(),

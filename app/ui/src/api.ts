@@ -10,6 +10,7 @@ import {
   parseAuthPolicy,
   parseBundleRead,
   parseClaudeStatus,
+  parseCodexStatus,
   parseConnectionListing,
   parseDefaultConnection,
   parseDeletedConnection,
@@ -39,12 +40,13 @@ import {
   type AuthPolicy,
   type Basis,
   type BundleRead,
-  type Candidate,
   type ClaudeStatus,
+  type CodexStatus,
   type Connection,
   type ConnectionListing,
   type Described,
   type Figures,
+  type FoundClients,
   type GenerationRequest,
   type HistoryEntry,
   type HostListing,
@@ -193,12 +195,18 @@ export interface Api {
    */
   readClaudeStatus(): Promise<ClaudeStatus>;
   /**
-   * The Claude Code programs the application finds (on the search path, then in the folders the
-   * official installer uses), each saying it is Claude Code. A connection names a program only
-   * among these. Starts the programs to ask them, so only the desktop window may; any other
-   * entrance is refused with `not-allowed-here`.
+   * Whether Codex is installed, whether this build verified that version, and who is signed in by
+   * each of the three sources a connection can take its credential from. Starts the program to
+   * ask it, so only the desktop window may; any other entrance is refused with `not-allowed-here`.
    */
-  findClients(): Promise<Candidate[]>;
+  readCodexStatus(): Promise<CodexStatus>;
+  /**
+   * The programs of each client the application finds (on the search path, then in the folders
+   * the official installers use), each saying it is that client. A connection names a program
+   * only among those of its own client. Starts the programs to ask them, so only the desktop
+   * window may; any other entrance is refused with `not-allowed-here`.
+   */
+  findClients(): Promise<FoundClients>;
 }
 
 /** A connection and the revision of it the person read: what a request is made for. */
@@ -328,6 +336,9 @@ export function apiOver(transport: Transport): Api {
     },
     async readClaudeStatus() {
       return parseClaudeStatus(await transport.call("read_claude_status"));
+    },
+    async readCodexStatus() {
+      return parseCodexStatus(await transport.call("read_codex_status"));
     },
     async findClients() {
       return parseFindClients(await transport.call("find_clients"));

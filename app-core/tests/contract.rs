@@ -22,9 +22,11 @@ mod common;
 
 use sce_app_core::claude_code::{Candidate, Found, Search};
 use sce_app_core::claude_status::{AccountState, Billing, ClaudeStatus, Client, SIGN_IN};
+use sce_app_core::codex_environment::API_KEY_VARIABLE;
+use sce_app_core::codex_status::{self, CodexStatus, SourceAccount, SupportState};
 use sce_app_core::{
-    call, call_in, CommandError, ConnectionStore, Context, Entrance, FixedClock, NoRenderer,
-    Policy, Product, Route, WorkStore, COMMANDS, COMMAND_SET_VERSION,
+    call, call_in, AuthSource, CommandError, ConnectionStore, Context, Entrance, FixedClock,
+    NoRenderer, Policy, Product, Route, WorkStore, COMMANDS, COMMAND_SET_VERSION,
 };
 use serde_json::{json, Map, Value};
 
@@ -915,18 +917,27 @@ fn replies() -> Value {
     );
     answers.insert(
         "find_clients_found".into(),
-        json!({ "claude": [
-            Candidate {
-                path: "/home/person/.local/bin/claude".into(),
-                version: "2.1.291".to_string(),
-                found: Found::SearchPath,
-            },
-            Candidate {
-                path: "/usr/local/bin/claude".into(),
-                version: "2.1.280".to_string(),
-                found: Found::KnownLocation,
-            },
-        ] }),
+        json!({
+            "claude": [
+                Candidate {
+                    path: "/home/person/.local/bin/claude".into(),
+                    version: "2.1.291".to_string(),
+                    found: Found::SearchPath,
+                },
+                Candidate {
+                    path: "/usr/local/bin/claude".into(),
+                    version: "2.1.280".to_string(),
+                    found: Found::KnownLocation,
+                },
+            ],
+            "codex": [
+                Candidate {
+                    path: "/home/person/.local/bin/codex".into(),
+                    version: "0.159.0".to_string(),
+                    found: Found::SearchPath,
+                },
+            ],
+        }),
     );
     refusals.insert(
         "not-allowed-to-find-clients".into(),
@@ -983,6 +994,125 @@ fn replies() -> Value {
         installed(AccountState::Unknown {
             reason: "`claude auth status` did not answer JSON".to_string(),
         }),
+    );
+    // What a screen is told of Codex, in the same way: the shapes are the core's own types, so
+    // that the file does not depend on a script that only a Unix shell can run or on a key a
+    // machine happens to have in its environment.
+    let codex_home = std::path::Path::new("/home/person/.local/share/sce/settings/codex-home");
+    let codex_status_of = |client: Client, support: SupportState, accounts: [AccountState; 3]| {
+        let sources = [
+            AuthSource::OfficialLogin,
+            AuthSource::AppStore,
+            AuthSource::EnvApiKey,
+        ];
+        json!({ "codex": CodexStatus {
+            client,
+            support,
+            accounts: sources
+                .into_iter()
+                .zip(accounts)
+                .map(|(source, account)| SourceAccount { source, account })
+                .collect(),
+            sign_in: codex_status::sign_in(codex_home),
+            key_variable: API_KEY_VARIABLE,
+        } })
+    };
+    let codex_installed = || Client::Installed {
+        version: "0.159.0".to_string(),
+        path: "/home/person/.local/bin/codex".to_string(),
+    };
+    let codex_in = |route: Route, environment: Option<&str>| {
+        let decision = policy.decide(route);
+        AccountState::SignedIn {
+            route,
+            billing: Billing::of(route),
+            environment: environment.map(str::to_string),
+            usable: matches!(decision, sce_app_core::Decision::Use { .. }),
+            decision,
+        }
+    };
+    answers.insert(
+        "read_codex_status_verified".into(),
+        codex_status_of(
+            codex_installed(),
+            SupportState::Verified,
+            [
+                codex_in(Route::CodexCliChatGptLogin, None),
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+            ],
+        ),
+    );
+    answers.insert(
+        "read_codex_status_unverified".into(),
+        codex_status_of(
+            codex_installed(),
+            SupportState::Unverified {
+                reason: "this version of Codex has not been verified by this build, so a request \
+                         made for it waits: choose another connection"
+                    .to_string(),
+            },
+            [
+                codex_in(Route::CodexCliChatGptLogin, None),
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+            ],
+        ),
+    );
+    answers.insert(
+        "read_codex_status_unknown_support".into(),
+        codex_status_of(
+            codex_installed(),
+            SupportState::Unknown {
+                reason: "Codex could not list its features: it did not answer".to_string(),
+            },
+            [
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+            ],
+        ),
+    );
+    answers.insert(
+        "read_codex_status_key_from_environment".into(),
+        codex_status_of(
+            codex_installed(),
+            SupportState::Verified,
+            [
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+                codex_in(Route::CodexCliApiKey, Some(API_KEY_VARIABLE)),
+            ],
+        ),
+    );
+    answers.insert(
+        "read_codex_status_not_used".into(),
+        codex_status_of(
+            codex_installed(),
+            SupportState::Verified,
+            [
+                codex_in(Route::Unlisted, None),
+                AccountState::SignedOut,
+                AccountState::SignedOut,
+            ],
+        ),
+    );
+    let not_found = "Codex was not found: install it, or set SCE_CODEX to its path".to_string();
+    answers.insert(
+        "read_codex_status_missing".into(),
+        codex_status_of(
+            Client::Missing,
+            SupportState::Unknown {
+                reason: not_found.clone(),
+            },
+            [
+                AccountState::Unknown {
+                    reason: not_found.clone(),
+                },
+                AccountState::Unknown { reason: not_found },
+                AccountState::SignedOut,
+            ],
+        ),
     );
     refusals.insert(
         "not-allowed-to-start-a-program".into(),

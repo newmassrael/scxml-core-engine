@@ -30,6 +30,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use crate::auth_policy::Observed;
+use crate::client_find::find_programs;
 use crate::client_run::{
     blank_job, capture, draft_from, prompt, schema, span_words, supervise, tail, Ended, Scratch,
     SERVER, SYSTEM_PROMPT,
@@ -303,87 +304,10 @@ const PROGRAM: &str = if cfg!(windows) {
     "claude"
 };
 
-/// How long a program that may be Claude Code is given to say what it is.
-pub(crate) const SAY_WHAT_IT_IS: Duration = Duration::from_secs(15);
-
-/// Where to look for the client: the search path first, then the places the official installer
-/// puts it. A window started from a menu does not have what a shell's startup files add to the
-/// path (the installer's folder is one), so a person who has the client installed would be told
-/// there is none.
-#[derive(Debug, Clone)]
-pub struct Search {
-    /// The folders of the search path, in its order.
-    pub path: Vec<PathBuf>,
-    /// The folders it is installed in, which the search path may not name.
-    pub known: Vec<PathBuf>,
-    /// How long each program is given to say what it is.
-    pub timeout: Duration,
-}
-
-impl Search {
-    /// Where this process can look: its search path, and the installer's folders under the
-    /// person's home.
-    pub fn from_environment() -> Self {
-        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-            .filter(|home| !home.is_empty())
-            .map(PathBuf::from);
-        Search {
-            path: std::env::var_os("PATH")
-                .map(|path| std::env::split_paths(&path).collect())
-                .unwrap_or_default(),
-            known: known_directories(home.as_deref()),
-            timeout: SAY_WHAT_IT_IS,
-        }
-    }
-}
-
-/// The folders the client is installed in apart from the search path: under the person's home
-/// where the official installer puts it, and the system's own places. Without a home folder
-/// there are only the ones that need none: a home is not guessed at.
-pub fn known_directories(home: Option<&Path>) -> Vec<PathBuf> {
-    let mut known = Vec::new();
-    if let Some(home) = home {
-        known.push(home.join(".local").join("bin"));
-        known.push(home.join(".claude").join("local"));
-    }
-    if cfg!(not(windows)) {
-        known.push(PathBuf::from("/usr/local/bin"));
-        known.push(PathBuf::from("/opt/homebrew/bin"));
-    }
-    known
-}
-
-/// Where a candidate was found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Found {
-    SearchPath,
-    KnownLocation,
-}
-
-/// A program the application found that says it is Claude Code: what it may be told to run.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct Candidate {
-    pub path: PathBuf,
-    pub version: String,
-    pub found: Found,
-}
-
-/// Whether `path` is a file that can be run.
-fn is_runnable(path: &Path) -> bool {
-    let Ok(meta) = fs::metadata(path) else {
-        return false;
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        meta.is_file() && meta.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        meta.is_file()
-    }
-}
+// Where a client may be is the same question for every client, answered in `client_find`; these
+// are the names this module has always had them under.
+pub(crate) use crate::client_find::SAY_WHAT_IT_IS;
+pub use crate::client_find::{known_directories, Candidate, Found, Search};
 
 /// What `binary --version` says when it says it is Claude Code (`2.1.291 (Claude Code)`): the
 /// version. A program that answers to `claude` and says anything else is not this client, and
@@ -402,40 +326,10 @@ pub(crate) fn claude_version_of(binary: &Path, timeout: Duration) -> Option<Stri
     first.split_whitespace().next().map(str::to_string)
 }
 
-/// The programs in `search` that say they are Claude Code, in the order they were found: the
-/// search path's, then the known locations'. One program reached by two names is offered once,
-/// by the first; a folder that is not there, a file that cannot be run, and a program that does
-/// not answer in time are passed over and do not stop the search.
+/// The programs in `search` that say they are Claude Code, in the order they were found
+/// ([`find_programs`]): the search path's, then the known locations'.
 pub fn candidates(search: &Search) -> Vec<Candidate> {
-    let places = search
-        .path
-        .iter()
-        .map(|dir| (dir, Found::SearchPath))
-        .chain(search.known.iter().map(|dir| (dir, Found::KnownLocation)));
-    let mut seen: Vec<PathBuf> = Vec::new();
-    let mut offered = Vec::new();
-    for (dir, found) in places {
-        let path = dir.join(PROGRAM);
-        if !is_runnable(&path) {
-            continue;
-        }
-        // Asked once whatever it is called: a program that is not Claude Code is not asked twice.
-        let Ok(real) = fs::canonicalize(&path) else {
-            continue;
-        };
-        if seen.contains(&real) {
-            continue;
-        }
-        seen.push(real);
-        if let Some(version) = claude_version_of(&path, search.timeout) {
-            offered.push(Candidate {
-                path,
-                version,
-                found,
-            });
-        }
-    }
-    offered
+    find_programs(search, PROGRAM, claude_version_of)
 }
 
 /// The program that is Claude Code on this computer: the one the environment named (`SCE_CLAUDE`),

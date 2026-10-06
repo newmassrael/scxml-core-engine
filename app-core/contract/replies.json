@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 14,
+      "command_set_version": 15,
       "commands": [
         "describe",
         "list_works",
@@ -155,6 +155,7 @@
         "read_connection",
         "read_auth_policy",
         "read_claude_status",
+        "read_codex_status",
         "find_clients",
         "save_connection",
         "delete_connection",
@@ -167,7 +168,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 14,
+      "command_set_version": 15,
       "commands": [
         "describe",
         "list_works",
@@ -212,6 +213,7 @@
         "read_connection",
         "read_auth_policy",
         "read_claude_status",
+        "read_codex_status",
         "find_clients",
         "save_connection",
         "delete_connection",
@@ -286,10 +288,18 @@
           "path": "/usr/local/bin/claude",
           "version": "2.1.280"
         }
+      ],
+      "codex": [
+        {
+          "found": "search-path",
+          "path": "/home/person/.local/bin/codex",
+          "version": "0.159.0"
+        }
       ]
     },
     "find_clients_none": {
-      "claude": []
+      "claude": [],
+      "codex": []
     },
     "heartbeat_request": {
       "request": {
@@ -911,6 +921,360 @@
             "command": "claude auth login --console"
           }
         ]
+      }
+    },
+    "read_codex_status_key_from_environment": {
+      "codex": {
+        "accounts": [
+          {
+            "source": "official-login",
+            "state": "signed-out"
+          },
+          {
+            "source": "app-store",
+            "state": "signed-out"
+          },
+          {
+            "billing": "usage",
+            "decision": {
+              "decision": "use",
+              "status": "allowed"
+            },
+            "environment": "CODEX_API_KEY",
+            "route": "codex-cli-api-key",
+            "source": "env-api-key",
+            "state": "signed-in",
+            "usable": true
+          }
+        ],
+        "client": {
+          "path": "/home/person/.local/bin/codex",
+          "state": "installed",
+          "version": "0.159.0"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "state": "verified"
+        }
+      }
+    },
+    "read_codex_status_missing": {
+      "codex": {
+        "accounts": [
+          {
+            "reason": "Codex was not found: install it, or set SCE_CODEX to its path",
+            "source": "official-login",
+            "state": "unknown"
+          },
+          {
+            "reason": "Codex was not found: install it, or set SCE_CODEX to its path",
+            "source": "app-store",
+            "state": "unknown"
+          },
+          {
+            "source": "env-api-key",
+            "state": "signed-out"
+          }
+        ],
+        "client": {
+          "state": "missing"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "reason": "Codex was not found: install it, or set SCE_CODEX to its path",
+          "state": "unknown"
+        }
+      }
+    },
+    "read_codex_status_not_used": {
+      "codex": {
+        "accounts": [
+          {
+            "billing": null,
+            "decision": {
+              "decision": "refuse",
+              "reason": "unconfirmed",
+              "status": "unconfirmed"
+            },
+            "environment": null,
+            "route": "unlisted",
+            "source": "official-login",
+            "state": "signed-in",
+            "usable": false
+          },
+          {
+            "source": "app-store",
+            "state": "signed-out"
+          },
+          {
+            "source": "env-api-key",
+            "state": "signed-out"
+          }
+        ],
+        "client": {
+          "path": "/home/person/.local/bin/codex",
+          "state": "installed",
+          "version": "0.159.0"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "state": "verified"
+        }
+      }
+    },
+    "read_codex_status_unknown_support": {
+      "codex": {
+        "accounts": [
+          {
+            "source": "official-login",
+            "state": "signed-out"
+          },
+          {
+            "source": "app-store",
+            "state": "signed-out"
+          },
+          {
+            "source": "env-api-key",
+            "state": "signed-out"
+          }
+        ],
+        "client": {
+          "path": "/home/person/.local/bin/codex",
+          "state": "installed",
+          "version": "0.159.0"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "reason": "Codex could not list its features: it did not answer",
+          "state": "unknown"
+        }
+      }
+    },
+    "read_codex_status_unverified": {
+      "codex": {
+        "accounts": [
+          {
+            "billing": "subscription",
+            "decision": {
+              "decision": "use",
+              "status": "conditional"
+            },
+            "environment": null,
+            "route": "codex-cli-chat-gpt-login",
+            "source": "official-login",
+            "state": "signed-in",
+            "usable": true
+          },
+          {
+            "source": "app-store",
+            "state": "signed-out"
+          },
+          {
+            "source": "env-api-key",
+            "state": "signed-out"
+          }
+        ],
+        "client": {
+          "path": "/home/person/.local/bin/codex",
+          "state": "installed",
+          "version": "0.159.0"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "reason": "this version of Codex has not been verified by this build, so a request made for it waits: choose another connection",
+          "state": "unverified"
+        }
+      }
+    },
+    "read_codex_status_verified": {
+      "codex": {
+        "accounts": [
+          {
+            "billing": "subscription",
+            "decision": {
+              "decision": "use",
+              "status": "conditional"
+            },
+            "environment": null,
+            "route": "codex-cli-chat-gpt-login",
+            "source": "official-login",
+            "state": "signed-in",
+            "usable": true
+          },
+          {
+            "source": "app-store",
+            "state": "signed-out"
+          },
+          {
+            "source": "env-api-key",
+            "state": "signed-out"
+          }
+        ],
+        "client": {
+          "path": "/home/person/.local/bin/codex",
+          "state": "installed",
+          "version": "0.159.0"
+        },
+        "key_variable": "CODEX_API_KEY",
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": null,
+            "source": "official-login"
+          },
+          {
+            "billing": "subscription",
+            "command": "codex login",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          },
+          {
+            "billing": "usage",
+            "command": "codex login --with-api-key",
+            "home": "/home/person/.local/share/sce/settings/codex-home",
+            "source": "app-store"
+          }
+        ],
+        "support": {
+          "state": "verified"
+        }
       }
     },
     "read_connection": {
@@ -1809,7 +2173,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 14,
+  "command_set_version": 15,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2058,7 +2422,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, find_clients, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {
