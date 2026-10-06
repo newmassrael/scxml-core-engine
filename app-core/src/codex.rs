@@ -47,20 +47,9 @@ use crate::connection::AuthSource;
 use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
 
-/// The authoring server's tools the client may use, by the names the server gives them. Reading
-/// a work and checking a draft; not saving, not taking a request, not accepting. This is the
-/// list the other client is allowed, in the spelling Codex wants (no server prefix).
-pub const AUTHOR_TOOLS: [&str; 9] = [
-    "works_read",
-    "scxml_kinds",
-    "validate_scxml",
-    "validate_scxml_set",
-    "scxml_unresolved",
-    "decisions",
-    "scxml_requirement_set",
-    "scxml_requirements",
-    "render_scxml_pseudocode",
-];
+// The authoring server's tools a client may use, said once for every client that has them
+// (`client_run::AUTHOR_TOOLS`), and named here as it always has been.
+pub use crate::client_run::AUTHOR_TOOLS;
 
 /// How long a program that may be Codex is given to say its version or its features.
 const SAY: Duration = Duration::from_secs(15);

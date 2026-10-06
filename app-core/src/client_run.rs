@@ -33,6 +33,22 @@ const KEPT_BYTES: usize = 16 * 1024 * 1024;
 /// What the SCE authoring server is called to a client, and so the prefix of its tools.
 pub(crate) const SERVER: &str = "sce-author";
 
+/// The authoring server's tools a client may use, by the names the server gives them. Reading a
+/// work and checking a draft; not saving, not taking a request, not accepting. A client that
+/// reaches the server by its own means offers these and no others; one that is told by name
+/// (Claude Code, `claude_code::ALLOWED_TOOLS`) is told the same nine with the server's prefix.
+pub const AUTHOR_TOOLS: [&str; 9] = [
+    "works_read",
+    "scxml_kinds",
+    "validate_scxml",
+    "validate_scxml_set",
+    "scxml_unresolved",
+    "decisions",
+    "scxml_requirement_set",
+    "scxml_requirements",
+    "render_scxml_pseudocode",
+];
+
 /// The documents of the model and the requirement list, as the application keeps them.
 pub(crate) fn draft_from(answer: &Value) -> Result<Draft, String> {
     let documents = answer["model"]["documents"]

@@ -57,6 +57,7 @@ pub mod figures;
 pub mod host;
 pub mod http_client;
 pub mod installed;
+pub mod local;
 mod lock;
 pub mod mcp_client;
 pub mod model_set;

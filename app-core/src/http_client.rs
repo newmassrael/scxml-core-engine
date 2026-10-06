@@ -857,13 +857,10 @@ mod tests {
 
     #[test]
     fn a_server_that_is_not_there_is_said_so_and_a_server_that_is_not_http_is_said_so() {
-        // A port nothing listens on: bind one, note it, and close it.
-        let port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let nobody = get(&format!("http://127.0.0.1:{port}/v1"), "/models").unwrap_err();
+        // A port nothing listens on. Not one that was bound and let go of: tests run side by side,
+        // and another's server may be given that port between the letting go and the asking. Port 1
+        // is below the range the system hands out.
+        let nobody = get("http://127.0.0.1:1/v1", "/models").unwrap_err();
         let (address, _) = serve(|s| {
             s.write_all(b"SSH-2.0-OpenSSH\r\n\r\n").unwrap();
         });
