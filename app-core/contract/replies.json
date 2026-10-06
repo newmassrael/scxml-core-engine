@@ -31,6 +31,7 @@
         "note": "cancelled by the owner",
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 3,
         "state": "cancelled",
         "stored_state": "cancelled",
@@ -58,6 +59,7 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "running",
         "stored_state": "running",
@@ -92,6 +94,7 @@
         "outcome": {
           "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         },
+        "pin": null,
         "seq": 1,
         "state": "completed",
         "stored_state": "completed",
@@ -239,6 +242,7 @@
         "note": "SCE refused the model",
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 2,
         "state": "failed",
         "stored_state": "failed",
@@ -285,6 +289,7 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "running",
         "stored_state": "running",
@@ -353,6 +358,7 @@
           "note": null,
           "origin": "gui",
           "outcome": null,
+          "pin": null,
           "seq": 1,
           "state": "queued",
           "stored_state": "queued",
@@ -377,6 +383,7 @@
           "note": "cancelled by the owner",
           "origin": "gui",
           "outcome": null,
+          "pin": null,
           "seq": 3,
           "state": "cancelled",
           "stored_state": "cancelled",
@@ -406,6 +413,7 @@
           "note": "SCE refused the model",
           "origin": "gui",
           "outcome": null,
+          "pin": null,
           "seq": 2,
           "state": "failed",
           "stored_state": "failed",
@@ -437,6 +445,7 @@
           "outcome": {
             "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           },
+          "pin": null,
           "seq": 1,
           "state": "completed",
           "stored_state": "completed",
@@ -1011,6 +1020,7 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
@@ -1280,6 +1290,7 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
@@ -1303,10 +1314,40 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "queued",
         "stored_state": "queued",
         "work": "<work-id>"
+      }
+    },
+    "request_generation_pinned": {
+      "created": true,
+      "request": {
+        "attempt": 0,
+        "candidate": null,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "id": "<pinned-request-id>",
+        "inputs": {
+          "answers": null,
+          "source": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+        },
+        "key": "press-pinned",
+        "lease": null,
+        "note": null,
+        "origin": "gui",
+        "outcome": null,
+        "pin": {
+          "adapter": "claude-code",
+          "connection": "main",
+          "model": "sonnet",
+          "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+        },
+        "seq": 1,
+        "state": "queued",
+        "stored_state": "queued",
+        "work": "<pinned-work-id>"
       }
     },
     "requirements_report": {
@@ -1523,6 +1564,7 @@
         "note": null,
         "origin": "gui",
         "outcome": null,
+        "pin": null,
         "seq": 1,
         "state": "running",
         "stored_state": "running",
@@ -1739,6 +1781,21 @@
       "kind": "not-found",
       "message": "work `<removed-work-id>` (it was removed) does not exist"
     },
+    "request-connection-moved": {
+      "detail": {
+        "current": {
+          "connection": {
+            "id": "main",
+            "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+          }
+        },
+        "moved": [
+          "connection"
+        ]
+      },
+      "kind": "moved",
+      "message": "the connection was changed after it was read, so nothing was registered; read it again"
+    },
     "request-ended": {
       "detail": {
         "request": "<request-id>",
@@ -1777,6 +1834,18 @@
     "unknown-command": {
       "kind": "unknown-command",
       "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, save_connection, delete_connection, set_default_connection"
+    },
+    "wrong-connection": {
+      "detail": {
+        "offered": null,
+        "pinned": {
+          "id": "main",
+          "revision": "5ce2a9ebc30444b1860d44c2e86ec5e337cb8539f3a2fc2720a1d1c645f54674"
+        },
+        "request": "<pinned-request-id>"
+      },
+      "kind": "wrong-connection",
+      "message": "the request <pinned-request-id> is for connection `main` at 5ce2a9ebc304, and the caller runs for no connection: it is taken by the executor of the connection it was made for and by no other"
     }
   }
 }

@@ -25,6 +25,7 @@ const request = (state: RequestState, answers: string | null): { head: Inputs["h
     lease: null,
     candidate: null,
     outcome: null,
+    pin: null,
     ended_at: null,
     note: null,
   },

@@ -471,9 +471,24 @@ export interface GenerationRequest {
   readonly candidate: RequestCandidate | null;
   /** The bundle a completed request made; `null` for every request that did not complete. */
   readonly outcome: { readonly bundle: Revision } | null;
+  /**
+   * The connection it was made for, as the core copied it when the request was made, or `null`
+   * for a request nobody chose a connection for. It says which client, which model and what a
+   * run may spend, and nothing of where a server is or what the person calls it.
+   */
+  readonly pin: RequestPin | null;
   readonly ended_at: string | null;
   /** Why it ended or was let go of, in words. */
   readonly note: string | null;
+}
+
+/** The connection a request was made for (`Pin` in the core). */
+export interface RequestPin {
+  readonly connection: string;
+  readonly revision: Revision;
+  readonly adapter: AdapterKind;
+  readonly model: string | null;
+  readonly limits: { readonly turns: number | null; readonly seconds: number | null };
 }
 
 /** The halves of a candidate the executor has written; a bundle needs both. */
@@ -1098,8 +1113,24 @@ export function parseGenerationRequest(value: unknown, where = "request"): Gener
       outcome === null
         ? null
         : { bundle: revision(record(outcome, `${where}.outcome`)["bundle"], `${where}.outcome.bundle`) },
+    pin: r["pin"] === null || r["pin"] === undefined ? null : parseRequestPin(r["pin"], `${where}.pin`),
     ended_at: nullableText(r, "ended_at", where),
     note: nullableText(r, "note", where),
+  };
+}
+
+function parseRequestPin(value: unknown, where: string): RequestPin {
+  const r = record(value, where);
+  const limits = r["limits"] === undefined ? {} : record(r["limits"], `${where}.limits`);
+  return {
+    connection: text(r, "connection", where),
+    revision: revision(r["revision"], `${where}.revision`),
+    adapter: oneOf(r, "adapter", where, ["claude-code", "codex", "local"] as const),
+    model: nullableText(r, "model", where),
+    limits: {
+      turns: nullableCount(limits, "turns", `${where}.limits`),
+      seconds: nullableCount(limits, "seconds", `${where}.limits`),
+    },
   };
 }
 

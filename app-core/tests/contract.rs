@@ -919,6 +919,46 @@ fn replies() -> Value {
         "no-settings".into(),
         refusal(&store, "list_connections", json!({})),
     );
+    // A request made for a connection, and what is refused to a caller it is not for.
+    let pinned_work = ask("create_work", json!({ "title": "Pinned" }));
+    let pinned_id = pinned_work["id"].as_str().expect("a work id").to_string();
+    let pinned_source = ask(
+        "save_source",
+        json!({ "id": pinned_id, "text": "The lock opens when the code matches." }),
+    );
+    let pinned = ask(
+        "request_generation",
+        json!({
+            "id": pinned_id, "key": "press-pinned", "origin": "gui",
+            "expect": { "source": pinned_source["revision"], "answers": null },
+            "connection": { "id": "main", "revision": next_revision },
+        }),
+    );
+    let pinned_request = pinned["request"]["id"]
+        .as_str()
+        .expect("a request id")
+        .to_string();
+    answers.insert("request_generation_pinned".into(), pinned);
+    refusals.insert(
+        "wrong-connection".into(),
+        refuse(
+            &desktop,
+            "claim_request",
+            json!({ "id": pinned_id, "request": pinned_request, "holder": "desktop" }),
+        ),
+    );
+    refusals.insert(
+        "request-connection-moved".into(),
+        refuse(
+            &desktop,
+            "request_generation",
+            json!({
+                "id": pinned_id, "key": "press-stale", "origin": "gui", "supersede": true,
+                "expect": { "source": pinned_source["revision"], "answers": null },
+                "connection": { "id": "main", "revision": first_revision },
+            }),
+        ),
+    );
     answers.insert(
         "delete_connection".into(),
         ask(
@@ -951,6 +991,8 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &request_id, "<request-id>");
     name_the_unstable(&mut document, &failed_id, "<failed-request-id>");
     name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");
+    name_the_unstable(&mut document, &pinned_request, "<pinned-request-id>");
+    name_the_unstable(&mut document, &pinned_id, "<pinned-work-id>");
     // A revision stays the shape of one, so that the screen's guard reads the file as it
     // would read the core.
     name_the_unstable(&mut document, &bundle_revision, &"b".repeat(64));

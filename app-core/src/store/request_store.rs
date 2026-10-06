@@ -39,7 +39,8 @@ use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::lock;
 use crate::requests::{
-    lease_is_valid, Inputs, Moment, Refusal, Request, State, LEASE_DEFAULT_SECONDS,
+    lease_is_valid, ConnectionRef, Inputs, Moment, Pin, Refusal, Request, State,
+    LEASE_DEFAULT_SECONDS,
 };
 use crate::revision::Revision;
 
@@ -384,6 +385,22 @@ pub(super) fn refusal_error(request: &Request, refusal: Refusal) -> StoreError {
             ),
             json!({ "request": id }),
         ),
+        Refusal::WrongConnection { pinned, offered } => {
+            let named = |connection: &Option<ConnectionRef>| match connection {
+                Some(c) => format!("connection `{}` at {}", c.id, c.revision.short()),
+                None => "no connection".to_string(),
+            };
+            StoreError::refused(
+                "wrong-connection",
+                format!(
+                    "the request {id} is for {}, and the caller runs for {}: it is taken by the \
+                     executor of the connection it was made for and by no other",
+                    named(&pinned),
+                    named(&offered)
+                ),
+                json!({ "request": id, "pinned": pinned, "offered": offered }),
+            )
+        }
     }
 }
 
@@ -402,6 +419,21 @@ impl<C: Clock> WorkStore<C> {
         &self,
         id: &WorkId,
         registration: Registration<'_>,
+    ) -> Result<Registered, StoreError> {
+        self.register_request_for(id, registration, None)
+    }
+
+    /// The same, for the connection `pin` copies: the request is made for it, and is taken by
+    /// the executor that runs for it. `None` is a request nobody chose a connection for.
+    ///
+    /// A key that was used before answers the request it made, with the pin it made it with:
+    /// the connection is not an input of the key, so a press sent again is not made again for
+    /// another.
+    pub fn register_request_for(
+        &self,
+        id: &WorkId,
+        registration: Registration<'_>,
+        pin: Option<Pin>,
     ) -> Result<Registered, StoreError> {
         if registration.key.is_empty() || registration.key.len() > KEY_MAX {
             return Err(bad(
@@ -499,6 +531,7 @@ impl<C: Clock> WorkStore<C> {
             registration.key.to_string(),
             registration.origin.to_string(),
             registration.expect,
+            pin,
             &now,
         );
         persist(&dir, None, &request, &now)?;
@@ -606,10 +639,25 @@ impl<C: Clock> WorkStore<C> {
         ttl: Option<u64>,
         resume: bool,
     ) -> Result<RequestView, StoreError> {
+        self.claim_request_for(id, request, holder, ttl, resume, None)
+    }
+
+    /// The same, by an executor that runs for the connection `offered`, or for none. A request
+    /// is taken by the executor of the connection it was made for and by no other
+    /// (`wrong-connection`).
+    pub fn claim_request_for(
+        &self,
+        id: &WorkId,
+        request: &str,
+        holder: &str,
+        ttl: Option<u64>,
+        resume: bool,
+        offered: Option<&ConnectionRef>,
+    ) -> Result<RequestView, StoreError> {
         let ttl = checked_lease(ttl)?;
         checked_holder(holder)?;
         self.change_request(id, request, |current, now| {
-            current.claim(holder, ttl, resume, now)
+            current.claim_for(holder, ttl, resume, offered, now)
         })
     }
 

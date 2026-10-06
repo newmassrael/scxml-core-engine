@@ -27,6 +27,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::connection::{AdapterKind, ConnectionId, Limits};
 use crate::revision::Revision;
 
 /// The lease a claim is given when it does not ask for another, in seconds.
@@ -111,6 +112,43 @@ pub struct Inputs {
     pub answers: Option<Revision>,
 }
 
+/// A connection as an executor or a screen names it: which one, and the revision it has seen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionRef {
+    pub id: ConnectionId,
+    pub revision: Revision,
+}
+
+/// The connection a request was made for, as it was when the request was made.
+///
+/// The core copies it from the person's settings and not the screen: a request that carried
+/// whatever its caller said would carry whatever its caller chose. It keeps what a run needs
+/// to be the same run (which client, which model, what it may spend) and nothing that says
+/// where or as whom (a server's address, what the person calls it, the path of a program):
+/// the works folder is shared, and an executor that needs those reads the connection at this
+/// revision, from the settings of whoever is running it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pin {
+    pub connection: ConnectionId,
+    pub revision: Revision,
+    pub adapter: AdapterKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Limits::is_empty")]
+    pub limits: Limits,
+}
+
+impl Pin {
+    /// The connection this pins, as an executor offers it.
+    pub fn reference(&self) -> ConnectionRef {
+        ConnectionRef {
+            id: self.connection.clone(),
+            revision: self.revision.clone(),
+        }
+    }
+}
+
 /// An executor's claim on a request, and the moment it runs out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lease {
@@ -137,6 +175,13 @@ pub enum Refusal {
     },
     /// The request was let go of; it is taken again only by a caller that says it resumes.
     NotResuming,
+    /// The request is for another connection than the one the caller offers: a person who
+    /// chose one AI is not answered by another. A request with no connection is taken by a
+    /// caller that offers none.
+    WrongConnection {
+        pinned: Option<ConnectionRef>,
+        offered: Option<ConnectionRef>,
+    },
 }
 
 /// What an executor has written for the request so far, by revision. The texts are kept
@@ -210,6 +255,11 @@ pub struct Request {
     /// The bundle a completed request published; `None` for every request that did not.
     #[serde(default)]
     pub outcome: Option<Outcome>,
+    /// The connection it was made for. `None` for a request nobody chose a connection for (one
+    /// an AI client asks for through the authoring server), which an executor that offers no
+    /// connection takes; and for every request written before connections existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<Pin>,
 }
 
 /// Whether `seconds` is a lease a claim may ask for.
@@ -225,6 +275,7 @@ impl Request {
         key: String,
         origin: String,
         inputs: Inputs,
+        pin: Option<Pin>,
         now: &Moment,
     ) -> Self {
         Request {
@@ -241,6 +292,7 @@ impl Request {
             note: None,
             candidate: None,
             outcome: None,
+            pin,
         }
     }
 
@@ -277,6 +329,30 @@ impl Request {
         resume: bool,
         now: &Moment,
     ) -> Result<Request, Refusal> {
+        self.claim_for(holder, ttl, resume, None, now)
+    }
+
+    /// The same, by an executor that runs for the connection `offered`, or for none.
+    ///
+    /// A request is taken by the executor of the connection it was made for and by nobody
+    /// else: a request pinned to a connection is refused to a caller that offers another, or
+    /// none, and a request with none is refused to a caller that offers one. That is said
+    /// before anything about the request's state, because it is what the caller can act on.
+    pub fn claim_for(
+        &self,
+        holder: &str,
+        ttl: u64,
+        resume: bool,
+        offered: Option<&ConnectionRef>,
+        now: &Moment,
+    ) -> Result<Request, Refusal> {
+        let pinned = self.pin.as_ref().map(Pin::reference);
+        if pinned.as_ref() != offered {
+            return Err(Refusal::WrongConnection {
+                pinned,
+                offered: offered.cloned(),
+            });
+        }
         let attempt = match self.effective(now.epoch) {
             State::Queued => self.attempt + 1,
             State::Interrupted if resume => self.attempt + 1,
@@ -491,6 +567,7 @@ mod tests {
                 source: revision("text"),
                 answers: None,
             },
+            None,
             &at(T0),
         )
     }

@@ -146,7 +146,7 @@ pub struct Limits {
 }
 
 impl Limits {
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.turns.is_none() && self.seconds.is_none()
     }
 

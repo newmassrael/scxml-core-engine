@@ -50,6 +50,7 @@ const detail = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
   lease: { holder: "desktop", attempt: 1, granted_at: "2026-10-05T09:00:01Z", expires_at: "2026-10-05T09:01:01Z" },
   candidate: null,
   outcome: null,
+  pin: null,
   ended_at: null,
   note: null,
   ...over,

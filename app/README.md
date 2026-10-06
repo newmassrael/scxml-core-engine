@@ -505,6 +505,25 @@ credential), so the table is of routes, and it is a constant of the build: a per
 it, a release can switch a route off, and a route that is not in it is not used. The design that
 explains each row is in `claudedocs/spec-to-pseudocode-flow/gui-ai-model-login-design.md`.
 
+**A request is made for a connection.** `request_generation` may name one (`connection`: its id
+and the revision the screen read). The core, not the screen, copies from the person's settings
+what a run needs to be the same run (`pin`: which client, which model, what it may spend) and
+refuses as `moved` when the connection is no longer at that revision; a later change of the
+settings moves no request already made. It copies nothing that says where or as whom: no
+server address, no name the person gave it, no path of a program, because a works folder is
+shared and the executor that needs those reads the connection at the pinned revision from the
+settings of whoever runs it. The connection is not an input of the request's key: the same press
+sent again is the request it made, with the pin it made it with, even if the connection changed
+since.
+
+An executor takes a request by offering the connection it runs for (`claim_request` with
+`connection`), and a request is taken by the executor of its own connection and by no other
+(`wrong-connection`): a person who chose one AI is never answered by another. A request made
+for none (one an AI client asks for through the authoring server) is taken by an executor that
+offers none. This is a check against an executor that is honest and mistaken (an old build, a
+second adapter), not against a process that lies about what it runs for: the holder's name is a
+string the caller chooses.
+
 ### The model, and where it stands
 
 A model is saved for a text revision (`written_for`), so "is this model about the

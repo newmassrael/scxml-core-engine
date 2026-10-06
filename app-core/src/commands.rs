@@ -28,7 +28,7 @@ use crate::connection::{Connection, ConnectionId};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
-use crate::requests::{Inputs, Lease};
+use crate::requests::{ConnectionRef, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
@@ -440,6 +440,10 @@ struct RequestGeneration {
     /// Replace the open request of the work, if there is one.
     #[serde(default)]
     supersede: bool,
+    /// The connection it is made for, at the revision the screen read. The core copies what a
+    /// run needs of it from the settings; the screen does not say what that is.
+    #[serde(default)]
+    connection: Option<ConnectionRef>,
 }
 
 #[derive(Deserialize)]
@@ -460,6 +464,10 @@ struct ClaimRequest {
     /// Take a request an executor let go of, as its next attempt.
     #[serde(default)]
     resume: bool,
+    /// The connection the executor runs for. A request is taken by the executor of the
+    /// connection it was made for, and one that was made for none by an executor that offers none.
+    #[serde(default)]
+    connection: Option<ConnectionRef>,
 }
 
 #[derive(Deserialize)]
@@ -589,6 +597,7 @@ fn request_json(work: &WorkId, view: &RequestView) -> Value {
         "lease": request.lease.as_ref().map(lease_json),
         "candidate": request.candidate,
         "outcome": request.outcome,
+        "pin": request.pin,
         "ended_at": request.ended_at,
         "note": request.note,
     })
@@ -1097,7 +1106,100 @@ pub fn call_in<C: Clock>(
     if SETTINGS_READ.contains(&name) || SETTINGS_WRITE.contains(&name) {
         return call_settings(context, name, args);
     }
+    if name == "request_generation" {
+        return request_generation(context, args);
+    }
     call_works(context.works, context.product, name, args)
+}
+
+/// Ask for a model, made for the connection the screen names, when it names one.
+///
+/// This is a command of the works that has to read the settings: the core copies what a run
+/// needs of the connection (see [`Pin`]) and the screen does not say what that is, so a caller
+/// cannot make a request that carries more than the person's own settings hold.
+fn request_generation<C: Clock>(
+    context: &Context<'_, C>,
+    args: Value,
+) -> Result<Value, CommandError> {
+    let RequestGeneration {
+        id,
+        key,
+        origin,
+        expect,
+        supersede,
+        connection,
+    } = arguments(args)?;
+    let id = work_id(&id)?;
+    // A press sent again is the request it made, whatever has become of the connection since:
+    // the connection is not an input of the key, so it is not looked at when the key is known.
+    let repeated = context
+        .works
+        .list_requests(&id)?
+        .iter()
+        .any(|view| view.request.key == key);
+    let pin = match (&connection, repeated) {
+        (Some(wanted), false) => Some(pin_for(context.connections, wanted)?),
+        _ => None,
+    };
+    let made = context.works.register_request_for(
+        &id,
+        Registration {
+            key: &key,
+            origin: &origin,
+            expect: Inputs {
+                source: expect.source,
+                answers: expect.answers,
+            },
+            supersede,
+        },
+        pin,
+    )?;
+    let view = RequestView {
+        request: made.request,
+        state: made.state,
+    };
+    Ok(json!({ "request": request_json(&id, &view), "created": made.created }))
+}
+
+/// What the core copies of the connection a request is made for, from the settings and not from
+/// the caller. Refused as `moved` when the connection is no longer at the revision the caller
+/// read: a person who pressed the button on one state of it is not answered under another.
+fn pin_for(
+    connections: Option<&ConnectionStore>,
+    wanted: &ConnectionRef,
+) -> Result<Pin, CommandError> {
+    let Some(connections) = connections else {
+        return Err(CommandError {
+            kind: "no-settings".to_string(),
+            message:
+                "a request for a connection needs a settings folder, and this entrance has none"
+                    .to_string(),
+            detail: Value::Null,
+        });
+    };
+    let Some(current) = connections.read(&wanted.id, None)? else {
+        return Err(CommandError::from(StoreError::NotFound {
+            what: format!("connection `{}`", wanted.id),
+        }));
+    };
+    if current.revision != wanted.revision {
+        return Err(CommandError::from(StoreError::refused(
+            "moved",
+            "the connection was changed after it was read, so nothing was registered; read it again",
+            json!({
+                "moved": ["connection"],
+                "current": { "connection": { "id": wanted.id, "revision": current.revision } },
+            }),
+        )));
+    }
+    let connection = current.connection;
+    Ok(Pin {
+        connection: connection.id,
+        revision: current.revision,
+        adapter: connection.adapter,
+        model: connection.model,
+        limits: connection.limits,
+    })
 }
 
 #[derive(Deserialize)]
@@ -1575,33 +1677,6 @@ fn call_works<C: Clock>(
             let OneWork { id } = arguments(args)?;
             answer(&store.read_work_heads(&work_id(&id)?)?)
         }
-        "request_generation" => {
-            let RequestGeneration {
-                id,
-                key,
-                origin,
-                expect,
-                supersede,
-            } = arguments(args)?;
-            let id = work_id(&id)?;
-            let made = store.register_request(
-                &id,
-                Registration {
-                    key: &key,
-                    origin: &origin,
-                    expect: Inputs {
-                        source: expect.source,
-                        answers: expect.answers,
-                    },
-                    supersede,
-                },
-            )?;
-            let view = RequestView {
-                request: made.request,
-                state: made.state,
-            };
-            Ok(json!({ "request": request_json(&id, &view), "created": made.created }))
-        }
         "read_request" => {
             let OneRequest { id, request } = arguments(args)?;
             let id = work_id(&id)?;
@@ -1631,9 +1706,17 @@ fn call_works<C: Clock>(
                 holder,
                 ttl_seconds,
                 resume,
+                connection,
             } = arguments(args)?;
             let id = work_id(&id)?;
-            let view = store.claim_request(&id, &request, &holder, ttl_seconds, resume)?;
+            let view = store.claim_request_for(
+                &id,
+                &request,
+                &holder,
+                ttl_seconds,
+                resume,
+                connection.as_ref(),
+            )?;
             Ok(json!({ "request": request_json(&id, &view) }))
         }
         "heartbeat_request" => {

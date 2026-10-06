@@ -585,6 +585,18 @@ describe("the replies the core gives", () => {
     expect(parseDefaultConnection(replies.answers["set_default_connection"])).toBe("main");
   });
 
+  it("carry the connection a request was made for, and refuse an executor it is not for", () => {
+    const pinned = parseRegisteredRequest(replies.answers["request_generation_pinned"]).request;
+    expect(pinned.pin).toMatchObject({ connection: "main", adapter: "claude-code", model: "sonnet" });
+    expect(pinned.pin?.revision).toMatch(/^[0-9a-f]{64}$/);
+    // A request nobody chose a connection for says so, in a field that is there.
+    expect(parseRegisteredRequest(replies.answers["request_generation"]).request.pin).toBeNull();
+    const wrong = asCommandError(replies.refusals["wrong-connection"]);
+    expect(wrong?.kind).toBe("wrong-connection");
+    expect(wrong?.detail).toMatchObject({ pinned: { id: "main" }, offered: null });
+    expect(asCommandError(replies.refusals["request-connection-moved"])?.kind).toBe("moved");
+  });
+
   it("carry the decision each way of signing in gets", () => {
     const policy = parseAuthPolicy(replies.answers["read_auth_policy"]);
     const decisionOf = (route: string) => policy.routes.find((r) => r.route === route)?.decision;
