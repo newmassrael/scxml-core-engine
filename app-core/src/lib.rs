@@ -44,6 +44,7 @@ pub mod claude_code;
 pub mod claude_status;
 mod client_run;
 pub mod clock;
+pub mod codex_environment;
 pub mod commands;
 pub mod connection;
 pub mod directory;
