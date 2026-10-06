@@ -56,6 +56,13 @@
     <transition event="to_note" type="internal">
       <assign location="note" expr="last.label"/>
     </transition>
+    <!-- A sensor of 200 or more takes the payload whole, into the record and the list
+         at once: the string field is held to the bound as it is when it is written
+         alone, so a payload whose label is past it leaves both as they were. -->
+    <transition event="labelled.taken" cond="_event.data.sensor &gt;= 200" type="internal">
+      <assign location="last" expr="_event.data"/>
+      <sce:append target="labels" expr="_event.data"/>
+    </transition>
     <transition event="labelled.taken" type="internal">
       <assign location="last.label" expr="_event.data.label"/>
       <assign location="last.sensor" expr="_event.data.sensor"/>

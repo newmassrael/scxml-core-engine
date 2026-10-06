@@ -14,6 +14,8 @@
 #
 #   a saved record string is read back unbounded;
 #   a record's string field is not among the strings an `<assign>` is held to;
+#   a payload taken whole into a record (`<assign location="last" expr="_event.data"/>`)
+#     is not held to the bound, which a transition on `sensor >= 200` of the fixture reads;
 #   a saved string past the bound is read back (the bound is not enforced).
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
@@ -37,6 +39,12 @@ mutation_case "a record's string field is not held to its bound by an assignment
 edit("sce-build/src/forge/static_lowering.rs",
      "        .chain(variables.iter().flat_map(|v| {",
      "        .chain(variables.iter().take(0).flat_map(|v| {")
+PY
+
+mutation_case "a payload taken whole into a record is not held to its string bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::String, Some(bound)) => {\n                bounded = true;",
+     "            (SceType::String, Some(bound)) if false => {\n                bounded = true;")
 PY
 
 mutation_case "a saved string past the bound is read back" <<'PY'

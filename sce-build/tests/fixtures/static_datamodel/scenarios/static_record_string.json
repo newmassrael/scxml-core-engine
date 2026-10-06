@@ -60,6 +60,18 @@
       "event": "keep", "expect": { "variables": { "labels": [ { "sensor": 9, "label": "12345678" }, { "sensor": 9, "label": "a" }, { "sensor": 9, "label": "a" } ], "errors": 4 } } },
 
     { "note": "emptied",
-      "event": "forget", "expect": { "variables": { "labels": [], "errors": 4 } } }
+      "event": "forget", "expect": { "variables": { "labels": [], "errors": 4 } } },
+
+    { "note": "a sensor of 200 or more takes the payload whole: the record and the list both hold it",
+      "event": "labelled.taken", "data": { "sensor": 200, "label": "whole" },
+      "expect": { "variables": { "last": { "sensor": 200, "label": "whole" }, "labels": [ { "sensor": 200, "label": "whole" } ], "errors": 4 } } },
+
+    { "note": "nine bytes do not fit a record taken whole: both are left as they were and error.execution is raised",
+      "event": "labelled.taken", "data": { "sensor": 201, "label": "123456789" },
+      "expect": { "variables": { "last": { "sensor": 200, "label": "whole" }, "labels": [ { "sensor": 200, "label": "whole" } ], "errors": 5 } } },
+
+    { "note": "seven bytes in three characters fit, taken whole",
+      "event": "labelled.taken", "data": { "sensor": 202, "label": "é€é" },
+      "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "labels": [ { "sensor": 200, "label": "whole" }, { "sensor": 202, "label": "é€é" } ], "errors": 5 } } }
   ]
 }

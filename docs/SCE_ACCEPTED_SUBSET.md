@@ -3612,9 +3612,11 @@ the record is declared, as `scxml/static-datamodel-rule`, by every backend, and 
 default stands in for it. The field starts at a string literal of at most that many
 UTF-8 bytes (`<sce:set name="label" expr="'a'"/>`), since the machine is built with
 no error to raise. A value written to it past the bound — an `<assign
-location="last.label">` of a literal, of a string variable or of a payload field —
-fails as any assignment does: nothing is written, `error.execution` is raised and
-the block ends (§scxml-4.9), so the record is left as it was; a saved state that
+location="last.label">` of a literal, of a string variable or of a payload field, or
+a payload taken whole into the record (`<assign location="last" expr="_event.data"/>`,
+`<sce:append target="labels" expr="_event.data"/>`) — fails as any assignment does:
+nothing is written, `error.execution` is raised and the block ends (§scxml-4.9), so
+the record and the list are left as they were; a saved state that
 claims a longer one is refused when read, naming the field. The bound counts UTF-8
 bytes, not characters. `scenarios/static_record_string.json` holds this on every
 backend that has lowered the field.

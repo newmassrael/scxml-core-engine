@@ -5262,6 +5262,10 @@ fn renames<'a>(
 /// is read as `_event.data.<field>`, lowered like any expression into the type
 /// the record holds it in, and the record is made in one value — so what cannot
 /// be read leaves the variable as it was, and never half of a payload is written.
+///
+/// A string field is held to the `sce:max-size` its schema declares, as it is when
+/// it is assigned alone: a payload whose text is past it does not fit the record,
+/// so the whole assignment fails and the record is left as it was.
 fn payload_record_value(
     machine: &str,
     alias: &str,
@@ -5271,6 +5275,7 @@ fn payload_record_value(
 ) -> Result<Receiving, GenerateError> {
     let ty = target.record_type(machine, alias);
     let mut values = Vec::with_capacity(schema.fields.len());
+    let mut bounded = false;
     for field in &schema.fields {
         let read = lower(
             &format!(
@@ -5287,11 +5292,18 @@ fn payload_record_value(
                 field.id
             )));
         }
-        values.push((target.record_field(&field.id), read.text));
+        let text = match (&field.sce_type, field.max_size) {
+            (SceType::String, Some(bound)) => {
+                bounded = true;
+                target.bounded_string(&read.text, bound)
+            }
+            _ => read.text,
+        };
+        values.push((target.record_field(&field.id), text));
     }
     Ok(Receiving {
         text: target.record_value(&ty, &values),
-        can_fail: false,
+        can_fail: bounded,
     })
 }
 

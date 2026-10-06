@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d752b968b894cd4e1e4666fe6c943077234997bb28438788aaff62bb183efe09
+// source-hash: 64fb223807f4c558ee24bbcd3b67b8ca6498504cd273de737c75cdc2b6d599ee
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -730,7 +730,10 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			}
 		}
 		if event == StaticRecordStringEventLabelledTaken {
-			{
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "_event.data.sensor >= 200" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.pendingPayloadTag == StaticRecordStringPayloadTagLabelledTaken && (p.pendingLabelledTakenPayload.sensor >= 200) {
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 7,
@@ -739,7 +742,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventKeep {
+		if event == StaticRecordStringEventLabelledTaken {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -749,7 +752,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventTally {
+		if event == StaticRecordStringEventKeep {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -759,7 +762,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventForget {
+		if event == StaticRecordStringEventTally {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -769,11 +772,21 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventErrorExecution {
+		if event == StaticRecordStringEventForget {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 11,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 12,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -868,7 +881,28 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 7:
-			//line static_record_string.scxml:59
+			//line static_record_string.scxml:62
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticRecordStringPayloadTagLabelledTaken {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticRecordStringLabelledRecord{sensor: p.pendingLabelledTakenPayload.sensor, label: scealgorithm.Bounded(&sceFailure, p.pendingLabelledTakenPayload.label, 8)}; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='last'>: an integer operation overflowed or failed")); return true }; p.vLast = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+	// SCE Accepted Subset §2.15: <sce:append target="labels">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vLabels) >= 3 { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vLabels, StaticRecordStringLabelledRecord{sensor: p.pendingLabelledTakenPayload.sensor, label: scealgorithm.Bounded(&sceFailure, p.pendingLabelledTakenPayload.label, 8)}); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<sce:append target='labels'>: an integer operation overflowed or failed")); return true }; p.vLabels = append(p.vLabels, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 8:
+			//line static_record_string.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordStringPayloadTagLabelledTaken {
@@ -885,8 +919,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLast.sensor = p.pendingLabelledTakenPayload.sensor
 
 			}()
-		case 8:
-			//line static_record_string.scxml:66
+		case 9:
+			//line static_record_string.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -897,8 +931,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 9:
-			//line static_record_string.scxml:69
+		case 10:
+			//line static_record_string.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -914,8 +948,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 10:
-			//line static_record_string.scxml:74
+		case 11:
+			//line static_record_string.scxml:81
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -924,8 +958,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLabels = p.vLabels[:0]
 
 			}()
-		case 11:
-			//line static_record_string.scxml:77
+		case 12:
+			//line static_record_string.scxml:84
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

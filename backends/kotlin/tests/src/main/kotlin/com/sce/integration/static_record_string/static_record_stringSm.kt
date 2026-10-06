@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d752b968b894cd4e1e4666fe6c943077234997bb28438788aaff62bb183efe09
+// source-hash: 64fb223807f4c558ee24bbcd3b67b8ca6498504cd273de737c75cdc2b6d599ee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_string.scxml
@@ -387,6 +387,15 @@ class StaticRecordStringStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 12, as the microstep reads it.
+        val transitionIdleAt12 = EnabledTransition<StaticRecordStringState, HistoryId>(
+            StaticRecordStringState.Idle,
+            emptyList(),
+            12,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -459,11 +468,12 @@ class StaticRecordStringStateMachine(
             event is StaticRecordStringEvent.LongNote -> transitionIdleAt4
             event is StaticRecordStringEvent.FromNote -> transitionIdleAt5
             event is StaticRecordStringEvent.ToNote -> transitionIdleAt6
-            event is StaticRecordStringEvent.Labelled.Taken -> transitionIdleAt7
-            event is StaticRecordStringEvent.Keep -> transitionIdleAt8
-            event is StaticRecordStringEvent.Tally -> transitionIdleAt9
-            event is StaticRecordStringEvent.Forget -> transitionIdleAt10
-            event is StaticRecordStringEvent.Error.Execution -> transitionIdleAt11
+            event is StaticRecordStringEvent.Labelled.Taken && pendingLabelledTakenPayload != null && (pendingLabelledTakenPayload!!.sensor >= 200.toUByte()) -> transitionIdleAt7
+            event is StaticRecordStringEvent.Labelled.Taken -> transitionIdleAt8
+            event is StaticRecordStringEvent.Keep -> transitionIdleAt9
+            event is StaticRecordStringEvent.Tally -> transitionIdleAt10
+            event is StaticRecordStringEvent.Forget -> transitionIdleAt11
+            event is StaticRecordStringEvent.Error.Execution -> transitionIdleAt12
             else -> null
         }
     }
@@ -545,7 +555,21 @@ class StaticRecordStringStateMachine(
             }
             }
             7 -> {
-                // SCE-MAP: static_record_string.scxml:59 :: idle :: _transition_7
+                // SCE-MAP: static_record_string.scxml:62 :: idle :: _transition_7
+                if (pendingLabelledTakenPayload == null) {
+                    return
+                }
+
+            if (try { last = StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { if (labels.size < 3) { labels = labels + (StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8))); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true } } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            8 -> {
+                // SCE-MAP: static_record_string.scxml:66 :: idle :: _transition_8
                 if (pendingLabelledTakenPayload == null) {
                     return
                 }
@@ -556,15 +580,15 @@ class StaticRecordStringStateMachine(
 
             last = last.copy(sensor = pendingLabelledTakenPayload!!.sensor)
             }
-            8 -> {
-                // SCE-MAP: static_record_string.scxml:66 :: idle :: _transition_8
+            9 -> {
+                // SCE-MAP: static_record_string.scxml:73 :: idle :: _transition_9
 
             if (if (labels.size < 3) { labels = labels + (last); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
-            9 -> {
-                // SCE-MAP: static_record_string.scxml:69 :: idle :: _transition_9
+            10 -> {
+                // SCE-MAP: static_record_string.scxml:76 :: idle :: _transition_10
 
 
             for (l in labels) {
@@ -574,13 +598,13 @@ class StaticRecordStringStateMachine(
             }
             }
             }
-            10 -> {
-                // SCE-MAP: static_record_string.scxml:74 :: idle :: _transition_10
+            11 -> {
+                // SCE-MAP: static_record_string.scxml:81 :: idle :: _transition_11
 
             labels = emptyList()
             }
-            11 -> {
-                // SCE-MAP: static_record_string.scxml:77 :: idle :: _transition_11
+            12 -> {
+                // SCE-MAP: static_record_string.scxml:84 :: idle :: _transition_12
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
