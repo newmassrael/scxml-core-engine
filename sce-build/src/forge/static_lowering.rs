@@ -3172,6 +3172,12 @@ impl StaticTarget for CppTarget {
     fn lowers_bytes(&self) -> bool {
         true
     }
+    // A record's `std::vector<uint8_t>` field is the same, in a struct that is
+    // handed to a host by value and held in a list the host is lent as a constant
+    // reference.
+    fn lowers_record_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }

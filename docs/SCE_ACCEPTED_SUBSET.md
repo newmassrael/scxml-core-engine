@@ -3677,7 +3677,7 @@ types, as the text of its bytes, one character to a byte, held to its bound by
 
 A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
 a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
-**Rust**, **Go** and **Python** so far (`scenarios/static_record_bytes.json`,
+**Rust**, **Go**, **Python** and **C++** so far (`scenarios/static_record_bytes.json`,
 `StaticTarget::lowers_record_bytes`);
 the other backends refuse a record with one by name until each holds it, in a variable
 and in a list of records alike. A transition on an event whose payload carries a `bytes`
@@ -3692,7 +3692,9 @@ the bound its schema declares. A Go record keeps its fields unexported and answe
 through a reader, which for a byte string is a copy; the machine replaces a slice and
 never writes into it, so a copy of a record shares it safely. A Python record is a frozen
 dataclass of immutable `bytes`, so a host is handed the value itself and two records of
-the same bytes are equal.
+the same bytes are equal. A C++ record holds a `std::vector<uint8_t>`, is handed to a host
+by value (a copy), and a list of records is lent as a constant reference, both asserted
+where the test is compiled.
 
 A Kotlin or Go machine never writes into its array
 and hands a host a copy of a published one, so the bound the machine keeps cannot be

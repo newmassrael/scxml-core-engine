@@ -1,0 +1,36 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_record_bytes_field_is_held_within_its_bound_ctest.cases`.
+#
+# `static_record_bytes` writes the field from a literal and from a bytes variable and
+# expects a value past eight bytes to leave the record as it was and `errors` to count
+# it. A C++ machine is not saved, so there is no restore to refuse here; the bound is the
+# assignment's. The test also asserts, where it is compiled, that a published record is
+# handed out by value and a published list of records is lent as a constant reference.
+# The mutants take one decision away each:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a published list of records is handed out as a copy and not lent as a constant
+#     reference.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY
+
+mutation_case "a published list of records is handed out as a copy" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        Some(format!(\"const std::vector<{record}>&\"))",
+     "        None")
+PY

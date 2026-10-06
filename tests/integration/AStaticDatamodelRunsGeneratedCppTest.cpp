@@ -51,6 +51,7 @@
 #include "static_payload_sm.h"
 #include "static_real32_sm.h"
 #include "static_real_sm.h"
+#include "static_record_bytes_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
 #include "static_record_list_sm.h"
@@ -235,6 +236,21 @@ template <typename Days> json daysJson(const Days &days) {
     json listed = json::array();
     for (const auto &day : days) {
         listed.push_back(dayJson(day));
+    }
+    return listed;
+}
+
+/// A `record:Framed` value as a scenario states it: its fields by the schema's ids,
+/// the byte string as its byte-exact Latin-1 text.
+template <typename Framed> json framedJson(const Framed &framed) {
+    return json{{"sensor", framed.sensor}, {"frame", latin1Text(framed.frame)}};
+}
+
+/// A list of such values, in order.
+template <typename Frameds> json framedsJson(const Frameds &frameds) {
+    json listed = json::array();
+    for (const auto &framed : frameds) {
+        listed.push_back(framedJson(framed));
     }
     return listed;
 }
@@ -483,6 +499,35 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsASingleFieldAsTheSingleNe
     });
     replay("static_record_real32", driver);
 }
+
+// A record's bytes field is held to the bytes its schema declares: an assignment
+// past the bound — from a literal or a bytes variable — writes nothing, raises
+// `error.execution` and ends its block, and a list of such records holds copies with
+// their bytes. A scenario states a byte string as its byte-exact Latin-1 text.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsABytesFieldWithinTheBoundItsSchemaDeclares) {
+    using Machine = G::static_record_bytes::static_record_bytes;
+    Driver<Machine> driver({
+        {"last", [](const Machine &m) { return framedJson(m.last()); }},
+        {"spare", [](const Machine &m) { return latin1Text(m.spare()); }},
+        {"frames", [](const Machine &m) { return framedsJson(m.frames()); }},
+        {"size", [](const Machine &m) { return json(m.size()); }},
+        {"matches", [](const Machine &m) { return json(m.matches()); }},
+        {"misses", [](const Machine &m) { return json(m.misses()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_record_bytes", driver);
+}
+
+// A host is handed a record by value, and the records of a list as a constant
+// reference to the machine's own vector: it can write into the first only into its
+// own copy, and into the second not at all. Checked where it is compiled, since a
+// reader that returned a mutable reference would be another type.
+static_assert(std::is_same_v<decltype(std::declval<const G::static_record_bytes::static_record_bytes &>().last()),
+                             G::static_record_bytes::StaticRecordBytesFramedRecord>,
+              "a published record is handed out by value");
+static_assert(std::is_same_v<decltype(std::declval<const G::static_record_bytes::static_record_bytes &>().frames()),
+                             const std::vector<G::static_record_bytes::StaticRecordBytesFramedRecord> &>,
+              "a published list of records is lent as a constant reference");
 
 // A record's string field is held to the UTF-8 bytes its schema declares: an
 // assignment past the bound — from a literal, a string variable or a payload —
