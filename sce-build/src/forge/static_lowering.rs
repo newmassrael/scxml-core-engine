@@ -4300,6 +4300,11 @@ impl StaticTarget for PythonTarget {
     fn lowers_bytes(&self) -> bool {
         true
     }
+    // A record's `bytes` field is the same, in a frozen dataclass that compares
+    // by the bytes it holds and is replaced, not written into, to change a field.
+    fn lowers_record_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }

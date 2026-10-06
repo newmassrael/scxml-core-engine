@@ -1,0 +1,27 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the Python backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_record_bytes_field_is_held_within_its_bound_python.cases`.
+#
+# `static_record_bytes` writes the field from a literal and from a bytes variable and
+# expects a value past eight bytes to leave the record as it was and `errors` to count
+# it. A Python machine is not saved, so there is no restore to refuse here; the bound is
+# the assignment's. The mutant takes it away:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY

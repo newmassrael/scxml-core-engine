@@ -587,7 +587,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         lang: "python",
         name: "Python",
         variable: true,
-        record: false,
+        record: true,
         payload: false,
     },
     BytesHeld {

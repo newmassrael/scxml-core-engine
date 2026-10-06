@@ -31,6 +31,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 _HERE = Path(__file__).resolve().parent
 # The tests directory, so this package is importable by the name it has there.
 sys.path.insert(0, str(_HERE.parents[1]))
@@ -254,6 +256,28 @@ def test_a_record_holds_a_real_field_to_the_bit() -> None:
 # single nearest it, and every operation on the field is a single's.
 def test_a_record_holds_a_single_field_as_the_single_nearest_the_payload() -> None:
     replay("static_record_real32")
+
+
+# A record's bytes field is held to the bytes its schema declares: an assignment
+# past the bound — from a literal or a bytes variable — writes nothing, raises
+# error.execution and ends its block, and a list of such records holds copies with
+# their bytes. A scenario states a byte string as its byte-exact Latin-1 text.
+def test_a_record_holds_a_bytes_field_within_the_bound_its_schema_declares() -> None:
+    replay("static_record_bytes")
+
+
+# A record is a frozen dataclass of immutable `bytes`, so what a host is handed is the
+# value itself and cannot be written into, and two records of the same bytes are equal.
+def test_a_record_of_the_same_bytes_is_equal_and_cannot_be_written_into() -> None:
+    module = importlib.import_module("integration.static_datamodel.static_record_bytes_sm")
+    engine = module.create_engine()
+    engine.initialize()
+    last = getattr(engine.policy, module.SCE_HOST_NAMES["readers"]["last"])()
+    assert isinstance(last.frame, bytes)
+    assert last == dataclasses.replace(last, frame=bytes(last.frame))
+    assert last != dataclasses.replace(last, frame=b"zz")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        last.frame = b"zz"  # type: ignore[misc]
 
 
 # A record's string field is held to the UTF-8 bytes its schema declares: an
