@@ -40,7 +40,7 @@ use crate::auth_policy::Policy;
 use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::client_run::capture;
 use crate::clock::Clock;
-use crate::codex::{Codex, CodexConfig, CodexLaunch};
+use crate::codex::{Codex, CodexConfig, CodexLaunch, HOME_DIR as CODEX_HOME_DIR};
 use crate::codex_support::Support;
 use crate::connection::AuthSource;
 use crate::directory::{ClaudeLaunch, Connections};
@@ -58,9 +58,6 @@ const EXECUTOR_ENV: &str = "SCE_EXECUTOR";
 pub(crate) const CLAUDE_ENV: &str = "SCE_CLAUDE";
 pub(crate) const CODEX_ENV: &str = "SCE_CODEX";
 
-/// The folder, in the settings folder, that is the application's own home for Codex: where a
-/// connection that chose the application's stored login keeps it, apart from the person's.
-const CODEX_HOME_DIR: &str = "codex-home";
 const AUTHOR_ENV: &str = "SCE_AUTHOR_MCP";
 const WORK_ENV: &str = "SCE_WORK";
 const MODEL_ENV: &str = "SCE_CLAUDE_MODEL";

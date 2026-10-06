@@ -64,6 +64,12 @@ pub const AUTHOR_TOOLS: [&str; 9] = [
 /// How long a program that may be Codex is given to say its version or its features.
 const SAY: Duration = Duration::from_secs(15);
 
+/// The folder, in the settings folder, that is the application's own home for Codex: where a
+/// connection that chose the application's stored login keeps it, apart from the person's. Said
+/// once, because the host that runs Codex and the screen that asks who is signed in must name the
+/// same folder.
+pub const HOME_DIR: &str = "codex-home";
+
 /// How a run of the client is bounded.
 #[derive(Debug, Clone)]
 pub struct CodexConfig {
@@ -207,38 +213,6 @@ impl Codex {
         ]
     }
 
-    /// The features the installed Codex has switched on, asked now.
-    fn enabled(&self) -> Result<Vec<String>, String> {
-        let mut command = Command::new(&self.binary);
-        command.args(["features", "list"]);
-        let said =
-            capture(command, SAY).map_err(|e| format!("Codex could not list its features: {e}"))?;
-        if !said.status.success() {
-            return Err(format!(
-                "Codex could not list its features: {}",
-                tail(said.stderr.trim(), 500)
-            ));
-        }
-        Ok(enabled_features(&said.stdout))
-    }
-
-    /// The environment the client is started in: the process's own, less the credentials that
-    /// are not the one chosen, with the home set when the connection has one of its own.
-    fn run_environment(&self) -> Result<Run, String> {
-        let environment = environment_for(self.auth, &self.app_home, &self.environment)
-            .map_err(|e| e.to_string())?;
-        let kept = self
-            .environment
-            .iter()
-            .filter(|(name, _)| !environment.remove.contains(name))
-            .cloned()
-            .collect();
-        Ok(Run {
-            kept,
-            home: environment.home,
-        })
-    }
-
     /// Everything that must be true before the client is started, asked in one place so that a run
     /// and the reason a request waits are the same judgement: it is Codex, a version a person
     /// verified, with nothing switched on that nobody looked at, and a credential to give it.
@@ -248,12 +222,8 @@ impl Codex {
             .version
             .as_deref()
             .ok_or("the program did not say it is Codex, so it is not run")?;
-        let instructions = self.instructions().unwrap_or_default();
-        let enabled = self.enabled()?;
-        self.support
-            .check(std::env::consts::OS, version, &instructions, &enabled)
-            .map_err(|e| e.to_string())?;
-        self.run_environment()
+        support_verdict(&self.binary, version, &self.support)?;
+        run_environment(self.auth, &self.app_home, &self.environment)
     }
 
     /// Why this Codex cannot be run now, or `None` when it can: for the request that waits.
@@ -265,20 +235,7 @@ impl Codex {
     /// is started (the same credentials, the same home), or why it could not be asked. `None` is
     /// nobody.
     pub fn observe_login(&self) -> Result<Option<Observed>, String> {
-        let run = self.run_environment()?;
-        let mut command = Command::new(&self.binary);
-        command.args(["login", "status"]).env_clear().envs(run.kept);
-        if let Some(home) = &run.home {
-            command.env("CODEX_HOME", home);
-        }
-        let said = capture(command, SAY)
-            .map_err(|_| "Codex could not be asked who is signed in".to_string())?;
-        // It says so on either stream, and fails when nobody is: what it printed is read, not how
-        // it ended.
-        Ok(observed_from_login_status(&format!(
-            "{}\n{}",
-            said.stdout, said.stderr
-        )))
+        login_of(&self.binary, self.auth, &self.app_home, &self.environment)
     }
 }
 
@@ -288,6 +245,99 @@ struct Run {
     kept: Vec<(String, String)>,
     /// The home to give the client, when it is not the one it would use itself.
     home: Option<PathBuf>,
+}
+
+/// The environment a client is started in for a connection that chose `auth`: `environment` (the
+/// process's own) less the credentials that are not the one chosen, with the home set when the
+/// connection has one of its own.
+fn run_environment(
+    auth: AuthSource,
+    app_home: &Path,
+    environment: &[(String, String)],
+) -> Result<Run, String> {
+    let policy = environment_for(auth, app_home, environment).map_err(|e| e.to_string())?;
+    let kept = environment
+        .iter()
+        .filter(|(name, _)| !policy.remove.contains(name))
+        .cloned()
+        .collect();
+    Ok(Run {
+        kept,
+        home: policy.home,
+    })
+}
+
+/// Who is signed in to `binary` for a connection that chose `auth`, asked the way a run is
+/// started (the same credentials, the same home), or why it could not be asked. `None` is nobody.
+/// Needs no authoring server: a screen asks it too.
+pub fn login_of(
+    binary: &Path,
+    auth: AuthSource,
+    app_home: &Path,
+    environment: &[(String, String)],
+) -> Result<Option<Observed>, String> {
+    let run = run_environment(auth, app_home, environment)?;
+    let mut command = Command::new(binary);
+    command.args(["login", "status"]).env_clear().envs(run.kept);
+    if let Some(home) = &run.home {
+        command.env("CODEX_HOME", home);
+    }
+    let said = capture(command, SAY)
+        .map_err(|_| "Codex could not be asked who is signed in".to_string())?;
+    // It says so on either stream, and fails when nobody is: what it printed is read, not how it
+    // ended.
+    Ok(observed_from_login_status(&format!(
+        "{}\n{}",
+        said.stdout, said.stderr
+    )))
+}
+
+/// The features `binary` has switched on, asked now.
+pub fn features_on(binary: &Path) -> Result<Vec<String>, String> {
+    let mut command = Command::new(binary);
+    command.args(["features", "list"]);
+    let said =
+        capture(command, SAY).map_err(|e| format!("Codex could not list its features: {e}"))?;
+    if !said.status.success() {
+        return Err(format!(
+            "Codex could not list its features: {}",
+            tail(said.stderr.trim(), 500)
+        ));
+    }
+    Ok(enabled_features(&said.stdout))
+}
+
+/// Whether this build may run `binary`, which says it is Codex `version`: a version a person
+/// verified against the instructions this build gives it, with nothing switched on that nobody
+/// looked at. The reason is a sentence that names no path. Needs no authoring server: a screen
+/// asks it too.
+pub fn support_verdict(binary: &Path, version: &str, support: &Support) -> Result<(), String> {
+    let enabled = features_on(binary)?;
+    support
+        .check(
+            std::env::consts::OS,
+            version,
+            &instructions_of(support),
+            &enabled,
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// The version of the working instructions this build gives Codex (`codex/<digest>`): named by
+/// what the client is told, what it must answer in, which tools it may use, and what is switched
+/// off and reviewed. A change to any of them is another version, and another entry on the list of
+/// what a person verified, with no one to remember to say so.
+pub fn instructions_of(support: &Support) -> String {
+    let material = format!(
+        "{SYSTEM_PROMPT}\n{}\n{}\n{}\n{}\n{}",
+        prompt(&blank_job()),
+        schema(),
+        AUTHOR_TOOLS.join(","),
+        support.disabled_features().join(","),
+        support.reviewed_features().join(","),
+    );
+    let digest = Revision::of(material.as_bytes()).to_string();
+    format!("codex/{}", &digest[..12])
 }
 
 /// What `codex login status` said, as the kind of credential in use, or `None` for nobody. A way it
@@ -326,7 +376,7 @@ fn toml_string(text: &str) -> String {
 }
 
 /// What `binary --version` says when it says it is Codex (`codex-cli 0.159.0`): the version.
-fn version_of(binary: &Path) -> Option<String> {
+pub fn version_of(binary: &Path) -> Option<String> {
     let mut command = Command::new(binary);
     command.arg("--version");
     let said = capture(command, SAY).ok()?;
@@ -349,20 +399,8 @@ impl Generator for Codex {
         self.version.clone()
     }
 
-    /// Named by what the client is told, what it must answer in, which tools it may use, and what
-    /// is switched off and reviewed. A change to any of them is another version, and another
-    /// entry on the list of what a person verified, with no one to remember to say so.
     fn instructions(&self) -> Option<String> {
-        let material = format!(
-            "{SYSTEM_PROMPT}\n{}\n{}\n{}\n{}\n{}",
-            prompt(&blank_job()),
-            schema(),
-            AUTHOR_TOOLS.join(","),
-            self.support.disabled_features().join(","),
-            self.support.reviewed_features().join(","),
-        );
-        let digest = Revision::of(material.as_bytes()).to_string();
-        Some(format!("codex/{}", &digest[..12]))
+        Some(instructions_of(&self.support))
     }
 
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
