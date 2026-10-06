@@ -46,8 +46,8 @@ export interface CodexSectionEnv {
   /** The connections as last read. */
   readonly listing: () => ConnectionListing | null;
   readonly busy: () => boolean;
-  /** The person pressed a save. */
-  readonly save: () => void;
+  /** The person pressed a save; `makeDefault` is whether it also makes this the default connection. */
+  readonly save: (makeDefault: boolean) => void;
   /** Draw again: what is chosen changes what is shown. */
   readonly redraw: () => void;
   /** The button that asks again, with the words `label`. */
@@ -330,7 +330,7 @@ export class CodexSection {
       this.env.described.writes_settings
         ? h(
             "button",
-            { id: "ai-save-program", type: "button", disabled: this.env.busy(), onclick: () => this.env.save() },
+            { id: "ai-save-program", type: "button", disabled: this.env.busy(), onclick: () => this.env.save(false) },
             t("aiUseProgram"),
           )
         : null,
@@ -348,7 +348,7 @@ export class CodexSection {
             { class: "choices" },
             h(
               "button",
-              { id: "ai-save", type: "button", disabled: this.env.busy(), onclick: () => this.env.save() },
+              { id: "ai-save", type: "button", disabled: this.env.busy(), onclick: () => this.env.save(true) },
               t(this.env.busy() ? "aiSaving" : "aiSave"),
             ),
             this.env.recheck("aiRecheck"),

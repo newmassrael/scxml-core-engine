@@ -1099,3 +1099,68 @@ describe("saving a connection to Codex", () => {
     expect(r.core.asked("set_default_connection")).toEqual([]);
   });
 });
+
+// ---- keeping a program is not choosing the AI ------------------------------------------------
+
+describe("keeping the program a connection runs", () => {
+  const KEPT_CLAUDE: ConnectionListing = {
+    connections: [{ connection: connection("opus"), revision: REVISION_1 }],
+    unreadable: [],
+    default: CLAUDE_CONNECTION_ID,
+  };
+
+  it("does not make an unverified Codex the default: every later request would wait for it", async () => {
+    // A working Claude Code is the default, and the Codex that is found is a version this build did not verify.
+    const r = await opened({
+      listing: KEPT_CLAUDE,
+      codex: codexStatusOf({ support: { state: "unverified", reason: "this version has not been verified" } }),
+    });
+    await chooseCodex(r);
+    choose(r.root, "#ai-codex-program", OTHER_CODEX);
+
+    click(r.root, "#ai-save-program");
+    await settle();
+
+    // The program is kept, as the connection to Codex...
+    const [saved] = r.core.asked("save_connection") as { connection: Connection }[];
+    expect(saved?.connection.id).toBe(CODEX_CONNECTION_ID);
+    expect(saved?.connection.executable).toBe(OTHER_CODEX);
+    // ...and the default is the one it was: nothing asked the core to change it.
+    expect(r.core.asked("set_default_connection")).toEqual([]);
+    expect(r.core.listing.default).toBe(CLAUDE_CONNECTION_ID);
+    expect(r.settings.connectionForRequest()?.id).toBe(CLAUDE_CONNECTION_ID);
+    expect(r.root.textContent).toContain("not made the default");
+  });
+
+  it("does not make Claude Code the default when nobody is signed in to it", async () => {
+    const r = await opened({ listing: KEPT_CODEX });
+    r.core.status = { ...statusOf({ state: "signed-out" }) };
+    click(r.root, "#ai-kind-claude-code");
+    await settle();
+    choose(r.root, "#ai-program", OTHER_PROGRAM);
+
+    click(r.root, "#ai-save-program");
+    await settle();
+
+    expect((r.core.asked("save_connection")[0] as { connection: Connection }).connection.id).toBe(
+      CLAUDE_CONNECTION_ID,
+    );
+    expect(r.core.asked("set_default_connection")).toEqual([]);
+    expect(r.core.listing.default).toBe(CODEX_CONNECTION_ID);
+    expect(r.root.textContent).toContain("not made the default");
+  });
+
+  it("leaves the choice of the default to the save that is offered only when a request would run", async () => {
+    const r = await opened({ listing: KEPT_CLAUDE, codex: codexStatusOf() });
+    await chooseCodex(r);
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.asked("set_default_connection")).toEqual([
+      { id: CODEX_CONNECTION_ID, expect: CLAUDE_CONNECTION_ID },
+    ]);
+    expect(r.core.listing.default).toBe(CODEX_CONNECTION_ID);
+    expect(r.root.textContent).toContain("from the next generation");
+  });
+});

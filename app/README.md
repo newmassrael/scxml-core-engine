@@ -605,8 +605,13 @@ do not overwrite each other unseen. Which Claude Code the connection runs is cho
 programs `find_clients` listed (the application's own choice is the first): the one that answered
 is shown with where it is, a program the connection names that is not found now stays in the list
 and is said to be gone, a save of the model keeps the program the connection already names, and
-where nobody is signed in to the program that answered a button keeps another one at once. The
-status is asked again after a save, of the program that is named now. The browser shell only
+where nobody is signed in to the program that answered a button keeps another one at once. **That
+button keeps the program and does not make the connection the default**: the default is the
+person's word for which AI a request is made for, and one that cannot run would leave every later
+request waiting (a working default is not replaced by a Codex this build did not verify because the
+person chose another program for it). Only the save that is offered when a request made for the
+connection would run makes it the default. The status is asked again after a save, of the program
+that is named now. The browser shell only
 shows what the desktop saved: it may not start a program or change a setting.
 
 **The panel is for one client at a time, Claude Code or Codex.** A choice of the two is at its top

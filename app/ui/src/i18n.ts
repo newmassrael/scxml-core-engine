@@ -280,6 +280,8 @@ const en = {
   aiSave: "Save as the default connection",
   aiSaving: "Saving...",
   aiSaved: "Saved. It applies from the next generation.",
+  aiSavedNotDefault:
+    "Saved. This connection was not made the default: save it as the default once a request made for it would run.",
   aiConflict:
     "Another window changed this connection first. What is kept now is shown; check it and save again.",
   aiSaveFailed: "The connection was not saved: {detail}",
@@ -630,6 +632,8 @@ const ko: Record<Key, string> = {
   aiSave: "기본 연결로 저장",
   aiSaving: "저장하는 중...",
   aiSaved: "저장했습니다. 다음 생성부터 적용됩니다.",
+  aiSavedNotDefault:
+    "저장했습니다. 이 연결은 기본 연결로 바꾸지 않았습니다. 이 연결로 만든 요청이 실행될 때 기본 연결로 저장하세요.",
   aiConflict:
     "다른 창이 먼저 이 연결을 바꿨습니다. 지금 저장된 내용을 보여 드렸으니 확인한 뒤 다시 저장하세요.",
   aiSaveFailed: "연결을 저장하지 못했습니다: {detail}",

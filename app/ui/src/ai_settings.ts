@@ -90,7 +90,7 @@ export class AiSettings {
       described: host.described,
       listing: () => this.listing,
       busy: () => this.busy,
-      save: () => void this.save(),
+      save: (makeDefault) => void this.save(makeDefault),
       redraw: () => host.redraw(),
       recheck: (label) => this.recheck(label),
       commands: (commands) => this.commands(commands),
@@ -221,20 +221,25 @@ export class AiSettings {
 
   // ---- what a button sends ----------------------------------------------
 
-  private async save(): Promise<void> {
+  /**
+   * Keep the connection that is shown. `makeDefault` also makes it the default, which is the
+   * person's word for which AI a request is made for: only the save that is offered when a request
+   * made for the connection would run says it. Keeping the program a connection runs does not: it
+   * is for a connection that would not run (nobody is signed in, a version this build did not
+   * verify), and a default that only waits would leave every later request waiting for it.
+   */
+  private async save(makeDefault: boolean): Promise<void> {
     if (this.busy || !this.host.described.writes_settings) return;
     this.busy = true;
     this.notice = null;
     this.host.redraw();
     let saved = false;
-    // The client that is shown is the one that is saved, and it is made the default: a save is
-    // the person's word for which AI a request is made for.
     const codex = this.kind() === "codex";
     try {
       const kept = codex ? codexConnection(this.listing) : claudeConnection(this.listing);
       const connection = codex ? this.codex.connection() : this.claudeDraft();
       await this.host.api.saveConnection(connection, kept?.revision ?? null);
-      await this.host.api.setDefaultConnection(connection.id, this.listing?.default ?? null);
+      if (makeDefault) await this.host.api.setDefaultConnection(connection.id, this.listing?.default ?? null);
       if (codex) {
         this.codex.reset();
       } else {
@@ -242,7 +247,7 @@ export class AiSettings {
         this.typedModel = "";
         this.draftProgram = undefined;
       }
-      this.notice = { tone: "ok", text: this.host.t("aiSaved") };
+      this.notice = { tone: "ok", text: this.host.t(makeDefault ? "aiSaved" : "aiSavedNotDefault") };
       saved = true;
     } catch (error) {
       if (this.host.handled(error)) return;
@@ -435,7 +440,7 @@ export class AiSettings {
       this.host.described.writes_settings
         ? h(
             "button",
-            { id: "ai-save-program", type: "button", disabled: this.busy, onclick: () => void this.save() },
+            { id: "ai-save-program", type: "button", disabled: this.busy, onclick: () => void this.save(false) },
             t("aiUseProgram"),
           )
         : null,
@@ -565,7 +570,7 @@ export class AiSettings {
             { class: "choices" },
             h(
               "button",
-              { id: "ai-save", type: "button", disabled: this.busy, onclick: () => void this.save() },
+              { id: "ai-save", type: "button", disabled: this.busy, onclick: () => void this.save(true) },
               t(this.busy ? "aiSaving" : "aiSave"),
             ),
             this.recheck("aiRecheck"),
