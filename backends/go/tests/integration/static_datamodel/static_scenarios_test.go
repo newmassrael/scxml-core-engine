@@ -53,6 +53,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
@@ -116,6 +117,28 @@ type reading32Record interface {
 // float64 it widens to, which is exact, since JSON would print the float32 itself.
 func reading32JSON(reading reading32Record) any {
 	return map[string]any{"sensor": reading.Sensor(), "value": float64(reading.Value())}
+}
+
+// framedRecord is a `record:Framed` as a host reads it: a small integer and a byte
+// string of at most eight bytes.
+type framedRecord interface {
+	Sensor() uint8
+	Frame() []byte
+}
+
+// framedJSON is a framed record as a scenario states it: its fields by the schema's
+// ids, the byte string as its byte-exact Latin-1 text.
+func framedJSON(framed framedRecord) any {
+	return map[string]any{"sensor": framed.Sensor(), "frame": sce.BytesAsPayloadText(framed.Frame())}
+}
+
+// framedsJSON is a list of such records, in order.
+func framedsJSON[R framedRecord](frameds []R) any {
+	out := make([]any, len(frameds))
+	for i, framed := range frameds {
+		out[i] = framedJSON(framed)
+	}
+	return out
 }
 
 // labelledRecord is a `record:Labelled` as a host reads it: a small integer and a
@@ -579,6 +602,37 @@ func TestARecordHoldsASingleFieldAsTheSingleNearestThePayload(t *testing.T) {
 		"sum":    func() any { return float64(policy.Sum()) },
 		"errors": func() any { return policy.Errors() },
 	}))
+}
+
+// A record's bytes field is held to the bytes its schema declares: an assignment
+// past the bound — from a literal or a bytes variable — writes nothing, raises
+// error.execution and ends its block, and a list of such records holds copies with
+// their bytes. A scenario states a byte string as its byte-exact Latin-1 text.
+func TestARecordHoldsABytesFieldWithinTheBoundItsSchemaDeclares(t *testing.T) {
+	policy := static_record_bytes.NewStaticRecordBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_bytes", drive[static_record_bytes.StaticRecordBytesState, static_record_bytes.StaticRecordBytesEvent](&policy, map[string]func() any{
+		"last":    func() any { return framedJSON(policy.Last()) },
+		"spare":   func() any { return sce.BytesAsPayloadText(policy.Spare()) },
+		"frames":  func() any { return framedsJSON(policy.Frames()) },
+		"size":    func() any { return policy.Size() },
+		"matches": func() any { return policy.Matches() },
+		"misses":  func() any { return policy.Misses() },
+		"errors":  func() any { return policy.Errors() },
+	}))
+}
+
+// A host that writes into the bytes of a record it was handed changes nothing of the
+// machine: the reader the record gives the field answers a copy, and so does the
+// reader of a list of records, whose records hold the machine's own slices.
+func TestAHostThatWritesIntoARecordsBytesItWasHandedChangesNothingOfTheMachine(t *testing.T) {
+	policy := static_record_bytes.NewStaticRecordBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	handed := policy.Last().Frame()
+	handed[0] = 'z'
+	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "ab" {
+		t.Fatalf("the record holds %q after a host wrote into its copy, want %q", got, "ab")
+	}
 }
 
 // A record's string field is held to the UTF-8 bytes its schema declares: an

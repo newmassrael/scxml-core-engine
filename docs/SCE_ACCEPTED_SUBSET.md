@@ -3676,8 +3676,9 @@ types, as the text of its bytes, one character to a byte, held to its bound by
 `SceStatic.boundedBytes`.
 
 A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
-a field at a time from a literal or from a `bytes` variable, is held by **Kotlin** and
-**Rust** so far (`scenarios/static_record_bytes.json`, `StaticTarget::lowers_record_bytes`);
+a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
+**Rust** and **Go** so far (`scenarios/static_record_bytes.json`,
+`StaticTarget::lowers_record_bytes`);
 the other backends refuse a record with one by name until each holds it, in a variable
 and in a list of records alike. A transition on an event whose payload carries a `bytes`
 field is refused on all six and by the Interpreter's lowering
@@ -3687,7 +3688,9 @@ otherwise, and is handed to a host as `detached()`, a copy of each array, as is 
 record of a published list. A Rust record that holds one is `Clone` and no longer `Copy`
 (as one that holds a string already was), is lent to a host by reference, and is saved as
 the object of its fields with the byte string as its Latin-1 text, read back only within
-the bound its schema declares.
+the bound its schema declares. A Go record keeps its fields unexported and answers each
+through a reader, which for a byte string is a copy; the machine replaces a slice and
+never writes into it, so a copy of a record shares it safely.
 
 A Kotlin or Go machine never writes into its array
 and hands a host a copy of a published one, so the bound the machine keeps cannot be

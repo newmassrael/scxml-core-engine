@@ -3707,10 +3707,17 @@ impl StaticTarget for GoTarget<'_> {
             .fields
             .iter()
             .map(|field| {
+                // A byte string is answered as a copy, so a host cannot write
+                // through the slice into what the machine holds
+                // (docs/adr/0005, decision 2).
+                let answer = if matches!(field.sce_type, SceType::Bytes) {
+                    format!("append([]byte{{}}, r.{}...)", self.record_field(&field.id))
+                } else {
+                    format!("r.{}", self.record_field(&field.id))
+                };
                 format!(
-                    "\n// {reader} reports the `{id}` field.\nfunc (r {ty}) {reader}() {} {{\n\treturn r.{}\n}}\n",
+                    "\n// {reader} reports the `{id}` field.\nfunc (r {ty}) {reader}() {} {{\n\treturn {answer}\n}}\n",
                     go_field_type(field),
-                    self.record_field(&field.id),
                     reader = filters::to_pascal_case(field.id.clone()),
                     id = field.id,
                 )
@@ -3805,6 +3812,12 @@ impl StaticTarget for GoTarget<'_> {
     }
     // A `[]byte` the machine never writes into, handed to a host as a copy.
     fn lowers_bytes(&self) -> bool {
+        true
+    }
+    // A record's `[]byte` field is the same: the machine replaces the slice and
+    // never writes into it, so a copy of the record shares it safely, and the
+    // reader the record gives the field answers a copy.
+    fn lowers_record_bytes(&self) -> bool {
         true
     }
     fn assign(&self, target: &str, value: &str) -> String {
