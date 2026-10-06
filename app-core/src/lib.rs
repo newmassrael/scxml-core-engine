@@ -66,6 +66,7 @@ pub mod requirements;
 pub mod review;
 pub mod revision;
 pub mod runner;
+pub mod server_status;
 pub mod store;
 
 pub use acceptance::{Acceptance, Basis, Snapshot};

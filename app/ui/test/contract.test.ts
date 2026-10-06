@@ -50,6 +50,7 @@ import {
   parseRequirementsReport,
   parseReview,
   parseSaved,
+  parseServerStatus,
   parseWork,
   parseWorkAndHead,
   parseWorkHeads,
@@ -113,6 +114,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_claude_status: parseClaudeStatus,
   read_codex_status: parseCodexStatus,
   find_clients: parseFindClients,
+  read_server_status: parseServerStatus,
   save_connection: parseSaved,
   delete_connection: parseDeletedConnection,
   set_default_connection: parseDefaultConnection,
@@ -680,6 +682,40 @@ describe("the replies the core gives", () => {
     expect(found.codex.map((c) => [c.version, c.found])).toEqual([["0.159.0", "search-path"]]);
     expect(found.codex[0]?.path.endsWith("codex")).toBe(true);
     expect(asCommandError(replies.refusals["not-allowed-to-find-clients"])?.kind).toBe("not-allowed-here");
+  });
+
+  it("carry what is known of a model server at an address: where it is, and what it answered", () => {
+    const server = (name: string) => parseServerStatus(replies.answers[name]);
+    expect(server("read_server_status_listed")).toEqual({
+      address: "http://127.0.0.1:11434/v1",
+      reach: "this-computer",
+      tls: false,
+      state: "listed",
+      models: ["qwen3-coder:30b", "devstral:24b"],
+    });
+    // A server with nothing loaded is a server that answered, not one that did not.
+    expect(server("read_server_status_listed_none")).toMatchObject({ state: "listed", models: [] });
+    // Each way it can go wrong is a state of its own, with the core's words for why.
+    expect(server("read_server_status_unreachable")).toMatchObject({
+      state: "unreachable",
+      reason: expect.stringContaining("could not be reached"),
+    });
+    expect(server("read_server_status_certificate")).toMatchObject({
+      state: "certificate",
+      reach: "network",
+      tls: true,
+    });
+    expect(server("read_server_status_needs_key")).toMatchObject({ state: "needs-key", reach: "network", tls: false });
+    expect(server("read_server_status_not_a_model_list")).toMatchObject({ state: "not-a-model-list" });
+    expect(asCommandError(replies.refusals["not-allowed-to-read-server-status"])?.kind).toBe("not-allowed-here");
+    expect(asCommandError(replies.refusals["bad-server-address"])?.kind).toBe("bad-connection");
+    // A state the screen does not know is not read as one it does.
+    expect(() =>
+      parseServerStatus({ server: { address: "http://x", reach: "network", tls: false, state: "asleep" } }),
+    ).toThrow(/state/);
+    expect(() =>
+      parseServerStatus({ server: { address: "http://x", reach: "network", tls: false, state: "listed", models: [1] } }),
+    ).toThrow(/models\[0\]/);
   });
 
   it("carry what the screen says of Codex: which one, whether this build verified it, who is signed in by each source", () => {

@@ -6,9 +6,9 @@
 //! A request is pinned to a connection by its id and the revision it had (`requests::Pin`), and a
 //! runner finds the generator that writes for it here. What is done, in this order, and why:
 //!
-//! 1. **The adapter.** This build can run Claude Code and Codex; it has no adapter for the other
-//!    kind yet, and says so, so that a request for it waits with a reason and is not taken by a
-//!    client that is not the one the person chose.
+//! 1. **The adapter.** This build can run Claude Code, Codex and a model server of the person's
+//!    (`local`). A request is written by the kind of connection it was made for and by no other,
+//!    so that it is not taken by a client that is not the one the person chose.
 //! 2. **The settings, at the revision the request pinned.** A connection changes after a request
 //!    is made, and the request is about what it was when it was made. Settings the request was
 //!    made with and this computer does not have (a works folder that came from another computer)
@@ -17,7 +17,8 @@
 //!    what a generation uses are the same login (`claude_code::observe_auth`,
 //!    `codex::Codex::observe_login`). Codex is first asked whether it is one this build verified
 //!    and has a credential to run on: a login is not worth asking about for a client that may not
-//!    be run.
+//!    be run. A model server has no login to ask about: it takes no key, or it is one this build
+//!    has no place to keep a key for yet, and says so.
 //! 4. **Whether that way of signing in is one the build uses** (`auth_policy`), and why not when
 //!    it is not, in words a person acts on.
 //! 5. **The generator**, with the model and the limits the request pinned.
@@ -37,6 +38,8 @@ use crate::claude_code::{
 use crate::codex::{Codex, CodexConfig, CodexLaunch};
 use crate::connection::{AdapterKind, AuthSource};
 use crate::error::StoreError;
+use crate::http_client::Endpoint;
+use crate::local::{Local, LocalConfig};
 use crate::requests::Pin;
 use crate::runner::{Directory, Generator, Unrunnable};
 use crate::store::{ConnectionStore, StoredConnection};
@@ -65,6 +68,14 @@ pub trait Launches: Send + Sync {
     fn claude(&self) -> Option<ClaudeLaunch>;
     /// The Codex that is there now, when one is.
     fn codex(&self) -> Option<CodexLaunch>;
+    /// How the authoring server is reached, for a model server: it has no client of its own to
+    /// start, and the application is the one that talks to the authoring server for it. By
+    /// default the one a client was given, since a shell that has a client has found it for that.
+    fn author(&self) -> Option<AuthorServer> {
+        self.claude()
+            .map(|launch| launch.author)
+            .or_else(|| self.codex().map(|launch| launch.author))
+    }
 }
 
 /// Launches that were found once and do not change: what a command line tool or a test has.
@@ -72,6 +83,8 @@ pub trait Launches: Send + Sync {
 pub struct FixedLaunches {
     pub claude: Option<ClaudeLaunch>,
     pub codex: Option<CodexLaunch>,
+    /// How the authoring server is reached, when no client was given that says so.
+    pub author: Option<AuthorServer>,
 }
 
 impl Launches for FixedLaunches {
@@ -81,6 +94,15 @@ impl Launches for FixedLaunches {
 
     fn codex(&self) -> Option<CodexLaunch> {
         self.codex.clone()
+    }
+
+    fn author(&self) -> Option<AuthorServer> {
+        self.author.clone().or_else(|| {
+            self.claude
+                .as_ref()
+                .map(|launch| launch.author.clone())
+                .or_else(|| self.codex.as_ref().map(|launch| launch.author.clone()))
+        })
     }
 }
 
@@ -111,7 +133,7 @@ impl Connections {
             policy,
             Arc::new(FixedLaunches {
                 claude,
-                codex: None,
+                ..FixedLaunches::default()
             }),
         )
     }
@@ -133,6 +155,18 @@ impl Connections {
         self.launches = Arc::new(FixedLaunches {
             claude: self.launches.claude(),
             codex: Some(launch),
+            author: self.launches.author(),
+        });
+        self
+    }
+
+    /// The same, able to run a model server, reaching the authoring server as `author` says. The
+    /// launches become fixed, as they do for [`Connections::with_codex`].
+    pub fn with_author(mut self, author: AuthorServer) -> Self {
+        self.launches = Arc::new(FixedLaunches {
+            claude: self.launches.claude(),
+            codex: self.launches.codex(),
+            author: Some(author),
         });
         self
     }
@@ -171,7 +205,7 @@ impl Connections {
     /// The Claude Code that runs for `pin`, or why it cannot.
     pub fn claude_for(&self, pin: &Pin) -> Result<ClaudeCode, Unrunnable> {
         if pin.adapter != AdapterKind::ClaudeCode {
-            return Err(no_adapter(pin.adapter));
+            return Err(wrong_adapter(AdapterKind::ClaudeCode, pin.adapter));
         }
         let stored = self.stored_for(pin)?;
         let Some(launch) = self.launches.claude() else {
@@ -236,7 +270,7 @@ impl Connections {
     /// nothing Codex printed: it is kept in the works folder, which is shared.
     pub fn codex_for(&self, pin: &Pin) -> Result<Codex, Unrunnable> {
         if pin.adapter != AdapterKind::Codex {
-            return Err(no_adapter(pin.adapter));
+            return Err(wrong_adapter(AdapterKind::Codex, pin.adapter));
         }
         let stored = self.stored_for(pin)?;
         let Some(launch) = self.launches.codex() else {
@@ -258,6 +292,76 @@ impl Connections {
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
         }))
+    }
+
+    /// The model server that runs for `pin`, or why it cannot. Every sentence of a reason names the
+    /// connection by what the person called it and nothing of where it is: it is kept in the works
+    /// folder, which is shared, and an address can be a name on a network that is not the reader's.
+    pub fn local_for(&self, pin: &Pin) -> Result<Local, Unrunnable> {
+        if pin.adapter != AdapterKind::Local {
+            return Err(wrong_adapter(AdapterKind::Local, pin.adapter));
+        }
+        let stored = self.stored_for(pin)?;
+        let connection = &stored.connection;
+        let called = connection
+            .display_name
+            .clone()
+            .unwrap_or_else(|| connection.id.to_string());
+        // A key is kept by the operating system's store, which this build does not reach yet: a
+        // connection that asks for one waits, and says why, and is not run without it as though the
+        // server wanted none.
+        if connection.auth != AuthSource::NoAuth {
+            return Err(Unrunnable::new(format!(
+                "the server `{called}` wants a key, and this build has no place to keep one yet: \
+                 choose a server that wants none, or reach this one through a proxy of your own \
+                 that does not"
+            )));
+        }
+        let Some(route) = Route::of(AdapterKind::Local, connection.auth, None) else {
+            return Err(Unrunnable::new(format!(
+                "the server `{called}` is reached in a way this build does not know"
+            )));
+        };
+        if let Decision::Refuse { reason, .. } = self.policy.decide(route) {
+            return Err(Unrunnable::new(refusal_words(
+                AdapterKind::Local,
+                route,
+                reason,
+            )));
+        }
+        let Some(model) = pin.model.clone() else {
+            return Err(Unrunnable::new(format!(
+                "no model is chosen for the server `{called}`: choose one under AI connection, then \
+                 ask again"
+            )));
+        };
+        let Some(author) = self.launches.author() else {
+            return Err(author_not_found());
+        };
+        // `validate` holds a local connection to an address, so this only reads it.
+        let endpoint = connection
+            .server_url
+            .as_deref()
+            .ok_or_else(|| {
+                Unrunnable::new(format!("the server `{called}` has no address, so it is not run"))
+            })
+            .and_then(|address| {
+                Endpoint::parse(address).map_err(|why| {
+                    Unrunnable::new(format!(
+                        "the address of the server `{called}` is not one this build can reach: {why}"
+                    ))
+                })
+            })?;
+        let defaults = LocalConfig::for_model(model);
+        let config = LocalConfig {
+            max_turns: pin.limits.turns.unwrap_or(defaults.max_turns),
+            timeout: pin
+                .limits
+                .seconds
+                .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
+            ..defaults
+        };
+        Ok(Local::new(endpoint, author, config))
     }
 
     /// A Codex that may be run with `auth`, as it was found a moment ago or is found now: a
@@ -346,7 +450,9 @@ impl Directory for Connections {
             AdapterKind::Codex => self
                 .codex_for(pin)
                 .map(|client| Arc::new(client) as Arc<dyn Generator>),
-            other => Err(no_adapter(other)),
+            AdapterKind::Local => self
+                .local_for(pin)
+                .map(|server| Arc::new(server) as Arc<dyn Generator>),
         }
     }
 }
@@ -363,11 +469,21 @@ fn codex_not_found() -> Unrunnable {
     )
 }
 
-fn no_adapter(adapter: AdapterKind) -> Unrunnable {
+fn author_not_found() -> Unrunnable {
+    Unrunnable::new(
+        "the SCE authoring server was not found on this computer, so a model server has no tools \
+         to write with: set SCE_AUTHOR_MCP to its launcher",
+    )
+}
+
+/// What a generator is told when it is asked for a pin that is for another kind of connection: a
+/// request is written by the adapter of its own connection and by no other.
+fn wrong_adapter(wanted: AdapterKind, pin: AdapterKind) -> Unrunnable {
     Unrunnable::new(format!(
-        "this build has no adapter for `{}` connections yet, so a request for one waits: choose \
-         another connection, or ask from an AI client of your own",
-        adapter.word()
+        "this request was made for a `{}` connection and is not one `{}` writes: it is run by the \
+         adapter of its own connection",
+        pin.word(),
+        wanted.word()
     ))
 }
 
@@ -383,7 +499,8 @@ fn refusal_words(adapter: AdapterKind, route: Route, reason: Reason) -> String {
             "with `codex login` (a ChatGPT plan) or `codex login --with-api-key`, or set \
              CODEX_API_KEY and choose that"
         }
-        _ => "with `claude auth login` or `claude auth login --console`",
+        AdapterKind::Local => "by choosing another server or another AI under AI connection",
+        AdapterKind::ClaudeCode => "with `claude auth login` or `claude auth login --console`",
     };
     match reason {
         Reason::Forbidden => format!("signing in this way ({word}) is not allowed"),

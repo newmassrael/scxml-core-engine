@@ -33,8 +33,11 @@ export const CLAUDE_CONNECTION_ID = "claude";
 /** The one connection to Codex that the settings keep. */
 export const CODEX_CONNECTION_ID = "codex";
 
-/** The clients these settings edit a connection to. A connection to a server of the person's is not one. */
-export type ClientKind = "claude-code" | "codex";
+/** The one connection to a model server of the person's that the settings keep. */
+export const LOCAL_CONNECTION_ID = "server";
+
+/** The ways to reach a model that these settings edit a connection to. */
+export type ClientKind = "claude-code" | "codex" | "local";
 
 /**
  * Names Claude Code documents for `--model`. The client offers no list to read, so these are
@@ -130,30 +133,53 @@ export function codexConnection(listing: ConnectionListing | null): StoredConnec
 }
 
 /**
+ * The connection to a model server that is kept: the default one when it is to a server (whatever
+ * it was named, because it may have been saved by something else), else the one these settings
+ * name, else the first connection to a server there is. `null` when none is (or the settings were
+ * not read).
+ */
+export function localConnection(listing: ConnectionListing | null): StoredConnection | null {
+  if (listing === null) return null;
+  const servers = listing.connections.filter((c) => c.connection.adapter === "local");
+  return (
+    servers.find((c) => c.connection.id === listing.default) ??
+    servers.find((c) => c.connection.id === LOCAL_CONNECTION_ID) ??
+    servers[0] ??
+    null
+  );
+}
+
+/**
  * The client the settings show when the person has not chosen one: the one the default connection
- * is for. Claude Code when there is no default, and for a default that is neither client (a
- * connection to a server of the person's, which these settings do not edit).
+ * is for. Claude Code when there is no default.
  */
 export function defaultKind(listing: ConnectionListing | null): ClientKind {
   const stored = listing?.connections.find((c) => c.connection.id === listing.default);
-  return stored?.connection.adapter === "codex" ? "codex" : "claude-code";
+  switch (stored?.connection.adapter) {
+    case "codex":
+      return "codex";
+    case "local":
+      return "local";
+    default:
+      return "claude-code";
+  }
 }
 
 // ---- Codex -----------------------------------------------------------------------------------
 
-/** What the AI settings say of Codex, before the core's answer is looked into. */
-export type CodexReadiness =
+/** What the AI settings say of something they ask the core about, before the answer is looked into. */
+export type Answering<S> =
   /** This window cannot ask: the settings are the desktop window's. */
   | { readonly kind: "not-here" }
   | { readonly kind: "unasked" }
   | { readonly kind: "asking" }
   /** It could not be asked. Says why, as the core said it. */
   | { readonly kind: "unknown"; readonly reason: string }
-  /** The core answered: the screen shows what it said of the source that is chosen. */
-  | { readonly kind: "answered"; readonly status: CodexStatus };
+  /** The core answered: the screen shows what it said. */
+  | { readonly kind: "answered"; readonly status: S };
 
-/** What to say of Codex, from what the window may do and what was asked of it. */
-export function codexReadinessOf(described: Described, asked: Asked<CodexStatus>): CodexReadiness {
+/** What to say of something asked of the core, from what the window may do and what was asked. */
+export function answeringOf<S>(described: Described, asked: Asked<S>): Answering<S> {
   if (asked.phase === "refused" && asked.kind === "not-allowed-here") return { kind: "not-here" };
   if (!described.starts_programs) return { kind: "not-here" };
   switch (asked.phase) {
@@ -166,6 +192,14 @@ export function codexReadinessOf(described: Described, asked: Asked<CodexStatus>
     case "answered":
       return { kind: "answered", status: asked.status };
   }
+}
+
+/** What the AI settings say of Codex, before the core's answer is looked into. */
+export type CodexReadiness = Answering<CodexStatus>;
+
+/** What to say of Codex, from what the window may do and what was asked of it. */
+export function codexReadinessOf(described: Described, asked: Asked<CodexStatus>): CodexReadiness {
+  return answeringOf(described, asked);
 }
 
 /** The sources a connection to Codex takes its credential from, in the order they are offered. */

@@ -236,6 +236,16 @@ impl Local {
         self
     }
 
+    /// What bounds a run, and which model is asked.
+    pub fn config(&self) -> &LocalConfig {
+        &self.config
+    }
+
+    /// The server a run asks.
+    pub fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
     /// The same, telling `sink` each [`Step`] of a run as it happens.
     pub fn with_trace(mut self, sink: impl Fn(&Step) + Send + Sync + 'static) -> Self {
         self.trace = Trace(Some(Arc::new(sink)));
@@ -724,6 +734,10 @@ fn server_said(status: u16, body: &[u8], has_key: bool) -> String {
 pub enum ModelsError {
     /// The server could not be reached or broke; says why.
     Unreachable(String),
+    /// The server is there and its certificate was refused (see `HttpError::Certificate`).
+    Certificate(String),
+    /// The server wants a key: it answered that nobody is let in without one.
+    NeedsKey(String),
     /// The server answered, and not with a list of models.
     Refused(String),
 }
@@ -731,7 +745,10 @@ pub enum ModelsError {
 impl std::fmt::Display for ModelsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ModelsError::Unreachable(why) | ModelsError::Refused(why) => f.write_str(why),
+            ModelsError::Unreachable(why)
+            | ModelsError::Certificate(why)
+            | ModelsError::NeedsKey(why)
+            | ModelsError::Refused(why) => f.write_str(why),
         }
     }
 }
@@ -753,13 +770,17 @@ pub fn list_models(endpoint: &Endpoint, bearer: Option<&str>) -> Result<Vec<Stri
         &Cancel::new(),
         ANSWER_MAX,
     )
-    .map_err(|e| ModelsError::Unreachable(e.to_string()))?;
+    .map_err(|e| match e {
+        HttpError::Certificate(_) => ModelsError::Certificate(e.to_string()),
+        other => ModelsError::Unreachable(other.to_string()),
+    })?;
     if !(200..300).contains(&response.status) {
-        return Err(ModelsError::Refused(server_said(
-            response.status,
-            &response.body,
-            bearer.is_some(),
-        )));
+        let said = server_said(response.status, &response.body, bearer.is_some());
+        return Err(if matches!(response.status, 401 | 403) {
+            ModelsError::NeedsKey(said)
+        } else {
+            ModelsError::Refused(said)
+        });
     }
     let list: Value = serde_json::from_slice(&response.body).map_err(|_| {
         ModelsError::Refused(

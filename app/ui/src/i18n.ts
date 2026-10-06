@@ -323,6 +323,38 @@ const en = {
   aiWhyAccountUnknown: "who is signed in could not be asked",
   aiCodexModelNote:
     "Left empty, Codex uses its own default. Your account may not be able to use a model you name; the first generation shows that.",
+  aiServer: "My server",
+  aiServerIntro:
+    "A model server you run yourself: Ollama, LM Studio, llama.cpp, vLLM, or any server that speaks the OpenAI chat protocol with tool calls.",
+  aiServerName: "Name",
+  aiServerNamePlaceholder: "for example: office GPU box",
+  aiServerNameNote:
+    "Shown beside the generate button, so that you can tell where a specification goes. If the address is a tunnel to another computer, say so here.",
+  aiServerAddress: "Address",
+  aiServerPresets: "Common servers:",
+  aiServerState: "Server",
+  aiServerCheck: "Check the connection",
+  aiServerChecking: "Checking...",
+  aiServerAsking: "Asking the server which models it has...",
+  aiServerNotChecked: "Not checked yet. Check the connection to see which models the server has.",
+  aiServerListed: "The server is there. Models it lists: {count}.",
+  aiServerListedNone: "The server is there and lists no models. Load one in the server, then check again.",
+  aiServerUnreachable:
+    "No server answered at this address. Check that it is running and that the address is right.",
+  aiServerCertificate: "The server's certificate is not accepted, so nothing was sent to it.",
+  aiServerNeedsKey:
+    "This server wants a key. This build has no place to keep one yet, so it cannot use this server. Run a server that wants none, or reach this one through a proxy of your own that adds the key.",
+  aiServerNotAModelList:
+    "Something answered, but not as a model server. The address is usually the server's OpenAI-compatible root, such as http://127.0.0.1:11434/v1.",
+  aiServerModelPlaceholder: "choose or type a model id",
+  aiServerSentTo: "The specification text and your answers are sent to this server when you generate.",
+  aiServerThisComputer:
+    "The address is on this computer, so what is sent stays here, unless it is a tunnel to another computer.",
+  aiServerPlainNetwork:
+    "This server is another computer reached over http, which nothing encrypts: anyone on the network in between can read the specification. Use an https address, or a tunnel.",
+  aiServerSecureNetwork: "This server is another computer, reached over an encrypted connection.",
+  aiServerKept: "Saved: {name}, {address}, model {model}.",
+  aiServerNoModel: "none",
   guardTitle: "A model is being written for this text",
   guardBody:
     "Saving changes the text or the answers the request is about, so what it writes will not be published. Save and cancel the request, or leave this unsaved.",
@@ -675,6 +707,38 @@ const ko: Record<Key, string> = {
   aiWhyAccountUnknown: "로그인한 사람을 물을 수 없었음",
   aiCodexModelNote:
     "비워 두면 Codex의 기본 모델을 씁니다. 계정이 쓸 수 없는 모델일 수 있으며 첫 생성에서 확인됩니다.",
+  aiServer: "내 서버",
+  aiServerIntro:
+    "직접 실행하는 모델 서버입니다. Ollama, LM Studio, llama.cpp, vLLM, 또는 도구 호출을 지원하는 OpenAI 호환 채팅 프로토콜 서버면 됩니다.",
+  aiServerName: "이름",
+  aiServerNamePlaceholder: "예: 사무실 GPU 서버",
+  aiServerNameNote:
+    "생성 버튼 옆에 표시되어 사양이 어디로 가는지 알 수 있습니다. 주소가 다른 컴퓨터로 가는 터널이면 여기에 적으세요.",
+  aiServerAddress: "주소",
+  aiServerPresets: "자주 쓰는 서버:",
+  aiServerState: "서버",
+  aiServerCheck: "연결 확인",
+  aiServerChecking: "확인하는 중...",
+  aiServerAsking: "서버에 모델 목록을 묻는 중...",
+  aiServerNotChecked: "아직 확인하지 않았습니다. 연결을 확인하면 서버의 모델 목록이 표시됩니다.",
+  aiServerListed: "서버가 응답했고 모델 {count}개가 있습니다.",
+  aiServerListedNone: "서버가 응답했지만 모델이 없습니다. 서버에서 모델을 불러온 뒤 다시 확인하세요.",
+  aiServerUnreachable:
+    "이 주소에서 응답하는 서버가 없습니다. 서버가 실행 중인지, 주소가 맞는지 확인하세요.",
+  aiServerCertificate: "서버의 인증서가 받아들여지지 않아 아무것도 보내지 않았습니다.",
+  aiServerNeedsKey:
+    "이 서버는 키를 요구합니다. 이 빌드에는 아직 키를 보관할 곳이 없어 이 서버를 쓸 수 없습니다. 키가 필요 없는 서버를 쓰거나, 키를 대신 붙여 주는 프록시를 거치세요.",
+  aiServerNotAModelList:
+    "무언가 응답했지만 모델 서버의 응답이 아닙니다. 주소는 보통 서버의 OpenAI 호환 루트이며, 예를 들면 http://127.0.0.1:11434/v1 입니다.",
+  aiServerModelPlaceholder: "모델 ID를 고르거나 입력",
+  aiServerSentTo: "생성하면 사양 텍스트와 답변이 이 서버로 전송됩니다.",
+  aiServerThisComputer:
+    "이 컴퓨터의 주소입니다. 다른 컴퓨터로 가는 터널이 아니라면 전송한 내용은 이 컴퓨터를 벗어나지 않습니다.",
+  aiServerPlainNetwork:
+    "이 서버는 http로 연결하는 다른 컴퓨터이며 아무것도 암호화하지 않습니다. 중간 네트워크에 있는 누구나 사양을 읽을 수 있습니다. https 주소나 터널을 쓰세요.",
+  aiServerSecureNetwork: "이 서버는 다른 컴퓨터이며, 암호화된 연결로 접속합니다.",
+  aiServerKept: "저장됨: {name}, {address}, 모델 {model}.",
+  aiServerNoModel: "없음",
   guardTitle: "이 사양으로 모델을 작성하는 중입니다",
   guardBody:
     "저장하면 요청이 기준으로 삼은 사양이나 답변이 바뀌어, AI가 쓰는 결과는 공개되지 않습니다. 저장하고 요청을 취소하거나, 저장하지 않고 두세요.",

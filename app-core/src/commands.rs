@@ -38,6 +38,7 @@ use crate::requests::{ConnectionRef, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
+use crate::server_status;
 use crate::store::{
     AdapterReport, AdapterStatus, AnswersText, CandidateWrite, ConnectionStore, HostStatus,
     ModelText, Published, Registration, RequestView, RequirementsText, SourceText, WorkId,
@@ -91,6 +92,7 @@ pub const COMMANDS: &[&str] = &[
     "read_claude_status",
     "read_codex_status",
     "find_clients",
+    "read_server_status",
     "save_connection",
     "delete_connection",
     "set_default_connection",
@@ -99,10 +101,16 @@ pub const COMMANDS: &[&str] = &[
 /// The commands that read the settings a person keeps apart from the works.
 const SETTINGS_READ: &[&str] = &["list_connections", "read_connection", "read_auth_policy"];
 
-/// The commands that start a program of the person's to ask it something. A command that does
-/// is a way to make the application run it, for whoever can send the command, so only the
-/// entrance that is the person at the keyboard may: the same reason the settings are theirs.
-const STARTS_PROGRAMS: &[&str] = &["read_claude_status", "read_codex_status", "find_clients"];
+/// The commands that start a program of the person's, or reach a server they named, to ask it
+/// something. A command that does is a way to make the application run it or call it, for whoever
+/// can send the command (an address is anywhere the machine can reach), so only the entrance that
+/// is the person at the keyboard may: the same reason the settings are theirs.
+const STARTS_PROGRAMS: &[&str] = &[
+    "read_claude_status",
+    "read_codex_status",
+    "find_clients",
+    "read_server_status",
+];
 
 /// The commands that change them. A connection names a program the application runs, so a
 /// command that writes one is a way to make the application run something: only the entrance
@@ -208,7 +216,13 @@ const SETTINGS_WRITE: &[&str] = &[
 /// installed client, and both were added under the same number, so a screen that requires the
 /// `path` met a core of 14 that did not give it, and failed in the middle of a view instead of
 /// being told the versions differ. A screen of 15 is refused by a core of 14 at once, by name.
-pub const COMMAND_SET_VERSION: u32 = 15;
+///
+/// 16: a model server of the person's can be asked what it is (`read_server_status`): whether it
+/// is there, whether its certificate is accepted when it is reached over https, whether it wants a
+/// key, and which models it lists. A connection to one (`adapter: "local"`) was always possible
+/// to save and now can be run, so a screen written for 16 offers to register one and would be
+/// refused by a core of 15 with `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 16;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1311,6 +1325,12 @@ struct ReadConnection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ReadServerStatus {
+    server_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SaveConnection {
     connection: Connection,
     #[serde(default)]
@@ -1444,6 +1464,10 @@ fn call_program<C: Clock>(
                 "claude": candidates(&places),
                 "codex": codex::candidates(&places),
             }))
+        }
+        "read_server_status" => {
+            let ReadServerStatus { server_url } = arguments(args)?;
+            Ok(json!({ "server": server_status::read(&server_url)? }))
         }
         other => Err(CommandError {
             kind: "unknown-command".to_string(),

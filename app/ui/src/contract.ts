@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 15;
+export const SUPPORTED_COMMAND_SET_VERSION = 16;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -405,6 +405,31 @@ export interface FoundClients {
   readonly claude: readonly Candidate[];
   readonly codex: readonly Candidate[];
 }
+
+/** Where a model server is, by its address: what the address says and nothing more. */
+export type ServerReach = "this-computer" | "network";
+
+/** What a server answered when it was asked for its models. */
+export type ServerState =
+  /** It listed its models, in its order. None is a server with nothing loaded. */
+  | { readonly state: "listed"; readonly models: readonly string[] }
+  /** Nothing answered, or it broke or was too slow. */
+  | { readonly state: "unreachable"; readonly reason: string }
+  /** It answered over https and its certificate was refused. Nothing was sent to it. */
+  | { readonly state: "certificate"; readonly reason: string }
+  /** It wants a key, which this build has no place to keep. */
+  | { readonly state: "needs-key"; readonly reason: string }
+  /** It answered with something that is not a list of models: the address is not its root. */
+  | { readonly state: "not-a-model-list"; readonly reason: string };
+
+/** `read_server_status`: what is known of the server at an address. */
+export type ServerStatus = {
+  /** The address as it was given: what a connection would keep. */
+  readonly address: string;
+  readonly reach: ServerReach;
+  /** Whether the way to the server is encrypted and the server is known by its certificate. */
+  readonly tls: boolean;
+} & ServerState;
 
 export interface WorkAndHead {
   readonly work: Work;
@@ -1676,6 +1701,33 @@ export function parseFindClients(value: unknown): FoundClients {
       };
     });
   return { claude: candidates("claude"), codex: candidates("codex") };
+}
+
+/** `read_server_status`. */
+export function parseServerStatus(value: unknown): ServerStatus {
+  const where = "read_server_status";
+  const at = `${where}.server`;
+  const server = record(record(value, where)["server"], at);
+  const common = {
+    address: text(server, "address", at),
+    reach: oneOf(server, "reach", at, ["this-computer", "network"] as const),
+    tls: flag(server, "tls", at),
+  };
+  const state = oneOf(server, "state", at, [
+    "listed",
+    "unreachable",
+    "certificate",
+    "needs-key",
+    "not-a-model-list",
+  ] as const);
+  if (state === "listed") {
+    const models = list(server, "models", at).map((model, i) => {
+      if (typeof model !== "string") throw new ContractError(`${at}.models[${i}]`, "text");
+      return model;
+    });
+    return { ...common, state, models };
+  }
+  return { ...common, state, reason: text(server, "reason", at) };
 }
 
 const CODEX_SOURCES = ["official-login", "app-store", "env-api-key"] as const;

@@ -30,6 +30,7 @@ import {
   parseRemoved,
   parseReview,
   parseSaved,
+  parseServerStatus,
   parseWork,
   parseWorkAndHead,
   parseWorkHeads,
@@ -56,6 +57,7 @@ import {
   type Review,
   type Revision,
   type Saved,
+  type ServerStatus,
   type SourceText,
   type StoredConnection,
   type Work,
@@ -207,6 +209,13 @@ export interface Api {
    * window may; any other entrance is refused with `not-allowed-here`.
    */
   findClients(): Promise<FoundClients>;
+  /**
+   * What a model server at `serverUrl` is: whether it is there, whether its certificate is accepted,
+   * whether it wants a key, and which models it lists. Calls the address, so only the desktop window
+   * may; any other entrance is refused with `not-allowed-here`. An address a connection could not
+   * keep is refused with `bad-connection`; a server that does not answer is a state of the answer.
+   */
+  readServerStatus(serverUrl: string): Promise<ServerStatus>;
 }
 
 /** A connection and the revision of it the person read: what a request is made for. */
@@ -342,6 +351,9 @@ export function apiOver(transport: Transport): Api {
     },
     async findClients() {
       return parseFindClients(await transport.call("find_clients"));
+    },
+    async readServerStatus(serverUrl) {
+      return parseServerStatus(await transport.call("read_server_status", { server_url: serverUrl }));
     },
   };
 }

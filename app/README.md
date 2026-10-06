@@ -457,6 +457,24 @@ it is the only one. This build has verified no version of Codex (`app-core/data/
 lists none), so a request made for a Codex connection waits, and says so, until a version has
 been verified against a real client.
 
+**A model server is found when the person registers one.** It is no program to look for: a
+connection names it (`adapter` `local`), and the executor then needs the authoring server and
+nothing else, so a computer with no client at all hosts once a server is registered (looked for
+again as the clients are, so one registered with the window open is run for within ten seconds),
+and the executor reports itself as `local`. With no client and no server it says where it looked
+for each and that a server is a way out. The application is the one that talks to the authoring
+server for such a run, as a client of its protocol, and offers the model the same nine tools the
+other clients are offered and no others (a model that reads of a tool tries it: one was seen
+calling a tool that saves, so the model is told which it has). It talks to the model server in the
+OpenAI chat protocol with tool calls (`POST {address}/chat/completions`), carries each call and its
+result between the two, and takes the model's last message as its draft. The requirement list is
+the one the tool that builds it returned, not a copy the model types out (measured against a real
+server: a copy of four thousand characters can be wrong), and the form of the answer is given as an
+example to fill in, because a model that is given a JSON Schema in its conversation says it back. A
+draft the core does not accept is told back to the model, which writes again. Measured once, on
+2026-10-06, against Ollama with `qwen3-coder:30b`: fourteen questions and about five minutes to a
+model the core accepted; one model, one run, and not a claim about the others.
+
 **The clients are looked for again while the application runs.** A person installs a client with
 the window open, and one that was there goes away. The executor asks for each client again (at most
 once in ten seconds) whenever a request needs it, so Claude Code installed after Codex, or Codex
@@ -570,9 +588,10 @@ missing, not guessed at), asks Claude Code who is signed in with the options a g
 with (`--setting-sources ""`, so that what the screen shows is the login a generation uses and
 not one a settings file supplies), judges that way of signing in by the build's table, and runs
 with the pinned model and limits. It offers that connection when it takes the request. A request
-it cannot run stays queued, and the runner says what it left and why (`Runner::waiting`): this
-build has no adapter for Codex or local connections yet, nobody is signed in, the way of signing
-in is not one the build uses, the settings are not on this computer.
+it cannot run stays queued, and the runner says what it left and why (`Runner::waiting`): the
+client was not found, nobody is signed in, the way of signing in is not one the build uses, no
+model is chosen for a server, a server wants a key this build has no place to keep, the settings
+are not on this computer.
 
 **What the runner left, and why, is said where the screen reads it.** The shell's report
 (`.sce-hosts/<name>.json`, read by `read_host_status`) carries `waiting`: for each request the
@@ -614,11 +633,12 @@ connection would run makes it the default. The status is asked again after a sav
 that is named now. The browser shell only
 shows what the desktop saved: it may not start a program or change a setting.
 
-**The panel is for one client at a time, Claude Code or Codex.** A choice of the two is at its top
-and starts on the client the default connection is for (Claude Code when there is none). Each is
-asked the first time it is looked at, and what was chosen for one is kept while the other is looked
-at. Each keeps its own connection (`claude`, `codex`), and a save makes the one that is shown the
-default: it is the person's word for which AI a request is made for.
+**The panel is for one way to reach a model at a time: Claude Code, Codex or a server of the
+person's own.** A choice of the three is at its top and starts on the one the default connection is
+for (Claude Code when there is none). Each is asked the first time it is looked at, and what was
+chosen for one is kept while another is looked at. Each keeps its own connection (`claude`, `codex`,
+`server`), and a save makes the one that is shown the default: it is the person's word for which AI
+a request is made for.
 
 For Codex (`read_codex_status`, which starts the person's program and so is the desktop window's)
 the panel shows the program and its version, whether this build verified that version, and who is
@@ -636,6 +656,32 @@ when a request would run, because a connection that only waits is not one to mak
 while it would wait, another Codex program can still be chosen among those found, which is how a
 person reaches a version this build did verify. Until a version is verified (`app-core/data/
 codex_support.json` lists none) the panel says so for every Codex it finds.
+
+For a server of the person's own (Ollama, LM Studio, llama.cpp, vLLM, anything that speaks the
+OpenAI chat protocol with tool calls) nothing is installed or signed in to, so the panel asks the
+server. The person gives it a name, an address (a button fills each of the usual ones) and a model,
+and presses check: `read_server_status`, which calls an address and so is the desktop window's, asks
+the server for its models (`GET /models`, with no key and nothing of a work) and says which of five
+things came of it: a list (offered for the model field, where an id that is not listed can still be
+typed), a server that is not there, a certificate that was refused, a server that wants a key, or an
+answer that is not a list of models (the address is usually the server's OpenAI-compatible root,
+such as `http://127.0.0.1:11434/v1`). What was checked belongs to the address it was checked at: a
+changed address is not said to be what the old one was.
+
+**Where the specification goes is said beside the address.** That it is sent to the server is said
+whatever the answer; it is said louder when the address is another computer over plain http (what
+nothing encrypts is read by the network in between) and quieter over https. An address on this
+computer is not a promise that it stays there, because a tunnel to another computer looks the same,
+so a connection to a server carries the name the person gave it and the screen shows that beside
+the generate button. An address over https is held to the roots of the web (`webpki-roots`, with
+`rustls`, so a build needs no TLS library of the system's) and to the name in the address: a server
+that fails either is sent nothing, and a certificate that a private authority made is not trusted
+yet, so such a server is reached through a tunnel or a proxy of the person's own over http. A
+server that wants a key cannot be used by this build, which has no place to keep one: the panel
+says so and offers no save for it, and a connection that asks for one waits and says why. The save
+writes the connection `server` (or the connection to a server that is already the default,
+whatever it was named, because it may have been saved by something else), without a key, keeps the
+limits a person set elsewhere, and is not offered until a name, an address and a model are given.
 
 ### The model, and where it stands
 

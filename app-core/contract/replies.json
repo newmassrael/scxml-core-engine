@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 15,
+      "command_set_version": 16,
       "commands": [
         "describe",
         "list_works",
@@ -157,6 +157,7 @@
         "read_claude_status",
         "read_codex_status",
         "find_clients",
+        "read_server_status",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -168,7 +169,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 15,
+      "command_set_version": 16,
       "commands": [
         "describe",
         "list_works",
@@ -215,6 +216,7 @@
         "read_claude_status",
         "read_codex_status",
         "find_clients",
+        "read_server_status",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -1628,6 +1630,63 @@
       "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
       "standing": null
     },
+    "read_server_status_certificate": {
+      "server": {
+        "address": "https://models.example.com/v1",
+        "reach": "network",
+        "reason": "the server's certificate was refused: it is not made out to the name in the address",
+        "state": "certificate",
+        "tls": true
+      }
+    },
+    "read_server_status_listed": {
+      "server": {
+        "address": "http://127.0.0.1:11434/v1",
+        "models": [
+          "qwen3-coder:30b",
+          "devstral:24b"
+        ],
+        "reach": "this-computer",
+        "state": "listed",
+        "tls": false
+      }
+    },
+    "read_server_status_listed_none": {
+      "server": {
+        "address": "http://127.0.0.1:1234/v1",
+        "models": [],
+        "reach": "this-computer",
+        "state": "listed",
+        "tls": false
+      }
+    },
+    "read_server_status_needs_key": {
+      "server": {
+        "address": "http://10.0.0.5:8000/v1",
+        "reach": "network",
+        "reason": "the server answered 401 and wants a key: missing bearer",
+        "state": "needs-key",
+        "tls": false
+      }
+    },
+    "read_server_status_not_a_model_list": {
+      "server": {
+        "address": "http://127.0.0.1:3000/v1",
+        "reach": "this-computer",
+        "reason": "the server's answer is not a list of models: <html>",
+        "state": "not-a-model-list",
+        "tls": false
+      }
+    },
+    "read_server_status_unreachable": {
+      "server": {
+        "address": "http://127.0.0.1:8080/v1",
+        "reach": "this-computer",
+        "reason": "the server could not be reached: Connection refused (os error 111)",
+        "state": "unreachable",
+        "tls": false
+      }
+    },
     "read_source": {
       "source": {
         "revision": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
@@ -2173,7 +2232,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 15,
+  "command_set_version": 16,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2202,6 +2261,10 @@
     "bad-request": {
       "kind": "bad-request",
       "message": "unknown field `extra`, there are no fields"
+    },
+    "bad-server-address": {
+      "kind": "bad-connection",
+      "message": "`ftp://x` is not a server address: it is http:// or https://, a host and an optional port and path, with no user, query or fragment"
     },
     "bundled-work": {
       "detail": {
@@ -2335,6 +2398,13 @@
       "kind": "not-allowed-here",
       "message": "`find_clients` starts a program of the person's, and only the desktop application does that"
     },
+    "not-allowed-to-read-server-status": {
+      "detail": {
+        "entrance": "tool"
+      },
+      "kind": "not-allowed-here",
+      "message": "`read_server_status` starts a program of the person's, and only the desktop application does that"
+    },
     "not-allowed-to-start-a-program": {
       "detail": {
         "entrance": "browser"
@@ -2422,7 +2492,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, read_server_status, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {

@@ -24,6 +24,7 @@ use sce_app_core::claude_code::{Candidate, Found, Search};
 use sce_app_core::claude_status::{AccountState, Billing, ClaudeStatus, Client, SIGN_IN};
 use sce_app_core::codex_environment::API_KEY_VARIABLE;
 use sce_app_core::codex_status::{self, CodexStatus, SourceAccount, SupportState};
+use sce_app_core::server_status::{Reach, ServerState, ServerStatus};
 use sce_app_core::{
     call, call_in, AuthSource, CommandError, ConnectionStore, Context, Entrance, FixedClock,
     NoRenderer, Policy, Product, Route, WorkStore, COMMANDS, COMMAND_SET_VERSION,
@@ -1120,6 +1121,102 @@ fn replies() -> Value {
             &entrance(Entrance::Browser, true),
             "read_claude_status",
             json!({}),
+        ),
+    );
+    // What a screen is told of a model server at an address. The shapes are the core's own types,
+    // so that the file does not depend on a server that is there when the test runs; asking a
+    // real one is held by `server_status.rs`.
+    let server = |address: &str, reach: Reach, tls: bool, state: ServerState| {
+        json!({ "server": ServerStatus {
+            address: address.to_string(),
+            reach,
+            tls,
+            server: state,
+        } })
+    };
+    let reason = |text: &str| text.to_string();
+    answers.insert(
+        "read_server_status_listed".into(),
+        server(
+            "http://127.0.0.1:11434/v1",
+            Reach::ThisComputer,
+            false,
+            ServerState::Listed {
+                models: vec!["qwen3-coder:30b".to_string(), "devstral:24b".to_string()],
+            },
+        ),
+    );
+    answers.insert(
+        "read_server_status_listed_none".into(),
+        server(
+            "http://127.0.0.1:1234/v1",
+            Reach::ThisComputer,
+            false,
+            ServerState::Listed { models: Vec::new() },
+        ),
+    );
+    answers.insert(
+        "read_server_status_unreachable".into(),
+        server(
+            "http://127.0.0.1:8080/v1",
+            Reach::ThisComputer,
+            false,
+            ServerState::Unreachable {
+                reason: reason(
+                    "the server could not be reached: Connection refused (os error 111)",
+                ),
+            },
+        ),
+    );
+    answers.insert(
+        "read_server_status_certificate".into(),
+        server(
+            "https://models.example.com/v1",
+            Reach::Network,
+            true,
+            ServerState::Certificate {
+                reason: reason(
+                    "the server's certificate was refused: it is not made out to the name in the address",
+                ),
+            },
+        ),
+    );
+    answers.insert(
+        "read_server_status_needs_key".into(),
+        server(
+            "http://10.0.0.5:8000/v1",
+            Reach::Network,
+            false,
+            ServerState::NeedsKey {
+                reason: reason("the server answered 401 and wants a key: missing bearer"),
+            },
+        ),
+    );
+    answers.insert(
+        "read_server_status_not_a_model_list".into(),
+        server(
+            "http://127.0.0.1:3000/v1",
+            Reach::ThisComputer,
+            false,
+            ServerState::NotAModelList {
+                reason: reason("the server's answer is not a list of models: <html>"),
+            },
+        ),
+    );
+    refusals.insert(
+        "not-allowed-to-read-server-status".into(),
+        refuse(
+            &entrance(Entrance::Tool, true),
+            "read_server_status",
+            json!({ "server_url": "http://127.0.0.1:11434/v1" }),
+        ),
+    );
+    refusals.insert(
+        "bad-server-address".into(),
+        refuse(
+            &desktop,
+            "read_server_status",
+            json!({ "server_url": "ftp://x" }),
         ),
     );
     refusals.insert(

@@ -16,6 +16,7 @@ import type {
 import {
   CLAUDE_CONNECTION_ID,
   CODEX_CONNECTION_ID,
+  LOCAL_CONNECTION_ID,
   accountOf,
   chosenSource,
   claudeConnection,
@@ -23,6 +24,7 @@ import {
   codexReadinessOf,
   connectionForRequest,
   defaultKind,
+  localConnection,
   modelChoices,
   outlookOf,
   readinessOf,
@@ -276,9 +278,28 @@ describe("which client the settings show first", () => {
     expect(defaultKind(null)).toBe("claude-code");
   });
 
-  it("is Claude Code for a default that is neither client, which these settings do not edit", () => {
+  it("is the model server for a default that is a connection to one, whatever it was named", () => {
     const local = connection({ id: "pc2", adapter: "local", auth: "none", display_name: "pc2", server_url: "http://127.0.0.1:1/v1" });
-    expect(defaultKind(listing({ connections: [{ connection: local, revision: OTHER }], default: "pc2" }))).toBe("claude-code");
+    expect(defaultKind(listing({ connections: [{ connection: local, revision: OTHER }], default: "pc2" }))).toBe("local");
+  });
+
+  it("keeps a connection to a model server apart from the other two, and finds the one a person is editing", () => {
+    const server = (id: string, over: Partial<Connection> = {}) => ({
+      connection: connection({ id, adapter: "local", auth: "none", display_name: id, server_url: `http://127.0.0.1:1/${id}`, ...over }),
+      revision: REVISION,
+    });
+    const claude = { connection: connection(), revision: REVISION };
+    expect(localConnection(null)).toBeNull();
+    expect(localConnection(listing({ connections: [claude] }))).toBeNull();
+    // The default one when it is to a server, else the one these settings name, else the first.
+    const several = [server("pc2"), server(LOCAL_CONNECTION_ID), server("laptop")];
+    expect(localConnection(listing({ connections: several, default: "laptop" }))?.connection.id).toBe("laptop");
+    expect(localConnection(listing({ connections: several, default: CLAUDE_CONNECTION_ID }))?.connection.id).toBe(
+      LOCAL_CONNECTION_ID,
+    );
+    expect(localConnection(listing({ connections: [server("pc2"), server("laptop")], default: null }))?.connection.id).toBe("pc2");
+    // A default to Claude Code is not mistaken for a server.
+    expect(localConnection(listing({ connections: [claude, server("pc2")], default: CLAUDE_CONNECTION_ID }))?.connection.id).toBe("pc2");
   });
 
   it("finds the connection to Codex that is kept, apart from the one to Claude Code", () => {

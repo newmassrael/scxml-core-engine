@@ -283,7 +283,7 @@ textarea:focus-visible {
   border-color: var(--ok-line);
 }
 
-/* The AI panel's choice of client: two radios in a row, not a boxed group. */
+/* The AI panel's choice of how a model is reached: radios in a row, not a boxed group. */
 .ai-kind {
   display: flex;
   flex-wrap: wrap;
@@ -303,6 +303,20 @@ textarea:focus-visible {
 /* One line about whether a request would run, set apart from the facts above it. */
 .ai-outlook {
   margin: 12px 0;
+}
+
+/* A model server's fields: the name and the address are typed, so they are wide enough to read. */
+.ai-facts input[type="text"] {
+  width: min(100%, 36em);
+}
+
+/* The servers a person is likely to run: one small button each, under the address. */
+.ai-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
 }
 
 /* The model, as SCE draws it: each sheet at the size it was set, scrolled sideways

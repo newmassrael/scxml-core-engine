@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
-import { CLAUDE_CONNECTION_ID, CODEX_CONNECTION_ID } from "../src/ai_settings_model";
+import { CLAUDE_CONNECTION_ID, CODEX_CONNECTION_ID, LOCAL_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
 import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type {
@@ -24,6 +24,7 @@ import type {
   Described,
   Revision,
   Saved,
+  ServerStatus,
 } from "../src/contract";
 import { CommandFailure } from "../src/ipc";
 import { translate } from "../src/i18n";
@@ -144,6 +145,8 @@ class FakeSettings {
     { path: CODEX_PROGRAM, version: "0.159.0", found: "search-path" },
     { path: OTHER_CODEX, version: "0.158.0", found: "known-location" },
   ];
+  /** What the core says of the server at each address; one that is not here is not answering. */
+  servers = new Map<string, ServerStatus | CommandFailure>();
 
   api(): Pick<
     Api,
@@ -153,8 +156,15 @@ class FakeSettings {
     | "readClaudeStatus"
     | "readCodexStatus"
     | "findClients"
+    | "readServerStatus"
   > {
     return {
+      readServerStatus: async (serverUrl: string) => {
+        this.calls.push({ name: "read_server_status", args: { server_url: serverUrl } });
+        const said = this.servers.get(serverUrl);
+        if (said instanceof CommandFailure) throw said;
+        return said ?? { address: serverUrl, reach: "this-computer", tls: false, state: "unreachable", reason: "nobody answered" };
+      },
       findClients: async () => {
         this.calls.push({ name: "find_clients", args: null });
         if (this.refuseFinding !== null) throw this.refuseFinding;
@@ -1162,5 +1172,290 @@ describe("keeping the program a connection runs", () => {
     ]);
     expect(r.core.listing.default).toBe(CODEX_CONNECTION_ID);
     expect(r.root.textContent).toContain("from the next generation");
+  });
+});
+
+// ---- a model server of the person's ----------------------------------------------------------
+
+const OLLAMA = "http://127.0.0.1:11434/v1";
+const FAR_PLAIN = "http://10.0.0.5:8000/v1";
+const FAR_SECURE = "https://models.example.com/v1";
+
+const listed = (address: string, models: string[], over: Partial<ServerStatus> = {}): ServerStatus =>
+  ({ address, reach: "this-computer", tls: false, state: "listed", models, ...over }) as ServerStatus;
+
+const serverConnection = (over: Partial<Connection> = {}): Connection => ({
+  id: LOCAL_CONNECTION_ID,
+  adapter: "local",
+  display_name: "office GPU box",
+  executable: null,
+  model: "qwen3-coder:30b",
+  auth: "none",
+  server_url: OLLAMA,
+  limits: { turns: 30, seconds: null },
+  ...over,
+});
+
+const KEPT_SERVER: ConnectionListing = {
+  connections: [{ connection: serverConnection(), revision: REVISION_1 }],
+  unreadable: [],
+  default: LOCAL_CONNECTION_ID,
+};
+
+/** The person opens the settings and chooses the model server among the ways to reach a model. */
+async function chooseServer(over: { listing?: ConnectionListing; servers?: [string, ServerStatus | CommandFailure][] } = {}): Promise<Rig> {
+  const r = rig();
+  if (over.listing !== undefined) r.core.listing = over.listing;
+  for (const [address, said] of over.servers ?? []) r.core.servers.set(address, said);
+  await r.settings.load();
+  r.settings.openPanel();
+  r.draw();
+  if (r.root.querySelector<HTMLInputElement>("#ai-kind-local")?.checked !== true) {
+    click(r.root, "#ai-kind-local");
+    await settle();
+  }
+  return r;
+}
+
+describe("a model server of the person's", () => {
+  it("is a third way to reach a model, and choosing it asks nothing while no server is named", async () => {
+    const r = await chooseServer();
+
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-local")?.checked).toBe(true);
+    expect(r.core.asked("read_server_status")).toEqual([]);
+    expect(r.root.querySelector("#ai-server-name")).not.toBeNull();
+    expect(r.root.textContent).toContain("Not checked yet");
+    // Nothing is asked of Claude Code or Codex for it either.
+    expect(r.core.asked("read_codex_status")).toEqual([]);
+  });
+
+  it("is filled in by a button for the server the person runs, which asks that server at once", async () => {
+    const r = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["qwen3-coder:30b", "devstral:24b"])]] });
+
+    click(r.root, `[data-address="${OLLAMA}"]`);
+    await settle();
+
+    expect(r.core.asked("read_server_status")).toEqual([{ server_url: OLLAMA }]);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-server-address")?.value).toBe(OLLAMA);
+    expect(r.root.textContent).toContain("Models it lists: 2");
+    // What it lists is what the model field offers, and a model that is not listed can still be typed.
+    expect([...r.root.querySelectorAll<HTMLOptionElement>("#ai-server-models option")].map((o) => o.value)).toEqual([
+      "qwen3-coder:30b",
+      "devstral:24b",
+    ]);
+  });
+
+  it("asks the address that was typed, when the person presses check", async () => {
+    const r = await chooseServer({ servers: [[FAR_SECURE, listed(FAR_SECURE, ["m"], { reach: "network", tls: true })]] });
+    // Spaces around what was pasted are not part of the address.
+    typeInto(r.root, "#ai-server-address", `  ${FAR_SECURE}  `);
+
+    click(r.root, "#ai-server-check");
+    await settle();
+
+    expect(r.core.asked("read_server_status")).toEqual([{ server_url: FAR_SECURE }]);
+  });
+
+  it("is asked the first time it is chosen when a server is kept but is not the default", async () => {
+    const claude = { connection: connection("opus"), revision: REVISION_1 };
+    const server = { connection: serverConnection(), revision: REVISION_1 };
+    const r = await chooseServer({
+      listing: { connections: [claude, server], unreadable: [], default: CLAUDE_CONNECTION_ID },
+      servers: [[OLLAMA, listed(OLLAMA, ["qwen3-coder:30b"])]],
+    });
+
+    // The settings opened on Claude Code and did not ask the server; choosing it does, once.
+    expect(r.core.asked("read_server_status")).toEqual([{ server_url: OLLAMA }]);
+    click(r.root, "#ai-kind-claude-code");
+    await settle();
+    click(r.root, "#ai-kind-local");
+    await settle();
+    expect(r.core.asked("read_server_status")).toHaveLength(1);
+  });
+
+  it("is saved with the name, the address and the model, takes no key, and becomes the default", async () => {
+    const r = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["qwen3-coder:30b"])]] });
+    typeInto(r.root, "#ai-server-name", "  office GPU box  ");
+    click(r.root, `[data-address="${OLLAMA}"]`);
+    await settle();
+    typeInto(r.root, "#ai-server-model", "qwen3-coder:30b");
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.asked("save_connection")).toEqual([
+      {
+        connection: {
+          id: LOCAL_CONNECTION_ID,
+          adapter: "local",
+          display_name: "office GPU box",
+          executable: null,
+          model: "qwen3-coder:30b",
+          auth: "none",
+          server_url: OLLAMA,
+          limits: { turns: null, seconds: null },
+        },
+        base: null,
+      },
+    ]);
+    expect(r.core.asked("set_default_connection")).toEqual([{ id: LOCAL_CONNECTION_ID, expect: null }]);
+    expect(r.root.textContent).toContain("from the next generation");
+    expect(r.settings.connectionForRequest()).toEqual({ id: LOCAL_CONNECTION_ID, revision: REVISION_2 });
+    expect(r.settings.targetLine()).toBe("Will ask: office GPU box (qwen3-coder:30b)");
+  });
+
+  it("is not saved until it has a name, an address and a model, and typing them is what allows it", async () => {
+    const r = await chooseServer();
+    const save = () => r.root.querySelector<HTMLButtonElement>("#ai-save")!;
+
+    expect(save().disabled).toBe(true);
+    typeInto(r.root, "#ai-server-name", "box");
+    expect(save().disabled).toBe(true);
+    typeInto(r.root, "#ai-server-address", OLLAMA);
+    expect(save().disabled).toBe(true);
+    typeInto(r.root, "#ai-server-model", "m");
+    expect(save().disabled).toBe(false);
+    typeInto(r.root, "#ai-server-model", "   ");
+    expect(save().disabled).toBe(true);
+    // Each of the three is what decides it, whichever is typed last.
+    typeInto(r.root, "#ai-server-model", "m");
+    typeInto(r.root, "#ai-server-name", "");
+    expect(save().disabled).toBe(true);
+    typeInto(r.root, "#ai-server-name", "box");
+    expect(save().disabled).toBe(false);
+    typeInto(r.root, "#ai-server-address", "");
+    expect(save().disabled).toBe(true);
+    typeInto(r.root, "#ai-server-address", OLLAMA);
+    expect(save().disabled).toBe(false);
+  });
+
+  it("is asked when the settings open on it, and said what is kept", async () => {
+    const r = await chooseServer({ listing: KEPT_SERVER, servers: [[OLLAMA, listed(OLLAMA, ["qwen3-coder:30b"])]] });
+
+    expect(r.core.asked("read_server_status")).toEqual([{ server_url: OLLAMA }]);
+    expect(r.core.asked("read_claude_status")).toEqual([]);
+    expect(r.root.textContent).toContain("Saved: office GPU box, http://127.0.0.1:11434/v1, model qwen3-coder:30b");
+    expect(r.root.querySelector<HTMLInputElement>("#ai-server-name")?.value).toBe("office GPU box");
+    expect(r.root.querySelector<HTMLInputElement>("#ai-server-model")?.value).toBe("qwen3-coder:30b");
+  });
+
+  it("is edited where it is kept, whatever it was named, and what a person set elsewhere is not dropped", async () => {
+    const other = serverConnection({ id: "pc2", server_url: FAR_SECURE, limits: { turns: 12, seconds: 900 } });
+    const r = await chooseServer({
+      listing: { connections: [{ connection: other, revision: REVISION_1 }], unreadable: [], default: "pc2" },
+      servers: [[FAR_SECURE, listed(FAR_SECURE, ["qwen3-coder:30b"], { reach: "network", tls: true })]],
+    });
+    typeInto(r.root, "#ai-server-model", "devstral:24b");
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    const [saved] = r.core.asked("save_connection") as { connection: Connection; base: Revision | null }[];
+    expect(saved?.connection.id).toBe("pc2");
+    expect(saved?.base).toBe(REVISION_1);
+    expect(saved?.connection.model).toBe("devstral:24b");
+    expect(saved?.connection.limits).toEqual({ turns: 12, seconds: 900 });
+    expect(r.core.asked("set_default_connection")).toEqual([{ id: "pc2", expect: "pc2" }]);
+  });
+
+  it("says where the specification goes: louder for another computer over http, quieter over https, and that it stays here", async () => {
+    const plain = await chooseServer({
+      servers: [[FAR_PLAIN, listed(FAR_PLAIN, ["m"], { reach: "network" })]],
+    });
+    typeInto(plain.root, "#ai-server-address", FAR_PLAIN);
+    click(plain.root, "#ai-server-check");
+    await settle();
+    const secure = await chooseServer({
+      servers: [[FAR_SECURE, listed(FAR_SECURE, ["m"], { reach: "network", tls: true })]],
+    });
+    typeInto(secure.root, "#ai-server-address", FAR_SECURE);
+    click(secure.root, "#ai-server-check");
+    await settle();
+    const here = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["m"])]] });
+    click(here.root, `[data-address="${OLLAMA}"]`);
+    await settle();
+
+    expect(plain.root.querySelector(".banner-warn")?.textContent).toContain("which nothing encrypts");
+    expect(secure.root.querySelector(".banner-warn")).toBeNull();
+    expect(secure.root.textContent).toContain("encrypted connection");
+    expect(here.root.querySelector(".banner-warn")).toBeNull();
+    expect(here.root.textContent).toContain("The address is on this computer");
+    // And whatever the server is, what is sent to it is said.
+    for (const r of [plain, secure, here]) expect(r.root.textContent).toContain("are sent to this server");
+  });
+
+  it("says for each way the server can fail what it comes to, and offers no save for a server this build cannot use", async () => {
+    const said = async (status: ServerStatus): Promise<Rig> => {
+      const r = await chooseServer({ servers: [[status.address, status]] });
+      typeInto(r.root, "#ai-server-name", "box");
+      typeInto(r.root, "#ai-server-model", "m");
+      typeInto(r.root, "#ai-server-address", status.address);
+      click(r.root, "#ai-server-check");
+      await settle();
+      return r;
+    };
+    const base = { reach: "network", tls: false } as const;
+
+    const unreachable = await said({ ...base, address: FAR_PLAIN, state: "unreachable", reason: "the server could not be reached: refused" });
+    const certificate = await said({ ...base, address: FAR_SECURE, tls: true, state: "certificate", reason: "the server's certificate was refused: it has expired" });
+    const key = await said({ ...base, address: FAR_PLAIN, state: "needs-key", reason: "wants a key" });
+    const page = await said({ ...base, address: FAR_PLAIN, state: "not-a-model-list", reason: "not a list of models: <html>" });
+
+    expect(unreachable.root.textContent).toContain("No server answered at this address");
+    expect(unreachable.root.textContent).toContain("refused");
+    expect(certificate.root.textContent).toContain("certificate is not accepted");
+    expect(certificate.root.textContent).toContain("it has expired");
+    expect(key.root.textContent).toContain("no place to keep one yet");
+    expect(page.root.textContent).toContain("OpenAI-compatible root");
+    // A server that is down may be saved (it may be started later); one that cannot be used is not.
+    const saveOf = (r: Rig) => r.root.querySelector<HTMLButtonElement>("#ai-save")!.disabled;
+    expect(saveOf(unreachable)).toBe(false);
+    expect(saveOf(page)).toBe(false);
+    expect(saveOf(certificate)).toBe(true);
+    expect(saveOf(key)).toBe(true);
+  });
+
+  it("is not said to be what another address was: what was checked belongs to the address it was checked at", async () => {
+    const r = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["m"])]] });
+    click(r.root, `[data-address="${OLLAMA}"]`);
+    await settle();
+    expect(r.root.textContent).toContain("Models it lists: 1");
+
+    typeInto(r.root, "#ai-server-address", "http://127.0.0.1:9999/v1");
+    r.root.querySelector<HTMLInputElement>("#ai-server-address")!.dispatchEvent(new Event("change"));
+    await settle();
+
+    expect(r.root.textContent).toContain("Not checked yet");
+    expect(r.root.textContent).not.toContain("Models it lists");
+  });
+
+  it("says in the core's words that an address is not one a connection could keep", async () => {
+    const r = await chooseServer({
+      servers: [["ftp://x", new CommandFailure("bad-connection", "`ftp://x` is not a server address")]],
+    });
+    typeInto(r.root, "#ai-server-address", "ftp://x");
+
+    click(r.root, "#ai-server-check");
+    await settle();
+
+    expect(r.root.textContent).toContain("is not a server address");
+  });
+
+  it("is not offered in a window that may not call an address, and nothing is asked", async () => {
+    const r = rig(BROWSER);
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+
+    expect(r.root.querySelector("#ai-kind-local")).toBeNull();
+    expect(r.core.asked("read_server_status")).toEqual([]);
+  });
+
+  it("is what the settings open on when the default connection is to a server, and Claude Code is not asked", async () => {
+    const r = await chooseServer({ listing: KEPT_SERVER, servers: [[OLLAMA, listed(OLLAMA, ["m"])]] });
+
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-local")?.checked).toBe(true);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-claude-code")?.checked).toBe(false);
+    expect(r.core.calls.map((c) => c.name)).toEqual(["list_connections", "read_server_status"]);
   });
 });

@@ -20,6 +20,7 @@ import {
   codexConnection,
   connectionForRequest,
   defaultKind,
+  localConnection,
   modelChoices,
   readinessOf,
   type Asked,
@@ -29,6 +30,7 @@ import {
 import { BILLING_WORDS, NOT_USED_WORDS, SIGN_IN_WORDS, programChoice } from "./ai_settings_view";
 import type { Api, ConnectionRef } from "./api";
 import { CodexSection } from "./codex_settings";
+import { ServerSection } from "./server_settings";
 import type { Candidate, Connection, ConnectionListing, Described, SignInCommand } from "./contract";
 import { h } from "./dom";
 import type { Child } from "./dom";
@@ -45,6 +47,7 @@ export interface AiSettingsHost {
     | "readClaudeStatus"
     | "readCodexStatus"
     | "findClients"
+    | "readServerStatus"
   >;
   readonly described: Described;
   readonly t: (key: Key, values?: Record<string, string>) => string;
@@ -83,6 +86,8 @@ export class AiSettings {
   private kindDraft: ClientKind | null = null;
   /** What is Codex's in these settings, which has its own state to keep. */
   private readonly codex: CodexSection;
+  /** What is a model server's in these settings, which has its own state to keep. */
+  private readonly server: ServerSection;
 
   constructor(private readonly host: AiSettingsHost) {
     this.codex = new CodexSection({
@@ -94,6 +99,15 @@ export class AiSettings {
       redraw: () => host.redraw(),
       recheck: (label) => this.recheck(label),
       commands: (commands) => this.commands(commands),
+    });
+    this.server = new ServerSection({
+      t: host.t,
+      described: host.described,
+      listing: () => this.listing,
+      busy: () => this.busy,
+      save: () => void this.save(true),
+      redraw: () => host.redraw(),
+      check: (address) => void this.askServer(address),
     });
   }
 
@@ -113,7 +127,8 @@ export class AiSettings {
     this.kindDraft = kind;
     this.copied = null;
     this.host.redraw();
-    const unasked = kind === "codex" ? this.codex.unasked : this.asked.phase === "idle";
+    const unasked =
+      kind === "codex" ? this.codex.unasked : kind === "local" ? this.server.unasked : this.asked.phase === "idle";
     if (unasked) await this.ask();
   }
 
@@ -132,8 +147,37 @@ export class AiSettings {
   async ask(): Promise<void> {
     if (!this.host.described.starts_programs) return;
     this.copied = null;
-    if (this.kind() === "codex") await this.askCodex();
-    else await this.askClaude();
+    switch (this.kind()) {
+      case "codex":
+        await this.askCodex();
+        break;
+      case "local":
+        await this.askServer(this.server.address());
+        break;
+      case "claude-code":
+        await this.askClaude();
+        break;
+    }
+  }
+
+  /**
+   * Ask the server at `address` what it is. Nothing is asked of a server nobody named: there is
+   * no address to call, and the screen says it has not been checked.
+   */
+  private async askServer(address: string): Promise<void> {
+    if (!this.host.described.starts_programs || address === "") return;
+    this.server.setAsked({ phase: "asking" });
+    this.host.redraw();
+    try {
+      this.server.setAsked({ phase: "answered", status: await this.host.api.readServerStatus(address) });
+    } catch (error) {
+      if (this.host.handled(error)) {
+        this.server.setAsked({ phase: "idle" });
+        return;
+      }
+      this.server.setAsked(refusal(error, this.host));
+    }
+    this.host.redraw();
   }
 
   private async askClaude(): Promise<void> {
@@ -234,14 +278,22 @@ export class AiSettings {
     this.notice = null;
     this.host.redraw();
     let saved = false;
-    const codex = this.kind() === "codex";
+    const kind = this.kind();
     try {
-      const kept = codex ? codexConnection(this.listing) : claudeConnection(this.listing);
-      const connection = codex ? this.codex.connection() : this.claudeDraft();
+      const kept =
+        kind === "codex"
+          ? codexConnection(this.listing)
+          : kind === "local"
+            ? localConnection(this.listing)
+            : claudeConnection(this.listing);
+      const connection =
+        kind === "codex" ? this.codex.connection() : kind === "local" ? this.server.connection() : this.claudeDraft();
       await this.host.api.saveConnection(connection, kept?.revision ?? null);
       if (makeDefault) await this.host.api.setDefaultConnection(connection.id, this.listing?.default ?? null);
-      if (codex) {
+      if (kind === "codex") {
         this.codex.reset();
+      } else if (kind === "local") {
+        this.server.reset();
       } else {
         this.draftModel = undefined;
         this.typedModel = "";
@@ -262,8 +314,9 @@ export class AiSettings {
       this.busy = false;
       this.host.redraw();
     }
-    // What is shown is of the program that is named now, which may be another one.
-    if (saved) await this.ask();
+    // What is shown is of the program that is named now, which may be another one; a server that
+    // was just kept is not asked again, because the person has just seen what it said.
+    if (saved && kind !== "local") await this.ask();
   }
 
   /** The connection to Claude Code that a save would write: what is chosen, over what is kept. */
@@ -316,11 +369,13 @@ export class AiSettings {
   view(): HTMLElement | null {
     const { described, t } = this.host;
     if (!described.settings && !described.starts_programs) return null;
-    const codex = this.kind() === "codex";
+    const kind = this.kind();
     const readiness = readinessOf(described, this.asked);
     const target = this.targetName();
     // A window that may not ask anything has no client to choose between.
-    const chooser = (codex ? this.codex.here : readiness.kind !== "not-here") ? this.kindChooser() : null;
+    const here =
+      kind === "codex" ? this.codex.here : kind === "local" ? this.server.here : readiness.kind !== "not-here";
+    const chooser = here ? this.kindChooser() : null;
     return h(
       "details",
       {
@@ -333,7 +388,7 @@ export class AiSettings {
       },
       h("summary", {}, `${t("aiTitle")}: ${target ?? t("aiNoneChosen")}`),
       chooser,
-      ...(codex ? this.codex.body() : this.body(readiness)),
+      ...(kind === "codex" ? this.codex.body() : kind === "local" ? this.server.body() : this.body(readiness)),
       this.notice === null
         ? null
         : h(
@@ -344,7 +399,7 @@ export class AiSettings {
     );
   }
 
-  /** The two clients these settings edit a connection to, one of which is shown at a time. */
+  /** The ways to reach a model these settings edit a connection to, one of which is shown at a time. */
   private kindChooser(): HTMLElement {
     const t = this.host.t;
     const shown = this.kind();
@@ -368,6 +423,7 @@ export class AiSettings {
       h("legend", {}, t("aiKind")),
       option("claude-code", "Claude Code"),
       option("codex", "Codex"),
+      option("local", t("aiServer")),
     );
   }
 

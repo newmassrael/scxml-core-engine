@@ -21,11 +21,15 @@
 //! | `sce-work`, for the authoring server | `SCE_WORK` | `sce-work` |
 //! | the product, for the authoring server | `SCE_CODEGEN` | `sce-codegen` |
 //!
-//! Either client is enough for a shell that has the person's settings: a request is then run for
-//! the connection it was made for, and a connection says which client and which credential. A
-//! shell without them runs the requests nobody chose a connection for, and for those Codex has no
-//! credential to run on, so it still needs Claude Code. The executor reports itself as Claude
-//! Code when that is there and as Codex when it is the only one.
+//! Any one of them is enough for a shell that has the person's settings: a request is then run for
+//! the connection it was made for, and a connection says which client and which credential, or
+//! which model server the person runs. A model server is no program to find, so it counts when a
+//! connection names one: the person registered it, and the executor runs for it with the
+//! authoring server and nothing else. A shell without the settings runs the requests nobody chose
+//! a connection for, and for those Codex has no credential to run on and there is no server to
+//! name, so it still needs Claude Code. The executor reports itself as Claude Code when that is
+//! there, as Codex when it is the only client, and as a model server when it is the only thing it
+//! runs for.
 //!
 //! `SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses and
 //! `SCE_CLAUDE_BUDGET_USD` bounds what one run may cost.
@@ -43,7 +47,7 @@ use crate::client_run::capture;
 use crate::clock::Clock;
 use crate::codex::{Codex, CodexConfig, CodexLaunch, HOME_DIR as CODEX_HOME_DIR};
 use crate::codex_support::Support;
-use crate::connection::AuthSource;
+use crate::connection::{AdapterKind, AuthSource};
 use crate::directory::{ClaudeLaunch, Connections, Launches};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
@@ -147,7 +151,8 @@ pub enum NotHosted {
     /// The owner turned it off.
     Off,
     /// No client was found to write with: no Claude Code, and for a shell that has the person's
-    /// settings no Codex either. Says where it looked for each.
+    /// settings no Codex and no connection to a model server either. Says where it looked for
+    /// each.
     NoClient(String),
     /// No launcher for the authoring server was found; says where it looked.
     NoAuthorServer(String),
@@ -168,7 +173,8 @@ impl std::fmt::Display for NotHosted {
                 f,
                 "no AI client to write models with ({tried}): install Claude Code, or set \
                  {CLAUDE_ENV} to its path (Codex too, with {CODEX_ENV}, where connections are \
-                 kept); until then requests wait for an authoring client of your own"
+                 kept, or register a model server of your own under AI connection); until then \
+                 requests wait for an authoring client of your own"
             ),
             NotHosted::NoAuthorServer(tried) => write!(
                 f,
@@ -322,7 +328,14 @@ where
         .as_ref()
         .map(|(settings_store, _)| settings_store.root().join(CODEX_HOME_DIR));
     // The first look is made now, so that what it found is in the works folder when this returns.
-    let first = find_clients(&store, &settings, codex_home.as_deref());
+    let first = find_clients(
+        &store,
+        &settings,
+        codex_home.as_deref(),
+        connections
+            .as_ref()
+            .map(|(settings_store, _)| settings_store),
+    );
     let shared = Arc::new(Shared::new(Standing::of(&first)));
     say(&store, &name, &shared.standing(), &[]);
     let supervising = thread::Builder::new()
@@ -393,6 +406,9 @@ fn supervise<C>(
 ) where
     C: Clock + Send + Sync + 'static,
 {
+    let registry = connections
+        .as_ref()
+        .map(|(settings_store, _)| settings_store.clone());
     let mut found = found;
     loop {
         let clients = match found {
@@ -411,7 +427,7 @@ fn supervise<C>(
                 if !wait_or_stop(&shutdown, wait) {
                     return;
                 }
-                found = find_clients(&store, &settings, codex_home.as_deref());
+                found = find_clients(&store, &settings, codex_home.as_deref(), registry.as_ref());
                 continue;
             }
         };
@@ -464,24 +480,29 @@ fn wait_or_stop(stop: &Cancel, span: Duration) -> bool {
     false
 }
 
-/// The clients a shell found for its executor, when it started: at least one.
+/// What a shell found for its executor, when it started: at least one client, or a connection to
+/// a model server, which is no program to find.
 struct Clients {
     author: AuthorServer,
     claude: Option<ClaudeCode>,
     codex: Option<Codex>,
+    /// Whether a connection names a model server: one the person registered.
+    servers: bool,
 }
 
 impl Clients {
-    /// What was found, or nothing when neither client is here.
+    /// What was found, or nothing when no client is here and no model server is registered.
     fn of(
         author: AuthorServer,
         claude: Option<ClaudeCode>,
         codex: Option<Codex>,
+        servers: bool,
     ) -> Option<Clients> {
-        (claude.is_some() || codex.is_some()).then_some(Clients {
+        (claude.is_some() || codex.is_some() || servers).then_some(Clients {
             author,
             claude,
             codex,
+            servers,
         })
     }
 
@@ -511,6 +532,9 @@ struct Finder {
     /// The application's own home for Codex, where Codex counts (a shell with the person's
     /// settings); none where it does not.
     codex_home: Option<PathBuf>,
+    /// Whether a connection named a model server when the executor started: what it reports itself
+    /// as when no client is there.
+    servers: bool,
     shared: Arc<Shared>,
     seen: Mutex<Seen>,
     /// Whether a thread is looking now. Another that wants the answer is given the last one and
@@ -546,6 +570,7 @@ impl Finder {
             settings,
             author: first.author,
             codex_home,
+            servers: first.servers,
             shared,
             seen: Mutex::new(Seen {
                 at: Instant::now(),
@@ -619,6 +644,12 @@ impl Launches for Finder {
             environment: std::env::vars().collect(),
         })
     }
+
+    /// The authoring server is the shell's own and does not depend on a client being there: a
+    /// model server is written for with it when neither client is installed.
+    fn author(&self) -> Option<AuthorServer> {
+        Some(self.author.clone())
+    }
 }
 
 /// The client that is there, as a generator.
@@ -645,6 +676,9 @@ impl Generator for Reporting {
     fn kind(&self) -> &str {
         match self.0.reporting() {
             Some(Reporter::Codex(_)) => "codex",
+            // An executor that has no client and runs for the model server a connection names is
+            // what it runs for.
+            None if self.0.servers => "local",
             // Claude Code, which is also what an executor that has lost every client goes on being
             // called: the screen reads the host's own report of why nothing runs.
             Some(Reporter::Claude(_)) | None => "claude-code",
@@ -676,13 +710,29 @@ impl Generator for Reporting {
     }
 }
 
+/// Whether a connection of the person's names a model server: one they registered. That is what
+/// finding one comes to, as it is no program. Connections that cannot be read name none: the
+/// screens that read them say why.
+fn names_a_server(registry: Option<&ConnectionStore>) -> bool {
+    registry
+        .and_then(|settings_store| settings_store.list().ok())
+        .is_some_and(|listing| {
+            listing
+                .connections
+                .iter()
+                .any(|stored| stored.connection.adapter == AdapterKind::Local)
+        })
+}
+
 /// What a shell needs to host an executor, found; or why it is not. `codex_home` is where Codex
 /// counts: it does for a shell that has the person's settings, where a connection gives it the
-/// credential to run on, and this is the application's own home for it.
+/// credential to run on, and this is the application's own home for it. `registry` is where those
+/// settings are, and where a model server is found.
 fn find_clients<C: Clock>(
     store: &WorkStore<C>,
     settings: &HostSettings,
     codex_home: Option<&Path>,
+    registry: Option<&ConnectionStore>,
 ) -> Result<Clients, NotHosted> {
     if !settings.enabled {
         return Err(NotHosted::Off);
@@ -691,12 +741,16 @@ fn find_clients<C: Clock>(
     let claude = find_claude(settings, &author);
     let codex = codex_home.map(|home| find_codex(settings, &author, home));
     // What to say when neither is here: where it looked for each client that counts.
-    let tried = match (&claude, &codex) {
+    let mut tried = match (&claude, &codex) {
         (Err(claude), None) => claude.clone(),
         (Err(claude), Some(Err(codex))) => format!("Claude Code: {claude}; Codex: {codex}"),
         _ => String::new(),
     };
-    let clients = Clients::of(author, claude.ok(), codex.and_then(Result::ok))
+    let servers = names_a_server(registry);
+    if registry.is_some() && !servers && !tried.is_empty() {
+        tried.push_str("; model server: none is registered");
+    }
+    let clients = Clients::of(author, claude.ok(), codex.and_then(Result::ok), servers)
         .ok_or(NotHosted::NoClient(tried))?;
     // Last: a missing client is the plainer thing to say, and the server is asked only when there
     // is a client to give it to.

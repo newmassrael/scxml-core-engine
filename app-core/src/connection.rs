@@ -215,14 +215,7 @@ impl Connection {
             (AdapterKind::Local, None) => {
                 return Err(bad("a local connection needs a server address"));
             }
-            (AdapterKind::Local, Some(address)) if !valid_server_address(address) => {
-                return Err(bad(format!(
-                    "`{}` is not a server address: it is http:// or https://, a host and an \
-                     optional port and path, with no user, query or fragment",
-                    address.escape_debug()
-                )));
-            }
-            (AdapterKind::Local, Some(_)) => {}
+            (AdapterKind::Local, Some(address)) => check_server_address(address)?,
             (_, Some(_)) => {
                 return Err(bad("only a local connection has a server address"));
             }
@@ -284,6 +277,21 @@ fn source_word(source: AuthSource) -> &'static str {
 fn one_line(text: &str, max: usize) -> bool {
     let length = text.chars().count();
     (1..=max).contains(&length) && text == text.trim() && !text.chars().any(char::is_control)
+}
+
+/// Whether `address` is one a connection may keep for a server, and what is wrong with it when it
+/// is not. The same rule holds an address that is only asked about (`server_status`), so that a
+/// screen is not told that a server is there at an address it could not then save.
+pub fn check_server_address(address: &str) -> Result<(), StoreError> {
+    if valid_server_address(address) {
+        Ok(())
+    } else {
+        Err(bad(format!(
+            "`{}` is not a server address: it is http:// or https://, a host and an optional \
+             port and path, with no user, query or fragment",
+            address.escape_debug()
+        )))
+    }
 }
 
 fn valid_server_address(address: &str) -> bool {

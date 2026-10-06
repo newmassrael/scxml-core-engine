@@ -5,6 +5,10 @@
 
 #![allow(dead_code)]
 
+/// The stand-ins a model server run is held against (a shell script is one of them).
+#[cfg(unix)]
+pub mod model_server;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 

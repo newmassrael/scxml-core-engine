@@ -25,6 +25,7 @@ use sce_app_core::claude_code::{
     observe_auth, observed_from_status, AuthorServer, ClaudeCodeConfig,
 };
 use sce_app_core::directory::{ClaudeLaunch, Connections};
+use sce_app_core::local::LocalConfig;
 use sce_app_core::requests::Pin;
 use sce_app_core::runner::{Directory, Unrunnable};
 use sce_app_core::{
@@ -361,23 +362,163 @@ fn a_route_a_release_switched_off_is_not_run_and_says_so() {
     assert!(said.contains("switched off"), "{said}");
 }
 
-#[test]
-fn a_kind_of_connection_the_build_has_no_adapter_for_is_not_run() {
-    let rig = Rig::new("dir-adapters", SUBSCRIPTION);
-    let mut local = claude();
-    local.id = ConnectionId::parse("pc2").unwrap();
-    local.adapter = AdapterKind::Local;
-    local.auth = AuthSource::NoAuth;
-    local.display_name = Some("pc2 (tunnel)".to_string());
-    local.server_url = Some("http://127.0.0.1:11434/v1".to_string());
+/// A connection to a model server on this computer, named as a person names one.
+fn local() -> Connection {
+    Connection {
+        id: ConnectionId::parse("pc2").unwrap(),
+        adapter: AdapterKind::Local,
+        display_name: Some("pc2 (tunnel)".to_string()),
+        executable: None,
+        model: Some("qwen3-coder:30b".to_string()),
+        auth: AuthSource::NoAuth,
+        server_url: Some("http://127.0.0.1:11434/v1".to_string()),
+        limits: Limits {
+            turns: Some(30),
+            seconds: Some(900),
+        },
+    }
+}
 
-    let pin = rig.pin(&local);
-    let said = refused(rig.directory(Policy::shipped()).generator_for(&pin));
+#[test]
+fn a_connection_to_a_model_server_is_run_with_its_model_its_address_and_its_limits() {
+    let rig = Rig::new("dir-local", SUBSCRIPTION);
+    let pin = rig.pin(&local());
+    let directory = rig.directory(Policy::shipped());
+
+    let server = directory.local_for(&pin).unwrap();
+
+    assert_eq!(server.config().model, "qwen3-coder:30b");
+    assert_eq!(server.config().max_turns, 30);
+    assert_eq!(server.config().timeout, Duration::from_secs(900));
+    assert!(server.endpoint().is_loopback());
+    // And it is what the runner is given for the request, whichever client is or is not installed.
+    assert_eq!(directory.generator_for(&pin).unwrap().kind(), "local");
+}
+
+#[test]
+fn what_a_connection_does_not_limit_is_left_to_the_defaults_of_a_model_server_run() {
+    let rig = Rig::new("dir-local-defaults", SUBSCRIPTION);
+    let mut open = local();
+    open.limits = Limits::default();
+    let pin = rig.pin(&open);
+
+    let server = rig.directory(Policy::shipped()).local_for(&pin).unwrap();
+
+    let defaults = LocalConfig::for_model("qwen3-coder:30b");
+    assert_eq!(server.config().max_turns, defaults.max_turns);
+    assert_eq!(server.config().timeout, defaults.timeout);
+}
+
+#[test]
+fn a_model_server_is_run_where_no_client_is_installed_when_the_authoring_server_is_known() {
+    let rig = Rig::new("dir-local-alone", SUBSCRIPTION);
+    let pin = rig.pin(&local());
+    let alone = Connections::new(rig.settings.clone(), Policy::shipped(), None);
+
+    let without = refused(alone.local_for(&pin));
+    let with = alone.with_author(author()).local_for(&pin);
 
     assert!(
-        said.contains(&format!("no adapter for `{}`", local.adapter.word())),
+        without.contains("authoring server was not found"),
+        "{without}"
+    );
+    assert!(with.is_ok());
+}
+
+#[test]
+fn an_address_over_https_is_one_a_model_server_is_run_at() {
+    let rig = Rig::new("dir-local-https", SUBSCRIPTION);
+    let mut remote = local();
+    remote.server_url = Some("https://models.example.com/v1".to_string());
+    let pin = rig.pin(&remote);
+
+    let server = rig.directory(Policy::shipped()).local_for(&pin).unwrap();
+
+    assert!(server.endpoint().is_tls());
+    assert!(!server.endpoint().is_loopback());
+}
+
+#[test]
+fn a_model_server_with_no_model_chosen_waits_and_says_which_without_saying_where_it_is() {
+    let rig = Rig::new("dir-local-no-model", SUBSCRIPTION);
+    let mut open = local();
+    open.model = None;
+    let pin = rig.pin(&open);
+
+    let said = refused(rig.directory(Policy::shipped()).local_for(&pin));
+
+    assert!(said.contains("no model is chosen"), "{said}");
+    assert!(said.contains("pc2 (tunnel)"), "{said}");
+    assert!(!said.contains("127.0.0.1"), "{said}");
+}
+
+#[test]
+fn a_model_server_that_wants_a_key_waits_because_no_place_keeps_one_yet() {
+    let rig = Rig::new("dir-local-key", SUBSCRIPTION);
+    let mut keyed = local();
+    keyed.auth = AuthSource::ServerKey;
+    let pin = rig.pin(&keyed);
+
+    let said = refused(rig.directory(Policy::shipped()).local_for(&pin));
+
+    assert!(said.contains("wants a key"), "{said}");
+    assert!(said.contains("no place to keep one"), "{said}");
+}
+
+#[test]
+fn an_address_this_build_cannot_reach_is_said_without_the_address() {
+    let rig = Rig::new("dir-local-address", SUBSCRIPTION);
+    let mut bad = local();
+    // Held to its characters by the settings, and to the rest of the form here.
+    bad.server_url = Some("http://127.0.0.1:99999/v1".to_string());
+    let pin = rig.pin(&bad);
+
+    let said = refused(rig.directory(Policy::shipped()).local_for(&pin));
+
+    assert!(said.contains("not one this build can reach"), "{said}");
+    assert!(
+        said.contains("the port is a number from 1 to 65535"),
         "{said}"
     );
+    assert!(!said.contains("127.0.0.1"), "{said}");
+}
+
+#[test]
+fn a_route_the_build_switched_off_is_not_run_for_a_model_server_either() {
+    let rig = Rig::new("dir-local-off", SUBSCRIPTION);
+    let pin = rig.pin(&local());
+    let policy = Policy::shipped().with_switched_off([Route::LocalServer]);
+
+    let said = refused(rig.directory(policy).local_for(&pin));
+
+    assert!(said.contains("switched off"), "{said}");
+}
+
+#[test]
+fn a_request_is_written_by_the_adapter_of_its_own_connection_and_by_no_other() {
+    let rig = Rig::new("dir-adapters", SUBSCRIPTION);
+    let for_server = rig.pin(&local());
+    let for_claude = rig.pin(&claude());
+    let directory = rig.directory(Policy::shipped());
+
+    let claude_said = refused(directory.claude_for(&for_server));
+    let server_said = refused(directory.local_for(&for_claude));
+    let codex_said = refused(directory.codex_for(&for_server));
+
+    assert!(
+        claude_said.contains("made for a `local` connection"),
+        "{claude_said}"
+    );
+    assert!(
+        claude_said.contains("`claude-code` writes"),
+        "{claude_said}"
+    );
+    assert!(
+        server_said.contains("made for a `claude-code` connection"),
+        "{server_said}"
+    );
+    assert!(server_said.contains("`local` writes"), "{server_said}");
+    assert!(codex_said.contains("`codex` writes"), "{codex_said}");
 }
 
 #[test]
