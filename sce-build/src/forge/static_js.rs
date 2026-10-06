@@ -399,6 +399,12 @@ impl StaticTarget for JsTarget {
     fn lowers_bytes(&self) -> bool {
         true
     }
+    // A record's byte-string field is the same text in the object that holds it,
+    // which `field_assignment` writes again with the field changed, held to the
+    // bound its schema declares as a variable's is.
+    fn lowers_record_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }

@@ -3677,10 +3677,9 @@ types, as the text of its bytes, one character to a byte, held to its bound by
 
 A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
 a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
-**Rust**, **Go**, **Python**, **C++** and **C11** so far (`scenarios/static_record_bytes.json`,
-`StaticTarget::lowers_record_bytes`);
-the Interpreter's lowering refuses a record with one by name until it holds it, in a variable
-and in a list of records alike. A transition on an event whose payload carries a `bytes`
+**Rust**, **Go**, **Python**, **C++**, **C11** and, as the text of its bytes in the
+object that holds it, the **Interpreter** (`scenarios/static_record_bytes.json`,
+`StaticTarget::lowers_record_bytes`), in a variable and in a list of records alike. A transition on an event whose payload carries a `bytes`
 field is refused on all six and by the Interpreter's lowering
 (`StaticTarget::lowers_payload_bytes`). A Kotlin record that holds a byte string compares
 and hashes by the bytes and not by the identity of the array, as a data class would

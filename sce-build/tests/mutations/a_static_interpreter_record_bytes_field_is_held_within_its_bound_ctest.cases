@@ -1,0 +1,43 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# "A byte string"; docs/adr/0005, decision 2).
+#
+# A lowered document holds a record as an object of its fields, written again with a
+# field changed, and a byte-string field as the text of its bytes, one character to a
+# byte. An assignment to the field is held to the bound its schema declares through
+# `SceStatic.boundedBytes`: past it the library throws, nothing is written,
+# `error.execution` is raised and the block ends (§scxml-4.9). `static_record_bytes` is
+# replayed by `static_datamodel_lowered`, which also asserts that it is replayed and not
+# left to a refusal; the mutants below each take one decision away:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a byte-string constant is not written as the text of its bytes, which the
+#     Interpreter's lowering refuses where it stands;
+#   the Interpreter is not said to hold a record's byte string, so the document is
+#     refused by name and not replayed.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_lowering.rs sce-build/src/forge/static_js.rs sce-build/src/forge/expr.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_record_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY
+
+mutation_case "a byte-string constant is not written as the text of its bytes" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if matches!(target, ExprTarget::Js) && !ctx.exact_integers {\n        bytes_literals_as_text(&mut ast);",
+     "    if matches!(target, ExprTarget::Js) && !ctx.exact_integers && false {\n        bytes_literals_as_text(&mut ast);")
+PY
+
+mutation_case "the Interpreter is not said to hold a record's byte string" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn lowers_record_bytes(&self) -> bool {\n        true\n    }",
+     "    fn lowers_record_bytes(&self) -> bool {\n        false\n    }")
+PY

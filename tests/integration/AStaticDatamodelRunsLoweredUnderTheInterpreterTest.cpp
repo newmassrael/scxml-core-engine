@@ -340,6 +340,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // is replayed and not left to a refusal the scan above would let pass.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_bytes"), replayed.end())
         << "static_bytes was not replayed: a byte string has no lowering for the Interpreter";
+    // ... and so is a record's field of one, the object that holds it written again with the
+    // field changed.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_record_bytes"), replayed.end())
+        << "static_record_bytes was not replayed: a record's byte string has no lowering for the Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }
