@@ -22,6 +22,7 @@ package com.sce.integration
 
 import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
+import com.sce.integration.static_bytes.StaticBytesStateMachine
 import com.sce.integration.static_cancel_expr.StaticCancelExprStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
@@ -790,6 +791,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_string_capacity"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A bytes variable is held to the bytes it declares, as a string is to its
+    // UTF-8 bytes: an assignment past the bound writes nothing, raises
+    // error.execution and ends its block. It is saved as its byte-exact Latin-1
+    // text, which is what the scenario reads it back as.
+    @Test
+    fun staticBytesHoldsAByteStringToItsBound() {
+        val sm = StaticBytesStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_bytes"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -1,0 +1,63 @@
+# Mutation cases for "a bytes variable is held within the `sce:capacity` it declares,
+# and is saved as its Latin-1 text" under the Kotlin backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_byte_string_is_held_within_its_bound_kotlin.cases`.
+#
+# `static_bytes` assigns a bytes variable from a literal and from another one, and
+# expects a value past the bound to leave the variable as it was and `errors` to count
+# it; the scenario reads each value back from the saved state, where it is its byte-exact
+# Latin-1 text. `aByteStringIsSavedAsLatin1TextAndRefusedPastItsBoundOrAByte` restores a
+# saved state that claims more bytes than the bound, or a character that is no byte, and
+# expects the refusal to name the variable; `aHostThatWritesIntoAByteStringItWasHanded...`
+# writes into the array it was handed and expects the machine not to have moved. The
+# mutants take one decision away each:
+#
+#   an assignment to a byte string is not held to its bound;
+#   a published byte string is handed out as the machine's own array and not as a copy;
+#   a byte string is saved as an array of numbers and not as its Latin-1 text;
+#   a saved byte string past the bound is read back (the bound is not enforced);
+#   a character past U+00FF is cut to a byte and not refused.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest' --tests 'com.sce.integration.StaticDatamodelTest'
+mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt
+mutation_targets backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Checked.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_bytes/static_bytesSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
+
+mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
+edit("backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Checked.kt",
+     "        if (value.size > capacity) fail(AlgorithmError.CapacityExceeded)",
+     "        if (value.size > capacity && false) fail(AlgorithmError.CapacityExceeded)")
+PY
+
+mutation_case "a published byte string is handed out as the machine's own array" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "        get() = field.copyOf()",
+     "        get() = field")
+PY
+
+mutation_case "a byte string is saved as an array of numbers" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+     "    fun of(value: ByteArray): Any = CharArray(value.size) { (value[it].toInt() and 0xFF).toChar() }.concatToString()",
+     "    fun of(value: ByteArray): Any = value.map { Json.Number((it.toInt() and 0xFF).toString()) }")
+PY
+
+mutation_case "a saved byte string past the bound is read back" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+     "        if (bytes.size > capacity) {\n            throw StateRefusal(\"'$what' holds ${bytes.size} bytes",
+     "        if (bytes.size > capacity && false) {\n            throw StateRefusal(\"'$what' holds ${bytes.size} bytes")
+PY
+
+mutation_case "a character past U+00FF is cut to a byte" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SavedState.kt",
+     "            if (unit > 0xFF) {\n                val hex",
+     "            if (unit > 0xFF && false) {\n                val hex")
+PY

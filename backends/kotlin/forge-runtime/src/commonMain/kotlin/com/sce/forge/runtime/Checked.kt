@@ -105,6 +105,15 @@ public object SceChecked {
         return value
     }
 
+    /**
+     * [bounded] for a byte string: [value] when it holds no more than [capacity]
+     * bytes, and a capacity failure otherwise (docs/adr/0005, decision 2).
+     */
+    public fun bounded(value: ByteArray, capacity: Int): ByteArray {
+        if (value.size > capacity) fail(AlgorithmError.CapacityExceeded)
+        return value
+    }
+
     /** `v` when it lies in `[lo, hi]`; an overflow otherwise. */
     private fun fit(v: Long, lo: Long, hi: Long): Long =
         if (v < lo || v > hi) fail(AlgorithmError.Overflow) else v

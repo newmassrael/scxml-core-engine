@@ -95,6 +95,11 @@ class {{ machine_name }}StateMachine(
 {% if field.published %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, published (`sce:direction="out"`). */
     var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% if field.saved_type == "bytes" %}
+        // A byte string is handed out as a copy: the array is the machine's own,
+        // and a host that wrote into it would change the variable behind its bound.
+        get() = field.copyOf()
+{% endif %}
         private set
 {% else %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, the machine's own. */

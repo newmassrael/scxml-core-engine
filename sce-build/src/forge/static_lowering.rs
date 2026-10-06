@@ -988,6 +988,14 @@ impl StaticTarget for KotlinTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("com.sce.forge.runtime.SceChecked.bounded({value}, {capacity})")
     }
+    // The overload that takes a `ByteArray` counts its size.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        self.bounded_string(value, capacity)
+    }
+    // A `ByteArray` the machine never writes into, saved as its Latin-1 text.
+    fn lowers_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }

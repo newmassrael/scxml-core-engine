@@ -590,7 +590,7 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
 /// `static_bytes`.
 const BYTES_HELD: &[(&str, &str, bool, bool)] = &[
     ("rust", "Rust", true, false),
-    ("kotlin", "Kotlin", false, false),
+    ("kotlin", "Kotlin", true, false),
     ("go", "Go", false, false),
     ("cpp", "C++", false, false),
     ("python", "Python", false, false),

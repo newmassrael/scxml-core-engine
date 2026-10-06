@@ -14,6 +14,7 @@
 
 package com.sce.integration
 
+import com.sce.integration.static_bytes.StaticBytesStateMachine
 import com.sce.integration.static_counter.StaticCounterEvent
 import com.sce.integration.static_counter.StaticCounterState
 import com.sce.integration.static_counter.StaticCounterStateMachine
@@ -46,6 +47,7 @@ import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -778,6 +780,59 @@ class StaticDatamodelTest {
             } finally {
                 sm.cleanup()
             }
+        }
+    }
+
+    // A byte string is its Latin-1 text (docs/adr/0005, decision 2): each character
+    // is one byte, so four of them fit sce:capacity="4" whatever their code points
+    // are, five do not, and a character past U+00FF is no byte at all.
+    @Test
+    fun aByteStringIsSavedAsLatin1TextAndRefusedPastItsBoundOrAByte() {
+        val source = StaticBytesStateMachine()
+        source.initialize()
+        val json = try {
+            source.save().toJson()
+        } finally {
+            source.cleanup()
+        }
+        for ((claimed, fits) in listOf("abcd" to true, "éÿ\u0080ÿ" to true, "abcde" to false, "é€" to false)) {
+            val text = json.replace("\"tail\":\"xy\"", "\"tail\":\"$claimed\"")
+            val sm = StaticBytesStateMachine()
+            try {
+                if (fits) {
+                    sm.restore(SavedState.fromJson(text))
+                    val bytes = claimed.map { it.code.toByte() }.toByteArray()
+                    assertArrayEquals(bytes, sm.tail)
+                    // Written back, and read again, as the same bytes: none became another.
+                    val again = StaticBytesStateMachine()
+                    try {
+                        again.restore(SavedState.fromJson(sm.save().toJson()))
+                        assertArrayEquals(bytes, again.tail)
+                    } finally {
+                        again.cleanup()
+                    }
+                } else {
+                    val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+                    assertTrue(refusal.message!!.contains("tail"), refusal.message)
+                    assertArrayEquals("xy".toByteArray(), sm.tail)
+                }
+            } finally {
+                sm.cleanup()
+            }
+        }
+    }
+
+    // A host that is handed a byte string is handed a copy of it: the array is the
+    // machine's own, and a write into it would change the variable behind its bound.
+    @Test
+    fun aHostThatWritesIntoAByteStringItWasHandedChangesNothingOfTheMachine() {
+        val sm = StaticBytesStateMachine()
+        sm.initialize()
+        try {
+            sm.frame[0] = 'z'.code.toByte()
+            assertArrayEquals("ab".toByteArray(), sm.frame)
+        } finally {
+            sm.cleanup()
         }
     }
 

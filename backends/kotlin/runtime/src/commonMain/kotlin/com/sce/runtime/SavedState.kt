@@ -576,8 +576,13 @@ object SavedValues {
     fun of(value: Boolean): Any = value
     fun of(value: String): Any = value
 
-    /** A byte string as the array of its bytes, each 0 to 255. */
-    fun of(value: ByteArray): Any = value.map { Json.Number((it.toInt() and 0xFF).toString()) }
+    /**
+     * A byte string as its byte-exact Latin-1 text, each byte the character of that
+     * code point (docs/adr/0005, decision 2): the spelling it takes on the wire, so
+     * one value is one text on every backend, and a JSON reader that has no byte
+     * string reads it as a string.
+     */
+    fun of(value: ByteArray): Any = CharArray(value.size) { (value[it].toInt() and 0xFF).toChar() }.concatToString()
 
     /** A list, each element written by [element]. */
     fun <T> list(value: List<T>, element: (T) -> Any?): Any = value.map(element)
@@ -653,9 +658,27 @@ object SavedValues {
         return items.mapIndexed { i, item -> element(item, "$what[$i]") }
     }
 
-    /** A byte string read back from the array of its bytes, held to its [capacity]. */
-    fun bytes(value: Any?, what: String, capacity: Int): ByteArray =
-        list(value, what, capacity) { item, w -> uint8(item, w).toByte() }.toByteArray()
+    /**
+     * A byte string read back from its Latin-1 text ([of]), only if it holds no more
+     * than the [capacity] bytes the machine bounds it by — a machine never holds
+     * more, and a restored one must not be the first to. A character past U+00FF is
+     * no byte, and is refused rather than cut.
+     */
+    fun bytes(value: Any?, what: String, capacity: Int): ByteArray {
+        val text = string(value, what)
+        val bytes = ByteArray(text.length) {
+            val unit = text[it].code
+            if (unit > 0xFF) {
+                val hex = unit.toString(16).uppercase().padStart(4, '0')
+                throw StateRefusal("'$what' holds U+$hex, which is past U+00FF and so no byte")
+            }
+            unit.toByte()
+        }
+        if (bytes.size > capacity) {
+            throw StateRefusal("'$what' holds ${bytes.size} bytes, past the $capacity it is bounded by")
+        }
+        return bytes
+    }
 
     /** The field [name] of a saved record [value] — what a generated record reads each field with. */
     fun field(value: Any?, record: String, name: String): Any? {
