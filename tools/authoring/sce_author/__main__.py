@@ -276,6 +276,11 @@ def cmd_verify(args) -> int:
     print(f"  {result.passed} passed, {result.failed} failed, "
           f"{result.unjudged} could not be judged "
           f"(the {result.backend} lowering)")
+    if result.passed_short:
+        print(f"  {result.passed_short} of the {result.passed} passed case(s) did not compare "
+              f"every position the record expects: no rule of this binding writes one of them "
+              f"(the `----` lines above). A component that leaves an output out passes these "
+              f"and still fails the host's own tests.")
     # ⚠ An open value is not a failure of the document, and it is not a pass
     # either: a pipeline that gates on this status must not read "incomplete"
     # as "verified". Before open values were run rather than refused, the

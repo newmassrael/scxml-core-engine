@@ -31,6 +31,7 @@ import contextlib
 import hashlib
 import itertools
 import json
+import math
 import pathlib
 import re
 import sys
@@ -301,6 +302,18 @@ class Verification:
     @property
     def unjudged(self) -> int:
         return sum(1 for r in self.results if not r.judged)
+
+    @property
+    def passed_short(self) -> int:
+        """Cases counted as passed that did not look at every position the record expects.
+
+        ⚠ A case is refused only when NOTHING was compared; one whose other position agreed
+        passes, and the position no rule of the binding writes is a `----` line. Over a document
+        that leaves a whole output out (an actuator it was given no address for) this made
+        "every case passed" true and the component wrong: tens of cases over three components,
+        measured 2026-10-06, all of which the host's own tests then failed. The count stands
+        beside the passes and never inside either side of them."""
+        return sum(1 for r in self.results if r.passed and r.unchecked)
 
 
 # ------------------------------------------------------------------ the code
@@ -1992,7 +2005,18 @@ def _same(want, got, field_=None) -> bool:
     # the report blamed it, which is the same defect as comparing a symbol
     # against its own code.
     try:
-        if float(str(want).strip()) == float(str(got).strip()):
+        left, right = float(str(want).strip()), float(str(got).strip())
+        if left == right:
+            return True
+        # ⚠ A real is equal to the platform's own comparison, which is not bit for bit. The
+        # product's validator accepts the double one place away (`9999 * 0.1` is
+        # 999.9000000000001, the record says 999.9; the original component computes that very
+        # double and passes its own test), and rejects a real that went through binary32
+        # (a relative error of 1.5e-8). Measured 2026-10-06 in three components, where an exact
+        # comparison failed cases the product passes. 1e-12 is far above a place in the 17th
+        # digit and far below a binary32 rounding.
+        if math.isfinite(left) and math.isfinite(right) and \
+                math.isclose(left, right, rel_tol=1e-12, abs_tol=0.0):
             return True
     except (TypeError, ValueError):
         pass
