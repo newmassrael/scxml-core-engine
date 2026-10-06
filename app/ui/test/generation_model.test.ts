@@ -15,6 +15,7 @@ import type {
 import {
   connectedNames,
   controlsOf,
+  hostsKey,
   isConnected,
   pressKey,
   savingEndsARequest,
@@ -77,6 +78,7 @@ describe("why no AI is hosted", () => {
     hosting: false,
     reason: "no Claude Code to write models with: install it, or set SCE_CLAUDE",
     client_version: null,
+    waiting: [],
     seen_at: "2026-10-05T09:00:00Z",
     live: true,
     ...over,
@@ -99,15 +101,101 @@ describe("why no AI is hosted", () => {
   });
 });
 
+describe("what the screen reads of the shells, as one thing to compare", () => {
+  const shell = (waiting: HostStatus["waiting"], over: Partial<HostStatus> = {}): HostListing => ({
+    hosts: [
+      {
+        name: "desktop",
+        hosting: true,
+        reason: null,
+        client_version: "2.1.291",
+        waiting,
+        seen_at: "2026-10-05T09:00:00Z",
+        live: true,
+        ...over,
+      },
+    ],
+    unreadable: [],
+  });
+  const left = (reason: string) => [{ work: "door", request: "req-1", connection: "claude", reason }];
+
+  it("moves when a shell says why a request waits, or says something else", () => {
+    expect(hostsKey(shell(left("nobody is signed in")))).not.toBe(hostsKey(shell([])));
+    expect(hostsKey(shell(left("nobody is signed in")))).not.toBe(hostsKey(shell(left("no adapter"))));
+  });
+
+  it("does not move when a shell says the same again a moment later", () => {
+    const again = shell(left("nobody is signed in"), { seen_at: "2026-10-05T09:00:30Z" });
+    expect(hostsKey(again)).toBe(hostsKey(shell(left("nobody is signed in"))));
+  });
+
+  it("does not count what a shell that stopped saying it last said", () => {
+    expect(hostsKey(shell(left("nobody is signed in"), { live: false }))).toBe(hostsKey(shell([])));
+    expect(hostsKey(null)).toBe("");
+  });
+});
+
 describe("where the latest request stands", () => {
   it("is idle for a work nobody asked a model for", () => {
     expect(statusOf(null, null, null)).toEqual({ kind: "idle" });
   });
 
   it("says whether an AI is there to take a request that waits", () => {
-    expect(statusOf(head("queued", 0), null, listing(adapter()))).toEqual({ kind: "queued", connected: true });
-    expect(statusOf(head("queued", 0), null, listing())).toEqual({ kind: "queued", connected: false });
-    expect(statusOf(head("queued", 0), null, null)).toEqual({ kind: "queued", connected: false });
+    const queued = (connected: boolean) => ({ kind: "queued", connected, waiting: null, unchosen: false });
+    expect(statusOf(head("queued", 0), null, listing(adapter()))).toEqual(queued(true));
+    expect(statusOf(head("queued", 0), null, listing())).toEqual(queued(false));
+    expect(statusOf(head("queued", 0), null, null)).toEqual(queued(false));
+  });
+
+  describe("a request that waits", () => {
+    const waitingHost = (over: Partial<HostStatus> = {}): HostStatus => ({
+      name: "desktop",
+      hosting: true,
+      reason: null,
+      client_version: "2.1.291",
+      waiting: [
+        { work: "door", request: "req-1", connection: "claude", reason: "nobody is signed in to Claude Code" },
+        { work: "door", request: "req-9", connection: "claude", reason: "another request's reason" },
+      ],
+      seen_at: "2026-10-05T09:00:00Z",
+      live: true,
+      ...over,
+    });
+    const seen = (...list: HostStatus[]): HostListing => ({ hosts: list, unreadable: [] });
+
+    it("says why the executor could not run it, in the words the executor gave", () => {
+      expect(statusOf(head("queued", 0), detail({ state: "queued" }), listing(adapter()), seen(waitingHost()))).toMatchObject({
+        kind: "queued",
+        waiting: "nobody is signed in to Claude Code",
+      });
+    });
+
+    it("does not take the reason of another request, of a shell that stopped saying it, or of nobody", () => {
+      const asked = (hosts: HostListing | null) =>
+        statusOf(head("queued", 0, "req-2"), detail({ id: "req-2", state: "queued" }), listing(adapter()), hosts);
+      expect(asked(seen(waitingHost()))).toMatchObject({ waiting: null });
+      expect(
+        statusOf(head("queued", 0), detail({ state: "queued" }), listing(adapter()), seen(waitingHost({ live: false }))),
+      ).toMatchObject({ waiting: null });
+      expect(asked(null)).toMatchObject({ waiting: null });
+    });
+
+    it("is one nobody chose a connection for, when the application made it", () => {
+      const made = (over: Partial<GenerationRequest>) =>
+        statusOf(head("queued", 0), detail({ state: "queued", lease: null, ...over }), listing(adapter()));
+      expect(made({ origin: "gui", pin: null })).toMatchObject({ unchosen: true });
+      // An authoring client made it for itself: it waits for that client, and is not unchosen.
+      expect(made({ origin: "mcp", pin: null })).toMatchObject({ unchosen: false });
+      // One made for a connection is chosen, whoever made it.
+      expect(
+        made({
+          origin: "gui",
+          pin: { connection: "claude", revision: "a".repeat(64), adapter: "claude-code", model: null, limits: { turns: null, seconds: null } },
+        }),
+      ).toMatchObject({ unchosen: false });
+      // What was not read of the request is not guessed at.
+      expect(statusOf(head("queued", 0), null, listing(adapter()))).toMatchObject({ unchosen: false });
+    });
   });
 
   it("says who holds a running request when the request was read, and not when it was not", () => {
@@ -152,6 +240,35 @@ describe("what the person may do", () => {
     for (const status of [statusOf(head("queued", 0), null, null), statusOf(head("running"), null, null)]) {
       expect(controlsOf(status, false)).toEqual({ canGenerate: false, replaces: false, canCancel: true });
     }
+  });
+
+  it("is to ask again over a request that waits for a connection, or to call it off", () => {
+    const unchosen = statusOf(head("queued", 0), detail({ state: "queued", lease: null, origin: "gui" }), null);
+    const pinned = {
+      connection: "claude",
+      revision: "a".repeat(64),
+      adapter: "claude-code",
+      model: null,
+      limits: { turns: null, seconds: null },
+    } as const;
+    const stuck = statusOf(head("queued", 0), detail({ state: "queued", lease: null, pin: pinned }), null, {
+      hosts: [
+        {
+          name: "desktop",
+          hosting: true,
+          reason: null,
+          client_version: null,
+          waiting: [{ work: "door", request: "req-1", connection: "claude", reason: "nobody is signed in" }],
+          seen_at: "2026-10-05T09:00:00Z",
+          live: true,
+        },
+      ],
+      unreadable: [],
+    });
+    for (const status of [unchosen, stuck]) {
+      expect(controlsOf(status, false)).toEqual({ canGenerate: true, replaces: true, canCancel: true });
+    }
+    expect(controlsOf(unchosen, true)).toEqual({ canGenerate: false, replaces: true, canCancel: false });
   });
 
   it("is to ask again over a request that was let go of, or to call it off", () => {

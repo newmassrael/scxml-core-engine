@@ -615,6 +615,14 @@ export interface AdapterStatus {
   readonly live: boolean;
 }
 
+/** A request an executor could not run, which it left queued, and why. */
+export interface HostWaiting {
+  readonly work: string;
+  readonly request: string;
+  readonly connection: string;
+  readonly reason: string;
+}
+
 /**
  * A shell's word about the executor it hosts: that one runs in it, or why none does, in words the
  * owner can act on (what to install, what to set).
@@ -625,6 +633,11 @@ export interface HostStatus {
   readonly hosting: boolean;
   readonly reason: string | null;
   readonly client_version: string | null;
+  /**
+   * The requests its executor left queued because it could not run them, and why, each in one
+   * sentence. Ids and words only: the works folder is shared, so nothing of the computer is in it.
+   */
+  readonly waiting: readonly HostWaiting[];
   readonly seen_at: string;
   /** The shell said it recently: one that went is not hosting, whatever it last said. */
   readonly live: boolean;
@@ -1324,6 +1337,16 @@ export function parseHostListing(value: unknown): HostListing {
         hosting: host["hosting"],
         reason: nullableText(host, "reason", at),
         client_version: nullableText(host, "client_version", at),
+        waiting: list(host, "waiting", at).map((entry, k) => {
+          const place = `${at}.waiting[${k}]`;
+          const waiting = record(entry, place);
+          return {
+            work: text(waiting, "work", place),
+            request: text(waiting, "request", place),
+            connection: text(waiting, "connection", place),
+            reason: text(waiting, "reason", place),
+          };
+        }),
         seen_at: text(host, "seen_at", at),
         live: host["live"],
       };

@@ -650,6 +650,20 @@ describe("the replies the core gives", () => {
     });
   });
 
+  it("carry which requests a shell left queued, and why, in ids and a sentence", () => {
+    const none = parseHostListing(replies.answers["read_host_status"]);
+    expect(none.hosts[0]?.waiting).toEqual([]);
+    // Shells are listed by name; the one that hosts and left a request is the browser shell.
+    const shells = parseHostListing(replies.answers["read_host_status_waiting"]).hosts;
+    const left = shells.find((h) => h.name === "web-shell")?.waiting ?? [];
+    expect(left).toHaveLength(1);
+    expect(left[0]).toMatchObject({ connection: "claude", reason: expect.stringContaining("claude auth login") });
+    expect(left[0]?.request).toBe("<request-id>");
+    expect(() => parseHostListing({ hosts: [{ name: "d", hosting: true, live: true, seen_at: "x" }], unreadable: [] })).toThrow(
+      /waiting/,
+    );
+  });
+
   it("carry the two commands that sign in, one for each way it is billed, and no path", () => {
     const signIn = parseClaudeStatus(replies.answers["read_claude_status_signed_out"]).sign_in;
     expect(signIn).toEqual([

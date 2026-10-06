@@ -83,6 +83,7 @@ import { findQuote, groundOf, linesNaming, quotesOf, statesOf } from "./groundin
 import {
   connectedNames,
   controlsOf,
+  hostsKey,
   isConnected,
   pressKey,
   savingEndsARequest,
@@ -451,7 +452,7 @@ export class App {
     try {
       const hosts = await this.api.readHostStatus();
       if (session !== this.session) return;
-      if (whyNoAi(this.hosts).join("\n") !== whyNoAi(hosts).join("\n")) changed = true;
+      if (hostsKey(this.hosts) !== hostsKey(hosts)) changed = true;
       this.hosts = hosts;
     } catch (error) {
       if (session !== this.session) return;
@@ -505,6 +506,15 @@ export class App {
   private async generate(replace: boolean): Promise<void> {
     const work = this.selected;
     if (work === null || this.requestBusy !== null) return;
+    // A request that waits for a connection is replaced by one made for a connection: with none
+    // chosen there is nothing to replace it with, and asking would make the same request again.
+    const current = statusOf(this.requestHead, this.requestDetail, this.adapters, this.hosts);
+    if (replace && current.kind === "queued" && this.ai !== null && this.ai.connectionForRequest() === null) {
+      this.ai.openPanel();
+      this.requestNotice = this.t("generationChooseFirst");
+      this.render();
+      return;
+    }
     const session = this.session;
     this.requestBusy = "making";
     this.requestNotice = null;
@@ -1891,12 +1901,12 @@ export class App {
    * is working, and a request nobody is there to take is not shown as running.
    */
   private generationSection(): HTMLElement {
-    const status = statusOf(this.requestHead, this.requestDetail, this.adapters);
+    const status = statusOf(this.requestHead, this.requestDetail, this.adapters, this.hosts);
     const controls = controlsOf(status, this.requestBusy !== null);
     const text = this.editor !== null && this.editor.base !== null;
     const modelHere = this.model !== null && (this.model.phase === "drawn" || this.model.phase === "not-drawn" || this.model.phase === "drawing");
     const label = controls.replaces
-      ? this.t("generateReplace")
+      ? this.t(status.kind === "queued" ? "generateWithConnection" : "generateReplace")
       : status.kind === "idle" && !modelHere
         ? this.t("generateFirst")
         : this.t("generateAgain");
@@ -1964,6 +1974,8 @@ export class App {
       case "idle":
         return modelHere ? "" : this.t("generationIdle");
       case "queued":
+        if (status.waiting !== null) return this.t("generationWaitingFor", { reason: status.waiting });
+        if (status.unchosen) return this.t("generationUnchosen");
         return this.t(status.connected ? "generationQueued" : "generationQueuedNoAi");
       case "running":
         return status.holder === null
@@ -2753,7 +2765,7 @@ export class App {
    */
   private regenerateButton(): HTMLElement | null {
     const controls = controlsOf(
-      statusOf(this.requestHead, this.requestDetail, this.adapters),
+      statusOf(this.requestHead, this.requestDetail, this.adapters, this.hosts),
       this.requestBusy !== null,
     );
     if (!controls.canGenerate) return null;

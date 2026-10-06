@@ -223,6 +223,12 @@ const en = {
   generationRefused: "The request was refused: {detail}",
   generationConnectionMoved:
     "The AI connection was changed after this screen read it, so nothing was asked. What is kept now is shown; press the button again.",
+  generationWaitingFor: "The request waits for its AI connection: {reason}",
+  generationUnchosen:
+    "This request was made without choosing an AI connection, so the application does not run it. An authoring client of your own can still take it; or choose a connection under AI connection and generate again.",
+  generateWithConnection: "Generate again with the chosen connection",
+  generationChooseFirst:
+    "Choose and save an AI connection first: it is under AI connection, in the list on the left.",
   generationWith: "Will ask: {target}",
   generationWithNone: "No AI connection is chosen yet: open AI connection and save one.",
   aiTitle: "AI connection",
@@ -525,6 +531,11 @@ const ko: Record<Key, string> = {
   generationRefused: "요청이 거절되었습니다: {detail}",
   generationConnectionMoved:
     "화면이 AI 연결을 읽은 뒤에 연결이 바뀌어 아무것도 요청하지 않았습니다. 지금 저장된 연결을 보여 드렸으니 버튼을 다시 누르세요.",
+  generationWaitingFor: "요청이 AI 연결을 기다리고 있습니다: {reason}",
+  generationUnchosen:
+    "이 요청은 AI 연결을 고르지 않고 만들어져 앱이 실행하지 않습니다. 직접 쓰는 작성 클라이언트가 가져갈 수는 있고, 아니면 AI 연결에서 연결을 골라 다시 생성하세요.",
+  generateWithConnection: "선택한 연결로 다시 생성",
+  generationChooseFirst: "먼저 AI 연결을 고르고 저장하세요. 왼쪽 목록의 AI 연결에 있습니다.",
   generationWith: "요청할 AI: {target}",
   generationWithNone: "아직 선택한 AI 연결이 없습니다. AI 연결을 열어 하나를 저장하세요.",
   aiTitle: "AI 연결",

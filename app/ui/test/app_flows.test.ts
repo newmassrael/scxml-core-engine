@@ -39,6 +39,8 @@ interface FakeRequest {
   answers: string | null;
   holder: string | null;
   note: string | null;
+  /** The connection it was made for, as the core would copy it, or none. */
+  pin: { connection: string; revision: string; model: string | null } | null;
 }
 
 interface Gate {
@@ -122,15 +124,33 @@ class FakeCore implements Transport {
     }));
   }
 
-  private hostList: Array<{ name: string; hosting: boolean; reason: string | null; live: boolean }> = [];
+  private hostList: Array<{
+    name: string;
+    hosting: boolean;
+    reason: string | null;
+    live: boolean;
+    waiting: Array<{ work: string; request: string; connection: string; reason: string }>;
+  }> = [];
 
-  /** What the shells say of the executor they host: that one runs, or why none does. */
-  setHosts(list: Array<{ name: string; hosting?: boolean; reason?: string | null; live?: boolean }>): void {
+  /**
+   * What the shells say of the executor they host: that one runs, or why none does, and which
+   * requests it left queued because it could not run them.
+   */
+  setHosts(
+    list: Array<{
+      name: string;
+      hosting?: boolean;
+      reason?: string | null;
+      live?: boolean;
+      waiting?: Array<{ work: string; request: string; connection: string; reason: string }>;
+    }>,
+  ): void {
     this.hostList = list.map((h) => ({
       name: h.name,
       hosting: h.hosting ?? false,
       reason: h.reason ?? null,
       live: h.live ?? true,
+      waiting: h.waiting ?? [],
     }));
   }
 
@@ -231,7 +251,16 @@ class FakeCore implements Transport {
           : { holder: request.holder, attempt: request.attempt, granted_at: "2026-10-05T09:00:01Z", expires_at: "2026-10-05T09:01:01Z" },
       candidate: null,
       outcome: null,
-      pin: null,
+      pin:
+        request.pin === null
+          ? null
+          : {
+              connection: request.pin.connection,
+              revision: request.pin.revision,
+              adapter: "claude-code",
+              model: request.pin.model,
+              limits: { turns: null, seconds: null },
+            },
       ended_at: null,
       note: request.note,
     };
@@ -474,6 +503,14 @@ class FakeCore implements Transport {
           answers: expect.answers ?? null,
           holder: null,
           note: null,
+          pin:
+            named === undefined
+              ? null
+              : {
+                  connection: named.id,
+                  revision: named.revision,
+                  model: this.connectionList.find((c) => c.id === named.id)?.model ?? null,
+                },
         };
         this.requestsOf.set(id, [...(this.requestsOf.get(id) ?? []), request]);
         return { request: this.requestJson(id, request), created: true };
@@ -521,6 +558,7 @@ class FakeCore implements Transport {
             hosting: h.hosting,
             reason: h.reason,
             client_version: h.hosting ? "2.1.289" : null,
+            waiting: h.waiting,
             seen_at: "2026-10-05T09:00:00Z",
             live: h.live,
           })),
@@ -3075,6 +3113,9 @@ describe("asking for a model", () => {
     core = new FakeCore();
     core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
     core.addWork("beta", "Beta", ["beta one"]);
+    // The person has chosen a connection, so a request is made for it and an executor can run it.
+    // What a request made without one is read as is the business of the cases that clear this.
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
     app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
     await app.start();
     await settle();
@@ -3176,6 +3217,9 @@ describe("asking for a model", () => {
   });
 
   it("makes a request for no connection when none is chosen, and says none is", async () => {
+    core.setConnections([], null);
+    await app.start();
+    await settle();
     await click("Alpha");
 
     await press("generate");
@@ -3377,6 +3421,87 @@ describe("asking for a model", () => {
     expect(core.callsOf("request_generation")).toHaveLength(1);
   });
 
+  it("says why a request waits for its connection, and offers to ask again with the one chosen now", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
+    await app.start();
+    await settle();
+    await click("Alpha");
+    await press("generate");
+    const waiting = core.latestRequest("alpha")!;
+    core.setHosts([
+      {
+        name: "desktop",
+        hosting: true,
+        waiting: [
+          { work: "alpha", request: waiting.id, connection: "claude", reason: "nobody is signed in to Claude Code" },
+        ],
+      },
+    ]);
+
+    await ticker.fire();
+
+    expect(generationStatus()).toContain("nobody is signed in to Claude Code");
+    expect(button("generate")?.textContent).toBe("Generate again with the chosen connection");
+    // Asking again replaces the one that waits, and is made for the connection kept now.
+    core.setConnections([{ id: "claude", model: "sonnet", revision: hex(8) }], "claude");
+    await app.start();
+    await settle();
+    await click("Alpha");
+    await press("generate");
+    expect(core.callsOf("request_generation").at(-1)).toMatchObject({
+      supersede: true,
+      connection: { id: "claude", revision: hex(8) },
+    });
+  });
+
+  it("says a request nobody chose a connection for is not run by the application, and asks again with the one chosen", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
+    await core.call("request_generation", {
+      id: "alpha",
+      key: "before-connections",
+      origin: "gui",
+      expect: { source: headOf("alpha"), answers: null },
+      supersede: false,
+    });
+    await app.start();
+    await settle();
+
+    await click("Alpha");
+
+    expect(generationStatus()).toContain("made without choosing an AI connection");
+    expect(button("generate")?.textContent).toBe("Generate again with the chosen connection");
+    await press("generate");
+    expect(core.callsOf("request_generation").at(-1)).toMatchObject({
+      supersede: true,
+      connection: { id: "claude", revision: hex(7) },
+    });
+    expect(generationStatus()).not.toContain("made without choosing");
+  });
+
+  it("opens the AI connection instead of asking, when nothing is chosen for a request that was made without one", async () => {
+    core.setConnections([], null);
+    core.setAdapters([{ name: "desktop" }]);
+    await core.call("request_generation", {
+      id: "alpha",
+      key: "before-connections",
+      origin: "gui",
+      expect: { source: headOf("alpha"), answers: null },
+      supersede: false,
+    });
+    await app.start();
+    await settle();
+    await click("Alpha");
+    const asked = core.callsOf("request_generation").length;
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")).toHaveLength(asked);
+    expect(root.querySelector<HTMLDetailsElement>("#ai-settings")?.open).toBe(true);
+    expect(root.textContent).toContain("Choose and save an AI connection first");
+  });
+
   it("offers to replace an open request that was made from another window", async () => {
     await click("Alpha");
     // Another window asked first: this screen has not heard of it yet.
@@ -3489,6 +3614,7 @@ describe("where an answer stands", () => {
     core.addWork("alpha", "Alpha", ["alpha one", "alpha two"]);
     core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
     core.setAdapters([{ name: "desktop" }]);
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
     app = new App(root, { transport: core, storage: null, browserLanguage: "en", ticker });
     await app.start();
     await settle();
