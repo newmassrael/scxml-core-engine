@@ -23,6 +23,8 @@
 //! - [`connection`] and its store are the ways a person reaches a model (which client, which
 //!   model, where its credentials come from), kept in their own settings folder and not
 //!   with the works, which are shared and moved.
+//! - [`auth_policy`] is which ways of signing in the workbench uses: a table of routes, each
+//!   allowed, conditional, forbidden or unconfirmed, as a constant of the build.
 //! - [`requirements`], [`acceptance`] and [`acceptance_run`] are the requirement list
 //!   a text is read into and what the owner accepted of a design against it: the
 //!   product measures, records and re-checks, and the workbench keeps the files and
@@ -34,6 +36,7 @@
 pub mod acceptance;
 pub mod acceptance_run;
 pub mod answers;
+pub mod auth_policy;
 pub mod bundle;
 pub mod claude_code;
 pub mod clock;
@@ -55,6 +58,7 @@ pub mod store;
 pub use acceptance::{Acceptance, Basis, Snapshot};
 pub use acceptance_run::{Acceptor, CheckOutcome, RequirementOutcome, RequirementsReport, Taken};
 pub use answers::{Answers, AnswersError};
+pub use auth_policy::{Decision, Observed, Policy, Reason, Route, Status};
 pub use clock::{Clock, FixedClock, ManualClock, SystemClock};
 pub use commands::{call, CommandError, COMMANDS, COMMAND_SET_VERSION};
 pub use connection::{AdapterKind, AuthSource, Connection, ConnectionId, Limits};
