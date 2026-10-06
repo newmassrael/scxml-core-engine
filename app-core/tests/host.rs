@@ -211,18 +211,15 @@ mod hosting {
         });
         fs::write(dir.join("answer.json"), answer.to_string()).unwrap();
         let claude = dir.join("claude");
-        fs::write(
+        common::write_program(
             &claude,
-            format!(
+            &format!(
                 "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.289 (Claude Code)\"; exit 0; fi\ncat > /dev/null\ncat '{}'\n",
                 dir.join("answer.json").display()
             ),
-        )
-        .unwrap();
-        fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+        );
         let author = dir.join("sce-author-mcp");
-        fs::write(&author, "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(&author, fs::Permissions::from_mode(0o755)).unwrap();
+        common::write_program(&author, "#!/bin/sh\nexit 0\n");
         (claude, author)
     }
 
@@ -347,19 +344,119 @@ mod hosting {
     /// The same `claude`, and signed in by a subscription: it answers `auth status` as well. What it
     /// is asked there is how the host knows who is signed in.
     fn installed_signed_in(label: &str) -> (PathBuf, PathBuf) {
+        installed_saying(
+            label,
+            r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}"#,
+        )
+    }
+
+    /// The same `claude`, answering `auth status` with `status`.
+    fn installed_saying(label: &str, status: &str) -> (PathBuf, PathBuf) {
         let (claude, author) = installed(label);
         let dir = claude.parent().unwrap().to_path_buf();
-        fs::write(
+        common::write_program(
             &claude,
-            format!(
+            &format!(
                 "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.289 (Claude Code)\"; exit 0; fi\n\
-                 if [ \"$3\" = \"auth\" ]; then echo '{{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}}'; exit 0; fi\n\
+                 if [ \"$3\" = \"auth\" ]; then echo '{status}'; exit 0; fi\n\
                  cat > /dev/null\ncat '{}'\n",
                 dir.join("answer.json").display()
             ),
-        )
-        .unwrap();
+        );
         (claude, author)
+    }
+
+    #[test]
+    fn a_host_says_which_request_it_could_not_run_and_why() {
+        let (_, store) = store("host-waiting");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_saying(
+            "host-waiting-bin",
+            r#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#,
+        );
+        let (settings_store, pin) = pinned("host-waiting-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude.clone());
+        settings.author = Some(author);
+
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+
+        within_ten_seconds("the host did not say what it waits for", || {
+            !store.host_status().unwrap().hosts[0]
+                .host
+                .waiting
+                .is_empty()
+        });
+        let said = store.host_status().unwrap().hosts[0].host.waiting.clone();
+        assert_eq!(said.len(), 1);
+        assert_eq!(said[0].request, request);
+        assert_eq!(said[0].work, id.as_str());
+        assert_eq!(said[0].connection, "main");
+        assert!(
+            said[0].reason.contains("claude auth login"),
+            "{}",
+            said[0].reason
+        );
+        // The works folder is shared: it carries a sentence, and nothing of this computer.
+        assert!(
+            !said[0]
+                .reason
+                .contains(claude.parent().unwrap().to_str().unwrap()),
+            "{}",
+            said[0].reason
+        );
+        // And the request is still there to be taken, by this host once somebody signs in or by
+        // another executor: it was not failed.
+        assert_eq!(
+            store.read_request(&id, &request).unwrap().state,
+            State::Queued
+        );
+        drop(host);
+    }
+
+    #[test]
+    fn a_host_stops_saying_it_waits_for_a_request_that_was_called_off() {
+        let (_, store) = store("host-waiting-cleared");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_saying(
+            "host-waiting-cleared-bin",
+            r#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#,
+        );
+        let (settings_store, pin) = pinned("host-waiting-cleared-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(author);
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+        within_ten_seconds("the host did not say what it waits for", || {
+            !store.host_status().unwrap().hosts[0]
+                .host
+                .waiting
+                .is_empty()
+        });
+
+        store.cancel_request(&id, &request).unwrap();
+
+        within_ten_seconds("the host went on saying it waits", || {
+            store.host_status().unwrap().hosts[0]
+                .host
+                .waiting
+                .is_empty()
+        });
+        drop(host);
     }
 
     /// A connection that is saved, and the pin a request made for it carries.
@@ -459,6 +556,37 @@ mod hosting {
         assert_eq!(host.not_hosted(), None);
         let view = store.read_request(&id, &request).unwrap();
         assert_eq!((view.state, view.request.attempt), (State::Queued, 0));
+    }
+
+    #[test]
+    fn a_host_that_has_the_settings_leaves_a_request_nobody_chose_a_connection_for() {
+        let (_, store) = store("host-unpinned-left");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_signed_in("host-unpinned-left-bin");
+        let (settings_store, _) = pinned("host-unpinned-left-settings");
+        let request = ask(&store, &id);
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(author);
+
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+        std::thread::sleep(Duration::from_millis(700));
+
+        // The executor is there, and which AI such a request was meant for is not for it to
+        // guess: an authoring client of the person's own takes it, or the person chooses.
+        assert_eq!(host.not_hosted(), None);
+        let view = store.read_request(&id, &request).unwrap();
+        assert_eq!((view.state, view.request.attempt), (State::Queued, 0));
+        assert!(store.host_status().unwrap().hosts[0]
+            .host
+            .waiting
+            .is_empty());
     }
 
     fn ask(store: &WorkStore<Arc<ManualClock>>, id: &WorkId) -> String {

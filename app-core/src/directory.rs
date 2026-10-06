@@ -84,9 +84,11 @@ impl Connections {
                     pin.connection
                 )))
             }
-            Err(other) => {
+            // What failed is for a log: a reason is said where the works folder is, which is
+            // shared, and a store's error names a path of this computer.
+            Err(_) => {
                 return Err(Unrunnable::new(format!(
-                    "the settings of `{}` could not be read: {other}",
+                    "the settings of `{}` could not be read, so this request cannot be run",
                     pin.connection
                 )))
             }
@@ -104,8 +106,13 @@ impl Connections {
                  path",
             ));
         };
-        let observed = self.observe(launch).map_err(|e| {
-            Unrunnable::new(format!("Claude Code could not say who is signed in: {e}"))
+        // What the client printed is for the settings screen, which shows it to the person who
+        // is looking: a reason is said where the works folder is, and is a sentence of ours.
+        let observed = self.observe(launch).map_err(|_| {
+            Unrunnable::new(
+                "Claude Code could not be asked who is signed in: check it under AI connection, \
+                 then ask again",
+            )
         })?;
         let Some(route) = Route::of(stored.connection.adapter, stored.connection.auth, observed)
         else {

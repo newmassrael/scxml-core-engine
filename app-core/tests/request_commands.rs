@@ -638,6 +638,7 @@ fn a_shell_says_whether_it_hosts_an_executor_and_the_screen_reads_it_back() {
             hosting: false,
             reason: Some("no Claude Code to write models with"),
             client_version: None,
+            waiting: &[],
         })
         .unwrap();
 
@@ -650,6 +651,7 @@ fn a_shell_says_whether_it_hosts_an_executor_and_the_screen_reads_it_back() {
             "hosting": false,
             "reason": "no Claude Code to write models with",
             "client_version": null,
+            "waiting": [],
             "seen_at": "2026-10-05T09:00:00Z",
             "live": true,
         })

@@ -28,6 +28,24 @@ const HOSTS_DIR: &str = ".sce-hosts";
 /// The longest reason a shell gives for hosting nothing: a sentence or two of what to do.
 const REASON_MAX: usize = 2_000;
 const VERSION_MAX: usize = 64;
+/// How many requests a shell says it could not run. More than this is a shell with something else
+/// the matter, and a record of them would be a log; the oldest are the ones said.
+pub const WAITING_MAX: usize = 20;
+/// The longest sentence of why one request waits.
+const WAITING_REASON_MAX: usize = 500;
+
+/// A request a shell's executor left queued because it could not run it, and why.
+///
+/// This is in the works folder, which is shared and moved, so what it holds is what a person
+/// is told and nothing of the computer it was said on: an id of the work, of the request and of
+/// the connection, and a sentence. No path, no address and nothing a client printed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostWaiting {
+    pub work: String,
+    pub request: String,
+    pub connection: String,
+    pub reason: String,
+}
 
 /// What a shell says of its executor.
 #[derive(Debug, Clone)]
@@ -40,6 +58,8 @@ pub struct HostReport<'a> {
     pub reason: Option<&'a str>,
     /// The version the client says it is, when one is running.
     pub client_version: Option<&'a str>,
+    /// The requests it left queued because it could not run them, and why; at most [`WAITING_MAX`].
+    pub waiting: &'a [HostWaiting],
 }
 
 /// A shell's word as it is kept.
@@ -51,6 +71,9 @@ pub struct Host {
     pub reason: Option<String>,
     #[serde(default)]
     pub client_version: Option<String>,
+    /// What it left queued, and why. A record written before a shell said this has none.
+    #[serde(default)]
+    pub waiting: Vec<HostWaiting>,
     pub seen_at: String,
     /// The same moment, as seconds since the Unix epoch.
     pub seen_epoch: u64,
@@ -101,12 +124,27 @@ impl<C: Clock> WorkStore<C> {
         {
             return Err(bad("a client's version is 1 to 64 characters"));
         }
+        if report.waiting.len() > WAITING_MAX
+            || report.waiting.iter().any(|w| {
+                !valid_name(&w.work)
+                    || !valid_name(&w.request)
+                    || !valid_name(&w.connection)
+                    || w.reason.trim().is_empty()
+                    || w.reason.chars().count() > WAITING_REASON_MAX
+            })
+        {
+            return Err(bad(
+                "what a shell waits for is at most 20 requests, each named by its work, request and \
+                 connection and told in a sentence of up to 500 characters",
+            ));
+        }
         let epoch = self.clock.epoch();
         let host = Host {
             name: report.name.to_string(),
             hosting: report.hosting,
             reason: report.reason.map(str::to_string),
             client_version: report.client_version.map(str::to_string),
+            waiting: report.waiting.to_vec(),
             seen_at: utc_timestamp(epoch),
             seen_epoch: epoch,
         };

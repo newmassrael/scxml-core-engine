@@ -36,8 +36,8 @@ use crate::directory::{ClaudeLaunch, Connections};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
 use crate::review::Product;
-use crate::runner::{Cancel, Directory, Generator, Runner, RunnerConfig};
-use crate::store::{ConnectionStore, HostReport, WorkStore};
+use crate::runner::{Cancel, Directory, Generator, Runner, RunnerConfig, Waiting};
+use crate::store::{ConnectionStore, HostReport, HostWaiting, WorkStore, WAITING_MAX};
 
 /// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_AUTHOR_MCP`, `SCE_WORK`, `SCE_CLAUDE_MODEL`,
 /// `SCE_CLAUDE_BUDGET_USD` in the environment.
@@ -230,6 +230,9 @@ where
     // One word stops everything the host runs: the runner's own, when there is a runner.
     let mut shutdown = Cancel::new();
     let mut threads = Vec::new();
+    // What the runner left queued and could not run: asked of it as often as the report looks, and
+    // nothing when there is no runner.
+    let mut left: Box<dyn Fn() -> Vec<HostWaiting> + Send> = Box::new(Vec::new);
     let (version, not_hosted) = match find_client(&store, &settings) {
         Ok(client) => {
             let version = client.version();
@@ -250,6 +253,11 @@ where
                 runner = runner.with_connections(directory);
             }
             shutdown = runner.shutdown();
+            let runner = Arc::new(runner);
+            left = Box::new({
+                let runner = Arc::clone(&runner);
+                move || waiting_words(&runner.waiting())
+            });
             let spawned = thread::Builder::new()
                 .name("sce-executor".to_string())
                 .spawn(move || runner.run());
@@ -272,12 +280,14 @@ where
     // said.
     let reason = not_hosted.as_ref().map(ToString::to_string);
     let said = (version.clone(), reason);
-    say(&store, &name, &said.0, said.1.as_deref());
+    say(&store, &name, &said.0, said.1.as_deref(), &left());
     if let Ok(thread) = thread::Builder::new()
         .name("sce-host-report".to_string())
         .spawn({
             let (store, shutdown, name) = (Arc::clone(&store), shutdown.clone(), name.clone());
-            move || report_until_stopped(&store, &shutdown, &name, &said.0, said.1.as_deref())
+            move || {
+                report_until_stopped(&store, &shutdown, &name, &said.0, said.1.as_deref(), &*left)
+            }
         })
     {
         threads.push(thread);
@@ -320,19 +330,25 @@ fn find_client<C: Clock>(
     Ok(client)
 }
 
-/// Say what the shell is doing now, and again every [`REPORT_EVERY`], until told to stop.
+/// Say what the shell is doing now, and again every [`REPORT_EVERY`] or as soon as what it
+/// waits for changes, until told to stop: a person who pressed the button is told why nothing
+/// happens when it is true and not half a minute later.
 fn report_until_stopped<C: Clock>(
     store: &WorkStore<C>,
     stop: &Cancel,
     name: &str,
     version: &Option<String>,
     reason: Option<&str>,
+    left: &dyn Fn() -> Vec<HostWaiting>,
 ) {
     // Said once already, by `start`: the next is due a period from then.
     let mut last = Instant::now();
+    let mut said = left();
     while !stop.is_cancelled() {
-        if last.elapsed() >= REPORT_EVERY {
-            say(store, name, version, reason);
+        let now = left();
+        if now != said || last.elapsed() >= REPORT_EVERY {
+            say(store, name, version, reason, &now);
+            said = now;
             last = Instant::now();
         }
         thread::sleep(Duration::from_millis(25));
@@ -340,13 +356,35 @@ fn report_until_stopped<C: Clock>(
 }
 
 /// One report. A folder that could not be written to this time is written to at the next.
-fn say<C: Clock>(store: &WorkStore<C>, name: &str, version: &Option<String>, reason: Option<&str>) {
+fn say<C: Clock>(
+    store: &WorkStore<C>,
+    name: &str,
+    version: &Option<String>,
+    reason: Option<&str>,
+    waiting: &[HostWaiting],
+) {
     let _ = store.report_host(HostReport {
         name,
         hosting: reason.is_none(),
         reason,
         client_version: version.as_deref(),
+        waiting,
     });
+}
+
+/// What the runner left queued, as a shell says it: the oldest [`WAITING_MAX`] of them, each as the
+/// ids and the sentence and nothing else.
+fn waiting_words(waiting: &[Waiting]) -> Vec<HostWaiting> {
+    waiting
+        .iter()
+        .take(WAITING_MAX)
+        .map(|w| HostWaiting {
+            work: w.work.as_str().to_string(),
+            request: w.request.clone(),
+            connection: w.connection.as_str().to_string(),
+            reason: w.reason.clone(),
+        })
+        .collect()
 }
 
 /// How the client reaches the authoring server: the launcher, and what the server needs to find

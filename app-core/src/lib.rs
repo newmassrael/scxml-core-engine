@@ -81,8 +81,8 @@ pub use store::{
     default_root, default_settings_root, AcceptanceText, Adapter, AdapterListing, AdapterReport,
     AdapterStatus, AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead,
     ConnectionListing, ConnectionStore, HistoryEntry, Host, HostListing, HostReport, HostStatus,
-    Listing, ModelText, Published, Registered, Registration, RequestHead, RequestView,
+    HostWaiting, Listing, ModelText, Published, Registered, Registration, RequestHead, RequestView,
     RequirementsText, Saved, SourceText, StoredConnection, Transition, Unreadable, Work, WorkHeads,
     WorkId, WorkSnapshot, WorkStore, ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES,
-    MAX_BUNDLE_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
+    MAX_BUNDLE_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES, WAITING_MAX,
 };

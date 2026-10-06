@@ -255,6 +255,11 @@ pub struct Runner<C: Clock, G> {
     /// Where the generator for a pinned request is found; a runner without one leaves every
     /// pinned request alone.
     directory: Option<Arc<dyn Directory>>,
+    /// Whether a request nobody chose a connection for is this runner's to write. It is for a
+    /// runner that knows no connections (one generator, as a command line tool or a test has);
+    /// it is not for one that runs for connections, which does not guess which of them such a
+    /// request was meant for and leaves it to an authoring client of the person's own.
+    takes_unpinned: bool,
     /// What the last look left queued, and why.
     waiting: Mutex<Vec<Waiting>>,
     config: RunnerConfig,
@@ -277,6 +282,7 @@ where
             product,
             generator,
             directory: None,
+            takes_unpinned: true,
             waiting: Mutex::new(Vec::new()),
             config,
             shutdown: Cancel::new(),
@@ -284,9 +290,12 @@ where
     }
 
     /// The same, running for the connections `directory` can run: a request pinned to one is
-    /// written by the generator the directory gives for it.
+    /// written by the generator the directory gives for it. A request nobody chose a connection
+    /// for is then left alone: which AI it was meant for is the person's to say, and no default is
+    /// assigned to it.
     pub fn with_connections(mut self, directory: Arc<dyn Directory>) -> Self {
         self.directory = Some(directory);
+        self.takes_unpinned = false;
         self
     }
 
@@ -335,6 +344,7 @@ where
             }
             let (offered, generator): (Option<ConnectionRef>, Arc<dyn Generator>) =
                 match &view.request.pin {
+                    None if !self.takes_unpinned => continue,
                     None => (None, Arc::clone(&self.generator) as Arc<dyn Generator>),
                     Some(pin) => {
                         let found = match &self.directory {

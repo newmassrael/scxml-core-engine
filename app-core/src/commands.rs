@@ -620,6 +620,7 @@ fn host_json(status: &HostStatus) -> Value {
         "hosting": host.hosting,
         "reason": host.reason,
         "client_version": host.client_version,
+        "waiting": host.waiting,
         "seen_at": host.seen_at,
         "live": status.live,
     })

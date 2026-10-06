@@ -290,6 +290,27 @@ fn nobody_signed_in_says_how_to_sign_in() {
 }
 
 #[test]
+fn what_a_person_is_told_of_a_request_that_waits_carries_nothing_the_client_printed() {
+    // A reason is said where the works folder is, which is shared and moved: it is a sentence of
+    // the application's, and not a path or a line the client wrote.
+    let rig = Rig::new(
+        "dir-printed",
+        "/home/coin/.secret-place printed this, and is not JSON",
+    );
+    let pin = rig.pin(&claude());
+
+    let said = refused(rig.directory(Policy::shipped()).claude_for(&pin));
+
+    assert!(
+        said.contains("could not be asked who is signed in"),
+        "{said}"
+    );
+    for leaked in ["/home/coin", "secret-place", "printed this"] {
+        assert!(!said.contains(leaked), "{said}");
+    }
+}
+
+#[test]
 fn a_route_a_release_switched_off_is_not_run_and_says_so() {
     let rig = Rig::new("dir-switched-off", SUBSCRIPTION);
     let pin = rig.pin(&claude());

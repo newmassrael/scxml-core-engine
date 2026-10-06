@@ -94,7 +94,7 @@ pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
 pub use connection_store::{
     default_settings_root, ConnectionListing, ConnectionStore, StoredConnection,
 };
-pub use host_store::{Host, HostListing, HostReport, HostStatus};
+pub use host_store::{Host, HostListing, HostReport, HostStatus, HostWaiting, WAITING_MAX};
 pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.

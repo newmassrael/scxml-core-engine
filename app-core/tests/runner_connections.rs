@@ -264,8 +264,27 @@ fn a_runner_with_no_directory_leaves_every_pinned_request_alone() {
 }
 
 #[test]
-fn a_request_with_no_connection_is_still_written_by_the_generator_the_runner_holds() {
+fn a_runner_with_no_directory_still_writes_a_request_nobody_chose_a_connection_for() {
+    // An executor that runs for one generator and knows no connections (a command line tool,
+    // a test) is what it always was.
     let f = fixture("rc-unpinned");
+    let fixed = Named::new("fixed");
+    let request = f.ask("press-1", None);
+    let runner = f.runner(&fixed, None);
+
+    let outcome = runner.run_once().unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(f.state_of(&request), State::Completed);
+    assert_eq!(fixed.times(), 1);
+}
+
+#[test]
+fn a_runner_that_runs_for_connections_leaves_a_request_nobody_chose_a_connection_for() {
+    // It is not the application's to guess which AI such a request was meant for, and no
+    // default is assigned to it: it waits for an authoring client of the person's own, or for
+    // the person to choose a connection and ask again.
+    let f = fixture("rc-unpinned-left");
     let fixed = Named::new("fixed");
     let shelf = Shelf::holding(vec![("main", Named::new("main"))]);
     let request = f.ask("press-1", None);
@@ -273,11 +292,31 @@ fn a_request_with_no_connection_is_still_written_by_the_generator_the_runner_hol
 
     let outcome = runner.run_once().unwrap();
 
-    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
-    assert_eq!(f.state_of(&request), State::Completed);
-    assert_eq!(fixed.times(), 1);
+    assert_eq!(outcome, Outcome::NothingToDo);
+    assert_eq!(f.state_of(&request), State::Queued);
+    assert_eq!(fixed.times(), 0);
     assert!(shelf.asked_for().is_empty());
+    // Said by the request itself (nobody chose, and it was made in the application), and not
+    // as something this runner is waiting for.
     assert!(runner.waiting().is_empty());
+}
+
+#[test]
+fn a_request_nobody_chose_a_connection_for_does_not_hold_up_one_that_did() {
+    let f = fixture("rc-unpinned-first");
+    let fixed = Named::new("fixed");
+    let main = Named::new("main");
+    let shelf = Shelf::holding(vec![("main", Arc::clone(&main))]);
+    let old = f.ask("press-1", None);
+    let runner = f.runner(&fixed, Some(&shelf));
+    // The older one is in the way of nothing: asking again is a new request for a connection.
+    let newer = f.ask("press-2", Some(pin("main", "r1")));
+
+    let outcome = runner.run_once().unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(f.state_of(&newer), State::Completed);
+    assert_eq!(f.state_of(&old), State::Superseded);
 }
 
 #[test]

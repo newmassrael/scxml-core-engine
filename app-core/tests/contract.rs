@@ -784,10 +784,30 @@ fn replies() -> Value {
             hosting: false,
             reason: Some("no Claude Code to write models with: install it, or set SCE_CLAUDE"),
             client_version: None,
+            waiting: &[],
         })
         .unwrap();
     answers.insert(
         "read_host_status".into(),
+        answer(&store, "read_host_status", json!({})),
+    );
+    // A shell that hosts, and the request it left queued because it could not run it.
+    store
+        .report_host(sce_app_core::HostReport {
+            name: "web-shell",
+            hosting: true,
+            reason: None,
+            client_version: Some("2.1.291"),
+            waiting: &[sce_app_core::HostWaiting {
+                work: id.clone(),
+                request: request_id.clone(),
+                connection: "claude".to_string(),
+                reason: "nobody is signed in to Claude Code: run `claude auth login`".to_string(),
+            }],
+        })
+        .unwrap();
+    answers.insert(
+        "read_host_status_waiting".into(),
         answer(&store, "read_host_status", json!({})),
     );
     refusals.insert(
