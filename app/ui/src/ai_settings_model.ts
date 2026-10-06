@@ -17,6 +17,9 @@
 import type {
   Billing,
   ClaudeStatus,
+  CodexAccount,
+  CodexSource,
+  CodexStatus,
   ConnectionListing,
   Described,
   SignInCommand,
@@ -27,6 +30,12 @@ import type { ConnectionRef } from "./api";
 /** The one connection to Claude Code that the settings keep. */
 export const CLAUDE_CONNECTION_ID = "claude";
 
+/** The one connection to Codex that the settings keep. */
+export const CODEX_CONNECTION_ID = "codex";
+
+/** The clients these settings edit a connection to. A connection to a server of the person's is not one. */
+export type ClientKind = "claude-code" | "codex";
+
 /**
  * Names Claude Code documents for `--model`. The client offers no list to read, so these are
  * what is offered, and a name the person types is kept as a choice too. An alias is not a model:
@@ -34,11 +43,11 @@ export const CLAUDE_CONNECTION_ID = "claude";
  */
 const CLAUDE_MODEL_ALIASES = ["opus", "sonnet", "haiku"] as const;
 
-/** Where the asking of Claude Code stands. */
-export type Asked =
+/** Where the asking of a client stands; `S` is what the core answered. */
+export type Asked<S = ClaudeStatus> =
   | { readonly phase: "idle" }
   | { readonly phase: "asking" }
-  | { readonly phase: "answered"; readonly status: ClaudeStatus }
+  | { readonly phase: "answered"; readonly status: S }
   /** The core refused to ask, with its word for why, and its own words when it gave any. */
   | { readonly phase: "refused"; readonly kind: string; readonly message?: string };
 
@@ -113,6 +122,111 @@ function readinessOfStatus(status: ClaudeStatus): Readiness {
 /** The connection to Claude Code that is kept, or `null` when none is (or the settings were not read). */
 export function claudeConnection(listing: ConnectionListing | null): StoredConnection | null {
   return listing?.connections.find((c) => c.connection.id === CLAUDE_CONNECTION_ID) ?? null;
+}
+
+/** The connection to Codex that is kept, or `null` when none is (or the settings were not read). */
+export function codexConnection(listing: ConnectionListing | null): StoredConnection | null {
+  return listing?.connections.find((c) => c.connection.id === CODEX_CONNECTION_ID) ?? null;
+}
+
+/**
+ * The client the settings show when the person has not chosen one: the one the default connection
+ * is for. Claude Code when there is no default, and for a default that is neither client (a
+ * connection to a server of the person's, which these settings do not edit).
+ */
+export function defaultKind(listing: ConnectionListing | null): ClientKind {
+  const stored = listing?.connections.find((c) => c.connection.id === listing.default);
+  return stored?.connection.adapter === "codex" ? "codex" : "claude-code";
+}
+
+// ---- Codex -----------------------------------------------------------------------------------
+
+/** What the AI settings say of Codex, before the core's answer is looked into. */
+export type CodexReadiness =
+  /** This window cannot ask: the settings are the desktop window's. */
+  | { readonly kind: "not-here" }
+  | { readonly kind: "unasked" }
+  | { readonly kind: "asking" }
+  /** It could not be asked. Says why, as the core said it. */
+  | { readonly kind: "unknown"; readonly reason: string }
+  /** The core answered: the screen shows what it said of the source that is chosen. */
+  | { readonly kind: "answered"; readonly status: CodexStatus };
+
+/** What to say of Codex, from what the window may do and what was asked of it. */
+export function codexReadinessOf(described: Described, asked: Asked<CodexStatus>): CodexReadiness {
+  if (asked.phase === "refused" && asked.kind === "not-allowed-here") return { kind: "not-here" };
+  if (!described.starts_programs) return { kind: "not-here" };
+  switch (asked.phase) {
+    case "idle":
+      return { kind: "unasked" };
+    case "asking":
+      return { kind: "asking" };
+    case "refused":
+      return { kind: "unknown", reason: asked.message ?? `the core refused it (${asked.kind})` };
+    case "answered":
+      return { kind: "answered", status: asked.status };
+  }
+}
+
+/** The sources a connection to Codex takes its credential from, in the order they are offered. */
+export const CODEX_SOURCES: readonly CodexSource[] = ["official-login", "app-store", "env-api-key"];
+
+/** What the core said of who is signed in by `source`; `null` when it did not say. */
+export function accountOf(status: CodexStatus, source: CodexSource): CodexAccount | null {
+  return status.accounts.find((account) => account.source === source) ?? null;
+}
+
+/**
+ * The source the settings show: the one the person chose in the list, else the one the kept
+ * connection names, else the first one somebody is signed in by in a way the build uses, else the
+ * official client's own login. A source the connection cannot take (a stored connection edited by
+ * hand to one) is not shown as the choice.
+ */
+export function chosenSource(
+  status: CodexStatus | null,
+  kept: StoredConnection | null,
+  draft: CodexSource | undefined,
+): CodexSource {
+  if (draft !== undefined) return draft;
+  const named = CODEX_SOURCES.find((source) => source === kept?.connection.auth);
+  if (named !== undefined) return named;
+  if (status !== null) {
+    const usable = CODEX_SOURCES.find((source) => {
+      const account = accountOf(status, source);
+      return account?.state === "signed-in" && account.usable;
+    });
+    if (usable !== undefined) return usable;
+  }
+  return "official-login";
+}
+
+/** Why a request made for Codex would wait. */
+export type Because =
+  | "no-client"
+  | "client-unverified"
+  | "unsupported"
+  | "support-unknown"
+  | "signed-out"
+  | "not-used"
+  | "account-unknown";
+
+/** Whether a request made for Codex by `source` would run, and if not, the first thing it waits for. */
+export type Outlook = { readonly runs: true } | { readonly runs: false; readonly because: Because };
+
+/**
+ * What the core's answer says would become of a request. The order is the order the things are
+ * true in: a program that is not there is not asked who is signed in, and a version this build
+ * did not verify is not run whoever is signed in, so the screen says that and not "sign in".
+ */
+export function outlookOf(status: CodexStatus, source: CodexSource): Outlook {
+  if (status.client.state === "missing") return { runs: false, because: "no-client" };
+  if (status.client.state === "unverified") return { runs: false, because: "client-unverified" };
+  if (status.support.state === "unverified") return { runs: false, because: "unsupported" };
+  if (status.support.state === "unknown") return { runs: false, because: "support-unknown" };
+  const account = accountOf(status, source);
+  if (account === null || account.state === "unknown") return { runs: false, because: "account-unknown" };
+  if (account.state === "signed-out") return { runs: false, because: "signed-out" };
+  return account.usable ? { runs: true } : { runs: false, because: "not-used" };
 }
 
 /** A model the person can choose for the connection. `null` is the client's own default. */

@@ -283,6 +283,44 @@ const en = {
   aiConflict:
     "Another window changed this connection first. What is kept now is shown; check it and save again.",
   aiSaveFailed: "The connection was not saved: {detail}",
+  aiKind: "AI client",
+  aiCodexNotAsked: "Codex has not been asked yet.",
+  aiCodexAsk: "Check Codex",
+  aiCodexAsking: "Asking Codex who is signed in...",
+  aiCodexNoClient:
+    "Codex is not installed. Install it, then check again. If it is installed where the application does not look, set SCE_CODEX to its path.",
+  aiCodexClientUnverified:
+    "A Codex file was found, but it did not say it is Codex, so it is not used.",
+  aiCodexUnknown: "Codex could not be asked: {reason}",
+  aiSupport: "Version check",
+  aiSupportVerified: "this build has verified this version of Codex",
+  aiSupportUnverified: "this build has not verified this version of Codex ({reason})",
+  aiSupportUnknown: "this build could not check this version of Codex ({reason})",
+  aiSource: "Credential from",
+  aiSourceOfficial: "the official client's login",
+  aiSourceStore: "the application's own login",
+  aiSourceKey: "a key in the environment",
+  aiCodexSignedOutLogin:
+    "Nobody is signed in by this source. Sign in in a terminal, with one of these commands. The application does not sign in for you:",
+  aiCodexHome:
+    "Start the client with CODEX_HOME set to {home}, so that the login is made where the application looks.",
+  aiCodexSignedOutKey:
+    "{name} is not set where the application starts. Set it there (a window started from a menu does not have what a shell's startup files set), then check again.",
+  aiCodexNotUsed:
+    "Somebody is signed in to Codex by this source, but by a way this build does not use ({reason}). Sign in another way, with one of these commands:",
+  aiCodexAccountUnknown: "Who is signed in by this source could not be asked: {reason}",
+  aiOutlook: "Requests",
+  aiOutlookRuns: "Requests made for this connection will run.",
+  aiOutlookWaits: "Requests made for this connection will wait: {why}.",
+  aiWhyNoClient: "Codex is not installed",
+  aiWhyClientUnverified: "the Codex file is not Codex",
+  aiWhyUnsupported: "this build has not verified this version",
+  aiWhySupportUnknown: "this build could not check this version",
+  aiWhySignedOut: "nobody is signed in by this source",
+  aiWhyNotUsed: "the way it is signed in is not one this build uses",
+  aiWhyAccountUnknown: "who is signed in could not be asked",
+  aiCodexModelNote:
+    "Left empty, Codex uses its own default. Your account may not be able to use a model you name; the first generation shows that.",
   guardTitle: "A model is being written for this text",
   guardBody:
     "Saving changes the text or the answers the request is about, so what it writes will not be published. Save and cancel the request, or leave this unsaved.",
@@ -595,6 +633,44 @@ const ko: Record<Key, string> = {
   aiConflict:
     "다른 창이 먼저 이 연결을 바꿨습니다. 지금 저장된 내용을 보여 드렸으니 확인한 뒤 다시 저장하세요.",
   aiSaveFailed: "연결을 저장하지 못했습니다: {detail}",
+  aiKind: "AI 클라이언트",
+  aiCodexNotAsked: "아직 Codex에 묻지 않았습니다.",
+  aiCodexAsk: "Codex 확인",
+  aiCodexAsking: "Codex에 로그인 상태를 묻는 중...",
+  aiCodexNoClient:
+    "Codex가 설치되어 있지 않습니다. 설치한 뒤 다시 확인하세요. 앱이 찾지 않는 곳에 설치했다면 SCE_CODEX에 그 경로를 지정하세요.",
+  aiCodexClientUnverified:
+    "Codex 파일은 찾았지만 Codex라고 응답하지 않아 사용하지 않습니다.",
+  aiCodexUnknown: "Codex에 물을 수 없었습니다: {reason}",
+  aiSupport: "버전 검증",
+  aiSupportVerified: "이 빌드가 이 버전의 Codex를 검증했습니다",
+  aiSupportUnverified: "이 빌드가 이 버전의 Codex를 검증하지 않았습니다 ({reason})",
+  aiSupportUnknown: "이 빌드가 이 버전의 Codex를 확인하지 못했습니다 ({reason})",
+  aiSource: "자격 증명 출처",
+  aiSourceOfficial: "공식 클라이언트의 로그인",
+  aiSourceStore: "앱 전용 로그인",
+  aiSourceKey: "환경 변수의 키",
+  aiCodexSignedOutLogin:
+    "이 출처로 로그인한 사람이 없습니다. 터미널에서 다음 명령 중 하나로 로그인하세요. 앱은 로그인을 대신 시작하지 않습니다:",
+  aiCodexHome:
+    "로그인이 앱이 보는 곳에 만들어지도록, 클라이언트를 CODEX_HOME={home} 으로 지정해 시작하세요.",
+  aiCodexSignedOutKey:
+    "{name}이(가) 앱이 시작되는 곳에 지정돼 있지 않습니다. 거기에 지정한 뒤 다시 확인하세요 (메뉴에서 연 창은 셸 시작 파일이 지정한 값을 갖지 않습니다).",
+  aiCodexNotUsed:
+    "이 출처로 Codex에 로그인되어 있지만 이 빌드가 쓰지 않는 방식입니다({reason}). 다음 명령 중 하나로 다른 방식으로 로그인하세요:",
+  aiCodexAccountUnknown: "이 출처로 로그인한 사람을 물을 수 없었습니다: {reason}",
+  aiOutlook: "요청",
+  aiOutlookRuns: "이 연결로 만든 요청은 실행됩니다.",
+  aiOutlookWaits: "이 연결로 만든 요청은 기다립니다: {why}.",
+  aiWhyNoClient: "Codex가 설치되어 있지 않음",
+  aiWhyClientUnverified: "Codex 파일이 Codex가 아님",
+  aiWhyUnsupported: "이 빌드가 이 버전을 검증하지 않음",
+  aiWhySupportUnknown: "이 빌드가 이 버전을 확인하지 못함",
+  aiWhySignedOut: "이 출처로 로그인한 사람이 없음",
+  aiWhyNotUsed: "로그인 방식이 이 빌드가 쓰지 않는 것임",
+  aiWhyAccountUnknown: "로그인한 사람을 물을 수 없었음",
+  aiCodexModelNote:
+    "비워 두면 Codex의 기본 모델을 씁니다. 계정이 쓸 수 없는 모델일 수 있으며 첫 생성에서 확인됩니다.",
   guardTitle: "이 사양으로 모델을 작성하는 중입니다",
   guardBody:
     "저장하면 요청이 기준으로 삼은 사양이나 답변이 바뀌어, AI가 쓰는 결과는 공개되지 않습니다. 저장하고 요청을 취소하거나, 저장하지 않고 두세요.",

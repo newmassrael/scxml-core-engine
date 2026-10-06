@@ -4,12 +4,27 @@
 import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
-import type { ClaudeAccount, ClaudeClient, ClaudeStatus, Connection, ConnectionListing, Described } from "../src/contract";
+import type {
+  ClaudeAccount,
+  ClaudeClient,
+  ClaudeStatus,
+  CodexStatus,
+  Connection,
+  ConnectionListing,
+  Described,
+} from "../src/contract";
 import {
   CLAUDE_CONNECTION_ID,
+  CODEX_CONNECTION_ID,
+  accountOf,
+  chosenSource,
   claudeConnection,
+  codexConnection,
+  codexReadinessOf,
   connectionForRequest,
+  defaultKind,
   modelChoices,
+  outlookOf,
   readinessOf,
   type Asked,
 } from "../src/ai_settings_model";
@@ -209,5 +224,177 @@ describe("the connection a request is made for", () => {
       default: "pc2",
     });
     expect(connectionForRequest(both)).toEqual({ id: "pc2", revision: OTHER });
+  });
+});
+
+// ---- Codex ---------------------------------------------------------------------------------
+
+const CODEX_SIGN_IN = [
+  { source: "official-login", billing: "subscription", command: "codex login -c cli_auth_credentials_store=file", home: null },
+  { source: "official-login", billing: "usage", command: "codex login --with-api-key -c cli_auth_credentials_store=file", home: null },
+  { source: "app-store", billing: "subscription", command: "codex login -c cli_auth_credentials_store=file", home: "/s/codex-home" },
+  { source: "app-store", billing: "usage", command: "codex login --with-api-key -c cli_auth_credentials_store=file", home: "/s/codex-home" },
+] as const;
+
+const codexSignedIn = (over: Partial<Extract<ClaudeAccount, { state: "signed-in" }>> = {}): ClaudeAccount =>
+  signedIn({ route: "codex-cli-chat-gpt-login", ...over });
+
+const codexAccounts = (
+  official: ClaudeAccount,
+  store: ClaudeAccount = { state: "signed-out" },
+  key: ClaudeAccount = { state: "signed-out" },
+): CodexStatus["accounts"] => [
+  { ...official, source: "official-login" },
+  { ...store, source: "app-store" },
+  { ...key, source: "env-api-key" },
+];
+
+const codexStatus = (over: Partial<CodexStatus> = {}): CodexStatus => ({
+  client: { state: "installed", version: "0.159.0", path: "/home/me/.local/bin/codex" },
+  support: { state: "verified" },
+  accounts: codexAccounts(codexSignedIn()),
+  sign_in: CODEX_SIGN_IN,
+  key_variable: "CODEX_API_KEY",
+  ...over,
+});
+
+const codexConnectionOf = (over: Partial<Connection> = {}): Connection =>
+  connection({ id: CODEX_CONNECTION_ID, adapter: "codex", model: null, auth: "official-login", ...over });
+
+describe("which client the settings show first", () => {
+  it("is the one the default connection is for, and Claude Code when nothing says", () => {
+    const codexDefault = listing({
+      connections: [
+        { connection: connection(), revision: REVISION },
+        { connection: codexConnectionOf(), revision: OTHER },
+      ],
+      default: CODEX_CONNECTION_ID,
+    });
+    expect(defaultKind(codexDefault)).toBe("codex");
+    expect(defaultKind(listing())).toBe("claude-code");
+    expect(defaultKind(listing({ default: null }))).toBe("claude-code");
+    expect(defaultKind(null)).toBe("claude-code");
+  });
+
+  it("is Claude Code for a default that is neither client, which these settings do not edit", () => {
+    const local = connection({ id: "pc2", adapter: "local", auth: "none", display_name: "pc2", server_url: "http://127.0.0.1:1/v1" });
+    expect(defaultKind(listing({ connections: [{ connection: local, revision: OTHER }], default: "pc2" }))).toBe("claude-code");
+  });
+
+  it("finds the connection to Codex that is kept, apart from the one to Claude Code", () => {
+    const both = listing({
+      connections: [
+        { connection: connection(), revision: REVISION },
+        { connection: codexConnectionOf({ model: "gpt-x" }), revision: OTHER },
+      ],
+    });
+    expect(codexConnection(both)?.connection.model).toBe("gpt-x");
+    expect(claudeConnection(both)?.connection.model).toBe("opus");
+    expect(codexConnection(listing())).toBeNull();
+    expect(codexConnection(null)).toBeNull();
+  });
+});
+
+describe("what the settings can say of Codex, by where the screen is", () => {
+  const asked = (status: CodexStatus): Asked<CodexStatus> => ({ phase: "answered", status });
+
+  it("is nothing to ask in a window that may not start a program", () => {
+    expect(codexReadinessOf(described({ starts_programs: false }), { phase: "idle" }).kind).toBe("not-here");
+    expect(codexReadinessOf(described(), { phase: "refused", kind: "not-allowed-here" }).kind).toBe("not-here");
+  });
+
+  it("is not asked until it is asked, and waiting while it is", () => {
+    expect(codexReadinessOf(described(), { phase: "idle" }).kind).toBe("unasked");
+    expect(codexReadinessOf(described(), { phase: "asking" }).kind).toBe("asking");
+  });
+
+  it("is a failure to ask, in the core's words, when the core refused for another reason", () => {
+    expect(codexReadinessOf(described(), { phase: "refused", kind: "no-settings", message: "needs a settings folder" })).toEqual({
+      kind: "unknown",
+      reason: "needs a settings folder",
+    });
+  });
+
+  it("is the whole answer once it came, for the screen to show a source of", () => {
+    const status = codexStatus();
+    expect(codexReadinessOf(described(), asked(status))).toEqual({ kind: "answered", status });
+  });
+});
+
+describe("the source of the credential the settings show", () => {
+  const kept = (auth: Connection["auth"]) => ({ connection: codexConnectionOf({ auth }), revision: REVISION });
+
+  it("is the one the person chose in the list, over what is kept", () => {
+    expect(chosenSource(codexStatus(), kept("app-store"), "env-api-key")).toBe("env-api-key");
+  });
+
+  it("is the one the connection that is kept names, when nothing was chosen", () => {
+    expect(chosenSource(codexStatus(), kept("app-store"), undefined)).toBe("app-store");
+    expect(chosenSource(codexStatus(), kept("env-api-key"), undefined)).toBe("env-api-key");
+  });
+
+  it("is the first source somebody is usably signed in by, when no connection is kept", () => {
+    const status = codexStatus({ accounts: codexAccounts({ state: "signed-out" }, codexSignedIn()) });
+    expect(chosenSource(status, null, undefined)).toBe("app-store");
+  });
+
+  it("is the official client's login when nothing is signed in anywhere and nothing is kept", () => {
+    const status = codexStatus({ accounts: codexAccounts({ state: "signed-out" }) });
+    expect(chosenSource(status, null, undefined)).toBe("official-login");
+    expect(chosenSource(null, null, undefined)).toBe("official-login");
+  });
+
+  it("is not a source a connection to Codex cannot take, even if the stored one is hand-edited to it", () => {
+    expect(chosenSource(codexStatus(), kept("none"), undefined)).toBe("official-login");
+    expect(chosenSource(codexStatus(), kept("server-key"), undefined)).toBe("official-login");
+  });
+});
+
+describe("whether a request made for Codex would run, and if not why it waits", () => {
+  it("runs when the program is there, this build verified it, and somebody is signed in by a way it uses", () => {
+    expect(outlookOf(codexStatus(), "official-login")).toEqual({ runs: true });
+  });
+
+  it("waits, first, for a program that is not there or is not Codex", () => {
+    expect(outlookOf(codexStatus({ client: { state: "missing" } }), "official-login")).toEqual({
+      runs: false,
+      because: "no-client",
+    });
+    expect(outlookOf(codexStatus({ client: { state: "unverified" } }), "official-login")).toEqual({
+      runs: false,
+      because: "client-unverified",
+    });
+  });
+
+  it("waits for a version this build did not verify, whoever is signed in", () => {
+    const unverified = codexStatus({ support: { state: "unverified", reason: "has not been verified" } });
+    expect(outlookOf(unverified, "official-login")).toEqual({ runs: false, because: "unsupported" });
+    const unknown = codexStatus({ support: { state: "unknown", reason: "it did not list its features" } });
+    expect(outlookOf(unknown, "official-login")).toEqual({ runs: false, because: "support-unknown" });
+  });
+
+  it("waits for a login, said apart from one that could not be asked and from one the build does not use", () => {
+    const out = codexStatus({ accounts: codexAccounts({ state: "signed-out" }) });
+    expect(outlookOf(out, "official-login")).toEqual({ runs: false, because: "signed-out" });
+    const unasked = codexStatus({ accounts: codexAccounts({ state: "unknown", reason: "it did not answer" }) });
+    expect(outlookOf(unasked, "official-login")).toEqual({ runs: false, because: "account-unknown" });
+    const unused = codexStatus({
+      accounts: codexAccounts(
+        codexSignedIn({ billing: null, usable: false, decision: { decision: "refuse", status: "unconfirmed", reason: "unconfirmed" } }),
+      ),
+    });
+    expect(outlookOf(unused, "official-login")).toEqual({ runs: false, because: "not-used" });
+  });
+
+  it("is of the source that is shown, and not of another that happens to be signed in", () => {
+    const status = codexStatus({ accounts: codexAccounts(codexSignedIn(), { state: "signed-out" }) });
+    expect(outlookOf(status, "official-login")).toEqual({ runs: true });
+    expect(outlookOf(status, "app-store")).toEqual({ runs: false, because: "signed-out" });
+  });
+
+  it("is not knowing, and not running, for a source the core did not answer", () => {
+    const status = codexStatus({ accounts: [] });
+    expect(outlookOf(status, "official-login")).toEqual({ runs: false, because: "account-unknown" });
+    expect(accountOf(status, "official-login")).toBeNull();
   });
 });

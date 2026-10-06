@@ -11,13 +11,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
-import { CLAUDE_CONNECTION_ID } from "../src/ai_settings_model";
+import { CLAUDE_CONNECTION_ID, CODEX_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
 import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type {
   Candidate,
   ClaudeAccount,
   ClaudeStatus,
+  CodexStatus,
   Connection,
   ConnectionListing,
   Described,
@@ -78,6 +79,50 @@ const connection = (model: string | null): Connection => ({
   limits: { turns: 40, seconds: null },
 });
 
+/** The program Codex answered from, and another one the application found. */
+const CODEX_PROGRAM = "/home/me/.local/bin/codex";
+const OTHER_CODEX = "/usr/local/bin/codex";
+const CODEX_HOME = "/home/me/.local/share/sce/settings/codex-home";
+
+const CODEX_SIGN_IN: CodexStatus["sign_in"] = [
+  { source: "official-login", billing: "subscription", command: "codex login -c cli_auth_credentials_store=file", home: null },
+  { source: "official-login", billing: "usage", command: "codex login --with-api-key -c cli_auth_credentials_store=file", home: null },
+  { source: "app-store", billing: "subscription", command: "codex login -c cli_auth_credentials_store=file", home: CODEX_HOME },
+  { source: "app-store", billing: "usage", command: "codex login --with-api-key -c cli_auth_credentials_store=file", home: CODEX_HOME },
+];
+
+const codexSignedIn = (over: Partial<Extract<ClaudeAccount, { state: "signed-in" }>> = {}): ClaudeAccount =>
+  signedIn({ route: "codex-cli-chat-gpt-login", ...over });
+
+/** What the core says of Codex: installed, verified, and signed in by the official client's login. */
+function codexStatusOf(over: Partial<CodexStatus> = {}, accounts?: [ClaudeAccount, ClaudeAccount, ClaudeAccount]): CodexStatus {
+  const [official, store, key] = accounts ?? [codexSignedIn(), { state: "signed-out" }, { state: "signed-out" }];
+  return {
+    client: { state: "installed", version: "0.159.0", path: CODEX_PROGRAM },
+    support: { state: "verified" },
+    accounts: [
+      { ...official, source: "official-login" },
+      { ...store, source: "app-store" },
+      { ...key, source: "env-api-key" },
+    ],
+    sign_in: CODEX_SIGN_IN,
+    key_variable: "CODEX_API_KEY",
+    ...over,
+  };
+}
+
+const codexConnection = (over: Partial<Connection> = {}): Connection => ({
+  id: CODEX_CONNECTION_ID,
+  adapter: "codex",
+  display_name: null,
+  executable: null,
+  model: null,
+  auth: "official-login",
+  server_url: null,
+  limits: { turns: null, seconds: 900 },
+  ...over,
+});
+
 /** A core that keeps one list of connections and says what it was asked. */
 class FakeSettings {
   readonly calls: Array<{ name: string; args: unknown }> = [];
@@ -92,16 +137,33 @@ class FakeSettings {
   ];
   /** Refuse to find programs with this, as the core does an entrance that may not start one. */
   refuseFinding: CommandFailure | null = null;
+  /** What the core says of Codex. */
+  codexStatus: CodexStatus | CommandFailure = codexStatusOf();
+  /** The Codex programs the application says it found. */
+  foundCodex: Candidate[] = [
+    { path: CODEX_PROGRAM, version: "0.159.0", found: "search-path" },
+    { path: OTHER_CODEX, version: "0.158.0", found: "known-location" },
+  ];
 
   api(): Pick<
     Api,
-    "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus" | "findClients"
+    | "listConnections"
+    | "saveConnection"
+    | "setDefaultConnection"
+    | "readClaudeStatus"
+    | "readCodexStatus"
+    | "findClients"
   > {
     return {
       findClients: async () => {
         this.calls.push({ name: "find_clients", args: null });
         if (this.refuseFinding !== null) throw this.refuseFinding;
-        return { claude: this.found, codex: [] };
+        return { claude: this.found, codex: this.foundCodex };
+      },
+      readCodexStatus: async () => {
+        this.calls.push({ name: "read_codex_status", args: null });
+        if (this.codexStatus instanceof CommandFailure) throw this.codexStatus;
+        return this.codexStatus;
       },
       listConnections: async () => {
         this.calls.push({ name: "list_connections", args: null });
@@ -119,9 +181,13 @@ class FakeSettings {
           this.refuseSave = null;
           throw refusal;
         }
+        // What is kept under this id is replaced, and what is kept under another stays.
         this.listing = {
           ...this.listing,
-          connections: [{ connection: saved, revision: REVISION_2 }],
+          connections: [
+            ...this.listing.connections.filter((c) => c.connection.id !== saved.id),
+            { connection: saved, revision: REVISION_2 },
+          ],
         };
         return { outcome: "saved", revision: REVISION_2, parent: base };
       },
@@ -676,5 +742,360 @@ describe("the connection a request is made for", () => {
     await r.settings.reload();
 
     expect(r.settings.connectionForRequest()).toEqual({ id: CLAUDE_CONNECTION_ID, revision: REVISION_2 });
+  });
+});
+
+// ---- Codex ---------------------------------------------------------------------------------
+
+const KEPT_CODEX: ConnectionListing = {
+  connections: [{ connection: codexConnection({ model: "gpt-kept", auth: "env-api-key" }), revision: REVISION_1 }],
+  unreadable: [],
+  default: CODEX_CONNECTION_ID,
+};
+
+/** The settings opened, with the kept connections and what the core says of Codex. */
+async function opened(over: { listing?: ConnectionListing; codex?: CodexStatus | CommandFailure } = {}): Promise<Rig> {
+  const r = rig();
+  if (over.listing !== undefined) r.core.listing = over.listing;
+  if (over.codex !== undefined) r.core.codexStatus = over.codex;
+  await r.settings.load();
+  r.settings.openPanel();
+  r.draw();
+  return r;
+}
+
+/** The person chooses Codex among the clients. */
+async function chooseCodex(r: Rig): Promise<void> {
+  click(r.root, "#ai-kind-codex");
+  await settle();
+}
+
+const typeInto = (root: HTMLElement, selector: string, text: string): void => {
+  const field = root.querySelector<HTMLInputElement>(selector);
+  if (field === null) throw new Error(`no ${selector} on screen`);
+  field.value = text;
+  field.dispatchEvent(new Event("input"));
+};
+
+const choose = (root: HTMLElement, selector: string, value: string): void => {
+  const select = root.querySelector<HTMLSelectElement>(selector);
+  if (select === null) throw new Error(`no ${selector} on screen`);
+  select.value = value;
+  select.dispatchEvent(new Event("change"));
+};
+
+describe("choosing which client the settings are for", () => {
+  it("starts on Claude Code when no connection is the default, and asks only Claude Code", async () => {
+    const r = await opened();
+
+    expect(r.core.calls.map((c) => c.name)).toEqual(["list_connections", "read_claude_status", "find_clients"]);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-claude-code")?.checked).toBe(true);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-codex")?.checked).toBe(false);
+  });
+
+  it("starts on Codex when the default connection is for Codex, and asks Codex and not Claude Code", async () => {
+    const r = await opened({ listing: KEPT_CODEX });
+
+    expect(r.core.calls.map((c) => c.name)).toEqual(["list_connections", "read_codex_status", "find_clients"]);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-kind-codex")?.checked).toBe(true);
+  });
+
+  it("asks Codex the first time it is chosen, and does not ask Claude Code again when it is chosen back", async () => {
+    const r = await opened();
+
+    await chooseCodex(r);
+    click(r.root, "#ai-kind-claude-code");
+    await settle();
+
+    expect(r.core.asked("read_codex_status")).toHaveLength(1);
+    expect(r.core.asked("read_claude_status")).toHaveLength(1);
+    expect(r.root.querySelector("#ai-codex-source")).toBeNull();
+  });
+
+  it("keeps what was chosen for one client while the other is looked at", async () => {
+    const r = await opened();
+    choose(r.root, "#ai-model", "sonnet");
+
+    await chooseCodex(r);
+    typeInto(r.root, "#ai-codex-model", "gpt-x");
+    click(r.root, "#ai-kind-claude-code");
+    await settle();
+
+    expect(r.root.querySelector<HTMLSelectElement>("#ai-model")?.value).toBe("sonnet");
+    await chooseCodex(r);
+    expect(r.root.querySelector<HTMLInputElement>("#ai-codex-model")?.value).toBe("gpt-x");
+  });
+
+  it("offers no choice of client in a window that may not start a program", async () => {
+    const r = rig(BROWSER);
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+
+    expect(r.root.querySelector("#ai-kind-codex")).toBeNull();
+    expect(r.root.textContent).toContain("desktop application");
+  });
+});
+
+describe("what is shown for each state Codex can be in", () => {
+  const shown = async (codex: CodexStatus | CommandFailure): Promise<Rig> => {
+    const r = await opened({ codex });
+    await chooseCodex(r);
+    return r;
+  };
+
+  it("says to install it when there is none, and where to say where it is", async () => {
+    const r = await shown(codexStatusOf({ client: { state: "missing" } }));
+
+    expect(r.root.textContent).toContain("Codex is not installed");
+    expect(r.root.textContent).toContain("SCE_CODEX");
+    expect(r.root.querySelector("code")).toBeNull();
+  });
+
+  it("says a file that does not say it is Codex is not used", async () => {
+    const r = await shown(codexStatusOf({ client: { state: "unverified" } }));
+
+    expect(r.root.textContent).toContain("did not say it is Codex");
+  });
+
+  it("says a failure to ask in the core's words, and does not send anyone to sign in", async () => {
+    const r = await shown(new CommandFailure("failed", "Codex could not be started"));
+
+    expect(r.root.textContent).toContain("Codex could not be started");
+    expect(r.root.querySelector("code")).toBeNull();
+  });
+
+  it("says a version this build verified, a login, and that a request will run", async () => {
+    const r = await shown(codexStatusOf());
+
+    expect(r.root.textContent).toContain("has verified this version");
+    expect(r.root.textContent).toContain("will run");
+    expect(r.root.textContent).not.toContain("will wait");
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+    const sources = [...r.root.querySelectorAll<HTMLOptionElement>("#ai-codex-source option")].map((o) => o.value);
+    expect(sources).toEqual(["official-login", "app-store", "env-api-key"]);
+  });
+
+  it("says a version this build did not verify, whoever is signed in, and that a request will wait", async () => {
+    const r = await shown(
+      codexStatusOf({ support: { state: "unverified", reason: "this version has not been verified" } }),
+    );
+
+    expect(r.root.textContent).toContain("has not verified this version");
+    expect(r.root.textContent).toContain("this version has not been verified");
+    expect(r.root.textContent).toContain("will wait");
+    // Not offered as the default: every generation would wait. Another program can still be chosen,
+    // which is how a person reaches a version this build did verify.
+    expect(r.root.querySelector("#ai-save")).toBeNull();
+    expect(r.root.querySelector("#ai-codex-model")).toBeNull();
+    expect(r.root.querySelector("#ai-save-program")).not.toBeNull();
+    expect(r.root.querySelector("#ai-codex-program")).not.toBeNull();
+  });
+
+  it("says a version that could not be checked is not one that was refused", async () => {
+    const r = await shown(codexStatusOf({ support: { state: "unknown", reason: "it did not list its features" } }));
+
+    expect(r.root.textContent).toContain("it did not list its features");
+    expect(r.root.textContent).not.toContain("has not verified this version");
+  });
+
+  it("gives the commands of the source that is chosen, and the folder the application's own login is made in", async () => {
+    const r = await shown(
+      codexStatusOf({}, [codexSignedIn(), { state: "signed-out" }, { state: "signed-out" }]),
+    );
+
+    choose(r.root, "#ai-codex-source", "app-store");
+    await settle();
+    r.draw();
+
+    const commands = [...r.root.querySelectorAll("code")].map((c) => c.textContent);
+    expect(commands).toEqual([
+      "codex login -c cli_auth_credentials_store=file",
+      "codex login --with-api-key -c cli_auth_credentials_store=file",
+    ]);
+    expect(r.root.textContent).toContain("Nobody is signed in by this source");
+    expect(r.root.textContent).toContain(CODEX_HOME);
+  });
+
+  it("gives the official client's commands without a folder for its own login", async () => {
+    const r = await shown(codexStatusOf({}, [{ state: "signed-out" }, { state: "signed-out" }, { state: "signed-out" }]));
+
+    expect(r.root.textContent).not.toContain(CODEX_HOME);
+    expect([...r.root.querySelectorAll("code")]).toHaveLength(2);
+  });
+
+  it("says a key in the environment is named by its variable, and has no command to sign in with", async () => {
+    const r = await shown(codexStatusOf({}, [{ state: "signed-out" }, { state: "signed-out" }, { state: "signed-out" }]));
+
+    choose(r.root, "#ai-codex-source", "env-api-key");
+    await settle();
+    r.draw();
+
+    expect(r.root.textContent).toContain("CODEX_API_KEY is not set");
+    expect(r.root.querySelector("code")).toBeNull();
+  });
+
+  it("names the variable of a key that is set, and says it is billed by use", async () => {
+    const key = codexSignedIn({ route: "codex-cli-api-key", billing: "usage", environment: "CODEX_API_KEY" });
+    const r = await shown(codexStatusOf({}, [{ state: "signed-out" }, { state: "signed-out" }, key]));
+
+    choose(r.root, "#ai-codex-source", "env-api-key");
+    await settle();
+    r.draw();
+
+    expect(r.root.textContent).toContain("CODEX_API_KEY");
+    expect(r.root.textContent).toContain("billed by use");
+  });
+
+  it("says a login the build does not use is a login that is there, and gives the commands that sign in another way", async () => {
+    const unused = codexSignedIn({
+      route: "unlisted",
+      billing: null,
+      usable: false,
+      decision: { decision: "refuse", status: "unconfirmed", reason: "unconfirmed" },
+    });
+    const r = await shown(codexStatusOf({}, [unused, { state: "signed-out" }, { state: "signed-out" }]));
+
+    expect(r.root.textContent).toContain("does not use");
+    expect(r.root.textContent).toContain("will wait");
+    expect([...r.root.querySelectorAll("code")]).toHaveLength(2);
+  });
+
+  it("says who is signed in by a source could not be asked, and does not send anyone to sign in for it", async () => {
+    const r = await shown(
+      codexStatusOf({}, [{ state: "unknown", reason: "it did not answer" }, { state: "signed-out" }, { state: "signed-out" }]),
+    );
+
+    expect(r.root.textContent).toContain("it did not answer");
+    expect(r.root.querySelector("code")).toBeNull();
+  });
+});
+
+describe("saving a connection to Codex", () => {
+  const readyToSave = async (over: Parameters<typeof opened>[0] = {}): Promise<Rig> => {
+    const r = await opened(over);
+    if (over.listing === undefined) await chooseCodex(r);
+    return r;
+  };
+
+  it("saves a first connection on top of nothing and makes it the default, expecting none", async () => {
+    const r = await readyToSave();
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.asked("save_connection")).toEqual([
+      {
+        connection: {
+          id: CODEX_CONNECTION_ID,
+          adapter: "codex",
+          display_name: null,
+          executable: null,
+          model: null,
+          auth: "official-login",
+          server_url: null,
+          limits: { turns: null, seconds: null },
+        },
+        base: null,
+      },
+    ]);
+    expect(r.core.asked("set_default_connection")).toEqual([{ id: CODEX_CONNECTION_ID, expect: null }]);
+    expect(r.root.textContent).toContain("from the next generation");
+    expect(r.settings.connectionForRequest()).toEqual({ id: CODEX_CONNECTION_ID, revision: REVISION_2 });
+    expect(r.settings.targetLine()).toBe("Will ask: Codex (client default)");
+    // What is shown is of what is kept now: Codex is asked again.
+    expect(r.core.asked("read_codex_status")).toHaveLength(2);
+  });
+
+  it("saves the model that was typed, the source and the program that were chosen", async () => {
+    // Somebody is signed in by the application's own login too, or choosing it would leave nothing to save.
+    const r = await readyToSave({
+      codex: codexStatusOf({}, [codexSignedIn(), codexSignedIn(), { state: "signed-out" }]),
+    });
+    typeInto(r.root, "#ai-codex-model", "  gpt-x  ");
+    choose(r.root, "#ai-codex-source", "app-store");
+    choose(r.root, "#ai-codex-program", OTHER_CODEX);
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    const saved = r.core.asked("save_connection")[0] as { connection: Connection };
+    expect(saved.connection).toMatchObject({
+      adapter: "codex",
+      model: "gpt-x",
+      auth: "app-store",
+      executable: OTHER_CODEX,
+    });
+  });
+
+  it("writes on top of the revision it read, keeps the limits it had, and expects the default it saw", async () => {
+    const key = codexSignedIn({ route: "codex-cli-api-key", billing: "usage", environment: "CODEX_API_KEY" });
+    const r = await readyToSave({
+      listing: KEPT_CODEX,
+      codex: codexStatusOf({}, [{ state: "signed-out" }, { state: "signed-out" }, key]),
+    });
+
+    // What is kept is what is shown: its model, and the source it names.
+    expect(r.root.querySelector<HTMLInputElement>("#ai-codex-model")?.value).toBe("gpt-kept");
+    expect(r.root.querySelector<HTMLSelectElement>("#ai-codex-source")?.value).toBe("env-api-key");
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.asked("save_connection")).toEqual([
+      {
+        connection: codexConnection({ model: "gpt-kept", auth: "env-api-key" }),
+        base: REVISION_1,
+      },
+    ]);
+    expect(r.core.asked("set_default_connection")).toEqual([{ id: CODEX_CONNECTION_ID, expect: CODEX_CONNECTION_ID }]);
+  });
+
+  it("saves a blank model as the client's own, and not as the one that was kept", async () => {
+    const key = codexSignedIn({ route: "codex-cli-api-key", billing: "usage", environment: "CODEX_API_KEY" });
+    const r = await readyToSave({
+      listing: KEPT_CODEX,
+      codex: codexStatusOf({}, [{ state: "signed-out" }, { state: "signed-out" }, key]),
+    });
+
+    typeInto(r.root, "#ai-codex-model", "   ");
+    click(r.root, "#ai-save");
+    await settle();
+
+    const saved = r.core.asked("save_connection")[0] as { connection: Connection };
+    expect(saved.connection.model).toBeNull();
+  });
+
+  it("does not drop the connection to Claude Code that is kept beside it", async () => {
+    const r = await readyToSave({
+      listing: {
+        connections: [{ connection: connection("opus"), revision: REVISION_1 }],
+        unreadable: [],
+        default: CLAUDE_CONNECTION_ID,
+      },
+    });
+    await chooseCodex(r);
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.listing.connections.map((c) => c.connection.id).sort()).toEqual([
+      CLAUDE_CONNECTION_ID,
+      CODEX_CONNECTION_ID,
+    ]);
+    // The one the person last saved is the one a request is made for.
+    expect(r.core.asked("set_default_connection")).toEqual([
+      { id: CODEX_CONNECTION_ID, expect: CLAUDE_CONNECTION_ID },
+    ]);
+  });
+
+  it("says another window changed it first, and overwrites nothing of theirs", async () => {
+    const r = await readyToSave();
+    r.core.refuseSave = new CommandFailure("conflict", "changed");
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.root.textContent).toContain("Another window changed this connection first");
+    expect(r.core.asked("set_default_connection")).toEqual([]);
   });
 });

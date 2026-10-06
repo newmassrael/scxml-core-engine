@@ -17,21 +17,19 @@
 import {
   CLAUDE_CONNECTION_ID,
   claudeConnection,
+  codexConnection,
   connectionForRequest,
+  defaultKind,
   modelChoices,
   readinessOf,
   type Asked,
+  type ClientKind,
   type Readiness,
 } from "./ai_settings_model";
+import { BILLING_WORDS, NOT_USED_WORDS, SIGN_IN_WORDS, programChoice } from "./ai_settings_view";
 import type { Api, ConnectionRef } from "./api";
-import type {
-  Billing,
-  Candidate,
-  Connection,
-  ConnectionListing,
-  Described,
-  SignInCommand,
-} from "./contract";
+import { CodexSection } from "./codex_settings";
+import type { Candidate, Connection, ConnectionListing, Described, SignInCommand } from "./contract";
 import { h } from "./dom";
 import type { Child } from "./dom";
 import type { Key } from "./i18n";
@@ -41,7 +39,12 @@ import { CommandFailure } from "./ipc";
 export interface AiSettingsHost {
   readonly api: Pick<
     Api,
-    "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus" | "findClients"
+    | "listConnections"
+    | "saveConnection"
+    | "setDefaultConnection"
+    | "readClaudeStatus"
+    | "readCodexStatus"
+    | "findClients"
   >;
   readonly described: Described;
   readonly t: (key: Key, values?: Record<string, string>) => string;
@@ -76,13 +79,42 @@ export class AiSettings {
   private draftProgram: string | null | undefined = undefined;
   /** The command the person last pressed copy on, and whether the clipboard took it. */
   private copied: { readonly command: string; readonly ok: boolean } | null = null;
+  /** The client the person chose to look at; `null` is the one the default connection is for. */
+  private kindDraft: ClientKind | null = null;
+  /** What is Codex's in these settings, which has its own state to keep. */
+  private readonly codex: CodexSection;
 
-  constructor(private readonly host: AiSettingsHost) {}
+  constructor(private readonly host: AiSettingsHost) {
+    this.codex = new CodexSection({
+      t: host.t,
+      described: host.described,
+      listing: () => this.listing,
+      busy: () => this.busy,
+      save: () => void this.save(),
+      redraw: () => host.redraw(),
+      recheck: (label) => this.recheck(label),
+      commands: (commands) => this.commands(commands),
+    });
+  }
 
-  /** Read the connections and ask Claude Code, when this window may. */
+  /** Read the connections and ask the client that is shown, when this window may. */
   async load(): Promise<void> {
     await this.reload();
     await this.ask();
+  }
+
+  /** The client the settings show: the one the person chose, else the one the default connection is for. */
+  private kind(): ClientKind {
+    return this.kindDraft ?? defaultKind(this.listing);
+  }
+
+  /** The person chose a client to look at. It is asked the first time it is looked at. */
+  private async choose(kind: ClientKind): Promise<void> {
+    this.kindDraft = kind;
+    this.copied = null;
+    this.host.redraw();
+    const unasked = kind === "codex" ? this.codex.unasked : this.asked.phase === "idle";
+    if (unasked) await this.ask();
   }
 
   /** Read the connections again: another window may have changed them. */
@@ -96,11 +128,16 @@ export class AiSettings {
     }
   }
 
-  /** Ask Claude Code who is signed in. Never from a window that may not start a program. */
+  /** Ask the client that is shown who is signed in. Never from a window that may not start a program. */
   async ask(): Promise<void> {
     if (!this.host.described.starts_programs) return;
-    this.asked = { phase: "asking" };
     this.copied = null;
+    if (this.kind() === "codex") await this.askCodex();
+    else await this.askClaude();
+  }
+
+  private async askClaude(): Promise<void> {
+    this.asked = { phase: "asking" };
     this.host.redraw();
     try {
       this.asked = { phase: "answered", status: await this.host.api.readClaudeStatus() };
@@ -109,10 +146,23 @@ export class AiSettings {
         this.asked = { phase: "idle" };
         return;
       }
-      this.asked =
-        error instanceof CommandFailure
-          ? { phase: "refused", kind: error.kind, message: error.message }
-          : { phase: "refused", kind: "failed", message: this.host.explain(error) };
+      this.asked = refusal(error, this.host);
+    }
+    await this.find();
+    this.host.redraw();
+  }
+
+  private async askCodex(): Promise<void> {
+    this.codex.setAsked({ phase: "asking" });
+    this.host.redraw();
+    try {
+      this.codex.setAsked({ phase: "answered", status: await this.host.api.readCodexStatus() });
+    } catch (error) {
+      if (this.host.handled(error)) {
+        this.codex.setAsked({ phase: "idle" });
+        return;
+      }
+      this.codex.setAsked(refusal(error, this.host));
     }
     await this.find();
     this.host.redraw();
@@ -125,10 +175,13 @@ export class AiSettings {
    */
   private async find(): Promise<void> {
     try {
-      this.candidates = (await this.host.api.findClients()).claude;
+      const found = await this.host.api.findClients();
+      this.candidates = found.claude;
+      this.codex.setCandidates(found.codex);
     } catch (error) {
       if (this.host.handled(error)) return;
       this.candidates = [];
+      this.codex.setCandidates([]);
     }
   }
 
@@ -174,26 +227,21 @@ export class AiSettings {
     this.notice = null;
     this.host.redraw();
     let saved = false;
+    // The client that is shown is the one that is saved, and it is made the default: a save is
+    // the person's word for which AI a request is made for.
+    const codex = this.kind() === "codex";
     try {
-      const kept = claudeConnection(this.listing);
-      const connection: Connection = {
-        id: CLAUDE_CONNECTION_ID,
-        adapter: "claude-code",
-        display_name: null,
-        // What is kept stays unless the person chose another: a save of the model is not a
-        // word about the program.
-        executable: this.chosenProgram(),
-        model: this.chosenModel(),
-        auth: "official-login",
-        server_url: null,
-        // What a person set outside this screen is theirs: saving a model does not drop it.
-        limits: kept?.connection.limits ?? { turns: null, seconds: null },
-      };
+      const kept = codex ? codexConnection(this.listing) : claudeConnection(this.listing);
+      const connection = codex ? this.codex.connection() : this.claudeDraft();
       await this.host.api.saveConnection(connection, kept?.revision ?? null);
-      await this.host.api.setDefaultConnection(CLAUDE_CONNECTION_ID, this.listing?.default ?? null);
-      this.draftModel = undefined;
-      this.typedModel = "";
-      this.draftProgram = undefined;
+      await this.host.api.setDefaultConnection(connection.id, this.listing?.default ?? null);
+      if (codex) {
+        this.codex.reset();
+      } else {
+        this.draftModel = undefined;
+        this.typedModel = "";
+        this.draftProgram = undefined;
+      }
       this.notice = { tone: "ok", text: this.host.t("aiSaved") };
       saved = true;
     } catch (error) {
@@ -211,6 +259,24 @@ export class AiSettings {
     }
     // What is shown is of the program that is named now, which may be another one.
     if (saved) await this.ask();
+  }
+
+  /** The connection to Claude Code that a save would write: what is chosen, over what is kept. */
+  private claudeDraft(): Connection {
+    const kept = claudeConnection(this.listing);
+    return {
+      id: CLAUDE_CONNECTION_ID,
+      adapter: "claude-code",
+      display_name: null,
+      // What is kept stays unless the person chose another: a save of the model is not a
+      // word about the program.
+      executable: this.chosenProgram(),
+      model: this.chosenModel(),
+      auth: "official-login",
+      server_url: null,
+      // What a person set outside this screen is theirs: saving a model does not drop it.
+      limits: kept?.connection.limits ?? { turns: null, seconds: null },
+    };
   }
 
   private async copy(command: string): Promise<void> {
@@ -245,8 +311,11 @@ export class AiSettings {
   view(): HTMLElement | null {
     const { described, t } = this.host;
     if (!described.settings && !described.starts_programs) return null;
+    const codex = this.kind() === "codex";
     const readiness = readinessOf(described, this.asked);
     const target = this.targetName();
+    // A window that may not ask anything has no client to choose between.
+    const chooser = (codex ? this.codex.here : readiness.kind !== "not-here") ? this.kindChooser() : null;
     return h(
       "details",
       {
@@ -258,7 +327,8 @@ export class AiSettings {
         },
       },
       h("summary", {}, `${t("aiTitle")}: ${target ?? t("aiNoneChosen")}`),
-      ...this.body(readiness),
+      chooser,
+      ...(codex ? this.codex.body() : this.body(readiness)),
       this.notice === null
         ? null
         : h(
@@ -266,6 +336,33 @@ export class AiSettings {
             { class: this.notice.tone === "ok" ? "banner banner-ok" : "banner banner-warn", role: "status" },
             this.notice.text,
           ),
+    );
+  }
+
+  /** The two clients these settings edit a connection to, one of which is shown at a time. */
+  private kindChooser(): HTMLElement {
+    const t = this.host.t;
+    const shown = this.kind();
+    const option = (kind: ClientKind, label: string) =>
+      h(
+        "label",
+        { class: "ai-kind-option" },
+        h("input", {
+          id: `ai-kind-${kind}`,
+          type: "radio",
+          name: "ai-kind",
+          value: kind,
+          checked: shown === kind,
+          onchange: () => void this.choose(kind),
+        }),
+        ` ${label}`,
+      );
+    return h(
+      "fieldset",
+      { class: "ai-kind" },
+      h("legend", {}, t("aiKind")),
+      option("claude-code", "Claude Code"),
+      option("codex", "Codex"),
     );
   }
 
@@ -313,32 +410,15 @@ export class AiSettings {
    * gone, so that a save does not drop it unseen and the person can see why a run waits.
    */
   private programChoice(): HTMLElement {
-    const t = this.host.t;
-    const current = this.chosenProgram();
-    const known = new Set(this.candidates.map((c) => c.path));
-    const select = h(
-      "select",
-      {
-        id: "ai-program",
-        "aria-label": t("aiProgram"),
-        onchange: (event) => {
-          const value = (event.target as HTMLSelectElement).value;
-          this.draftProgram = value === "" ? null : value;
-        },
+    return programChoice({
+      id: "ai-program",
+      t: this.host.t,
+      current: this.chosenProgram(),
+      candidates: this.candidates,
+      choose: (program) => {
+        this.draftProgram = program;
       },
-      h("option", { value: "", selected: current === null }, t("aiProgramAutomatic")),
-      ...this.candidates.map((c) =>
-        h(
-          "option",
-          { value: c.path, selected: current === c.path },
-          t("aiProgramCandidate", { path: c.path, version: c.version }),
-        ),
-      ),
-      current !== null && !known.has(current)
-        ? h("option", { value: current, selected: true }, `${current} (${t("aiProgramGone")})`)
-        : null,
-    );
-    return h("label", { class: "ai-program" }, h("span", {}, `${t("aiProgram")} `), select);
+    });
   }
 
   /**
@@ -495,20 +575,9 @@ export class AiSettings {
   }
 }
 
-const SIGN_IN_WORDS: Record<Billing, Key> = {
-  subscription: "aiSignInSubscription",
-  usage: "aiSignInUsage",
-  provider: "aiSignInProvider",
-};
-
-const BILLING_WORDS: Record<Billing, Key> = {
-  subscription: "aiBillingSubscription",
-  usage: "aiBillingUsage",
-  provider: "aiBillingProvider",
-};
-
-const NOT_USED_WORDS: Record<"forbidden" | "unconfirmed" | "switched-off", Key> = {
-  forbidden: "aiReasonForbidden",
-  unconfirmed: "aiReasonUnconfirmed",
-  "switched-off": "aiReasonSwitchedOff",
-};
+/** What a refused or failed asking is, in the words the settings keep it in. */
+function refusal<S>(error: unknown, host: AiSettingsHost): Asked<S> {
+  return error instanceof CommandFailure
+    ? { phase: "refused", kind: error.kind, message: error.message }
+    : { phase: "refused", kind: "failed", message: host.explain(error) };
+}

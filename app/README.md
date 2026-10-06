@@ -609,6 +609,29 @@ where nobody is signed in to the program that answered a button keeps another on
 status is asked again after a save, of the program that is named now. The browser shell only
 shows what the desktop saved: it may not start a program or change a setting.
 
+**The panel is for one client at a time, Claude Code or Codex.** A choice of the two is at its top
+and starts on the client the default connection is for (Claude Code when there is none). Each is
+asked the first time it is looked at, and what was chosen for one is kept while the other is looked
+at. Each keeps its own connection (`claude`, `codex`), and a save makes the one that is shown the
+default: it is the person's word for which AI a request is made for.
+
+For Codex (`read_codex_status`, which starts the person's program and so is the desktop window's)
+the panel shows the program and its version, whether this build verified that version, and who is
+signed in by the source that is chosen among three: the official client's own login, a login the
+application keeps of its own in a folder of its own, or a key in the environment. Each source is
+asked on its own, the way a generation runs it, so the screen can say of the one chosen what a
+request would find. A source nobody is signed in by gives the commands that sign in to it (with the
+folder to start the client in, for the application's own login) or, for a key, the variable to set
+where the application starts; a login the build does not use is shown as the login it is.
+
+One line says whether a request made for the connection would run and, if not, the first thing it
+waits for, in the order the things are true in: a program that is not there or is not Codex, a
+version this build did not verify (whoever is signed in), then the login. The save is offered only
+when a request would run, because a connection that only waits is not one to make the default;
+while it would wait, another Codex program can still be chosen among those found, which is how a
+person reaches a version this build did verify. Until a version is verified (`app-core/data/
+codex_support.json` lists none) the panel says so for every Codex it finds.
+
 ### The model, and where it stands
 
 A model is saved for a text revision (`written_for`), so "is this model about the
